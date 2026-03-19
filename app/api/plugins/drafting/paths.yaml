@@ -1,0 +1,59 @@
+# Drafting plugin API paths.
+#
+# RPC-style endpoints that wrap the AG-UI backend controller.
+# The chat endpoint returns an SSE stream of AG-UI events.
+
+chat:
+  post:
+    operationId: postDraftingChat
+    summary: Send a drafting message and receive AG-UI SSE stream
+    tags: [Drafting]
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: "../../openapi.yaml#/components/schemas/DraftingChatRequest"
+    responses:
+      "200":
+        description: SSE stream of AG-UI protocol events
+        content:
+          text/event-stream: {}
+
+reset:
+  post:
+    operationId: postDraftingReset
+    summary: Reset the drafting conversation thread
+    tags: [Drafting]
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: "../../openapi.yaml#/components/schemas/DraftingResetRequest"
+    responses:
+      "200":
+        description: New thread ID
+        content:
+          application/json:
+            schema:
+              $ref: "../../openapi.yaml#/components/schemas/DraftingResetResponse"
+
+save:
+  post:
+    operationId: postDraftingSave
+    summary: Save an approved draft as an unpublished node
+    tags: [Drafting]
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: "../../openapi.yaml#/components/schemas/DraftingSaveRequest"
+    responses:
+      "200":
+        description: Created node details
+        content:
+          application/json:
+            schema:
+              $ref: "../../openapi.yaml#/components/schemas/DraftingSaveResponse"

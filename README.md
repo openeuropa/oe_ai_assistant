@@ -78,8 +78,9 @@ ddev restart
 
 | Command | Description |
 |---------|-------------|
-| `ddev rebuild` | Full rebuild: composer install, symlink module, install site |
-| `ddev install` | Reinstall the Drupal site (fast, no composer) |
+| `ddev rebuild` | Full rebuild: composer install, symlink, build app, install site |
+| `ddev install` | Reinstall the Drupal site (fast, no composer or build) |
+| `ddev build-app` | Build the React app production bundle |
 | `ddev phpunit tests/src/ExistingSite/` | Run ExistingSite tests |
 | `ddev phpcs` | Run PHP CodeSniffer with Drupal standards |
 
@@ -106,6 +107,28 @@ inside the DDEV container against a live Drupal site:
 
 ```bash
 ddev phpunit tests/src/ExistingSite/
+```
+
+### React app
+
+The React frontend lives in `app/` and produces an IIFE bundle consumed by the Drupal module. The Drupal library
+definition points directly to `app/dist/`.
+
+```bash
+cd app
+npm install
+npm run dev          # Vite + Express mock API (standalone, no Drupal needed)
+npm run build        # Production IIFE bundle -> app/dist/
+npm run lint         # Biome check
+npm run typecheck    # TypeScript strict
+npm run test         # Vitest
+npm run api:generate # Regenerate types from OpenAPI spec
+```
+
+Or build via DDEV:
+
+```bash
+ddev build-app
 ```
 
 ### Coding standards

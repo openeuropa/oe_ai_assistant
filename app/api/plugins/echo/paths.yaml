@@ -1,0 +1,33 @@
+# Echo plugin paths (dev-only).
+
+stream:
+  post:
+    operationId: postEchoStream
+    summary: Echo a message back as an SSE stream (dev-only).
+    description: >
+      Accepts a message and streams it back word-by-word as
+      Server-Sent Events. Used to test SSE consumption in the
+      frontend. Not available in production.
+    tags: [Echo]
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: "../../openapi.yaml#/components/schemas/EchoRequest"
+    responses:
+      "200":
+        description: SSE stream echoing the message word-by-word.
+        content:
+          text/event-stream:
+            schema:
+              description: >
+                Each SSE data frame is a JSON object with
+                { word, index, done }.
+              type: string
+      "400":
+        description: Missing or empty message.
+        content:
+          application/json:
+            schema:
+              $ref: "../../openapi.yaml#/components/schemas/ApiError"

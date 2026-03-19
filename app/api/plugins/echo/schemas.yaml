@@ -1,0 +1,25 @@
+# Echo plugin schemas (dev-only).
+
+EchoRequest:
+  type: object
+  description: Request body for the echo stream endpoint.
+  required: [message]
+  properties:
+    message:
+      type: string
+      description: Text to echo back word-by-word.
+
+EchoStreamEvent:
+  type: object
+  description: A single SSE data frame from the echo stream.
+  required: [word, index, done]
+  properties:
+    word:
+      type: string
+      description: The word being streamed back.
+    index:
+      type: integer
+      description: Zero-based index of this word in the original message.
+    done:
+      type: boolean
+      description: True when this is the last event in the stream.

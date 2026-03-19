@@ -1,0 +1,83 @@
+# Drafting plugin API schemas.
+#
+# Request/response types for the drafting endpoints.
+# The SSE stream uses AG-UI protocol events (not defined here
+# as they are a transport-level concern, not REST schemas).
+
+DraftingChatRequest:
+  type: object
+  required:
+    - message
+    - entityTypeId
+    - bundle
+    - schema
+  properties:
+    message:
+      type: string
+      description: The user's drafting prompt or instruction.
+    threadId:
+      type: string
+      description: >
+        Optional thread ID for conversation continuity.
+        Omit to start a new conversation.
+    entityTypeId:
+      type: string
+      description: The entity type ID (e.g. "node").
+    bundle:
+      type: string
+      description: The content type machine name (e.g. "oe_news").
+    schema:
+      type: object
+      description: >
+        The full form schema for the target content type,
+        as returned by GET /content-schema/{entityTypeId}/{bundle}?mode=form.
+
+DraftingResetRequest:
+  type: object
+  required:
+    - threadId
+  properties:
+    threadId:
+      type: string
+      description: The thread ID of the conversation to reset.
+
+DraftingResetResponse:
+  type: object
+  required:
+    - threadId
+  properties:
+    threadId:
+      type: string
+      description: The new thread ID for the reset conversation.
+
+DraftingSaveRequest:
+  type: object
+  required:
+    - entityTypeId
+    - bundle
+    - fields
+  properties:
+    entityTypeId:
+      type: string
+      description: The entity type ID (e.g. "node").
+    bundle:
+      type: string
+      description: The content type machine name (e.g. "oe_news").
+    fields:
+      type: object
+      description: >
+        The drafted field values, keyed by field machine name.
+        Shape matches the content type form schema.
+
+DraftingSaveResponse:
+  type: object
+  required:
+    - nodeId
+    - previewUrl
+  properties:
+    nodeId:
+      type: string
+      description: The ID of the created node.
+    previewUrl:
+      type: string
+      description: URL to preview the created draft node.

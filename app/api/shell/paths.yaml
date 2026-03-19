@@ -1,0 +1,93 @@
+# Shell-level paths.
+#
+# Application state persistence and content type discovery.
+# These are cross-cutting concerns used by multiple plugins.
+
+state:
+  get:
+    operationId: getState
+    summary: Load persisted application state for a content node.
+    tags: [State]
+    parameters:
+      - $ref: "../openapi.yaml#/components/parameters/NodeId"
+    responses:
+      "200":
+        description: State blob for this node.
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/AppStateBlob"
+      "404":
+        description: No persisted state found for this node.
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+      "403":
+        $ref: "../openapi.yaml#/components/responses/Forbidden"
+
+  put:
+    operationId: saveState
+    summary: Save application state for a content node.
+    tags: [State]
+    parameters:
+      - $ref: "../openapi.yaml#/components/parameters/NodeId"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: "../openapi.yaml#/components/schemas/AppStateBlob"
+    responses:
+      "204":
+        description: State saved successfully.
+      "403":
+        $ref: "../openapi.yaml#/components/responses/Forbidden"
+
+contentTypes:
+  get:
+    operationId: listContentTypes
+    summary: List available content types.
+    description: >
+      Returns the content types the current user can work with. Each
+      entry includes the type's field schema so plugins know which
+      fields are available.
+    tags: [ContentTypes]
+    responses:
+      "200":
+        description: Array of content type definitions.
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [contentTypes]
+              properties:
+                contentTypes:
+                  type: array
+                  items:
+                    $ref: "../openapi.yaml#/components/schemas/ContentType"
+      "403":
+        $ref: "../openapi.yaml#/components/responses/Forbidden"
+
+contentType:
+  get:
+    operationId: getContentType
+    summary: Get a single content type definition.
+    tags: [ContentTypes]
+    parameters:
+      - $ref: "../openapi.yaml#/components/parameters/ContentTypeId"
+    responses:
+      "200":
+        description: Content type definition.
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ContentType"
+      "404":
+        description: Content type not found.
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+      "403":
+        $ref: "../openapi.yaml#/components/responses/Forbidden"

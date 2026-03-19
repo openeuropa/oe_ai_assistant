@@ -1,0 +1,121 @@
+# Notes plugin paths (dev-only).
+#
+# RPC-style: every action is POST with the verb in the URL path.
+# noteId is in the request body, not a path parameter.
+
+list:
+  post:
+    operationId: notesList
+    summary: List all notes (dev-only).
+    tags: [Notes]
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: "../../openapi.yaml#/components/schemas/NotesListRequest"
+    responses:
+      "200":
+        description: Array of notes, newest first.
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: "../../openapi.yaml#/components/schemas/Note"
+
+get:
+  post:
+    operationId: notesGet
+    summary: Get a single note by ID (dev-only).
+    tags: [Notes]
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: "../../openapi.yaml#/components/schemas/NotesGetRequest"
+    responses:
+      "200":
+        description: The note.
+        content:
+          application/json:
+            schema:
+              $ref: "../../openapi.yaml#/components/schemas/Note"
+      "404":
+        description: Note not found.
+        content:
+          application/json:
+            schema:
+              $ref: "../../openapi.yaml#/components/schemas/ApiError"
+
+create:
+  post:
+    operationId: notesCreate
+    summary: Create a new note (dev-only).
+    tags: [Notes]
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: "../../openapi.yaml#/components/schemas/NotesCreateRequest"
+    responses:
+      "200":
+        description: Note created.
+        content:
+          application/json:
+            schema:
+              $ref: "../../openapi.yaml#/components/schemas/Note"
+      "400":
+        description: Validation error.
+        content:
+          application/json:
+            schema:
+              $ref: "../../openapi.yaml#/components/schemas/ApiError"
+
+update:
+  post:
+    operationId: notesUpdate
+    summary: Update an existing note (dev-only).
+    tags: [Notes]
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: "../../openapi.yaml#/components/schemas/NotesUpdateRequest"
+    responses:
+      "200":
+        description: Note updated.
+        content:
+          application/json:
+            schema:
+              $ref: "../../openapi.yaml#/components/schemas/Note"
+      "404":
+        description: Note not found.
+        content:
+          application/json:
+            schema:
+              $ref: "../../openapi.yaml#/components/schemas/ApiError"
+
+delete:
+  post:
+    operationId: notesDelete
+    summary: Delete a note (dev-only).
+    tags: [Notes]
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: "../../openapi.yaml#/components/schemas/NotesDeleteRequest"
+    responses:
+      "200":
+        description: Note deleted.
+      "404":
+        description: Note not found.
+        content:
+          application/json:
+            schema:
+              $ref: "../../openapi.yaml#/components/schemas/ApiError"

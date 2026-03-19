@@ -1,0 +1,41 @@
+stages:
+  - check
+  - build
+
+default:
+  image: node:22-alpine
+  cache:
+    key: ${CI_COMMIT_REF_SLUG}
+    paths:
+      - node_modules/
+
+install:
+  stage: .pre
+  script:
+    - npm ci
+  artifacts:
+    paths:
+      - node_modules/
+    expire_in: 1 hour
+
+lint:
+  stage: check
+  needs: [install]
+  script:
+    - npm run lint
+
+typecheck:
+  stage: check
+  needs: [install]
+  script:
+    - npm run typecheck
+
+build:
+  stage: build
+  needs: [install, lint, typecheck]
+  script:
+    - npm run build
+  artifacts:
+    paths:
+      - dist/
+    expire_in: 1 week

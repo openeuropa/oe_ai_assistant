@@ -1,0 +1,166 @@
+# AI Editorial Assistant API specification.
+#
+# Root file that assembles the full API from per-plugin spec files.
+# Each plugin owns its paths and schemas in its own directory under
+# api/plugins/{pluginId}/. Shell-level (generic) endpoints live in
+# api/shell/.
+#
+# To add a new plugin's API:
+# 1. Create api/plugins/{pluginId}/paths.yaml and schemas.yaml.
+# 2. Add $ref entries in the paths and components/schemas sections below.
+# 3. Run `npm run api:generate` to regenerate TypeScript types.
+#
+# URL structure:
+#   /api/...                          Shell-level (generic) endpoints
+#   /api/plugins/{pluginId}/...       Plugin-specific endpoints
+#
+# Conventions:
+# - Authentication is cookie-based (CMS session). 403 on failure.
+# - Error responses use the ApiError schema: { code, message }.
+# - Streaming endpoints use Server-Sent Events (text/event-stream).
+
+openapi: "3.1.0"
+
+info:
+  title: AI Editorial Assistant API
+  version: 0.3.0
+  description: >
+    CMS-agnostic REST API for the AI Editorial Assistant. Split into
+    shell-level endpoints (state persistence, content type discovery)
+    and plugin-specific endpoints under /plugins/{pluginId}/.
+
+servers:
+  - url: /api/ai
+    description: Relative base -- resolved against the host page origin.
+
+# ---------------------------------------------------------------------------
+# Paths
+# ---------------------------------------------------------------------------
+
+paths:
+
+  # -- Shell --
+  /state/{nodeId}:
+    $ref: "shell/paths.yaml#/state"
+  /content-types:
+    $ref: "shell/paths.yaml#/contentTypes"
+  /content-types/{contentTypeId}:
+    $ref: "shell/paths.yaml#/contentType"
+
+  # -- Plugin: drafting --
+  /plugins/drafting/chat:
+    $ref: "plugins/drafting/paths.yaml#/chat"
+  /plugins/drafting/reset:
+    $ref: "plugins/drafting/paths.yaml#/reset"
+  /plugins/drafting/save:
+    $ref: "plugins/drafting/paths.yaml#/save"
+
+  # -- Plugin: echo (dev-only) --
+  /plugins/echo/stream:
+    $ref: "plugins/echo/paths.yaml#/stream"
+
+  # -- Plugin: notes (dev-only, RPC-style) --
+  /plugins/notes/list:
+    $ref: "plugins/notes/paths.yaml#/list"
+  /plugins/notes/get:
+    $ref: "plugins/notes/paths.yaml#/get"
+  /plugins/notes/create:
+    $ref: "plugins/notes/paths.yaml#/create"
+  /plugins/notes/update:
+    $ref: "plugins/notes/paths.yaml#/update"
+  /plugins/notes/delete:
+    $ref: "plugins/notes/paths.yaml#/delete"
+
+# ---------------------------------------------------------------------------
+# Components
+# ---------------------------------------------------------------------------
+
+components:
+
+  parameters:
+    NodeId:
+      name: nodeId
+      in: path
+      required: true
+      description: CMS content node identifier.
+      schema:
+        type: string
+
+    ContentTypeId:
+      name: contentTypeId
+      in: path
+      required: true
+      description: Machine name of a content type.
+      schema:
+        type: string
+
+  responses:
+    Forbidden:
+      description: Authentication required or insufficient permissions.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiError"
+
+  schemas:
+    # -- Shell --
+    ApiError:
+      $ref: "shell/schemas.yaml#/ApiError"
+    AppStateBlob:
+      $ref: "shell/schemas.yaml#/AppStateBlob"
+    ContentTypeField:
+      $ref: "shell/schemas.yaml#/ContentTypeField"
+    ContentType:
+      $ref: "shell/schemas.yaml#/ContentType"
+
+    # -- Plugin: drafting --
+    DraftingChatRequest:
+      $ref: "plugins/drafting/schemas.yaml#/DraftingChatRequest"
+    DraftingResetRequest:
+      $ref: "plugins/drafting/schemas.yaml#/DraftingResetRequest"
+    DraftingResetResponse:
+      $ref: "plugins/drafting/schemas.yaml#/DraftingResetResponse"
+    DraftingSaveRequest:
+      $ref: "plugins/drafting/schemas.yaml#/DraftingSaveRequest"
+    DraftingSaveResponse:
+      $ref: "plugins/drafting/schemas.yaml#/DraftingSaveResponse"
+
+    # -- Plugin: echo --
+    EchoRequest:
+      $ref: "plugins/echo/schemas.yaml#/EchoRequest"
+    EchoStreamEvent:
+      $ref: "plugins/echo/schemas.yaml#/EchoStreamEvent"
+
+    # -- Plugin: notes --
+    Note:
+      $ref: "plugins/notes/schemas.yaml#/Note"
+    NotesListRequest:
+      $ref: "plugins/notes/schemas.yaml#/NotesListRequest"
+    NotesGetRequest:
+      $ref: "plugins/notes/schemas.yaml#/NotesGetRequest"
+    NotesCreateRequest:
+      $ref: "plugins/notes/schemas.yaml#/NotesCreateRequest"
+    NotesUpdateRequest:
+      $ref: "plugins/notes/schemas.yaml#/NotesUpdateRequest"
+    NotesDeleteRequest:
+      $ref: "plugins/notes/schemas.yaml#/NotesDeleteRequest"
+
+# ---------------------------------------------------------------------------
+# Tags
+# ---------------------------------------------------------------------------
+
+tags:
+  - name: State
+    description: Application state persistence (per user, per node).
+  - name: ContentTypes
+    description: Content type discovery and field schemas (generic).
+  - name: Drafting
+    description: >
+      Plugin: content drafting. AI-powered content generation via AG-UI
+      protocol streaming.
+  - name: Echo
+    description: >
+      Plugin: echo (dev-only). SSE streaming test endpoint.
+  - name: Notes
+    description: >
+      Plugin: notes (dev-only). Simple CRUD notepad.

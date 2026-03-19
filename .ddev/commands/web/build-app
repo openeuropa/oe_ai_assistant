@@ -1,0 +1,25 @@
+#!/bin/bash
+
+## Description: Build the React app and copy dist to module root
+## Usage: build-app
+## Example: ddev build-app
+
+set -e
+
+cd /var/www/html/app
+
+echo "Installing npm dependencies..."
+npm ci
+
+echo "Cleaning previous build..."
+rm -rf /var/www/html/app/dist
+
+echo "Building production bundle..."
+npm run build
+
+echo "Copying build to module dist/..."
+rm -rf /var/www/html/dist
+cp -r /var/www/html/app/dist /var/www/html/dist
+
+echo ""
+echo "Build complete: dist/"

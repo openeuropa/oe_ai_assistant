@@ -1,0 +1,306 @@
+/*
+ * Declare the full layer order up front. The "reset" layer comes last,
+ * which means for !important declarations it has the LOWEST priority
+ * (CSS reverses layer order for !important). This gives us:
+ *
+ *   Tailwind utilities (!important) > reset (!important) > Drupal (normal)
+ *
+ * The reset strips host-page styles from all elements inside the app.
+ * Tailwind utilities can still override the reset because their layer
+ * comes earlier (= higher !important priority).
+ */
+@layer theme, base, components, utilities, reset;
+
+@import "tailwindcss" important;
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+@import "@fontsource-variable/geist";
+
+@custom-variant dark (&:is(.dark *));
+
+:root {
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.145 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.145 0 0);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.145 0 0);
+  --primary: oklch(0.205 0 0);
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.97 0 0);
+  --secondary-foreground: oklch(0.205 0 0);
+  --muted: oklch(0.97 0 0);
+  --muted-foreground: oklch(0.556 0 0);
+  --accent: oklch(0.97 0 0);
+  --accent-foreground: oklch(0.205 0 0);
+  --destructive: oklch(0.577 0.245 27.325);
+  --border: oklch(0.922 0 0);
+  --input: oklch(0.922 0 0);
+  --ring: oklch(0.708 0 0);
+  --chart-1: oklch(0.809 0.105 251.813);
+  --chart-2: oklch(0.623 0.214 259.815);
+  --chart-3: oklch(0.546 0.245 262.881);
+  --chart-4: oklch(0.488 0.243 264.376);
+  --chart-5: oklch(0.424 0.199 265.638);
+  --radius: 0.625rem;
+  --sidebar: oklch(0.985 0 0);
+  --sidebar-foreground: oklch(0.145 0 0);
+  --sidebar-primary: oklch(0.205 0 0);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.97 0 0);
+  --sidebar-accent-foreground: oklch(0.205 0 0);
+  --sidebar-border: oklch(0.922 0 0);
+  --sidebar-ring: oklch(0.708 0 0);
+}
+
+.dark {
+  --background: oklch(0.145 0 0);
+  --foreground: oklch(0.985 0 0);
+  --card: oklch(0.205 0 0);
+  --card-foreground: oklch(0.985 0 0);
+  --popover: oklch(0.205 0 0);
+  --popover-foreground: oklch(0.985 0 0);
+  --primary: oklch(0.922 0 0);
+  --primary-foreground: oklch(0.205 0 0);
+  --secondary: oklch(0.269 0 0);
+  --secondary-foreground: oklch(0.985 0 0);
+  --muted: oklch(0.269 0 0);
+  --muted-foreground: oklch(0.708 0 0);
+  --accent: oklch(0.269 0 0);
+  --accent-foreground: oklch(0.985 0 0);
+  --destructive: oklch(0.704 0.191 22.216);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.556 0 0);
+  --chart-1: oklch(0.809 0.105 251.813);
+  --chart-2: oklch(0.623 0.214 259.815);
+  --chart-3: oklch(0.546 0.245 262.881);
+  --chart-4: oklch(0.488 0.243 264.376);
+  --chart-5: oklch(0.424 0.199 265.638);
+  --sidebar: oklch(0.205 0 0);
+  --sidebar-foreground: oklch(0.985 0 0);
+  --sidebar-primary: oklch(0.488 0.243 264.376);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.269 0 0);
+  --sidebar-accent-foreground: oklch(0.985 0 0);
+  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-ring: oklch(0.556 0 0);
+}
+
+@theme inline {
+  --font-sans: inherit, sans-serif;
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --color-foreground: var(--foreground);
+  --color-background: var(--background);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+  html {
+    @apply font-sans;
+  }
+}
+
+/*
+ * Scoped reset: neutralize host-page styles inside the app container.
+ *
+ * This is a self-contained reset that does not rely on Tailwind's
+ * preflight surviving the cascade. It works in three steps:
+ *
+ *   1. all:revert strips every CSS property back to browser defaults,
+ *      removing any Drupal admin theme styles.
+ *   2. Explicit rules re-establish the baseline Tailwind expects
+ *      (border-box, zero margins, inherit-based typography, etc.).
+ *   3. Tailwind utilities (!important, in the earlier "utilities" layer)
+ *      override anything set here.
+ *
+ * Placed in @layer reset (the last layer). CSS reverses layer priority
+ * for !important, so this has the lowest !important priority:
+ *
+ *   Tailwind utilities !important  >  reset !important  >  Drupal normal
+ */
+@layer reset {
+  /* Step 1: nuclear reset. Strip every host-page style.
+     SVG elements and their children (path, line, circle, etc.) are
+     excluded because they rely on presentation attributes (fill,
+     stroke, stroke-width) set by the icon library. The host page
+     does not style SVG internals, so there is nothing to reset. */
+  [data-ai-app] *:not(svg, svg *),
+  [data-ai-app] *:not(svg, svg *)::before,
+  [data-ai-app] *:not(svg, svg *)::after {
+    all: revert !important;
+  }
+
+  /* Step 2a: universal baseline (box model, borders, outline).
+     Same SVG exclusion as step 1 -- SVG internals don't need these. */
+  [data-ai-app] *:not(svg, svg *),
+  [data-ai-app] *:not(svg, svg *)::before,
+  [data-ai-app] *:not(svg, svg *)::after {
+    box-sizing: border-box !important;
+    border-width: 0 !important;
+    border-style: solid !important;
+    border-color: var(--border) !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    outline-color: var(--ring) !important;
+  }
+
+  /* Step 2b: container baseline (typography, colors, scale).
+     font-size: 125% makes all rem-based sizing 1.25x larger,
+     equivalent to a browser zoom. Every Tailwind utility that uses
+     rem (spacing, text sizes, radii) scales up proportionally. */
+  [data-ai-app] {
+    /*zoom: 1.2 !important;*/
+    height: 100vh !important;
+    font-family: var(--font-sans) !important;
+    line-height: 1.5 !important;
+    color: var(--foreground) !important;
+    background-color: var(--background) !important;
+    -webkit-text-size-adjust: 100% !important;
+    tab-size: 4 !important;
+    -webkit-tap-highlight-color: transparent !important;
+  }
+
+  /* Step 2c: element-specific resets. */
+
+  /* Headings: strip UA sizing so utilities control typography. */
+  [data-ai-app] :is(h1, h2, h3, h4, h5, h6) {
+    font-size: inherit !important;
+    font-weight: inherit !important;
+  }
+
+  /* Links: inherit color and decoration from parent. */
+  [data-ai-app] a {
+    color: inherit !important;
+    text-decoration: inherit !important;
+  }
+
+  /* Bold: only bolder, not a fixed weight. */
+  [data-ai-app] :is(b, strong) {
+    font-weight: bolder !important;
+  }
+
+  /* Code: use the mono font stack. */
+  [data-ai-app] :is(code, kbd, samp, pre) {
+    font-family: var(
+      --font-mono,
+      ui-monospace,
+      SFMono-Regular,
+      Menlo,
+      Monaco,
+      Consolas,
+      "Liberation Mono",
+      "Courier New",
+      monospace
+    ) !important;
+    font-size: 1em !important;
+  }
+
+  /* Small: relative sizing. */
+  [data-ai-app] small {
+    font-size: 80% !important;
+  }
+
+  /* Lists: no markers. */
+  [data-ai-app] :is(ol, ul, menu) {
+    list-style: none !important;
+  }
+
+  /* Images and media: responsive block display. */
+  [data-ai-app] :is(img, svg, video, canvas, audio, iframe, embed, object) {
+    display: block !important;
+    vertical-align: middle !important;
+  }
+  [data-ai-app] :is(img, video) {
+    max-width: 100% !important;
+    height: auto !important;
+  }
+
+  /* Tables: collapse borders, strip text-indent. */
+  [data-ai-app] table {
+    text-indent: 0 !important;
+    border-color: inherit !important;
+    border-collapse: collapse !important;
+  }
+
+  /* Forms: inherit font, strip appearance quirks. */
+  [data-ai-app] :is(button, input, select, optgroup, textarea) {
+    font: inherit !important;
+    font-feature-settings: inherit !important;
+    font-variation-settings: inherit !important;
+    letter-spacing: inherit !important;
+    color: inherit !important;
+    background-color: transparent !important;
+    border-radius: 0 !important;
+    opacity: 1 !important;
+  }
+  [data-ai-app] textarea {
+    resize: vertical !important;
+  }
+  [data-ai-app] :is(button, [type="button"], [type="reset"], [type="submit"]) {
+    appearance: button !important;
+  }
+
+  /* Placeholder: half-opacity of current color. */
+  [data-ai-app] ::placeholder {
+    opacity: 1 !important;
+    color: color-mix(in oklab, currentcolor 50%, transparent) !important;
+  }
+
+  /* HR: visible top border. */
+  [data-ai-app] hr {
+    height: 0 !important;
+    color: inherit !important;
+    border-top-width: 1px !important;
+  }
+
+  /* Summary: proper display. */
+  [data-ai-app] summary {
+    display: list-item !important;
+  }
+
+  /* Hidden attribute: force hide. */
+  [data-ai-app] [hidden]:where(:not([hidden="until-found"])) {
+    display: none !important;
+  }
+}

@@ -1,0 +1,73 @@
+# Notes plugin schemas (dev-only).
+#
+# Each RPC action has its own typed request schema. The response is
+# always a Note (or array of Notes) for data-returning actions, and
+# an empty 200 for delete.
+
+# -- Domain model --
+
+Note:
+  type: object
+  description: A note stored in the mock backend.
+  required: [id, title, content, createdAt, updatedAt]
+  properties:
+    id:
+      type: string
+    title:
+      type: string
+    content:
+      type: string
+    createdAt:
+      type: string
+      format: date-time
+    updatedAt:
+      type: string
+      format: date-time
+
+# -- Per-action request bodies --
+
+NotesListRequest:
+  type: object
+  description: Request body for the list action (currently empty).
+  properties: {}
+
+NotesGetRequest:
+  type: object
+  description: Request body for the get action.
+  required: [noteId]
+  properties:
+    noteId:
+      type: string
+      description: ID of the note to retrieve.
+
+NotesCreateRequest:
+  type: object
+  description: Request body for the create action.
+  required: [title, content]
+  properties:
+    title:
+      type: string
+    content:
+      type: string
+
+NotesUpdateRequest:
+  type: object
+  description: Request body for the update action.
+  required: [noteId, title, content]
+  properties:
+    noteId:
+      type: string
+      description: ID of the note to update.
+    title:
+      type: string
+    content:
+      type: string
+
+NotesDeleteRequest:
+  type: object
+  description: Request body for the delete action.
+  required: [noteId]
+  properties:
+    noteId:
+      type: string
+      description: ID of the note to delete.
