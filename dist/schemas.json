@@ -1,0 +1,338 @@
+{
+  "ApiError": {
+    "type": "object",
+    "description": "Standard error envelope returned by all error responses.",
+    "required": [
+      "code",
+      "message"
+    ],
+    "properties": {
+      "code": {
+        "type": "string",
+        "description": "Machine-readable error code (e.g. \"not_found\")."
+      },
+      "message": {
+        "type": "string",
+        "description": "Human-readable explanation."
+      }
+    }
+  },
+  "AppStateBlob": {
+    "type": "object",
+    "description": "Opaque JSON blob representing the full persisted application state. The backend stores it as-is and returns it verbatim. The shape is owned by the frontend Zustand store.\n",
+    "additionalProperties": true
+  },
+  "ContentTypeField": {
+    "type": "object",
+    "description": "Describes a single field within a content type.",
+    "required": [
+      "name",
+      "label",
+      "type"
+    ],
+    "properties": {
+      "name": {
+        "type": "string",
+        "description": "Machine name (used as the key in content fields)."
+      },
+      "label": {
+        "type": "string",
+        "description": "Human-readable label."
+      },
+      "type": {
+        "type": "string",
+        "enum": [
+          "text",
+          "textarea",
+          "html",
+          "select",
+          "boolean",
+          "number"
+        ],
+        "description": "Field widget type."
+      },
+      "required": {
+        "type": "boolean",
+        "description": "Whether the field is required.",
+        "default": false
+      },
+      "options": {
+        "type": "array",
+        "description": "Allowed values for select fields.",
+        "items": {
+          "type": "object",
+          "required": [
+            "value",
+            "label"
+          ],
+          "properties": {
+            "value": {
+              "type": "string"
+            },
+            "label": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    }
+  },
+  "ContentType": {
+    "type": "object",
+    "description": "A content type definition. Tells the app which fields are available for a given type of content.\n",
+    "required": [
+      "id",
+      "name",
+      "fields"
+    ],
+    "properties": {
+      "id": {
+        "type": "string",
+        "description": "Machine name (e.g. \"article\", \"news_story\")."
+      },
+      "name": {
+        "type": "string",
+        "description": "Human-readable name."
+      },
+      "description": {
+        "type": "string",
+        "description": "Short explanation of the content type."
+      },
+      "fields": {
+        "type": "array",
+        "description": "Ordered list of fields the editor can fill.",
+        "items": {
+          "$ref": "#/ContentTypeField"
+        }
+      }
+    }
+  },
+  "Note": {
+    "type": "object",
+    "description": "A note stored in the mock backend.",
+    "required": [
+      "id",
+      "title",
+      "content",
+      "createdAt",
+      "updatedAt"
+    ],
+    "properties": {
+      "id": {
+        "type": "string"
+      },
+      "title": {
+        "type": "string"
+      },
+      "content": {
+        "type": "string"
+      },
+      "createdAt": {
+        "type": "string",
+        "format": "date-time"
+      },
+      "updatedAt": {
+        "type": "string",
+        "format": "date-time"
+      }
+    }
+  },
+  "NotesListRequest": {
+    "type": "object",
+    "description": "Request body for the list action (currently empty).",
+    "properties": {}
+  },
+  "NotesGetRequest": {
+    "type": "object",
+    "description": "Request body for the get action.",
+    "required": [
+      "noteId"
+    ],
+    "properties": {
+      "noteId": {
+        "type": "string",
+        "description": "ID of the note to retrieve."
+      }
+    }
+  },
+  "NotesCreateRequest": {
+    "type": "object",
+    "description": "Request body for the create action.",
+    "required": [
+      "title",
+      "content"
+    ],
+    "properties": {
+      "title": {
+        "type": "string"
+      },
+      "content": {
+        "type": "string"
+      }
+    }
+  },
+  "NotesUpdateRequest": {
+    "type": "object",
+    "description": "Request body for the update action.",
+    "required": [
+      "noteId",
+      "title",
+      "content"
+    ],
+    "properties": {
+      "noteId": {
+        "type": "string",
+        "description": "ID of the note to update."
+      },
+      "title": {
+        "type": "string"
+      },
+      "content": {
+        "type": "string"
+      }
+    }
+  },
+  "NotesDeleteRequest": {
+    "type": "object",
+    "description": "Request body for the delete action.",
+    "required": [
+      "noteId"
+    ],
+    "properties": {
+      "noteId": {
+        "type": "string",
+        "description": "ID of the note to delete."
+      }
+    }
+  },
+  "EchoRequest": {
+    "type": "object",
+    "description": "Request body for the echo stream endpoint.",
+    "required": [
+      "message"
+    ],
+    "properties": {
+      "message": {
+        "type": "string",
+        "description": "Text to echo back word-by-word."
+      }
+    }
+  },
+  "EchoStreamEvent": {
+    "type": "object",
+    "description": "A single SSE data frame from the echo stream.",
+    "required": [
+      "word",
+      "index",
+      "done"
+    ],
+    "properties": {
+      "word": {
+        "type": "string",
+        "description": "The word being streamed back."
+      },
+      "index": {
+        "type": "integer",
+        "description": "Zero-based index of this word in the original message."
+      },
+      "done": {
+        "type": "boolean",
+        "description": "True when this is the last event in the stream."
+      }
+    }
+  },
+  "DraftingChatRequest": {
+    "type": "object",
+    "required": [
+      "message",
+      "entityTypeId",
+      "bundle",
+      "schema"
+    ],
+    "properties": {
+      "message": {
+        "type": "string",
+        "description": "The user's drafting prompt or instruction."
+      },
+      "threadId": {
+        "type": "string",
+        "description": "Optional thread ID for conversation continuity. Omit to start a new conversation.\n"
+      },
+      "entityTypeId": {
+        "type": "string",
+        "description": "The entity type ID (e.g. \"node\")."
+      },
+      "bundle": {
+        "type": "string",
+        "description": "The content type machine name (e.g. \"oe_news\")."
+      },
+      "schema": {
+        "type": "object",
+        "description": "The full form schema for the target content type, as returned by GET /content-schema/{entityTypeId}/{bundle}?mode=form.\n"
+      }
+    }
+  },
+  "DraftingResetRequest": {
+    "type": "object",
+    "required": [
+      "threadId"
+    ],
+    "properties": {
+      "threadId": {
+        "type": "string",
+        "description": "The thread ID of the conversation to reset."
+      }
+    }
+  },
+  "DraftingResetResponse": {
+    "type": "object",
+    "required": [
+      "threadId"
+    ],
+    "properties": {
+      "threadId": {
+        "type": "string",
+        "description": "The new thread ID for the reset conversation."
+      }
+    }
+  },
+  "DraftingSaveRequest": {
+    "type": "object",
+    "required": [
+      "entityTypeId",
+      "bundle",
+      "fields"
+    ],
+    "properties": {
+      "entityTypeId": {
+        "type": "string",
+        "description": "The entity type ID (e.g. \"node\")."
+      },
+      "bundle": {
+        "type": "string",
+        "description": "The content type machine name (e.g. \"oe_news\")."
+      },
+      "fields": {
+        "type": "object",
+        "description": "The drafted field values, keyed by field machine name. Shape matches the content type form schema.\n"
+      }
+    }
+  },
+  "DraftingSaveResponse": {
+    "type": "object",
+    "required": [
+      "nodeId",
+      "previewUrl"
+    ],
+    "properties": {
+      "nodeId": {
+        "type": "string",
+        "description": "The ID of the created node."
+      },
+      "previewUrl": {
+        "type": "string",
+        "description": "URL to preview the created draft node."
+      }
+    }
+  }
+}

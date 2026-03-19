@@ -1,0 +1,9 @@
+name: OpenEuropa AI Editorial Assistant
+type: module
+description: Embeds the AI Editorial Assistant React app and implements plugin APIs.
+core_version_requirement: ^11
+package: OpenEuropa
+dependencies:
+  - agui:agui
+  - ai:ai_assistant_api
+  - drupal:content_moderation

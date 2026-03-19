@@ -1,0 +1,7 @@
+# Per-content-type field whitelist for the AI schema extractor.
+#
+# Only whitelisted fields are included in the schema sent to the LLM.
+# If a content type is not listed here, all visible form fields are included.
+#
+# Use the field machine names as they appear in the form display.
+field_whitelist: {}

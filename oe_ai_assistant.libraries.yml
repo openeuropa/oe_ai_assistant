@@ -1,0 +1,14 @@
+react-app:
+  js:
+    dist/ai-editorial-assistant.iife.js: { minified: true }
+  css:
+    component:
+      dist/ai-editorial-assistant.css: { minified: true }
+
+app:
+  js:
+    js/init.js: {}
+  dependencies:
+    - oe_ai_assistant/react-app
+    - core/drupalSettings
+    - core/drupal

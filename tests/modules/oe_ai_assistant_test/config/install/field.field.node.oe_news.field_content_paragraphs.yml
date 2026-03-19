@@ -1,0 +1,33 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - field.storage.node.field_content_paragraphs
+    - node.type.oe_news
+    - paragraphs.paragraphs_type.quote_block
+    - paragraphs.paragraphs_type.text_block
+id: node.oe_news.field_content_paragraphs
+field_name: field_content_paragraphs
+entity_type: node
+bundle: oe_news
+label: 'Content paragraphs'
+description: ''
+required: false
+translatable: true
+default_value: {  }
+default_value_callback: ''
+settings:
+  handler: 'default:paragraph'
+  handler_settings:
+    target_bundles:
+      text_block: text_block
+      quote_block: quote_block
+    negate: 0
+    target_bundles_drag_drop:
+      text_block:
+        enabled: true
+        weight: 0
+      quote_block:
+        enabled: true
+        weight: 1
+field_type: entity_reference_revisions

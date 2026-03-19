@@ -1,0 +1,27 @@
+<?php
+
+/**
+ * @file
+ * Install hooks for the OE AI Assistant Test module.
+ */
+
+declare(strict_types=1);
+
+/**
+ * Implements hook_install().
+ *
+ * Populates the content schema whitelist with the test oe_news fields.
+ */
+function oe_ai_assistant_test_install(): void {
+  $config = \Drupal::configFactory()->getEditable('oe_ai_assistant.content_schema');
+  $config->set('field_whitelist.oe_news', [
+    'title',
+    'field_teaser',
+    'body',
+    'field_publication_date',
+    'field_news_type',
+    'field_contacts',
+    'field_content_paragraphs',
+  ]);
+  $config->save();
+}

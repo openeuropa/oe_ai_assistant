@@ -1,0 +1,3 @@
+use oe ai assistant:
+  title: 'Use OpenEuropa AI Assistant'
+  description: 'Access the AI Assistant tab on nodes and use its API endpoints.'

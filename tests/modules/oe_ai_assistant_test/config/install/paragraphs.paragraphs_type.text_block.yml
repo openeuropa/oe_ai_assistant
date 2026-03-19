@@ -1,0 +1,10 @@
+langcode: en
+status: true
+dependencies:
+  module:
+    - paragraphs
+id: text_block
+label: 'Text Block'
+icon_uuid: null
+icon_default: null
+description: ''

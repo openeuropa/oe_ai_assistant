@@ -1,0 +1,18 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - field.storage.node.field_news_type
+    - node.type.oe_news
+id: node.oe_news.field_news_type
+field_name: field_news_type
+entity_type: node
+bundle: oe_news
+label: 'News type'
+description: ''
+required: false
+translatable: true
+default_value: {  }
+default_value_callback: ''
+settings: {  }
+field_type: list_string

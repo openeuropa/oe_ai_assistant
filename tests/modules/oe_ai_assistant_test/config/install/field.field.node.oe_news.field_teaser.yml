@@ -1,0 +1,18 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - field.storage.node.field_teaser
+    - node.type.oe_news
+id: node.oe_news.field_teaser
+field_name: field_teaser
+entity_type: node
+bundle: oe_news
+label: Teaser
+description: 'A short teaser for the news item.'
+required: false
+translatable: true
+default_value: {  }
+default_value_callback: ''
+settings: {  }
+field_type: string

@@ -1,0 +1,36 @@
+# Plugin dispatch route: handles all plugin API calls.
+oe_ai_assistant.plugin.dispatch:
+  path: /api/ai/plugins/{plugin_id}/{action}
+  defaults:
+    _controller: \Drupal\oe_ai_assistant\Controller\PluginController::dispatch
+  methods: [POST]
+  requirements:
+    _permission: 'use oe ai assistant'
+    plugin_id: '[a-z][a-z0-9_-]*'
+    action: '[a-z][a-z0-9_-]*'
+
+# Node tab route: renders the AI Assistant page on nodes.
+oe_ai_assistant.node_tab:
+  path: /node/{node}/ai-assistant
+  defaults:
+    _controller: \Drupal\oe_ai_assistant\Controller\NodeTabController::content
+    _title: 'AI Assistant'
+  requirements:
+    _permission: 'use oe ai assistant'
+    node: \d+
+  options:
+    _admin_route: TRUE
+    parameters:
+      node:
+        type: entity:node
+
+# Content schema route: returns the content type schema for an entity type/bundle.
+oe_ai_assistant.content_schema:
+  path: /api/ai/content-schema/{entity_type_id}/{bundle}
+  defaults:
+    _controller: \Drupal\oe_ai_assistant\Controller\ContentSchemaController::get
+  methods: [GET]
+  requirements:
+    _permission: 'use oe ai assistant'
+    entity_type_id: '[a-z][a-z0-9_]*'
+    bundle: '[a-z][a-z0-9_]*'

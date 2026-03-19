@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:noNamespaceSchemaLocation="vendor/phpunit/phpunit/phpunit.xsd"
+         bootstrap="vendor/weitzman/drupal-test-traits/src/bootstrap-fast.php"
+         colors="true"
+>
+  <php>
+    <env name="DTT_BASE_URL" value="http://localhost"/>
+    <env name="DTT_MINK_DRIVER_ARGS" value='["chromium", {"browserName": "chromium", "goog:chromeOptions": {"args": ["--disable-gpu", "--headless", "--no-sandbox"]}}, "http://localhost:9515"]'/>
+  </php>
+  <testsuites>
+    <testsuite name="existing-site">
+      <directory>tests/src/ExistingSite</directory>
+    </testsuite>
+  </testsuites>
+</phpunit>

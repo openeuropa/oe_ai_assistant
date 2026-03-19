@@ -1,0 +1,17 @@
+name: 'OE AI Assistant Test'
+type: module
+description: 'Test content types and configuration for oe_ai_assistant development.'
+package: Testing
+core_version_requirement: ^11
+dependencies:
+  - oe_ai_assistant:oe_ai_assistant
+  - drupal:content_moderation
+  - drupal:datetime
+  - drupal:node
+  - drupal:options
+  - drupal:text
+  - drupal:workflows
+  - entity_reference_revisions:entity_reference_revisions
+  - paragraphs:paragraphs
+  - inline_entity_form:inline_entity_form
+hidden: true

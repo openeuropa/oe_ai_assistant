@@ -1,0 +1,5 @@
+oe_ai_assistant.node_tab:
+  route_name: oe_ai_assistant.node_tab
+  title: 'AI Assistant'
+  base_route: entity.node.canonical
+  weight: 50

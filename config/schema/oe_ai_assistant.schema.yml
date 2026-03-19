@@ -1,0 +1,13 @@
+oe_ai_assistant.content_schema:
+  type: config_object
+  label: 'AI Assistant content schema settings'
+  mapping:
+    field_whitelist:
+      type: sequence
+      label: 'Per-content-type field whitelist'
+      sequence:
+        type: sequence
+        label: 'Field names'
+        sequence:
+          type: string
+          label: 'Field name'

@@ -1,0 +1,10 @@
+langcode: en
+status: true
+dependencies: {  }
+name: Contact
+type: oe_contact
+description: 'Test contact content type for inline entity reference.'
+help: ''
+new_revision: true
+preview_mode: 1
+display_submitted: false

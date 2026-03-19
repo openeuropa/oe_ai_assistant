@@ -1,0 +1,7 @@
+/web/
+/vendor/
+composer.contrib.json
+composer.lock
+/.editorconfig
+/.gitattributes
+/recipes
