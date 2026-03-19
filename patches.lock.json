@@ -1,0 +1,17 @@
+{
+    "_hash": "319160c109a8b73f11db95d6c10d72d3ae2cbf5d7b9753c21311ee287e72e36a",
+    "patches": {
+        "drupal/ai": [
+            {
+                "package": "drupal/ai",
+                "description": "#3579967: Buffer corrupts HTML with relative URLs in streamed responses",
+                "url": "patches/ai-3579967-streaming-buffer-relative-urls.patch",
+                "sha256": "78973b76344baf1fe1b88903db50b1b817a46b6e5aff720dfd179684e13eb48a",
+                "depth": 1,
+                "extra": {
+                    "provenance": "root"
+                }
+            }
+        ]
+    }
+}

@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace Drupal\oe_ai_assistant\Plugin;
 
+use Drupal\ai\Response\AiStreamedResponse;
 use Drupal\Component\Plugin\Exception\PluginException;
+use Drupal\Component\Serialization\Json;
 use Drupal\Core\Plugin\ContainerFactoryPluginInterface;
 use Drupal\Core\Plugin\PluginBase;
 use Symfony\Component\HttpFoundation\Request;
@@ -76,6 +78,60 @@ abstract class AiAssistantPluginBase extends PluginBase implements AiAssistantPl
     }
 
     return $body;
+  }
+
+  /**
+   * Creates an SSE streaming response.
+   *
+   * Uses AiStreamedResponse from drupal/ai which handles output buffer
+   * clearing and sets the correct headers (X-Accel-Buffering, Cache-Control,
+   * Surrogate-Control) automatically. Plugins only need to call flush()
+   * after each chunk inside the callback.
+   *
+   * @param callable $callback
+   *   The streaming callback. Will be executed after output buffers are
+   *   cleared by AiStreamedResponse::sendContent().
+   *
+   * @return \Drupal\ai\Response\AiStreamedResponse
+   *   The configured streaming response.
+   */
+  protected function createSseResponse(callable $callback): AiStreamedResponse {
+    return new AiStreamedResponse($callback, 200, [
+      'Content-Type' => 'text/event-stream',
+      'Connection' => 'keep-alive',
+    ]);
+  }
+
+  /**
+   * Sends an SSE event to the client.
+   *
+   * Outputs an AG-UI protocol event as an SSE "data:" line with a JSON
+   * payload. The first event includes 4 KB of padding to force proxy
+   * buffers (nginx/FastCGI) to flush immediately.
+   *
+   * @param array $data
+   *   The event data. Must include a 'type' key.
+   * @param bool $isFirst
+   *   Whether this is the first event in the stream (adds proxy padding).
+   */
+  protected function sendSseEvent(array $data, bool $isFirst = FALSE): void {
+    // Send padding to overcome proxy buffering on the first event.
+    if ($isFirst) {
+      echo ": " . str_repeat(" ", 4096) . "\n\n";
+      flush();
+    }
+
+    if (empty($data) || !isset($data['type'])) {
+      return;
+    }
+
+    $json = Json::encode($data);
+    if ($json === FALSE || $json === 'null') {
+      return;
+    }
+
+    echo "data: " . $json . "\n\n";
+    flush();
   }
 
 }

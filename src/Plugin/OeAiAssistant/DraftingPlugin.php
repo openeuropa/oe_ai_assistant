@@ -24,7 +24,6 @@ use Psr\Log\LoggerInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
-use Symfony\Component\HttpFoundation\StreamedResponse;
 
 /**
  * Drafting plugin: AI-powered content drafting via direct LLM streaming.
@@ -276,7 +275,10 @@ PROMPT;
   }
 
   /**
-   * Creates the SSE StreamedResponse.
+   * Creates the SSE streaming response.
+   *
+   * Uses AiStreamedResponse (via the base class) which handles output
+   * buffer clearing and streaming headers automatically.
    */
   private function createStreamResponse(
     string $systemPrompt,
@@ -286,19 +288,10 @@ PROMPT;
     string $providerId,
     string $modelId,
     string $bundle,
-  ): StreamedResponse {
-    return new StreamedResponse(function () use (
+  ): Response {
+    return $this->createSseResponse(function () use (
       $systemPrompt, $userMessage, $threadId, $tools, $providerId, $modelId, $bundle,
     ) {
-      // Disable output buffering for true streaming.
-      while (ob_get_level() > 0) {
-        ob_end_flush();
-      }
-      if (function_exists('apache_setenv')) {
-        apache_setenv('no-gzip', '1');
-      }
-      ini_set('zlib.output_compression', '0');
-      ini_set('implicit_flush', '1');
       set_time_limit(0);
 
       $runId = $this->uuid->generate();
@@ -350,19 +343,15 @@ PROMPT;
         'runId' => $runId,
         'threadId' => $sseThreadId,
       ]);
-    }, 200, [
-      'Content-Type' => 'text/event-stream',
-      'Cache-Control' => 'no-cache',
-      'Connection' => 'keep-alive',
-      'X-Accel-Buffering' => 'no',
-    ]);
+    });
   }
 
   /**
    * Runs the LLM call with tool loop and streams SSE events.
    *
    * Uses the drupal/ai provider plugin system for streaming chat responses
-   * with tool call support.
+   * with tool call support. The StreamedChatMessageIterator assembles
+   * tool call deltas automatically via getTools().
    *
    * @return string
    *   The final assistant text message.
@@ -380,58 +369,43 @@ PROMPT;
     $fullMessage = '';
 
     for ($i = 0; $i < self::MAX_ITERATIONS; $i++) {
-      // Build the ChatInput from conversation history.
-      $chatInput = new ChatInput([
-        new ChatMessage('system', $systemPrompt),
-      ]);
+      // Build the ChatInput from conversation history. Tool result
+      // messages need setToolsId() and assistant messages with tool
+      // calls need setTools() for the provider to handle them correctly.
+      $chatMessages = [];
       foreach ($messages as $msg) {
-        $chatInput->addMessage(new ChatMessage(
+        $chatMsg = new ChatMessage(
           $msg['role'],
           $msg['content'] ?? '',
-        ));
+        );
+        if (!empty($msg['tool_call_id'])) {
+          $chatMsg->setToolsId($msg['tool_call_id']);
+        }
+        if (!empty($msg['tool_outputs'])) {
+          $chatMsg->setTools($msg['tool_outputs']);
+        }
+        $chatMessages[] = $chatMsg;
       }
+      $chatInput = new ChatInput($chatMessages);
+      $chatInput->setSystemPrompt($systemPrompt);
+      $chatInput->setStreamedOutput(TRUE);
+      $chatInput->setChatTools($tools);
 
       // Get the AI provider instance and perform a streamed chat call.
       $provider = $this->aiProvider->createInstance($providerId);
       $provider->setConfiguration(['model_id' => $modelId]);
 
       $streamedText = '';
-      $toolCalls = [];
       $messageStarted = FALSE;
 
-      // Use the provider's streaming chat method with tools.
-      $response = $provider->streamedChat($chatInput, $modelId, [
-        'tools' => $tools,
-      ]);
+      // Call chat() with streaming enabled. The provider returns a
+      // ChatOutput whose getNormalized() is a StreamedChatMessageIterator.
+      $chatOutput = $provider->chat($chatInput, $modelId);
+      $iterator = $chatOutput->getNormalized();
 
-      // Iterate the streamed response chunks.
-      foreach ($response as $chunk) {
-        $text = '';
-        $chunkToolCalls = [];
-
-        // Extract text content from the chunk. The drupal/ai module
-        // provides different accessor methods depending on version.
-        if (method_exists($chunk, 'getText')) {
-          $text = $chunk->getText() ?? '';
-        }
-        elseif (method_exists($chunk, 'getDelta')) {
-          $delta = $chunk->getDelta();
-          $text = is_string($delta) ? $delta : ($delta['content'] ?? '');
-        }
-        elseif (method_exists($chunk, 'getMessage')) {
-          $msg = $chunk->getMessage();
-          $text = is_string($msg) ? $msg : ($msg->getText() ?? '');
-        }
-
-        // Extract tool calls from the chunk.
-        if (method_exists($chunk, 'getToolCalls')) {
-          $chunkToolCalls = $chunk->getToolCalls() ?? [];
-        }
-        elseif (method_exists($chunk, 'getToolCallDeltas')) {
-          $chunkToolCalls = $chunk->getToolCallDeltas() ?? [];
-        }
-
-        // Handle text content - emit SSE events.
+      // Stream text chunks to the client as SSE events.
+      foreach ($iterator as $chunk) {
+        $text = $chunk->getText() ?? '';
         if (!empty($text)) {
           if (!$messageStarted) {
             $this->sendSseEvent([
@@ -448,34 +422,6 @@ PROMPT;
           ]);
           $streamedText .= $text;
         }
-
-        // Accumulate tool calls from streamed deltas.
-        foreach ($chunkToolCalls as $idx => $tc) {
-          if (is_object($tc)) {
-            $id = method_exists($tc, 'getId') ? $tc->getId() : '';
-            $name = method_exists($tc, 'getName') ? $tc->getName() : '';
-            $arguments = method_exists($tc, 'getArguments') ? $tc->getArguments() : '';
-          }
-          else {
-            $id = $tc['id'] ?? '';
-            $name = $tc['function']['name'] ?? '';
-            $arguments = $tc['function']['arguments'] ?? '';
-          }
-
-          if (!empty($id)) {
-            $toolCalls[$idx] = [
-              'id' => $id,
-              'function' => [
-                'name' => $name,
-                'arguments' => is_string($arguments) ? $arguments : Json::encode($arguments),
-              ],
-            ];
-          }
-          elseif (isset($toolCalls[$idx])) {
-            $argFragment = is_string($arguments) ? $arguments : Json::encode($arguments);
-            $toolCalls[$idx]['function']['arguments'] .= $argFragment;
-          }
-        }
       }
 
       // Close text message if started.
@@ -486,16 +432,20 @@ PROMPT;
         ]);
       }
 
-      // If tool calls were made, execute them and loop.
-      if (!empty($toolCalls)) {
+      // After iteration completes, the iterator has assembled all tool
+      // call deltas into complete ToolsFunctionOutput objects.
+      $assembledTools = $iterator->getTools();
+
+      if (!empty($assembledTools)) {
+        // Emit tool call SSE events and build the keyed map.
         $toolCallsKeyed = [];
-        foreach ($toolCalls as $tc) {
-          $toolCallId = $tc['id'] ?? $this->uuid->generate();
-          $toolCallsKeyed[$toolCallId] = $tc;
+        foreach ($assembledTools as $toolOutput) {
+          $toolCallId = $toolOutput->getId() ?: $this->uuid->generate();
+          $toolCallsKeyed[$toolCallId] = $toolOutput;
           $this->sendSseEvent([
             'type' => 'TOOL_CALL_START',
             'toolCallId' => $toolCallId,
-            'toolCallName' => $tc['function']['name'],
+            'toolCallName' => $toolOutput->getName(),
           ]);
           $this->sendSseEvent([
             'type' => 'TOOL_CALL_END',
@@ -503,11 +453,12 @@ PROMPT;
           ]);
         }
 
+        // Execute tool calls and add results to conversation history.
         $toolResults = $this->executeToolCalls($toolCallsKeyed, $bundle);
         $messages[] = [
           'role' => 'assistant',
           'content' => $streamedText ?: '',
-          'tool_calls' => array_values($toolCalls),
+          'tool_outputs' => array_values($assembledTools),
         ];
         foreach ($toolResults as $result) {
           $messages[] = $result;
@@ -528,7 +479,7 @@ PROMPT;
    * Executes tool calls and returns results as messages.
    *
    * @param array $toolCalls
-   *   Tool calls keyed by tool call ID.
+   *   Tool calls keyed by tool call ID. Values are ToolsFunctionOutput.
    * @param string $bundle
    *   The content type bundle.
    *
@@ -538,13 +489,9 @@ PROMPT;
   private function executeToolCalls(array $toolCalls, string $bundle): array {
     $results = [];
 
-    foreach ($toolCalls as $toolCall) {
-      $name = $toolCall['function']['name'] ?? '';
-      $args = $toolCall['function']['arguments'] ?? [];
-      if (is_string($args)) {
-        $args = Json::decode($args) ?? [];
-      }
-      $toolCallId = $toolCall['id'] ?? $this->uuid->generate();
+    foreach ($toolCalls as $toolCallId => $toolOutput) {
+      $name = $toolOutput->getName();
+      $args = $toolOutput->getArguments() ?? [];
 
       $result = match ($name) {
         'draft_content' => $this->toolDraftContent($args),
@@ -599,32 +546,6 @@ PROMPT;
     // Keep only the last N message pairs.
     $trimmed = array_slice($history, -(self::HISTORY_LENGTH * 2));
     $store->set($threadId, $trimmed);
-  }
-
-  /**
-   * Sends an SSE event to the client.
-   */
-  private function sendSseEvent(array $data, bool $isFirst = FALSE): void {
-    if ($isFirst) {
-      echo ": " . str_repeat(" ", 4096) . "\n\n";
-      flush();
-    }
-
-    if (empty($data) || !isset($data['type'])) {
-      return;
-    }
-
-    $json = Json::encode($data);
-    if ($json === FALSE || $json === 'null') {
-      return;
-    }
-
-    echo "data: " . $json . "\n\n";
-
-    if (function_exists('ob_flush') && ob_get_level() > 0) {
-      @ob_flush();
-    }
-    flush();
   }
 
 }

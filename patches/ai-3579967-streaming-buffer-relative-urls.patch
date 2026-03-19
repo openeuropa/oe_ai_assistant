@@ -1,0 +1,16 @@
+diff --git a/src/OperationType/Chat/StreamedChatMessageIterator.php b/src/OperationType/Chat/StreamedChatMessageIterator.php
+index 885e50a..df17611 100644
+--- a/src/OperationType/Chat/StreamedChatMessageIterator.php
++++ b/src/OperationType/Chat/StreamedChatMessageIterator.php
+@@ -637,8 +637,9 @@ abstract class StreamedChatMessageIterator implements StreamedChatMessageIterato
+    *   TRUE if buffer should flush.
+    */
+   private function shouldFlush(): bool {
+-    // If a URL is being built, hold the buffer until it's complete.
+-    if (preg_match('/"(?:http|\/\/:)[^"]*$/', $this->buffer) || preg_match('/\((?:http|\/\/:)[^)]*$/', $this->buffer)) {
++    // If a URL is being built, hold the buffer until it's complete, so we can
++    // check the full url for safety.
++    if (preg_match('/"(?:http|\/\/:|\/)[^"]*$/', $this->buffer) || preg_match('/\((?:http|\/\/:|\/)[^)]*$/', $this->buffer)) {
+       return FALSE;
+     }
+
