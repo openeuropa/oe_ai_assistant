@@ -1,5 +1,5 @@
 --- a/src/MistralChatMessageIterator.php	2026-03-19 15:43:10.723845522 +0000
-+++ b/src/MistralChatMessageIterator.php	2026-03-19 17:55:16.179101687 +0000
++++ b/src/MistralChatMessageIterator.php	2026-03-19 21:13:21.902284448 +0000
 @@ -3,6 +3,7 @@
  namespace Drupal\ai_provider_mistral;
  

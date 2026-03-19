@@ -450,13 +450,18 @@ PROMPT;
 
       if (!empty($assembledTools)) {
         // Build a plain array of tool calls for SSE events and execution.
-        // ToolsFunctionOutput::getArguments() returns the decoded args.
         $toolCallsForExec = [];
         $toolCallsForHistory = [];
         foreach ($assembledTools as $toolOutput) {
           $toolCallId = $toolOutput->getToolId() ?: $this->uuid->generate();
           $name = $toolOutput->getName();
-          $args = $toolOutput->getArguments();
+          // getArguments() returns ToolsPropertyResult objects. Convert
+          // back to a plain associative array for our tool handlers.
+          $rawArgs = [];
+          foreach ($toolOutput->getArguments() as $arg) {
+            $rawArgs[$arg->getName()] = $arg->getValue();
+          }
+          $args = $rawArgs;
 
           $toolCallsForExec[$toolCallId] = [
             'name' => $name,
