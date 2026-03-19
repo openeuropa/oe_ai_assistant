@@ -381,8 +381,14 @@ PROMPT;
         if (!empty($msg['tool_call_id'])) {
           $chatMsg->setToolsId($msg['tool_call_id']);
         }
-        if (!empty($msg['tool_outputs'])) {
-          $chatMsg->setTools($msg['tool_outputs']);
+        if (!empty($msg['tool_calls_raw'])) {
+          // Set tool calls on the assistant message so the provider can
+          // include them in the next API call. Wrap each raw array so
+          // ChatMessage::getRenderedTools() returns the correct format.
+          $chatMsg->setTools(array_map(
+            [self::class, 'wrapToolCallArray'],
+            $msg['tool_calls_raw'],
+          ));
         }
         $chatMessages[] = $chatMsg;
       }
@@ -443,15 +449,36 @@ PROMPT;
       $assembledTools = $iterator->getTools();
 
       if (!empty($assembledTools)) {
-        // Emit tool call SSE events and build the keyed map.
-        $toolCallsKeyed = [];
+        // Build a plain array of tool calls for SSE events and execution.
+        // ToolsFunctionOutput::getArguments() returns the decoded args.
+        $toolCallsForExec = [];
+        $toolCallsForHistory = [];
         foreach ($assembledTools as $toolOutput) {
           $toolCallId = $toolOutput->getToolId() ?: $this->uuid->generate();
-          $toolCallsKeyed[$toolCallId] = $toolOutput;
+          $name = $toolOutput->getName();
+          $args = $toolOutput->getArguments();
+
+          $toolCallsForExec[$toolCallId] = [
+            'name' => $name,
+            'arguments' => $args,
+          ];
+
+          // Build the tool call array in the format the Mistral provider
+          // expects from getRenderedTools() / ToolCallFunction::fromArray().
+          $toolCallsForHistory[] = [
+            'id' => $toolCallId,
+            'type' => 'function',
+            'index' => 0,
+            'function' => [
+              'name' => $name,
+              'arguments' => Json::encode($args),
+            ],
+          ];
+
           $this->sendSseEvent([
             'type' => 'TOOL_CALL_START',
             'toolCallId' => $toolCallId,
-            'toolCallName' => $toolOutput->getName(),
+            'toolCallName' => $name,
           ]);
           $this->sendSseEvent([
             'type' => 'TOOL_CALL_END',
@@ -460,11 +487,11 @@ PROMPT;
         }
 
         // Execute tool calls and add results to conversation history.
-        $toolResults = $this->executeToolCalls($toolCallsKeyed, $bundle);
+        $toolResults = $this->executeToolCalls($toolCallsForExec, $bundle);
         $messages[] = [
           'role' => 'assistant',
           'content' => $streamedText ?: '',
-          'tool_outputs' => array_values($assembledTools),
+          'tool_calls_raw' => $toolCallsForHistory,
         ];
         foreach ($toolResults as $result) {
           $messages[] = $result;
@@ -495,9 +522,9 @@ PROMPT;
   private function executeToolCalls(array $toolCalls, string $bundle): array {
     $results = [];
 
-    foreach ($toolCalls as $toolCallId => $toolOutput) {
-      $name = $toolOutput->getName();
-      $args = $toolOutput->getArguments() ?? [];
+    foreach ($toolCalls as $toolCallId => $toolCall) {
+      $name = $toolCall['name'] ?? '';
+      $args = $toolCall['arguments'] ?? [];
 
       $result = match ($name) {
         'draft_content' => $this->toolDraftContent($args),
@@ -552,6 +579,36 @@ PROMPT;
     // Keep only the last N message pairs.
     $trimmed = array_slice($history, -(self::HISTORY_LENGTH * 2));
     $store->set($threadId, $trimmed);
+  }
+
+  /**
+   * Wraps a raw tool call array into an object with getOutputRenderArray().
+   *
+   * ChatMessage::getRenderedTools() calls getOutputRenderArray() on each
+   * tool. This wrapper satisfies that interface using the pre-built array.
+   *
+   * @param array $data
+   *   Tool call array with id, type, function (name + arguments).
+   *
+   * @return object
+   *   An object with a getOutputRenderArray() method.
+   */
+  private static function wrapToolCallArray(array $data): object {
+    return new class($data) {
+
+      /**
+       * Constructs the wrapper.
+       */
+      public function __construct(private array $data) {}
+
+      /**
+       * Returns the tool call render array.
+       */
+      public function getOutputRenderArray(): array {
+        return $this->data;
+      }
+
+    };
   }
 
 }

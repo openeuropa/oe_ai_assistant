@@ -1,6 +1,14 @@
 --- a/src/MistralChatMessageIterator.php	2026-03-19 15:43:10.723845522 +0000
-+++ b/src/MistralChatMessageIterator.php	2026-03-19 15:53:46.737821860 +0000
-@@ -15,10 +15,6 @@
++++ b/src/MistralChatMessageIterator.php	2026-03-19 17:55:16.179101687 +0000
+@@ -3,6 +3,7 @@
+ namespace Drupal\ai_provider_mistral;
+ 
+ use Drupal\ai\OperationType\Chat\StreamedChatMessageIterator;
++use Drupal\ai\OperationType\Chat\Tools\ToolsFunctionOutput;
+ use Partitech\PhpMistral\Clients\Response;
+ 
+ /**
+@@ -15,10 +16,6 @@
   * PromptJsonDecoder may interrupt the first pass and need to continue
   * consuming remaining chunks from where they left off.
   *
@@ -11,7 +19,22 @@
   * @see https://www.drupal.org/project/ai_provider_mistral/issues/3572398
   */
  class MistralChatMessageIterator extends StreamedChatMessageIterator {
-@@ -29,29 +25,42 @@
+@@ -26,32 +23,86 @@
+   use MistralResponseTrait;
+ 
+   /**
++   * Tool call data captured from the last streaming chunk.
++   *
++   * Each entry is ['id' => string, 'name' => string, 'arguments' => array].
++   * Updated on every chunk that has tool calls, so after iteration
++   * completes it holds the fully assembled tool call arguments.
++   *
++   * @var array
++   */
++  private array $capturedToolCallData = [];
++
++
++  /**
     * {@inheritdoc}
     */
    public function doIterate(): \Generator {
@@ -42,10 +65,38 @@
        $message = $response->getLastMessage();
 +      $role = $message->getRole() ?? 'assistant';
        $metadata = $response->getUsage() ?: [];
--
-       $toolCalls = $response->getToolCalls();
 +      $rawResponse = $this->responseToArray($response);
 +      $stopReason = $response->getStopReason();
+ 
++      // Snapshot tool call data from the raw response. The SDK's
++      // ToolCallFunction objects may have incomplete arguments due to
++      // streaming fragment assembly timing. We capture both the SDK's
++      // parsed data and the raw partial JSON strings on every chunk.
++      // The last snapshot before iteration ends will be the most
++      // complete.
+       $toolCalls = $response->getToolCalls();
++      if ($toolCalls && !$toolCalls->isEmpty()) {
++        $lastMessage = $response->getLastMessage();
++        $partials = $lastMessage->getPartialToolCalls();
++        $this->capturedToolCallData = [];
++        $idx = 0;
++        foreach ($toolCalls as $tc) {
++          $args = $tc->getArguments();
++          // If SDK arguments are empty, try decoding accumulated partials.
++          if (empty($args) && isset($partials[$idx])) {
++            $decoded = json_decode($partials[$idx], TRUE);
++            if (is_array($decoded) && !empty($decoded)) {
++              $args = $decoded;
++            }
++          }
++          $this->capturedToolCallData[] = [
++            'id' => $tc->getId(),
++            'name' => $tc->getName(),
++            'arguments' => $args,
++          ];
++          $idx++;
++        }
++      }
 +
 +      // Advance AFTER capturing data so that the consumer sees the
 +      // correct chunk text. When the consumer breaks out of the loop,
@@ -61,12 +112,12 @@
          $metadata,
 -        $toolCalls && !$toolCalls->isEmpty() ? $toolCalls->toArray() : NULL,
 -        $this->responseToArray($response),
-+        $toolCalls && !$toolCalls->isEmpty() ? $this->serializeToolCalls($toolCalls) : NULL,
++        NULL,
 +        $rawResponse,
        );
  
        // Set token usage if available.
-@@ -71,7 +80,6 @@
+@@ -71,7 +122,6 @@
        }
  
        // Set finish reason if available.
@@ -74,40 +125,28 @@
        if ($stopReason) {
          $this->setFinishReason($stopReason);
        }
-@@ -80,4 +88,36 @@
+@@ -80,4 +130,24 @@
      }
    }
  
 +  /**
-+   * Converts ToolCallCollection items into the format expected by
-+   * StreamedChatMessageIterator::assembleToolCalls().
++   * {@inheritdoc}
 +   *
-+   * The base class calls $tool->toArray() on each element and expects
-+   * ['function']['arguments'] to be a JSON string for concatenation.
-+   * ToolCallFunction::toArray() returns arguments as a decoded array,
-+   * so we wrap each item in a simple object with a toArray() that
-+   * JSON-encodes the arguments.
-+   *
-+   * @param \Partitech\PhpMistral\Tools\ToolCallCollection $toolCalls
-+   *   The tool call collection from the Mistral response.
-+   *
-+   * @return array
-+   *   Array of objects compatible with assembleToolCalls().
++   * Returns tool calls captured directly from the Mistral SDK's
++   * ToolCallCollection, bypassing the base class's assembleToolCalls()
++   * which is incompatible with the Mistral streaming data format.
 +   */
-+  private function serializeToolCalls($toolCalls): array {
-+    $result = [];
-+    foreach ($toolCalls as $tc) {
-+      $data = $tc->toArray();
-+      // Ensure arguments is a JSON string for the base class.
-+      if (isset($data['function']['arguments']) && is_array($data['function']['arguments'])) {
-+        $data['function']['arguments'] = json_encode($data['function']['arguments']);
++  public function getTools(): array {
++    if (!empty($this->capturedToolCallData)) {
++      $result = [];
++      foreach ($this->capturedToolCallData as $tc) {
++        $output = new ToolsFunctionOutput(NULL, $tc['id'], $tc['arguments']);
++        $output->setName($tc['name']);
++        $result[] = $output;
 +      }
-+      $result[] = new class($data) {
-+        public function __construct(private array $data) {}
-+        public function toArray(): array { return $this->data; }
-+      };
++      return $result;
 +    }
-+    return $result;
++    return parent::getTools();
 +  }
 +
  }
