@@ -1,0 +1,93 @@
+--- a/src/MistralChatMessageIterator.php	2026-03-19 14:04:04.956416826 +0000
++++ b/src/MistralChatMessageIterator.php	2026-03-19 14:04:21.958101196 +0000
+@@ -15,10 +15,6 @@
+  * PromptJsonDecoder may interrupt the first pass and need to continue
+  * consuming remaining chunks from where they left off.
+  *
+- * The "advance before yield" pattern ensures that when a consumer breaks out
+- * of the iteration, the underlying iterator is already positioned at the
+- * next unread chunk, preventing duplication on the second pass.
+- *
+  * @see https://www.drupal.org/project/ai_provider_mistral/issues/3572398
+  */
+ class MistralChatMessageIterator extends StreamedChatMessageIterator {
+@@ -29,29 +25,42 @@
+    * {@inheritdoc}
+    */
+   public function doIterate(): \Generator {
+-    // Use manual iteration to avoid foreach's implicit rewind() call.
+-    // PHP Generators auto-start on the first valid()/current() call, and
+-    // maintain their position across multiple doIterate() invocations since
+-    // $this->iterator is shared state on the object.
++    // Use manual iteration to avoid foreach's implicit rewind() call on
++    // the underlying Generator. PHP Generators auto-start on the first
++    // valid()/current() call and maintain their position across multiple
++    // doIterate() invocations since $this->iterator is shared state.
+     while ($this->iterator->valid()) {
+       $response = $this->iterator->current();
+-      // Advance BEFORE yielding so that when the consumer breaks after
+-      // receiving a chunk, the underlying iterator is already past it.
+-      $this->iterator->next();
+ 
+       if (!$response instanceof Response) {
++        $this->iterator->next();
+         continue;
+       }
++
++      // Capture all data from the current chunk BEFORE advancing the
++      // iterator. The SSE client reuses a single Response object, so
++      // calling next() overwrites getChunk() and other accessors with
++      // the next event's data.
++      $chunkText = $response->getChunk() ?? '';
+       $message = $response->getLastMessage();
++      $role = $message->getRole() ?? 'assistant';
+       $metadata = $response->getUsage() ?: [];
+-
+       $toolCalls = $response->getToolCalls();
++      $rawResponse = $this->responseToArray($response);
++      $stopReason = $response->getStopReason();
++
++      // Advance AFTER capturing data so that the consumer sees the
++      // correct chunk text. When the consumer breaks out of the loop,
++      // the next doIterate() call will resume from the right position
++      // since $this->iterator is shared state.
++      $this->iterator->next();
++
+       $streamedMessage = $this->createStreamedChatMessage(
+-        $message->getRole() ?? 'assistant',
+-        $response->getChunk() ?? '',
++        $role,
++        $chunkText,
+         $metadata,
+         $toolCalls && !$toolCalls->isEmpty() ? $toolCalls->toArray() : NULL,
+-        $this->responseToArray($response),
++        $rawResponse,
+       );
+ 
+       // Set token usage if available.
+@@ -71,7 +80,6 @@
+       }
+ 
+       // Set finish reason if available.
+-      $stopReason = $response->getStopReason();
+       if ($stopReason) {
+         $this->setFinishReason($stopReason);
+       }
+diff --git a/src/Plugin/AiProvider/MistralProvider.php b/src/Plugin/AiProvider/MistralProvider.php
+--- a/src/Plugin/AiProvider/MistralProvider.php
++++ b/src/Plugin/AiProvider/MistralProvider.php
+@@ -251,6 +251,14 @@ class MistralProvider extends AiProviderClientBase implements
+       else {
+         $this->client = new MistralClient($this->apiKey);
+       }
++      // Inject a Guzzle client configured for true HTTP streaming.
++      // The default PSR-18 adapter buffers the entire response body
++      // before returning, which defeats SSE streaming. Setting
++      // 'stream' => true makes Guzzle return a lazy-reading body
++      // so chunks arrive as the LLM generates them.
++      $guzzle = new \GuzzleHttp\Client(['stream' => true]);
++      $adapter = new \Http\Adapter\Guzzle7\Client($guzzle);
++      $this->client->setClient($adapter);
+     }
+   }
+ 

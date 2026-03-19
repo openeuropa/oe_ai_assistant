@@ -76,6 +76,7 @@ class EchoPlugin extends AiAssistantPluginBase {
       $total = count($words);
       foreach ($words as $index => $word) {
         $this->sendSseEvent([
+          'type' => 'echo',
           'word' => $word,
           'index' => $index,
           'done' => $index === $total - 1,

@@ -13,4 +13,4 @@ index 885e50a..df17611 100644
 +    if (preg_match('/"(?:http|\/\/:|\/)[^"]*$/', $this->buffer) || preg_match('/\((?:http|\/\/:|\/)[^)]*$/', $this->buffer)) {
        return FALSE;
      }
-
+ 

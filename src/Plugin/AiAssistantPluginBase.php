@@ -118,6 +118,9 @@ abstract class AiAssistantPluginBase extends PluginBase implements AiAssistantPl
     // Send padding to overcome proxy buffering on the first event.
     if ($isFirst) {
       echo ": " . str_repeat(" ", 4096) . "\n\n";
+      if (ob_get_level() > 0) {
+        @ob_flush();
+      }
       flush();
     }
 
@@ -131,6 +134,13 @@ abstract class AiAssistantPluginBase extends PluginBase implements AiAssistantPl
     }
 
     echo "data: " . $json . "\n\n";
+
+    // Drupal or PHP may recreate output buffers after AiStreamedResponse
+    // clears them. Flush any active buffer before the system-level flush
+    // to ensure data reaches the client immediately.
+    if (ob_get_level() > 0) {
+      @ob_flush();
+    }
     flush();
   }
 

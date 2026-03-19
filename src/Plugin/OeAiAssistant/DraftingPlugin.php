@@ -403,6 +403,12 @@ PROMPT;
       $chatOutput = $provider->chat($chatInput, $modelId);
       $iterator = $chatOutput->getNormalized();
 
+      // Flush every token immediately for smooth real-time SSE delivery.
+      // The default 100-char buffer causes chunks to arrive in bursts.
+      if (method_exists($iterator, 'setMaxBufferSize')) {
+        $iterator->setMaxBufferSize(1);
+      }
+
       // Stream text chunks to the client as SSE events.
       foreach ($iterator as $chunk) {
         $text = $chunk->getText() ?? '';

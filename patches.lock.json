@@ -1,12 +1,24 @@
 {
-    "_hash": "319160c109a8b73f11db95d6c10d72d3ae2cbf5d7b9753c21311ee287e72e36a",
+    "_hash": "ef6d1ba9f562349be0a0a5803127aba221ecc354604de6228f80814eca6c7f70",
     "patches": {
         "drupal/ai": [
             {
                 "package": "drupal/ai",
                 "description": "#3579967: Buffer corrupts HTML with relative URLs in streamed responses",
                 "url": "patches/ai-3579967-streaming-buffer-relative-urls.patch",
-                "sha256": "78973b76344baf1fe1b88903db50b1b817a46b6e5aff720dfd179684e13eb48a",
+                "sha256": "40648f745f5cf229bd1460dc12af012f3b531c6971cb9ff4345b13619f42d655",
+                "depth": 1,
+                "extra": {
+                    "provenance": "root"
+                }
+            }
+        ],
+        "drupal/ai_provider_mistral": [
+            {
+                "package": "drupal/ai_provider_mistral",
+                "description": "Streaming chunk loss: advance-before-yield overwrites shared Response object",
+                "url": "patches/ai-provider-mistral-streaming-chunk-loss.patch",
+                "sha256": "3b2ce324c73365488bfe6654daacffb18712890187c44065516e84e36be1eaaa",
                 "depth": 1,
                 "extra": {
                     "provenance": "root"
