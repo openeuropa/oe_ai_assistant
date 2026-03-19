@@ -58,6 +58,29 @@ function ToolCallCard({
   );
 }
 
+/** UI for the draft_content tool call. */
+export const DraftContentToolUI = makeAssistantToolUI<
+  { fields: Record<string, unknown> },
+  unknown
+>({
+  toolName: "draft_content",
+  render: ({ args, status }) => {
+    const fieldCount = args?.fields ? Object.keys(args.fields).length : 0;
+    return (
+      <ToolCallCard
+        icon={PenLine}
+        label="Drafting content"
+        detail={
+          fieldCount > 0
+            ? `${fieldCount} field${fieldCount > 1 ? "s" : ""}`
+            : undefined
+        }
+        status={status}
+      />
+    );
+  },
+});
+
 /** UI for the get_content_schema tool call. */
 export const GetContentSchemaToolUI = makeAssistantToolUI<
   { bundle: string },

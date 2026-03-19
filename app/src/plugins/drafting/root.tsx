@@ -14,6 +14,7 @@ import { ArtifactPlaceholder } from "./components/artifact-placeholder";
 import { ContentTable } from "./components/content-table";
 import { DraftingThread } from "./components/drafting-thread";
 import {
+  DraftContentToolUI,
   GetContentSchemaToolUI,
   RegenerateFieldsToolUI,
   SaveDraftRevisionToolUI,
@@ -86,6 +87,7 @@ export default function DraftingRoot() {
   return (
     <AssistantRuntimeProvider runtime={runtime}>
       {/* Register tool call renderers so they appear inline in chat. */}
+      <DraftContentToolUI />
       <GetContentSchemaToolUI />
       <SetFieldContentToolUI />
       <RegenerateFieldsToolUI />

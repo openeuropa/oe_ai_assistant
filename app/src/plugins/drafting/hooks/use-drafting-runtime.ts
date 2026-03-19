@@ -29,13 +29,33 @@ import { getDraftingState, setDraftingState } from "../store";
  * contain drafted field values.
  */
 export function useDraftingRuntime() {
-  const agent = useMemo(
-    () =>
-      new HttpAgent({
-        url: `${getConfig().apiBaseUrl}/plugins/drafting/chat`,
-      }),
-    [],
-  );
+  // Read bundle and entity type from the host page's plugin config.
+  const draftingConfig = getConfig().pluginConfig["drafting"] ?? {};
+  const bundle = (draftingConfig.bundle as string) ?? "";
+  const entityTypeId = (draftingConfig.entityTypeId as string) ?? "node";
+
+  const agent = useMemo(() => {
+    const httpAgent = new HttpAgent({
+      url: `${getConfig().apiBaseUrl}/plugins/drafting/chat`,
+    });
+    // Wrap runAgent to inject forwardedProps with the content type
+    // context on every chat request. The backend reads these to load
+    // the correct schema for tool calls.
+    const originalRun = httpAgent.runAgent.bind(httpAgent);
+    httpAgent.runAgent = (input, ...rest) =>
+      originalRun(
+        {
+          ...input,
+          forwardedProps: {
+            ...(input?.forwardedProps ?? {}),
+            bundle,
+            entityTypeId,
+          },
+        },
+        ...rest,
+      );
+    return httpAgent;
+  }, [bundle, entityTypeId]);
 
   // Accept images and common document types as attachments.
   // Files are kept client-side only (no upload); the mock server
@@ -89,7 +109,35 @@ export function useDraftingRuntime() {
       }
 
       lastSnapshotRef.current = serialized;
-      const fields = snapshot.draftedFields as Record<string, DraftedField>;
+      const raw = snapshot.draftedFields as Record<string, unknown>;
+
+      // The backend sends raw field values (strings or objects). Wrap
+      // each into the DraftedField shape the content table expects.
+      // If the value is already a DraftedField (has a label property),
+      // use it as-is.
+      const fields: Record<string, DraftedField> = {};
+      for (const [name, val] of Object.entries(raw)) {
+        if (
+          val !== null &&
+          typeof val === "object" &&
+          "label" in (val as Record<string, unknown>)
+        ) {
+          // Already a DraftedField shape.
+          fields[name] = val as DraftedField;
+        } else {
+          // Raw value from the LLM -- wrap it.
+          const strVal =
+            typeof val === "object" ? JSON.stringify(val) : String(val ?? "");
+          fields[name] = {
+            label: name
+              .replace(/^field_/, "")
+              .replace(/_/g, " ")
+              .replace(/\b\w/g, (c) => c.toUpperCase()),
+            value: strVal,
+            type: typeof val === "object" ? "html" : "string",
+          };
+        }
+      }
       setDraftingState({ draftedFields: fields });
     });
     return unsubscribe;
