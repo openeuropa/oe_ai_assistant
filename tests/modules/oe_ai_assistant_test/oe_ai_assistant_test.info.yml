@@ -11,6 +11,8 @@ dependencies:
   - drupal:options
   - drupal:text
   - drupal:workflows
+  - ai:ai_provider_mistral
+  - key:key
   - entity_reference_revisions:entity_reference_revisions
   - paragraphs:paragraphs
   - inline_entity_form:inline_entity_form

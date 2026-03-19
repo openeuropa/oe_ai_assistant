@@ -1,17 +1,10 @@
 #!/bin/bash
 
-## Description: Install the test Drupal site and enable the module
+## Description: Install (or reinstall) the Drupal test site and enable the module
 ## Usage: install
 ## Example: ddev install
 
 set -e
-
-echo "Installing dependencies..."
-ddev poser
-
-echo "Symlinking module into Drupal..."
-export PROJECT_FILES=$(ls -A)
-ddev symlink-project
 
 echo "Installing Drupal with minimal profile..."
 ddev drush site:install minimal --account-name=admin --account-pass=admin -y
