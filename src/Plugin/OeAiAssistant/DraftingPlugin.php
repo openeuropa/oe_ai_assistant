@@ -446,7 +446,7 @@ PROMPT;
         // Emit tool call SSE events and build the keyed map.
         $toolCallsKeyed = [];
         foreach ($assembledTools as $toolOutput) {
-          $toolCallId = $toolOutput->getId() ?: $this->uuid->generate();
+          $toolCallId = $toolOutput->getToolId() ?: $this->uuid->generate();
           $toolCallsKeyed[$toolCallId] = $toolOutput;
           $this->sendSseEvent([
             'type' => 'TOOL_CALL_START',

@@ -1,5 +1,5 @@
---- a/src/MistralChatMessageIterator.php	2026-03-19 14:04:04.956416826 +0000
-+++ b/src/MistralChatMessageIterator.php	2026-03-19 14:04:21.958101196 +0000
+--- a/src/MistralChatMessageIterator.php	2026-03-19 15:43:10.723845522 +0000
++++ b/src/MistralChatMessageIterator.php	2026-03-19 15:53:46.737821860 +0000
 @@ -15,10 +15,6 @@
   * PromptJsonDecoder may interrupt the first pass and need to continue
   * consuming remaining chunks from where they left off.
@@ -59,8 +59,9 @@
 +        $role,
 +        $chunkText,
          $metadata,
-         $toolCalls && !$toolCalls->isEmpty() ? $toolCalls->toArray() : NULL,
+-        $toolCalls && !$toolCalls->isEmpty() ? $toolCalls->toArray() : NULL,
 -        $this->responseToArray($response),
++        $toolCalls && !$toolCalls->isEmpty() ? $this->serializeToolCalls($toolCalls) : NULL,
 +        $rawResponse,
        );
  
@@ -73,10 +74,46 @@
        if ($stopReason) {
          $this->setFinishReason($stopReason);
        }
-diff --git a/src/Plugin/AiProvider/MistralProvider.php b/src/Plugin/AiProvider/MistralProvider.php
---- a/src/Plugin/AiProvider/MistralProvider.php
-+++ b/src/Plugin/AiProvider/MistralProvider.php
-@@ -251,6 +251,14 @@ class MistralProvider extends AiProviderClientBase implements
+@@ -80,4 +88,36 @@
+     }
+   }
+ 
++  /**
++   * Converts ToolCallCollection items into the format expected by
++   * StreamedChatMessageIterator::assembleToolCalls().
++   *
++   * The base class calls $tool->toArray() on each element and expects
++   * ['function']['arguments'] to be a JSON string for concatenation.
++   * ToolCallFunction::toArray() returns arguments as a decoded array,
++   * so we wrap each item in a simple object with a toArray() that
++   * JSON-encodes the arguments.
++   *
++   * @param \Partitech\PhpMistral\Tools\ToolCallCollection $toolCalls
++   *   The tool call collection from the Mistral response.
++   *
++   * @return array
++   *   Array of objects compatible with assembleToolCalls().
++   */
++  private function serializeToolCalls($toolCalls): array {
++    $result = [];
++    foreach ($toolCalls as $tc) {
++      $data = $tc->toArray();
++      // Ensure arguments is a JSON string for the base class.
++      if (isset($data['function']['arguments']) && is_array($data['function']['arguments'])) {
++        $data['function']['arguments'] = json_encode($data['function']['arguments']);
++      }
++      $result[] = new class($data) {
++        public function __construct(private array $data) {}
++        public function toArray(): array { return $this->data; }
++      };
++    }
++    return $result;
++  }
++
+ }
+--- a/src/Plugin/AiProvider/MistralProvider.php	2026-03-19 15:43:10.725845487 +0000
++++ b/src/Plugin/AiProvider/MistralProvider.php	2026-03-19 15:44:14.626727787 +0000
+@@ -252,6 +252,14 @@
        else {
          $this->client = new MistralClient($this->apiKey);
        }

@@ -14,6 +14,10 @@ import {
   ThreadPrimitive,
   useAuiState,
 } from "@assistant-ui/react";
+
+import { useEffect, useRef, useState } from "react";
+import { Streamdown } from "streamdown";
+import "streamdown/styles.css";
 import {
   AlertCircle,
   FileText,
@@ -112,6 +116,88 @@ function MessageError() {
   );
 }
 
+/**
+ * Delay in milliseconds between each character when animating
+ * streamed text. Lower values feel faster but less readable;
+ * higher values give a visible typewriter effect.
+ */
+const CHAR_DELAY_MS = 12;
+
+/**
+ * Renders streamed assistant text with a client-side typewriter
+ * animation. Buffers incoming deltas and reveals them character
+ * by character at a fixed cadence, producing smooth output
+ * regardless of how the server delivers chunks.
+ */
+function SmoothAssistantText({
+  text,
+  status,
+}: {
+  text: string;
+  status: { type: string };
+}) {
+  const [displayed, setDisplayed] = useState("");
+  const targetRef = useRef(text);
+  const idxRef = useRef(0);
+  const rafRef = useRef<ReturnType<typeof requestAnimationFrame> | null>(null);
+  const lastTimeRef = useRef(0);
+
+  // Keep target text in sync with incoming deltas.
+  targetRef.current = text;
+
+  useEffect(() => {
+    /** Animate one frame: append characters until the per-char budget
+     *  for this frame is exhausted, then schedule the next frame. */
+    const step = (now: number) => {
+      if (!lastTimeRef.current) lastTimeRef.current = now;
+      const elapsed = now - lastTimeRef.current;
+      const chars = Math.max(1, Math.floor(elapsed / CHAR_DELAY_MS));
+
+      if (idxRef.current < targetRef.current.length) {
+        idxRef.current = Math.min(
+          idxRef.current + chars,
+          targetRef.current.length,
+        );
+        setDisplayed(targetRef.current.slice(0, idxRef.current));
+        lastTimeRef.current = now;
+        rafRef.current = requestAnimationFrame(step);
+      } else {
+        rafRef.current = null;
+      }
+    };
+
+    // Start or continue animating when new text arrives.
+    if (idxRef.current < targetRef.current.length && !rafRef.current) {
+      lastTimeRef.current = 0;
+      rafRef.current = requestAnimationFrame(step);
+    }
+
+    return () => {
+      if (rafRef.current) {
+        cancelAnimationFrame(rafRef.current);
+        rafRef.current = null;
+      }
+    };
+  }, [text]);
+
+  // When the message is complete and animation has caught up,
+  // ensure we show the final text.
+  useEffect(() => {
+    if (status.type !== "running" && displayed !== text) {
+      idxRef.current = text.length;
+      setDisplayed(text);
+    }
+  }, [status.type, text, displayed]);
+
+  const isStreaming = status.type === "running";
+
+  return (
+    <div className="text-sm prose prose-sm max-w-none">
+      <Streamdown isAnimating={isStreaming}>{displayed}</Streamdown>
+    </div>
+  );
+}
+
 /** Renders a single assistant message. */
 function AssistantMessage() {
   return (
@@ -119,9 +205,7 @@ function AssistantMessage() {
       <div className="max-w-[80%]">
         <div className="rounded-lg bg-gray-100 px-4 py-2 text-gray-900">
           <MessagePrimitive.Content
-            components={{
-              Text: ({ text }) => <p className="text-sm">{text}</p>,
-            }}
+            components={{ Text: SmoothAssistantText }}
           />
         </div>
         <MessageError />

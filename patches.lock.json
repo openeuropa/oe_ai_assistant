@@ -1,5 +1,5 @@
 {
-    "_hash": "ef6d1ba9f562349be0a0a5803127aba221ecc354604de6228f80814eca6c7f70",
+    "_hash": "1f64222be2461195b5233e473404804582398c9f9aeddd9addc1754c359f5849",
     "patches": {
         "drupal/ai": [
             {
@@ -18,7 +18,7 @@
                 "package": "drupal/ai_provider_mistral",
                 "description": "Streaming chunk loss: advance-before-yield overwrites shared Response object",
                 "url": "patches/ai-provider-mistral-streaming-chunk-loss.patch",
-                "sha256": "3b2ce324c73365488bfe6654daacffb18712890187c44065516e84e36be1eaaa",
+                "sha256": "589ba518a572bba50a7794ae329b12e87e40706f679e563e6e2908ba799b4261",
                 "depth": 1,
                 "extra": {
                     "provenance": "root"
