@@ -16,3 +16,6 @@ npm run build
 
 echo ""
 echo "Build complete: dist/"
+
+echo "Clearing cache..."
+drush cr
