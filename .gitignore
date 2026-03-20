@@ -6,3 +6,4 @@ composer.lock
 /.gitattributes
 /recipes
 .env
+/dist

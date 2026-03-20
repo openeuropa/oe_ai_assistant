@@ -10,7 +10,7 @@
     "dev": "concurrently -n vite,api -c cyan,yellow \"vite\" \"tsx watch server/index.ts\"",
     "dev:client": "vite",
     "dev:server": "tsx watch server/index.ts",
-    "build": "tsc -b && vite build && node scripts/build-schemas.js",
+    "build": "tsc -b && vite build --emptyOutDir && node scripts/build-schemas.js",
     "build:schemas": "node scripts/build-schemas.js",
     "typecheck": "tsc -b",
     "api:generate": "openapi-typescript api/openapi.yaml -o src/api/schema.d.ts",
