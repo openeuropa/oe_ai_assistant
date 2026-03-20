@@ -55,9 +55,17 @@ class DrupalSseTransporter extends AbstractTransporter {
       $this->paddingSent = TRUE;
     }
 
-    // Get the event data array and convert the type string.
+    // Get the event data array and normalize for the AG-UI TypeScript SDK.
     $data = $event->toArray();
     $data['type'] = self::toScreamingSnake($data['type'] ?? '');
+
+    // The swisnl package emits timestamp as an RFC3339 string, but the
+    // AG-UI TypeScript SDK validates it as z.number().optional(). Convert
+    // to a Unix epoch integer (milliseconds) to match the SDK expectation.
+    if (isset($data['timestamp'])) {
+      $ts = strtotime($data['timestamp']);
+      $data['timestamp'] = $ts !== FALSE ? $ts * 1000 : (int) (microtime(TRUE) * 1000);
+    }
 
     $json = json_encode($data, JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE);
     echo "data: {$json}\n\n";
