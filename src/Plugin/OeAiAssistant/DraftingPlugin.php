@@ -30,7 +30,8 @@ use Symfony\Component\HttpFoundation\Response;
  *
  * Uses drupal/ai core directly (not ai_assistant_api) for full control over
  * streaming and tool call handling. Manages its own conversation history
- * via PrivateTempStore.
+ * via PrivateTempStore. SSE events are emitted through the swisnl/ag-ui-server
+ * AgUiState manager with adaptive delta buffering for text streaming.
  */
 #[AiAssistantPlugin(
   id: 'drafting',
@@ -335,7 +336,8 @@ PROMPT;
    * Creates the SSE streaming response.
    *
    * Uses AiStreamedResponse (via the base class) which handles output
-   * buffer clearing and streaming headers automatically.
+   * buffer clearing and streaming headers automatically. The AG-UI state
+   * manager handles event construction and delta buffering.
    */
   private function createStreamResponse(
     string $systemPrompt,
@@ -352,15 +354,14 @@ PROMPT;
     ) {
       set_time_limit(0);
 
+      // Initialize the AG-UI state manager with delta buffering.
+      $state = $this->createAgUiState();
+
       $runId = $this->uuid->generate();
       $sseThreadId = !empty($threadId) ? $threadId : $this->uuid->generate();
       $messageId = $this->uuid->generate();
 
-      $this->sendSseEvent([
-        'type' => 'RUN_STARTED',
-        'runId' => $runId,
-        'threadId' => $sseThreadId,
-      ], TRUE);
+      $state->startRun($sseThreadId, $runId);
 
       try {
         // Load conversation history.
@@ -391,17 +392,10 @@ PROMPT;
         $this->logger->error('Error in drafting chat: @error', [
           '@error' => $e->getMessage(),
         ]);
-        $this->sendSseEvent([
-          'type' => 'RUN_ERROR',
-          'message' => $e->getMessage(),
-        ]);
+        $state->errorRun($e->getMessage());
       }
 
-      $this->sendSseEvent([
-        'type' => 'RUN_FINISHED',
-        'runId' => $runId,
-        'threadId' => $sseThreadId,
-      ]);
+      $state->finishRun();
     });
   }
 
@@ -410,7 +404,8 @@ PROMPT;
    *
    * Uses the drupal/ai provider plugin system for streaming chat responses
    * with tool call support. The StreamedChatMessageIterator assembles
-   * tool call deltas automatically via getTools().
+   * tool call deltas automatically via getTools(). Text message events
+   * are emitted through AgUiState which applies delta buffering.
    *
    * @return string
    *   The final assistant text message.
@@ -475,33 +470,24 @@ PROMPT;
         $iterator->setMaxBufferSize(1);
       }
 
-      // Stream text chunks to the client as SSE events.
+      // Stream text chunks to the client via AgUiState. Delta buffering
+      // batches tokens before sending to reduce SSE event count while
+      // maintaining smooth streaming (flushes at 100 chars or 150ms).
       foreach ($iterator as $chunk) {
         $text = $chunk->getText() ?? '';
         if (!empty($text)) {
           if (!$messageStarted) {
-            $this->sendSseEvent([
-              'type' => 'TEXT_MESSAGE_START',
-              'messageId' => $messageId,
-              'role' => 'assistant',
-            ]);
+            $this->agUiState->startMessage('assistant', $messageId);
             $messageStarted = TRUE;
           }
-          $this->sendSseEvent([
-            'type' => 'TEXT_MESSAGE_CONTENT',
-            'messageId' => $messageId,
-            'delta' => $text,
-          ]);
+          $this->agUiState->addMessageContent($text, $messageId);
           $streamedText .= $text;
         }
       }
 
       // Close text message if started.
       if ($messageStarted) {
-        $this->sendSseEvent([
-          'type' => 'TEXT_MESSAGE_END',
-          'messageId' => $messageId,
-        ]);
+        $this->agUiState->finishMessage($messageId);
       }
 
       // After iteration completes, the iterator has assembled all tool
@@ -540,11 +526,8 @@ PROMPT;
             ],
           ];
 
-          $this->sendSseEvent([
-            'type' => 'TOOL_CALL_START',
-            'toolCallId' => $toolCallId,
-            'toolCallName' => $name,
-          ]);
+          // Emit tool call start via AgUiState.
+          $this->agUiState->startToolCall($name, NULL, $toolCallId);
         }
 
         // Execute tool calls and add results to conversation history.
@@ -604,10 +587,8 @@ PROMPT;
       // each field as it arrives and show long text word-by-word.
       $this->streamFieldSnapshots($result['fields'] ?? [], $fieldIndex);
 
-      $this->sendSseEvent([
-        'type' => 'TOOL_CALL_END',
-        'toolCallId' => $toolCallId,
-      ]);
+      // Close the tool call via AgUiState.
+      $this->agUiState->finishToolCall($toolCallId);
     }
 
     return $results;
@@ -620,6 +601,9 @@ PROMPT;
    * streamed progressively. When set (regeneration), only the
    * listed fields are streamed word-by-word; all others are sent
    * in a single initial snapshot. Field ordering is preserved.
+   *
+   * State snapshots are sent directly through the transporter since
+   * AgUiState does not expose a method for this event type.
    *
    * @param array $fields
    *   Drafted fields keyed by machine name.
@@ -649,10 +633,7 @@ PROMPT;
         foreach ($words as $word) {
           $partial .= $word;
           $streamed[$name] = $partial;
-          $this->sendSseEvent([
-            'type' => 'STATE_SNAPSHOT',
-            'snapshot' => ['draftedFields' => $streamed],
-          ]);
+          $this->sendStateSnapshot(['draftedFields' => $streamed]);
         }
       }
       elseif ($isLongText && is_array($value) && isset($value['value'])
@@ -662,18 +643,12 @@ PROMPT;
         foreach ($words as $word) {
           $partial .= $word;
           $streamed[$name] = array_merge($value, ['value' => $partial]);
-          $this->sendSseEvent([
-            'type' => 'STATE_SNAPSHOT',
-            'snapshot' => ['draftedFields' => $streamed],
-          ]);
+          $this->sendStateSnapshot(['draftedFields' => $streamed]);
         }
       }
       else {
         $streamed[$name] = $value;
-        $this->sendSseEvent([
-          'type' => 'STATE_SNAPSHOT',
-          'snapshot' => ['draftedFields' => $streamed],
-        ]);
+        $this->sendStateSnapshot(['draftedFields' => $streamed]);
       }
     }
   }

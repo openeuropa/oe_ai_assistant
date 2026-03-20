@@ -6,11 +6,13 @@ namespace Drupal\oe_ai_assistant\Plugin;
 
 use Drupal\ai\Response\AiStreamedResponse;
 use Drupal\Component\Plugin\Exception\PluginException;
-use Drupal\Component\Serialization\Json;
-use Drupal\Core\Plugin\ContainerFactoryPluginInterface;
-use Drupal\Core\Plugin\PluginBase;
+use Drupal\oe_ai_assistant\Transporter\DrupalSseTransporter;
+use Swis\AgUiServer\AgUiState;
+use Swis\AgUiServer\Events\StateSnapshotEvent;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
+use Drupal\Core\Plugin\ContainerFactoryPluginInterface;
+use Drupal\Core\Plugin\PluginBase;
 
 /**
  * Base class for AI Assistant plugins.
@@ -22,8 +24,30 @@ use Symfony\Component\HttpFoundation\Response;
  * Action methods return an array (serialised to JSON by the controller)
  * or a Response (passed through as-is, e.g. for SSE streaming).
  * Errors are signalled by throwing ActionException.
+ *
+ * SSE streaming is handled via the swisnl/ag-ui-server package. Plugins
+ * use AgUiState to emit typed AG-UI protocol events through a Drupal-
+ * adapted SSE transporter.
  */
 abstract class AiAssistantPluginBase extends PluginBase implements AiAssistantPluginInterface, ContainerFactoryPluginInterface {
+
+  /**
+   * The AG-UI state manager for the current streaming response.
+   *
+   * Created lazily by createAgUiState() and used within the
+   * createSseResponse() callback. Not available outside of a streaming
+   * context.
+   */
+  protected ?AgUiState $agUiState = NULL;
+
+  /**
+   * The SSE transporter for the current streaming response.
+   *
+   * Stored separately so plugins can send events directly through the
+   * transporter when AgUiState does not expose a method for a particular
+   * event type (e.g., StateSnapshot).
+   */
+  protected ?DrupalSseTransporter $transporter = NULL;
 
   /**
    * {@inheritdoc}
@@ -81,12 +105,57 @@ abstract class AiAssistantPluginBase extends PluginBase implements AiAssistantPl
   }
 
   /**
+   * Creates an AG-UI state manager with delta buffering.
+   *
+   * Uses the DrupalSseTransporter which handles PascalCase-to-
+   * SCREAMING_SNAKE_CASE type conversion and proxy padding automatically.
+   * Delta buffering batches text message content deltas to reduce the
+   * number of SSE events during LLM token streaming.
+   *
+   * @return \Swis\AgUiServer\AgUiState
+   *   The configured AG-UI state manager.
+   */
+  protected function createAgUiState(): AgUiState {
+    $this->transporter = new DrupalSseTransporter();
+    $this->transporter->initialize();
+
+    $this->agUiState = new AgUiState($this->transporter);
+    $this->agUiState->withDeltaBuffering(
+      deltaBufferThreshold: 100,
+      deltaFlushInterval: 0.15,
+    );
+
+    return $this->agUiState;
+  }
+
+  /**
+   * Sends a STATE_SNAPSHOT event via the transporter.
+   *
+   * AgUiState does not expose a method for state snapshot events, so
+   * this helper sends them directly through the transporter.
+   *
+   * @param array $snapshot
+   *   The state snapshot data.
+   */
+  protected function sendStateSnapshot(array $snapshot): void {
+    if ($this->transporter === NULL) {
+      return;
+    }
+    $this->transporter->sendEvent(new StateSnapshotEvent($snapshot));
+  }
+
+  /**
    * Creates an SSE streaming response.
    *
    * Uses AiStreamedResponse from drupal/ai which handles output buffer
    * clearing and sets the correct headers (X-Accel-Buffering, Cache-Control,
-   * Surrogate-Control) automatically. Plugins only need to call flush()
-   * after each chunk inside the callback.
+   * Surrogate-Control) automatically.
+   *
+   * Additionally disables PHP and web server compression (gzip, zlib) and
+   * enables implicit flush so that every echo reaches the client immediately
+   * without being buffered for compression. Without these, environments with
+   * gzip enabled at the PHP or web server layer will buffer the entire
+   * response before sending, breaking SSE streaming.
    *
    * @param callable $callback
    *   The streaming callback. Will be executed after output buffers are
@@ -96,52 +165,31 @@ abstract class AiAssistantPluginBase extends PluginBase implements AiAssistantPl
    *   The configured streaming response.
    */
   protected function createSseResponse(callable $callback): AiStreamedResponse {
-    return new AiStreamedResponse($callback, 200, [
+    // Wrap the callback to disable compression and enable implicit flush
+    // before the plugin's streaming logic runs. This ensures SSE data is
+    // never held up by gzip or output buffering in any environment.
+    $wrappedCallback = function () use ($callback) {
+      // Disable PHP-level gzip compression which would buffer the
+      // entire response body before sending.
+      ini_set('zlib.output_compression', '0');
+
+      // Auto-flush after every echo so events are sent immediately
+      // even if an explicit flush() call is missed.
+      ini_set('implicit_flush', '1');
+
+      // Disable Apache mod_deflate compression when running behind
+      // Apache. Has no effect on nginx or other web servers.
+      if (function_exists('apache_setenv')) {
+        apache_setenv('no-gzip', '1');
+      }
+
+      ($callback)();
+    };
+
+    return new AiStreamedResponse($wrappedCallback, 200, [
       'Content-Type' => 'text/event-stream',
       'Connection' => 'keep-alive',
     ]);
-  }
-
-  /**
-   * Sends an SSE event to the client.
-   *
-   * Outputs an AG-UI protocol event as an SSE "data:" line with a JSON
-   * payload. The first event includes 4 KB of padding to force proxy
-   * buffers (nginx/FastCGI) to flush immediately.
-   *
-   * @param array $data
-   *   The event data. Must include a 'type' key.
-   * @param bool $isFirst
-   *   Whether this is the first event in the stream (adds proxy padding).
-   */
-  protected function sendSseEvent(array $data, bool $isFirst = FALSE): void {
-    // Send padding to overcome proxy buffering on the first event.
-    if ($isFirst) {
-      echo ": " . str_repeat(" ", 4096) . "\n\n";
-      if (ob_get_level() > 0) {
-        @ob_flush();
-      }
-      flush();
-    }
-
-    if (empty($data) || !isset($data['type'])) {
-      return;
-    }
-
-    $json = Json::encode($data);
-    if ($json === FALSE || $json === 'null') {
-      return;
-    }
-
-    echo "data: " . $json . "\n\n";
-
-    // Drupal or PHP may recreate output buffers after AiStreamedResponse
-    // clears them. Flush any active buffer before the system-level flush
-    // to ensure data reaches the client immediately.
-    if (ob_get_level() > 0) {
-      @ob_flush();
-    }
-    flush();
   }
 
 }
