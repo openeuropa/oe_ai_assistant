@@ -3,10 +3,10 @@
  *
  * POST /api/plugins/drafting/chat
  *
- * Two behaviours based on the user's message:
- * - Contains "generate a draft": triggers the full agent flow
- *   with tool calls, loading pauses, streamed text, and a
- *   STATE_SNAPSHOT that populates the content table.
+ * Behaviours based on the user's message:
+ * - Contains "draft": triggers the full agent flow with tool
+ *   calls, streamed text, and progressive STATE_SNAPSHOTs.
+ * - "rewrite <field>": rewrites a single field with fresh text.
  * - Anything else: streams a conversational reply char by char.
  *
  * POST /api/plugins/drafting/reset
@@ -101,30 +101,68 @@ function isStreamableField(field: Record<string, unknown>): boolean {
 }
 
 /**
+ * Last snapshot sent to the client. Used to diff against new fields
+ * so only changed fields are streamed progressively.
+ */
+let lastSentFields: Record<string, Record<string, unknown>> = {};
+
+/**
  * Streams fields progressively as a series of STATE_SNAPSHOT events.
  *
- * - Short fields: added whole, one snapshot per field.
- * - Long text fields: streamed word-by-word, each word triggers a
- *   new snapshot with the partial value.
- * - Inline form fields: added whole.
+ * Compares each field against the last sent snapshot. Unchanged fields
+ * are included immediately in the first snapshot; only changed fields
+ * are streamed progressively (word-by-word for long text, whole for
+ * short fields).
  *
- * Each snapshot contains all previously completed fields plus the
- * current (possibly partial) field, so the frontend always sees a
- * complete, self-contained state.
+ * Each snapshot is self-contained: it always includes all fields so
+ * the adapter can replace state wholesale.
  */
 async function streamFieldSnapshots(
   res: import("express").Response,
   fields: Record<string, Record<string, unknown>>,
   cancelled: () => boolean,
 ): Promise<boolean> {
-  // Accumulated fields sent so far.
-  const streamed: Record<string, Record<string, unknown>> = {};
+  // Pre-allocate all keys in the input order so that JS object
+  // iteration preserves the original field position. Changed
+  // fields start as undefined and are filled in during streaming.
+  const streamed: Record<string, Record<string, unknown> | undefined> = {};
+  const changedNames: string[] = [];
 
   for (const [name, field] of Object.entries(fields)) {
+    const prev = lastSentFields[name];
+    if (prev && JSON.stringify(prev) === JSON.stringify(field)) {
+      streamed[name] = field;
+    } else {
+      // Reserve the slot to preserve key order.
+      streamed[name] = undefined;
+      changedNames.push(name);
+    }
+  }
+
+  /** Builds a snapshot object containing only the defined fields. */
+  function buildSnapshot(): Record<string, Record<string, unknown>> {
+    const out: Record<string, Record<string, unknown>> = {};
+    for (const [k, v] of Object.entries(streamed)) {
+      if (v !== undefined) out[k] = v;
+    }
+    return out;
+  }
+
+  // If there are unchanged fields, send one initial snapshot so
+  // the frontend sees the complete baseline before streaming starts.
+  if (changedNames.length > 0 && changedNames.length < Object.keys(fields).length) {
+    sendEvent(res, {
+      type: "STATE_SNAPSHOT",
+      snapshot: { draftedFields: buildSnapshot() },
+    });
+  }
+
+  // Stream only the changed fields progressively.
+  for (const name of changedNames) {
     if (cancelled()) return true;
+    const field = fields[name]!;
 
     if (isStreamableField(field)) {
-      // Stream word-by-word for long text fields.
       const fullValue = field.value as string;
       const words = fullValue.split(/(\s+)/);
       let partial = "";
@@ -135,26 +173,25 @@ async function streamFieldSnapshots(
         streamed[name] = { ...field, value: partial };
         sendEvent(res, {
           type: "STATE_SNAPSHOT",
-          snapshot: { draftedFields: { ...streamed } },
+          snapshot: { draftedFields: buildSnapshot() },
         });
-        // Only delay on actual words, not whitespace.
         if (word.trim()) {
           await delay(FIELD_WORD_DELAY_MS);
         }
       }
     } else {
-      // Send the complete field in one snapshot.
       streamed[name] = field;
       sendEvent(res, {
         type: "STATE_SNAPSHOT",
-        snapshot: { draftedFields: { ...streamed } },
+        snapshot: { draftedFields: buildSnapshot() },
       });
     }
 
-    // Pause between fields.
     await delay(FIELD_GAP_DELAY_MS);
   }
 
+  // Remember what we sent for the next diff.
+  lastSentFields = buildSnapshot();
   return false;
 }
 
@@ -171,21 +208,21 @@ const CHAT_REPLIES = [
     "1. What is the main message you want to convey?\n" +
     "2. Are there any key facts or quotes to include?\n" +
     "3. What length are you aiming for?\n\n" +
-    'Once we\'ve discussed the details, say "generate a draft" ' +
+    'Once we\'ve discussed the details, say "draft" ' +
     "to produce the structured content.",
 
   "I understand. I'll keep that in mind when drafting the content. " +
     "Is there anything else you'd like to specify before I start? " +
     "You can mention preferred keywords, a specific angle, or any " +
     "constraints.\n\n" +
-    'Say "generate a draft" whenever you\'re ready.',
+    'Say "draft" whenever you\'re ready.',
 
   "Good point! I've noted that. Let me know if you have any " +
     "other preferences for the content. Things like:\n\n" +
     "- Formal or informal tone\n" +
     "- Specific sections to emphasise\n" +
     "- Any references or sources to cite\n\n" +
-    'Just say "generate a draft" when you want me to produce ' +
+    'Just say "draft" when you want me to produce ' +
     "the structured fields.",
 ];
 
@@ -279,6 +316,95 @@ const DEMO_FIELDS: Record<string, Record<string, unknown>> = {
   },
 };
 
+// -- Lorem ipsum generator ---------------------------------------------------
+
+/**
+ * Word pool for generating random lorem ipsum text. Contains the
+ * classic vocabulary shuffled into fresh combinations each time.
+ */
+const LOREM_WORDS = [
+  "lorem", "ipsum", "dolor", "sit", "amet", "consectetur",
+  "adipiscing", "elit", "sed", "do", "eiusmod", "tempor",
+  "incididunt", "ut", "labore", "et", "dolore", "magna", "aliqua",
+  "enim", "ad", "minim", "veniam", "quis", "nostrud",
+  "exercitation", "ullamco", "laboris", "nisi", "aliquip", "ex",
+  "ea", "commodo", "consequat", "duis", "aute", "irure", "in",
+  "reprehenderit", "voluptate", "velit", "esse", "cillum", "fugiat",
+  "nulla", "pariatur", "excepteur", "sint", "occaecat", "cupidatat",
+  "non", "proident", "sunt", "culpa", "qui", "officia", "deserunt",
+  "mollit", "anim", "id", "est", "laborum", "curabitur", "pretium",
+  "tincidunt", "lacus", "gravida", "orci", "odio", "nullam",
+  "varius", "turpis", "pharetra", "eros", "bibendum", "luctus",
+  "felis", "sollicitudin", "mauris", "vivamus", "fermentum",
+  "semper", "porta", "nunc", "diam", "blandit", "volutpat",
+  "maecenas", "accumsan", "integer", "posuere", "morbi", "leo",
+  "urna", "eleifend", "vitae", "metus", "pellentesque", "habitant",
+  "tristique", "senectus", "netus", "fames", "egestas", "proin",
+];
+
+/** Picks a random word from the lorem pool. */
+function randomWord(): string {
+  return LOREM_WORDS[Math.floor(Math.random() * LOREM_WORDS.length)]!;
+}
+
+/**
+ * Generates a lorem ipsum sentence of the given word count.
+ * Capitalizes the first word and ends with a period.
+ */
+function loremSentence(wordCount: number): string {
+  const words: string[] = [];
+  for (let i = 0; i < wordCount; i++) {
+    words.push(randomWord());
+  }
+  words[0] = words[0]!.charAt(0).toUpperCase() + words[0]!.slice(1);
+  return words.join(" ") + ".";
+}
+
+/**
+ * Generates a lorem ipsum paragraph with 3-5 sentences.
+ */
+function loremParagraph(): string {
+  const count = 3 + Math.floor(Math.random() * 3);
+  const sentences: string[] = [];
+  for (let i = 0; i < count; i++) {
+    sentences.push(loremSentence(8 + Math.floor(Math.random() * 8)));
+  }
+  return sentences.join(" ");
+}
+
+/**
+ * Generates a rewrite value for a field based on its type.
+ * Produces fresh random text every time it is called.
+ */
+function generateRewriteValue(
+  field: Record<string, unknown>,
+): Record<string, unknown> {
+  const type = field.type as string;
+
+  if (type === "textarea" || type === "html") {
+    // Two paragraphs for long text fields.
+    return { ...field, value: loremParagraph() + "\n\n" + loremParagraph() };
+  }
+  if (type === "textfield") {
+    // Short title-like text: 4-7 words, no period.
+    const count = 4 + Math.floor(Math.random() * 4);
+    const words: string[] = [];
+    for (let i = 0; i < count; i++) {
+      const w = randomWord();
+      words.push(w.charAt(0).toUpperCase() + w.slice(1));
+    }
+    return { ...field, value: words.join(" ") };
+  }
+  if (type === "date") {
+    // Random date in the next 30 days.
+    const d = new Date();
+    d.setDate(d.getDate() + Math.floor(Math.random() * 30) + 1);
+    return { ...field, value: d.toISOString().slice(0, 10) };
+  }
+  // Fallback: return unchanged.
+  return field;
+}
+
 draftingRouter.post("/chat", async (req, res) => {
   const body = (await readJsonBody(req)) as {
     message?: string;
@@ -323,15 +449,107 @@ draftingRouter.post("/chat", async (req, res) => {
 
   // Determine which flow to trigger based on the message.
   const lowerMessage = message.toLowerCase();
-  const shouldDraft = lowerMessage.includes("generate a draft");
+  const shouldDraft = lowerMessage.includes("draft");
   const shouldSave = lowerMessage.includes("save");
+
+  // Parse "rewrite <field_name>" trigger.
+  const rewriteMatch = lowerMessage.match(/rewrite (\S+)/);
+  const rewriteFieldName = rewriteMatch?.[1] ?? null;
 
   // Parse field names from "[fields:title,body,oe_teaser]" tag.
   const fieldsMatch = message.match(/\[fields:([^\]]+)\]/);
   const shouldRegenerate = fieldsMatch !== null;
   const regenFieldNames = fieldsMatch ? fieldsMatch[1]!.split(",") : [];
 
-  if (shouldRegenerate) {
+  if (rewriteFieldName) {
+    // --- Rewrite flow: replace a single field with fresh text ---
+
+    const existingField = lastSentFields[rewriteFieldName];
+
+    if (!existingField) {
+      // Unknown field or no draft yet: send a conversational reply.
+      const errId = randomUUID();
+      const hint = Object.keys(lastSentFields).length > 0
+        ? "Available fields: " + Object.keys(lastSentFields).join(", ")
+        : 'Generate a draft first by saying "draft".';
+      await streamText(
+        res,
+        errId,
+        `I can't rewrite "${rewriteFieldName}". ${hint}`,
+        isCancelled,
+      );
+    } else {
+      const fieldLabel = (existingField.label as string) ?? rewriteFieldName;
+
+      const rewriteIntroId = randomUUID();
+      await streamText(
+        res,
+        rewriteIntroId,
+        `Rewriting ${fieldLabel} with a fresh take.`,
+        isCancelled,
+      );
+      if (cancelled) {
+        res.end();
+        return;
+      }
+
+      // Tool call: draft_content.
+      const rewriteToolId = randomUUID();
+      sendEvent(res, {
+        type: "TOOL_CALL_START",
+        toolCallId: rewriteToolId,
+        toolCallName: "draft_content",
+      });
+      sendEvent(res, {
+        type: "TOOL_CALL_ARGS",
+        toolCallId: rewriteToolId,
+        delta: JSON.stringify({ fields: [rewriteFieldName] }),
+      });
+      sendEvent(res, { type: "TOOL_CALL_END", toolCallId: rewriteToolId });
+
+      await delay(800);
+      if (cancelled) {
+        res.end();
+        return;
+      }
+
+      sendEvent(res, {
+        type: "TOOL_CALL_RESULT",
+        messageId: randomUUID(),
+        toolCallId: rewriteToolId,
+        content: `Field ${rewriteFieldName} rewritten.`,
+      });
+
+      // Generate fresh lorem ipsum for the field.
+      const rewriteValue = generateRewriteValue(existingField);
+
+      // Build updated fields preserving the original key order
+      // so the rewritten field stays in its original position.
+      const updatedFields: Record<string, Record<string, unknown>> = {};
+      for (const key of Object.keys(lastSentFields)) {
+        updatedFields[key] =
+          key === rewriteFieldName ? rewriteValue : lastSentFields[key]!;
+      }
+
+      const rewriteCancelled = await streamFieldSnapshots(
+        res,
+        updatedFields,
+        isCancelled,
+      );
+      if (rewriteCancelled) {
+        res.end();
+        return;
+      }
+
+      const confirmId = randomUUID();
+      await streamText(
+        res,
+        confirmId,
+        `Done! I've rewritten ${fieldLabel}.`,
+        isCancelled,
+      );
+    }
+  } else if (shouldRegenerate) {
     // --- Regenerate flow: re-draft specific fields ---
 
     const regenLabels = regenFieldNames
@@ -374,14 +592,17 @@ draftingRouter.post("/chat", async (req, res) => {
       content: `${regenFieldNames.length} fields regenerated.`,
     });
 
-    // Build updated fields with new values.
-    const updatedFields = { ...DEMO_FIELDS };
-    for (const name of regenFieldNames) {
-      if (updatedFields[name]) {
-        updatedFields[name] = {
-          ...updatedFields[name]!,
-          value: `[Regenerated] ${updatedFields[name]!.value}`,
-        };
+    // Build updated fields preserving key order from the last
+    // snapshot. Regenerated fields get fresh lorem ipsum text.
+    const updatedFields: Record<string, Record<string, unknown>> = {};
+    const baseline = Object.keys(lastSentFields).length > 0
+      ? lastSentFields
+      : DEMO_FIELDS;
+    for (const key of Object.keys(baseline)) {
+      if (regenFieldNames.includes(key) && baseline[key]) {
+        updatedFields[key] = generateRewriteValue(baseline[key]!);
+      } else {
+        updatedFields[key] = baseline[key]!;
       }
     }
 
@@ -554,5 +775,7 @@ draftingRouter.post("/save", async (req, res) => {
 });
 
 draftingRouter.post("/reset", async (_req, res) => {
+  // Clear tracked snapshot so the next draft streams from scratch.
+  lastSentFields = {};
   res.json({ threadId: randomUUID() });
 });
