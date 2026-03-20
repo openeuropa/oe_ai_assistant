@@ -49,6 +49,16 @@ class DraftingPlugin extends AiAssistantPluginBase {
    */
   private const HISTORY_LENGTH = 10;
 
+  /**
+   * Last snapshot fields sent to the client.
+   *
+   * Used to diff against new fields so only changed fields are
+   * streamed progressively on subsequent tool calls.
+   *
+   * @var array
+   */
+  private array $lastSentFields = [];
+
   public function __construct(
     array $configuration,
     $plugin_id,
@@ -597,10 +607,10 @@ PROMPT;
   /**
    * Streams drafted fields progressively as STATE_SNAPSHOT events.
    *
-   * Short fields (textfield, date, select, inline_form) are sent whole.
-   * Long text fields (textarea, formatted text) are streamed word-by-word,
-   * with each word triggering a new snapshot containing all previously
-   * completed fields plus the partial value.
+   * Compares each field against the last sent snapshot. Unchanged
+   * fields are included immediately; only changed fields are streamed
+   * progressively. Field ordering is preserved so rewritten fields
+   * stay in their original position.
    *
    * @param array $fields
    *   Drafted fields keyed by machine name.
@@ -608,13 +618,43 @@ PROMPT;
    *   Schema field definitions keyed by machine name.
    */
   private function streamFieldSnapshots(array $fields, array $fieldIndex): void {
+    // Separate unchanged and changed fields, preserving key order.
+    // Use NULL as a placeholder for changed fields so PHP arrays
+    // keep the original insertion order.
     $streamed = [];
+    $changedNames = [];
 
     foreach ($fields as $name => $value) {
+      $prev = $this->lastSentFields[$name] ?? NULL;
+      if ($prev !== NULL && Json::encode($prev) === Json::encode($value)) {
+        $streamed[$name] = $value;
+      }
+      else {
+        // Reserve the slot to preserve key order.
+        $streamed[$name] = NULL;
+        $changedNames[] = $name;
+      }
+    }
+
+    // Build a snapshot array with only the non-NULL entries.
+    $buildSnapshot = static function () use (&$streamed): array {
+      return array_filter($streamed, fn($v) => $v !== NULL);
+    };
+
+    // Send one baseline snapshot with all unchanged fields.
+    if (!empty($changedNames) && count($changedNames) < count($fields)) {
+      $this->sendSseEvent([
+        'type' => 'STATE_SNAPSHOT',
+        'snapshot' => ['draftedFields' => $buildSnapshot()],
+      ]);
+    }
+
+    // Stream only the changed fields progressively.
+    foreach ($changedNames as $name) {
+      $value = $fields[$name];
       $isLongText = $this->isStreamableField($name, $value, $fieldIndex);
 
       if ($isLongText && is_string($value) && mb_strlen($value) > 50) {
-        // Stream word-by-word for long text fields.
         $words = preg_split('/(\s+)/', $value, -1, PREG_SPLIT_DELIM_CAPTURE);
         $partial = '';
         foreach ($words as $word) {
@@ -622,13 +662,12 @@ PROMPT;
           $streamed[$name] = $partial;
           $this->sendSseEvent([
             'type' => 'STATE_SNAPSHOT',
-            'snapshot' => ['draftedFields' => $streamed],
+            'snapshot' => ['draftedFields' => $buildSnapshot()],
           ]);
         }
       }
       elseif ($isLongText && is_array($value) && isset($value['value'])
         && is_string($value['value']) && mb_strlen($value['value']) > 50) {
-        // Formatted text: { value: "<p>...</p>", format: "full_html" }.
         $words = preg_split('/(\s+)/', $value['value'], -1, PREG_SPLIT_DELIM_CAPTURE);
         $partial = '';
         foreach ($words as $word) {
@@ -636,19 +675,21 @@ PROMPT;
           $streamed[$name] = array_merge($value, ['value' => $partial]);
           $this->sendSseEvent([
             'type' => 'STATE_SNAPSHOT',
-            'snapshot' => ['draftedFields' => $streamed],
+            'snapshot' => ['draftedFields' => $buildSnapshot()],
           ]);
         }
       }
       else {
-        // Send the complete field in one snapshot.
         $streamed[$name] = $value;
         $this->sendSseEvent([
           'type' => 'STATE_SNAPSHOT',
-          'snapshot' => ['draftedFields' => $streamed],
+          'snapshot' => ['draftedFields' => $buildSnapshot()],
         ]);
       }
     }
+
+    // Remember what we sent for the next diff.
+    $this->lastSentFields = $buildSnapshot();
   }
 
   /**
