@@ -35,7 +35,7 @@ export interface EventSmoothingConfig {
 /** Sensible defaults for environments with buffering (e.g. PHP). */
 export const defaultSmoothingConfig: EventSmoothingConfig = {
   enabled: true,
-  intervalMs: 30,
+  intervalMs: 15,
 };
 
 /** Observer interface matching what RxJS Observable accepts. */
