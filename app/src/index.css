@@ -304,3 +304,10 @@
     display: none !important;
   }
 }
+
+/* Blink animation for the streaming cursor indicator. */
+@keyframes blink {
+  50% {
+    opacity: 0;
+  }
+}

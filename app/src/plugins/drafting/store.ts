@@ -47,6 +47,8 @@ export interface DraftingSliceState {
   rejectedFields: Set<string>;
   /** Whether the user has sent at least one message. */
   hasPrompted: boolean;
+  /** Field currently being streamed (null when idle). */
+  streamingFieldName: string | null;
 }
 
 export const draftingSliceConfig: PluginSliceConfig<DraftingSliceState> = {
@@ -55,6 +57,7 @@ export const draftingSliceConfig: PluginSliceConfig<DraftingSliceState> = {
     draftedFields: {},
     rejectedFields: new Set(),
     hasPrompted: false,
+    streamingFieldName: null,
   },
   /** Only persist thread ID -- drafted fields are transient. */
   partialize: (state) =>

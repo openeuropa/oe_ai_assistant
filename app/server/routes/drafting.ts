@@ -16,7 +16,11 @@
 
 import { randomUUID } from "node:crypto";
 import { Router } from "express";
-import { SSE_CHUNK_DELAY_MS } from "../config";
+import {
+  FIELD_GAP_DELAY_MS,
+  FIELD_WORD_DELAY_MS,
+  SSE_CHUNK_DELAY_MS,
+} from "../config";
 
 export const draftingRouter = Router();
 
@@ -79,6 +83,78 @@ async function streamText(
 
   if (cancelled()) return true;
   sendEvent(res, { type: "TEXT_MESSAGE_END", messageId });
+  return false;
+}
+
+/**
+ * Determines whether a field should be streamed word-by-word.
+ * Long text fields (textarea, html) get progressive streaming;
+ * short fields (textfield, date, inline_form) arrive in one shot.
+ */
+function isStreamableField(field: Record<string, unknown>): boolean {
+  const type = field.type as string;
+  return (
+    (type === "textarea" || type === "html") &&
+    typeof field.value === "string" &&
+    (field.value as string).length > 50
+  );
+}
+
+/**
+ * Streams fields progressively as a series of STATE_SNAPSHOT events.
+ *
+ * - Short fields: added whole, one snapshot per field.
+ * - Long text fields: streamed word-by-word, each word triggers a
+ *   new snapshot with the partial value.
+ * - Inline form fields: added whole.
+ *
+ * Each snapshot contains all previously completed fields plus the
+ * current (possibly partial) field, so the frontend always sees a
+ * complete, self-contained state.
+ */
+async function streamFieldSnapshots(
+  res: import("express").Response,
+  fields: Record<string, Record<string, unknown>>,
+  cancelled: () => boolean,
+): Promise<boolean> {
+  // Accumulated fields sent so far.
+  const streamed: Record<string, Record<string, unknown>> = {};
+
+  for (const [name, field] of Object.entries(fields)) {
+    if (cancelled()) return true;
+
+    if (isStreamableField(field)) {
+      // Stream word-by-word for long text fields.
+      const fullValue = field.value as string;
+      const words = fullValue.split(/(\s+)/);
+      let partial = "";
+
+      for (const word of words) {
+        if (cancelled()) return true;
+        partial += word;
+        streamed[name] = { ...field, value: partial };
+        sendEvent(res, {
+          type: "STATE_SNAPSHOT",
+          snapshot: { draftedFields: { ...streamed } },
+        });
+        // Only delay on actual words, not whitespace.
+        if (word.trim()) {
+          await delay(FIELD_WORD_DELAY_MS);
+        }
+      }
+    } else {
+      // Send the complete field in one snapshot.
+      streamed[name] = field;
+      sendEvent(res, {
+        type: "STATE_SNAPSHOT",
+        snapshot: { draftedFields: { ...streamed } },
+      });
+    }
+
+    // Pause between fields.
+    await delay(FIELD_GAP_DELAY_MS);
+  }
+
   return false;
 }
 
@@ -309,11 +385,14 @@ draftingRouter.post("/chat", async (req, res) => {
       }
     }
 
-    // Push updated state.
-    sendEvent(res, {
-      type: "STATE_SNAPSHOT",
-      snapshot: { draftedFields: updatedFields },
-    });
+    // Stream the updated fields progressively. Only the
+    // regenerated fields are new; the rest carry over unchanged.
+    const regenCancelled = await streamFieldSnapshots(
+      res,
+      updatedFields,
+      isCancelled,
+    );
+    if (regenCancelled) return res.end();
 
     const regenConfirmId = randomUUID();
     await streamText(
@@ -458,11 +537,13 @@ draftingRouter.post("/chat", async (req, res) => {
       content: "6 fields drafted successfully.",
     });
 
-    // Step 4: push drafted fields via STATE_SNAPSHOT.
-    sendEvent(res, {
-      type: "STATE_SNAPSHOT",
-      snapshot: { draftedFields: DEMO_FIELDS },
-    });
+    // Step 4: stream drafted fields progressively, field by field.
+    const draftCancelled = await streamFieldSnapshots(
+      res,
+      DEMO_FIELDS,
+      isCancelled,
+    );
+    if (draftCancelled) return res.end();
 
     // Step 5: confirmation message.
     const confirmId = randomUUID();

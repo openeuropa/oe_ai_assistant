@@ -38,14 +38,30 @@ function HtmlFieldValue({ html }: { html: string }) {
 }
 
 /** Renders a field value based on its type. */
-function FieldValue({ field }: { field: DraftedField }) {
+function FieldValue({
+  field,
+  isStreaming,
+}: {
+  field: DraftedField;
+  isStreaming: boolean;
+}) {
   if (field.inlineEntities && field.inlineEntities.length > 0) {
     return <InlineEntities entities={field.inlineEntities} />;
   }
   if (field.type === "html" && field.value) {
-    return <HtmlFieldValue html={field.value} />;
+    return (
+      <div className="flex items-end">
+        <HtmlFieldValue html={field.value} />
+        {isStreaming && <StreamingCursor />}
+      </div>
+    );
   }
-  return <p className="text-sm text-gray-700">{field.value}</p>;
+  return (
+    <p className="text-sm text-gray-700">
+      {field.value}
+      {isStreaming && <StreamingCursor />}
+    </p>
+  );
 }
 
 /** Renders a list of inline entity cards (e.g. contacts). */
@@ -154,9 +170,20 @@ function SaveConfirmDialog({
   );
 }
 
+/** Blinking cursor shown at the end of a field being streamed. */
+function StreamingCursor() {
+  return (
+    <span
+      className="ml-0.5 inline-block h-4 w-0.5 bg-blue-500"
+      style={{ animation: "blink 0.8s step-end infinite" }}
+    />
+  );
+}
+
 /** The content drafting table with reject/accept controls. */
 export function ContentTable({ onRegenerate, onSave }: ContentTableProps) {
-  const { draftedFields, rejectedFields } = useDraftingSlice();
+  const { draftedFields, rejectedFields, streamingFieldName } =
+    useDraftingSlice();
   const fieldEntries = Object.entries(draftedFields);
   const [showConfirm, setShowConfirm] = useState(false);
 
@@ -233,7 +260,10 @@ export function ContentTable({ onRegenerate, onSave }: ContentTableProps) {
 
               {/* Field value */}
               <div className={`pl-8 ${isRejected ? "opacity-50" : ""}`}>
-                <FieldValue field={field} />
+                <FieldValue
+                  field={field}
+                  isStreaming={streamingFieldName === name}
+                />
               </div>
             </div>
           );

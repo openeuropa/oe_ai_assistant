@@ -269,9 +269,23 @@ export function useDraftingRuntime() {
   // triggers the subscribe callback again.
   const lastSnapshotRef = useRef<string | null>(null);
 
+  // Track per-field serialized values to detect which field changed.
+  const lastFieldValuesRef = useRef<Record<string, string>>({});
+
   useEffect(() => {
     const unsubscribe = runtime.thread.subscribe(() => {
       const threadState = runtime.thread.getState();
+
+      // Detect run completion to clear the streaming indicator.
+      const status = (threadState as Record<string, unknown>).status as
+        | string
+        | undefined;
+      if (status !== "running" && status !== "streaming") {
+        if (getDraftingState().streamingFieldName !== null) {
+          setDraftingState({ streamingFieldName: null });
+        }
+      }
+
       const snapshot = (threadState as Record<string, unknown>).state as
         | Record<string, unknown>
         | undefined;
@@ -296,7 +310,24 @@ export function useDraftingRuntime() {
       // Transform raw LLM values into DraftedField objects using the
       // content type schema for label, type, and inline entity resolution.
       const fields = transformFields(raw, fieldIndexRef.current);
-      setDraftingState({ draftedFields: fields });
+
+      // Detect which field changed by comparing per-field serialized
+      // values against the previous snapshot.
+      let changedField: string | null = null;
+      const currentFieldValues: Record<string, string> = {};
+      for (const [name, field] of Object.entries(fields)) {
+        const fieldSerialized = JSON.stringify(field);
+        currentFieldValues[name] = fieldSerialized;
+        if (fieldSerialized !== lastFieldValuesRef.current[name]) {
+          changedField = name;
+        }
+      }
+      lastFieldValuesRef.current = currentFieldValues;
+
+      setDraftingState({
+        draftedFields: fields,
+        streamingFieldName: changedField,
+      });
     });
     return unsubscribe;
   }, [runtime]);
