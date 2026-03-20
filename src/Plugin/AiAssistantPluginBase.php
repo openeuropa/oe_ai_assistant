@@ -105,12 +105,12 @@ abstract class AiAssistantPluginBase extends PluginBase implements AiAssistantPl
   }
 
   /**
-   * Creates an AG-UI state manager with delta buffering.
+   * Creates an AG-UI state manager for SSE streaming.
    *
    * Uses the DrupalSseTransporter which handles PascalCase-to-
    * SCREAMING_SNAKE_CASE type conversion and proxy padding automatically.
-   * Delta buffering batches text message content deltas to reduce the
-   * number of SSE events during LLM token streaming.
+   * Each token is sent immediately without delta buffering so the
+   * frontend receives a smooth, progressive stream.
    *
    * @return \Swis\AgUiServer\AgUiState
    *   The configured AG-UI state manager.
@@ -120,10 +120,6 @@ abstract class AiAssistantPluginBase extends PluginBase implements AiAssistantPl
     $this->transporter->initialize();
 
     $this->agUiState = new AgUiState($this->transporter);
-    $this->agUiState->withDeltaBuffering(
-      deltaBufferThreshold: 100,
-      deltaFlushInterval: 0.15,
-    );
 
     return $this->agUiState;
   }
