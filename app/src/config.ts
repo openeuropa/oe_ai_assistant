@@ -10,6 +10,9 @@
  * Call getConfig() anywhere to read the current config.
  */
 
+import type { EventSmoothingConfig } from "@/lib/event-smoothing";
+import { defaultSmoothingConfig } from "@/lib/event-smoothing";
+
 /** Shape of the runtime configuration the app needs to operate. */
 export interface AppConfig {
   /** Base URL for all API requests (e.g. "/api" or "https://cms.example.com/api"). */
@@ -22,6 +25,13 @@ export interface AppConfig {
   enabledPlugins: string[];
   /** Per-plugin init configuration from the host page. */
   pluginConfig: Record<string, Record<string, unknown>>;
+  /**
+   * SSE event smoothing configuration. When events arrive in bursts
+   * (due to proxy buffering), the smoothing layer queues them and
+   * releases one at a time at a controlled pace. Set enabled=false
+   * for backends that stream natively (e.g. Node/Express dev server).
+   */
+  eventSmoothing: EventSmoothingConfig;
 }
 
 /** Sensible defaults for standalone development (no host page). */
@@ -31,6 +41,7 @@ const defaults: AppConfig = {
   userId: null,
   enabledPlugins: [],
   pluginConfig: {},
+  eventSmoothing: defaultSmoothingConfig,
 };
 
 /** Module-level singleton holding the active config. */
