@@ -49,6 +49,8 @@ export interface DraftingSliceState {
   hasPrompted: boolean;
   /** Field currently being streamed (null when idle). */
   streamingFieldName: string | null;
+  /** Fields recently updated by the agent (for highlight effect). */
+  updatedFields: Set<string>;
 }
 
 export const draftingSliceConfig: PluginSliceConfig<DraftingSliceState> = {
@@ -58,6 +60,7 @@ export const draftingSliceConfig: PluginSliceConfig<DraftingSliceState> = {
     rejectedFields: new Set(),
     hasPrompted: false,
     streamingFieldName: null,
+    updatedFields: new Set(),
   },
   /** Only persist thread ID -- drafted fields are transient. */
   partialize: (state) =>

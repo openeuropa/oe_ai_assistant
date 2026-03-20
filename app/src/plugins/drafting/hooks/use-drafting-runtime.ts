@@ -220,7 +220,9 @@ export function useDraftingRuntime() {
     // for backends that stream without proxy buffering.
     if (getConfig().eventSmoothing.enabled) {
       // biome-ignore lint/suspicious/noExplicitAny: rxjs version mismatch requires cast
-      httpAgent.use(createSmoothingMiddleware(getConfig().eventSmoothing) as any);
+      httpAgent.use(
+        createSmoothingMiddleware(getConfig().eventSmoothing) as any,
+      );
     }
 
     // Wrap runAgent to inject forwardedProps with the content type
@@ -275,17 +277,41 @@ export function useDraftingRuntime() {
   // Track per-field serialized values to detect which field changed.
   const lastFieldValuesRef = useRef<Record<string, string>>({});
 
+  // Accumulate all fields that changed during a single run so we
+  // can highlight them when the run finishes.
+  const changedFieldsRef = useRef<Set<string>>(new Set());
+
   useEffect(() => {
     const unsubscribe = runtime.thread.subscribe(() => {
       const threadState = runtime.thread.getState();
 
-      // Detect run completion to clear the streaming indicator.
+      // Detect run completion to clear the streaming indicator and
+      // mark all fields that changed during the run as updated so
+      // the UI can highlight them briefly.
       const status = (threadState as Record<string, unknown>).status as
         | string
         | undefined;
       if (status !== "running" && status !== "streaming") {
-        if (getDraftingState().streamingFieldName !== null) {
-          setDraftingState({ streamingFieldName: null });
+        const state = getDraftingState();
+        if (state.streamingFieldName !== null) {
+          setDraftingState({
+            streamingFieldName: null,
+            updatedFields: new Set(changedFieldsRef.current),
+          });
+          // Clear the highlight after a short delay so the editor
+          // sees which fields were updated, then the highlight fades.
+          const fieldsToClear = new Set(changedFieldsRef.current);
+          changedFieldsRef.current.clear();
+          setTimeout(() => {
+            // Only clear if the set hasn't been replaced by a new run.
+            const current = getDraftingState().updatedFields;
+            if (
+              current.size === fieldsToClear.size &&
+              [...fieldsToClear].every((f) => current.has(f))
+            ) {
+              setDraftingState({ updatedFields: new Set() });
+            }
+          }, 2000);
         }
       }
 
@@ -321,7 +347,8 @@ export function useDraftingRuntime() {
       const fields = { ...existing, ...incomingFields };
 
       // Detect which field changed by comparing per-field serialized
-      // values against the previous snapshot.
+      // values against the previous snapshot. Also accumulate all
+      // changed fields for the highlight effect when the run ends.
       let changedField: string | null = null;
       const currentFieldValues: Record<string, string> = {};
       for (const [name, field] of Object.entries(fields)) {
@@ -329,6 +356,7 @@ export function useDraftingRuntime() {
         currentFieldValues[name] = fieldSerialized;
         if (fieldSerialized !== lastFieldValuesRef.current[name]) {
           changedField = name;
+          changedFieldsRef.current.add(name);
         }
       }
       lastFieldValuesRef.current = currentFieldValues;

@@ -182,7 +182,7 @@ function StreamingCursor() {
 
 /** The content drafting table with reject/accept controls. */
 export function ContentTable({ onRegenerate, onSave }: ContentTableProps) {
-  const { draftedFields, rejectedFields, streamingFieldName } =
+  const { draftedFields, rejectedFields, streamingFieldName, updatedFields } =
     useDraftingSlice();
   const fieldEntries = Object.entries(draftedFields);
   const [showConfirm, setShowConfirm] = useState(false);
@@ -225,11 +225,16 @@ export function ContentTable({ onRegenerate, onSave }: ContentTableProps) {
       <div className="min-h-0 flex-1 overflow-y-auto">
         {fieldEntries.map(([name, field]) => {
           const isRejected = rejectedFields.has(name);
+          const isUpdated = updatedFields.has(name);
           return (
             <div
               key={name}
-              className={`border-b border-gray-100 px-4 py-3 ${
-                isRejected ? "bg-red-50" : "hover:bg-gray-50/50"
+              className={`border-b border-gray-100 px-4 py-3 transition-colors duration-700 ${
+                isRejected
+                  ? "bg-red-50"
+                  : isUpdated
+                    ? "bg-blue-50"
+                    : "hover:bg-gray-50/50"
               }`}
             >
               {/* Field header: toggle + label */}
