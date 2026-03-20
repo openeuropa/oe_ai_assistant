@@ -176,9 +176,10 @@ class DraftingPlugin extends AiAssistantPluginBase {
     // Build a flat field index for progressive snapshot streaming.
     $fieldIndex = $this->buildFieldIndex($entityTypeId, $bundle);
 
-    // Parse [fields:name1,name2] tag from the user message to know
-    // which fields to stream progressively on regeneration. When
-    // absent, all fields are streamed (first draft).
+    // Parse [fields:name1,name2] tag from the user message as a hint
+    // for which fields to stream progressively. This is set by the
+    // frontend regenerate button. The LLM also declares changed_fields
+    // in its tool call, which overrides this hint if present.
     if (preg_match('/\[fields:([^\]]+)\]/', $message, $matches)) {
       $this->fieldsToStream = explode(',', $matches[1]);
     }
@@ -254,9 +255,14 @@ When the editor asks you to draft or generate content:
 - Use the draft_content tool to return structured field values matching the
   content type schema provided below.
 - Always return the COMPLETE set of fields in every tool call, not just the
-  ones you changed. The frontend replaces the entire draft on each call.
-- When the editor asks to regenerate specific fields, return the full draft
-  with those fields updated and all other fields unchanged.
+  ones you changed.
+- In the changed_fields parameter, list ONLY the field machine names you
+  actually created or modified. On a first draft, list all fields. When
+  the editor asks to regenerate or update specific fields, list only those.
+  This controls which fields are progressively streamed to the editor.
+- When the editor asks to regenerate specific fields, figure out which
+  field machine names they refer to, update those, and keep all other
+  fields unchanged.
 - Do NOT produce values for entity reference fields (media, taxonomies, etc.).
   These are handled separately by the editor.
 - For formatted text fields, produce clean HTML appropriate for the field.
@@ -331,14 +337,29 @@ PROMPT;
     $draftTool->setDescription(
       'Produce a complete set of field values for the content type. '
       . 'Field names and value shapes must match the content type schema '
-      . 'provided in the system prompt. Always return ALL fields.'
+      . 'provided in the system prompt. Always return ALL fields, and '
+      . 'list which ones you actually created or modified in changed_fields.'
     );
+
     $fieldsParam = new ToolsPropertyInput();
     $fieldsParam->setName('fields');
     $fieldsParam->setType('object');
     $fieldsParam->setDescription('Complete field values keyed by field machine name.');
     $fieldsParam->setRequired(TRUE);
-    $draftTool->setProperties([$fieldsParam]);
+
+    // The LLM declares which fields it actually changed so the frontend
+    // can progressively stream only those and send the rest in one shot.
+    $changedParam = new ToolsPropertyInput();
+    $changedParam->setName('changed_fields');
+    $changedParam->setType('array');
+    $changedParam->setDescription(
+      'List of field machine names that were created or modified. '
+      . 'On first draft this is all fields. On regeneration this is '
+      . 'only the fields the editor asked to change.'
+    );
+    $changedParam->setRequired(TRUE);
+
+    $draftTool->setProperties([$fieldsParam, $changedParam]);
 
     return new ToolsInput([$draftTool]);
   }
@@ -718,9 +739,19 @@ PROMPT;
    * Tool handler: draft_content.
    *
    * Returns the drafted fields as-is (validation can be added later).
+   * Also extracts the changed_fields parameter from the LLM and sets
+   * fieldsToStream so only modified fields are streamed progressively.
    */
   private function toolDraftContent(array $args): array {
     $fields = $args['fields'] ?? $args;
+
+    // The LLM declares which fields it changed via changed_fields.
+    // Use this to control progressive streaming instead of relying
+    // on the [fields:] tag in the user message.
+    if (!empty($args['changed_fields']) && is_array($args['changed_fields'])) {
+      $this->fieldsToStream = $args['changed_fields'];
+    }
+
     return [
       'success' => TRUE,
       'fields' => $fields,
