@@ -7,6 +7,7 @@
  * inline entities render as expandable cards with sub-fields.
  */
 
+import DOMPurify from "dompurify";
 import {
   Check,
   ChevronDown,
@@ -15,7 +16,7 @@ import {
   Save,
   X,
 } from "lucide-react";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import type { DraftedField, DraftedInlineEntity } from "../store";
 import { toggleFieldRejected, useDraftingSlice } from "../store";
 
@@ -25,10 +26,24 @@ interface ContentTableProps {
   onSave: () => void;
 }
 
-/** Renders a flat field value as plain text. */
+/** Renders sanitized HTML content for formatted text fields. */
+function HtmlFieldValue({ html }: { html: string }) {
+  const clean = useMemo(() => DOMPurify.sanitize(html), [html]);
+  return (
+    <div
+      className="prose prose-sm max-w-none text-gray-700"
+      dangerouslySetInnerHTML={{ __html: clean }}
+    />
+  );
+}
+
+/** Renders a field value based on its type. */
 function FieldValue({ field }: { field: DraftedField }) {
   if (field.inlineEntities && field.inlineEntities.length > 0) {
     return <InlineEntities entities={field.inlineEntities} />;
+  }
+  if (field.type === "html" && field.value) {
+    return <HtmlFieldValue html={field.value} />;
   }
   return <p className="text-sm text-gray-700">{field.value}</p>;
 }
