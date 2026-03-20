@@ -53,14 +53,25 @@ class DraftingPlugin extends AiAssistantPluginBase {
   /**
    * Field names that should be streamed progressively.
    *
-   * When empty, all fields are streamed (first draft). When set,
-   * only listed fields are streamed word-by-word; the rest are
-   * sent in one snapshot. Parsed from the user message's
-   * [fields:name1,name2] tag.
+   * When empty, all fields are streamed on first draft, or sent in
+   * one snapshot on regeneration. When set, only listed fields are
+   * streamed word-by-word; the rest are sent in one snapshot. Parsed
+   * from the user message's [fields:name1,name2] tag.
    *
    * @var string[]
    */
   private array $fieldsToStream = [];
+
+  /**
+   * Whether this is the first draft in the conversation.
+   *
+   * On the first draft (no prior conversation history), all long text
+   * fields are streamed word-by-word for a progressive reveal effect.
+   * On regeneration, only explicitly requested fields (via the
+   * [fields:] tag) are streamed; everything else is sent in one
+   * snapshot to avoid re-streaming unchanged content like the body.
+   */
+  private bool $isFirstDraft = TRUE;
 
   public function __construct(
     array $configuration,
@@ -367,6 +378,11 @@ PROMPT;
         // Load conversation history.
         $history = $this->loadHistory($sseThreadId);
 
+        // Detect whether this is the first draft or a regeneration.
+        // If there are prior messages in history, we have already
+        // generated a draft, so this is a regeneration.
+        $this->isFirstDraft = empty($history);
+
         // Add the new user message to history.
         $history[] = ['role' => 'user', 'content' => $userMessage];
 
@@ -597,10 +613,11 @@ PROMPT;
   /**
    * Streams drafted fields progressively as STATE_SNAPSHOT events.
    *
-   * When fieldsToStream is empty (first draft), all fields are
-   * streamed progressively. When set (regeneration), only the
-   * listed fields are streamed word-by-word; all others are sent
-   * in a single initial snapshot. Field ordering is preserved.
+   * On first draft, all long text fields are streamed word-by-word for
+   * a progressive reveal effect. On regeneration, only fields listed
+   * in fieldsToStream (via the [fields:] tag) are streamed word-by-word;
+   * everything else is sent in a single snapshot. This avoids re-streaming
+   * unchanged content like the body when only the title was requested.
    *
    * State snapshots are sent directly through the transporter since
    * AgUiState does not expose a method for this event type.
@@ -611,9 +628,9 @@ PROMPT;
    *   Schema field definitions keyed by machine name.
    */
   private function streamFieldSnapshots(array $fields, array $fieldIndex): void {
-    // On regeneration, only send the requested fields. The frontend
-    // merges partial snapshots with its existing state, so omitted
-    // fields stay untouched. On first draft, send all fields.
+    // On regeneration with specific fields requested, only send those.
+    // The frontend merges partial snapshots with its existing state,
+    // so omitted fields stay untouched.
     $targetFields = $fields;
     if (!empty($this->fieldsToStream)) {
       $targetFields = array_intersect_key(
@@ -622,12 +639,30 @@ PROMPT;
       );
     }
 
+    // Determine which fields should be streamed word-by-word:
+    // - First draft: all long text fields (progressive reveal).
+    // - Regeneration with [fields:] tag: only the requested fields.
+    // - Regeneration without [fields:] tag: none (send all at once).
+    $progressiveFields = [];
+    if ($this->isFirstDraft) {
+      // Stream all long text fields on first draft.
+      $progressiveFields = NULL;
+    }
+    elseif (!empty($this->fieldsToStream)) {
+      // Stream only explicitly requested fields on regeneration.
+      $progressiveFields = array_flip($this->fieldsToStream);
+    }
+
     $streamed = [];
 
     foreach ($targetFields as $name => $value) {
-      $isLongText = $this->isStreamableField($name, $value, $fieldIndex);
+      // Only word-by-word stream fields that qualify: must be a long
+      // text field AND must be in the progressive set (or all fields
+      // are progressive on first draft when $progressiveFields is NULL).
+      $shouldStream = $this->isStreamableField($name, $value, $fieldIndex)
+        && ($progressiveFields === NULL || isset($progressiveFields[$name]));
 
-      if ($isLongText && is_string($value) && mb_strlen($value) > 50) {
+      if ($shouldStream && is_string($value) && mb_strlen($value) > 50) {
         $words = preg_split('/(\s+)/', $value, -1, PREG_SPLIT_DELIM_CAPTURE);
         $partial = '';
         foreach ($words as $word) {
@@ -636,7 +671,7 @@ PROMPT;
           $this->sendStateSnapshot(['draftedFields' => $streamed]);
         }
       }
-      elseif ($isLongText && is_array($value) && isset($value['value'])
+      elseif ($shouldStream && is_array($value) && isset($value['value'])
         && is_string($value['value']) && mb_strlen($value['value']) > 50) {
         $words = preg_split('/(\s+)/', $value['value'], -1, PREG_SPLIT_DELIM_CAPTURE);
         $partial = '';
@@ -672,6 +707,7 @@ PROMPT;
   private function isStreamableField(string $name, mixed $value, array $fieldIndex): bool {
     $widget = $fieldIndex[$name]['widget'] ?? '';
     return in_array($widget, [
+      'text',
       'textarea',
       'textarea_formatted',
       'textarea_formatted_summary',
