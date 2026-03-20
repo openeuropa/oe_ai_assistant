@@ -212,13 +212,16 @@ export function useDraftingRuntime() {
       url: `${getConfig().apiBaseUrl}/plugins/drafting/chat`,
     });
 
-    // Apply event smoothing middleware. When SSE events arrive in
-    // bursts (common with PHP + reverse proxy stacks), this queues
-    // them and releases one at a time at a controlled pace.
-    // The cast works around duplicate-rxjs type conflicts between
-    // @ag-ui/client's bundled rxjs and the top-level rxjs.
-    // biome-ignore lint/suspicious/noExplicitAny: rxjs version mismatch requires cast
-    httpAgent.use(createSmoothingMiddleware(getConfig().eventSmoothing) as any);
+    // Apply event smoothing middleware when enabled. Browsers
+    // batch SSE events that arrive faster than the renderer's
+    // scheduling interval (~4-16ms). The middleware queues them
+    // and releases one at a time for smooth progressive rendering.
+    // Disable via init({ eventSmoothing: { enabled: false } })
+    // for backends that stream without proxy buffering.
+    if (getConfig().eventSmoothing.enabled) {
+      // biome-ignore lint/suspicious/noExplicitAny: rxjs version mismatch requires cast
+      httpAgent.use(createSmoothingMiddleware(getConfig().eventSmoothing) as any);
+    }
 
     // Wrap runAgent to inject forwardedProps with the content type
     // context on every chat request. The backend reads these to load

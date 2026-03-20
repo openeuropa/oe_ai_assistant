@@ -1,35 +1,69 @@
 /**
  * Development API server.
  *
- * Lightweight Express server with in-memory storage that implements
- * the dev plugin API endpoints. Runs alongside the Vite dev server
- * and receives proxied requests from /api/*.
+ * Express server with real Mistral LLM integration for the
+ * drafting plugin and mock endpoints for echo and notes.
+ * Runs alongside the Vite dev server and receives proxied
+ * requests from /api/*.
  *
- * URL structure follows the spec:
- *   /api/plugins/echo/...   Echo plugin endpoints
- *   /api/plugins/notes/...  Notes plugin endpoints
+ * Uses dynamic imports so dotenv loads before any module that
+ * reads process.env (ES module imports are hoisted, so static
+ * imports would evaluate before dotenv.config() runs).
  */
 
-import express from "express";
-import { draftingRouter } from "./routes/drafting";
-import { echoRouter } from "./routes/echo";
-import { notesRouter } from "./routes/notes";
+import { config } from "dotenv";
+import { join } from "node:path";
 
-const app = express();
+// Load .env before any other modules read env vars.
+// The server runs as a standalone Node process via tsx,
+// not through Vite, so Vite's .env loading does not apply.
+config({ path: join(import.meta.dirname, "..", ".env") });
+
 const PORT = 5150;
 
-// Mount SSE routes BEFORE express.json(). These handlers parse
-// the body manually because Express 5's async body parser
-// interferes with SSE streaming on the response.
-app.use("/api/plugins/echo", echoRouter);
-app.use("/api/plugins/drafting", draftingRouter);
+async function start(): Promise<void> {
+  // Dynamic imports so modules that read process.env at the
+  // top level (config.ts) see the dotenv-injected values.
+  const { default: express } = await import("express");
+  const { createMistralClient } = await import("./lib/mistral");
+  const { echoRouter } = await import("./routes/echo");
+  const { notesRouter } = await import("./routes/notes");
+  const { createDraftingRouter } = await import(
+    "./routes/drafting"
+  );
+  const { ConversationStore } = await import(
+    "./services/conversation-store"
+  );
+  const { DraftingService } = await import(
+    "./services/drafting-service"
+  );
 
-// Parse JSON request bodies for all other routes.
-app.use(express.json());
+  const app = express();
 
-// Mount remaining route modules.
-app.use("/api/plugins/notes", notesRouter);
+  // Create shared service instances.
+  const mistral = createMistralClient();
+  const store = new ConversationStore();
+  const draftingService = new DraftingService(mistral, store);
 
-app.listen(PORT, () => {
-  console.log(`Dev API server running at http://localhost:${PORT}`);
+  // Parse JSON bodies for all routes.
+  app.use(express.json());
+
+  // Mount route modules.
+  app.use("/api/plugins/echo", echoRouter);
+  app.use("/api/plugins/notes", notesRouter);
+  app.use(
+    "/api/plugins/drafting",
+    createDraftingRouter(draftingService),
+  );
+
+  app.listen(PORT, () => {
+    console.log(
+      `Dev API server running at http://localhost:${PORT}`,
+    );
+  });
+}
+
+start().catch((err) => {
+  console.error("Failed to start server:", err);
+  process.exit(1);
 });
