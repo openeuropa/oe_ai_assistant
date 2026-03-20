@@ -9,15 +9,7 @@
  */
 
 import { makeAssistantToolUI } from "@assistant-ui/react";
-import {
-  Check,
-  FileSearch,
-  Loader2,
-  PenLine,
-  RefreshCw,
-  Save,
-  X,
-} from "lucide-react";
+import { Check, Loader2, PenLine, RefreshCw, Save, X } from "lucide-react";
 
 /** Shared wrapper for tool call cards in the chat. */
 function ToolCallCard({
@@ -26,7 +18,7 @@ function ToolCallCard({
   detail,
   status,
 }: {
-  icon: typeof FileSearch;
+  icon: typeof PenLine;
   label: string;
   detail?: string;
   status: { type: string };
@@ -79,22 +71,6 @@ export const DraftContentToolUI = makeAssistantToolUI<
       />
     );
   },
-});
-
-/** UI for the get_content_schema tool call. */
-export const GetContentSchemaToolUI = makeAssistantToolUI<
-  { bundle: string },
-  unknown
->({
-  toolName: "get_content_schema",
-  render: ({ args, status }) => (
-    <ToolCallCard
-      icon={FileSearch}
-      label="Fetching content schema"
-      detail={args?.bundle ? `Content type: ${args.bundle}` : undefined}
-      status={status}
-    />
-  ),
 });
 
 /** UI for the set_field_content tool call. */

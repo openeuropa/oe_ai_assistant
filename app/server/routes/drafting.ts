@@ -449,52 +449,12 @@ draftingRouter.post("/chat", async (req, res) => {
   } else if (shouldDraft) {
     // --- Full agent flow: tool calls + text + state snapshot ---
 
-    // Step 0: introductory text before tool calls.
-    const introId = randomUUID();
-    const introText =
-      "Let me fetch the content schema first so I know which " +
-      "fields to generate.";
-    const introCancelled = await streamText(
-      res,
-      introId,
-      introText,
-      isCancelled,
-    );
-    if (introCancelled) return res.end();
-    await delay(300);
-
-    // Step 1: tool call to fetch the content schema.
-    const schemaToolId = randomUUID();
-    sendEvent(res, {
-      type: "TOOL_CALL_START",
-      toolCallId: schemaToolId,
-      toolCallName: "get_content_schema",
-    });
-    sendEvent(res, {
-      type: "TOOL_CALL_ARGS",
-      toolCallId: schemaToolId,
-      delta: JSON.stringify({ bundle: "oe_news" }),
-    });
-    sendEvent(res, { type: "TOOL_CALL_END", toolCallId: schemaToolId });
-
-    // Simulate schema fetch time.
-    await delay(1200);
-    if (cancelled) return res.end();
-
-    // Tool result: schema loaded successfully.
-    sendEvent(res, {
-      type: "TOOL_CALL_RESULT",
-      messageId: randomUUID(),
-      toolCallId: schemaToolId,
-      content: "Schema loaded: 14 fields found for oe_news.",
-    });
-
-    // Step 2: stream the assistant's reasoning.
+    // Step 1: stream the assistant's reasoning.
     const thinkingId = randomUUID();
     const thinkingText =
-      "I've loaded the content schema for News. It has fields for " +
-      "title, introduction, body text, teaser, alternative title, " +
-      "and publication date. Let me generate content for each one.";
+      "I'll generate content for the News fields: title, " +
+      "introduction, body text, teaser, alternative title, " +
+      "and publication date.";
 
     const didCancel = await streamText(
       res,
