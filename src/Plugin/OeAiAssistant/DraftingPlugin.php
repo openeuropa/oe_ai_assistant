@@ -149,6 +149,9 @@ class DraftingPlugin extends AiAssistantPluginBase {
     $providerId = $defaults['provider_id'];
     $modelId = $defaults['model_id'];
 
+    // Build a flat field index for progressive snapshot streaming.
+    $fieldIndex = $this->buildFieldIndex($entityTypeId, $bundle);
+
     return $this->createStreamResponse(
       $systemPrompt,
       $message,
@@ -157,6 +160,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
       $providerId,
       $modelId,
       $bundle,
+      $fieldIndex,
     );
   }
 
@@ -250,6 +254,40 @@ PROMPT;
   }
 
   /**
+   * Builds a flat field index from the content type schema.
+   *
+   * Flattens the grouped schema structure into a lookup keyed by field
+   * machine name. Used by streamFieldSnapshots() to determine which
+   * fields should be streamed word-by-word vs sent whole.
+   *
+   * @param string $entityTypeId
+   *   The entity type ID.
+   * @param string $bundle
+   *   The content type bundle.
+   *
+   * @return array
+   *   Field definitions keyed by machine name.
+   */
+  private function buildFieldIndex(string $entityTypeId, string $bundle): array {
+    if (empty($bundle)) {
+      return [];
+    }
+    try {
+      $schema = $this->formSchemaExtractor->extract($entityTypeId, $bundle);
+      $index = [];
+      foreach ($schema['groups'] ?? [] as $group) {
+        foreach ($group['fields'] ?? [] as $field) {
+          $index[$field['name']] = $field;
+        }
+      }
+      return $index;
+    }
+    catch (\Exception $e) {
+      return [];
+    }
+  }
+
+  /**
    * Builds tool definitions for the LLM.
    *
    * @return \Drupal\ai\OperationType\Chat\Tools\ToolsInput
@@ -288,9 +326,10 @@ PROMPT;
     string $providerId,
     string $modelId,
     string $bundle,
+    array $fieldIndex,
   ): Response {
     return $this->createSseResponse(function () use (
-      $systemPrompt, $userMessage, $threadId, $tools, $providerId, $modelId, $bundle,
+      $systemPrompt, $userMessage, $threadId, $tools, $providerId, $modelId, $bundle, $fieldIndex,
     ) {
       set_time_limit(0);
 
@@ -320,6 +359,7 @@ PROMPT;
           $modelId,
           $messageId,
           $bundle,
+          $fieldIndex,
         );
 
         // Save updated history.
@@ -364,6 +404,7 @@ PROMPT;
     string $modelId,
     string $messageId,
     string $bundle,
+    array $fieldIndex,
   ): string {
     $messages = $conversationHistory;
     $fullMessage = '';
@@ -488,7 +529,7 @@ PROMPT;
         }
 
         // Execute tool calls and add results to conversation history.
-        $toolResults = $this->executeToolCalls($toolCallsForExec, $bundle);
+        $toolResults = $this->executeToolCalls($toolCallsForExec, $bundle, $fieldIndex);
         $messages[] = [
           'role' => 'assistant',
           'content' => $streamedText ?: '',
@@ -516,11 +557,13 @@ PROMPT;
    *   Tool calls keyed by tool call ID. Values are ToolsFunctionOutput.
    * @param string $bundle
    *   The content type bundle.
+   * @param array $fieldIndex
+   *   Flat field index from the content type schema, keyed by machine name.
    *
    * @return array
    *   Array of tool result messages.
    */
-  private function executeToolCalls(array $toolCalls, string $bundle): array {
+  private function executeToolCalls(array $toolCalls, string $bundle, array $fieldIndex): array {
     $results = [];
 
     foreach ($toolCalls as $toolCallId => $toolCall) {
@@ -538,12 +581,10 @@ PROMPT;
         'tool_call_id' => $toolCallId,
       ];
 
-      // Emit tool call events for the frontend: snapshot first,
-      // then end, so the UI receives state before closing the tool.
-      $this->sendSseEvent([
-        'type' => 'STATE_SNAPSHOT',
-        'snapshot' => ['draftedFields' => $result['fields'] ?? []],
-      ]);
+      // Stream fields progressively so the frontend can render
+      // each field as it arrives and show long text word-by-word.
+      $this->streamFieldSnapshots($result['fields'] ?? [], $fieldIndex);
+
       $this->sendSseEvent([
         'type' => 'TOOL_CALL_END',
         'toolCallId' => $toolCallId,
@@ -551,6 +592,88 @@ PROMPT;
     }
 
     return $results;
+  }
+
+  /**
+   * Streams drafted fields progressively as STATE_SNAPSHOT events.
+   *
+   * Short fields (textfield, date, select, inline_form) are sent whole.
+   * Long text fields (textarea, formatted text) are streamed word-by-word,
+   * with each word triggering a new snapshot containing all previously
+   * completed fields plus the partial value.
+   *
+   * @param array $fields
+   *   Drafted fields keyed by machine name.
+   * @param array $fieldIndex
+   *   Schema field definitions keyed by machine name.
+   */
+  private function streamFieldSnapshots(array $fields, array $fieldIndex): void {
+    $streamed = [];
+
+    foreach ($fields as $name => $value) {
+      $isLongText = $this->isStreamableField($name, $value, $fieldIndex);
+
+      if ($isLongText && is_string($value) && mb_strlen($value) > 50) {
+        // Stream word-by-word for long text fields.
+        $words = preg_split('/(\s+)/', $value, -1, PREG_SPLIT_DELIM_CAPTURE);
+        $partial = '';
+        foreach ($words as $word) {
+          $partial .= $word;
+          $streamed[$name] = $partial;
+          $this->sendSseEvent([
+            'type' => 'STATE_SNAPSHOT',
+            'snapshot' => ['draftedFields' => $streamed],
+          ]);
+        }
+      }
+      elseif ($isLongText && is_array($value) && isset($value['value'])
+        && is_string($value['value']) && mb_strlen($value['value']) > 50) {
+        // Formatted text: { value: "<p>...</p>", format: "full_html" }.
+        $words = preg_split('/(\s+)/', $value['value'], -1, PREG_SPLIT_DELIM_CAPTURE);
+        $partial = '';
+        foreach ($words as $word) {
+          $partial .= $word;
+          $streamed[$name] = array_merge($value, ['value' => $partial]);
+          $this->sendSseEvent([
+            'type' => 'STATE_SNAPSHOT',
+            'snapshot' => ['draftedFields' => $streamed],
+          ]);
+        }
+      }
+      else {
+        // Send the complete field in one snapshot.
+        $streamed[$name] = $value;
+        $this->sendSseEvent([
+          'type' => 'STATE_SNAPSHOT',
+          'snapshot' => ['draftedFields' => $streamed],
+        ]);
+      }
+    }
+  }
+
+  /**
+   * Determines whether a field should be streamed word-by-word.
+   *
+   * Uses the widget type from the content type schema: textarea and
+   * formatted text widgets are streamable; all others arrive whole.
+   *
+   * @param string $name
+   *   The field machine name.
+   * @param mixed $value
+   *   The field value from the LLM.
+   * @param array $fieldIndex
+   *   Schema field definitions keyed by machine name.
+   *
+   * @return bool
+   *   TRUE if the field should be streamed progressively.
+   */
+  private function isStreamableField(string $name, mixed $value, array $fieldIndex): bool {
+    $widget = $fieldIndex[$name]['widget'] ?? '';
+    return in_array($widget, [
+      'textarea',
+      'textarea_formatted',
+      'textarea_formatted_summary',
+    ], TRUE);
   }
 
   /**
