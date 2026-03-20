@@ -16,6 +16,10 @@ export default defineConfig({
     "process.env.NODE_ENV": JSON.stringify("production"),
   },
   build: {
+    // Output directly to the module root's dist/ directory so the
+    // Drupal library (oe_ai_assistant.libraries.yml) can reference
+    // the built assets without a copy step.
+    outDir: resolve(__dirname, "../dist"),
     // Library mode: expose init() as the public API. The Drupal host
     // page loads the built JS and calls AiEditorialAssistant.init().
     lib: {

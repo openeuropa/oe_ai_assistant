@@ -15,7 +15,7 @@ import { resolve } from "node:path";
 import yaml from "js-yaml";
 
 const apiDir = resolve(import.meta.dirname, "../api");
-const outFile = resolve(import.meta.dirname, "../dist/schemas.json");
+const outFile = resolve(import.meta.dirname, "../../dist/schemas.json");
 
 // Find all schemas.yaml files under api/.
 const files = globSync("**/schemas.yaml", { cwd: apiDir });
