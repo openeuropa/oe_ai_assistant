@@ -309,7 +309,13 @@ export function useDraftingRuntime() {
 
       // Transform raw LLM values into DraftedField objects using the
       // content type schema for label, type, and inline entity resolution.
-      const fields = transformFields(raw, fieldIndexRef.current);
+      const incomingFields = transformFields(raw, fieldIndexRef.current);
+
+      // Merge incoming fields with existing ones so that partial
+      // snapshots (e.g. single-field regeneration) don't wipe out
+      // fields the backend intentionally omitted.
+      const existing = getDraftingState().draftedFields;
+      const fields = { ...existing, ...incomingFields };
 
       // Detect which field changed by comparing per-field serialized
       // values against the previous snapshot.

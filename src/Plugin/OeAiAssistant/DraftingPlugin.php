@@ -50,14 +50,16 @@ class DraftingPlugin extends AiAssistantPluginBase {
   private const HISTORY_LENGTH = 10;
 
   /**
-   * Last snapshot fields sent to the client.
+   * Field names that should be streamed progressively.
    *
-   * Used to diff against new fields so only changed fields are
-   * streamed progressively on subsequent tool calls.
+   * When empty, all fields are streamed (first draft). When set,
+   * only listed fields are streamed word-by-word; the rest are
+   * sent in one snapshot. Parsed from the user message's
+   * [fields:name1,name2] tag.
    *
-   * @var array
+   * @var string[]
    */
-  private array $lastSentFields = [];
+  private array $fieldsToStream = [];
 
   public function __construct(
     array $configuration,
@@ -161,6 +163,13 @@ class DraftingPlugin extends AiAssistantPluginBase {
 
     // Build a flat field index for progressive snapshot streaming.
     $fieldIndex = $this->buildFieldIndex($entityTypeId, $bundle);
+
+    // Parse [fields:name1,name2] tag from the user message to know
+    // which fields to stream progressively on regeneration. When
+    // absent, all fields are streamed (first draft).
+    if (preg_match('/\[fields:([^\]]+)\]/', $message, $matches)) {
+      $this->fieldsToStream = explode(',', $matches[1]);
+    }
 
     return $this->createStreamResponse(
       $systemPrompt,
@@ -607,10 +616,10 @@ PROMPT;
   /**
    * Streams drafted fields progressively as STATE_SNAPSHOT events.
    *
-   * Compares each field against the last sent snapshot. Unchanged
-   * fields are included immediately; only changed fields are streamed
-   * progressively. Field ordering is preserved so rewritten fields
-   * stay in their original position.
+   * When fieldsToStream is empty (first draft), all fields are
+   * streamed progressively. When set (regeneration), only the
+   * listed fields are streamed word-by-word; all others are sent
+   * in a single initial snapshot. Field ordering is preserved.
    *
    * @param array $fields
    *   Drafted fields keyed by machine name.
@@ -618,40 +627,20 @@ PROMPT;
    *   Schema field definitions keyed by machine name.
    */
   private function streamFieldSnapshots(array $fields, array $fieldIndex): void {
-    // Separate unchanged and changed fields, preserving key order.
-    // Use NULL as a placeholder for changed fields so PHP arrays
-    // keep the original insertion order.
+    // On regeneration, only send the requested fields. The frontend
+    // merges partial snapshots with its existing state, so omitted
+    // fields stay untouched. On first draft, send all fields.
+    $targetFields = $fields;
+    if (!empty($this->fieldsToStream)) {
+      $targetFields = array_intersect_key(
+        $fields,
+        array_flip($this->fieldsToStream),
+      );
+    }
+
     $streamed = [];
-    $changedNames = [];
 
-    foreach ($fields as $name => $value) {
-      $prev = $this->lastSentFields[$name] ?? NULL;
-      if ($prev !== NULL && Json::encode($prev) === Json::encode($value)) {
-        $streamed[$name] = $value;
-      }
-      else {
-        // Reserve the slot to preserve key order.
-        $streamed[$name] = NULL;
-        $changedNames[] = $name;
-      }
-    }
-
-    // Build a snapshot array with only the non-NULL entries.
-    $buildSnapshot = static function () use (&$streamed): array {
-      return array_filter($streamed, fn($v) => $v !== NULL);
-    };
-
-    // Send one baseline snapshot with all unchanged fields.
-    if (!empty($changedNames) && count($changedNames) < count($fields)) {
-      $this->sendSseEvent([
-        'type' => 'STATE_SNAPSHOT',
-        'snapshot' => ['draftedFields' => $buildSnapshot()],
-      ]);
-    }
-
-    // Stream only the changed fields progressively.
-    foreach ($changedNames as $name) {
-      $value = $fields[$name];
+    foreach ($targetFields as $name => $value) {
       $isLongText = $this->isStreamableField($name, $value, $fieldIndex);
 
       if ($isLongText && is_string($value) && mb_strlen($value) > 50) {
@@ -662,7 +651,7 @@ PROMPT;
           $streamed[$name] = $partial;
           $this->sendSseEvent([
             'type' => 'STATE_SNAPSHOT',
-            'snapshot' => ['draftedFields' => $buildSnapshot()],
+            'snapshot' => ['draftedFields' => $streamed],
           ]);
         }
       }
@@ -675,7 +664,7 @@ PROMPT;
           $streamed[$name] = array_merge($value, ['value' => $partial]);
           $this->sendSseEvent([
             'type' => 'STATE_SNAPSHOT',
-            'snapshot' => ['draftedFields' => $buildSnapshot()],
+            'snapshot' => ['draftedFields' => $streamed],
           ]);
         }
       }
@@ -683,13 +672,10 @@ PROMPT;
         $streamed[$name] = $value;
         $this->sendSseEvent([
           'type' => 'STATE_SNAPSHOT',
-          'snapshot' => ['draftedFields' => $buildSnapshot()],
+          'snapshot' => ['draftedFields' => $streamed],
         ]);
       }
     }
-
-    // Remember what we sent for the next diff.
-    $this->lastSentFields = $buildSnapshot();
   }
 
   /**
