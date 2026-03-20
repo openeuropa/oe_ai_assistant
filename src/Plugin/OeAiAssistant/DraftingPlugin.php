@@ -485,10 +485,6 @@ PROMPT;
             'toolCallId' => $toolCallId,
             'toolCallName' => $name,
           ]);
-          $this->sendSseEvent([
-            'type' => 'TOOL_CALL_END',
-            'toolCallId' => $toolCallId,
-          ]);
         }
 
         // Execute tool calls and add results to conversation history.
@@ -542,10 +538,15 @@ PROMPT;
         'tool_call_id' => $toolCallId,
       ];
 
-      // Emit tool call events for the frontend.
+      // Emit tool call events for the frontend: snapshot first,
+      // then end, so the UI receives state before closing the tool.
       $this->sendSseEvent([
         'type' => 'STATE_SNAPSHOT',
         'snapshot' => ['draftedFields' => $result['fields'] ?? []],
+      ]);
+      $this->sendSseEvent([
+        'type' => 'TOOL_CALL_END',
+        'toolCallId' => $toolCallId,
       ]);
     }
 

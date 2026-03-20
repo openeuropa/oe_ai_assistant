@@ -1,0 +1,36 @@
+# Disable Traefik response buffering for SSE streaming endpoints.
+# Traefik buffers responses by default, causing SSE events to arrive
+# in a single batch instead of progressively. Setting flushInterval
+# to -1 makes Traefik flush each write immediately.
+#
+# This file uses separate router names and a dedicated service to
+# avoid conflicting with the #ddev-generated oe-ai-assistant.yaml
+# that DDEV regenerates on every restart.
+
+http:
+  routers:
+    oe-ai-sse-http:
+      entrypoints:
+        - http-80
+      rule: "HostRegexp(`^oe-ai-assistant\\.ddev\\.site$`) && PathRegexp(`^/api/ai/plugins/.+/(chat|stream)$`)"
+      service: "oe-ai-assistant-web-80-streaming"
+      ruleSyntax: v3
+      priority: 100
+      tls: false
+
+    oe-ai-sse-https:
+      entrypoints:
+        - http-443
+      rule: "HostRegexp(`^oe-ai-assistant\\.ddev\\.site$`) && PathRegexp(`^/api/ai/plugins/.+/(chat|stream)$`)"
+      service: "oe-ai-assistant-web-80-streaming"
+      ruleSyntax: v3
+      priority: 100
+      tls: true
+
+  services:
+    oe-ai-assistant-web-80-streaming:
+      loadbalancer:
+        servers:
+          - url: http://ddev-oe-ai-assistant-web:80
+        responseForwarding:
+          flushInterval: "-1ms"
