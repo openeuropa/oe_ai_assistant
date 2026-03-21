@@ -24,3 +24,7 @@ services:
       - '@entity_type.manager'
       - '@entity_field.manager'
       - '@content_moderation.moderation_information'
+
+  Drupal\oe_ai_assistant\Service\ConversationHistory:
+    arguments:
+      - '@tempstore.private'
