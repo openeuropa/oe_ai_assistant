@@ -26,6 +26,12 @@ class DraftingPromptBuilder {
   /**
    * Per-request schema cache keyed by "entityTypeId:bundle".
    *
+   * FormSchemaExtractor::extract() triggers form building which can be
+   * expensive (it may bootstrap form elements, invoke hooks, etc.). This
+   * cache ensures that both buildSystemPrompt() and buildFieldIndex() share
+   * a single extraction call per entity type + bundle combination within
+   * the same HTTP request.
+   *
    * @var array<string, array>
    */
   private array $cachedSchema = [];
@@ -34,9 +40,13 @@ class DraftingPromptBuilder {
    * Constructs a DraftingPromptBuilder.
    *
    * @param \Drupal\oe_ai_assistant\Service\FormSchemaExtractor $formSchemaExtractor
-   *   The form schema extractor service.
+   *   The form schema extractor service. Derives a machine-readable schema
+   *   from the Drupal entity form, describing each field's name, type,
+   *   widget, and constraints.
    * @param \Psr\Log\LoggerInterface $logger
-   *   The logger channel.
+   *   The logger channel for oe_ai_assistant. Used to emit warnings when
+   *   schema extraction fails so the plugin can still function (with a
+   *   schema-free prompt) rather than throwing an unhandled exception.
    */
   public function __construct(
     private readonly FormSchemaExtractor $formSchemaExtractor,
@@ -46,15 +56,27 @@ class DraftingPromptBuilder {
   /**
    * Builds the system prompt with the content type schema appended.
    *
+   * The base prompt instructs the model on its editorial assistant role,
+   * the draft_content tool usage rules, and field constraints (e.g. no
+   * entity reference fields). If a bundle is supplied and schema extraction
+   * succeeds, the full JSON schema is appended so the model knows which
+   * field machine names and value shapes to produce.
+   *
+   * Schema extraction failures are logged as warnings and do not abort
+   * the prompt build; the model receives a schema-free prompt instead.
+   *
    * @param string $entityTypeId
-   *   The entity type ID.
+   *   The entity type ID (e.g. "node", "media").
    * @param string $bundle
-   *   The content type bundle.
+   *   The content type bundle machine name (e.g. "article", "page"). If
+   *   empty, the schema section is omitted from the prompt.
    *
    * @return string
-   *   The system prompt text.
+   *   The complete system prompt text, in ASCII-safe plain text.
    */
   public function buildSystemPrompt(string $entityTypeId, string $bundle): string {
+    // The heredoc uses single-quoted delimiter (PROMPT) so that no PHP
+    // variable interpolation occurs inside the prompt text.
     $prompt = <<<'PROMPT'
 You are a content drafting assistant for a CMS editorial workflow.
 
@@ -84,12 +106,16 @@ does not involve generating content, respond normally in plain text. Do NOT
 call the draft_content tool for conversational responses.
 PROMPT;
 
+    // Append the JSON schema only when a bundle is known. Without a bundle
+    // we cannot extract the schema, so the model operates without it.
     if (!empty($bundle)) {
       try {
         $schema = $this->getSchema($entityTypeId, $bundle);
         $prompt .= "\n\nContent type schema:\n" . Json::encode($schema);
       }
       catch (\Exception $e) {
+        // Log and continue without the schema rather than surfacing a 500.
+        // The model can still draft content; it just won't have field hints.
         $this->logger->warning('Could not load schema for @type/@bundle: @error', [
           '@type' => $entityTypeId,
           '@bundle' => $bundle,
@@ -104,11 +130,21 @@ PROMPT;
   /**
    * Builds tool definitions for the LLM.
    *
+   * Defines the draft_content function tool that the model may call to
+   * return structured field values. The tool has two required parameters:
+   *   - "fields": an object of field machine name => value pairs.
+   *   - "changed_fields": an array of field names the model actually changed.
+   *
+   * The drupal/ai ToolsInput / ToolsFunctionInput / ToolsPropertyInput
+   * classes serialise into the provider-specific format (OpenAI functions,
+   * Mistral tools, etc.) before the request is sent.
+   *
    * @return \Drupal\ai\OperationType\Chat\Tools\ToolsInput
    *   The tools input containing the draft_content function tool.
    */
   public function buildTools(): ToolsInput {
-    // draft_content tool: produces structured field values.
+    // Define the draft_content function tool. This is the only tool the
+    // drafting assistant can call; all other model responses are plain text.
     $draftTool = new ToolsFunctionInput();
     $draftTool->setName('draft_content');
     $draftTool->setDescription(
@@ -118,14 +154,20 @@ PROMPT;
       . 'list which ones you actually created or modified in changed_fields.'
     );
 
+    // "fields" parameter: an object whose keys are field machine names and
+    // whose values are the drafted content. The exact shape of each value
+    // (string, array, nested object) depends on the field type described
+    // in the schema appended to the system prompt.
     $fieldsParam = new ToolsPropertyInput();
     $fieldsParam->setName('fields');
     $fieldsParam->setType('object');
     $fieldsParam->setDescription('Complete field values keyed by field machine name.');
     $fieldsParam->setRequired(TRUE);
 
-    // The LLM declares which fields it actually changed so the frontend
-    // can progressively stream only those and send the rest in one shot.
+    // "changed_fields" parameter: the model declares which fields it actually
+    // created or modified. The plugin uses this list to decide which fields
+    // to stream progressively vs send in one snapshot. On first draft this
+    // should be all fields; on regeneration only the touched ones.
     $changedParam = new ToolsPropertyInput();
     $changedParam->setName('changed_fields');
     $changedParam->setType('array');
@@ -144,17 +186,22 @@ PROMPT;
   /**
    * Builds a flat field index from the content type schema.
    *
-   * Flattens the grouped schema structure into a lookup keyed by field
-   * machine name. Used by the plugin's streaming logic to determine which
-   * fields should be streamed word-by-word vs sent whole.
+   * Flattens the grouped schema structure (schema.groups[].fields[]) into a
+   * single lookup array keyed by field machine name. This index is consumed
+   * by FieldSnapshotStreamer::isStreamableField() to check whether a given
+   * field should be streamed word-by-word or sent as a single snapshot.
+   *
+   * Returns an empty array silently on failure because the streamer falls
+   * back to whole-field mode for any field not found in the index.
    *
    * @param string $entityTypeId
-   *   The entity type ID.
+   *   The entity type ID (e.g. "node").
    * @param string $bundle
-   *   The content type bundle.
+   *   The content type bundle machine name (e.g. "article").
    *
-   * @return array
-   *   Field definitions keyed by machine name, or empty array on failure.
+   * @return array<string, array>
+   *   Field definitions keyed by machine name (e.g. ["body" => [...]]),
+   *   or an empty array if the bundle is empty or extraction fails.
    */
   public function buildFieldIndex(string $entityTypeId, string $bundle): array {
     if (empty($bundle)) {
@@ -163,6 +210,9 @@ PROMPT;
     try {
       $schema = $this->getSchema($entityTypeId, $bundle);
       $index = [];
+
+      // The schema groups fields by form group (e.g. "Basic", "Advanced").
+      // Flatten all groups into a single machine-name => field-definition map.
       foreach ($schema['groups'] ?? [] as $group) {
         foreach ($group['fields'] ?? [] as $field) {
           $index[$field['name']] = $field;
@@ -171,6 +221,8 @@ PROMPT;
       return $index;
     }
     catch (\Exception $e) {
+      // Return empty index; FieldSnapshotStreamer will send unknown fields
+      // as whole-field snapshots rather than streaming them.
       return [];
     }
   }
@@ -182,18 +234,24 @@ PROMPT;
    * be expensive. Cache the result keyed by entity type and bundle so both
    * buildSystemPrompt() and buildFieldIndex() share a single extraction.
    *
+   * The cache lives only for the lifetime of this object (i.e. one HTTP
+   * request). It is not a persistent cache and does not need invalidation.
+   *
    * @param string $entityTypeId
    *   The entity type ID.
    * @param string $bundle
-   *   The content type bundle.
+   *   The content type bundle machine name.
    *
-   * @return array
-   *   The extracted schema array.
+   * @return array<string, mixed>
+   *   The extracted schema array as returned by FormSchemaExtractor::extract().
    *
    * @throws \Exception
-   *   Re-throws any exception from the extractor.
+   *   Re-throws any exception from the extractor so callers can decide
+   *   whether to log and continue or propagate the failure.
    */
   private function getSchema(string $entityTypeId, string $bundle): array {
+    // The cache key combines entity type and bundle to avoid collisions
+    // if the builder is ever called with multiple bundle types.
     $cacheKey = "$entityTypeId:$bundle";
     if (!isset($this->cachedSchema[$cacheKey])) {
       $this->cachedSchema[$cacheKey] = $this->formSchemaExtractor->extract(
