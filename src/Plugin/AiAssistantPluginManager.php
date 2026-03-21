@@ -7,13 +7,13 @@ namespace Drupal\oe_ai_assistant\Plugin;
 use Drupal\Core\Cache\CacheBackendInterface;
 use Drupal\Core\Extension\ModuleHandlerInterface;
 use Drupal\Core\Plugin\DefaultPluginManager;
-use Drupal\oe_ai_assistant\Annotation\AiAssistantPlugin;
+use Drupal\oe_ai_assistant\Annotation\AiEditorialAssistant;
 
 /**
  * Manages discovery and instantiation of AI Assistant plugins.
  *
- * Discovers plugin classes under the Plugin\OeAiAssistant namespace
- * that carry the AiAssistantPlugin attribute.
+ * Discovers plugin classes under the Plugin\AiEditorialAssistant namespace
+ * that carry the AiEditorialAssistant attribute.
  */
 class AiAssistantPluginManager extends DefaultPluginManager {
 
@@ -23,11 +23,11 @@ class AiAssistantPluginManager extends DefaultPluginManager {
     ModuleHandlerInterface $module_handler,
   ) {
     parent::__construct(
-      'Plugin/OeAiAssistant',
+      'Plugin/AiEditorialAssistant',
       $namespaces,
       $module_handler,
       AiAssistantPluginInterface::class,
-      AiAssistantPlugin::class,
+      AiEditorialAssistant::class,
     );
     $this->alterInfo('ai_assistant_plugin_info');
     $this->setCacheBackend($cache, 'ai_assistant_plugins');

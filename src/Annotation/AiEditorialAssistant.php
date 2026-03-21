@@ -13,9 +13,11 @@ use Drupal\Component\Plugin\Attribute\Plugin;
  * plugins. The plugin manager discovers them automatically.
  */
 #[\Attribute(\Attribute::TARGET_CLASS)]
-class AiAssistantPlugin extends Plugin {
+class AiEditorialAssistant extends Plugin {
 
   /**
+   * Constructs a new AiEditorialAssistant attribute.
+   *
    * @param string $id
    *   The plugin ID.
    * @param string $label

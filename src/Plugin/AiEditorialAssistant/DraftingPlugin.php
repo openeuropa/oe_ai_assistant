@@ -2,18 +2,18 @@
 
 declare(strict_types=1);
 
-namespace Drupal\oe_ai_assistant\Plugin\OeAiAssistant;
+namespace Drupal\oe_ai_assistant\Plugin\AiEditorialAssistant;
 
 use Drupal\ai\AiProviderPluginManager;
 use Drupal\Component\Serialization\Json;
 use Drupal\Component\Uuid\UuidInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Session\AccountProxyInterface;
-use Drupal\oe_ai_assistant\Annotation\AiAssistantPlugin;
+use Drupal\oe_ai_assistant\Annotation\AiEditorialAssistant;
 use Drupal\oe_ai_assistant\Exception\ActionException;
 use Drupal\oe_ai_assistant\Plugin\AiAssistantPluginBase;
-use Drupal\oe_ai_assistant\Plugin\OeAiAssistant\Drafting\DraftingPromptBuilder;
-use Drupal\oe_ai_assistant\Plugin\OeAiAssistant\Drafting\FieldSnapshotStreamer;
+use Drupal\oe_ai_assistant\Plugin\AiEditorialAssistant\Drafting\DraftingPromptBuilder;
+use Drupal\oe_ai_assistant\Plugin\AiEditorialAssistant\Drafting\FieldSnapshotStreamer;
 use Drupal\oe_ai_assistant\Service\ConversationHistory;
 use Drupal\oe_ai_assistant\Service\DraftFieldMapper;
 use Drupal\oe_ai_assistant\Service\FormSchemaExtractor;
@@ -33,7 +33,7 @@ use Symfony\Component\HttpFoundation\Response;
  * SSE events are emitted through the AG-UI state manager from the
  * base class.
  */
-#[AiAssistantPlugin(
+#[AiEditorialAssistant(
   id: 'drafting',
   label: 'Drafting',
   description: 'AI-powered content drafting with AG-UI streaming.',

@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Drupal\oe_ai_assistant\Plugin\OeAiAssistant\Drafting;
+namespace Drupal\oe_ai_assistant\Plugin\AiEditorialAssistant\Drafting;
 
 use Drupal\oe_ai_assistant\Transporter\DrupalSseTransporter;
 use Swis\AgUiServer\Events\StateSnapshotEvent;

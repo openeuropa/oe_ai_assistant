@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Drupal\oe_ai_assistant\Plugin\OeAiAssistant\Drafting;
+namespace Drupal\oe_ai_assistant\Plugin\AiEditorialAssistant\Drafting;
 
 use Drupal\ai\OperationType\Chat\Tools\ToolsFunctionInput;
 use Drupal\ai\OperationType\Chat\Tools\ToolsInput;

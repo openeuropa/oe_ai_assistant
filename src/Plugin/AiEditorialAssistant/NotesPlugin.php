@@ -2,11 +2,11 @@
 
 declare(strict_types=1);
 
-namespace Drupal\oe_ai_assistant\Plugin\OeAiAssistant;
+namespace Drupal\oe_ai_assistant\Plugin\AiEditorialAssistant;
 
 use Drupal\Core\Session\AccountProxyInterface;
 use Drupal\Core\State\StateInterface;
-use Drupal\oe_ai_assistant\Annotation\AiAssistantPlugin;
+use Drupal\oe_ai_assistant\Annotation\AiEditorialAssistant;
 use Drupal\oe_ai_assistant\Exception\ActionException;
 use Drupal\oe_ai_assistant\Plugin\AiAssistantPluginBase;
 use Symfony\Component\DependencyInjection\ContainerInterface;
@@ -18,7 +18,7 @@ use Symfony\Component\HttpFoundation\Request;
  * This is a development/testing plugin that demonstrates the RPC-style
  * plugin pattern with persistent storage.
  */
-#[AiAssistantPlugin(
+#[AiEditorialAssistant(
   id: 'notes',
   label: 'Notes',
   description: 'Simple note-taking with CRUD operations.',

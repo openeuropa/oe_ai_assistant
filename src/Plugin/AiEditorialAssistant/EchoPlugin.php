@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-namespace Drupal\oe_ai_assistant\Plugin\OeAiAssistant;
+namespace Drupal\oe_ai_assistant\Plugin\AiEditorialAssistant;
 
-use Drupal\oe_ai_assistant\Annotation\AiAssistantPlugin;
+use Drupal\oe_ai_assistant\Annotation\AiEditorialAssistant;
 use Drupal\oe_ai_assistant\Plugin\AiAssistantPluginBase;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\Request;
@@ -17,7 +17,7 @@ use Symfony\Component\HttpFoundation\Response;
  * pattern without requiring a real AI backend. Uses custom AG-UI events
  * via the swisnl/ag-ui-server package.
  */
-#[AiAssistantPlugin(
+#[AiEditorialAssistant(
   id: 'echo',
   label: 'Echo',
   description: 'Echoes the input message back as a word-by-word SSE stream.',
