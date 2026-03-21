@@ -28,3 +28,8 @@ services:
   Drupal\oe_ai_assistant\Service\ConversationHistory:
     arguments:
       - '@tempstore.private'
+
+  Drupal\oe_ai_assistant\Service\LlmStreamingLoop:
+    arguments:
+      - '@ai.provider'
+      - '@uuid'
