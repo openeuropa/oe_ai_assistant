@@ -5,54 +5,52 @@ declare(strict_types=1);
 namespace Drupal\oe_ai_assistant\Plugin\AiEditorialAssistant;
 
 use Drupal\ai\AiProviderPluginManager;
+use Drupal\ai\OperationType\Chat\Tools\ToolsInput;
 use Drupal\Component\Serialization\Json;
 use Drupal\Component\Uuid\UuidInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Session\AccountProxyInterface;
 use Drupal\oe_ai_assistant\Annotation\AiEditorialAssistant;
 use Drupal\oe_ai_assistant\Exception\ActionException;
-use Drupal\oe_ai_assistant\Plugin\AiAssistantPluginBase;
 use Drupal\oe_ai_assistant\Plugin\AiEditorialAssistant\Drafting\DraftingPromptBuilder;
 use Drupal\oe_ai_assistant\Plugin\AiEditorialAssistant\Drafting\FieldSnapshotStreamer;
+use Drupal\oe_ai_assistant\Plugin\ChatPluginBase;
 use Drupal\oe_ai_assistant\Service\ConversationHistory;
 use Drupal\oe_ai_assistant\Service\DraftFieldMapper;
 use Drupal\oe_ai_assistant\Service\FormSchemaExtractor;
-use Drupal\ai\OperationType\Chat\Tools\ToolsInput;
-use Drupal\oe_ai_assistant\Service\LlmLoopConfig;
-use Drupal\oe_ai_assistant\Service\LlmLoopResult;
 use Drupal\oe_ai_assistant\Service\LlmStreamingLoop;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\Request;
-use Symfony\Component\HttpFoundation\Response;
 
 /**
- * Drafting plugin: thin orchestrator for AI-powered content drafting.
+ * Drafting plugin: AI-powered content drafting with AG-UI streaming.
  *
- * Delegates prompt building to DraftingPromptBuilder, conversation
- * history to ConversationHistory, the agentic tool-call loop to
- * LlmStreamingLoop, and field streaming to FieldSnapshotStreamer.
- * SSE events are emitted through the AG-UI state manager from the
- * base class.
+ * Extends ChatPluginBase to inherit the full LLM chat lifecycle (message
+ * extraction, SSE streaming, conversation history, error handling) and
+ * implements the four abstract hooks to supply drafting-specific prompts,
+ * tools, and tool executors.
  *
- * The plugin follows an RPC-style action model: each action (chat, reset,
- * save) is mapped by getActionMap() and dispatched by the base controller.
- * The "chat" action is the only streaming action; the others return plain
- * JSON arrays.
+ * Drafting-specific responsibilities:
+ *   - Building the system prompt and tool definitions via
+ *     DraftingPromptBuilder.
+ *   - Executing the draft_content tool call and streaming field snapshots.
+ *   - Saving approved drafts as Drupal nodes via DraftFieldMapper.
  */
 #[AiEditorialAssistant(
   id: 'drafting',
   label: 'Drafting',
   description: 'AI-powered content drafting with AG-UI streaming.',
 )]
-class DraftingPlugin extends AiAssistantPluginBase {
+class DraftingPlugin extends ChatPluginBase {
 
   /**
    * Constructs a DraftingPlugin.
    *
-   * All dependencies are injected via the static create() factory. Services
-   * are declared as constructor-promoted properties so they are available
-   * as $this->xyz throughout the class.
+   * The five chat services (aiProvider, uuid, logger, conversationHistory,
+   * llmLoop) are forwarded to ChatPluginBase via parent::__construct().
+   * Only drafting-specific services are declared as promoted properties
+   * on this class.
    *
    * @param array $configuration
    *   Plugin configuration array from the plugin manager.
@@ -60,12 +58,6 @@ class DraftingPlugin extends AiAssistantPluginBase {
    *   The plugin ID as declared in the AiEditorialAssistant attribute.
    * @param mixed $plugin_definition
    *   The plugin definition as resolved by the plugin manager.
-   * @param \Drupal\Core\Entity\EntityTypeManagerInterface $entityTypeManager
-   *   The entity type manager, used indirectly via DraftFieldMapper.
-   * @param \Drupal\oe_ai_assistant\Service\DraftFieldMapper $fieldMapper
-   *   Maps LLM field values to Drupal field structures and creates nodes.
-   * @param \Drupal\Core\Session\AccountProxyInterface $currentUser
-   *   The currently authenticated Drupal user, used for permission checks.
    * @param \Drupal\ai\AiProviderPluginManager $aiProvider
    *   The AI provider plugin manager, used to resolve the default chat model.
    * @param \Drupal\Component\Uuid\UuidInterface $uuid
@@ -76,6 +68,12 @@ class DraftingPlugin extends AiAssistantPluginBase {
    *   Persists and retrieves per-thread conversation history.
    * @param \Drupal\oe_ai_assistant\Service\LlmStreamingLoop $llmLoop
    *   Runs the agentic tool-call loop against the configured LLM.
+   * @param \Drupal\Core\Entity\EntityTypeManagerInterface $entityTypeManager
+   *   The entity type manager, used indirectly via DraftFieldMapper.
+   * @param \Drupal\oe_ai_assistant\Service\DraftFieldMapper $fieldMapper
+   *   Maps LLM field values to Drupal field structures and creates nodes.
+   * @param \Drupal\Core\Session\AccountProxyInterface $currentUser
+   *   The currently authenticated Drupal user, used for permission checks.
    * @param \Drupal\oe_ai_assistant\Plugin\AiEditorialAssistant\Drafting\DraftingPromptBuilder $promptBuilder
    *   Builds the system prompt, tool definitions, and field index.
    */
@@ -83,17 +81,26 @@ class DraftingPlugin extends AiAssistantPluginBase {
     array $configuration,
     $plugin_id,
     $plugin_definition,
+    AiProviderPluginManager $aiProvider,
+    UuidInterface $uuid,
+    LoggerInterface $logger,
+    ConversationHistory $conversationHistory,
+    LlmStreamingLoop $llmLoop,
     protected readonly EntityTypeManagerInterface $entityTypeManager,
     protected readonly DraftFieldMapper $fieldMapper,
     protected readonly AccountProxyInterface $currentUser,
-    protected readonly AiProviderPluginManager $aiProvider,
-    protected readonly UuidInterface $uuid,
-    protected readonly LoggerInterface $logger,
-    protected readonly ConversationHistory $conversationHistory,
-    protected readonly LlmStreamingLoop $llmLoop,
     protected readonly DraftingPromptBuilder $promptBuilder,
   ) {
-    parent::__construct($configuration, $plugin_id, $plugin_definition);
+    parent::__construct(
+      $configuration,
+      $plugin_id,
+      $plugin_definition,
+      $aiProvider,
+      $uuid,
+      $logger,
+      $conversationHistory,
+      $llmLoop,
+    );
   }
 
   /**
@@ -125,14 +132,16 @@ class DraftingPlugin extends AiAssistantPluginBase {
       $configuration,
       $plugin_id,
       $plugin_definition,
-      $container->get('entity_type.manager'),
-      $container->get(DraftFieldMapper::class),
-      $container->get('current_user'),
+      // Chat services (forwarded to ChatPluginBase).
       $container->get('ai.provider'),
       $container->get('uuid'),
       $container->get('logger.factory')->get('oe_ai_assistant'),
       $container->get(ConversationHistory::class),
       $container->get(LlmStreamingLoop::class),
+      // Drafting-specific services.
+      $container->get('entity_type.manager'),
+      $container->get(DraftFieldMapper::class),
+      $container->get('current_user'),
       // DraftingPromptBuilder is not a Drupal service, so we instantiate
       // it here and pass in its own dependencies from the container.
       new DraftingPromptBuilder(
@@ -147,6 +156,9 @@ class DraftingPlugin extends AiAssistantPluginBase {
    *
    * Maps action names (as received in the URL path) to callable methods.
    * The base controller reads this map and dispatches accordingly.
+   *
+   * The "chat" action is inherited from ChatPluginBase and handles the
+   * full LLM streaming lifecycle. "reset" and "save" are handled locally.
    *
    * Note: "create" cannot be used as an action name because it collides
    * with the static create() factory inherited from the plugin interface.
@@ -183,104 +195,10 @@ class DraftingPlugin extends AiAssistantPluginBase {
   }
 
   /**
-   * Streams AI chat responses via AG-UI SSE.
-   *
-   * This is the main drafting action. It:
-   *   1. Parses the user message from the AG-UI protocol request body.
-   *   2. Extracts any [fields:name1,name2] hint for selective streaming.
-   *   3. Builds the system prompt, tool definitions, and field index.
-   *   4. Resolves the default AI provider and model.
-   *   5. Opens an SSE response and, inside the streaming callback:
-   *      a. Loads or initialises the conversation history for the thread.
-   *      b. Runs the LLM tool-call loop via LlmStreamingLoop.
-   *      c. Inside the tool executor, streams drafted fields progressively
-   *         via FieldSnapshotStreamer.
-   *      d. Saves the updated conversation history.
-   *
-   * All errors are caught, logged, and forwarded to the AG-UI error event
-   * so the frontend can display a meaningful message.
-   *
-   * @param \Symfony\Component\HttpFoundation\Request $request
-   *   The incoming HTTP request with an AG-UI chat message body.
-   *
-   * @return \Symfony\Component\HttpFoundation\Response
-   *   An SSE streaming response that emits AG-UI protocol events.
-   *
-   * @throws \Drupal\oe_ai_assistant\Exception\ActionException
-   *   If the request body contains no user message.
-   */
-  public function chat(Request $request): Response {
-    $body = $this->decodeJsonBody($request);
-
-    $message = $this->extractUserMessage($body);
-    $threadId = $body['threadId'] ?? '';
-
-    // forwardedProps carry CMS-specific context (entity type, bundle) that
-    // the frontend appends transparently; fall back to top-level keys for
-    // backwards compatibility.
-    $forwardedProps = $body['forwardedProps'] ?? [];
-    $entityTypeId = $forwardedProps['entityTypeId'] ?? $body['entityTypeId'] ?? 'node';
-    $bundle = $forwardedProps['bundle'] ?? $body['bundle'] ?? '';
-
-    if (empty($message)) {
-      throw new ActionException('invalid_request', 'Message is required.', 400);
-    }
-
-    $fieldsToStream = $this->parseFieldsHint($message);
-
-    // Build prompt, tools, and field index via the prompt builder.
-    // These are computed before opening the SSE response so that any
-    // schema extraction errors surface as HTTP 500 rather than mid-stream.
-    $systemPrompt = $this->promptBuilder->buildSystemPrompt($entityTypeId, $bundle);
-    $tools = $this->promptBuilder->buildTools();
-    $fieldIndex = $this->promptBuilder->buildFieldIndex($entityTypeId, $bundle);
-
-    // Resolve the default provider and model for "chat" operation type.
-    $defaults = $this->aiProvider->getDefaultProviderForOperationType('chat');
-    $providerId = $defaults['provider_id'];
-    $modelId = $defaults['model_id'];
-
-    // Open the SSE response. Everything inside the callback is executed
-    // after the HTTP headers have been sent, so we cannot throw exceptions
-    // that bubble up to the controller -- errors must go through $state.
-    return $this->createSseResponse(function () use (
-      $systemPrompt, $message, $threadId, $tools, $providerId, $modelId,
-      $fieldIndex, $fieldsToStream,
-    ) {
-      set_time_limit(0);
-      $state = $this->createAgUiState();
-      $runId = $this->uuid->generate();
-      $sseThreadId = !empty($threadId) ? $threadId : $this->uuid->generate();
-      $messageId = $this->uuid->generate();
-
-      $state->startRun($sseThreadId, $runId);
-
-      try {
-        $loopResult = $this->runLlmChat(
-          $systemPrompt, $message, $sseThreadId, $tools,
-          $providerId, $modelId, $messageId,
-          $fieldIndex, $fieldsToStream,
-        );
-        $this->persistHistory($sseThreadId, $loopResult);
-      }
-      catch (\Exception $e) {
-        $this->logger->error('Error in drafting chat: @error', [
-          '@error' => $e->getMessage(),
-        ]);
-        $state->errorRun($this->formatErrorForChat($e));
-      }
-
-      // Always emit RUN_FINISHED to signal the end of the SSE stream,
-      // even if an error occurred, so the frontend can stop loading.
-      $state->finishRun();
-    });
-  }
-
-  /**
    * Resets the conversation thread.
    *
-   * Deletes the stored history for the given thread ID and returns a fresh
-   * thread ID that the frontend should use for subsequent chat requests.
+   * Delegates to the resetThread() method inherited from ChatPluginBase,
+   * which handles history deletion and fresh thread ID generation.
    *
    * @param \Symfony\Component\HttpFoundation\Request $request
    *   The incoming request. Body must conform to DraftingResetRequest schema.
@@ -289,18 +207,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
    *   An array with a single "threadId" key containing the new thread ID.
    */
   public function reset(Request $request): array {
-    $body = $this->decodeJsonBody($request);
-    $threadId = $body['threadId'] ?? '';
-
-    // Only attempt deletion if a thread ID was provided; a missing or
-    // empty thread ID means there is nothing to clear.
-    if (!empty($threadId)) {
-      $this->conversationHistory->delete('oe_ai_drafting', $threadId);
-    }
-
-    // Always return a fresh thread ID so the frontend can start a new
-    // conversation without needing to generate its own UUID.
-    return ['threadId' => $this->uuid->generate()];
+    return $this->resetThread($request);
   }
 
   /**
@@ -354,45 +261,78 @@ class DraftingPlugin extends AiAssistantPluginBase {
   }
 
   /**
-   * Extracts the user message from an AG-UI protocol request body.
+   * {@inheritdoc}
    *
-   * The frontend may send a top-level "message" string (simple format)
-   * or a "messages" array in the OpenAI conversation format. We support
-   * both and extract the last user-role message in the array case.
-   *
-   * @param array $body
-   *   The decoded JSON request body.
-   *
-   * @return string
-   *   The extracted user message text, or empty string if none found.
+   * Extracts drafting-specific context from the request body. This includes
+   * the entity type, bundle, field index, and any [fields:...] hint from
+   * the user message for selective field streaming.
    */
-  private function extractUserMessage(array $body): string {
-    $message = $body['message'] ?? '';
-    if (!empty($message)) {
-      return $message;
-    }
+  protected function buildChatContext(
+    array $body,
+    string $message,
+  ): array {
+    // forwardedProps carry CMS-specific context (entity type, bundle) that
+    // the frontend appends transparently; fall back to top-level keys for
+    // backwards compatibility.
+    $forwardedProps = $body['forwardedProps'] ?? [];
+    $entityTypeId = $forwardedProps['entityTypeId']
+      ?? $body['entityTypeId'] ?? 'node';
+    $bundle = $forwardedProps['bundle']
+      ?? $body['bundle'] ?? '';
+    return [
+      'entityTypeId' => $entityTypeId,
+      'bundle' => $bundle,
+      'fieldIndex' => $this->promptBuilder
+        ->buildFieldIndex($entityTypeId, $bundle),
+      'fieldsToStream' => $this->parseFieldsHint($message),
+    ];
+  }
 
-    if (empty($body['messages'])) {
-      return '';
-    }
-
-    // Filter to user-role messages and take the last one.
-    $userMessages = array_filter(
-      $body['messages'],
-      fn($m) => ($m['role'] ?? '') === 'user',
+  /**
+   * {@inheritdoc}
+   *
+   * Delegates system prompt construction to DraftingPromptBuilder, which
+   * includes the content type schema and drafting instructions.
+   */
+  protected function buildSystemPrompt(array $context): string {
+    return $this->promptBuilder->buildSystemPrompt(
+      $context['entityTypeId'],
+      $context['bundle'],
     );
-    $lastUserMessage = end($userMessages);
+  }
 
-    // Content may be a plain string or an array of content parts
-    // (e.g. [{ "type": "text", "text": "..." }]).
-    if (is_array($lastUserMessage['content'] ?? '')) {
-      return implode('', array_map(
-        fn($p) => $p['text'] ?? '',
-        $lastUserMessage['content'],
-      ));
-    }
+  /**
+   * {@inheritdoc}
+   *
+   * Delegates tool definition construction to DraftingPromptBuilder.
+   */
+  protected function buildTools(array $context): ToolsInput {
+    return $this->promptBuilder->buildTools();
+  }
 
-    return $lastUserMessage['content'] ?? '';
+  /**
+   * {@inheritdoc}
+   *
+   * Creates a closure that executes drafting tool calls (draft_content)
+   * and streams field snapshots to the frontend. The closure captures
+   * the field index and streaming hint from the context.
+   */
+  protected function createToolExecutor(
+    array $context,
+    bool $isFirstTurn,
+  ): \Closure {
+    $fieldIndex = $context['fieldIndex'];
+    $activeFieldsToStream = $context['fieldsToStream'];
+    return function (array $toolCalls) use (
+      $fieldIndex, &$activeFieldsToStream, $isFirstTurn,
+    ): array {
+      return $this->executeToolCalls(
+        $toolCalls,
+        $fieldIndex,
+        $activeFieldsToStream,
+        $isFirstTurn,
+      );
+    };
   }
 
   /**
@@ -413,77 +353,6 @@ class DraftingPlugin extends AiAssistantPluginBase {
       return explode(',', $matches[1]);
     }
     return [];
-  }
-
-  /**
-   * Runs the LLM tool-call loop for a single chat turn.
-   *
-   * Loads conversation history, builds the tool executor, invokes the
-   * LLM streaming loop, and returns the result. This method runs inside
-   * the SSE callback where the AG-UI state is already initialised.
-   *
-   * @param string $systemPrompt
-   *   The system prompt for the LLM.
-   * @param string $message
-   *   The current user message.
-   * @param string $threadId
-   *   The thread ID for conversation history.
-   * @param array $tools
-   *   Tool definitions for the LLM.
-   * @param string $providerId
-   *   The AI provider plugin ID.
-   * @param string $modelId
-   *   The model ID within the provider.
-   * @param string $messageId
-   *   The UUID for the SSE message envelope.
-   * @param array $fieldIndex
-   *   The field index mapping field names to metadata.
-   * @param string[] $fieldsToStream
-   *   Fields hint from the frontend for progressive streaming.
-   *
-   * @return \Drupal\oe_ai_assistant\Service\LlmLoopResult
-   *   The loop result with assistant text and updated message history.
-   */
-  private function runLlmChat(
-    string $systemPrompt,
-    string $message,
-    string $threadId,
-    ToolsInput $tools,
-    string $providerId,
-    string $modelId,
-    string $messageId,
-    array $fieldIndex,
-    array $fieldsToStream,
-  ): LlmLoopResult {
-    $history = $this->conversationHistory->load('oe_ai_drafting', $threadId);
-    $isFirstDraft = empty($history);
-    $history[] = ['role' => 'user', 'content' => $message];
-
-    // $activeFieldsToStream is mutable: the tool executor may override
-    // it with the LLM's own changed_fields declaration.
-    $activeFieldsToStream = $fieldsToStream;
-
-    // Build the tool executor closure. It delegates each tool call to
-    // a named handler and streams field snapshots to the frontend.
-    $toolExecutor = function (array $toolCalls) use (
-      $fieldIndex, &$activeFieldsToStream, $isFirstDraft,
-    ): array {
-      return $this->executeToolCalls(
-        $toolCalls, $fieldIndex, $activeFieldsToStream, $isFirstDraft,
-      );
-    };
-
-    $config = new LlmLoopConfig(
-      systemPrompt: $systemPrompt,
-      conversationHistory: $history,
-      tools: $tools,
-      providerId: $providerId,
-      modelId: $modelId,
-      messageId: $messageId,
-      toolExecutor: $toolExecutor,
-    );
-
-    return $this->llmLoop->run($this->agUiState, $config);
   }
 
   /**
@@ -552,73 +421,6 @@ class DraftingPlugin extends AiAssistantPluginBase {
     }
 
     return $results;
-  }
-
-  /**
-   * Persists conversation history after a successful LLM loop.
-   *
-   * Appends the final assistant text (if any) to the message history
-   * and saves it so subsequent chat turns have full context.
-   *
-   * @param string $threadId
-   *   The thread ID for conversation history.
-   * @param \Drupal\oe_ai_assistant\Service\LlmLoopResult $loopResult
-   *   The result from the LLM streaming loop.
-   */
-  private function persistHistory(string $threadId, LlmLoopResult $loopResult): void {
-    $updatedHistory = $loopResult->messages;
-
-    if (!empty($loopResult->assistantText)) {
-      $updatedHistory[] = [
-        'role' => 'assistant',
-        'content' => $loopResult->assistantText,
-      ];
-    }
-
-    $this->conversationHistory->save('oe_ai_drafting', $threadId, $updatedHistory);
-  }
-
-  /**
-   * Formats an exception into a user-friendly chat error message.
-   *
-   * AI provider errors (e.g. from Mistral) often contain HTTP status
-   * codes or technical details that are unhelpful to editors. This
-   * method detects common provider error patterns and returns a
-   * message suitable for display in the chat UI.
-   *
-   * @param \Exception $e
-   *   The caught exception.
-   *
-   * @return string
-   *   A user-facing error message.
-   */
-  private function formatErrorForChat(\Exception $e): string {
-    $message = $e->getMessage();
-
-    // Detect HTTP status codes commonly returned by AI provider APIs.
-    // These surface as exception messages from the Guzzle HTTP client
-    // or from the provider plugin itself.
-    if (preg_match('/\b401\b|unauthorized/i', $message)) {
-      return 'The AI service rejected the API key. Please check the provider configuration.';
-    }
-    if (preg_match('/\b403\b|forbidden/i', $message)) {
-      return 'The AI service denied access. Please check the provider permissions.';
-    }
-    if (preg_match('/\b429\b|rate.?limit|too many requests/i', $message)) {
-      return 'The AI service is temporarily overloaded. Please try again in a moment.';
-    }
-    if (preg_match('/\b5\d{2}\b|server error|internal error|service unavailable/i', $message)) {
-      return 'The AI service is temporarily unavailable. Please try again later.';
-    }
-    if (preg_match('/timeout|timed? out/i', $message)) {
-      return 'The AI service did not respond in time. Please try again.';
-    }
-    if (preg_match('/connection refused|could not resolve|network/i', $message)) {
-      return 'Could not reach the AI service. Please check your network connection.';
-    }
-
-    // Fall back to the original message for unrecognised errors.
-    return $message;
   }
 
   /**
