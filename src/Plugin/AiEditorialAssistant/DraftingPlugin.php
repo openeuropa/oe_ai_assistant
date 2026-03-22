@@ -17,7 +17,9 @@ use Drupal\oe_ai_assistant\Plugin\AiEditorialAssistant\Drafting\FieldSnapshotStr
 use Drupal\oe_ai_assistant\Service\ConversationHistory;
 use Drupal\oe_ai_assistant\Service\DraftFieldMapper;
 use Drupal\oe_ai_assistant\Service\FormSchemaExtractor;
+use Drupal\ai\OperationType\Chat\Tools\ToolsInput;
 use Drupal\oe_ai_assistant\Service\LlmLoopConfig;
+use Drupal\oe_ai_assistant\Service\LlmLoopResult;
 use Drupal\oe_ai_assistant\Service\LlmStreamingLoop;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
@@ -210,26 +212,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
   public function chat(Request $request): Response {
     $body = $this->decodeJsonBody($request);
 
-    // Extract user message from AG-UI protocol format.
-    // The frontend may send a top-level "message" string (simple format)
-    // or a "messages" array in the OpenAI conversation format. We support
-    // both and extract the last user-role message in the array case.
-    $message = $body['message'] ?? '';
-    if (empty($message) && !empty($body['messages'])) {
-      // Filter to user-role messages and take the last one.
-      $userMessages = array_filter(
-        $body['messages'],
-        fn($m) => ($m['role'] ?? '') === 'user',
-      );
-      $lastUserMessage = end($userMessages);
-      // Content may be a plain string or an array of content parts
-      // (e.g. [{ "type": "text", "text": "..." }]).
-      $message = is_array($lastUserMessage['content'] ?? '')
-        ? implode('', array_map(fn($p) => $p['text'] ?? '', $lastUserMessage['content']))
-        : ($lastUserMessage['content'] ?? '');
-    }
-
-    // The thread ID correlates history across multiple chat turns.
+    $message = $this->extractUserMessage($body);
     $threadId = $body['threadId'] ?? '';
 
     // forwardedProps carry CMS-specific context (entity type, bundle) that
@@ -243,14 +226,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
       throw new ActionException('invalid_request', 'Message is required.', 400);
     }
 
-    // Parse [fields:name1,name2] tag from the user message as a hint
-    // for which fields to stream progressively. This is set by the
-    // frontend regenerate button. The LLM also declares changed_fields
-    // in its tool call, which overrides this hint if present.
-    $fieldsToStream = [];
-    if (preg_match('/\[fields:([^\]]+)\]/', $message, $matches)) {
-      $fieldsToStream = explode(',', $matches[1]);
-    }
+    $fieldsToStream = $this->parseFieldsHint($message);
 
     // Build prompt, tools, and field index via the prompt builder.
     // These are computed before opening the SSE response so that any
@@ -260,7 +236,6 @@ class DraftingPlugin extends AiAssistantPluginBase {
     $fieldIndex = $this->promptBuilder->buildFieldIndex($entityTypeId, $bundle);
 
     // Resolve the default provider and model for "chat" operation type.
-    // The provider ID and model ID are passed into the LLM loop config.
     $defaults = $this->aiProvider->getDefaultProviderForOperationType('chat');
     $providerId = $defaults['provider_id'];
     $modelId = $defaults['model_id'];
@@ -272,124 +247,27 @@ class DraftingPlugin extends AiAssistantPluginBase {
       $systemPrompt, $message, $threadId, $tools, $providerId, $modelId,
       $fieldIndex, $fieldsToStream,
     ) {
-      // Disable PHP's execution time limit for long-running streams.
       set_time_limit(0);
-
-      // Create the AG-UI state manager which tracks run/message lifecycle
-      // and emits the appropriate SSE events (RUN_STARTED, RUN_FINISHED,
-      // ERROR, etc.).
       $state = $this->createAgUiState();
       $runId = $this->uuid->generate();
-
-      // If the caller supplied a thread ID, reuse it so history is
-      // continuous across turns; otherwise generate a fresh one.
       $sseThreadId = !empty($threadId) ? $threadId : $this->uuid->generate();
       $messageId = $this->uuid->generate();
 
       $state->startRun($sseThreadId, $runId);
 
       try {
-        // Load existing conversation history for this thread so the LLM
-        // has context from previous turns.
-        $history = $this->conversationHistory->load('oe_ai_drafting', $sseThreadId);
-
-        // An empty history means this is the very first message in the
-        // thread; used later to decide streaming mode for all text fields.
-        $isFirstDraft = empty($history);
-
-        // Append the new user message to the history before sending it
-        // to the LLM. The LLM loop receives the full history array.
-        $history[] = ['role' => 'user', 'content' => $message];
-
-        // $activeFieldsToStream is mutable: the tool executor may override
-        // it with the LLM's own changed_fields declaration. We use a
-        // reference so the override is visible outside the closure.
-        $activeFieldsToStream = $fieldsToStream;
-
-        // Build the tool executor closure passed to LlmStreamingLoop.
-        // It is called once per LLM tool-call round-trip with the list
-        // of tool calls the model wants to invoke.
-        $toolExecutor = function (array $toolCalls) use (
-          $fieldIndex, &$activeFieldsToStream, $isFirstDraft,
-        ): array {
-          $results = [];
-          foreach ($toolCalls as $toolCallId => $toolCall) {
-            $name = $toolCall['name'] ?? '';
-            $args = $toolCall['arguments'] ?? [];
-
-            // Dispatch each tool call to the appropriate local handler.
-            // Currently only draft_content is supported; unknown tools
-            // return an error payload that the LLM can act on.
-            $result = match ($name) {
-              'draft_content' => $this->toolDraftContent($args),
-              default => ['error' => "Unknown tool: $name"],
-            };
-
-            // The tool result is fed back to the LLM as a "tool" role
-            // message so it can continue the conversation with the result.
-            $results[] = [
-              'role' => 'tool',
-              'content' => Json::encode($result),
-              'tool_call_id' => $toolCallId,
-            ];
-
-            // If the LLM declared changed_fields in the tool arguments,
-            // override the frontend hint so only genuinely modified
-            // fields are streamed progressively.
-            if (!empty($result['changedFields'])) {
-              $activeFieldsToStream = $result['changedFields'];
-            }
-
-            // Stream field values to the frontend as STATE_SNAPSHOT SSE
-            // events. Progressive (word-by-word) streaming is applied to
-            // long text fields; short and non-text fields arrive whole.
-            $streamer = new FieldSnapshotStreamer($this->transporter);
-            $streamer->stream(
-              $result['fields'] ?? [],
-              $fieldIndex,
-              $activeFieldsToStream,
-              $isFirstDraft,
-            );
-          }
-          return $results;
-        };
-
-        // Run the agentic LLM tool-call loop. The loop sends the
-        // conversation history to the LLM, handles any tool calls the
-        // model makes (by invoking $toolExecutor), and continues until
-        // the model produces a final text response.
-        $config = new LlmLoopConfig(
-          systemPrompt: $systemPrompt,
-          conversationHistory: $history,
-          tools: $tools,
-          providerId: $providerId,
-          modelId: $modelId,
-          messageId: $messageId,
-          toolExecutor: $toolExecutor,
+        $loopResult = $this->runLlmChat(
+          $systemPrompt, $message, $sseThreadId, $tools,
+          $providerId, $modelId, $messageId,
+          $fieldIndex, $fieldsToStream,
         );
-        $loopResult = $this->llmLoop->run($this->agUiState, $config);
-
-        // Persist the updated conversation history so the next chat turn
-        // in this thread has full context.
-        $updatedHistory = $loopResult->messages;
-
-        // If the model produced a final plain-text reply (i.e. no tool
-        // call on the last turn), append it to the history as well.
-        if (!empty($loopResult->assistantText)) {
-          $updatedHistory[] = [
-            'role' => 'assistant',
-            'content' => $loopResult->assistantText,
-          ];
-        }
-        $this->conversationHistory->save('oe_ai_drafting', $sseThreadId, $updatedHistory);
+        $this->persistHistory($sseThreadId, $loopResult);
       }
       catch (\Exception $e) {
-        // Log the full error server-side and emit an AG-UI error event
-        // so the frontend can display a user-facing message.
         $this->logger->error('Error in drafting chat: @error', [
           '@error' => $e->getMessage(),
         ]);
-        $state->errorRun($e->getMessage());
+        $state->errorRun($this->formatErrorForChat($e));
       }
 
       // Always emit RUN_FINISHED to signal the end of the SSE stream,
@@ -473,6 +351,274 @@ class DraftingPlugin extends AiAssistantPluginBase {
       'nodeId' => (string) $node->id(),
       'previewUrl' => $this->fieldMapper->getPreviewUrl($node),
     ];
+  }
+
+  /**
+   * Extracts the user message from an AG-UI protocol request body.
+   *
+   * The frontend may send a top-level "message" string (simple format)
+   * or a "messages" array in the OpenAI conversation format. We support
+   * both and extract the last user-role message in the array case.
+   *
+   * @param array $body
+   *   The decoded JSON request body.
+   *
+   * @return string
+   *   The extracted user message text, or empty string if none found.
+   */
+  private function extractUserMessage(array $body): string {
+    $message = $body['message'] ?? '';
+    if (!empty($message)) {
+      return $message;
+    }
+
+    if (empty($body['messages'])) {
+      return '';
+    }
+
+    // Filter to user-role messages and take the last one.
+    $userMessages = array_filter(
+      $body['messages'],
+      fn($m) => ($m['role'] ?? '') === 'user',
+    );
+    $lastUserMessage = end($userMessages);
+
+    // Content may be a plain string or an array of content parts
+    // (e.g. [{ "type": "text", "text": "..." }]).
+    if (is_array($lastUserMessage['content'] ?? '')) {
+      return implode('', array_map(
+        fn($p) => $p['text'] ?? '',
+        $lastUserMessage['content'],
+      ));
+    }
+
+    return $lastUserMessage['content'] ?? '';
+  }
+
+  /**
+   * Parses [fields:name1,name2] hint from the user message.
+   *
+   * This tag is set by the frontend regenerate button to indicate which
+   * fields should be streamed progressively. The LLM's own changed_fields
+   * declaration overrides this hint if present.
+   *
+   * @param string $message
+   *   The user message text.
+   *
+   * @return string[]
+   *   Array of field machine names to stream, or empty array.
+   */
+  private function parseFieldsHint(string $message): array {
+    if (preg_match('/\[fields:([^\]]+)\]/', $message, $matches)) {
+      return explode(',', $matches[1]);
+    }
+    return [];
+  }
+
+  /**
+   * Runs the LLM tool-call loop for a single chat turn.
+   *
+   * Loads conversation history, builds the tool executor, invokes the
+   * LLM streaming loop, and returns the result. This method runs inside
+   * the SSE callback where the AG-UI state is already initialised.
+   *
+   * @param string $systemPrompt
+   *   The system prompt for the LLM.
+   * @param string $message
+   *   The current user message.
+   * @param string $threadId
+   *   The thread ID for conversation history.
+   * @param array $tools
+   *   Tool definitions for the LLM.
+   * @param string $providerId
+   *   The AI provider plugin ID.
+   * @param string $modelId
+   *   The model ID within the provider.
+   * @param string $messageId
+   *   The UUID for the SSE message envelope.
+   * @param array $fieldIndex
+   *   The field index mapping field names to metadata.
+   * @param string[] $fieldsToStream
+   *   Fields hint from the frontend for progressive streaming.
+   *
+   * @return \Drupal\oe_ai_assistant\Service\LlmLoopResult
+   *   The loop result with assistant text and updated message history.
+   */
+  private function runLlmChat(
+    string $systemPrompt,
+    string $message,
+    string $threadId,
+    ToolsInput $tools,
+    string $providerId,
+    string $modelId,
+    string $messageId,
+    array $fieldIndex,
+    array $fieldsToStream,
+  ): LlmLoopResult {
+    $history = $this->conversationHistory->load('oe_ai_drafting', $threadId);
+    $isFirstDraft = empty($history);
+    $history[] = ['role' => 'user', 'content' => $message];
+
+    // $activeFieldsToStream is mutable: the tool executor may override
+    // it with the LLM's own changed_fields declaration.
+    $activeFieldsToStream = $fieldsToStream;
+
+    // Build the tool executor closure. It delegates each tool call to
+    // a named handler and streams field snapshots to the frontend.
+    $toolExecutor = function (array $toolCalls) use (
+      $fieldIndex, &$activeFieldsToStream, $isFirstDraft,
+    ): array {
+      return $this->executeToolCalls(
+        $toolCalls, $fieldIndex, $activeFieldsToStream, $isFirstDraft,
+      );
+    };
+
+    $config = new LlmLoopConfig(
+      systemPrompt: $systemPrompt,
+      conversationHistory: $history,
+      tools: $tools,
+      providerId: $providerId,
+      modelId: $modelId,
+      messageId: $messageId,
+      toolExecutor: $toolExecutor,
+    );
+
+    return $this->llmLoop->run($this->agUiState, $config);
+  }
+
+  /**
+   * Executes tool calls from the LLM and streams field snapshots.
+   *
+   * Dispatches each tool call to the appropriate handler, builds tool
+   * result messages for the conversation history, and streams field
+   * values to the frontend via FieldSnapshotStreamer.
+   *
+   * @param array $toolCalls
+   *   Map of tool call ID to tool call data (name + arguments).
+   * @param array $fieldIndex
+   *   The field index mapping field names to metadata.
+   * @param string[] &$activeFieldsToStream
+   *   Fields to stream progressively; updated by reference if the LLM
+   *   declares changed_fields.
+   * @param bool $isFirstDraft
+   *   Whether this is the first message in the thread.
+   *
+   * @return array
+   *   Tool result messages for the conversation history.
+   */
+  private function executeToolCalls(
+    array $toolCalls,
+    array $fieldIndex,
+    array &$activeFieldsToStream,
+    bool $isFirstDraft,
+  ): array {
+    $results = [];
+
+    foreach ($toolCalls as $toolCallId => $toolCall) {
+      $name = $toolCall['name'] ?? '';
+      $args = $toolCall['arguments'] ?? [];
+
+      // Dispatch each tool call to the appropriate local handler.
+      // Currently only draft_content is supported; unknown tools
+      // return an error payload that the LLM can act on.
+      $result = match ($name) {
+        'draft_content' => $this->toolDraftContent($args),
+        default => ['error' => "Unknown tool: $name"],
+      };
+
+      $results[] = [
+        'role' => 'tool',
+        'content' => Json::encode($result),
+        'tool_call_id' => $toolCallId,
+      ];
+
+      // If the LLM declared changed_fields in the tool arguments,
+      // override the frontend hint so only genuinely modified
+      // fields are streamed progressively.
+      if (!empty($result['changedFields'])) {
+        $activeFieldsToStream = $result['changedFields'];
+      }
+
+      // Stream field values to the frontend as STATE_SNAPSHOT SSE
+      // events. Progressive (word-by-word) streaming is applied to
+      // long text fields; short and non-text fields arrive whole.
+      $streamer = new FieldSnapshotStreamer($this->transporter);
+      $streamer->stream(
+        $result['fields'] ?? [],
+        $fieldIndex,
+        $activeFieldsToStream,
+        $isFirstDraft,
+      );
+    }
+
+    return $results;
+  }
+
+  /**
+   * Persists conversation history after a successful LLM loop.
+   *
+   * Appends the final assistant text (if any) to the message history
+   * and saves it so subsequent chat turns have full context.
+   *
+   * @param string $threadId
+   *   The thread ID for conversation history.
+   * @param \Drupal\oe_ai_assistant\Service\LlmLoopResult $loopResult
+   *   The result from the LLM streaming loop.
+   */
+  private function persistHistory(string $threadId, LlmLoopResult $loopResult): void {
+    $updatedHistory = $loopResult->messages;
+
+    if (!empty($loopResult->assistantText)) {
+      $updatedHistory[] = [
+        'role' => 'assistant',
+        'content' => $loopResult->assistantText,
+      ];
+    }
+
+    $this->conversationHistory->save('oe_ai_drafting', $threadId, $updatedHistory);
+  }
+
+  /**
+   * Formats an exception into a user-friendly chat error message.
+   *
+   * AI provider errors (e.g. from Mistral) often contain HTTP status
+   * codes or technical details that are unhelpful to editors. This
+   * method detects common provider error patterns and returns a
+   * message suitable for display in the chat UI.
+   *
+   * @param \Exception $e
+   *   The caught exception.
+   *
+   * @return string
+   *   A user-facing error message.
+   */
+  private function formatErrorForChat(\Exception $e): string {
+    $message = $e->getMessage();
+
+    // Detect HTTP status codes commonly returned by AI provider APIs.
+    // These surface as exception messages from the Guzzle HTTP client
+    // or from the provider plugin itself.
+    if (preg_match('/\b401\b|unauthorized/i', $message)) {
+      return 'The AI service rejected the API key. Please check the provider configuration.';
+    }
+    if (preg_match('/\b403\b|forbidden/i', $message)) {
+      return 'The AI service denied access. Please check the provider permissions.';
+    }
+    if (preg_match('/\b429\b|rate.?limit|too many requests/i', $message)) {
+      return 'The AI service is temporarily overloaded. Please try again in a moment.';
+    }
+    if (preg_match('/\b5\d{2}\b|server error|internal error|service unavailable/i', $message)) {
+      return 'The AI service is temporarily unavailable. Please try again later.';
+    }
+    if (preg_match('/timeout|timed? out/i', $message)) {
+      return 'The AI service did not respond in time. Please try again.';
+    }
+    if (preg_match('/connection refused|could not resolve|network/i', $message)) {
+      return 'Could not reach the AI service. Please check your network connection.';
+    }
+
+    // Fall back to the original message for unrecognised errors.
+    return $message;
   }
 
   /**
