@@ -12,6 +12,7 @@ import {
   Check,
   ChevronDown,
   ChevronRight,
+  Loader2,
   RotateCcw,
   Save,
   X,
@@ -226,6 +227,7 @@ export function ContentTable({ onRegenerate, onSave }: ContentTableProps) {
         {fieldEntries.map(([name, field]) => {
           const isRejected = rejectedFields.has(name);
           const isUpdated = updatedFields.has(name);
+          const isFieldStreaming = streamingFieldName === name;
           return (
             <div
               key={name}
@@ -237,20 +239,28 @@ export function ContentTable({ onRegenerate, onSave }: ContentTableProps) {
                     : "hover:bg-gray-50/50"
               }`}
             >
-              {/* Field header: toggle + label */}
+              {/* Field header: streaming spinner or toggle + label */}
               <div className="mb-1.5 flex items-center gap-3">
-                <button
-                  type="button"
-                  onClick={() => toggleFieldRejected(name)}
-                  className={`flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center rounded-full transition-colors ${
-                    isRejected
-                      ? "bg-red-100 text-red-600 hover:bg-red-200"
-                      : "bg-green-100 text-green-600 hover:bg-green-200"
-                  }`}
-                  title={isRejected ? "Mark as accepted" : "Reject this field"}
-                >
-                  {isRejected ? <X size={12} /> : <Check size={12} />}
-                </button>
+                {isFieldStreaming ? (
+                  <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-blue-100 text-blue-500">
+                    <Loader2 size={12} className="animate-spin" />
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => toggleFieldRejected(name)}
+                    className={`flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center rounded-full transition-colors ${
+                      isRejected
+                        ? "bg-red-100 text-red-600 hover:bg-red-200"
+                        : "bg-green-100 text-green-600 hover:bg-green-200"
+                    }`}
+                    title={
+                      isRejected ? "Mark as accepted" : "Reject this field"
+                    }
+                  >
+                    {isRejected ? <X size={12} /> : <Check size={12} />}
+                  </button>
+                )}
                 <div>
                   <span
                     className={`text-sm font-medium ${

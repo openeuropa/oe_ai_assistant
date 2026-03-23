@@ -47,6 +47,8 @@ export interface DraftingSliceState {
   rejectedFields: Set<string>;
   /** Whether the user has sent at least one message. */
   hasPrompted: boolean;
+  /** Whether a draft_content tool call is currently running. */
+  isDrafting: boolean;
   /** Field currently being streamed (null when idle). */
   streamingFieldName: string | null;
   /** Fields recently updated by the agent (for highlight effect). */
@@ -59,6 +61,7 @@ export const draftingSliceConfig: PluginSliceConfig<DraftingSliceState> = {
     draftedFields: {},
     rejectedFields: new Set(),
     hasPrompted: false,
+    isDrafting: false,
     streamingFieldName: null,
     updatedFields: new Set(),
   },

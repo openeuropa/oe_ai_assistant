@@ -10,6 +10,8 @@
 
 import { makeAssistantToolUI } from "@assistant-ui/react";
 import { Check, Loader2, PenLine, RefreshCw, Save, X } from "lucide-react";
+import { useEffect } from "react";
+import { setDraftingState } from "../store";
 
 /** Shared wrapper for tool call cards in the chat. */
 function ToolCallCard({
@@ -57,6 +59,14 @@ export const DraftContentToolUI = makeAssistantToolUI<
 >({
   toolName: "draft_content",
   render: ({ args, status }) => {
+    // Track whether a draft tool call is running so the right
+    // pane can show the loading spinner only during actual
+    // drafting, not on every chat message.
+    useEffect(() => {
+      const isRunning = status.type === "running";
+      setDraftingState({ isDrafting: isRunning });
+    }, [status.type]);
+
     const fieldCount = args?.fields ? Object.keys(args.fields).length : 0;
     return (
       <ToolCallCard

@@ -34,7 +34,7 @@ function ArtifactLoading() {
 
 export default function DraftingRoot() {
   const runtime = useDraftingRuntime();
-  const { draftedFields, hasPrompted } = useDraftingSlice();
+  const { draftedFields, isDrafting } = useDraftingSlice();
   const hasFields = Object.keys(draftedFields).length > 0;
 
   /** Send rejected fields back to the chat for regeneration. */
@@ -77,7 +77,7 @@ export default function DraftingRoot() {
         <ContentTable onRegenerate={handleRegenerate} onSave={handleSave} />
       );
     }
-    if (hasPrompted) {
+    if (isDrafting) {
       return <ArtifactLoading />;
     }
     return <ArtifactPlaceholder />;
