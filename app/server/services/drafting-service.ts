@@ -323,15 +323,16 @@ call the draft_content tool for conversational responses.`;
   }
 
   /**
-   * Yields STATE_SNAPSHOT events for drafted fields.
-   * Mirrors DraftingPlugin::streamFieldSnapshots() (lines 629-679).
+   * Yields AG-UI events for drafted fields using three-phase
+   * streaming: skeleton snapshot, per-word deltas, final snapshot.
+   * Mirrors FieldSnapshotStreamer::stream().
    */
-  private *streamFieldSnapshots(
+  private *streamFieldEvents(
     fields: Record<string, unknown>,
     fieldIndex: FieldIndex,
     fieldsToStream: string[],
   ): Generator<AgUiEvent> {
-    // On regeneration, only send the requested fields.
+    // Filter to target fields on regeneration.
     let targetFields = fields;
     if (fieldsToStream.length > 0) {
       targetFields = Object.fromEntries(
@@ -341,7 +342,11 @@ call the draft_content tool for conversational responses.`;
       );
     }
 
+    // Phase 1: Build skeleton with all fields present.
+    // Non-progressive fields carry final values. Progressive
+    // fields carry empty placeholders.
     const streamed: Record<string, unknown> = {};
+    const progressiveFieldNames: string[] = [];
 
     for (const [name, value] of Object.entries(targetFields)) {
       const isLongText = this.isStreamableField(
@@ -350,56 +355,104 @@ call the draft_content tool for conversational responses.`;
         fieldIndex,
       );
 
-      // Case 1: plain string, streamable, >50 chars.
       if (
         isLongText &&
         typeof value === "string" &&
         value.length > 50
       ) {
-        const words = value.split(/(\s+)/);
-        let partial = "";
-        for (const word of words) {
-          partial += word;
-          streamed[name] = partial;
-          yield {
-            type: "STATE_SNAPSHOT",
-            snapshot: { draftedFields: { ...streamed } },
-          };
-        }
-        continue;
-      }
-
-      // Case 2: object with value key (formatted text), >50 chars.
-      if (
+        // Plain string placeholder.
+        streamed[name] = "";
+        progressiveFieldNames.push(name);
+      } else if (
         isLongText &&
         value !== null &&
         typeof value === "object" &&
         "value" in (value as Record<string, unknown>)
       ) {
+        const inner = String(
+          (value as Record<string, unknown>).value ?? "",
+        );
+        if (inner.length > 50) {
+          // Formatted text placeholder: preserve structure.
+          streamed[name] = {
+            ...(value as Record<string, unknown>),
+            value: "",
+          };
+          progressiveFieldNames.push(name);
+        } else {
+          streamed[name] = value;
+        }
+      } else {
+        // Non-progressive: final value.
+        streamed[name] = value;
+      }
+    }
+
+    // Emit skeleton snapshot.
+    yield {
+      type: "STATE_SNAPSHOT",
+      snapshot: { draftedFields: { ...streamed } },
+    };
+
+    // Phase 2: Stream progressive fields as deltas.
+    for (const name of progressiveFieldNames) {
+      const value = targetFields[name];
+      // Escape for JSON Pointer (RFC 6901). Drupal field
+      // names are [a-z0-9_] only so this is defensive.
+      const escaped = name
+        .replace(/~/g, "~0")
+        .replace(/\//g, "~1");
+
+      if (typeof value === "string") {
+        // Plain string field.
+        const words = value.split(/(\s+)/);
+        let partial = "";
+        for (const word of words) {
+          partial += word;
+          yield {
+            type: "STATE_DELTA",
+            delta: [
+              {
+                op: "replace",
+                path: `/draftedFields/${escaped}`,
+                value: partial,
+              },
+            ],
+          };
+        }
+        streamed[name] = value;
+      } else if (
+        value !== null &&
+        typeof value === "object" &&
+        "value" in (value as Record<string, unknown>)
+      ) {
+        // Formatted text field.
         const obj = value as Record<string, unknown>;
         const inner = String(obj.value ?? "");
-        if (inner.length > 50) {
-          const words = inner.split(/(\s+)/);
-          let partial = "";
-          for (const word of words) {
-            partial += word;
-            streamed[name] = { ...obj, value: partial };
-            yield {
-              type: "STATE_SNAPSHOT",
-              snapshot: { draftedFields: { ...streamed } },
-            };
-            }
-          continue;
+        const words = inner.split(/(\s+)/);
+        let partial = "";
+        for (const word of words) {
+          partial += word;
+          yield {
+            type: "STATE_DELTA",
+            delta: [
+              {
+                op: "replace",
+                path: `/draftedFields/${escaped}/value`,
+                value: partial,
+              },
+            ],
+          };
         }
+        streamed[name] = value;
       }
-
-      // Case 3: non-streamable or short -- send whole.
-      streamed[name] = value;
-      yield {
-        type: "STATE_SNAPSHOT",
-        snapshot: { draftedFields: { ...streamed } },
-      };
     }
+
+    // Phase 3: Final snapshot with complete state.
+    yield {
+      type: "STATE_SNAPSHOT",
+      snapshot: { draftedFields: { ...streamed } },
+    };
   }
 
   /**
@@ -433,9 +486,9 @@ call the draft_content tool for conversational responses.`;
         toolCallId: toolCall.id,
       });
 
-      // Stream field snapshots if the tool produced fields.
+      // Stream field events if the tool produced fields.
       if ("fields" in result && result.fields) {
-        yield* this.streamFieldSnapshots(
+        yield* this.streamFieldEvents(
           result.fields as Record<string, unknown>,
           fieldIndex,
           fieldsToStream,
