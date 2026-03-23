@@ -8,6 +8,7 @@ use Drupal\ai\Response\AiStreamedResponse;
 use Drupal\Component\Plugin\Exception\PluginException;
 use Drupal\oe_ai_assistant\Transporter\DrupalSseTransporter;
 use Swis\AgUiServer\AgUiState;
+use Swis\AgUiServer\Events\StateDeltaEvent;
 use Swis\AgUiServer\Events\StateSnapshotEvent;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -216,6 +217,25 @@ abstract class AiAssistantPluginBase extends PluginBase implements AiAssistantPl
       return;
     }
     $this->transporter->sendEvent(new StateSnapshotEvent($snapshot));
+  }
+
+  /**
+   * Sends a STATE_DELTA event via SSE.
+   *
+   * Emits a StateDeltaEvent carrying an array of JSON Patch
+   * (RFC 6902) operations. The frontend applies these operations
+   * to its current state, avoiding the need to resend the entire
+   * state on every incremental update.
+   *
+   * @param array $delta
+   *   Array of JSON Patch operations. Each operation is an
+   *   associative array with 'op', 'path', and 'value' keys.
+   */
+  protected function sendStateDelta(array $delta): void {
+    if ($this->transporter === NULL) {
+      return;
+    }
+    $this->transporter->sendEvent(new StateDeltaEvent($delta));
   }
 
   /**
