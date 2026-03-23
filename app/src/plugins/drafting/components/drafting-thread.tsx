@@ -136,21 +136,23 @@ function AssistantText({
 }
 
 /**
- * Typing indicator with three bouncing dots, shown while the
- * assistant is processing but has not yet started streaming text.
- * Mimics the WhatsApp "typing..." animation.
+ * Typing indicator with three pulsating dots, shown in place of
+ * the assistant message bubble while the assistant is processing
+ * but has not yet started streaming content. Once the first
+ * content part arrives, the indicator is replaced by the normal
+ * message bubble.
  */
 function TypingIndicator() {
   return (
     <div className="mb-4 flex justify-start">
       <div className="rounded-lg bg-gray-100 px-4 py-3">
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-1.5">
           {[0, 1, 2].map((i) => (
             <span
               key={i}
               className="inline-block h-2 w-2 rounded-full bg-gray-400"
               style={{
-                animation: "typing-bounce 1.4s ease-in-out infinite",
+                animation: "typing-pulse 1.4s ease-in-out infinite",
                 animationDelay: `${i * 0.2}s`,
               }}
             />
@@ -161,8 +163,28 @@ function TypingIndicator() {
   );
 }
 
-/** Renders a single assistant message. */
+/**
+ * Renders a single assistant message, or the typing indicator
+ * when the message has no content yet (waiting for the LLM to
+ * start streaming). This ensures the empty chat bubble is never
+ * visible -- the user sees pulsating dots until real content
+ * arrives.
+ */
 function AssistantMessage() {
+  const hasContent = useAuiState(
+    (s) => (s.message?.content?.length ?? 0) > 0,
+  );
+
+  // Show pulsating dots while waiting for the first content
+  // part (text or tool call) to arrive from the backend.
+  if (!hasContent) {
+    return (
+      <MessagePrimitive.Root className="mb-4">
+        <TypingIndicator />
+      </MessagePrimitive.Root>
+    );
+  }
+
   return (
     <MessagePrimitive.Root className="mb-4 flex justify-start">
       <div className="max-w-[80%]">
@@ -245,11 +267,6 @@ export function DraftingThread() {
             AssistantMessage,
           }}
         />
-        {/* Bouncing dots shown while waiting for the assistant
-            to start streaming a response. */}
-        <ThreadPrimitive.If running>
-          <TypingIndicator />
-        </ThreadPrimitive.If>
       </ThreadPrimitive.Viewport>
       <Composer />
     </ThreadPrimitive.Root>
