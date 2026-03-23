@@ -3,3 +3,15 @@ oe_ai_assistant.node_tab:
   title: 'AI Assistant'
   base_route: entity.node.canonical
   weight: 50
+
+oe_ai_assistant.node_add_default_tab:
+  route_name: node.add
+  title: 'Form'
+  base_route: node.add
+  weight: 0
+
+oe_ai_assistant.node_add_tab:
+  route_name: oe_ai_assistant.node_add_tab
+  title: 'AI Assistant'
+  base_route: node.add
+  weight: 50

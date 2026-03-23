@@ -24,6 +24,20 @@ oe_ai_assistant.node_tab:
       node:
         type: entity:node
 
+# Node add tab route: renders the AI Assistant on the node creation form.
+oe_ai_assistant.node_add_tab:
+  path: /node/add/{node_type}/ai-assistant
+  defaults:
+    _controller: \Drupal\oe_ai_assistant\Controller\NodeTabController::addContent
+    _title: 'AI Assistant'
+  requirements:
+    _permission: 'use oe ai assistant'
+  options:
+    _admin_route: TRUE
+    parameters:
+      node_type:
+        type: entity:node_type
+
 # Content schema route: returns the content type schema for an entity type/bundle.
 oe_ai_assistant.content_schema:
   path: /api/ai/content-schema/{entity_type_id}/{bundle}

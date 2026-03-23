@@ -7,6 +7,7 @@ namespace Drupal\oe_ai_assistant\Controller;
 use Drupal\Core\Controller\ControllerBase;
 use Drupal\oe_ai_assistant\Service\ManifestReader;
 use Drupal\node\NodeInterface;
+use Drupal\node\NodeTypeInterface;
 use Symfony\Component\HttpFoundation\RequestStack;
 
 /**
@@ -40,7 +41,7 @@ class NodeTabController extends ControllerBase {
   ) {}
 
   /**
-   * Builds the render array for the AI Assistant tab on a node page.
+   * Builds the render array for the AI Assistant tab on an existing node.
    *
    * Assembles the drupalSettings configuration payload and returns a render
    * array that Drupal's theme layer will convert into an HTML page fragment.
@@ -58,6 +59,49 @@ class NodeTabController extends ControllerBase {
    *     - "#attached": library and drupalSettings attachments for the page.
    */
   public function content(NodeInterface $node): array {
+    return $this->buildRenderArray(
+      $node->getEntityTypeId(),
+      $node->bundle(),
+      (string) $node->id(),
+    );
+  }
+
+  /**
+   * Builds the render array for the AI Assistant tab on a node add page.
+   *
+   * Works like content() but for new nodes that do not yet have an ID.
+   * The nodeId is omitted from the configuration since the node has not been
+   * created yet. The drafting plugin receives entity type and bundle from the
+   * node type so it can still fetch the correct content schema.
+   *
+   * @param \Drupal\node\NodeTypeInterface $node_type
+   *   The node type entity resolved from the {node_type} route parameter.
+   *
+   * @return array
+   *   A Drupal render array identical in structure to content().
+   */
+  public function addContent(NodeTypeInterface $node_type): array {
+    return $this->buildRenderArray('node', $node_type->id());
+  }
+
+  /**
+   * Builds the common render array for the AI Assistant.
+   *
+   * Centralises the render array construction shared by both the existing-node
+   * tab (content()) and the node-add tab (addContent()). The only difference
+   * is whether a nodeId is present in the configuration payload.
+   *
+   * @param string $entityTypeId
+   *   The entity type ID (always 'node' for now).
+   * @param string $bundle
+   *   The content type machine name (e.g. 'article', 'page').
+   * @param string|null $nodeId
+   *   The node ID as a string, or NULL when creating a new node.
+   *
+   * @return array
+   *   A Drupal render array with mount point, library, and settings.
+   */
+  private function buildRenderArray(string $entityTypeId, string $bundle, ?string $nodeId = NULL): array {
     // Build the configuration object that bootstraps the React app.
     // This data is serialised into window.drupalSettings.oeAiAssistant
     // and read by the React entry point before the first render.
@@ -67,9 +111,6 @@ class NodeTabController extends ControllerBase {
       // Drupal is installed at the domain root), guaranteeing correct paths
       // in both root and subdirectory installations.
       'apiBaseUrl' => $this->requestStack->getCurrentRequest()->getBasePath() . '/api/ai',
-      // Node ID as a string; the React app and OpenAPI schema treat all
-      // entity IDs as strings for consistency across entity types.
-      'nodeId' => (string) $node->id(),
       // Current user ID as a string, used by the React app to namespace
       // per-user state (e.g. conversation history keys in TempStore).
       'userId' => (string) $this->currentUser()->id(),
@@ -85,11 +126,19 @@ class NodeTabController extends ControllerBase {
         // is operating on so it can request the correct content schema and
         // build appropriately scoped AI prompts.
         'drafting' => [
-          'entityTypeId' => $node->getEntityTypeId(),
-          'bundle' => $node->bundle(),
+          'entityTypeId' => $entityTypeId,
+          'bundle' => $bundle,
         ],
       ],
     ];
+
+    // Include the node ID only when editing an existing node. When creating
+    // a new node the ID does not exist yet, so it is omitted entirely rather
+    // than set to null -- the React app treats an absent nodeId as a signal
+    // that it is operating in creation mode.
+    if ($nodeId !== NULL) {
+      $config['nodeId'] = $nodeId;
+    }
 
     return [
       // The React mount point: a plain <div> with a stable ID that the
