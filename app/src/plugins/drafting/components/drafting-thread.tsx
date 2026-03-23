@@ -135,6 +135,32 @@ function AssistantText({
   );
 }
 
+/**
+ * Typing indicator with three bouncing dots, shown while the
+ * assistant is processing but has not yet started streaming text.
+ * Mimics the WhatsApp "typing..." animation.
+ */
+function TypingIndicator() {
+  return (
+    <div className="mb-4 flex justify-start">
+      <div className="rounded-lg bg-gray-100 px-4 py-3">
+        <div className="flex items-center gap-1">
+          {[0, 1, 2].map((i) => (
+            <span
+              key={i}
+              className="inline-block h-2 w-2 rounded-full bg-gray-400"
+              style={{
+                animation: "typing-bounce 1.4s ease-in-out infinite",
+                animationDelay: `${i * 0.2}s`,
+              }}
+            />
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /** Renders a single assistant message. */
 function AssistantMessage() {
   return (
@@ -219,6 +245,11 @@ export function DraftingThread() {
             AssistantMessage,
           }}
         />
+        {/* Bouncing dots shown while waiting for the assistant
+            to start streaming a response. */}
+        <ThreadPrimitive.If running>
+          <TypingIndicator />
+        </ThreadPrimitive.If>
       </ThreadPrimitive.Viewport>
       <Composer />
     </ThreadPrimitive.Root>
