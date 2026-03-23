@@ -6,8 +6,13 @@ namespace Drupal\oe_ai_assistant\Plugin;
 
 use Drupal\ai\AiProviderPluginManager;
 use Drupal\ai\OperationType\Chat\ChatMessage;
+use Drupal\ai\OperationType\Chat\Tools\ToolsFunctionOutput;
 use Drupal\ai\OperationType\Chat\Tools\ToolsInput;
 use Drupal\ai\PluginManager\AiShortTermMemoryPluginManager;
+use Drupal\ai\Service\FunctionCalling\ExecutableFunctionCallInterface;
+use Drupal\ai\Service\FunctionCalling\FunctionCallPluginManager;
+use Drupal\ai\Service\FunctionCalling\StructuredExecutableFunctionCallInterface;
+use Drupal\Component\Serialization\Json;
 use Drupal\Component\Uuid\UuidInterface;
 use Drupal\oe_ai_assistant\Exception\ActionException;
 use Drupal\oe_ai_assistant\Service\ConversationHistory;
@@ -27,13 +32,17 @@ use Symfony\Component\HttpFoundation\Response;
  * executors).
  *
  * This class implements the Template Method pattern: the chat() method
- * defines the full lifecycle of an LLM chat turn, delegating four
- * domain-specific steps to abstract hooks that each concrete plugin must
- * implement:
+ * defines the full lifecycle of an LLM chat turn, delegating domain-specific
+ * steps to hooks that concrete plugins may implement or override:
  *   - buildChatContext(): extract domain context from the request body.
  *   - buildSystemPrompt(): compose the LLM system prompt.
- *   - buildTools(): declare the tool definitions exposed to the LLM.
- *   - createToolExecutor(): build the closure that handles tool calls.
+ *   - buildTools(): declare tool definitions (default: empty set).
+ *   - createToolExecutor(): build the closure that handles tool calls
+ *     (default: dispatches via FunctionCall plugin manager).
+ *
+ * Additionally, FunctionCall plugins matching the configured group
+ * (see getFunctionCallGroup()) are auto-discovered and appended to the
+ * tool set before each chat turn.
  *
  * Concrete plugins do NOT need to implement create(); that responsibility
  * stays with the final plugin class, which knows its own service
@@ -65,6 +74,8 @@ abstract class ChatPluginBase extends AiAssistantPluginBase {
    *   Runs the agentic tool-call loop against the configured LLM.
    * @param \Drupal\ai\PluginManager\AiShortTermMemoryPluginManager $shortTermMemoryManager
    *   Plugin manager for AI short-term memory plugins (e.g. LastN).
+   * @param \Drupal\ai\Service\FunctionCalling\FunctionCallPluginManager $functionCallManager
+   *   Plugin manager for AI FunctionCall plugins (tool auto-discovery).
    */
   public function __construct(
     array $configuration,
@@ -76,6 +87,7 @@ abstract class ChatPluginBase extends AiAssistantPluginBase {
     protected readonly ConversationHistory $conversationHistory,
     protected readonly LlmStreamingLoop $llmLoop,
     protected readonly AiShortTermMemoryPluginManager $shortTermMemoryManager,
+    protected readonly FunctionCallPluginManager $functionCallManager,
   ) {
     parent::__construct($configuration, $plugin_id, $plugin_definition);
   }
@@ -121,6 +133,7 @@ abstract class ChatPluginBase extends AiAssistantPluginBase {
     $context = $this->buildChatContext($body, $message);
     $systemPrompt = $this->buildSystemPrompt($context);
     $tools = $this->buildTools($context);
+    $tools = $this->appendDiscoveredTools($tools);
 
     // Resolve the default provider and model for "chat" operation type.
     $defaults = $this->aiProvider->getDefaultProviderForOperationType('chat');
@@ -188,6 +201,23 @@ abstract class ChatPluginBase extends AiAssistantPluginBase {
       // even if an error occurred, so the frontend can stop loading.
       $state->finishRun();
     });
+  }
+
+  /**
+   * Resets the conversation thread.
+   *
+   * Standard action inherited by all chat plugins. Delegates to
+   * resetThread(), which deletes stored history and returns a fresh
+   * thread ID for the frontend.
+   *
+   * @param \Symfony\Component\HttpFoundation\Request $request
+   *   The incoming request. Body must include a "threadId" key.
+   *
+   * @return array<string, string>
+   *   An array with a single "threadId" key containing the new thread ID.
+   */
+  public function reset(Request $request): array {
+    return $this->resetThread($request);
   }
 
   /**
@@ -314,6 +344,23 @@ abstract class ChatPluginBase extends AiAssistantPluginBase {
    */
   protected function getShortTermMemoryConfig(): array {
     return [];
+  }
+
+  /**
+   * Returns the FunctionCall plugin group to auto-discover.
+   *
+   * Override in concrete plugins to enable automatic discovery of
+   * FunctionCall plugins that belong to a specific group. All plugins
+   * whose @FunctionCall annotation has a matching "group" property
+   * will be appended to the tool set before each chat turn.
+   *
+   * Returns NULL by default, which disables auto-discovery.
+   *
+   * @return string|null
+   *   The group name, or NULL to skip auto-discovery.
+   */
+  protected function getFunctionCallGroup(): ?string {
+    return NULL;
   }
 
   /**
@@ -491,6 +538,84 @@ abstract class ChatPluginBase extends AiAssistantPluginBase {
   }
 
   /**
+   * Appends auto-discovered FunctionCall plugins to the tool set.
+   *
+   * Queries the FunctionCallPluginManager for all plugin definitions
+   * whose "group" matches getFunctionCallGroup(). Each matching plugin
+   * is instantiated, normalised to a ToolsFunctionInput, and appended
+   * via setFunction(). If no group is configured, returns $tools
+   * unchanged.
+   *
+   * @param \Drupal\ai\OperationType\Chat\Tools\ToolsInput $tools
+   *   The tool set built by buildTools().
+   *
+   * @return \Drupal\ai\OperationType\Chat\Tools\ToolsInput
+   *   The tool set with any discovered plugins appended.
+   */
+  private function appendDiscoveredTools(ToolsInput $tools): ToolsInput {
+    $group = $this->getFunctionCallGroup();
+    if ($group === NULL) {
+      return $tools;
+    }
+
+    $definitions = $this->functionCallManager->getDefinitions();
+    foreach ($definitions as $pluginId => $definition) {
+      if (($definition['group'] ?? '') !== $group) {
+        continue;
+      }
+      /** @var \Drupal\ai\Service\FunctionCalling\FunctionCallInterface $plugin */
+      $plugin = $this->functionCallManager->createInstance($pluginId);
+      $tools->setFunction($plugin->normalize());
+    }
+
+    return $tools;
+  }
+
+  /**
+   * Executes a FunctionCall plugin by name.
+   *
+   * Looks up the plugin via FunctionCallPluginManager, populates it
+   * with the given arguments, and executes it if it implements
+   * ExecutableFunctionCallInterface. Returns structured output if
+   * available, readable output otherwise, or a fallback confirmation.
+   *
+   * @param string $name
+   *   The function name as declared by the FunctionCall plugin.
+   * @param array $args
+   *   The arguments from the LLM tool call.
+   *
+   * @return array|string
+   *   The execution result: structured array, readable string wrapper,
+   *   or an error array if the function is unknown.
+   */
+  protected function executeFunctionCallPlugin(string $name, array $args): array|string {
+    if (!$this->functionCallManager->functionExists($name)) {
+      return ['error' => "Unknown tool: $name"];
+    }
+
+    /** @var \Drupal\ai\Service\FunctionCalling\FunctionCallInterface $plugin */
+    $plugin = $this->functionCallManager->getFunctionCallFromFunctionName($name);
+    $input = $plugin->normalize();
+    $output = new ToolsFunctionOutput($input, '', $args);
+    $plugin->populateValues($output);
+
+    // Execute the plugin if it supports execution.
+    if ($plugin instanceof ExecutableFunctionCallInterface) {
+      $plugin->execute();
+    }
+
+    // Return structured output if available, readable output if not.
+    if ($plugin instanceof StructuredExecutableFunctionCallInterface) {
+      return $plugin->getStructuredOutput();
+    }
+    if ($plugin instanceof ExecutableFunctionCallInterface) {
+      return ['result' => $plugin->getReadableOutput()];
+    }
+
+    return ['result' => 'executed'];
+  }
+
+  /**
    * Parses domain-specific context from the request body.
    *
    * Called before opening the SSE response. Any errors thrown here
@@ -523,16 +648,27 @@ abstract class ChatPluginBase extends AiAssistantPluginBase {
   /**
    * Builds the tool definitions exposed to the LLM.
    *
+   * Default returns an empty tool set. Concrete plugins override to
+   * add manual tool definitions. Auto-discovered FunctionCall plugins
+   * are appended separately by appendDiscoveredTools().
+   *
    * @param array $context
    *   The context array returned by buildChatContext().
    *
    * @return \Drupal\ai\OperationType\Chat\Tools\ToolsInput
    *   The tool definitions.
    */
-  abstract protected function buildTools(array $context): ToolsInput;
+  protected function buildTools(array $context): ToolsInput {
+    return new ToolsInput();
+  }
 
   /**
    * Creates the tool executor closure for this chat turn.
+   *
+   * The default implementation dispatches all tool calls through
+   * executeFunctionCallPlugin(), which handles auto-discovered
+   * FunctionCall plugins. Concrete plugins that define manual tools
+   * should override this to add their own dispatch logic.
    *
    * The returned closure has the signature:
    *   fn(array $toolCalls): array
@@ -548,9 +684,24 @@ abstract class ChatPluginBase extends AiAssistantPluginBase {
    * @return \Closure
    *   The tool executor closure.
    */
-  abstract protected function createToolExecutor(
+  protected function createToolExecutor(
     array $context,
     bool $isFirstTurn,
-  ): \Closure;
+  ): \Closure {
+    return function (array $toolCalls): array {
+      $results = [];
+      foreach ($toolCalls as $toolCallId => $toolCall) {
+        $name = $toolCall['name'] ?? '';
+        $args = $toolCall['arguments'] ?? [];
+        $result = $this->executeFunctionCallPlugin($name, $args);
+        $results[] = [
+          'role' => 'tool',
+          'content' => Json::encode($result),
+          'tool_call_id' => $toolCallId,
+        ];
+      }
+      return $results;
+    };
+  }
 
 }

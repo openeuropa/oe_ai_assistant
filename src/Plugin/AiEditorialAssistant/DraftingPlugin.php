@@ -157,8 +157,8 @@ class DraftingPlugin extends ChatPluginBase {
    * Maps action names (as received in the URL path) to callable methods.
    * The base controller reads this map and dispatches accordingly.
    *
-   * The "chat" action is inherited from ChatPluginBase and handles the
-   * full LLM streaming lifecycle. "reset" and "save" are handled locally.
+   * The "chat" and "reset" actions are inherited from ChatPluginBase.
+   * "save" is handled locally.
    *
    * Note: "create" cannot be used as an action name because it collides
    * with the static create() factory inherited from the plugin interface.
@@ -192,22 +192,6 @@ class DraftingPlugin extends ChatPluginBase {
       'reset' => 'DraftingResetRequest',
       'save' => 'DraftingSaveRequest',
     ];
-  }
-
-  /**
-   * Resets the conversation thread.
-   *
-   * Delegates to the resetThread() method inherited from ChatPluginBase,
-   * which handles history deletion and fresh thread ID generation.
-   *
-   * @param \Symfony\Component\HttpFoundation\Request $request
-   *   The incoming request. Body must conform to DraftingResetRequest schema.
-   *
-   * @return array<string, string>
-   *   An array with a single "threadId" key containing the new thread ID.
-   */
-  public function reset(Request $request): array {
-    return $this->resetThread($request);
   }
 
   /**
