@@ -4,5 +4,4 @@ description: Embeds the AI Editorial Assistant React app and implements plugin A
 core_version_requirement: ^11
 package: OpenEuropa
 dependencies:
-  - ai:ai_assistant_api
   - drupal:content_moderation

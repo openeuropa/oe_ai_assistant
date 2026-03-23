@@ -38,7 +38,7 @@ class PluginController extends ControllerBase {
    *   The plugin manager for AI Assistant plugins. Used to check whether a
    *   plugin ID is registered (hasDefinition) and to create plugin instances
    *   (createInstance). Plugins are discovered from annotated classes under
-   *   src/Plugin/OeAiAssistant/.
+   *   src/Plugin/AiEditorialAssistant/.
    * @param \Drupal\oe_ai_assistant\Service\RequestValidator $requestValidator
    *   Validates raw JSON request bodies against JSON Schema definitions
    *   provided by each plugin. Returns an array of human-readable error

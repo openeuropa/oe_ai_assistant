@@ -21,7 +21,7 @@ use Drupal\Component\Plugin\Attribute\Plugin;
  *   label: 'Drafting',
  *   description: 'AI-powered content drafting with streaming.',
  * )]
- * class DraftingPlugin extends OeAiAssistantPluginBase { ... }
+ * class DraftingPlugin extends AiAssistantPluginBase { ... }
  * @endcode
  */
 #[\Attribute(\Attribute::TARGET_CLASS)]
