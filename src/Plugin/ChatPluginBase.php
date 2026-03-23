@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace Drupal\oe_ai_assistant\Plugin;
 
 use Drupal\ai\AiProviderPluginManager;
+use Drupal\ai\OperationType\Chat\ChatMessage;
 use Drupal\ai\OperationType\Chat\Tools\ToolsInput;
+use Drupal\ai\PluginManager\AiShortTermMemoryPluginManager;
 use Drupal\Component\Uuid\UuidInterface;
 use Drupal\oe_ai_assistant\Exception\ActionException;
 use Drupal\oe_ai_assistant\Service\ConversationHistory;
@@ -61,6 +63,8 @@ abstract class ChatPluginBase extends AiAssistantPluginBase {
    *   Persists and retrieves per-thread conversation history.
    * @param \Drupal\oe_ai_assistant\Service\LlmStreamingLoop $llmLoop
    *   Runs the agentic tool-call loop against the configured LLM.
+   * @param \Drupal\ai\PluginManager\AiShortTermMemoryPluginManager $shortTermMemoryManager
+   *   Plugin manager for AI short-term memory plugins (e.g. LastN).
    */
   public function __construct(
     array $configuration,
@@ -71,6 +75,7 @@ abstract class ChatPluginBase extends AiAssistantPluginBase {
     protected readonly LoggerInterface $logger,
     protected readonly ConversationHistory $conversationHistory,
     protected readonly LlmStreamingLoop $llmLoop,
+    protected readonly AiShortTermMemoryPluginManager $shortTermMemoryManager,
   ) {
     parent::__construct($configuration, $plugin_id, $plugin_definition);
   }
@@ -146,6 +151,13 @@ abstract class ChatPluginBase extends AiAssistantPluginBase {
         );
         $isFirstTurn = empty($history);
         $history[] = ['role' => 'user', 'content' => $message];
+
+        // Apply short-term memory plugin (if configured).
+        // May trim history and modify systemPrompt/tools.
+        [$history, $systemPrompt, $tools] =
+          $this->applyShortTermMemory(
+            $history, $systemPrompt, $tools, $sseThreadId,
+          );
 
         // Delegate tool executor creation to the concrete plugin.
         $toolExecutor = $this->createToolExecutor($context, $isFirstTurn);
@@ -277,6 +289,34 @@ abstract class ChatPluginBase extends AiAssistantPluginBase {
   }
 
   /**
+   * Returns the short-term memory plugin ID to apply before each LLM turn.
+   *
+   * Override in concrete plugins to enable short-term memory processing
+   * (e.g. "last_n" to trim history to the N most recent messages).
+   * Returns NULL by default, which disables short-term memory.
+   *
+   * @return string|null
+   *   The plugin ID, or NULL to skip memory processing.
+   */
+  protected function getShortTermMemoryPluginId(): ?string {
+    return NULL;
+  }
+
+  /**
+   * Returns configuration for the short-term memory plugin.
+   *
+   * Override in concrete plugins to pass plugin-specific settings
+   * (e.g. ['last_n' => 10] for the LastN plugin). Only called when
+   * getShortTermMemoryPluginId() returns a non-null value.
+   *
+   * @return array
+   *   Configuration array passed to the plugin's createInstance().
+   */
+  protected function getShortTermMemoryConfig(): array {
+    return [];
+  }
+
+  /**
    * Persists conversation history after a successful LLM loop.
    *
    * Appends the final assistant text (if any) to the message history
@@ -329,6 +369,125 @@ abstract class ChatPluginBase extends AiAssistantPluginBase {
     // Always return a fresh thread ID so the frontend can start a new
     // conversation without needing to generate its own UUID.
     return ['threadId' => $this->uuid->generate()];
+  }
+
+  /**
+   * Converts simple history arrays to ChatMessage objects.
+   *
+   * The conversation history is stored as associative arrays with 'role'
+   * and 'content' keys. The AiShortTermMemory plugin API requires
+   * ChatMessage objects. This method performs that conversion.
+   *
+   * @param array $history
+   *   History entries, each with 'role' and 'content' keys.
+   *
+   * @return \Drupal\ai\OperationType\Chat\ChatMessage[]
+   *   Array of ChatMessage objects.
+   */
+  private function convertHistoryToChatMessages(array $history): array {
+    $messages = [];
+    foreach ($history as $item) {
+      $role = $item['role'] ?? '';
+      $content = $item['content'] ?? '';
+      $messages[] = new ChatMessage($role, $content);
+    }
+    return $messages;
+  }
+
+  /**
+   * Restores original history structure after memory processing.
+   *
+   * The memory plugin only sees ChatMessage (role + text). Tool call
+   * messages have extra keys (tool_calls_raw, tool_call_id) that must
+   * survive the round-trip. Since LastN trims from the front, the
+   * surviving messages correspond to the tail of the original array.
+   * If the processed count is >= the original, no trimming occurred
+   * and the original history is returned unchanged.
+   *
+   * @param \Drupal\ai\OperationType\Chat\ChatMessage[] $processed
+   *   ChatMessage objects returned by the memory plugin.
+   * @param array $originalHistory
+   *   The original history array with full metadata.
+   *
+   * @return array
+   *   The trimmed history preserving tool call metadata.
+   */
+  private function rebuildHistoryFromProcessed(array $processed, array $originalHistory): array {
+    $processedCount = count($processed);
+    $originalCount = count($originalHistory);
+
+    // No trimming occurred; return the original with all metadata.
+    if ($processedCount >= $originalCount) {
+      return $originalHistory;
+    }
+
+    // The memory plugin trimmed from the front, so take the tail
+    // of the original array to preserve tool call metadata.
+    $offset = $originalCount - $processedCount;
+    return array_slice($originalHistory, $offset);
+  }
+
+  /**
+   * Applies the configured short-term memory plugin to the chat context.
+   *
+   * This method encapsulates the full short-term memory flow:
+   *   1. Checks whether a memory plugin is configured (returns early if not).
+   *   2. Converts history arrays to ChatMessage objects for the plugin API.
+   *   3. Creates the plugin instance and calls process().
+   *   4. Reads back modified history, prompt, and tools.
+   *   5. Rebuilds the history array preserving tool call metadata.
+   *
+   * @param array $history
+   *   Conversation history as associative arrays.
+   * @param string $systemPrompt
+   *   The system prompt text.
+   * @param \Drupal\ai\OperationType\Chat\Tools\ToolsInput $tools
+   *   The tool definitions.
+   * @param string $threadId
+   *   The conversation thread ID.
+   *
+   * @return array
+   *   A three-element array: [$history, $systemPrompt, $tools].
+   */
+  private function applyShortTermMemory(
+    array $history,
+    string $systemPrompt,
+    ToolsInput $tools,
+    string $threadId,
+  ): array {
+    $pluginId = $this->getShortTermMemoryPluginId();
+    if ($pluginId === NULL) {
+      return [$history, $systemPrompt, $tools];
+    }
+
+    // Convert history to ChatMessage objects for the plugin API.
+    $chatMessages = $this->convertHistoryToChatMessages($history);
+    $toolFunctions = $tools->getFunctions();
+
+    // Create the memory plugin instance and run processing.
+    $config = $this->getShortTermMemoryConfig();
+    /** @var \Drupal\ai\Plugin\AiShortTermMemory\AiShortTermMemoryInterface $plugin */
+    $plugin = $this->shortTermMemoryManager->createInstance($pluginId, $config);
+    $plugin->process(
+      $threadId,
+      $this->getPluginId(),
+      $chatMessages,
+      $systemPrompt,
+      $toolFunctions,
+      $chatMessages,
+      $systemPrompt,
+      $toolFunctions,
+    );
+
+    // Read back modified values from the plugin.
+    $modifiedHistory = $this->rebuildHistoryFromProcessed(
+      $plugin->getChatHistory(),
+      $history,
+    );
+    $modifiedPrompt = $plugin->getSystemPrompt();
+    $modifiedTools = new ToolsInput($plugin->getTools());
+
+    return [$modifiedHistory, $modifiedPrompt, $modifiedTools];
   }
 
   /**
