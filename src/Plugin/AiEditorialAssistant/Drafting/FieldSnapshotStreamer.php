@@ -79,44 +79,120 @@ class FieldSnapshotStreamer {
     array $fieldsToStream,
     bool $isFirstDraft,
   ): void {
-    // Determine the set of fields to include in the output.
-    // On regeneration with specific fields requested ($fieldsToStream
-    // non-empty), restrict to only those fields so the rest of the draft
-    // stays untouched in the frontend. On first draft or when no specific
-    // fields are requested, pass through all drafted fields.
-    $targetFields = $fields;
-    if (!empty($fieldsToStream)) {
-      // array_flip converts ["title", "body"] into ["title" => 0, "body" => 1]
-      // so array_intersect_key can use it as a key mask.
-      $targetFields = array_intersect_key(
-        $fields,
-        array_flip($fieldsToStream),
-      );
-    }
+    $targetFields = $this->resolveTargetFields($fields, $fieldsToStream);
+    $progressiveFields = $this->resolveProgressiveMode(
+      $isFirstDraft,
+      $fieldsToStream,
+    );
 
-    // Decide the progressive-streaming mode. Three cases apply:
-    // NULL means first draft, so all long text fields are progressive.
-    // A non-empty associative array means regeneration with specific fields;
-    // only those fields are progressive (keyed by name for O(1) lookup).
-    // An empty array means regeneration without a field hint, so no
-    // progressive streaming and all fields arrive as single snapshots.
-    $progressiveFields = [];
+    // Phase 1: skeleton snapshot with placeholders for progressive fields.
+    [$streamed, $progressiveFieldNames, $escapedNames] = $this->buildSkeleton(
+      $targetFields,
+      $fieldIndex,
+      $progressiveFields,
+    );
+    $this->transporter->sendEvent(
+      new StateSnapshotEvent(['draftedFields' => $streamed]),
+    );
+
+    // Phase 2: word-by-word deltas for progressive fields.
+    $this->streamDeltas(
+      $targetFields,
+      $progressiveFieldNames,
+      $escapedNames,
+      $streamed,
+    );
+
+    // Phase 3: final snapshot with complete state for reconciliation.
+    $this->transporter->sendEvent(
+      new StateSnapshotEvent(['draftedFields' => $streamed]),
+    );
+  }
+
+  /**
+   * Filters fields to only those requested for streaming.
+   *
+   * On regeneration with specific fields requested, restricts to only
+   * those fields so the rest of the draft stays untouched in the
+   * frontend. On first draft or when no specific fields are requested,
+   * passes through all drafted fields.
+   *
+   * @param array $fields
+   *   All drafted fields keyed by machine name.
+   * @param array $fieldsToStream
+   *   Field names explicitly requested, or empty for all.
+   *
+   * @return array
+   *   The subset of fields to include in the output.
+   */
+  private function resolveTargetFields(array $fields, array $fieldsToStream): array {
+    if (empty($fieldsToStream)) {
+      return $fields;
+    }
+    // array_flip converts ["title", "body"] into ["title" => 0, "body" => 1]
+    // so array_intersect_key can use it as a key mask.
+    return array_intersect_key($fields, array_flip($fieldsToStream));
+  }
+
+  /**
+   * Determines the progressive-streaming mode.
+   *
+   * Three cases:
+   * - NULL: first draft, all eligible fields are progressive.
+   * - Non-empty array: regeneration with specific fields as progressive
+   *   (keyed by name for O(1) lookup).
+   * - Empty array: regeneration without a field hint, no progressive
+   *   streaming.
+   *
+   * @param bool $isFirstDraft
+   *   TRUE if this is the initial draft.
+   * @param array $fieldsToStream
+   *   Field names explicitly requested for streaming.
+   *
+   * @return array|null
+   *   NULL for unrestricted progressive mode, or a hash map of
+   *   progressive field names, or an empty array for none.
+   */
+  private function resolveProgressiveMode(bool $isFirstDraft, array $fieldsToStream): ?array {
     if ($isFirstDraft) {
-      // NULL signals "all eligible fields are progressive" to the loop below.
-      $progressiveFields = NULL;
+      return NULL;
     }
-    elseif (!empty($fieldsToStream)) {
-      // Convert the list to a hash map for O(1) isset() checks in the loop.
-      $progressiveFields = array_flip($fieldsToStream);
+    if (!empty($fieldsToStream)) {
+      return array_flip($fieldsToStream);
     }
+    return [];
+  }
 
-    // Phase 1: Build skeleton state with all fields present.
-    // Non-progressive fields carry their final values.
-    // Progressive fields carry empty placeholders so the
-    // frontend has a complete structure to patch against.
-    // Also prepare escaped field names for JSON Pointer paths
-    // (RFC 6901: ~ becomes ~0, / becomes ~1). Drupal field
-    // names are [a-z0-9_] only so this is defensive.
+  /**
+   * Builds the skeleton state for phase 1.
+   *
+   * Iterates all target fields and classifies each as progressive or
+   * non-progressive. Non-progressive fields carry their final values.
+   * Progressive fields carry empty placeholders (empty string for plain
+   * text, or the field array with an empty "value" key for formatted text).
+   *
+   * Also prepares JSON Pointer-escaped field names (RFC 6901: ~ becomes
+   * ~0, / becomes ~1). Drupal field names are [a-z0-9_] only so this
+   * is defensive.
+   *
+   * @param array $targetFields
+   *   Fields to include in the skeleton, keyed by machine name.
+   * @param array $fieldIndex
+   *   Schema field definitions keyed by machine name.
+   * @param array|null $progressiveFields
+   *   NULL for unrestricted, hash map of progressive names, or empty.
+   *
+   * @return array
+   *   A three-element array:
+   *   - $streamed: the skeleton state keyed by field name.
+   *   - $progressiveFieldNames: ordered list of progressive field names.
+   *   - $escapedNames: JSON Pointer-escaped names keyed by field name.
+   */
+  private function buildSkeleton(
+    array $targetFields,
+    array $fieldIndex,
+    ?array $progressiveFields,
+  ): array {
     $streamed = [];
     $progressiveFieldNames = [];
     $escapedNames = [];
@@ -150,72 +226,85 @@ class FieldSnapshotStreamer {
       }
     }
 
-    // Emit the skeleton snapshot. The frontend now has a base
-    // document to apply JSON Patch operations against.
-    $this->transporter->sendEvent(
-      new StateSnapshotEvent(['draftedFields' => $streamed]),
-    );
+    return [$streamed, $progressiveFieldNames, $escapedNames];
+  }
 
-    // Phase 2: Stream progressive fields word-by-word as deltas.
-    // Each delta carries a single JSON Patch "replace" operation
-    // targeting the specific field path, not the full state.
+  /**
+   * Streams progressive fields word-by-word as JSON Patch deltas.
+   *
+   * For each progressive field, splits the text on whitespace and emits
+   * one StateDeltaEvent per token with a "replace" operation targeting
+   * the specific field path. Also updates the $streamed accumulator
+   * with final values for use in the phase 3 snapshot.
+   *
+   * @param array $targetFields
+   *   All target fields with their final values.
+   * @param array $progressiveFieldNames
+   *   Ordered list of field names to stream progressively.
+   * @param array $escapedNames
+   *   JSON Pointer-escaped names keyed by field name.
+   * @param array &$streamed
+   *   The skeleton state, updated in place with final values after
+   *   each field finishes streaming.
+   */
+  private function streamDeltas(
+    array $targetFields,
+    array $progressiveFieldNames,
+    array $escapedNames,
+    array &$streamed,
+  ): void {
     foreach ($progressiveFieldNames as $name) {
       $value = $targetFields[$name];
 
       if (is_string($value)) {
         // Plain string field: patch the field value directly.
-        $words = preg_split(
-          '/(\s+)/',
+        $this->streamWords(
           $value,
-          -1,
-          PREG_SPLIT_DELIM_CAPTURE,
+          '/draftedFields/' . $escapedNames[$name],
         );
-        $partial = '';
-        foreach ($words as $word) {
-          $partial .= $word;
-          $this->transporter->sendEvent(new StateDeltaEvent([
-            [
-              'op' => 'replace',
-              'path' => '/draftedFields/' . $escapedNames[$name],
-              'value' => $partial,
-            ],
-          ]));
-        }
-        // Update the accumulator with the final value for phase 3.
         $streamed[$name] = $value;
       }
       elseif (is_array($value) && isset($value['value'])) {
         // Formatted text field: patch only the "value" key,
         // leaving format/summary intact from the skeleton.
-        $words = preg_split(
-          '/(\s+)/',
+        $this->streamWords(
           $value['value'],
-          -1,
-          PREG_SPLIT_DELIM_CAPTURE,
+          '/draftedFields/' . $escapedNames[$name] . '/value',
         );
-        $partial = '';
-        foreach ($words as $word) {
-          $partial .= $word;
-          $this->transporter->sendEvent(new StateDeltaEvent([
-            [
-              'op' => 'replace',
-              'path' => '/draftedFields/' . $escapedNames[$name] . '/value',
-              'value' => $partial,
-            ],
-          ]));
-        }
-        // Update the accumulator with the final value for phase 3.
         $streamed[$name] = $value;
       }
     }
+  }
 
-    // Phase 3: Final snapshot with complete state.
-    // Acts as a reconciliation checkpoint so the frontend can
-    // verify its patch-built state against the authoritative
-    // final values.
-    $this->transporter->sendEvent(
-      new StateSnapshotEvent(['draftedFields' => $streamed]),
+  /**
+   * Splits text on whitespace and emits one delta per token.
+   *
+   * Uses PREG_SPLIT_DELIM_CAPTURE to preserve whitespace tokens so the
+   * reconstructed partial string has correct spacing.
+   *
+   * @param string $text
+   *   The full text to stream word-by-word.
+   * @param string $path
+   *   The JSON Pointer path for the replace operation.
+   */
+  private function streamWords(string $text, string $path): void {
+    $words = preg_split(
+      '/(\s+)/',
+      $text,
+      -1,
+      PREG_SPLIT_DELIM_CAPTURE,
     );
+    $partial = '';
+    foreach ($words as $word) {
+      $partial .= $word;
+      $this->transporter->sendEvent(new StateDeltaEvent([
+        [
+          'op' => 'replace',
+          'path' => $path,
+          'value' => $partial,
+        ],
+      ]));
+    }
   }
 
   /**
