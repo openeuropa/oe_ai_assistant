@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Drupal\oe_ai_assistant\Plugin\AiEditorialAssistant\Drafting;
 
 use Drupal\oe_ai_assistant\Transporter\DrupalSseTransporter;
+use Swis\AgUiServer\Events\StateDeltaEvent;
 use Swis\AgUiServer\Events\StateSnapshotEvent;
 
 /**
@@ -104,59 +105,112 @@ class FieldSnapshotStreamer {
       $progressiveFields = array_flip($fieldsToStream);
     }
 
-    // Accumulator: holds all fields emitted so far in this call.
-    // Each STATE_SNAPSHOT event carries the full accumulator so the frontend
-    // always receives a complete partial state, not just a delta.
+    // Phase 1: Build skeleton state with all fields present.
+    // Non-progressive fields carry their final values.
+    // Progressive fields carry empty placeholders so the
+    // frontend has a complete structure to patch against.
+    // Also prepare escaped field names for JSON Pointer paths
+    // (RFC 6901: ~ becomes ~0, / becomes ~1). Drupal field
+    // names are [a-z0-9_] only so this is defensive.
     $streamed = [];
+    $progressiveFieldNames = [];
+    $escapedNames = [];
 
     foreach ($targetFields as $name => $value) {
-      // A field is streamed word-by-word only when both conditions hold:
-      // (1) its widget type is a textarea or formatted text editor, and
-      // (2) it is in the progressive set, or progressive mode is unrestricted
-      // on first draft (signalled by $progressiveFields === NULL).
-      $shouldStream = $this->isStreamableField($name, $value, $fieldIndex)
+      // Escape field name for JSON Pointer (RFC 6901).
+      $escapedNames[$name] = str_replace(
+        ['~', '/'],
+        ['~0', '~1'],
+        $name,
+      );
+
+      $isProgressive = $this->isStreamableField($name, $value, $fieldIndex)
         && ($progressiveFields === NULL || isset($progressiveFields[$name]));
 
-      if ($shouldStream && is_string($value) && mb_strlen($value) > 50) {
-        // Plain string field (e.g. "title" or "field_summary"): split on
-        // whitespace while PREG_SPLIT_DELIM_CAPTURE retains whitespace tokens
-        // so the reconstructed partial string has correct spacing.
-        $words = preg_split('/(\s+)/', $value, -1, PREG_SPLIT_DELIM_CAPTURE);
-        $partial = '';
-        foreach ($words as $word) {
-          // Append each token (word or whitespace run) to the growing partial
-          // value and emit a snapshot after every token so the frontend
-          // updates smoothly.
-          $partial .= $word;
-          $streamed[$name] = $partial;
-          $this->transporter->sendEvent(new StateSnapshotEvent(['draftedFields' => $streamed]));
-        }
+      if ($isProgressive && is_string($value) && mb_strlen($value) > 50) {
+        // Plain string placeholder: empty string.
+        $streamed[$name] = '';
+        $progressiveFieldNames[] = $name;
       }
-      elseif ($shouldStream && is_array($value) && isset($value['value'])
+      elseif ($isProgressive && is_array($value) && isset($value['value'])
         && is_string($value['value']) && mb_strlen($value['value']) > 50) {
-        // Formatted text field (e.g. "body"): the LLM returns an array with
-        // at least a "value" key (the HTML string) and optionally "format"
-        // and "summary" keys. We stream only the "value" key word-by-word
-        // and preserve the rest of the array on every snapshot so the
-        // frontend always has a complete, valid field structure.
-        $words = preg_split('/(\s+)/', $value['value'], -1, PREG_SPLIT_DELIM_CAPTURE);
-        $partial = '';
-        foreach ($words as $word) {
-          $partial .= $word;
-          // array_merge preserves extra keys (format, summary, etc.) while
-          // replacing only the "value" key with the growing partial HTML.
-          $streamed[$name] = array_merge($value, ['value' => $partial]);
-          $this->transporter->sendEvent(new StateSnapshotEvent(['draftedFields' => $streamed]));
-        }
+        // Formatted text placeholder: preserve structure,
+        // empty the value key.
+        $streamed[$name] = array_merge($value, ['value' => '']);
+        $progressiveFieldNames[] = $name;
       }
       else {
-        // Short text, number, date, entity reference stub, or any field
-        // not eligible for progressive streaming: emit a single snapshot
-        // with the complete value.
+        // Non-progressive: final value immediately.
         $streamed[$name] = $value;
-        $this->transporter->sendEvent(new StateSnapshotEvent(['draftedFields' => $streamed]));
       }
     }
+
+    // Emit the skeleton snapshot. The frontend now has a base
+    // document to apply JSON Patch operations against.
+    $this->transporter->sendEvent(
+      new StateSnapshotEvent(['draftedFields' => $streamed]),
+    );
+
+    // Phase 2: Stream progressive fields word-by-word as deltas.
+    // Each delta carries a single JSON Patch "replace" operation
+    // targeting the specific field path, not the full state.
+    foreach ($progressiveFieldNames as $name) {
+      $value = $targetFields[$name];
+
+      if (is_string($value)) {
+        // Plain string field: patch the field value directly.
+        $words = preg_split(
+          '/(\s+)/',
+          $value,
+          -1,
+          PREG_SPLIT_DELIM_CAPTURE,
+        );
+        $partial = '';
+        foreach ($words as $word) {
+          $partial .= $word;
+          $this->transporter->sendEvent(new StateDeltaEvent([
+            [
+              'op' => 'replace',
+              'path' => '/draftedFields/' . $escapedNames[$name],
+              'value' => $partial,
+            ],
+          ]));
+        }
+        // Update the accumulator with the final value for phase 3.
+        $streamed[$name] = $value;
+      }
+      elseif (is_array($value) && isset($value['value'])) {
+        // Formatted text field: patch only the "value" key,
+        // leaving format/summary intact from the skeleton.
+        $words = preg_split(
+          '/(\s+)/',
+          $value['value'],
+          -1,
+          PREG_SPLIT_DELIM_CAPTURE,
+        );
+        $partial = '';
+        foreach ($words as $word) {
+          $partial .= $word;
+          $this->transporter->sendEvent(new StateDeltaEvent([
+            [
+              'op' => 'replace',
+              'path' => '/draftedFields/' . $escapedNames[$name] . '/value',
+              'value' => $partial,
+            ],
+          ]));
+        }
+        // Update the accumulator with the final value for phase 3.
+        $streamed[$name] = $value;
+      }
+    }
+
+    // Phase 3: Final snapshot with complete state.
+    // Acts as a reconciliation checkpoint so the frontend can
+    // verify its patch-built state against the authoritative
+    // final values.
+    $this->transporter->sendEvent(
+      new StateSnapshotEvent(['draftedFields' => $streamed]),
+    );
   }
 
   /**
