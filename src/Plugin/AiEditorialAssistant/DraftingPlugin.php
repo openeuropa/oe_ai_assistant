@@ -19,6 +19,8 @@ use Drupal\oe_ai_assistant\Service\ConversationHistory;
 use Drupal\oe_ai_assistant\Service\DraftFieldMapper;
 use Drupal\oe_ai_assistant\Service\FormSchemaExtractor;
 use Drupal\oe_ai_assistant\Service\LlmStreamingLoop;
+use Drupal\ai\PluginManager\AiShortTermMemoryPluginManager;
+use Drupal\ai\Service\FunctionCalling\FunctionCallPluginManager;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\Request;
@@ -47,8 +49,9 @@ class DraftingPlugin extends ChatPluginBase {
   /**
    * Constructs a DraftingPlugin.
    *
-   * The five chat services (aiProvider, uuid, logger, conversationHistory,
-   * llmLoop) are forwarded to ChatPluginBase via parent::__construct().
+   * The seven chat services (aiProvider, uuid, logger, conversationHistory,
+   * llmLoop, shortTermMemoryManager, functionCallManager) are forwarded to
+   * ChatPluginBase via parent::__construct().
    * Only drafting-specific services are declared as promoted properties
    * on this class.
    *
@@ -68,6 +71,10 @@ class DraftingPlugin extends ChatPluginBase {
    *   Persists and retrieves per-thread conversation history.
    * @param \Drupal\oe_ai_assistant\Service\LlmStreamingLoop $llmLoop
    *   Runs the agentic tool-call loop against the configured LLM.
+   * @param \Drupal\ai\PluginManager\AiShortTermMemoryPluginManager $shortTermMemoryManager
+   *   Plugin manager for AI short-term memory plugins (e.g. LastN).
+   * @param \Drupal\ai\Service\FunctionCalling\FunctionCallPluginManager $functionCallManager
+   *   Plugin manager for auto-discovered FunctionCall plugins.
    * @param \Drupal\Core\Entity\EntityTypeManagerInterface $entityTypeManager
    *   The entity type manager, used indirectly via DraftFieldMapper.
    * @param \Drupal\oe_ai_assistant\Service\DraftFieldMapper $fieldMapper
@@ -86,6 +93,8 @@ class DraftingPlugin extends ChatPluginBase {
     LoggerInterface $logger,
     ConversationHistory $conversationHistory,
     LlmStreamingLoop $llmLoop,
+    AiShortTermMemoryPluginManager $shortTermMemoryManager,
+    FunctionCallPluginManager $functionCallManager,
     protected readonly EntityTypeManagerInterface $entityTypeManager,
     protected readonly DraftFieldMapper $fieldMapper,
     protected readonly AccountProxyInterface $currentUser,
@@ -100,6 +109,8 @@ class DraftingPlugin extends ChatPluginBase {
       $logger,
       $conversationHistory,
       $llmLoop,
+      $shortTermMemoryManager,
+      $functionCallManager,
     );
   }
 
@@ -138,6 +149,8 @@ class DraftingPlugin extends ChatPluginBase {
       $container->get('logger.factory')->get('oe_ai_assistant'),
       $container->get(ConversationHistory::class),
       $container->get(LlmStreamingLoop::class),
+      $container->get('plugin.manager.ai.short_term_memory'),
+      $container->get('plugin.manager.ai.function_calls'),
       // Drafting-specific services.
       $container->get('entity_type.manager'),
       $container->get(DraftFieldMapper::class),
@@ -372,11 +385,11 @@ class DraftingPlugin extends ChatPluginBase {
       $args = $toolCall['arguments'] ?? [];
 
       // Dispatch each tool call to the appropriate local handler.
-      // Currently only draft_content is supported; unknown tools
-      // return an error payload that the LLM can act on.
+      // draft_content is handled locally; all other tool names are
+      // delegated to the FunctionCall plugin system.
       $result = match ($name) {
         'draft_content' => $this->toolDraftContent($args),
-        default => ['error' => "Unknown tool: $name"],
+        default => $this->executeFunctionCallPlugin($name, $args),
       };
 
       $results[] = [
@@ -405,6 +418,26 @@ class DraftingPlugin extends ChatPluginBase {
     }
 
     return $results;
+  }
+
+  /**
+   * {@inheritdoc}
+   *
+   * Uses the 'last_n' short-term memory strategy to keep
+   * conversation history bounded for the LLM context window.
+   */
+  protected function getShortTermMemoryPluginId(): ?string {
+    return 'last_n';
+  }
+
+  /**
+   * {@inheritdoc}
+   *
+   * Configures LastN to keep 20 messages, matching the previous
+   * behavior of 10 message pairs.
+   */
+  protected function getShortTermMemoryConfig(): array {
+    return ['max_messages' => 20];
   }
 
   /**
