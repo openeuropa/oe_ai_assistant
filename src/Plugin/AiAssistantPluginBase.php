@@ -227,7 +227,7 @@ abstract class AiAssistantPluginBase extends PluginBase implements AiAssistantPl
    * to its current state, avoiding the need to resend the entire
    * state on every incremental update.
    *
-   * @param array $delta
+   * @param array<int, array<string, mixed>> $delta
    *   Array of JSON Patch operations. Each operation is an
    *   associative array with 'op', 'path', and 'value' keys.
    */

@@ -9,11 +9,16 @@ use Swis\AgUiServer\Events\StateDeltaEvent;
 use Swis\AgUiServer\Events\StateSnapshotEvent;
 
 /**
- * Streams drafted fields to the frontend via STATE_SNAPSHOT SSE events.
+ * Streams drafted fields to the frontend via SSE events.
  *
- * Handles two streaming modes:
- * - Word-by-word (progressive): long text fields that qualify for streaming.
- * - Whole-field (single snapshot): short or non-text fields.
+ * Uses a three-phase event lifecycle:
+ * 1. Skeleton STATE_SNAPSHOT: all fields present, progressive fields empty.
+ * 2. Per-word STATE_DELTA: JSON Patch replace operations for progressive
+ *    fields, one per whitespace-delimited token.
+ * 3. Final STATE_SNAPSHOT: complete state for reconciliation.
+ *
+ * Non-progressive fields (short text, numbers, dates, entity references)
+ * carry their final values in both the skeleton and final snapshots.
  *
  * On first draft all long text fields are streamed progressively. On
  * regeneration only the explicitly requested fields are streamed; the
@@ -25,32 +30,32 @@ class FieldSnapshotStreamer {
    * Constructs a FieldSnapshotStreamer.
    *
    * @param \Drupal\oe_ai_assistant\Transporter\DrupalSseTransporter $transporter
-   *   The SSE transporter used to emit STATE_SNAPSHOT events to the browser.
-   *   The transporter handles the low-level SSE framing (data:, event:, id:
-   *   lines) and flushes the output buffer after each event.
+   *   The SSE transporter used to emit STATE_SNAPSHOT and STATE_DELTA
+   *   events to the browser. The transporter handles the low-level SSE
+   *   framing (data:, event:, id: lines) and flushes the output buffer
+   *   after each event.
    */
   public function __construct(
     private readonly DrupalSseTransporter $transporter,
   ) {}
 
   /**
-   * Streams drafted fields as STATE_SNAPSHOT SSE events.
+   * Streams drafted fields via the three-phase event lifecycle.
    *
    * Entry point called by DraftingPlugin's tool executor closure after the
    * LLM invokes draft_content. The method determines which fields to include
-   * in the SSE stream, then iterates over them emitting either progressive
-   * word-by-word events or a single whole-field event per field.
+   * and which qualify for progressive streaming, then emits:
    *
-   * Each STATE_SNAPSHOT event wraps a "draftedFields" key containing all
-   * fields streamed so far (including fields from previous iterations of the
-   * loop). The frontend applies each snapshot as a merge, so a field already
-   * present in the frontend state is overwritten only when it appears in the
-   * snapshot.
+   * 1. A skeleton STATE_SNAPSHOT with all target fields present
+   *    (progressive fields set to empty placeholders).
+   * 2. One STATE_DELTA per whitespace token for each progressive field,
+   *    carrying a JSON Patch "replace" operation.
+   * 3. A final STATE_SNAPSHOT with the complete state for reconciliation.
    *
    * Selective streaming (regeneration): when $fieldsToStream is non-empty,
    * only those fields are included in the output. Omitted fields remain
-   * unchanged in the frontend state because they simply never appear in any
-   * snapshot during this call.
+   * unchanged in the frontend state because they do not appear in any
+   * event during this call.
    *
    * @param array $fields
    *   Drafted fields keyed by machine name, as returned by the LLM tool call.
