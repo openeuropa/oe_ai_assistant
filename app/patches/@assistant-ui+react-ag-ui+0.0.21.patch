@@ -1,26 +1,25 @@
-diff --git a/node_modules/@assistant-ui/react-ag-ui/src/runtime/AgUiThreadRuntimeCore.ts b/node_modules/@assistant-ui/react-ag-ui/src/runtime/AgUiThreadRuntimeCore.ts
-index 2da1a9e..9db0b1a 100644
---- a/node_modules/@assistant-ui/react-ag-ui/src/runtime/AgUiThreadRuntimeCore.ts
-+++ b/node_modules/@assistant-ui/react-ag-ui/src/runtime/AgUiThreadRuntimeCore.ts
-@@ -15,6 +15,7 @@ import type { HttpAgent } from "@ag-ui/client";
- import type { Logger } from "./logger";
- import type { AgUiEvent } from "./types";
- import type { ReadonlyJSONValue } from "assistant-stream/utils";
+diff --git a/node_modules/@assistant-ui/react-ag-ui/dist/runtime/AgUiThreadRuntimeCore.js b/node_modules/@assistant-ui/react-ag-ui/dist/runtime/AgUiThreadRuntimeCore.js
+index 6be0494..0f2df48 100644
+--- a/node_modules/@assistant-ui/react-ag-ui/dist/runtime/AgUiThreadRuntimeCore.js
++++ b/node_modules/@assistant-ui/react-ag-ui/dist/runtime/AgUiThreadRuntimeCore.js
+@@ -1,5 +1,6 @@
+ "use client";
+ import { generateId, fromThreadMessageLike } from "@assistant-ui/core/internal";
 +import { applyPatch, deepClone } from "fast-json-patch";
- import { RunAggregator } from "./adapter/run-aggregator";
- import {
-   fromAgUiMessages,
-@@ -496,7 +497,12 @@ export class AgUiThreadRuntimeCore {
-         return;
-       }
-       case "STATE_DELTA": {
--        this.logger.debug?.("[agui] state delta event ignored", event.delta);
-+        const base = this.stateSnapshot ?? {};
-+        const cloned = deepClone(base);
-+        const result = applyPatch(cloned, event.delta as any[], false, false);
-+        this.stateSnapshot = result.newDocument as ReadonlyJSONValue;
-+        this.logger.debug?.("[agui] state delta applied", event.delta);
-+        this.notifyUpdate();
-         return;
-       }
-       case "MESSAGES_SNAPSHOT": {
+ import { RunAggregator } from "./adapter/run-aggregator.js";
+ import { fromAgUiMessages, toAgUiMessages, toAgUiTools, } from "./adapter/conversions.js";
+ import { createAgUiSubscriber } from "./adapter/subscriber.js";
+@@ -376,7 +377,12 @@ export class AgUiThreadRuntimeCore {
+                 return;
+             }
+             case "STATE_DELTA": {
+-                this.logger.debug?.("[agui] state delta event ignored", event.delta);
++                const base = this.stateSnapshot ?? {};
++                const cloned = deepClone(base);
++                const result = applyPatch(cloned, event.delta, false, false);
++                this.stateSnapshot = result.newDocument;
++                this.logger.debug?.("[agui] state delta applied", event.delta);
++                this.notifyUpdate();
+                 return;
+             }
+             case "MESSAGES_SNAPSHOT": {
