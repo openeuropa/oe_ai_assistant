@@ -6,8 +6,8 @@
  * intervals regardless of event type.
  */
 
-import { describe, expect, it, vi } from "vitest";
 import { Observable } from "rxjs";
+import { describe, expect, it } from "vitest";
 import {
   createSmoothingMiddleware,
   type EventSmoothingConfig,
@@ -51,9 +51,7 @@ describe("createSmoothingMiddleware", () => {
       },
     ];
 
-    const result = await collectEvents(
-      middleware({}, mockNext(events)),
-    );
+    const result = await collectEvents(middleware({}, mockNext(events)));
 
     expect(result).toHaveLength(2);
     expect(result[0]).toEqual(events[0]);
@@ -89,9 +87,7 @@ describe("createSmoothingMiddleware", () => {
       },
     ];
 
-    const result = await collectEvents(
-      middleware({}, mockNext(events)),
-    );
+    const result = await collectEvents(middleware({}, mockNext(events)));
 
     expect(result).toHaveLength(2);
     expect(result[0]).toEqual(events[0]);
@@ -122,9 +118,7 @@ describe("createSmoothingMiddleware", () => {
       },
     ];
 
-    const result = await collectEvents(
-      middleware({}, mockNext(events)),
-    );
+    const result = await collectEvents(middleware({}, mockNext(events)));
 
     expect(result).toHaveLength(3);
     expect(result.map((e) => e.type)).toEqual([
@@ -153,9 +147,7 @@ describe("createSmoothingMiddleware", () => {
       },
     ];
 
-    const result = await collectEvents(
-      middleware({}, mockNext(events)),
-    );
+    const result = await collectEvents(middleware({}, mockNext(events)));
 
     expect(result).toHaveLength(1);
     expect(result[0]).toEqual(events[0]);
