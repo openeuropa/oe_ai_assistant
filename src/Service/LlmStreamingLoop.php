@@ -138,6 +138,11 @@ class LlmStreamingLoop {
       $streamedText = '';
       $messageStarted = FALSE;
 
+      // Track tool calls that were started during incremental
+      // streaming so we do not re-emit startToolCall() in the
+      // post-loop tool execution block.
+      $startedToolCalls = [];
+
       // Perform the streamed chat call. getNormalized() returns a
       // StreamedChatMessageIterator that assembles delta chunks into complete
       // text and tool call objects incrementally.
@@ -166,6 +171,30 @@ class LlmStreamingLoop {
           }
           $agUiState->addMessageContent($text, $messageId);
           $streamedText .= $text;
+        }
+
+        // Check for partial tool call arguments during streaming.
+        // The iterator object is in scope; we call its method
+        // directly to read the current partial state. Guarded by
+        // method_exists() so non-Mistral iterators are unaffected.
+        if ($config->onToolCallArgumentDelta
+          && method_exists($iterator, 'getPartialToolCallArguments')
+        ) {
+          $partials = $iterator->getPartialToolCallArguments();
+          if (!empty($partials)) {
+            // Emit TOOL_CALL_START on first detection of each tool
+            // call ID, before any deltas are sent.
+            foreach ($partials as $tc) {
+              $tcId = $tc['id'] ?? '';
+              if ($tcId !== '' && !isset($startedToolCalls[$tcId])) {
+                $agUiState->startToolCall(
+                  $tc['name'] ?? '', NULL, $tcId,
+                );
+                $startedToolCalls[$tcId] = $tc['name'] ?? '';
+              }
+            }
+            ($config->onToolCallArgumentDelta)($partials);
+          }
         }
       }
 
@@ -229,8 +258,14 @@ class LlmStreamingLoop {
         // The AG-UI protocol expects all tool call envelopes to be opened
         // before any results are produced, so the client can render a
         // "running tools" indicator for each simultaneously.
+        // Emit start events only for tool calls that were NOT
+        // already started during incremental streaming.
         foreach ($toolCallsForExec as $toolCallId => $toolCall) {
-          $agUiState->startToolCall($toolCall['name'], NULL, $toolCallId);
+          if (!isset($startedToolCalls[$toolCallId])) {
+            $agUiState->startToolCall(
+              $toolCall['name'], NULL, $toolCallId,
+            );
+          }
         }
 
         // Brief pause so the TOOL_CALL_START events reach the browser
