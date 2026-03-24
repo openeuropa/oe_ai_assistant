@@ -82,7 +82,7 @@ class LlmLoopConfig {
     public readonly string $messageId,
     public readonly \Closure $toolExecutor,
     public readonly int $maxIterations = 10,
-    public readonly ?\Closure $onToolCallArgumentDelta = null,
+    public readonly ?\Closure $onToolCallArgumentDelta = NULL,
   ) {}
 
 }

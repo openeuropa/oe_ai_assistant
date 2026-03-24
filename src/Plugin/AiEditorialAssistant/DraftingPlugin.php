@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\oe_ai_assistant\Plugin\AiEditorialAssistant;
 
+use Swis\AgUiServer\Events\StateSnapshotEvent;
 use Drupal\ai\AiProviderPluginManager;
 use Drupal\ai\OperationType\Chat\Tools\ToolsInput;
 use Drupal\Component\Serialization\Json;
@@ -350,7 +351,6 @@ class DraftingPlugin extends ChatPluginBase {
     // emitInitialSnapshot() is called lazily by onDelta() on the
     // first invocation, so we do not call it here. This avoids
     // sending an empty draftedFields snapshot on text-only turns.
-
     return function (array $partials) use ($streamer): void {
       foreach ($partials as $tc) {
         if (($tc['name'] ?? '') === 'draft_content') {
@@ -438,7 +438,7 @@ class DraftingPlugin extends ChatPluginBase {
       // ToolCallFieldStreamer during the streaming iteration, so
       // we only need the authoritative final state here.
       $this->transporter->sendEvent(
-        new \Swis\AgUiServer\Events\StateSnapshotEvent(
+        new StateSnapshotEvent(
           ['draftedFields' => $result['fields'] ?? []],
         ),
       );
