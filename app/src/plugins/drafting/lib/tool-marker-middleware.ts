@@ -22,36 +22,29 @@
 
 import type { Observable } from "rxjs";
 
-/** Full marker pattern to detect in the accumulated text buffer. */
-const MARKER_RE = /\[TOOL:(\w+)\]/;
+/**
+ * Marker pattern to detect in the accumulated text buffer.
+ *
+ * Matches [TOOL:name with or without the closing bracket. Mistral
+ * holds the closing ] until the tool call is ready (arrives 10-20s
+ * later with the tool call data), so we trigger as soon as we see
+ * [TOOL: followed by a word-character tool name.
+ */
+const MARKER_RE = /\[TOOL:(\w+)\]?/;
 
 /**
  * Partial prefix patterns that indicate a marker MAY be forming.
  * If the buffer ends with any of these, we hold it instead of
  * flushing, because the next chunk might complete the marker.
- *
- * Ordered longest-first so we match the most specific prefix.
+ * Only short prefixes before the tool name appears -- once we
+ * have [TOOL:word, MARKER_RE will match.
  */
 const PARTIAL_PREFIXES = [
-  "[TOOL:draft_content",
-  "[TOOL:draft_conten",
-  "[TOOL:draft_conte",
-  "[TOOL:draft_cont",
-  "[TOOL:draft_con",
-  "[TOOL:draft_co",
-  "[TOOL:draft_c",
-  "[TOOL:draft_",
-  "[TOOL:draft",
-  "[TOOL:draf",
-  "[TOOL:dra",
-  "[TOOL:dr",
-  "[TOOL:d",
   "[TOOL:",
   "[TOOL",
   "[TOO",
   "[TO",
   "[T",
-  "[",
 ];
 
 /**
