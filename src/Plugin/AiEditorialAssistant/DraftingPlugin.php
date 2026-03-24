@@ -405,18 +405,9 @@ class DraftingPlugin extends ChatPluginBase {
         $activeFieldsToStream = $result['changedFields'];
       }
 
-      // Emit a brief status message to force the SSE buffer to
-      // flush. This ensures the browser receives the preceding
-      // TOOL_CALL_START event and can render a loading indicator
-      // before the STATE_SNAPSHOT arrives with field data.
-      $statusId = $this->uuid->generate();
-      $this->agUiState->startMessage('assistant', $statusId);
-      $this->agUiState->addMessageContent(
-        'Generating content...', $statusId,
-      );
-      $this->agUiState->finishMessage($statusId);
-
       // Emit the field snapshot with all drafted values at once.
+      // The [TOOL:draft_content] marker in the LLM's text stream
+      // signals the frontend to show a loader before this arrives.
       $this->transporter->sendEvent(
         new StateSnapshotEvent(
           ['draftedFields' => $result['fields'] ?? []],

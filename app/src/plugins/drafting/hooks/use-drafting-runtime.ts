@@ -17,6 +17,7 @@ import { useAgUiRuntime } from "@assistant-ui/react-ag-ui";
 import { useEffect, useMemo, useRef } from "react";
 import { getConfig } from "@/config";
 import { createSmoothingMiddleware } from "@/lib/event-smoothing";
+import { createToolMarkerMiddleware } from "../lib/tool-marker-middleware";
 import type {
   DraftedField,
   DraftedInlineEntity,
@@ -211,6 +212,20 @@ export function useDraftingRuntime() {
     const httpAgent = new HttpAgent({
       url: `${getConfig().apiBaseUrl}/plugins/drafting/chat`,
     });
+
+    // Detect [TOOL:draft_content] markers in the LLM text stream.
+    // The marker arrives as a text token while Mistral is still
+    // generating the tool call server-side. Setting isDrafting=true
+    // immediately shows the loader in the right pane, seconds
+    // before TOOL_CALL_START arrives.
+    // biome-ignore lint/suspicious/noExplicitAny: rxjs version mismatch requires cast
+    httpAgent.use(
+      createToolMarkerMiddleware((toolName) => {
+        if (toolName === "draft_content") {
+          setDraftingState({ isDrafting: true });
+        }
+      }) as any,
+    );
 
     // Apply event smoothing middleware when enabled. Browsers
     // batch SSE events that arrive faster than the renderer's
