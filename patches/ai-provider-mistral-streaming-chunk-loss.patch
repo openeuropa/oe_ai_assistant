@@ -19,7 +19,7 @@
   * @see https://www.drupal.org/project/ai_provider_mistral/issues/3572398
   */
  class MistralChatMessageIterator extends StreamedChatMessageIterator {
-@@ -26,32 +23,86 @@
+@@ -26,32 +23,107 @@
    use MistralResponseTrait;
  
    /**
@@ -33,6 +33,15 @@
 +   */
 +  private array $capturedToolCallData = [];
 +
++  /**
++   * Partial tool call argument strings from the latest chunk.
++   *
++   * Each entry has 'id', 'name', and 'arguments_json' (the raw
++   * accumulated JSON string, potentially incomplete).
++   *
++   * @var array
++   */
++  private array $partialToolCallArguments = [];
 +
 +  /**
     * {@inheritdoc}
@@ -96,6 +105,18 @@
 +          ];
 +          $idx++;
 +        }
++
++        // Capture raw partial argument strings for incremental
++        // streaming. These are the unrepaired JSON fragments that
++        // grow token by token as Mistral generates tool call args.
++        $this->partialToolCallArguments = [];
++        foreach ($toolCalls as $tcIdx => $tc) {
++          $this->partialToolCallArguments[] = [
++            'id' => $tc->getId() ?? '',
++            'name' => $tc->getName() ?? '',
++            'arguments_json' => $partials[$tcIdx] ?? '',
++          ];
++        }
 +      }
 +
 +      // Advance AFTER capturing data so that the consumer sees the
@@ -117,7 +138,7 @@
        );
  
        // Set token usage if available.
-@@ -71,7 +122,6 @@
+@@ -71,7 +143,6 @@
        }
  
        // Set finish reason if available.
@@ -125,7 +146,7 @@
        if ($stopReason) {
          $this->setFinishReason($stopReason);
        }
-@@ -80,4 +130,24 @@
+@@ -80,4 +151,44 @@
      }
    }
  
@@ -149,6 +170,26 @@
 +    return parent::getTools();
 +  }
 +
++  /**
++   * Returns partial tool call argument data from the latest chunk.
++   *
++   * Each element has keys:
++   * - 'id': The tool call ID assigned by Mistral.
++   * - 'name': The tool function name (e.g. 'draft_content').
++   * - 'arguments_json': The raw accumulated argument JSON string,
++   *   which may be incomplete (e.g. '{"title":"EU L').
++   *
++   * Called by LlmStreamingLoop during iteration to enable
++   * incremental field streaming before the tool call completes.
++   *
++   * @return array
++   *   Array of partial tool call data, or empty if no tool calls
++   *   are in progress.
++   */
++  public function getPartialToolCallArguments(): array {
++    return $this->partialToolCallArguments;
++  }
++
  }
 --- a/src/Plugin/AiProvider/MistralProvider.php
 +++ b/src/Plugin/AiProvider/MistralProvider.php
@@ -169,7 +210,7 @@
          $message = new MistralChatMessageIterator($response);
        }
        else {
-@@ -545,6 +546,163 @@
+@@ -545,6 +546,171 @@
    }
  
    /**
@@ -321,7 +362,15 @@
 +            $response = \Partitech\PhpMistral\Clients\Response::updateFromArray($response, $json);
 +          }
 +
-+          if (!empty($response->getChunk()) || $response->getStopReason() !== NULL) {
++          // Yield on text content, stop reason, OR tool call data.
++          // Without the tool call check, tool call argument tokens
++          // are silently accumulated but never exposed to the
++          // iterator for incremental streaming.
++          $toolCalls = $response->getToolCalls();
++          $hasToolCalls = $toolCalls && !$toolCalls->isEmpty();
++          if (!empty($response->getChunk())
++            || $response->getStopReason() !== NULL
++            || $hasToolCalls) {
 +            yield $response;
 +          }
 +        }
