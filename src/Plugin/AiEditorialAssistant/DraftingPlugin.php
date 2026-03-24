@@ -385,7 +385,7 @@ class DraftingPlugin extends ChatPluginBase {
    *
    * Dispatches each tool call to the appropriate handler, builds tool
    * result messages for the conversation history, and streams field
-   * values to the frontend via FieldSnapshotStreamer.
+   * values to the frontend via SSE STATE_SNAPSHOT events.
    *
    * @param array $toolCalls
    *   Map of tool call ID to tool call data (name + arguments).

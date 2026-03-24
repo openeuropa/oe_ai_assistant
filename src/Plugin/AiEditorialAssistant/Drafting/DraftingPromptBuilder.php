@@ -188,8 +188,8 @@ PROMPT;
    *
    * Flattens the grouped schema structure (schema.groups[].fields[]) into a
    * single lookup array keyed by field machine name. This index is consumed
-   * by FieldSnapshotStreamer::isStreamableField() to check whether a given
-   * field should be streamed word-by-word or sent as a single snapshot.
+   * by the field streaming logic to check whether a given
+   * field should be streamed incrementally or sent as a single snapshot.
    *
    * Returns an empty array silently on failure because the streamer falls
    * back to whole-field mode for any field not found in the index.
@@ -221,7 +221,7 @@ PROMPT;
       return $index;
     }
     catch (\Exception $e) {
-      // Return empty index; FieldSnapshotStreamer will send unknown fields
+      // Return empty index; the field streamer will send unknown fields
       // as whole-field snapshots rather than streaming them.
       return [];
     }

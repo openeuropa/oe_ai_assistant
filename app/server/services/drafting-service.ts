@@ -325,7 +325,7 @@ call the draft_content tool for conversational responses.`;
   /**
    * Yields AG-UI events for drafted fields using incremental
    * streaming: empty snapshot, add/replace deltas, final snapshot.
-   * Mirrors FieldSnapshotStreamer::stream().
+   * Mirrors the PHP backend's incremental field streaming.
    */
   private *streamFieldEvents(
     fields: Record<string, unknown>,
