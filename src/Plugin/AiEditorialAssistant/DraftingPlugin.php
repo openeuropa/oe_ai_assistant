@@ -13,7 +13,7 @@ use Drupal\Core\Session\AccountProxyInterface;
 use Drupal\oe_ai_assistant\Annotation\AiEditorialAssistant;
 use Drupal\oe_ai_assistant\Exception\ActionException;
 use Drupal\oe_ai_assistant\Plugin\AiEditorialAssistant\Drafting\DraftingPromptBuilder;
-use Drupal\oe_ai_assistant\Plugin\AiEditorialAssistant\Drafting\FieldSnapshotStreamer;
+use Drupal\oe_ai_assistant\Plugin\AiEditorialAssistant\Drafting\ToolCallFieldStreamer;
 use Drupal\oe_ai_assistant\Plugin\ChatPluginBase;
 use Drupal\oe_ai_assistant\Service\ConversationHistory;
 use Drupal\oe_ai_assistant\Service\DraftFieldMapper;
@@ -333,6 +333,34 @@ class DraftingPlugin extends ChatPluginBase {
   }
 
   /**
+   * {@inheritdoc}
+   *
+   * Creates a ToolCallFieldStreamer that processes partial tool call
+   * argument JSON in real time, emitting STATE_DELTA events as field
+   * values grow token by token.
+   */
+  protected function createToolCallDeltaObserver(
+    array $context,
+    bool $isFirstTurn,
+  ): ?\Closure {
+    $fieldIndex = $context['fieldIndex'];
+    $streamer = new ToolCallFieldStreamer(
+      $this->transporter, $fieldIndex,
+    );
+    // emitInitialSnapshot() is called lazily by onDelta() on the
+    // first invocation, so we do not call it here. This avoids
+    // sending an empty draftedFields snapshot on text-only turns.
+
+    return function (array $partials) use ($streamer): void {
+      foreach ($partials as $tc) {
+        if (($tc['name'] ?? '') === 'draft_content') {
+          $streamer->onDelta($tc['arguments_json'] ?? '');
+        }
+      }
+    };
+  }
+
+  /**
    * Parses [fields:name1,name2] hint from the user message.
    *
    * This tag is set by the frontend regenerate button to indicate which
@@ -405,15 +433,14 @@ class DraftingPlugin extends ChatPluginBase {
         $activeFieldsToStream = $result['changedFields'];
       }
 
-      // Stream field values to the frontend as STATE_SNAPSHOT SSE
-      // events. Progressive (word-by-word) streaming is applied to
-      // long text fields; short and non-text fields arrive whole.
-      $streamer = new FieldSnapshotStreamer($this->transporter);
-      $streamer->stream(
-        $result['fields'] ?? [],
-        $fieldIndex,
-        $activeFieldsToStream,
-        $isFirstDraft,
+      // Emit the final reconciliation snapshot. Incremental field
+      // streaming (STATE_DELTA events) was already handled by
+      // ToolCallFieldStreamer during the streaming iteration, so
+      // we only need the authoritative final state here.
+      $this->transporter->sendEvent(
+        new \Swis\AgUiServer\Events\StateSnapshotEvent(
+          ['draftedFields' => $result['fields'] ?? []],
+        ),
       );
     }
 
