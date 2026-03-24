@@ -19,7 +19,7 @@
   * @see https://www.drupal.org/project/ai_provider_mistral/issues/3572398
   */
  class MistralChatMessageIterator extends StreamedChatMessageIterator {
-@@ -26,32 +23,84 @@
+@@ -26,32 +23,85 @@
    use MistralResponseTrait;
  
    /**
@@ -95,6 +95,7 @@
 +          ];
 +          $idx++;
 +        }
++      }
 +
 +      // Advance AFTER capturing data so that the consumer sees the
 +      // correct chunk text. When the consumer breaks out of the loop,
@@ -115,7 +116,7 @@
        );
  
        // Set token usage if available.
-@@ -71,7 +120,6 @@
+@@ -71,7 +121,6 @@
        }
  
        // Set finish reason if available.
@@ -123,7 +124,7 @@
        if ($stopReason) {
          $this->setFinishReason($stopReason);
        }
-@@ -80,4 +128,24 @@
+@@ -80,4 +129,24 @@
      }
    }
  
