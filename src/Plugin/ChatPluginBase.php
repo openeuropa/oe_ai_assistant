@@ -174,10 +174,6 @@ abstract class ChatPluginBase extends AiAssistantPluginBase {
 
         // Delegate tool executor creation to the concrete plugin.
         $toolExecutor = $this->createToolExecutor($context, $isFirstTurn);
-        // Create optional incremental streaming observer.
-        $deltaObserver = $this->createToolCallDeltaObserver(
-          $context, $isFirstTurn,
-        );
 
         $config = new LlmLoopConfig(
           systemPrompt: $systemPrompt,
@@ -187,7 +183,6 @@ abstract class ChatPluginBase extends AiAssistantPluginBase {
           modelId: $modelId,
           messageId: $messageId,
           toolExecutor: $toolExecutor,
-          onToolCallArgumentDelta: $deltaObserver,
         );
 
         // Pass $this->agUiState (same object as $state) to the loop.
@@ -707,34 +702,6 @@ abstract class ChatPluginBase extends AiAssistantPluginBase {
       }
       return $results;
     };
-  }
-
-  /**
-   * Creates an observer for incremental tool call argument streaming.
-   *
-   * Called alongside createToolExecutor() during chat setup. The
-   * returned closure is invoked on every streaming chunk that carries
-   * partial tool call arguments, enabling plugins to stream field
-   * values to the frontend before the tool call completes.
-   *
-   * The default implementation returns NULL, which disables
-   * incremental streaming. Concrete plugins that support real-time
-   * field streaming (e.g. DraftingPlugin) override this method.
-   *
-   * @param array $context
-   *   The context array returned by buildChatContext().
-   * @param bool $isFirstTurn
-   *   TRUE if the conversation history was empty before this turn.
-   *
-   * @return \Closure|null
-   *   A closure with signature fn(array $partialToolCalls): void,
-   *   or NULL to disable incremental streaming.
-   */
-  protected function createToolCallDeltaObserver(
-    array $context,
-    bool $isFirstTurn,
-  ): ?\Closure {
-    return NULL;
   }
 
 }

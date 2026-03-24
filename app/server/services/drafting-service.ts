@@ -286,46 +286,14 @@ call the draft_content tool for conversational responses.`;
   }
 
   /**
-   * Determines whether a field should be streamed word-by-word.
-   * Mirrors DraftingPlugin::isStreamableField() (lines 697-704).
-   */
-  private isStreamableField(
-    name: string,
-    value: unknown,
-    fieldIndex: FieldIndex,
-  ): boolean {
-    const widget = fieldIndex[name]?.widget ?? "";
-    if (
-      ["textarea", "textarea_formatted", "textarea_formatted_summary"]
-        .includes(widget)
-    ) {
-      return true;
-    }
-    // Fallback: if the field is not in the schema (LLM invented
-    // its own field names), stream any long string. This ensures
-    // progressive streaming works even without a matching schema.
-    if (!fieldIndex[name]) {
-      if (typeof value === "string" && value.length > 50) {
-        return true;
-      }
-      if (
-        value !== null &&
-        typeof value === "object" &&
-        "value" in (value as Record<string, unknown>)
-      ) {
-        const inner = (value as Record<string, unknown>).value;
-        if (typeof inner === "string" && inner.length > 50) {
-          return true;
-        }
-      }
-    }
-    return false;
-  }
-
-  /**
-   * Yields AG-UI events for drafted fields using incremental
-   * streaming: empty snapshot, add/replace deltas, final snapshot.
-   * Mirrors the PHP backend's incremental field streaming.
+   * Yields a STATE_SNAPSHOT event with all drafted field values.
+   *
+   * Mirrors the PHP backend behavior: all fields arrive as a
+   * single snapshot after the tool call completes. No incremental
+   * streaming -- Mistral sends tool call arguments in one shot.
+   *
+   * Any progressive display (typewriter effect) is handled
+   * entirely on the frontend.
    */
   private *streamFieldEvents(
     fields: Record<string, unknown>,
@@ -342,133 +310,10 @@ call the draft_content tool for conversational responses.`;
       );
     }
 
-    // Phase 1: Empty initial snapshot. Fields are added
-    // incrementally via deltas, not pre-populated.
+    // Emit a single snapshot with all field values at once.
     yield {
       type: "STATE_SNAPSHOT",
-      snapshot: { draftedFields: {} },
-    };
-
-    // Accumulate complete state for the final snapshot.
-    const completedFields: Record<string, unknown> = {};
-
-    // Phase 2: Emit incremental deltas for each field.
-    for (const [name, value] of Object.entries(targetFields)) {
-      // Escape for JSON Pointer (RFC 6901). Drupal field
-      // names are [a-z0-9_] only so this is defensive.
-      const escaped = name
-        .replace(/~/g, "~0")
-        .replace(/\//g, "~1");
-
-      const isProgressive = this.isStreamableField(
-        name,
-        value,
-        fieldIndex,
-      );
-
-      if (
-        isProgressive &&
-        typeof value === "string" &&
-        value.length > 50
-      ) {
-        // Progressive plain string: add with first word,
-        // then replace as content grows.
-        const words = value.split(/(\s+)/);
-        let partial = "";
-        for (let i = 0; i < words.length; i++) {
-          partial += words[i];
-          yield {
-            type: "STATE_DELTA",
-            delta: [
-              {
-                // First token adds the field; subsequent
-                // tokens replace the growing value.
-                op: i === 0 ? "add" : "replace",
-                path: `/draftedFields/${escaped}`,
-                value: partial,
-              },
-            ],
-          };
-        }
-        completedFields[name] = value;
-      } else if (
-        isProgressive &&
-        value !== null &&
-        typeof value === "object" &&
-        "value" in (value as Record<string, unknown>)
-      ) {
-        // Progressive formatted text: add the full object
-        // on first appearance, then replace inner value.
-        const obj = value as Record<string, unknown>;
-        const inner = String(obj.value ?? "");
-
-        if (inner.length > 50) {
-          const words = inner.split(/(\s+)/);
-          let partial = "";
-          for (let i = 0; i < words.length; i++) {
-            partial += words[i];
-            if (i === 0) {
-              // First appearance: add the whole object
-              // with partial inner value.
-              yield {
-                type: "STATE_DELTA",
-                delta: [
-                  {
-                    op: "add",
-                    path: `/draftedFields/${escaped}`,
-                    value: { ...obj, value: partial },
-                  },
-                ],
-              };
-            } else {
-              // Subsequent tokens: replace just the
-              // inner value path.
-              yield {
-                type: "STATE_DELTA",
-                delta: [
-                  {
-                    op: "replace",
-                    path: `/draftedFields/${escaped}/value`,
-                    value: partial,
-                  },
-                ],
-              };
-            }
-          }
-        } else {
-          // Short formatted text: add with final value.
-          yield {
-            type: "STATE_DELTA",
-            delta: [
-              {
-                op: "add",
-                path: `/draftedFields/${escaped}`,
-                value,
-              },
-            ],
-          };
-        }
-        completedFields[name] = value;
-      } else {
-        // Non-progressive field: add with final value.
-        yield {
-          type: "STATE_DELTA",
-          delta: [
-            {
-              op: "add",
-              path: `/draftedFields/${escaped}`,
-              value,
-            },
-          ],
-        };
-        completedFields[name] = value;
-      }
-    }
-
-    // Phase 3: Final snapshot with complete state.
-    yield {
-      type: "STATE_SNAPSHOT",
-      snapshot: { draftedFields: { ...completedFields } },
+      snapshot: { draftedFields: { ...targetFields } },
     };
   }
 

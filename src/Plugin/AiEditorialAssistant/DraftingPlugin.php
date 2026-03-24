@@ -14,7 +14,6 @@ use Drupal\Core\Session\AccountProxyInterface;
 use Drupal\oe_ai_assistant\Annotation\AiEditorialAssistant;
 use Drupal\oe_ai_assistant\Exception\ActionException;
 use Drupal\oe_ai_assistant\Plugin\AiEditorialAssistant\Drafting\DraftingPromptBuilder;
-use Drupal\oe_ai_assistant\Plugin\AiEditorialAssistant\Drafting\ToolCallFieldStreamer;
 use Drupal\oe_ai_assistant\Plugin\ChatPluginBase;
 use Drupal\oe_ai_assistant\Service\ConversationHistory;
 use Drupal\oe_ai_assistant\Service\DraftFieldMapper;
@@ -331,27 +330,6 @@ class DraftingPlugin extends ChatPluginBase {
         $isFirstTurn,
       );
     };
-  }
-
-  /**
-   * {@inheritdoc}
-   *
-   * Returns NULL to disable incremental tool call argument streaming.
-   * Mistral does not stream tool call arguments incrementally (they
-   * arrive complete in a single SSE frame), so there is nothing to
-   * stream progressively. The infrastructure in LlmStreamingLoop and
-   * ToolCallFieldStreamer is retained for future use with providers
-   * that do support incremental tool call argument streaming (e.g.
-   * OpenAI).
-   *
-   * Fields are delivered as a single STATE_SNAPSHOT in
-   * executeToolCalls() after the tool call completes.
-   */
-  protected function createToolCallDeltaObserver(
-    array $context,
-    bool $isFirstTurn,
-  ): ?\Closure {
-    return NULL;
   }
 
   /**
