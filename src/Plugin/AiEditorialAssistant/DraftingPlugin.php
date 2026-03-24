@@ -336,28 +336,22 @@ class DraftingPlugin extends ChatPluginBase {
   /**
    * {@inheritdoc}
    *
-   * Creates a ToolCallFieldStreamer that processes partial tool call
-   * argument JSON in real time, emitting STATE_DELTA events as field
-   * values grow token by token.
+   * Returns NULL to disable incremental tool call argument streaming.
+   * Mistral does not stream tool call arguments incrementally (they
+   * arrive complete in a single SSE frame), so there is nothing to
+   * stream progressively. The infrastructure in LlmStreamingLoop and
+   * ToolCallFieldStreamer is retained for future use with providers
+   * that do support incremental tool call argument streaming (e.g.
+   * OpenAI).
+   *
+   * Fields are delivered as a single STATE_SNAPSHOT in
+   * executeToolCalls() after the tool call completes.
    */
   protected function createToolCallDeltaObserver(
     array $context,
     bool $isFirstTurn,
   ): ?\Closure {
-    $fieldIndex = $context['fieldIndex'];
-    $streamer = new ToolCallFieldStreamer(
-      $this->transporter, $fieldIndex,
-    );
-    // emitInitialSnapshot() is called lazily by onDelta() on the
-    // first invocation, so we do not call it here. This avoids
-    // sending an empty draftedFields snapshot on text-only turns.
-    return function (array $partials) use ($streamer): void {
-      foreach ($partials as $tc) {
-        if (($tc['name'] ?? '') === 'draft_content') {
-          $streamer->onDelta($tc['arguments_json'] ?? '');
-        }
-      }
-    };
+    return NULL;
   }
 
   /**
