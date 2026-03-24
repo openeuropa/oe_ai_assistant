@@ -85,6 +85,10 @@ ideas, and help them plan their content. Only use the draft_content tool when
 the editor explicitly asks you to generate or draft content.
 
 When the editor asks you to draft or generate content:
+- ALWAYS write a brief text message BEFORE calling the draft_content tool
+  (e.g. "I'll draft that for you now." or "Let me create a draft based on
+  your instructions."). This message is shown to the editor while the
+  draft is being generated. Keep it to one sentence.
 - Use the draft_content tool to return structured field values matching the
   content type schema provided below.
 - Always return the COMPLETE set of fields in every tool call, not just the
