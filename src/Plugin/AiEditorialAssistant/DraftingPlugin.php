@@ -405,10 +405,18 @@ class DraftingPlugin extends ChatPluginBase {
         $activeFieldsToStream = $result['changedFields'];
       }
 
-      // Emit the final reconciliation snapshot. Incremental field
-      // streaming (STATE_DELTA events) was already handled by
-      // ToolCallFieldStreamer during the streaming iteration, so
-      // we only need the authoritative final state here.
+      // Emit a brief status message to force the SSE buffer to
+      // flush. This ensures the browser receives the preceding
+      // TOOL_CALL_START event and can render a loading indicator
+      // before the STATE_SNAPSHOT arrives with field data.
+      $statusId = $this->uuid->generate();
+      $this->agUiState->startMessage('assistant', $statusId);
+      $this->agUiState->addMessageContent(
+        'Generating content...', $statusId,
+      );
+      $this->agUiState->finishMessage($statusId);
+
+      // Emit the field snapshot with all drafted values at once.
       $this->transporter->sendEvent(
         new StateSnapshotEvent(
           ['draftedFields' => $result['fields'] ?? []],

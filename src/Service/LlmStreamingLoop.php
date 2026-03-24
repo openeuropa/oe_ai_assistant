@@ -235,9 +235,9 @@ class LlmStreamingLoop {
         }
 
         // Brief pause so the TOOL_CALL_START events reach the browser
-        // before the executor begins emitting STATE_SNAPSHOT / STATE_DELTA
-        // events. Without this, they coalesce into one TCP segment and
-        // the client cannot show a spinner before the first delta arrives.
+        // before the executor begins emitting STATE_SNAPSHOT events.
+        // Without this, they coalesce into one TCP segment and the
+        // client cannot show a loading indicator.
         usleep(15000);
 
         // Invoke the plugin-provided executor with the complete set of tool
