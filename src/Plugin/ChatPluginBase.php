@@ -329,7 +329,7 @@ abstract class ChatPluginBase extends AiAssistantPluginBase {
    *   The plugin ID, or NULL to skip memory processing.
    */
   protected function getShortTermMemoryPluginId(): ?string {
-    return NULL;
+    return 'last_n';
   }
 
   /**
@@ -343,7 +343,7 @@ abstract class ChatPluginBase extends AiAssistantPluginBase {
    *   Configuration array passed to the plugin's createInstance().
    */
   protected function getShortTermMemoryConfig(): array {
-    return [];
+    return ['max_messages' => 20];
   }
 
   /**

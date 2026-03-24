@@ -421,26 +421,6 @@ class DraftingPlugin extends ChatPluginBase {
   }
 
   /**
-   * {@inheritdoc}
-   *
-   * Uses the 'last_n' short-term memory strategy to keep
-   * conversation history bounded for the LLM context window.
-   */
-  protected function getShortTermMemoryPluginId(): ?string {
-    return 'last_n';
-  }
-
-  /**
-   * {@inheritdoc}
-   *
-   * Configures LastN to keep 20 messages, matching the previous
-   * behavior of 10 message pairs.
-   */
-  protected function getShortTermMemoryConfig(): array {
-    return ['max_messages' => 20];
-  }
-
-  /**
    * Tool handler: draft_content.
    *
    * Handles the draft_content LLM tool call. Normalises the arguments from
