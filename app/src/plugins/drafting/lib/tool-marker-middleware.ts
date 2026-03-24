@@ -2,30 +2,65 @@
  * AG-UI middleware that detects [TOOL:name] markers in text content.
  *
  * The LLM outputs a [TOOL:draft_content] marker in its text stream
- * right before calling the tool. This marker arrives as a regular
- * text token while Mistral is still generating the tool call
- * arguments server-side. The middleware:
+ * right before calling the tool. Mistral splits this across multiple
+ * SSE chunks (e.g. "[", "TOOL", ":draft_content", "]"), so the
+ * middleware buffers text deltas and scans the accumulated buffer
+ * for the complete marker pattern.
  *
- * 1. Intercepts TEXT_MESSAGE_CONTENT events.
- * 2. Detects the [TOOL:draft_content] marker pattern.
- * 3. Strips the marker from the text so it does not appear in chat.
- * 4. Calls the onToolMarker callback so the UI can show a loader
- *    immediately, before TOOL_CALL_START arrives.
+ * When the marker is detected:
+ * 1. The callback fires so the UI can show a loader immediately.
+ * 2. The marker text is stripped from the buffer.
+ * 3. Any non-marker text before the marker is flushed to chat.
+ * 4. Chunks after the marker pass through normally.
  *
  * This solves a Mistral-specific limitation: Mistral does not stream
- * tool call arguments incrementally. The entire tool call (name,
- * arguments, finish_reason) arrives in a single SSE frame. Without
- * this marker, TOOL_CALL_START and STATE_SNAPSHOT arrive at the
- * same moment, giving the browser no time to render a loader.
+ * tool call arguments incrementally. The entire tool call arrives in
+ * a single SSE frame. Without this marker, TOOL_CALL_START and
+ * STATE_SNAPSHOT arrive at the same moment, giving the browser no
+ * time to render a loader.
  */
 
 import type { Observable } from "rxjs";
 
-/** Regex matching [TOOL:tool_name] markers in text content. */
-const TOOL_MARKER_RE = /\[TOOL:(\w+)\]/g;
+/** Full marker pattern to detect in the accumulated text buffer. */
+const MARKER_RE = /\[TOOL:(\w+)\]/;
+
+/**
+ * Partial prefix patterns that indicate a marker MAY be forming.
+ * If the buffer ends with any of these, we hold it instead of
+ * flushing, because the next chunk might complete the marker.
+ *
+ * Ordered longest-first so we match the most specific prefix.
+ */
+const PARTIAL_PREFIXES = [
+  "[TOOL:draft_content",
+  "[TOOL:draft_conten",
+  "[TOOL:draft_conte",
+  "[TOOL:draft_cont",
+  "[TOOL:draft_con",
+  "[TOOL:draft_co",
+  "[TOOL:draft_c",
+  "[TOOL:draft_",
+  "[TOOL:draft",
+  "[TOOL:draf",
+  "[TOOL:dra",
+  "[TOOL:dr",
+  "[TOOL:d",
+  "[TOOL:",
+  "[TOOL",
+  "[TOO",
+  "[TO",
+  "[T",
+  "[",
+];
 
 /**
  * Creates an AG-UI middleware that detects tool markers in text.
+ *
+ * Buffers TEXT_MESSAGE_CONTENT deltas and scans the accumulated
+ * text for the [TOOL:name] pattern. Non-text events pass through
+ * unchanged. When a TEXT_MESSAGE_END arrives, any remaining buffer
+ * is flushed.
  *
  * @param onToolMarker - Called with the tool name when a marker is
  *   detected. Use this to set isDrafting=true in the store.
@@ -46,47 +81,93 @@ export function createToolMarkerMiddleware(
 
     // biome-ignore lint/suspicious/noExplicitAny: AG-UI event types
     return new ObservableCtor((observer: any) => {
+      // Accumulated text buffer for cross-chunk marker detection.
+      let buffer = "";
+      // Whether the marker has been found (stop buffering after).
+      let markerFound = false;
+      // The last TEXT_MESSAGE_CONTENT event template (for re-emit).
+      // biome-ignore lint/suspicious/noExplicitAny: AG-UI event type
+      let lastTextEvent: any = null;
+
+      /**
+       * Flushes accumulated buffer text as a TEXT_MESSAGE_CONTENT
+       * event. Uses the last seen text event as a template so the
+       * messageId and other fields are correct.
+       */
+      function flushBuffer() {
+        if (buffer.length > 0 && lastTextEvent) {
+          observer.next({ ...lastTextEvent, delta: buffer });
+          buffer = "";
+        }
+      }
+
       const subscription = source.subscribe({
         // biome-ignore lint/suspicious/noExplicitAny: AG-UI event type
         next(event: any) {
-          // Only inspect TEXT_MESSAGE_CONTENT events.
+          // Non-text events: flush any buffered text first, then
+          // pass the event through. This ensures text appears in
+          // the correct order relative to other events.
           if (event?.type !== "TEXT_MESSAGE_CONTENT") {
+            if (!markerFound) {
+              flushBuffer();
+            }
+            observer.next(event);
+            return;
+          }
+
+          // After the marker was found, pass text through directly.
+          if (markerFound) {
             observer.next(event);
             return;
           }
 
           const delta: string = event.delta ?? "";
+          lastTextEvent = event;
+          buffer += delta;
 
-          // Check for [TOOL:name] marker in the text delta.
-          // Reset lastIndex since the regex has the global flag.
-          TOOL_MARKER_RE.lastIndex = 0;
-          if (TOOL_MARKER_RE.test(delta)) {
-            // Extract tool name and fire the callback.
-            const match = delta.match(/\[TOOL:(\w+)\]/);
-            if (match?.[1]) {
-              onToolMarker(match[1]);
-            }
+          // Check if the buffer contains a complete marker.
+          const match = buffer.match(MARKER_RE);
+          if (match?.[1]) {
+            // Fire the callback with the tool name.
+            onToolMarker(match[1]);
+            markerFound = true;
 
-            // Strip the marker from the text. If the delta was
-            // only the marker (plus whitespace), skip the event
-            // entirely so no empty text appears in chat.
-            const cleaned = delta.replace(TOOL_MARKER_RE, "").trim();
-            if (cleaned.length === 0) {
-              return;
-            }
-
-            // Re-emit with cleaned text.
-            observer.next({ ...event, delta: cleaned });
+            // Strip the marker and everything after it from the
+            // buffer. Flush any text before the marker.
+            const markerStart = buffer.indexOf(match[0]);
+            const beforeMarker = buffer.slice(0, markerStart).trimEnd();
+            buffer = beforeMarker;
+            flushBuffer();
             return;
           }
 
-          // No marker found -- pass through unchanged.
-          observer.next(event);
+          // Check if the buffer ends with a partial marker prefix.
+          // If so, hold the buffer -- the next chunk may complete it.
+          for (const prefix of PARTIAL_PREFIXES) {
+            if (buffer.endsWith(prefix)) {
+              // Still accumulating -- don't flush yet.
+              return;
+            }
+          }
+
+          // No marker and no partial prefix: flush the buffer.
+          // Keep only the last character in case it starts a new
+          // potential marker (e.g. "[").
+          const safeEnd = buffer.length - 1;
+          if (safeEnd > 0) {
+            observer.next({
+              ...lastTextEvent,
+              delta: buffer.slice(0, safeEnd),
+            });
+            buffer = buffer.slice(safeEnd);
+          }
         },
         error(err: unknown) {
           observer.error(err);
         },
         complete() {
+          // Flush any remaining buffered text on completion.
+          flushBuffer();
           observer.complete();
         },
       });
