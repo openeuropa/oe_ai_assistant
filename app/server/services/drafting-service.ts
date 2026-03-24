@@ -323,8 +323,8 @@ call the draft_content tool for conversational responses.`;
   }
 
   /**
-   * Yields AG-UI events for drafted fields using three-phase
-   * streaming: skeleton snapshot, per-word deltas, final snapshot.
+   * Yields AG-UI events for drafted fields using incremental
+   * streaming: empty snapshot, add/replace deltas, final snapshot.
    * Mirrors FieldSnapshotStreamer::stream().
    */
   private *streamFieldEvents(
@@ -342,116 +342,133 @@ call the draft_content tool for conversational responses.`;
       );
     }
 
-    // Phase 1: Build skeleton with all fields present.
-    // Non-progressive fields carry final values. Progressive
-    // fields carry empty placeholders.
-    const streamed: Record<string, unknown> = {};
-    const progressiveFieldNames: string[] = [];
-
-    for (const [name, value] of Object.entries(targetFields)) {
-      const isLongText = this.isStreamableField(
-        name,
-        value,
-        fieldIndex,
-      );
-
-      if (
-        isLongText &&
-        typeof value === "string" &&
-        value.length > 50
-      ) {
-        // Plain string placeholder.
-        streamed[name] = "";
-        progressiveFieldNames.push(name);
-      } else if (
-        isLongText &&
-        value !== null &&
-        typeof value === "object" &&
-        "value" in (value as Record<string, unknown>)
-      ) {
-        const inner = String(
-          (value as Record<string, unknown>).value ?? "",
-        );
-        if (inner.length > 50) {
-          // Formatted text placeholder: preserve structure.
-          streamed[name] = {
-            ...(value as Record<string, unknown>),
-            value: "",
-          };
-          progressiveFieldNames.push(name);
-        } else {
-          streamed[name] = value;
-        }
-      } else {
-        // Non-progressive: final value.
-        streamed[name] = value;
-      }
-    }
-
-    // Emit skeleton snapshot.
+    // Phase 1: Empty initial snapshot. Fields are added
+    // incrementally via deltas, not pre-populated.
     yield {
       type: "STATE_SNAPSHOT",
-      snapshot: { draftedFields: { ...streamed } },
+      snapshot: { draftedFields: {} },
     };
 
-    // Phase 2: Stream progressive fields as deltas.
-    for (const name of progressiveFieldNames) {
-      const value = targetFields[name];
+    // Accumulate complete state for the final snapshot.
+    const completedFields: Record<string, unknown> = {};
+
+    // Phase 2: Emit incremental deltas for each field.
+    for (const [name, value] of Object.entries(targetFields)) {
       // Escape for JSON Pointer (RFC 6901). Drupal field
       // names are [a-z0-9_] only so this is defensive.
       const escaped = name
         .replace(/~/g, "~0")
         .replace(/\//g, "~1");
 
-      if (typeof value === "string") {
-        // Plain string field.
+      const isProgressive = this.isStreamableField(
+        name,
+        value,
+        fieldIndex,
+      );
+
+      if (
+        isProgressive &&
+        typeof value === "string" &&
+        value.length > 50
+      ) {
+        // Progressive plain string: add with first word,
+        // then replace as content grows.
         const words = value.split(/(\s+)/);
         let partial = "";
-        for (const word of words) {
-          partial += word;
+        for (let i = 0; i < words.length; i++) {
+          partial += words[i];
           yield {
             type: "STATE_DELTA",
             delta: [
               {
-                op: "replace",
+                // First token adds the field; subsequent
+                // tokens replace the growing value.
+                op: i === 0 ? "add" : "replace",
                 path: `/draftedFields/${escaped}`,
                 value: partial,
               },
             ],
           };
         }
-        streamed[name] = value;
+        completedFields[name] = value;
       } else if (
+        isProgressive &&
         value !== null &&
         typeof value === "object" &&
         "value" in (value as Record<string, unknown>)
       ) {
-        // Formatted text field.
+        // Progressive formatted text: add the full object
+        // on first appearance, then replace inner value.
         const obj = value as Record<string, unknown>;
         const inner = String(obj.value ?? "");
-        const words = inner.split(/(\s+)/);
-        let partial = "";
-        for (const word of words) {
-          partial += word;
+
+        if (inner.length > 50) {
+          const words = inner.split(/(\s+)/);
+          let partial = "";
+          for (let i = 0; i < words.length; i++) {
+            partial += words[i];
+            if (i === 0) {
+              // First appearance: add the whole object
+              // with partial inner value.
+              yield {
+                type: "STATE_DELTA",
+                delta: [
+                  {
+                    op: "add",
+                    path: `/draftedFields/${escaped}`,
+                    value: { ...obj, value: partial },
+                  },
+                ],
+              };
+            } else {
+              // Subsequent tokens: replace just the
+              // inner value path.
+              yield {
+                type: "STATE_DELTA",
+                delta: [
+                  {
+                    op: "replace",
+                    path: `/draftedFields/${escaped}/value`,
+                    value: partial,
+                  },
+                ],
+              };
+            }
+          }
+        } else {
+          // Short formatted text: add with final value.
           yield {
             type: "STATE_DELTA",
             delta: [
               {
-                op: "replace",
-                path: `/draftedFields/${escaped}/value`,
-                value: partial,
+                op: "add",
+                path: `/draftedFields/${escaped}`,
+                value,
               },
             ],
           };
         }
-        streamed[name] = value;
+        completedFields[name] = value;
+      } else {
+        // Non-progressive field: add with final value.
+        yield {
+          type: "STATE_DELTA",
+          delta: [
+            {
+              op: "add",
+              path: `/draftedFields/${escaped}`,
+              value,
+            },
+          ],
+        };
+        completedFields[name] = value;
       }
     }
 
     // Phase 3: Final snapshot with complete state.
     yield {
       type: "STATE_SNAPSHOT",
-      snapshot: { draftedFields: { ...streamed } },
+      snapshot: { draftedFields: { ...completedFields } },
     };
   }
 
