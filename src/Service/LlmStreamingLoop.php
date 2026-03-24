@@ -233,6 +233,12 @@ class LlmStreamingLoop {
           $agUiState->startToolCall($toolCall['name'], NULL, $toolCallId);
         }
 
+        // Brief pause so the TOOL_CALL_START events reach the browser
+        // before the executor begins emitting STATE_SNAPSHOT / STATE_DELTA
+        // events. Without this, they coalesce into one TCP segment and
+        // the client cannot show a spinner before the first delta arrives.
+        usleep(15000);
+
         // Invoke the plugin-provided executor with the complete set of tool
         // calls. The executor is responsible for dispatching to the correct
         // handler function and returning tool result messages.

@@ -1,5 +1,5 @@
---- a/src/MistralChatMessageIterator.php	2026-03-19 15:43:10.723845522 +0000
-+++ b/src/MistralChatMessageIterator.php	2026-03-19 21:13:21.902284448 +0000
+--- a/src/MistralChatMessageIterator.php
++++ b/src/MistralChatMessageIterator.php
 @@ -3,6 +3,7 @@
  namespace Drupal\ai_provider_mistral;
  
@@ -150,20 +150,186 @@
 +  }
 +
  }
---- a/src/Plugin/AiProvider/MistralProvider.php	2026-03-19 15:43:10.725845487 +0000
-+++ b/src/Plugin/AiProvider/MistralProvider.php	2026-03-19 15:44:14.626727787 +0000
-@@ -252,6 +252,14 @@
+--- a/src/Plugin/AiProvider/MistralProvider.php
++++ b/src/Plugin/AiProvider/MistralProvider.php
+@@ -252,6 +252,7 @@
        else {
          $this->client = new MistralClient($this->apiKey);
        }
-+      // Inject a Guzzle client configured for true HTTP streaming.
-+      // The default PSR-18 adapter buffers the entire response body
-+      // before returning, which defeats SSE streaming. Setting
-+      // 'stream' => true makes Guzzle return a lazy-reading body
-+      // so chunks arrive as the LLM generates them.
-+      $guzzle = new \GuzzleHttp\Client(['stream' => true]);
-+      $adapter = new \Http\Adapter\Guzzle7\Client($guzzle);
-+      $this->client->setClient($adapter);
++      // SDK client used for non-streaming calls only.
      }
    }
  
+@@ -360,7 +361,7 @@
+ 
+     try {
+       if ($input->isStreamedOutput()) {
+-        $response = $this->client->chat($messages, $params, TRUE);
++        $response = $this->streamChatWithCurl($messages, $params);
+         $message = new MistralChatMessageIterator($response);
+       }
+       else {
+@@ -545,6 +546,163 @@
+   }
+ 
+   /**
++   * Streams a chat completion using raw curl instead of Guzzle.
++   *
++   * Guzzle's CurlHandler buffers the entire HTTP response into php://temp
++   * before returning it (see guzzle/guzzle#3115). The PSR-18 adapter used
++   * by the Mistral SDK strips request options, so 'stream' => true never
++   * reaches Guzzle. This method bypasses both Guzzle and the SDK for
++   * streaming calls, using a Fiber around curl_exec with
++   * CURLOPT_WRITEFUNCTION to receive chunks as they arrive from the
++   * Mistral API.
++   *
++   * The write callback suspends the Fiber after each chunk, giving
++   * control back to the generator loop which parses SSE frames and
++   * yields Response objects. Resuming the Fiber lets curl continue
++   * receiving the next chunk.
++   *
++   * Yields the same Response objects that the SDK's SSEClient::getStream()
++   * would, so MistralChatMessageIterator works unchanged.
++   *
++   * @param \Partitech\PhpMistral\Messages $messages
++   *   The formatted messages to send.
++   * @param array $params
++   *   Chat parameters (model, tools, etc.).
++   *
++   * @return \Generator
++   *   Yields \Partitech\PhpMistral\Clients\Response objects.
++   */
++  protected function streamChatWithCurl(\Partitech\PhpMistral\Messages $messages, array $params): \Generator {
++    $host = $this->getConfig()->get('host');
++    $baseUrl = !empty($host) ? rtrim($host, '/') : 'https://api.mistral.ai';
++    $url = $baseUrl . '/v1/chat/completions';
++
++    // Build the JSON payload. The SDK's makeChatCompletionRequest()
++    // filters params against a definition whitelist. We replicate
++    // that by only including keys the Mistral API accepts.
++    $allowedKeys = [
++      'model', 'temperature', 'top_p', 'max_tokens',
++      'safe_prompt', 'random_seed', 'tools', 'tool_choice',
++      'response_format', 'n', 'presence_penalty',
++      'frequency_penalty', 'stop',
++    ];
++    $filteredParams = array_intersect_key($params, array_flip($allowedKeys));
++    $payload = json_encode($filteredParams + [
++      'stream' => TRUE,
++      'messages' => $messages->format(),
++    ]);
++
++    // The write callback pushes raw data chunks to this queue.
++    // The main loop pops them for SSE frame parsing.
++    $queue = new \SplQueue();
++
++    $ch = curl_init($url);
++    curl_setopt_array($ch, [
++      CURLOPT_POST => TRUE,
++      CURLOPT_POSTFIELDS => $payload,
++      CURLOPT_HTTPHEADER => [
++        'Authorization: Bearer ' . $this->apiKey,
++        'Content-Type: application/json',
++        'Accept: text/event-stream',
++      ],
++      CURLOPT_RETURNTRANSFER => FALSE,
++      // Each write callback invocation delivers one network chunk
++      // as it arrives from the API, before any library buffering.
++      // Fiber::suspend() yields control back to the generator so
++      // each chunk can be parsed and yielded immediately.
++      CURLOPT_WRITEFUNCTION => function ($ch, $data) use ($queue) {
++        $queue->enqueue($data);
++        \Fiber::suspend();
++        return strlen($data);
++      },
++    ]);
++
++    // Use a Fiber to run curl_exec (blocking) while yielding
++    // Response objects from the generator. The write callback
++    // fires synchronously during curl_exec, pushing chunks to
++    // the queue. The Fiber suspends after each chunk, giving
++    // control back to the generator which parses and yields.
++    $fiber = new \Fiber(function () use ($ch) {
++      curl_exec($ch);
++      curl_close($ch);
++    });
++
++    $buffer = '';
++    $response = NULL;
++
++    // Start the fiber. curl_exec begins the HTTP request.
++    // The first write callback will suspend the fiber.
++    $fiber->start();
++
++    // Process chunks as they arrive from the write callback.
++    while (!$fiber->isTerminated() || !$queue->isEmpty()) {
++      // If the queue is empty and the fiber is still running,
++      // resume it to let curl process more network data.
++      if ($queue->isEmpty()) {
++        if ($fiber->isSuspended()) {
++          $fiber->resume();
++        }
++        continue;
++      }
++
++      $buffer .= $queue->dequeue();
++
++      // Parse complete SSE frames (separated by double newlines).
++      while (($pos = strpos($buffer, "\n\n")) !== FALSE) {
++        $rawEvent = substr($buffer, 0, $pos);
++        $buffer = substr($buffer, $pos + 2);
++
++        // Extract "data:" lines from the SSE frame.
++        $dataLines = [];
++        foreach (explode("\n", $rawEvent) as $line) {
++          $line = ltrim($line);
++          if (str_starts_with($line, 'data:')) {
++            $dataLines[] = substr($line, 5);
++          }
++        }
++
++        if (empty($dataLines)) {
++          continue;
++        }
++
++        $rawData = implode("\n", $dataLines);
++
++        // End-of-stream sentinel.
++        if (trim($rawData) === '[DONE]') {
++          if ($response !== NULL) {
++            yield $response;
++          }
++          return;
++        }
++
++        $json = json_decode($rawData, TRUE);
++        if ($json === NULL) {
++          continue;
++        }
++
++        // Build/update the Response object the same way the SDK's
++        // SSEClient::processCompletionEvent() does.
++        if (isset($json['object']) && $json['object'] === 'chat.completion.chunk') {
++          $json['stream'] = TRUE;
++          if ($response === NULL) {
++            $response = \Partitech\PhpMistral\Clients\Response::createFromArray(
++              $json,
++              \Partitech\PhpMistral\Clients\Client::TYPE_OPENAI,
++            );
++          }
++          else {
++            $response = \Partitech\PhpMistral\Clients\Response::updateFromArray($response, $json);
++          }
++
++          if (!empty($response->getChunk()) || $response->getStopReason() !== NULL) {
++            yield $response;
++          }
++        }
++      }
++    }
++  }
++
++  /**
+    * Helper function to render tools.
+    *
+    * @param \Drupal\ai\OperationType\Chat\ChatInput $input

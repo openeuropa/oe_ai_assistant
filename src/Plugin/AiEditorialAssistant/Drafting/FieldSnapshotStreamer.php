@@ -295,7 +295,8 @@ class FieldSnapshotStreamer {
       PREG_SPLIT_DELIM_CAPTURE,
     );
     $partial = '';
-    foreach ($words as $word) {
+    $count = count($words);
+    foreach ($words as $i => $word) {
       $partial .= $word;
       $this->transporter->sendEvent(new StateDeltaEvent([
         [
@@ -304,6 +305,13 @@ class FieldSnapshotStreamer {
           'value' => $partial,
         ],
       ]));
+      // Small delay between words so each SSE event reaches the
+      // client as a separate TCP segment. Without this, events
+      // fire within microseconds and get coalesced by the network
+      // stack into a single burst.
+      if ($i < $count - 1) {
+        usleep(15000);
+      }
     }
   }
 
