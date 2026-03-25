@@ -86,8 +86,10 @@ the editor explicitly asks you to generate or draft content.
 
 When the editor asks you to draft or generate content:
 - ALWAYS write a brief text message BEFORE calling the draft_content tool.
-  Start the message with the marker [TOOL:draft_content] on its own line,
-  then write a short sentence for the editor.
+  Start the message with the exact marker [TOOL:draft_content] on its own
+  line. Do NOT add any formatting, markdown, bold, or other characters
+  around the marker -- output it exactly as shown. Then write a short
+  sentence for the editor on the next line.
   Example:
     [TOOL:draft_content]
     I'll draft that article for you now.

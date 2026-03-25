@@ -16,19 +16,30 @@ import type { Observable } from "rxjs";
 
 /**
  * Matches [TOOL:name] in the accumulated buffer.
- * The closing bracket is required since the marker appears at the
+ *
+ * Tolerates optional surrounding markdown formatting (e.g. ** or
+ * `) that the LLM might add despite instructions not to. The
+ * closing bracket is required since the marker appears at the
  * start of the message and completes before any long pause.
  */
-const MARKER_RE = /\[TOOL:(\w+)\]/;
+const MARKER_RE = /\*{0,2}`?\[TOOL:(\w+)\]`?\*{0,2}/;
 
 /**
  * Tests whether the buffer ends with a partial [TOOL:...] prefix
- * that might be completed by the next chunk.
+ * that might be completed by the next chunk. Also handles leading
+ * markdown formatting (** or `) that the LLM might add.
  */
 function isPartialMarker(buf: string): boolean {
-  const idx = buf.lastIndexOf("[");
-  if (idx === -1) return false;
-  const tail = buf.slice(idx);
+  // Strip trailing markdown formatting before checking.
+  const stripped = buf.replace(/[\s*`]+$/, "");
+
+  const idx = stripped.lastIndexOf("[");
+  if (idx === -1) {
+    // No bracket yet, but might have leading formatting before it.
+    // Check if the buffer ends with **, `, or * that could precede [.
+    return /[*`]$/.test(buf);
+  }
+  const tail = stripped.slice(idx);
 
   // Fixed prefix before the tool name.
   if ("[TOOL:".startsWith(tail)) return true;
