@@ -63,6 +63,12 @@ class LlmLoopConfig {
    *   even if the LLM has not produced a final text response. This guards
    *   against runaway tool-call chains caused by misbehaving LLM output.
    *   Default is 10, which is sufficient for all current plugin use cases.
+   * @param \Closure|null $onToolCallArgumentDelta
+   *   Optional callback invoked during the streaming iteration when
+   *   partial tool call arguments are detected. Signature:
+   *   fn(array $partialToolCalls): void. Each element has keys
+   *   'id' (string), 'name' (string), and 'arguments_json' (string).
+   *   NULL disables incremental streaming (the default).
    */
   public function __construct(
     public readonly string $systemPrompt,
@@ -73,6 +79,7 @@ class LlmLoopConfig {
     public readonly string $messageId,
     public readonly \Closure $toolExecutor,
     public readonly int $maxIterations = 10,
+    public readonly ?\Closure $onToolCallArgumentDelta = NULL,
   ) {}
 
 }

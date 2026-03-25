@@ -137,6 +137,9 @@ class LlmStreamingLoop {
       // the SSE message envelope.
       $streamedText = '';
       $messageStarted = FALSE;
+      // Track tool calls started during incremental streaming
+      // to avoid duplicate startToolCall() in the post-loop block.
+      $startedToolCalls = [];
 
       // Perform the streamed chat call. getNormalized() returns a
       // StreamedChatMessageIterator that assembles delta chunks into complete
@@ -166,6 +169,27 @@ class LlmStreamingLoop {
           }
           $agUiState->addMessageContent($text, $messageId);
           $streamedText .= $text;
+        }
+
+        // Check for partial tool call arguments during streaming.
+        // Guarded by method_exists() so non-Mistral iterators work.
+        if ($config->onToolCallArgumentDelta
+          && method_exists($iterator, 'getPartialToolCallArguments')
+        ) {
+          $partials = $iterator->getPartialToolCallArguments();
+          if (!empty($partials)) {
+            // Emit TOOL_CALL_START on first detection of each ID.
+            foreach ($partials as $tc) {
+              $tcId = $tc['id'] ?? '';
+              if ($tcId !== '' && !isset($startedToolCalls[$tcId])) {
+                $agUiState->startToolCall(
+                  $tc['name'] ?? '', NULL, $tcId,
+                );
+                $startedToolCalls[$tcId] = $tc['name'] ?? '';
+              }
+            }
+            ($config->onToolCallArgumentDelta)($partials);
+          }
         }
 
       }
@@ -231,7 +255,11 @@ class LlmStreamingLoop {
         // before any results are produced, so the client can render a
         // "running tools" indicator for each simultaneously.
         foreach ($toolCallsForExec as $toolCallId => $toolCall) {
-          $agUiState->startToolCall($toolCall['name'], NULL, $toolCallId);
+          if (!isset($startedToolCalls[$toolCallId])) {
+            $agUiState->startToolCall(
+              $toolCall['name'], NULL, $toolCallId,
+            );
+          }
         }
 
         // Brief pause so the TOOL_CALL_START events reach the browser
