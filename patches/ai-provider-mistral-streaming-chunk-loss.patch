@@ -19,7 +19,7 @@
   * @see https://www.drupal.org/project/ai_provider_mistral/issues/3572398
   */
  class MistralChatMessageIterator extends StreamedChatMessageIterator {
-@@ -26,32 +23,85 @@
+@@ -26,32 +23,105 @@
    use MistralResponseTrait;
  
    /**
@@ -32,6 +32,16 @@
 +   * @var array
 +   */
 +  private array $capturedToolCallData = [];
++
++  /**
++   * Partial tool call argument strings from the latest chunk.
++   *
++   * Each entry has 'id', 'name', and 'arguments_json' keys.
++   * Updated on every chunk that has tool call data.
++   *
++   * @var array
++   */
++  private array $partialToolCallArguments = [];
 +
 +  /**
     * {@inheritdoc}
@@ -95,6 +105,16 @@
 +          ];
 +          $idx++;
 +        }
++        // Capture raw partial argument strings for incremental
++        // field streaming during the LLM iteration loop.
++        $this->partialToolCallArguments = [];
++        foreach ($toolCalls as $tcIdx => $tc) {
++          $this->partialToolCallArguments[] = [
++            'id' => $tc->getId() ?? '',
++            'name' => $tc->getName() ?? '',
++            'arguments_json' => $partials[$tcIdx] ?? '',
++          ];
++        }
 +      }
 +
 +      // Advance AFTER capturing data so that the consumer sees the
@@ -116,7 +136,7 @@
        );
  
        // Set token usage if available.
-@@ -71,7 +121,6 @@
+@@ -71,7 +141,6 @@
        }
  
        // Set finish reason if available.
@@ -124,7 +144,7 @@
        if ($stopReason) {
          $this->setFinishReason($stopReason);
        }
-@@ -80,4 +129,24 @@
+@@ -80,4 +149,41 @@
      }
    }
  
@@ -146,6 +166,23 @@
 +      return $result;
 +    }
 +    return parent::getTools();
++  }
++
++  /**
++   * Returns partial tool call argument data from the latest chunk.
++   *
++   * Each element has keys:
++   * - 'id': The tool call ID assigned by the provider.
++   * - 'name': The tool function name (e.g. 'draft_content').
++   * - 'arguments_json': The raw accumulated argument JSON string,
++   *   which may be incomplete.
++   *
++   * @return array
++   *   Array of partial tool call data, or empty if no tool calls
++   *   are in progress.
++   */
++  public function getPartialToolCallArguments(): array {
++    return $this->partialToolCallArguments;
 +  }
 +
  }
