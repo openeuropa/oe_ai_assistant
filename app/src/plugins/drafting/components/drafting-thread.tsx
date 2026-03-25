@@ -117,9 +117,8 @@ function MessageError() {
 
 /**
  * Renders streamed assistant text with Streamdown for incremental
- * markdown rendering. Event-level smoothing (see event-smoothing.ts)
- * ensures text deltas arrive at a steady pace, so no character-level
- * typewriter animation is needed here.
+ * markdown rendering. Text deltas arrive from the LLM stream at
+ * the provider's natural pace.
  */
 function AssistantText({
   text,

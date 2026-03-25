@@ -18,6 +18,7 @@ import {
   X,
 } from "lucide-react";
 import { useMemo, useState } from "react";
+import { useTypewriterFields } from "../hooks/use-typewriter-fields";
 import type { DraftedField, DraftedInlineEntity } from "../store";
 import { toggleFieldRejected, useDraftingSlice } from "../store";
 
@@ -185,7 +186,13 @@ function StreamingCursor() {
 export function ContentTable({ onRegenerate, onSave }: ContentTableProps) {
   const { draftedFields, rejectedFields, streamingFieldName, updatedFields } =
     useDraftingSlice();
-  const fieldEntries = Object.entries(draftedFields);
+
+  // Apply a cosmetic typewriter effect: field values are revealed
+  // character by character in parallel, giving the appearance of
+  // live streaming even though all data arrives at once.
+  const { fields: displayFields } =
+    useTypewriterFields(draftedFields);
+  const fieldEntries = Object.entries(displayFields);
   const [showConfirm, setShowConfirm] = useState(false);
 
   if (fieldEntries.length === 0) {
@@ -227,7 +234,17 @@ export function ContentTable({ onRegenerate, onSave }: ContentTableProps) {
         {fieldEntries.map(([name, field]) => {
           const isRejected = rejectedFields.has(name);
           const isUpdated = updatedFields.has(name);
-          const isFieldStreaming = streamingFieldName === name;
+          // Show streaming indicator during real streaming OR
+          // during the cosmetic typewriter animation (when the
+          // displayed value is shorter than the real value).
+          const realField = draftedFields[name];
+          const displayField = displayFields[name];
+          const isTyping =
+            realField &&
+            displayField &&
+            displayField.value.length < realField.value.length;
+          const isFieldStreaming =
+            streamingFieldName === name || isTyping;
           return (
             <div
               key={name}

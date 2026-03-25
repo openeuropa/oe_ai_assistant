@@ -16,7 +16,6 @@ import {
 import { useAgUiRuntime } from "@assistant-ui/react-ag-ui";
 import { useEffect, useMemo, useRef } from "react";
 import { getConfig } from "@/config";
-import { createSmoothingMiddleware } from "@/lib/event-smoothing";
 import type {
   DraftedField,
   DraftedInlineEntity,
@@ -211,19 +210,6 @@ export function useDraftingRuntime() {
     const httpAgent = new HttpAgent({
       url: `${getConfig().apiBaseUrl}/plugins/drafting/chat`,
     });
-
-    // Apply event smoothing middleware when enabled. Browsers
-    // batch SSE events that arrive faster than the renderer's
-    // scheduling interval (~4-16ms). The middleware queues them
-    // and releases one at a time for smooth progressive rendering.
-    // Disable via init({ eventSmoothing: { enabled: false } })
-    // for backends that stream without proxy buffering.
-    if (getConfig().eventSmoothing.enabled) {
-      // biome-ignore lint/suspicious/noExplicitAny: rxjs version mismatch requires cast
-      httpAgent.use(
-        createSmoothingMiddleware(getConfig().eventSmoothing) as any,
-      );
-    }
 
     // Wrap runAgent to inject forwardedProps with the content type
     // context on every chat request. The backend reads these to load

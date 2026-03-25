@@ -118,10 +118,6 @@ class NodeTabController extends ControllerBase {
       // The React app only registers plugins whose IDs appear in this list,
       // allowing server-side control over which tools are shown per context.
       'enabledPlugins' => ['echo', 'notes', 'drafting'],
-      // Disable client-side event smoothing. The backend now streams
-      // SSE events progressively (via raw curl, bypassing Guzzle's
-      // buffering), so the artificial typewriter delay is not needed.
-      'eventSmoothing' => ['enabled' => FALSE],
       // Per-plugin configuration objects passed directly to each plugin's
       // frontend initialisation code. Only plugins that require extra context
       // need an entry here.

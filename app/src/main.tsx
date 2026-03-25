@@ -9,8 +9,4 @@
 import { init } from "./init";
 import "./index.css";
 
-// Disable event smoothing in dev -- the Express mock server
-// streams natively without proxy buffering.
-init("#root", {
-  eventSmoothing: { enabled: false, intervalMs: 0 },
-});
+init("#root");
