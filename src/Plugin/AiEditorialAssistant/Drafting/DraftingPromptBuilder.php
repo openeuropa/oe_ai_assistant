@@ -171,6 +171,7 @@ PROMPT;
     $changedParam = new ToolsPropertyInput();
     $changedParam->setName('changed_fields');
     $changedParam->setType('array');
+    $changedParam->setItems('string');
     $changedParam->setDescription(
       'List of field machine names that were created or modified. '
       . 'On first draft this is all fields. On regeneration this is '
