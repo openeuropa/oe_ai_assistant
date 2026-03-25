@@ -109,6 +109,7 @@ class LlmStreamingLoop {
             $agUiState->toolCallResult(
               $toolCallId,
               $result['content'] ?? '',
+              'tool',
             );
           }
         }
