@@ -14,6 +14,7 @@ use Drupal\Core\Session\AccountProxyInterface;
 use Drupal\oe_ai_assistant\Annotation\AiEditorialAssistant;
 use Drupal\oe_ai_assistant\Exception\ActionException;
 use Drupal\oe_ai_assistant\Plugin\AiEditorialAssistant\Drafting\DraftingPromptBuilder;
+use Drupal\oe_ai_assistant\Plugin\AiEditorialAssistant\Drafting\ToolCallFieldStreamer;
 use Drupal\oe_ai_assistant\Plugin\ChatPluginBase;
 use Drupal\oe_ai_assistant\Service\ConversationHistory;
 use Drupal\oe_ai_assistant\Service\DraftFieldMapper;
@@ -333,6 +334,30 @@ class DraftingPlugin extends ChatPluginBase {
   }
 
   /**
+   * {@inheritdoc}
+   *
+   * Creates a ToolCallFieldStreamer that processes partial tool call
+   * argument JSON in real time, emitting STATE_DELTA events as field
+   * values grow token by token from the LLM.
+   */
+  protected function createToolCallDeltaObserver(
+    array $context,
+    bool $isFirstTurn,
+  ): ?\Closure {
+    $fieldIndex = $context['fieldIndex'];
+    $streamer = new ToolCallFieldStreamer(
+      $this->transporter, $fieldIndex,
+    );
+    return function (array $partials) use ($streamer): void {
+      foreach ($partials as $tc) {
+        if (($tc['name'] ?? '') === 'draft_content') {
+          $streamer->onDelta($tc['arguments_json'] ?? '');
+        }
+      }
+    };
+  }
+
+  /**
    * Parses [fields:name1,name2] hint from the user message.
    *
    * This tag is set by the frontend regenerate button to indicate which
@@ -405,9 +430,9 @@ class DraftingPlugin extends ChatPluginBase {
         $activeFieldsToStream = $result['changedFields'];
       }
 
-      // Emit the field snapshot with all drafted values at once.
-      // The [TOOL:draft_content] marker in the LLM's text stream
-      // signals the frontend to show a loader before this arrives.
+      // Emit the final reconciliation snapshot. Incremental field
+      // deltas were already streamed by ToolCallFieldStreamer
+      // during the LLM iteration (for providers that support it).
       $this->transporter->sendEvent(
         new StateSnapshotEvent(
           ['draftedFields' => $result['fields'] ?? []],

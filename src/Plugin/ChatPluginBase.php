@@ -174,6 +174,10 @@ abstract class ChatPluginBase extends AiAssistantPluginBase {
 
         // Delegate tool executor creation to the concrete plugin.
         $toolExecutor = $this->createToolExecutor($context, $isFirstTurn);
+        // Create optional incremental streaming observer.
+        $deltaObserver = $this->createToolCallDeltaObserver(
+          $context, $isFirstTurn,
+        );
 
         $config = new LlmLoopConfig(
           systemPrompt: $systemPrompt,
@@ -183,6 +187,7 @@ abstract class ChatPluginBase extends AiAssistantPluginBase {
           modelId: $modelId,
           messageId: $messageId,
           toolExecutor: $toolExecutor,
+          onToolCallArgumentDelta: $deltaObserver,
         );
 
         // Pass $this->agUiState (same object as $state) to the loop.
@@ -702,6 +707,29 @@ abstract class ChatPluginBase extends AiAssistantPluginBase {
       }
       return $results;
     };
+  }
+
+  /**
+   * Creates an observer for incremental tool call argument streaming.
+   *
+   * Returns NULL by default (no incremental streaming). Concrete
+   * plugins override to provide a callback that processes partial
+   * tool call arguments as they stream from the LLM.
+   *
+   * @param array $context
+   *   The context array from buildChatContext().
+   * @param bool $isFirstTurn
+   *   TRUE if the conversation history was empty.
+   *
+   * @return \Closure|null
+   *   Callback with signature fn(array $partialToolCalls): void,
+   *   or NULL to disable.
+   */
+  protected function createToolCallDeltaObserver(
+    array $context,
+    bool $isFirstTurn,
+  ): ?\Closure {
+    return NULL;
   }
 
 }
