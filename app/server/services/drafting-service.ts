@@ -357,6 +357,16 @@ call the draft_content tool for conversational responses.`;
         );
       }
 
+      // TOOL_CALL_RESULT tells the AG-UI adapter the tool completed
+      // successfully, which transitions the tool UI to "complete"
+      // status (green tick). Must arrive before TOOL_CALL_END.
+      yield {
+        type: "TOOL_CALL_RESULT",
+        toolCallId: toolCall.id,
+        role: "tool",
+        content: JSON.stringify(result),
+      };
+
       yield {
         type: "TOOL_CALL_END",
         toolCallId: toolCall.id,
