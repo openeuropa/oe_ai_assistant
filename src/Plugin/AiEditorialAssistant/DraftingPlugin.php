@@ -430,12 +430,29 @@ class DraftingPlugin extends ChatPluginBase {
         $activeFieldsToStream = $result['changedFields'];
       }
 
-      // Emit the final reconciliation snapshot. Incremental field
-      // deltas were already streamed by ToolCallFieldStreamer
-      // during the LLM iteration (for providers that support it).
+      // Filter fields against the schema before sending to the
+      // frontend. Only fields present in the field index are
+      // included. Log any unknown fields the LLM invented so we
+      // can tune the prompt or schema if needed.
+      $draftedFields = $result['fields'] ?? [];
+      if (!empty($fieldIndex)) {
+        $unknownFields = array_diff_key($draftedFields, $fieldIndex);
+        if (!empty($unknownFields)) {
+          $this->logger->notice(
+            'LLM generated unknown fields: @fields',
+            ['@fields' => implode(', ', array_keys($unknownFields))],
+          );
+        }
+        $draftedFields = array_intersect_key($draftedFields, $fieldIndex);
+      }
+
+      // Emit the reconciliation snapshot with validated fields.
+      // Incremental deltas were already streamed by
+      // ToolCallFieldStreamer during the LLM iteration (for
+      // providers that support it).
       $this->transporter->sendEvent(
         new StateSnapshotEvent(
-          ['draftedFields' => $result['fields'] ?? []],
+          ['draftedFields' => $draftedFields],
         ),
       );
     }
