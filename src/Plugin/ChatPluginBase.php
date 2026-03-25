@@ -36,7 +36,9 @@ use Symfony\Component\HttpFoundation\Response;
  * steps to hooks that concrete plugins may implement or override:
  *   - buildChatContext(): extract domain context from the request body.
  *   - buildSystemPrompt(): compose the LLM system prompt.
- *   - buildTools(): declare tool definitions (default: empty set).
+ *   - buildTools(): declare tool definitions for the LLM.
+ *   - createToolCallDeltaObserver(): create a callback for incremental
+ *     tool call streaming (return NULL to disable).
  *   - createToolExecutor(): build the closure that handles tool calls
  *     (default: dispatches via FunctionCall plugin manager).
  *
@@ -653,9 +655,10 @@ abstract class ChatPluginBase extends AiAssistantPluginBase {
   /**
    * Builds the tool definitions exposed to the LLM.
    *
-   * Default returns an empty tool set. Concrete plugins override to
-   * add manual tool definitions. Auto-discovered FunctionCall plugins
-   * are appended separately by appendDiscoveredTools().
+   * Concrete plugins return their tool definitions here.
+   * Auto-discovered FunctionCall plugins are appended separately
+   * by appendDiscoveredTools(). Return an empty ToolsInput if the
+   * plugin does not define any tools.
    *
    * @param array $context
    *   The context array returned by buildChatContext().
@@ -663,9 +666,7 @@ abstract class ChatPluginBase extends AiAssistantPluginBase {
    * @return \Drupal\ai\OperationType\Chat\Tools\ToolsInput
    *   The tool definitions.
    */
-  protected function buildTools(array $context): ToolsInput {
-    return new ToolsInput();
-  }
+  abstract protected function buildTools(array $context): ToolsInput;
 
   /**
    * Creates the tool executor closure for this chat turn.
@@ -712,9 +713,10 @@ abstract class ChatPluginBase extends AiAssistantPluginBase {
   /**
    * Creates an observer for incremental tool call argument streaming.
    *
-   * Returns NULL by default (no incremental streaming). Concrete
-   * plugins override to provide a callback that processes partial
-   * tool call arguments as they stream from the LLM.
+   * Called on each streaming chunk that carries partial tool call
+   * arguments. The loop repairs the partial JSON and passes decoded
+   * arrays to the callback. Return NULL to disable incremental
+   * streaming for this plugin.
    *
    * @param array $context
    *   The context array from buildChatContext().
@@ -723,13 +725,12 @@ abstract class ChatPluginBase extends AiAssistantPluginBase {
    *
    * @return \Closure|null
    *   Callback with signature fn(array $partialToolCalls): void,
-   *   or NULL to disable.
+   *   where each element has 'id', 'name', and 'arguments' keys.
+   *   Return NULL to disable incremental streaming.
    */
-  protected function createToolCallDeltaObserver(
+  abstract protected function createToolCallDeltaObserver(
     array $context,
     bool $isFirstTurn,
-  ): ?\Closure {
-    return NULL;
-  }
+  ): ?\Closure;
 
 }
