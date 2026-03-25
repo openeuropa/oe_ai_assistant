@@ -29,19 +29,6 @@ use function Cortex\JsonRepair\json_repair_decode;
  * value object and in the local $messages array built up during the loop.
  * This means the same service instance can be reused safely across multiple
  * concurrent requests.
- *
- * Tool call protocol within a single loop iteration:
- * 1. Send conversation to the LLM (with tools definition).
- * 2. Stream text chunks to the client via AgUiState delta buffering.
- * 3. After the stream ends, inspect getTools() for tool calls.
- * 4. If tool calls are present:
- *    a. Emit startToolCall() for ALL tool calls before executing any.
- *    b. Invoke the plugin's toolExecutor closure with the call map.
- *    c. Emit finishToolCall() for all tool calls.
- *    d. Append the assistant message (with raw tool calls) and all tool
- *       result messages to the running history.
- *    e. Loop back to step 1 with the updated history.
- * 5. If no tool calls: store the final text and exit the loop.
  */
 class LlmStreamingLoop {
 
@@ -49,13 +36,9 @@ class LlmStreamingLoop {
    * Constructs a new LlmStreamingLoop.
    *
    * @param \Drupal\ai\AiProviderPluginManager $aiProvider
-   *   The AI provider plugin manager. Used to instantiate a provider plugin
-   *   by ID (e.g. 'mistral') and configure it with the model ID before
-   *   each LLM call.
+   *   The AI provider plugin manager.
    * @param \Drupal\Component\Uuid\UuidInterface $uuid
-   *   The UUID generator service. Used to generate unique message IDs for
-   *   SSE message envelopes on each tool-call iteration so events can be
-   *   correlated by the client.
+   *   The UUID generator service.
    */
   public function __construct(
     private readonly AiProviderPluginManager $aiProvider,
@@ -66,260 +49,65 @@ class LlmStreamingLoop {
    * Runs the LLM call with tool loop and streams SSE events.
    *
    * Iterates up to $config->maxIterations times. On each iteration the
-   * full conversation (including any tool call/result messages appended
-   * in previous iterations) is sent to the LLM. Text chunks are forwarded
-   * to the client immediately via AgUiState delta buffering. When the LLM
-   * responds with tool calls, all startToolCall() events are emitted first,
-   * the plugin executor is invoked, then all finishToolCall() events are
-   * emitted. The loop continues until the LLM produces a text-only response
-   * or the iteration limit is reached.
+   * full conversation is sent to the LLM. Text chunks are forwarded to
+   * the client in real time. When the LLM responds with tool calls, the
+   * plugin executor is invoked and the loop continues. The loop exits
+   * when the LLM produces a text-only response.
    *
    * @param \Swis\AgUiServer\AgUiState $agUiState
-   *   The AG-UI state manager for SSE event emission. Created and owned
-   *   by the caller; this method only reads/writes events through it.
+   *   The AG-UI state manager for SSE event emission.
    * @param \Drupal\oe_ai_assistant\Service\LlmLoopConfig $config
-   *   The loop configuration: prompts, history, tools, provider, executor.
+   *   The loop configuration.
    *
    * @return \Drupal\oe_ai_assistant\Service\LlmLoopResult
-   *   The result containing the final assistant text and the full message
-   *   array (conversation history including tool call/result messages).
+   *   The final assistant text and full conversation history.
    */
   public function run(AgUiState $agUiState, LlmLoopConfig $config): LlmLoopResult {
-    // Work on a local copy of the history so the original config is not
-    // mutated. Tool call/result messages are appended here each iteration.
     $messages = $config->conversationHistory;
     $messageId = $config->messageId;
-    // Accumulates the final assistant text (from the last non-tool iteration).
     $fullMessage = '';
 
     for ($i = 0; $i < $config->maxIterations; $i++) {
-      // Build ChatMessage objects from the running message array. Tool
-      // result messages need setToolsId() and assistant messages that
-      // carried tool calls need setTools() so the provider re-sends them
-      // correctly in the next API request.
-      $chatMessages = [];
-      foreach ($messages as $msg) {
-        $chatMsg = new ChatMessage(
-          $msg['role'],
-          $msg['content'] ?? '',
-        );
-        if (!empty($msg['tool_call_id'])) {
-          // Mark this message as a tool result for the given call ID.
-          // The provider uses this to build the 'tool' role message in
-          // the API request body.
-          $chatMsg->setToolsId($msg['tool_call_id']);
-        }
-        if (!empty($msg['tool_calls_raw'])) {
-          // Attach the original tool calls so the provider can replay
-          // them in the conversation context sent to the LLM API. Each
-          // element is wrapped via wrapToolCallArray() to satisfy the
-          // interface expected by ChatMessage::getRenderedTools().
-          $chatMsg->setTools(array_map(
-            [self::class, 'wrapToolCallArray'],
-            $msg['tool_calls_raw'],
-          ));
-        }
-        $chatMessages[] = $chatMsg;
-      }
+      $chatInput = $this->buildChatInput($messages, $config);
+      $iterator = $this->createStreamingIterator($chatInput, $config);
 
-      // Assemble and configure the ChatInput for this iteration.
-      $chatInput = new ChatInput($chatMessages);
-      $chatInput->setSystemPrompt($config->systemPrompt);
-      $chatInput->setStreamedOutput(TRUE);
-      $chatInput->setChatTools($config->tools);
+      // Stream text and detect partial tool call arguments.
+      [$streamedText, $startedToolCalls] = $this->streamIteration(
+        $iterator, $agUiState, $config, $messageId,
+      );
 
-      // Instantiate the provider plugin and apply the model configuration.
-      // A new instance is created each iteration because provider plugins
-      // may carry per-call state internally.
-      $provider = $this->aiProvider->createInstance($config->providerId);
-      $provider->setConfiguration(['model_id' => $config->modelId]);
-
-      // Track whether any text was streamed so we know when to open/close
-      // the SSE message envelope.
-      $streamedText = '';
-      $messageStarted = FALSE;
-      // Track tool calls started during incremental streaming
-      // to avoid duplicate startToolCall() in the post-loop block.
-      $startedToolCalls = [];
-
-      // Perform the streamed chat call. getNormalized() returns a
-      // StreamedChatMessageIterator that assembles delta chunks into complete
-      // text and tool call objects incrementally.
-      $chatOutput = $provider->chat($chatInput, $config->modelId);
-      $iterator = $chatOutput->getNormalized();
-
-      // Flush every token immediately for smooth real-time SSE delivery.
-      // The default 100-char buffer causes chunks to arrive in bursts
-      // rather than token by token, degrading the perceived streaming UX.
-      if (method_exists($iterator, 'setMaxBufferSize')) {
-        $iterator->setMaxBufferSize(1);
-      }
-
-      // Iterate the streaming response. Each chunk may carry a text delta.
-      // AgUiState internally batches deltas before sending SSE events to
-      // reduce event count while maintaining smooth streaming (flushes at
-      // 100 chars or 150 ms, whichever comes first).
-      foreach ($iterator as $chunk) {
-        $text = $chunk->getText() ?? '';
-        if (!empty($text)) {
-          if (!$messageStarted) {
-            // Open the SSE message envelope on the very first text chunk.
-            // Subsequent chunks are added as deltas to the same envelope.
-            $agUiState->startMessage('assistant', $messageId);
-            $messageStarted = TRUE;
-          }
-          $agUiState->addMessageContent($text, $messageId);
-          $streamedText .= $text;
-        }
-
-        // Check for partial tool call arguments during streaming.
-        // Guarded by method_exists() so non-Mistral iterators work.
-        if ($config->onToolCallArgumentDelta
-          && method_exists($iterator, 'getPartialToolCallArguments')
-        ) {
-          $partials = $iterator->getPartialToolCallArguments();
-          if (!empty($partials)) {
-            // Emit TOOL_CALL_START on first detection of each ID.
-            foreach ($partials as $tc) {
-              $tcId = $tc['id'] ?? '';
-              if ($tcId !== '' && !isset($startedToolCalls[$tcId])) {
-                $agUiState->startToolCall(
-                  $tc['name'] ?? '', NULL, $tcId,
-                );
-                $startedToolCalls[$tcId] = $tc['name'] ?? '';
-              }
-            }
-            // Repair partial JSON and pass decoded arrays to the
-            // callback. Tool call arguments are always JSON, so
-            // the repair step is provider-agnostic.
-            $decoded = [];
-            foreach ($partials as $tc) {
-              $args = $this->repairToolCallJson(
-                $tc['arguments_json'] ?? '',
-              );
-              if ($args !== NULL) {
-                $decoded[] = [
-                  'id' => $tc['id'] ?? '',
-                  'name' => $tc['name'] ?? '',
-                  'arguments' => $args,
-                ];
-              }
-            }
-            if (!empty($decoded)) {
-              ($config->onToolCallArgumentDelta)($decoded);
-            }
-          }
-        }
-
-      }
-
-      // Close the text message SSE envelope after the iterator is exhausted.
-      if ($messageStarted) {
-        $agUiState->finishMessage($messageId);
-      }
-
-      // After the iterator is fully consumed, getTools() returns the complete
-      // set of ToolsFunctionOutput objects assembled from the delta stream.
+      // After iteration, check for complete tool calls.
       $assembledTools = $iterator->getTools();
 
       if (!empty($assembledTools)) {
-        // Build two parallel structures from the assembled tool calls:
-        // - $toolCallsForExec: passed to the plugin executor (simple arrays).
-        // - $toolCallsForHistory: stored in the conversation history message
-        //   so the Mistral provider can replay them in the next API call.
-        $toolCallsForExec = [];
-        $toolCallsForHistory = [];
+        [$toolCallsForExec, $toolCallsForHistory] =
+          $this->assembleToolCalls($assembledTools);
 
-        foreach ($assembledTools as $toolOutput) {
-          // Use the provider-assigned tool call ID if available; otherwise
-          // generate a UUID. The ID is used to correlate tool result messages
-          // with their originating tool call.
-          $toolCallId = $toolOutput->getToolId() ?: $this->uuid->generate();
-          $name = $toolOutput->getName();
+        $this->emitToolCallEvents(
+          $agUiState, $config, $toolCallsForExec, $startedToolCalls,
+        );
 
-          // Convert ToolsPropertyResult objects back to a plain key => value
-          // array so the plugin executor receives a simple structure that does
-          // not depend on the Drupal AI module's internal types.
-          $rawArgs = [];
-          foreach ($toolOutput->getArguments() as $arg) {
-            $rawArgs[$arg->getName()] = $arg->getValue();
-          }
-
-          // Executor-facing representation: keyed by call ID for easy lookup.
-          $toolCallsForExec[$toolCallId] = [
-            'name' => $name,
-            'arguments' => $rawArgs,
-          ];
-
-          // History-facing representation: matches the structure that the
-          // Mistral provider reconstructs from getRenderedTools() /
-          // ToolCallFunction::fromArray() in subsequent API calls.
-          $toolCallsForHistory[] = [
-            'id' => $toolCallId,
-            'type' => 'function',
-            // The index is always 0 because Mistral's streaming chunks report
-            // tool calls sequentially rather than with meaningful indices.
-            'index' => 0,
-            'function' => [
-              'name' => $name,
-              // Arguments must be JSON-encoded because the Mistral provider
-              // stores and transmits them as a JSON string, not an object.
-              'arguments' => Json::encode($rawArgs),
-            ],
-          ];
-        }
-
-        // Emit start events for ALL tool calls before executing any of them.
-        // The AG-UI protocol expects all tool call envelopes to be opened
-        // before any results are produced, so the client can render a
-        // "running tools" indicator for each simultaneously.
-        foreach ($toolCallsForExec as $toolCallId => $toolCall) {
-          if (!isset($startedToolCalls[$toolCallId])) {
-            $agUiState->startToolCall(
-              $toolCall['name'], NULL, $toolCallId,
-            );
-          }
-        }
-
-        // Brief pause so the TOOL_CALL_START events reach the browser
-        // before the executor begins emitting STATE_SNAPSHOT events.
-        // Without this, they coalesce into one TCP segment and the
-        // client cannot show a loading indicator.
-        usleep(15000);
-
-        // Invoke the plugin-provided executor with the complete set of tool
-        // calls. The executor is responsible for dispatching to the correct
-        // handler function and returning tool result messages.
-        $toolResults = ($config->toolExecutor)($toolCallsForExec);
-
-        // Emit finish events for all tool calls after the executor returns.
-        // These are emitted together (after all results are ready) because
-        // the executor processes all calls before returning.
-        foreach ($toolCallsForExec as $toolCallId => $toolCall) {
-          $agUiState->finishToolCall($toolCallId);
-        }
-
-        // Append the assistant message (with its raw tool calls) to the
-        // running history so the LLM receives the full context on the next
-        // API call. The content is the text streamed before the tool calls
-        // (often empty when the LLM jumps straight to tool calls).
+        // Append assistant message and tool results to history.
         $messages[] = [
           'role' => 'assistant',
           'content' => $streamedText ?: '',
           'tool_calls_raw' => $toolCallsForHistory,
         ];
-        // Append each tool result message returned by the executor.
+        $toolResults = ($config->toolExecutor)($toolCallsForExec);
         foreach ($toolResults as $result) {
           $messages[] = $result;
         }
 
-        // Generate a fresh message ID for the next iteration's SSE envelope.
+        // Emit finish events for all tool calls.
+        foreach ($toolCallsForExec as $toolCallId => $toolCall) {
+          $agUiState->finishToolCall($toolCallId);
+        }
+
         $messageId = $this->uuid->generate();
         continue;
       }
 
-      // No tool calls in this iteration: the LLM produced a final text
-      // response. Store it and exit the loop normally.
+      // No tool calls: final text response.
       $fullMessage = $streamedText;
       break;
     }
@@ -328,43 +116,309 @@ class LlmStreamingLoop {
   }
 
   /**
-   * Wraps a raw tool call array into an object with getOutputRenderArray().
+   * Builds ChatMessage objects and a ChatInput from the message history.
    *
-   * ChatMessage::getRenderedTools() calls getOutputRenderArray() on each
-   * tool call object when building the API request payload for the next
-   * LLM call. Stored tool calls are plain arrays (serialisable to TempStore);
-   * this anonymous class wrapper satisfies the interface contract so the
-   * pre-built arrays can be replayed in subsequent iterations without losing
-   * any data.
+   * Converts the plain-array message history into ChatMessage objects
+   * that the AI provider can send to the LLM API. Tool result messages
+   * get setToolsId() and assistant messages with tool calls get
+   * setTools() for proper replay.
+   *
+   * @param array $messages
+   *   The running conversation history as plain arrays.
+   * @param \Drupal\oe_ai_assistant\Service\LlmLoopConfig $config
+   *   The loop configuration (system prompt, tools).
+   *
+   * @return \Drupal\ai\OperationType\Chat\ChatInput
+   *   The assembled chat input ready for the provider.
+   */
+  private function buildChatInput(
+    array $messages,
+    LlmLoopConfig $config,
+  ): ChatInput {
+    $chatMessages = [];
+    foreach ($messages as $msg) {
+      $chatMsg = new ChatMessage(
+        $msg['role'],
+        $msg['content'] ?? '',
+      );
+      if (!empty($msg['tool_call_id'])) {
+        $chatMsg->setToolsId($msg['tool_call_id']);
+      }
+      if (!empty($msg['tool_calls_raw'])) {
+        $chatMsg->setTools(array_map(
+          [self::class, 'wrapToolCallArray'],
+          $msg['tool_calls_raw'],
+        ));
+      }
+      $chatMessages[] = $chatMsg;
+    }
+
+    $chatInput = new ChatInput($chatMessages);
+    $chatInput->setSystemPrompt($config->systemPrompt);
+    $chatInput->setStreamedOutput(TRUE);
+    $chatInput->setChatTools($config->tools);
+
+    return $chatInput;
+  }
+
+  /**
+   * Creates a streaming iterator from the AI provider.
+   *
+   * Instantiates the provider plugin, configures the model, performs
+   * the streamed chat call, and sets the buffer size to 1 for
+   * immediate token delivery.
+   *
+   * @param \Drupal\ai\OperationType\Chat\ChatInput $chatInput
+   *   The assembled chat input.
+   * @param \Drupal\oe_ai_assistant\Service\LlmLoopConfig $config
+   *   The loop configuration (provider ID, model ID).
+   *
+   * @return \Drupal\ai\OperationType\Chat\StreamedChatMessageIteratorInterface
+   *   The streaming iterator.
+   */
+  private function createStreamingIterator(
+    ChatInput $chatInput,
+    LlmLoopConfig $config,
+  ) {
+    $provider = $this->aiProvider->createInstance($config->providerId);
+    $provider->setConfiguration(['model_id' => $config->modelId]);
+
+    $chatOutput = $provider->chat($chatInput, $config->modelId);
+    $iterator = $chatOutput->getNormalized();
+
+    // Flush every token immediately for smooth real-time SSE delivery.
+    if (method_exists($iterator, 'setMaxBufferSize')) {
+      $iterator->setMaxBufferSize(1);
+    }
+
+    return $iterator;
+  }
+
+  /**
+   * Streams one LLM iteration, emitting text and detecting tool calls.
+   *
+   * Iterates the streaming response, forwarding text chunks to the
+   * browser via AgUiState. Also checks for partial tool call arguments
+   * on each chunk and invokes the delta callback if configured.
+   *
+   * @param mixed $iterator
+   *   The streaming iterator from the provider.
+   * @param \Swis\AgUiServer\AgUiState $agUiState
+   *   The AG-UI state manager for SSE events.
+   * @param \Drupal\oe_ai_assistant\Service\LlmLoopConfig $config
+   *   The loop configuration (delta callback).
+   * @param string $messageId
+   *   The SSE message envelope ID for this iteration.
+   *
+   * @return array
+   *   A two-element array: [string $streamedText, array $startedToolCalls].
+   */
+  private function streamIteration(
+    $iterator,
+    AgUiState $agUiState,
+    LlmLoopConfig $config,
+    string $messageId,
+  ): array {
+    $streamedText = '';
+    $messageStarted = FALSE;
+    $startedToolCalls = [];
+
+    foreach ($iterator as $chunk) {
+      $text = $chunk->getText() ?? '';
+      if (!empty($text)) {
+        if (!$messageStarted) {
+          $agUiState->startMessage('assistant', $messageId);
+          $messageStarted = TRUE;
+        }
+        $agUiState->addMessageContent($text, $messageId);
+        $streamedText .= $text;
+      }
+
+      // Detect partial tool call arguments for incremental streaming.
+      $this->processPartialToolCalls(
+        $iterator, $agUiState, $config, $startedToolCalls,
+      );
+    }
+
+    // Close the text message SSE envelope.
+    if ($messageStarted) {
+      $agUiState->finishMessage($messageId);
+    }
+
+    return [$streamedText, $startedToolCalls];
+  }
+
+  /**
+   * Processes partial tool call arguments from the current chunk.
+   *
+   * Checks if the iterator exposes partial tool call data (provider-
+   * specific). If a delta callback is configured, repairs the partial
+   * JSON and passes decoded arrays to the callback. Also emits
+   * TOOL_CALL_START events on first detection of each tool call ID.
+   *
+   * @param mixed $iterator
+   *   The streaming iterator (may have getPartialToolCallArguments).
+   * @param \Swis\AgUiServer\AgUiState $agUiState
+   *   The AG-UI state manager for SSE events.
+   * @param \Drupal\oe_ai_assistant\Service\LlmLoopConfig $config
+   *   The loop configuration (delta callback).
+   * @param array &$startedToolCalls
+   *   Tracking map of tool call IDs already started (by reference).
+   */
+  private function processPartialToolCalls(
+    $iterator,
+    AgUiState $agUiState,
+    LlmLoopConfig $config,
+    array &$startedToolCalls,
+  ): void {
+    if (!$config->onToolCallArgumentDelta
+      || !method_exists($iterator, 'getPartialToolCallArguments')
+    ) {
+      return;
+    }
+
+    $partials = $iterator->getPartialToolCallArguments();
+    if (empty($partials)) {
+      return;
+    }
+
+    // Emit TOOL_CALL_START on first detection of each tool call ID.
+    foreach ($partials as $tc) {
+      $tcId = $tc['id'] ?? '';
+      if ($tcId !== '' && !isset($startedToolCalls[$tcId])) {
+        $agUiState->startToolCall($tc['name'] ?? '', NULL, $tcId);
+        $startedToolCalls[$tcId] = $tc['name'] ?? '';
+      }
+    }
+
+    // Repair partial JSON and pass decoded arrays to the callback.
+    $decoded = [];
+    foreach ($partials as $tc) {
+      $args = $this->repairToolCallJson($tc['arguments_json'] ?? '');
+      if ($args !== NULL) {
+        $decoded[] = [
+          'id' => $tc['id'] ?? '',
+          'name' => $tc['name'] ?? '',
+          'arguments' => $args,
+        ];
+      }
+    }
+    if (!empty($decoded)) {
+      ($config->onToolCallArgumentDelta)($decoded);
+    }
+  }
+
+  /**
+   * Assembles tool call data from the iterator's completed tools.
+   *
+   * Builds two parallel structures: one for the plugin executor
+   * (simple arrays) and one for the conversation history (matching
+   * the provider's replay format).
+   *
+   * @param array $assembledTools
+   *   ToolsFunctionOutput objects from the iterator's getTools().
+   *
+   * @return array
+   *   A two-element array: [$toolCallsForExec, $toolCallsForHistory].
+   */
+  private function assembleToolCalls(array $assembledTools): array {
+    $toolCallsForExec = [];
+    $toolCallsForHistory = [];
+
+    foreach ($assembledTools as $toolOutput) {
+      $toolCallId = $toolOutput->getToolId() ?: $this->uuid->generate();
+      $name = $toolOutput->getName();
+
+      // Convert ToolsPropertyResult objects to plain key => value array.
+      $rawArgs = [];
+      foreach ($toolOutput->getArguments() as $arg) {
+        $rawArgs[$arg->getName()] = $arg->getValue();
+      }
+
+      $toolCallsForExec[$toolCallId] = [
+        'name' => $name,
+        'arguments' => $rawArgs,
+      ];
+
+      // History format for provider replay (Mistral-compatible).
+      $toolCallsForHistory[] = [
+        'id' => $toolCallId,
+        'type' => 'function',
+        'index' => 0,
+        'function' => [
+          'name' => $name,
+          'arguments' => Json::encode($rawArgs),
+        ],
+      ];
+    }
+
+    return [$toolCallsForExec, $toolCallsForHistory];
+  }
+
+  /**
+   * Emits TOOL_CALL_START events and pauses for browser rendering.
+   *
+   * Emits start events for tool calls not already started during
+   * incremental streaming, then pauses briefly so the events reach
+   * the browser before the executor emits STATE_SNAPSHOT data.
+   *
+   * @param \Swis\AgUiServer\AgUiState $agUiState
+   *   The AG-UI state manager.
+   * @param \Drupal\oe_ai_assistant\Service\LlmLoopConfig $config
+   *   The loop configuration (tool executor).
+   * @param array $toolCallsForExec
+   *   Tool calls keyed by ID with 'name' and 'arguments'.
+   * @param array $startedToolCalls
+   *   Tool call IDs already started during incremental streaming.
+   */
+  private function emitToolCallEvents(
+    AgUiState $agUiState,
+    LlmLoopConfig $config,
+    array $toolCallsForExec,
+    array $startedToolCalls,
+  ): void {
+    foreach ($toolCallsForExec as $toolCallId => $toolCall) {
+      if (!isset($startedToolCalls[$toolCallId])) {
+        $agUiState->startToolCall(
+          $toolCall['name'], NULL, $toolCallId,
+        );
+      }
+    }
+
+    // Brief pause so TOOL_CALL_START events reach the browser
+    // before the executor emits STATE_SNAPSHOT data.
+    usleep(15000);
+  }
+
+  /**
+   * Wraps a raw tool call array for ChatMessage replay.
+   *
+   * ChatMessage::getRenderedTools() calls getOutputRenderArray() on
+   * each tool call. This wrapper satisfies that interface so stored
+   * plain arrays can be replayed in subsequent LLM API calls.
    *
    * @param array $data
-   *   Tool call array with keys: id, type, index, function (name +
-   *   arguments). This is the exact structure expected by the Mistral
-   *   provider's ToolCallFunction::fromArray().
+   *   Tool call array with id, type, index, function keys.
    *
    * @return object
-   *   An anonymous object with a single getOutputRenderArray() method
-   *   that returns the original $data array unchanged.
+   *   An object with getOutputRenderArray() returning $data.
    */
   private static function wrapToolCallArray(array $data): object {
     return new class($data) {
 
       /**
-       * Constructs the wrapper with the tool call array.
+       * Constructs the wrapper.
        *
        * @param array $data
-       *   The raw tool call data to be returned by getOutputRenderArray().
+       *   The raw tool call data.
        */
       public function __construct(private array $data) {}
 
       /**
        * Returns the tool call render array.
        *
-       * Called by ChatMessage::getRenderedTools() when assembling the
-       * tools array for an API request to the LLM provider.
-       *
        * @return array
-       *   The raw tool call data array.
+       *   The raw tool call data.
        */
       public function getOutputRenderArray(): array {
         return $this->data;
@@ -376,17 +430,14 @@ class LlmStreamingLoop {
   /**
    * Repairs a partial tool call argument JSON string.
    *
-   * Tool call arguments arrive as incomplete JSON during streaming
-   * (e.g. '{"title":"EU L'). This method uses cortexphp/json-repair
-   * to close unclosed strings, brackets, and braces, producing a
-   * valid associative array.
+   * Uses cortexphp/json-repair to close unclosed strings, brackets,
+   * and braces in streaming JSON fragments, producing a valid array.
    *
    * @param string $json
    *   The raw (possibly incomplete) JSON argument string.
    *
    * @return array|null
-   *   The decoded associative array, or NULL if the input is empty
-   *   or cannot be repaired into a valid array.
+   *   The decoded associative array, or NULL if unrepairable.
    */
   private function repairToolCallJson(string $json): ?array {
     if ($json === '') {
@@ -400,7 +451,6 @@ class LlmStreamingLoop {
       return NULL;
     }
 
-    // The library may return stdClass; convert to array.
     if ($decoded instanceof \stdClass) {
       $decoded = (array) $decoded;
     }
