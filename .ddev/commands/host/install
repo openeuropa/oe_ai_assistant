@@ -12,6 +12,10 @@ ddev drush site:install minimal --account-name=admin --account-pass=admin -y
 echo "Enabling test module discovery..."
 ddev exec 'grep -q extension_discovery_scan_tests web/sites/default/settings.php 2>/dev/null || echo "\$settings[\"extension_discovery_scan_tests\"] = TRUE;" >> web/sites/default/settings.php'
 
+echo "Copying AI provider settings..."
+ddev exec 'cp /var/www/html/.ddev/settings.ai.php web/sites/default/settings.ai.php'
+ddev exec 'grep -q settings.ai.php web/sites/default/settings.php 2>/dev/null || echo "include __DIR__ . \"/settings.ai.php\";" >> web/sites/default/settings.php'
+
 echo "Installing and setting Seven as default and admin theme..."
 ddev drush theme:install seven -y
 ddev drush config:set system.theme default seven -y
