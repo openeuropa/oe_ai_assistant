@@ -163,6 +163,10 @@ PROMPT;
     $fieldsParam->setType('object');
     $fieldsParam->setDescription('Complete field values keyed by field machine name.');
     $fieldsParam->setRequired(TRUE);
+    // Allow arbitrary keys since the field set is dynamic per content type.
+    // Without this, OpenAI rejects the schema because an "object" type
+    // with no "properties" key is invalid JSON Schema.
+    $fieldsParam->setCustomValue('additionalProperties', TRUE);
 
     // "changed_fields" parameter: the model declares which fields it actually
     // created or modified. The plugin uses this list to decide which fields
@@ -171,7 +175,7 @@ PROMPT;
     $changedParam = new ToolsPropertyInput();
     $changedParam->setName('changed_fields');
     $changedParam->setType('array');
-    $changedParam->setItems('string');
+    $changedParam->setItems(['type' => 'string']);
     $changedParam->setDescription(
       'List of field machine names that were created or modified. '
       . 'On first draft this is all fields. On regeneration this is '
