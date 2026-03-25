@@ -14,8 +14,8 @@ use Swis\AgUiServer\Events\StateSnapshotEvent;
 /**
  * Tests the ToolCallFieldStreamer class.
  *
- * Verifies incremental JSON repair, field diffing, and SSE event
- * emission for streaming tool call arguments into AG-UI state.
+ * Verifies field diffing and SSE event emission for streaming
+ * decoded tool call arguments into AG-UI state.
  *
  * @coversDefaultClass \Drupal\oe_ai_assistant\Plugin\AiEditorialAssistant\Drafting\ToolCallFieldStreamer
  */
@@ -89,7 +89,7 @@ class ToolCallFieldStreamerTest extends TestCase {
       ['title' => TRUE],
     );
 
-    $streamer->onDelta('{"fields":{"title":"Hello"}}');
+    $streamer->onDelta(['fields' => ['title' => 'Hello']]);
 
     $this->assertCount(2, $this->events);
     $this->assertInstanceOf(StateSnapshotEvent::class, $this->events[0]);
@@ -110,8 +110,11 @@ class ToolCallFieldStreamerTest extends TestCase {
       ['title' => TRUE],
     );
 
-    $streamer->onDelta('not json');
+    // Pass an array with no valid fields (not a field map).
+    $streamer->onDelta(['not' => 'fields']);
 
+    // Initial snapshot + 1 delta for "not" which is not in index.
+    // Since "not" is not in fieldIndex, no delta is emitted.
     $this->assertCount(1, $this->events);
     $this->assertInstanceOf(StateSnapshotEvent::class, $this->events[0]);
   }
@@ -130,7 +133,8 @@ class ToolCallFieldStreamerTest extends TestCase {
       ['title' => TRUE],
     );
 
-    $streamer->onDelta('');
+    // Empty array: no fields to process.
+    $streamer->onDelta([]);
 
     $this->assertCount(1, $this->events);
     $this->assertInstanceOf(StateSnapshotEvent::class, $this->events[0]);
@@ -151,9 +155,9 @@ class ToolCallFieldStreamerTest extends TestCase {
     );
 
     // First chunk: partial title.
-    $streamer->onDelta('{"fields":{"title":"Hel"}}');
+    $streamer->onDelta(['fields' => ['title' => 'Hel']]);
     // Second chunk: extended title.
-    $streamer->onDelta('{"fields":{"title":"Hello world"}}');
+    $streamer->onDelta(['fields' => ['title' => 'Hello world']]);
 
     // Initial snapshot + 2 deltas.
     $this->assertCount(3, $this->events);
@@ -188,9 +192,9 @@ class ToolCallFieldStreamerTest extends TestCase {
     );
 
     // First chunk: body with formatted text object.
-    $streamer->onDelta('{"fields":{"body":{"value":"First","format":"full_html"}}}');
+    $streamer->onDelta(['fields' => ['body' => ['value' => 'First', 'format' => 'full_html']]]);
     // Second chunk: updated body value.
-    $streamer->onDelta('{"fields":{"body":{"value":"First paragraph.","format":"full_html"}}}');
+    $streamer->onDelta(['fields' => ['body' => ['value' => 'First paragraph.', 'format' => 'full_html']]]);
 
     // Initial snapshot + 2 deltas.
     $this->assertCount(3, $this->events);
@@ -226,7 +230,7 @@ class ToolCallFieldStreamerTest extends TestCase {
     );
 
     // "titl" is not in the field index.
-    $streamer->onDelta('{"fields":{"titl":"Hello"}}');
+    $streamer->onDelta(['fields' => ['titl' => 'Hello']]);
 
     // Only the initial snapshot, no deltas.
     $this->assertCount(1, $this->events);
@@ -247,8 +251,8 @@ class ToolCallFieldStreamerTest extends TestCase {
       ['title' => TRUE],
     );
 
-    $streamer->onDelta('{"fields":{"title":"Same"}}');
-    $streamer->onDelta('{"fields":{"title":"Same"}}');
+    $streamer->onDelta(['fields' => ['title' => 'Same']]);
+    $streamer->onDelta(['fields' => ['title' => 'Same']]);
 
     // Initial snapshot + 1 delta only.
     $this->assertCount(2, $this->events);
@@ -270,9 +274,9 @@ class ToolCallFieldStreamerTest extends TestCase {
     );
 
     // First chunk: only title.
-    $streamer->onDelta('{"fields":{"title":"Hello"}}');
+    $streamer->onDelta(['fields' => ['title' => 'Hello']]);
     // Second chunk: title unchanged, body appears.
-    $streamer->onDelta('{"fields":{"title":"Hello","body":{"value":"Text","format":"html"}}}');
+    $streamer->onDelta(['fields' => ['title' => 'Hello', 'body' => ['value' => 'Text', 'format' => 'html']]]);
 
     // Initial snapshot + 2 deltas.
     $this->assertCount(3, $this->events);
@@ -326,7 +330,7 @@ class ToolCallFieldStreamerTest extends TestCase {
     );
 
     // No "fields" wrapper.
-    $streamer->onDelta('{"title":"Direct"}');
+    $streamer->onDelta(['title' => 'Direct']);
 
     // Initial snapshot + 1 delta.
     $this->assertCount(2, $this->events);

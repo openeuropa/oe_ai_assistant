@@ -8,15 +8,13 @@ use Drupal\oe_ai_assistant\Transporter\DrupalSseTransporter;
 use Swis\AgUiServer\Events\StateDeltaEvent;
 use Swis\AgUiServer\Events\StateSnapshotEvent;
 
-use function Cortex\JsonRepair\json_repair_decode;
-
 /**
- * Streams tool call field arguments as AG-UI state events.
+ * Streams drafted field values as AG-UI state events.
  *
- * Receives incremental JSON fragments from a streaming LLM tool call,
- * repairs them with cortexphp/json-repair, diffs against the previous
- * state, and emits AG-UI StateDelta / StateSnapshot events via the
- * SSE transporter.
+ * Receives already-decoded tool call arguments (repaired by the
+ * LLM streaming loop), extracts and filters field values, diffs
+ * against the previous state, and emits AG-UI StateDelta /
+ * StateSnapshot events via the SSE transporter.
  */
 class ToolCallFieldStreamer {
 
@@ -66,27 +64,26 @@ class ToolCallFieldStreamer {
   }
 
   /**
-   * Processes an incremental JSON fragment from the tool call stream.
+   * Processes decoded tool call arguments from the LLM stream.
    *
-   * Repairs the partial JSON, extracts and filters fields against the
-   * field index, diffs against the previous state, and emits a
-   * StateDeltaEvent if any fields changed.
+   * Extracts and filters fields against the field index, diffs
+   * against the previous state, and emits a StateDeltaEvent if any
+   * fields changed. The JSON repair step is handled upstream by
+   * LlmStreamingLoop before this method is called.
    *
-   * @param string $partialArgumentsJson
-   *   The raw (possibly incomplete) JSON string from the LLM stream.
+   * @param array $arguments
+   *   Already-decoded associative array from the repaired tool call
+   *   JSON. May contain a "fields" wrapper key or bare field values.
    */
-  public function onDelta(string $partialArgumentsJson): void {
+  public function onDelta(array $arguments): void {
     // Ensure the initial snapshot is emitted before any deltas.
     $this->emitInitialSnapshot();
 
-    // Attempt to repair and decode the partial JSON.
-    $repaired = $this->repairJson($partialArgumentsJson);
-    if ($repaired === NULL) {
+    // Normalize: support both {"fields": {...}} and bare {...} formats.
+    $fields = $arguments['fields'] ?? $arguments;
+    if (!is_array($fields)) {
       return;
     }
-
-    // Normalize: support both {"fields": {...}} and bare {...} formats.
-    $fields = $repaired['fields'] ?? $repaired;
 
     // Filter out any fields not present in the known field index.
     $fields = array_intersect_key($fields, $this->fieldIndex);
@@ -111,44 +108,6 @@ class ToolCallFieldStreamer {
     $this->transporter->sendEvent(
       new StateSnapshotEvent(['draftedFields' => $fields]),
     );
-  }
-
-  /**
-   * Repairs and decodes a possibly malformed JSON string.
-   *
-   * Uses cortexphp/json-repair to fix common LLM JSON issues such as
-   * trailing commas, missing brackets, and incomplete strings.
-   *
-   * @param string $json
-   *   The raw JSON string to repair.
-   *
-   * @return array<string, mixed>|null
-   *   The decoded associative array, or NULL if the input is empty
-   *   or cannot be repaired into a valid array.
-   */
-  private function repairJson(string $json): ?array {
-    if ($json === '') {
-      return NULL;
-    }
-
-    try {
-      $decoded = json_repair_decode($json);
-    }
-    catch (\Throwable) {
-      return NULL;
-    }
-
-    // The library may return stdClass; convert to array.
-    if ($decoded instanceof \stdClass) {
-      $decoded = (array) $decoded;
-    }
-
-    // Only associative arrays are valid field maps.
-    if (!is_array($decoded)) {
-      return NULL;
-    }
-
-    return $decoded;
   }
 
   /**

@@ -351,7 +351,7 @@ class DraftingPlugin extends ChatPluginBase {
     return function (array $partials) use ($streamer): void {
       foreach ($partials as $tc) {
         if (($tc['name'] ?? '') === 'draft_content') {
-          $streamer->onDelta($tc['arguments_json'] ?? '');
+          $streamer->onDelta($tc['arguments'] ?? []);
         }
       }
     };

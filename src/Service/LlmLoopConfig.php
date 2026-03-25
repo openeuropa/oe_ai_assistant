@@ -65,10 +65,12 @@ class LlmLoopConfig {
    *   Default is 10, which is sufficient for all current plugin use cases.
    * @param \Closure|null $onToolCallArgumentDelta
    *   Optional callback invoked during the streaming iteration when
-   *   partial tool call arguments are detected. Signature:
+   *   partial tool call arguments are detected. The loop repairs the
+   *   partial JSON before calling the callback. Signature:
    *   fn(array $partialToolCalls): void. Each element has keys
-   *   'id' (string), 'name' (string), and 'arguments_json' (string).
-   *   NULL disables incremental streaming (the default).
+   *   'id' (string), 'name' (string), and 'arguments' (array).
+   *   The 'arguments' value is an already-decoded associative array
+   *   from the repaired JSON. NULL disables incremental streaming.
    */
   public function __construct(
     public readonly string $systemPrompt,

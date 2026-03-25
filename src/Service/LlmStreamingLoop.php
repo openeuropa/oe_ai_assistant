@@ -10,6 +10,7 @@ use Drupal\ai\OperationType\Chat\ChatMessage;
 use Drupal\Component\Serialization\Json;
 use Drupal\Component\Uuid\UuidInterface;
 use Swis\AgUiServer\AgUiState;
+use function Cortex\JsonRepair\json_repair_decode;
 
 /**
  * Runs the agentic LLM tool-call loop for AI assistant plugins.
@@ -188,7 +189,25 @@ class LlmStreamingLoop {
                 $startedToolCalls[$tcId] = $tc['name'] ?? '';
               }
             }
-            ($config->onToolCallArgumentDelta)($partials);
+            // Repair partial JSON and pass decoded arrays to the
+            // callback. Tool call arguments are always JSON, so
+            // the repair step is provider-agnostic.
+            $decoded = [];
+            foreach ($partials as $tc) {
+              $args = $this->repairToolCallJson(
+                $tc['arguments_json'] ?? '',
+              );
+              if ($args !== NULL) {
+                $decoded[] = [
+                  'id' => $tc['id'] ?? '',
+                  'name' => $tc['name'] ?? '',
+                  'arguments' => $args,
+                ];
+              }
+            }
+            if (!empty($decoded)) {
+              ($config->onToolCallArgumentDelta)($decoded);
+            }
           }
         }
 
@@ -352,6 +371,45 @@ class LlmStreamingLoop {
       }
 
     };
+  }
+
+  /**
+   * Repairs a partial tool call argument JSON string.
+   *
+   * Tool call arguments arrive as incomplete JSON during streaming
+   * (e.g. '{"title":"EU L'). This method uses cortexphp/json-repair
+   * to close unclosed strings, brackets, and braces, producing a
+   * valid associative array.
+   *
+   * @param string $json
+   *   The raw (possibly incomplete) JSON argument string.
+   *
+   * @return array|null
+   *   The decoded associative array, or NULL if the input is empty
+   *   or cannot be repaired into a valid array.
+   */
+  private function repairToolCallJson(string $json): ?array {
+    if ($json === '') {
+      return NULL;
+    }
+
+    try {
+      $decoded = json_repair_decode($json);
+    }
+    catch (\Throwable) {
+      return NULL;
+    }
+
+    // The library may return stdClass; convert to array.
+    if ($decoded instanceof \stdClass) {
+      $decoded = (array) $decoded;
+    }
+
+    if (!is_array($decoded)) {
+      return NULL;
+    }
+
+    return $decoded;
   }
 
 }
