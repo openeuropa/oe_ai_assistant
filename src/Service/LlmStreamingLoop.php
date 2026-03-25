@@ -181,8 +181,11 @@ class LlmStreamingLoop {
     LlmLoopConfig $config,
   ) {
     $provider = $this->aiProvider->createInstance($config->providerId);
-    $provider->setConfiguration(['model_id' => $config->modelId]);
 
+    // The model ID is passed as the second argument to chat().
+    // Do not use setConfiguration(['model_id' => ...]) because
+    // some providers (e.g. OpenAI) pass configuration keys as
+    // API parameters, and the API rejects unknown keys.
     $chatOutput = $provider->chat($chatInput, $config->modelId);
     $iterator = $chatOutput->getNormalized();
 
