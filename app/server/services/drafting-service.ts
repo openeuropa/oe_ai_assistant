@@ -362,6 +362,7 @@ call the draft_content tool for conversational responses.`;
       // status (green tick). Must arrive before TOOL_CALL_END.
       yield {
         type: "TOOL_CALL_RESULT",
+        messageId: crypto.randomUUID(),
         toolCallId: toolCall.id,
         role: "tool",
         content: JSON.stringify(result),
