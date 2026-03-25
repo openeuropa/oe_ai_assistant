@@ -98,7 +98,20 @@ class LlmStreamingLoop {
           $messages[] = $result;
         }
 
-        // Emit finish events for all tool calls.
+        // Emit result + finish events for all tool calls.
+        // TOOL_CALL_RESULT tells the AG-UI adapter the tool
+        // completed successfully (triggers the "complete" status
+        // and shows the green tick). TOOL_CALL_END closes the
+        // tool call envelope.
+        foreach ($toolResults as $result) {
+          $toolCallId = $result['tool_call_id'] ?? '';
+          if ($toolCallId !== '') {
+            $agUiState->toolCallResult(
+              $toolCallId,
+              $result['content'] ?? '',
+            );
+          }
+        }
         foreach ($toolCallsForExec as $toolCallId => $toolCall) {
           $agUiState->finishToolCall($toolCallId);
         }
