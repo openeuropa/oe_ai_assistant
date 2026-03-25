@@ -66,7 +66,6 @@ export function useTypewriterFields(
   // Detect new or changed fields and start their animations.
   useEffect(() => {
     const current = revealRef.current;
-    let hasNewAnimation = false;
 
     for (const [name, field] of Object.entries(draftedFields)) {
       const targetValue = extractText(field);
@@ -79,7 +78,6 @@ export function useTypewriterFields(
           revealed: 0,
           done: false,
         };
-        hasNewAnimation = true;
       }
     }
 
@@ -90,9 +88,14 @@ export function useTypewriterFields(
       }
     }
 
-    // Start the animation timer if we have new animations and
-    // the timer is not already running.
-    if (hasNewAnimation && !timerRef.current) {
+    // Start the animation timer if there are pending animations
+    // and the timer is not already running. Check for any field
+    // that is not fully revealed (not just new animations) to
+    // handle React StrictMode remounts: the cleanup function
+    // clears the timer, but refs persist, so on the second mount
+    // we need to restart the timer for fields still in progress.
+    const hasPending = Object.values(current).some((s) => !s.done);
+    if (hasPending && !timerRef.current) {
       timerRef.current = setInterval(() => {
         let allDone = true;
 
