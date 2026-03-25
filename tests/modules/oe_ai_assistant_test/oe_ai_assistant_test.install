@@ -62,4 +62,10 @@ function oe_ai_assistant_test_install(): void {
   $configFactory->getEditable('ai_provider_mistral.settings')
     ->set('api_key', 'mistral_api_key')
     ->save();
+
+  // Point the OpenAI provider to the Key entity for the API key.
+  $configFactory->getEditable('ai_provider_openai.settings')
+    ->set('api_key', 'openai_api_key')
+    ->set('moderation', FALSE)
+    ->save();
 }

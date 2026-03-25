@@ -12,6 +12,7 @@ dependencies:
   - drupal:text
   - drupal:workflows
   - ai:ai_provider_mistral
+  - ai:ai_provider_openai
   - key:key
   - entity_reference_revisions:entity_reference_revisions
   - paragraphs:paragraphs
