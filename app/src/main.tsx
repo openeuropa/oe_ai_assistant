@@ -9,4 +9,11 @@
 import { init } from "./init";
 import "./index.css";
 
-init("#root");
+init("#root", {
+  pluginConfig: {
+    drafting: {
+      entityTypeId: "node",
+      bundle: "oe_news",
+    },
+  },
+});
