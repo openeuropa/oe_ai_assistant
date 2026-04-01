@@ -107,6 +107,14 @@ class DrupalTempMessageStoreTest extends TestCase {
     $loaded = $messageStore->load();
     // Should keep only the last 4 messages.
     $this->assertCount(4, $loaded->getMessages());
+
+    // Verify the retained messages are the most recent ones.
+    $messages = $loaded->getMessages();
+    $firstRetained = $messages[0];
+    $this->assertInstanceOf(
+      \Symfony\AI\Platform\Message\UserMessage::class,
+      $firstRetained,
+    );
   }
 
   /**

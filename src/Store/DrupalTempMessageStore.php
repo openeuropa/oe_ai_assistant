@@ -47,6 +47,11 @@ class DrupalTempMessageStore {
     private readonly int $maxMessages = 20,
   ) {
     $this->store = $factory->get($collection);
+    if ($this->maxMessages < 1) {
+      throw new \InvalidArgumentException(
+        'maxMessages must be at least 1.',
+      );
+    }
   }
 
   /**
