@@ -52,9 +52,6 @@
         "patches": {
             "drupal/ai": {
                 "#3579967: Buffer corrupts HTML with relative URLs in streamed responses": "patches/ai-3579967-streaming-buffer-relative-urls.patch"
-            },
-            "drupal/ai_provider_mistral": {
-                "Streaming chunk loss: advance-before-yield overwrites shared Response object": "patches/ai-provider-mistral-streaming-chunk-loss.patch"
             }
         },
         "installer-paths": {
