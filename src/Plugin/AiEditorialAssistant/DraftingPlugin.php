@@ -4,22 +4,19 @@ declare(strict_types=1);
 
 namespace Drupal\oe_ai_assistant\Plugin\AiEditorialAssistant;
 
-use Swis\AgUiServer\Events\StateSnapshotEvent;
-use Drupal\ai\AiProviderPluginManager;
-use Drupal\ai\OperationType\Chat\Tools\ToolsInput;
-use Drupal\Component\Serialization\Json;
 use Drupal\Component\Uuid\UuidInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Session\AccountProxyInterface;
+use Drupal\Core\TempStore\PrivateTempStoreFactory;
 use Drupal\oe_ai_assistant\Annotation\AiEditorialAssistant;
 use Drupal\oe_ai_assistant\Exception\ActionException;
 use Drupal\oe_ai_assistant\Plugin\AiEditorialAssistant\Drafting\DraftingPromptBuilder;
 use Drupal\oe_ai_assistant\Plugin\AiEditorialAssistant\Drafting\ToolCallFieldStreamer;
 use Drupal\oe_ai_assistant\Plugin\ChatPluginBase;
-use Drupal\oe_ai_assistant\Service\ConversationHistory;
+use Drupal\oe_ai_assistant\Service\AgentFactory;
 use Drupal\oe_ai_assistant\Service\DraftFieldMapper;
 use Drupal\oe_ai_assistant\Service\FormSchemaExtractor;
-use Drupal\oe_ai_assistant\Service\LlmStreamingLoop;
+use Drupal\oe_ai_assistant\Tool\DraftContentTool;
 use Drupal\ai\PluginManager\AiShortTermMemoryPluginManager;
 use Drupal\ai\Service\FunctionCalling\FunctionCallPluginManager;
 use Psr\Log\LoggerInterface;
@@ -50,8 +47,8 @@ class DraftingPlugin extends ChatPluginBase {
   /**
    * Constructs a DraftingPlugin.
    *
-   * The seven chat services (aiProvider, uuid, logger, conversationHistory,
-   * llmLoop, shortTermMemoryManager, functionCallManager) are forwarded to
+   * The chat services (uuid, logger, agentFactory, tempStoreFactory,
+   * shortTermMemoryManager, functionCallManager) are forwarded to
    * ChatPluginBase via parent::__construct().
    * Only drafting-specific services are declared as promoted properties
    * on this class.
@@ -62,16 +59,14 @@ class DraftingPlugin extends ChatPluginBase {
    *   The plugin ID as declared in the AiEditorialAssistant attribute.
    * @param mixed $plugin_definition
    *   The plugin definition as resolved by the plugin manager.
-   * @param \Drupal\ai\AiProviderPluginManager $aiProvider
-   *   The AI provider plugin manager, used to resolve the default chat model.
    * @param \Drupal\Component\Uuid\UuidInterface $uuid
    *   UUID generator for run IDs, thread IDs, and message IDs.
    * @param \Psr\Log\LoggerInterface $logger
    *   Logger channel for the oe_ai_assistant module.
-   * @param \Drupal\oe_ai_assistant\Service\ConversationHistory $conversationHistory
-   *   Persists and retrieves per-thread conversation history.
-   * @param \Drupal\oe_ai_assistant\Service\LlmStreamingLoop $llmLoop
-   *   Runs the agentic tool-call loop against the configured LLM.
+   * @param \Drupal\oe_ai_assistant\Service\AgentFactory $agentFactory
+   *   Factory for creating configured Symfony AI Agent instances.
+   * @param \Drupal\Core\TempStore\PrivateTempStoreFactory $tempStoreFactory
+   *   Factory for per-user temp stores used for conversation history.
    * @param \Drupal\ai\PluginManager\AiShortTermMemoryPluginManager $shortTermMemoryManager
    *   Plugin manager for AI short-term memory plugins (e.g. LastN).
    * @param \Drupal\ai\Service\FunctionCalling\FunctionCallPluginManager $functionCallManager
@@ -89,11 +84,10 @@ class DraftingPlugin extends ChatPluginBase {
     array $configuration,
     $plugin_id,
     $plugin_definition,
-    AiProviderPluginManager $aiProvider,
     UuidInterface $uuid,
     LoggerInterface $logger,
-    ConversationHistory $conversationHistory,
-    LlmStreamingLoop $llmLoop,
+    AgentFactory $agentFactory,
+    PrivateTempStoreFactory $tempStoreFactory,
     AiShortTermMemoryPluginManager $shortTermMemoryManager,
     FunctionCallPluginManager $functionCallManager,
     protected readonly EntityTypeManagerInterface $entityTypeManager,
@@ -102,16 +96,9 @@ class DraftingPlugin extends ChatPluginBase {
     protected readonly DraftingPromptBuilder $promptBuilder,
   ) {
     parent::__construct(
-      $configuration,
-      $plugin_id,
-      $plugin_definition,
-      $aiProvider,
-      $uuid,
-      $logger,
-      $conversationHistory,
-      $llmLoop,
-      $shortTermMemoryManager,
-      $functionCallManager,
+      $configuration, $plugin_id, $plugin_definition,
+      $uuid, $logger, $agentFactory, $tempStoreFactory,
+      $shortTermMemoryManager, $functionCallManager,
     );
   }
 
@@ -145,11 +132,10 @@ class DraftingPlugin extends ChatPluginBase {
       $plugin_id,
       $plugin_definition,
       // Chat services (forwarded to ChatPluginBase).
-      $container->get('ai.provider'),
       $container->get('uuid'),
       $container->get('logger.factory')->get('oe_ai_assistant'),
-      $container->get(ConversationHistory::class),
-      $container->get(LlmStreamingLoop::class),
+      $container->get(AgentFactory::class),
+      $container->get('tempstore.private'),
       $container->get('plugin.manager.ai.short_term_memory'),
       $container->get('plugin.manager.ai.function_calls'),
       // Drafting-specific services.
@@ -262,8 +248,7 @@ class DraftingPlugin extends ChatPluginBase {
    * {@inheritdoc}
    *
    * Extracts drafting-specific context from the request body. This includes
-   * the entity type, bundle, field index, and any [fields:...] hint from
-   * the user message for selective field streaming.
+   * the entity type, bundle, and field index for schema-aware drafting.
    */
   protected function buildChatContext(
     array $body,
@@ -282,7 +267,6 @@ class DraftingPlugin extends ChatPluginBase {
       'bundle' => $bundle,
       'fieldIndex' => $this->promptBuilder
         ->buildFieldIndex($entityTypeId, $bundle),
-      'fieldsToStream' => $this->parseFieldsHint($message),
     ];
   }
 
@@ -302,35 +286,20 @@ class DraftingPlugin extends ChatPluginBase {
   /**
    * {@inheritdoc}
    *
-   * Delegates tool definition construction to DraftingPromptBuilder.
+   * Creates a DraftContentTool instance with the current transporter
+   * and field index, and pairs it with the Tool metadata from
+   * DraftingPromptBuilder.
    */
-  protected function buildTools(array $context): ToolsInput {
-    return $this->promptBuilder->buildTools();
-  }
-
-  /**
-   * {@inheritdoc}
-   *
-   * Creates a closure that executes drafting tool calls (draft_content)
-   * and streams field snapshots to the frontend. The closure captures
-   * the field index and streaming hint from the context.
-   */
-  protected function createToolExecutor(
-    array $context,
-    bool $isFirstTurn,
-  ): \Closure {
-    $fieldIndex = $context['fieldIndex'];
-    $activeFieldsToStream = $context['fieldsToStream'];
-    return function (array $toolCalls) use (
-      $fieldIndex, &$activeFieldsToStream, $isFirstTurn,
-    ): array {
-      return $this->executeToolCalls(
-        $toolCalls,
-        $fieldIndex,
-        $activeFieldsToStream,
-        $isFirstTurn,
-      );
-    };
+  protected function buildTools(array $context): array {
+    $tool = new DraftContentTool(
+      $this->transporter,
+      $context['fieldIndex'],
+      $this->logger,
+    );
+    $metadata = $this->promptBuilder->buildToolMetadata();
+    return [
+      ['instance' => $tool, 'metadata' => $metadata],
+    ];
   }
 
   /**
@@ -348,158 +317,11 @@ class DraftingPlugin extends ChatPluginBase {
     $streamer = new ToolCallFieldStreamer(
       $this->transporter, $fieldIndex,
     );
-    return function (array $partials) use ($streamer): void {
-      foreach ($partials as $tc) {
-        if (($tc['name'] ?? '') === 'draft_content') {
-          $streamer->onDelta($tc['arguments'] ?? []);
-        }
+    return function (string $toolName, array $decoded) use ($streamer): void {
+      if ($toolName === 'draft_content') {
+        $streamer->onDelta($decoded);
       }
     };
-  }
-
-  /**
-   * Parses [fields:name1,name2] hint from the user message.
-   *
-   * This tag is set by the frontend regenerate button to indicate which
-   * fields should be streamed progressively. The LLM's own changed_fields
-   * declaration overrides this hint if present.
-   *
-   * @param string $message
-   *   The user message text.
-   *
-   * @return string[]
-   *   Array of field machine names to stream, or empty array.
-   */
-  private function parseFieldsHint(string $message): array {
-    if (preg_match('/\[fields:([^\]]+)\]/', $message, $matches)) {
-      return explode(',', $matches[1]);
-    }
-    return [];
-  }
-
-  /**
-   * Executes tool calls from the LLM and streams field snapshots.
-   *
-   * Dispatches each tool call to the appropriate handler, builds tool
-   * result messages for the conversation history, and streams field
-   * values to the frontend via SSE STATE_SNAPSHOT events.
-   *
-   * @param array $toolCalls
-   *   Map of tool call ID to tool call data (name + arguments).
-   * @param array $fieldIndex
-   *   The field index mapping field names to metadata.
-   * @param string[] &$activeFieldsToStream
-   *   Fields to stream progressively; updated by reference if the LLM
-   *   declares changed_fields.
-   * @param bool $isFirstDraft
-   *   Whether this is the first message in the thread.
-   *
-   * @return array
-   *   Tool result messages for the conversation history.
-   */
-  private function executeToolCalls(
-    array $toolCalls,
-    array $fieldIndex,
-    array &$activeFieldsToStream,
-    bool $isFirstDraft,
-  ): array {
-    $results = [];
-
-    foreach ($toolCalls as $toolCallId => $toolCall) {
-      $name = $toolCall['name'] ?? '';
-      $args = $toolCall['arguments'] ?? [];
-
-      // Dispatch each tool call to the appropriate local handler.
-      // draft_content is handled locally; all other tool names are
-      // delegated to the FunctionCall plugin system.
-      $result = match ($name) {
-        'draft_content' => $this->toolDraftContent($args),
-        default => $this->executeFunctionCallPlugin($name, $args),
-      };
-
-      $results[] = [
-        'role' => 'tool',
-        'content' => Json::encode($result),
-        'tool_call_id' => $toolCallId,
-      ];
-
-      // If the LLM declared changed_fields in the tool arguments,
-      // override the frontend hint so only genuinely modified
-      // fields are streamed progressively.
-      if (!empty($result['changedFields'])) {
-        $activeFieldsToStream = $result['changedFields'];
-      }
-
-      // Filter fields against the schema before sending to the
-      // frontend. Only fields present in the field index are
-      // included. Log any unknown fields the LLM invented so we
-      // can tune the prompt or schema if needed.
-      $draftedFields = $result['fields'] ?? [];
-      if (!empty($fieldIndex)) {
-        $unknownFields = array_diff_key($draftedFields, $fieldIndex);
-        if (!empty($unknownFields)) {
-          $this->logger->notice(
-            'LLM generated unknown fields: @fields',
-            ['@fields' => implode(', ', array_keys($unknownFields))],
-          );
-        }
-        $draftedFields = array_intersect_key($draftedFields, $fieldIndex);
-      }
-
-      // Emit the reconciliation snapshot with validated fields.
-      // Incremental deltas were already streamed by
-      // ToolCallFieldStreamer during the LLM iteration (for
-      // providers that support it).
-      $this->transporter->sendEvent(
-        new StateSnapshotEvent(
-          ['draftedFields' => $draftedFields],
-        ),
-      );
-    }
-
-    return $results;
-  }
-
-  /**
-   * Tool handler: draft_content.
-   *
-   * Handles the draft_content LLM tool call. Normalises the arguments from
-   * the model (which may nest fields inside an "args.fields" key or return
-   * them flat) and returns a structured result for the tool executor.
-   *
-   * The "changedFields" value in the return array is used by the tool
-   * executor to override the frontend streaming hint: if the LLM declares
-   * which fields it changed, we stream only those progressively.
-   *
-   * @param array $args
-   *   The tool call arguments as decoded from the LLM's JSON response.
-   *   Expected keys: "fields" (object) and "changed_fields" (array).
-   *
-   * @return array<string, mixed>
-   *   An array with keys:
-   *   - "success": bool, always TRUE on a valid call.
-   *   - "fields": array of field values keyed by machine name.
-   *   - "changedFields": array of field machine names that were modified.
-   *   - "message": human-readable summary for the tool result.
-   */
-  private function toolDraftContent(array $args): array {
-    // The LLM may wrap the field values under an "fields" key or return
-    // them directly at the top level of $args; handle both shapes.
-    $fields = $args['fields'] ?? $args;
-
-    // Extract the changed_fields array, defaulting to empty if absent or
-    // not an array (which would indicate a malformed tool call from the LLM).
-    $changedFields = [];
-    if (!empty($args['changed_fields']) && is_array($args['changed_fields'])) {
-      $changedFields = $args['changed_fields'];
-    }
-
-    return [
-      'success' => TRUE,
-      'fields' => $fields,
-      'changedFields' => $changedFields,
-      'message' => 'Draft content generated with ' . count($fields) . ' fields.',
-    ];
   }
 
 }

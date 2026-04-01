@@ -69,7 +69,7 @@ class ToolCallFieldStreamer {
    * Extracts and filters fields against the field index, diffs
    * against the previous state, and emits a StateDeltaEvent if any
    * fields changed. The JSON repair step is handled upstream by
-   * LlmStreamingLoop before this method is called.
+   * ChatPluginBase::repairPartialJson() before this method is called.
    *
    * @param array $arguments
    *   Already-decoded associative array from the repaired tool call

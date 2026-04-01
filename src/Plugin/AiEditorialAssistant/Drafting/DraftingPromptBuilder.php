@@ -4,12 +4,12 @@ declare(strict_types=1);
 
 namespace Drupal\oe_ai_assistant\Plugin\AiEditorialAssistant\Drafting;
 
-use Drupal\ai\OperationType\Chat\Tools\ToolsFunctionInput;
-use Drupal\ai\OperationType\Chat\Tools\ToolsInput;
-use Drupal\ai\OperationType\Chat\Tools\ToolsPropertyInput;
 use Drupal\Component\Serialization\Json;
 use Drupal\oe_ai_assistant\Service\FormSchemaExtractor;
+use Drupal\oe_ai_assistant\Tool\DraftContentTool;
 use Psr\Log\LoggerInterface;
+use Symfony\AI\Platform\Tool\ExecutionReference;
+use Symfony\AI\Platform\Tool\Tool;
 
 /**
  * Builds the system prompt, tool definitions, and field index for drafting.
@@ -128,64 +128,46 @@ PROMPT;
   }
 
   /**
-   * Builds tool definitions for the LLM.
+   * Builds the Symfony AI Tool metadata for the draft_content tool.
    *
    * Defines the draft_content function tool that the model may call to
-   * return structured field values. The tool has two required parameters:
+   * return structured field values. The tool has two parameters:
    *   - "fields": an object of field machine name => value pairs.
    *   - "changed_fields": an array of field names the model actually changed.
    *
-   * The drupal/ai ToolsInput / ToolsFunctionInput / ToolsPropertyInput
-   * classes serialise into the provider-specific format (OpenAI functions,
-   * Mistral tools, etc.) before the request is sent.
+   * The Tool metadata provides a custom JSON schema that bypasses
+   * ReflectionToolFactory, allowing dynamic field structures.
    *
-   * @return \Drupal\ai\OperationType\Chat\Tools\ToolsInput
-   *   The tools input containing the draft_content function tool.
+   * @return \Symfony\AI\Platform\Tool\Tool
+   *   The Tool metadata for the draft_content function.
    */
-  public function buildTools(): ToolsInput {
-    // Define the draft_content function tool. This is the only tool the
-    // drafting assistant can call; all other model responses are plain text.
-    $draftTool = new ToolsFunctionInput();
-    $draftTool->setName('draft_content');
-    $draftTool->setDescription(
-      'Produce a complete set of field values for the content type. '
-      . 'Field names and value shapes must match the content type schema '
-      . 'provided in the system prompt. Always return ALL fields, and '
-      . 'list which ones you actually created or modified in changed_fields.'
+  public function buildToolMetadata(): Tool {
+    return new Tool(
+      new ExecutionReference(DraftContentTool::class),
+      'draft_content',
+      'Generate or update field values for a content draft. '
+        . 'Call this whenever the user asks to draft, create, '
+        . 'update, or modify content fields.',
+      [
+        'type' => 'object',
+        'properties' => [
+          'fields' => [
+            'type' => 'object',
+            'description' => 'An object mapping field machine names '
+              . 'to their values. Use the field names from the '
+              . 'content type schema.',
+            'additionalProperties' => TRUE,
+          ],
+          'changed_fields' => [
+            'type' => 'array',
+            'description' => 'List of field machine names that '
+              . 'were created or modified in this call.',
+            'items' => ['type' => 'string'],
+          ],
+        ],
+        'required' => ['fields'],
+      ],
     );
-
-    // "fields" parameter: an object whose keys are field machine names and
-    // whose values are the drafted content. The exact shape of each value
-    // (string, array, nested object) depends on the field type described
-    // in the schema appended to the system prompt.
-    $fieldsParam = new ToolsPropertyInput();
-    $fieldsParam->setName('fields');
-    $fieldsParam->setType('object');
-    $fieldsParam->setDescription('Complete field values keyed by field machine name.');
-    $fieldsParam->setRequired(TRUE);
-    // Allow arbitrary keys since the field set is dynamic per content type.
-    // Without this, OpenAI rejects the schema because an "object" type
-    // with no "properties" key is invalid JSON Schema.
-    $fieldsParam->setCustomValue('additionalProperties', TRUE);
-
-    // "changed_fields" parameter: the model declares which fields it actually
-    // created or modified. The plugin uses this list to decide which fields
-    // to stream progressively vs send in one snapshot. On first draft this
-    // should be all fields; on regeneration only the touched ones.
-    $changedParam = new ToolsPropertyInput();
-    $changedParam->setName('changed_fields');
-    $changedParam->setType('array');
-    $changedParam->setItems(['type' => 'string']);
-    $changedParam->setDescription(
-      'List of field machine names that were created or modified. '
-      . 'On first draft this is all fields. On regeneration this is '
-      . 'only the fields the editor asked to change.'
-    );
-    $changedParam->setRequired(TRUE);
-
-    $draftTool->setProperties([$fieldsParam, $changedParam]);
-
-    return new ToolsInput([$draftTool]);
   }
 
   /**

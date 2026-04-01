@@ -4,24 +4,29 @@ declare(strict_types=1);
 
 namespace Drupal\oe_ai_assistant\Plugin;
 
-use Drupal\ai\AiProviderPluginManager;
-use Drupal\ai\OperationType\Chat\ChatMessage;
-use Drupal\ai\OperationType\Chat\Tools\ToolsFunctionOutput;
-use Drupal\ai\OperationType\Chat\Tools\ToolsInput;
 use Drupal\ai\PluginManager\AiShortTermMemoryPluginManager;
-use Drupal\ai\Service\FunctionCalling\ExecutableFunctionCallInterface;
 use Drupal\ai\Service\FunctionCalling\FunctionCallPluginManager;
-use Drupal\ai\Service\FunctionCalling\StructuredExecutableFunctionCallInterface;
 use Drupal\Component\Serialization\Json;
 use Drupal\Component\Uuid\UuidInterface;
+use Drupal\Core\TempStore\PrivateTempStoreFactory;
 use Drupal\oe_ai_assistant\Exception\ActionException;
-use Drupal\oe_ai_assistant\Service\ConversationHistory;
-use Drupal\oe_ai_assistant\Service\LlmLoopConfig;
-use Drupal\oe_ai_assistant\Service\LlmLoopResult;
-use Drupal\oe_ai_assistant\Service\LlmStreamingLoop;
+use Drupal\oe_ai_assistant\Processor\ShortTermMemoryInputProcessor;
+use Drupal\oe_ai_assistant\Service\AgentFactory;
+use Drupal\oe_ai_assistant\Store\DrupalTempMessageStore;
 use Psr\Log\LoggerInterface;
+use Swis\AgUiServer\AgUiState;
+use Symfony\AI\Platform\Message\Message;
+use Symfony\AI\Platform\Message\MessageBag;
+use Symfony\AI\Platform\Result\Stream\Delta\TextDelta;
+use Symfony\AI\Platform\Result\Stream\Delta\ToolCallStart;
+use Symfony\AI\Platform\Result\Stream\Delta\ToolInputDelta;
+use Symfony\AI\Platform\Tool\ExecutionReference;
+use Symfony\AI\Platform\Tool\Tool;
+use Symfony\AI\Agent\Toolbox\Event\ToolCallSucceeded;
+use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
+use function Cortex\JsonRepair\json_repair_decode;
 
 /**
  * Abstract base class for AI assistant plugins that use LLM chat streaming.
@@ -39,12 +44,11 @@ use Symfony\Component\HttpFoundation\Response;
  *   - buildTools(): declare tool definitions for the LLM.
  *   - createToolCallDeltaObserver(): create a callback for incremental
  *     tool call streaming (return NULL to disable).
- *   - createToolExecutor(): build the closure that handles tool calls
- *     (default: dispatches via FunctionCall plugin manager).
  *
- * Additionally, FunctionCall plugins matching the configured group
- * (see getFunctionCallGroup()) are auto-discovered and appended to the
- * tool set before each chat turn.
+ * Uses Symfony AI Agent for LLM orchestration. Tool execution is handled
+ * by the Agent's Toolbox via CompositeToolbox, which bridges Symfony AI
+ * tools with Drupal's FunctionCall plugin system. Conversation history
+ * is persisted via DrupalTempMessageStore using Drupal's PrivateTempStore.
  *
  * Concrete plugins do NOT need to implement create(); that responsibility
  * stays with the final plugin class, which knows its own service
@@ -64,16 +68,14 @@ abstract class ChatPluginBase extends AiAssistantPluginBase {
    *   The plugin ID as declared in the plugin attribute.
    * @param mixed $plugin_definition
    *   The plugin definition as resolved by the plugin manager.
-   * @param \Drupal\ai\AiProviderPluginManager $aiProvider
-   *   The AI provider plugin manager, used to resolve the default chat model.
    * @param \Drupal\Component\Uuid\UuidInterface $uuid
    *   UUID generator for run IDs, thread IDs, and message IDs.
    * @param \Psr\Log\LoggerInterface $logger
    *   Logger channel for the oe_ai_assistant module.
-   * @param \Drupal\oe_ai_assistant\Service\ConversationHistory $conversationHistory
-   *   Persists and retrieves per-thread conversation history.
-   * @param \Drupal\oe_ai_assistant\Service\LlmStreamingLoop $llmLoop
-   *   Runs the agentic tool-call loop against the configured LLM.
+   * @param \Drupal\oe_ai_assistant\Service\AgentFactory $agentFactory
+   *   Factory for creating configured Symfony AI Agent instances.
+   * @param \Drupal\Core\TempStore\PrivateTempStoreFactory $tempStoreFactory
+   *   Factory for per-user temp stores used for conversation history.
    * @param \Drupal\ai\PluginManager\AiShortTermMemoryPluginManager $shortTermMemoryManager
    *   Plugin manager for AI short-term memory plugins (e.g. LastN).
    * @param \Drupal\ai\Service\FunctionCalling\FunctionCallPluginManager $functionCallManager
@@ -83,11 +85,10 @@ abstract class ChatPluginBase extends AiAssistantPluginBase {
     array $configuration,
     $plugin_id,
     $plugin_definition,
-    protected readonly AiProviderPluginManager $aiProvider,
     protected readonly UuidInterface $uuid,
     protected readonly LoggerInterface $logger,
-    protected readonly ConversationHistory $conversationHistory,
-    protected readonly LlmStreamingLoop $llmLoop,
+    protected readonly AgentFactory $agentFactory,
+    protected readonly PrivateTempStoreFactory $tempStoreFactory,
     protected readonly AiShortTermMemoryPluginManager $shortTermMemoryManager,
     protected readonly FunctionCallPluginManager $functionCallManager,
   ) {
@@ -134,20 +135,13 @@ abstract class ChatPluginBase extends AiAssistantPluginBase {
     // error responses rather than mid-stream.
     $context = $this->buildChatContext($body, $message);
     $systemPrompt = $this->buildSystemPrompt($context);
-    $tools = $this->buildTools($context);
-    $tools = $this->appendDiscoveredTools($tools);
-
-    // Resolve the default provider and model for "chat" operation type.
-    $defaults = $this->aiProvider->getDefaultProviderForOperationType('chat');
-    $providerId = $defaults['provider_id'];
-    $modelId = $defaults['model_id'];
+    $toolDefinitions = $this->buildTools($context);
 
     // Open the SSE response. Everything inside the callback is executed
     // after the HTTP headers have been sent, so we cannot throw exceptions
     // that bubble up to the controller -- errors must go through $state.
     return $this->createSseResponse(function () use (
-      $systemPrompt, $message, $threadId, $tools,
-      $providerId, $modelId, $context,
+      $systemPrompt, $message, $threadId, $toolDefinitions, $context,
     ) {
       set_time_limit(0);
 
@@ -155,47 +149,82 @@ abstract class ChatPluginBase extends AiAssistantPluginBase {
       $state = $this->createAgUiState();
       $runId = $this->uuid->generate();
       $sseThreadId = !empty($threadId) ? $threadId : $this->uuid->generate();
-      $messageId = $this->uuid->generate();
 
       $state->startRun($sseThreadId, $runId);
 
       try {
-        // Load conversation history for this thread.
-        $history = $this->conversationHistory->load(
-          $this->getHistoryCollection(), $sseThreadId
+        // Load conversation history from the store.
+        $store = new DrupalTempMessageStore(
+          $this->tempStoreFactory,
+          $this->getHistoryCollection(),
+          $sseThreadId,
         );
-        $isFirstTurn = empty($history);
-        $history[] = ['role' => 'user', 'content' => $message];
+        $bag = $store->load();
+        $isFirstTurn = count($bag->getMessages()) === 0;
 
-        // Apply short-term memory plugin (if configured).
-        // May trim history and modify systemPrompt/tools.
-        [$history, $systemPrompt, $tools] =
-          $this->applyShortTermMemory(
-            $history, $systemPrompt, $tools, $sseThreadId,
-          );
+        // Add the user message and system prompt.
+        $bag->add(Message::ofUser($message));
+        $bag = $bag->withSystemMessage(
+          Message::forSystem($systemPrompt),
+        );
 
-        // Delegate tool executor creation to the concrete plugin.
-        $toolExecutor = $this->createToolExecutor($context, $isFirstTurn);
-        // Create optional incremental streaming observer.
+        // Build the event dispatcher for tool call lifecycle events.
+        $eventDispatcher = new EventDispatcher();
+
+        // Register AG-UI event emitter for tool call results.
+        $eventDispatcher->addListener(
+          ToolCallSucceeded::class,
+          function (ToolCallSucceeded $event) use ($state): void {
+            $toolCall = $event->getResult()->getToolCall();
+            $result = $event->getResult()->getResult();
+            $content = is_string($result) ? $result : Json::encode($result);
+            $state->toolCallResult($toolCall->getId(), $content, 'tool');
+            $state->finishToolCall($toolCall->getId());
+          },
+        );
+
+        // Build input processors.
+        $inputProcessors = $this->buildInputProcessors(
+          $sseThreadId, $isFirstTurn,
+        );
+
+        // Extract tool objects, metadata, and FunctionCall group.
+        $toolObjects = [];
+        $toolMetadata = [];
+        foreach ($toolDefinitions as $def) {
+          $toolObjects[] = $def['instance'];
+          $toolMetadata[] = $def['metadata'];
+        }
+        $functionCallGroup = $this->getFunctionCallGroup();
+
+        // Create the Agent via the factory.
+        [$agent, $modelId] = $this->agentFactory->createAgent(
+          $toolObjects,
+          $toolMetadata,
+          $functionCallGroup,
+          $inputProcessors,
+          $eventDispatcher,
+        );
+
+        // Create the delta observer for incremental tool call streaming.
         $deltaObserver = $this->createToolCallDeltaObserver(
           $context, $isFirstTurn,
         );
 
-        $config = new LlmLoopConfig(
-          systemPrompt: $systemPrompt,
-          conversationHistory: $history,
-          tools: $tools,
-          providerId: $providerId,
-          modelId: $modelId,
-          messageId: $messageId,
-          toolExecutor: $toolExecutor,
-          onToolCallArgumentDelta: $deltaObserver,
+        // Call the agent with streaming enabled.
+        $result = $agent->call($bag, ['stream' => TRUE]);
+
+        // Iterate deltas and emit AG-UI events.
+        $accumulatedText = $this->streamDeltas(
+          $result, $state, $deltaObserver,
         );
 
-        // Pass $this->agUiState (same object as $state) to the loop.
-        // LlmStreamingLoop::run() uses it for SSE events.
-        $loopResult = $this->llmLoop->run($this->agUiState, $config);
-        $this->persistHistory($sseThreadId, $loopResult);
+        // Persist conversation: add final assistant message and save
+        // without the system message (rebuilt fresh each request).
+        if (!empty($accumulatedText)) {
+          $bag->add(Message::ofAssistant($accumulatedText));
+        }
+        $store->save($bag->withoutSystemMessage());
       }
       catch (\Exception $e) {
         $this->logger->error('Error in chat: @error', [
@@ -371,32 +400,6 @@ abstract class ChatPluginBase extends AiAssistantPluginBase {
   }
 
   /**
-   * Persists conversation history after a successful LLM loop.
-   *
-   * Appends the final assistant text (if any) to the message history
-   * and saves it so subsequent chat turns have full context.
-   *
-   * @param string $threadId
-   *   The thread ID for conversation history.
-   * @param \Drupal\oe_ai_assistant\Service\LlmLoopResult $loopResult
-   *   The result from the LLM streaming loop.
-   */
-  protected function persistHistory(string $threadId, LlmLoopResult $loopResult): void {
-    $updatedHistory = $loopResult->messages;
-
-    if (!empty($loopResult->assistantText)) {
-      $updatedHistory[] = [
-        'role' => 'assistant',
-        'content' => $loopResult->assistantText,
-      ];
-    }
-
-    $this->conversationHistory->save(
-      $this->getHistoryCollection(), $threadId, $updatedHistory
-    );
-  }
-
-  /**
    * Resets the conversation thread.
    *
    * Deletes the stored history for the given thread ID and returns a fresh
@@ -415,9 +418,12 @@ abstract class ChatPluginBase extends AiAssistantPluginBase {
     // Only attempt deletion if a thread ID was provided; a missing or
     // empty thread ID means there is nothing to clear.
     if (!empty($threadId)) {
-      $this->conversationHistory->delete(
-        $this->getHistoryCollection(), $threadId
+      $store = new DrupalTempMessageStore(
+        $this->tempStoreFactory,
+        $this->getHistoryCollection(),
+        $threadId,
       );
+      $store->drop();
     }
 
     // Always return a fresh thread ID so the frontend can start a new
@@ -425,202 +431,7 @@ abstract class ChatPluginBase extends AiAssistantPluginBase {
     return ['threadId' => $this->uuid->generate()];
   }
 
-  /**
-   * Converts simple history arrays to ChatMessage objects.
-   *
-   * The conversation history is stored as associative arrays with 'role'
-   * and 'content' keys. The AiShortTermMemory plugin API requires
-   * ChatMessage objects. This method performs that conversion.
-   *
-   * @param array $history
-   *   History entries, each with 'role' and 'content' keys.
-   *
-   * @return \Drupal\ai\OperationType\Chat\ChatMessage[]
-   *   Array of ChatMessage objects.
-   */
-  private function convertHistoryToChatMessages(array $history): array {
-    $messages = [];
-    foreach ($history as $item) {
-      $role = $item['role'] ?? '';
-      $content = $item['content'] ?? '';
-      $messages[] = new ChatMessage($role, $content);
-    }
-    return $messages;
-  }
 
-  /**
-   * Restores original history structure after memory processing.
-   *
-   * The memory plugin only sees ChatMessage (role + text). Tool call
-   * messages have extra keys (tool_calls_raw, tool_call_id) that must
-   * survive the round-trip. Since LastN trims from the front, the
-   * surviving messages correspond to the tail of the original array.
-   * If the processed count is >= the original, no trimming occurred
-   * and the original history is returned unchanged.
-   *
-   * @param \Drupal\ai\OperationType\Chat\ChatMessage[] $processed
-   *   ChatMessage objects returned by the memory plugin.
-   * @param array $originalHistory
-   *   The original history array with full metadata.
-   *
-   * @return array
-   *   The trimmed history preserving tool call metadata.
-   */
-  private function rebuildHistoryFromProcessed(array $processed, array $originalHistory): array {
-    $processedCount = count($processed);
-    $originalCount = count($originalHistory);
-
-    // No trimming occurred; return the original with all metadata.
-    if ($processedCount >= $originalCount) {
-      return $originalHistory;
-    }
-
-    // The memory plugin trimmed from the front, so take the tail
-    // of the original array to preserve tool call metadata.
-    $offset = $originalCount - $processedCount;
-    return array_slice($originalHistory, $offset);
-  }
-
-  /**
-   * Applies the configured short-term memory plugin to the chat context.
-   *
-   * This method encapsulates the full short-term memory flow:
-   *   1. Checks whether a memory plugin is configured (returns early if not).
-   *   2. Converts history arrays to ChatMessage objects for the plugin API.
-   *   3. Creates the plugin instance and calls process().
-   *   4. Reads back modified history, prompt, and tools.
-   *   5. Rebuilds the history array preserving tool call metadata.
-   *
-   * @param array $history
-   *   Conversation history as associative arrays.
-   * @param string $systemPrompt
-   *   The system prompt text.
-   * @param \Drupal\ai\OperationType\Chat\Tools\ToolsInput $tools
-   *   The tool definitions.
-   * @param string $threadId
-   *   The conversation thread ID.
-   *
-   * @return array
-   *   A three-element array: [$history, $systemPrompt, $tools].
-   */
-  private function applyShortTermMemory(
-    array $history,
-    string $systemPrompt,
-    ToolsInput $tools,
-    string $threadId,
-  ): array {
-    $pluginId = $this->getShortTermMemoryPluginId();
-    if ($pluginId === NULL) {
-      return [$history, $systemPrompt, $tools];
-    }
-
-    // Convert history to ChatMessage objects for the plugin API.
-    $chatMessages = $this->convertHistoryToChatMessages($history);
-    $toolFunctions = $tools->getFunctions();
-
-    // Create the memory plugin instance and run processing.
-    $config = $this->getShortTermMemoryConfig();
-    /** @var \Drupal\ai\Plugin\AiShortTermMemory\AiShortTermMemoryInterface $plugin */
-    $plugin = $this->shortTermMemoryManager->createInstance($pluginId, $config);
-    $plugin->process(
-      $threadId,
-      $this->getPluginId(),
-      $chatMessages,
-      $systemPrompt,
-      $toolFunctions,
-      $chatMessages,
-      $systemPrompt,
-      $toolFunctions,
-    );
-
-    // Read back modified values from the plugin.
-    $modifiedHistory = $this->rebuildHistoryFromProcessed(
-      $plugin->getChatHistory(),
-      $history,
-    );
-    $modifiedPrompt = $plugin->getSystemPrompt();
-    $modifiedTools = new ToolsInput($plugin->getTools());
-
-    return [$modifiedHistory, $modifiedPrompt, $modifiedTools];
-  }
-
-  /**
-   * Appends auto-discovered FunctionCall plugins to the tool set.
-   *
-   * Queries the FunctionCallPluginManager for all plugin definitions
-   * whose "group" matches getFunctionCallGroup(). Each matching plugin
-   * is instantiated, normalised to a ToolsFunctionInput, and appended
-   * via setFunction(). If no group is configured, returns $tools
-   * unchanged.
-   *
-   * @param \Drupal\ai\OperationType\Chat\Tools\ToolsInput $tools
-   *   The tool set built by buildTools().
-   *
-   * @return \Drupal\ai\OperationType\Chat\Tools\ToolsInput
-   *   The tool set with any discovered plugins appended.
-   */
-  private function appendDiscoveredTools(ToolsInput $tools): ToolsInput {
-    $group = $this->getFunctionCallGroup();
-    if ($group === NULL) {
-      return $tools;
-    }
-
-    $definitions = $this->functionCallManager->getDefinitions();
-    foreach ($definitions as $pluginId => $definition) {
-      if (($definition['group'] ?? '') !== $group) {
-        continue;
-      }
-      /** @var \Drupal\ai\Service\FunctionCalling\FunctionCallInterface $plugin */
-      $plugin = $this->functionCallManager->createInstance($pluginId);
-      $tools->setFunction($plugin->normalize());
-    }
-
-    return $tools;
-  }
-
-  /**
-   * Executes a FunctionCall plugin by name.
-   *
-   * Looks up the plugin via FunctionCallPluginManager, populates it
-   * with the given arguments, and executes it if it implements
-   * ExecutableFunctionCallInterface. Returns structured output if
-   * available, readable output otherwise, or a fallback confirmation.
-   *
-   * @param string $name
-   *   The function name as declared by the FunctionCall plugin.
-   * @param array $args
-   *   The arguments from the LLM tool call.
-   *
-   * @return array|string
-   *   The execution result: structured array, readable string wrapper,
-   *   or an error array if the function is unknown.
-   */
-  protected function executeFunctionCallPlugin(string $name, array $args): array|string {
-    if (!$this->functionCallManager->functionExists($name)) {
-      return ['error' => "Unknown tool: $name"];
-    }
-
-    /** @var \Drupal\ai\Service\FunctionCalling\FunctionCallInterface $plugin */
-    $plugin = $this->functionCallManager->getFunctionCallFromFunctionName($name);
-    $input = $plugin->normalize();
-    $output = new ToolsFunctionOutput($input, '', $args);
-    $plugin->populateValues($output);
-
-    // Execute the plugin if it supports execution.
-    if ($plugin instanceof ExecutableFunctionCallInterface) {
-      $plugin->execute();
-    }
-
-    // Return structured output if available, readable output if not.
-    if ($plugin instanceof StructuredExecutableFunctionCallInterface) {
-      return $plugin->getStructuredOutput();
-    }
-    if ($plugin instanceof ExecutableFunctionCallInterface) {
-      return ['result' => $plugin->getReadableOutput()];
-    }
-
-    return ['result' => 'executed'];
-  }
 
   /**
    * Parses domain-specific context from the request body.
@@ -655,67 +466,27 @@ abstract class ChatPluginBase extends AiAssistantPluginBase {
   /**
    * Builds the tool definitions exposed to the LLM.
    *
-   * Concrete plugins return their tool definitions here.
-   * Auto-discovered FunctionCall plugins are appended separately
-   * by appendDiscoveredTools(). Return an empty ToolsInput if the
-   * plugin does not define any tools.
+   * Concrete plugins return their tool definitions here as an array
+   * of associative arrays, each with 'instance' (the callable tool
+   * object) and 'metadata' (a Symfony AI Tool descriptor). FunctionCall
+   * plugins are auto-discovered separately by the AgentFactory via
+   * CompositeToolbox. Return an empty array if the plugin does not
+   * define any tools.
    *
    * @param array $context
    *   The context array returned by buildChatContext().
    *
-   * @return \Drupal\ai\OperationType\Chat\Tools\ToolsInput
+   * @return array<array{instance: object, metadata: \Symfony\AI\Platform\Tool\Tool}>
    *   The tool definitions.
    */
-  abstract protected function buildTools(array $context): ToolsInput;
-
-  /**
-   * Creates the tool executor closure for this chat turn.
-   *
-   * The default implementation dispatches all tool calls through
-   * executeFunctionCallPlugin(), which handles auto-discovered
-   * FunctionCall plugins. Concrete plugins that define manual tools
-   * should override this to add their own dispatch logic.
-   *
-   * The returned closure has the signature:
-   *   fn(array $toolCalls): array
-   * where $toolCalls maps tool call ID to
-   * ['name' => string, 'arguments' => array] and the return value
-   * is a list of tool result messages for the conversation history.
-   *
-   * @param array $context
-   *   The context array returned by buildChatContext().
-   * @param bool $isFirstTurn
-   *   TRUE if the conversation history was empty before this turn.
-   *
-   * @return \Closure
-   *   The tool executor closure.
-   */
-  protected function createToolExecutor(
-    array $context,
-    bool $isFirstTurn,
-  ): \Closure {
-    return function (array $toolCalls): array {
-      $results = [];
-      foreach ($toolCalls as $toolCallId => $toolCall) {
-        $name = $toolCall['name'] ?? '';
-        $args = $toolCall['arguments'] ?? [];
-        $result = $this->executeFunctionCallPlugin($name, $args);
-        $results[] = [
-          'role' => 'tool',
-          'content' => Json::encode($result),
-          'tool_call_id' => $toolCallId,
-        ];
-      }
-      return $results;
-    };
-  }
+  abstract protected function buildTools(array $context): array;
 
   /**
    * Creates an observer for incremental tool call argument streaming.
    *
-   * Called on each streaming chunk that carries partial tool call
-   * arguments. The loop repairs the partial JSON and passes decoded
-   * arrays to the callback. Return NULL to disable incremental
+   * Called on each streaming delta that carries partial tool call
+   * arguments. The base class repairs the partial JSON and passes
+   * decoded arrays to the callback. Return NULL to disable incremental
    * streaming for this plugin.
    *
    * @param array $context
@@ -724,13 +495,140 @@ abstract class ChatPluginBase extends AiAssistantPluginBase {
    *   TRUE if the conversation history was empty.
    *
    * @return \Closure|null
-   *   Callback with signature fn(array $partialToolCalls): void,
-   *   where each element has 'id', 'name', and 'arguments' keys.
+   *   Callback with signature fn(string $toolName, array $decoded): void.
    *   Return NULL to disable incremental streaming.
    */
   abstract protected function createToolCallDeltaObserver(
     array $context,
     bool $isFirstTurn,
   ): ?\Closure;
+
+  /**
+   * Iterates streaming deltas and emits AG-UI events.
+   *
+   * Processes each delta from the Symfony AI StreamResult: TextDelta
+   * chunks are forwarded as AG-UI message content events, ToolCallStart
+   * deltas trigger AG-UI tool call start events, and ToolInputDelta
+   * chunks are passed to the plugin's delta observer for incremental
+   * field streaming.
+   *
+   * @param mixed $result
+   *   The StreamResult from Agent::call() with streaming enabled.
+   * @param \Swis\AgUiServer\AgUiState $state
+   *   The AG-UI state manager for emitting SSE events.
+   * @param \Closure|null $deltaObserver
+   *   Optional callback for incremental tool call argument streaming.
+   *
+   * @return string
+   *   The accumulated assistant text from all TextDelta chunks.
+   */
+  private function streamDeltas(
+    $result,
+    AgUiState $state,
+    ?\Closure $deltaObserver,
+  ): string {
+    $accumulatedText = '';
+    $messageStarted = FALSE;
+    $messageId = $this->uuid->generate();
+
+    foreach ($result->getContent() as $delta) {
+      if ($delta instanceof TextDelta) {
+        if (!$messageStarted) {
+          $state->startMessage('assistant', $messageId);
+          $messageStarted = TRUE;
+        }
+        $state->addMessageContent($delta->getText(), $messageId);
+        $accumulatedText .= $delta->getText();
+      }
+      elseif ($delta instanceof ToolCallStart) {
+        if ($messageStarted) {
+          $state->finishMessage($messageId);
+          $messageStarted = FALSE;
+        }
+        $state->startToolCall(
+          $delta->getName(), NULL, $delta->getId(),
+        );
+      }
+      elseif ($delta instanceof ToolInputDelta
+        && $deltaObserver !== NULL
+      ) {
+        $decoded = $this->repairPartialJson(
+          $delta->getPartialJson(),
+        );
+        if ($decoded !== NULL) {
+          $deltaObserver($delta->getName(), $decoded);
+        }
+      }
+    }
+
+    if ($messageStarted) {
+      $state->finishMessage($messageId);
+    }
+
+    return $accumulatedText;
+  }
+
+  /**
+   * Attempts to repair and decode partial JSON from streaming deltas.
+   *
+   * Tool call arguments arrive as incomplete JSON fragments during
+   * streaming. This method uses the cortexphp/json-repair library
+   * to attempt decoding, returning NULL for empty or unrecoverable
+   * fragments rather than throwing.
+   *
+   * @param string $json
+   *   The partial JSON string to repair.
+   *
+   * @return array|null
+   *   The decoded array, or NULL if repair fails or input is empty.
+   */
+  private function repairPartialJson(string $json): ?array {
+    if ($json === '') {
+      return NULL;
+    }
+    try {
+      $decoded = json_repair_decode($json);
+    }
+    catch (\Throwable) {
+      return NULL;
+    }
+    if ($decoded instanceof \stdClass) {
+      $decoded = (array) $decoded;
+    }
+    return is_array($decoded) ? $decoded : NULL;
+  }
+
+  /**
+   * Builds input processors for the Symfony AI Agent pipeline.
+   *
+   * Creates a ShortTermMemoryInputProcessor if a memory plugin is
+   * configured (via getShortTermMemoryPluginId()), which trims
+   * conversation history before each LLM call.
+   *
+   * @param string $threadId
+   *   The conversation thread ID.
+   * @param bool $isFirstTurn
+   *   TRUE if this is the first message in the thread.
+   *
+   * @return \Symfony\AI\Agent\InputProcessorInterface[]
+   *   Array of input processors for the Agent.
+   */
+  private function buildInputProcessors(
+    string $threadId,
+    bool $isFirstTurn,
+  ): array {
+    $processors = [];
+    $memoryPluginId = $this->getShortTermMemoryPluginId();
+    if ($memoryPluginId !== NULL) {
+      $processors[] = new ShortTermMemoryInputProcessor(
+        $this->shortTermMemoryManager,
+        $memoryPluginId,
+        $this->getShortTermMemoryConfig(),
+        $threadId,
+        $this->getPluginId(),
+      );
+    }
+    return $processors;
+  }
 
 }
