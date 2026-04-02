@@ -91,7 +91,10 @@ abstract class AiAssistantPluginBase extends PluginBase implements AiAssistantPl
       if (function_exists('apache_setenv')) {
         apache_setenv('no-gzip', '1');
       }
-      ($callback)($response);
+      $result = ($callback)($response);
+      if (is_iterable($result)) {
+        yield from $result;
+      }
     };
 
     return new EventStreamResponse($wrappedCallback, 200, [

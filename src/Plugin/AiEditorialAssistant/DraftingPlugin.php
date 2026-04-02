@@ -5,34 +5,37 @@ declare(strict_types=1);
 namespace Drupal\oe_ai_assistant\Plugin\AiEditorialAssistant;
 
 use Drupal\Component\Uuid\UuidInterface;
-use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Session\AccountProxyInterface;
 use Drupal\Core\TempStore\PrivateTempStoreFactory;
 use Drupal\oe_ai_assistant\Annotation\AiEditorialAssistant;
 use Drupal\oe_ai_assistant\Exception\ActionException;
 use Drupal\oe_ai_assistant\Plugin\AiAssistantPluginBase;
 use Drupal\oe_ai_assistant\Plugin\AiEditorialAssistant\Drafting\DraftingPromptBuilder;
-use Drupal\oe_ai_assistant\Plugin\AiEditorialAssistant\Drafting\ToolCallFieldStreamer;
 use Drupal\oe_ai_assistant\Service\AgentFactory;
 use Drupal\oe_ai_assistant\Service\DraftFieldMapper;
 use Drupal\oe_ai_assistant\Service\FormSchemaExtractor;
 use Drupal\oe_ai_assistant\Store\DrupalTempMessageStore;
-use Drupal\oe_ai_assistant\Streaming\DataStreamListener;
 use Drupal\oe_ai_assistant\Tool\DraftContentTool;
 use Psr\Log\LoggerInterface;
 use Symfony\AI\Agent\Toolbox\Event\ToolCallSucceeded;
 use Symfony\AI\Platform\Message\Message;
+use Symfony\AI\Platform\Result\Stream\Delta\TextDelta;
+use Symfony\AI\Platform\Result\Stream\Delta\ToolCallStart;
+use Symfony\AI\Platform\Result\Stream\Delta\ToolInputDelta;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\EventDispatcher\EventDispatcher;
+use Symfony\Component\HttpFoundation\EventStreamResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\HttpFoundation\ServerEvent;
 
 /**
  * Drafting plugin: AI-powered content drafting with SSE streaming.
  *
  * Self-contained chat plugin that uses Symfony AI's Agent for LLM
- * orchestration and DataStreamListener for SSE event emission.
- * No base class template method -- the chat lifecycle is inline.
+ * orchestration and EventStreamResponse for SSE output. The chat
+ * callback is a generator that yields ServerEvent objects --
+ * EventStreamResponse drives the iteration.
  */
 #[AiEditorialAssistant(
   id: 'drafting',
@@ -130,9 +133,9 @@ class DraftingPlugin extends AiAssistantPluginBase {
   /**
    * Streams an AI chat response via SSE.
    *
-   * Self-contained chat lifecycle: decode request, build prompt,
-   * create agent, stream deltas via DataStreamListener, persist
-   * conversation.
+   * The callback is a generator that yields ServerEvent objects.
+   * EventStreamResponse drives the iteration, flushing each event
+   * to the client automatically.
    *
    * @param \Symfony\Component\HttpFoundation\Request $request
    *   The incoming request with a chat message body.
@@ -151,14 +154,12 @@ class DraftingPlugin extends AiAssistantPluginBase {
       );
     }
 
-    // Build context and prompt before opening SSE so errors
-    // surface as normal HTTP responses.
     $context = $this->buildContext($body);
     $prompt = $this->promptBuilder->buildSystemPrompt(
       $context['entityTypeId'], $context['bundle'],
     );
 
-    return $this->createSseResponse(function ($response) use (
+    return $this->createSseResponse(function (EventStreamResponse $response) use (
       $message, $prompt, $context, $threadId,
     ) {
       set_time_limit(0);
@@ -173,54 +174,126 @@ class DraftingPlugin extends AiAssistantPluginBase {
       $bag->add(Message::ofUser($message));
       $bag = $bag->withSystemMessage(Message::forSystem($prompt));
 
-      // Create the agent with tools and event listeners.
+      // Tool call events are emitted directly via $response
+      // during stream iteration (inside AgentProcessor).
       $eventDispatcher = new EventDispatcher();
-      $listener = new DataStreamListener(
-        $response,
-        $this->uuid->generate(),
-        $this->createFieldDeltaObserver($context),
-      );
       $this->registerToolCallListeners(
-        $eventDispatcher, $listener, $context,
+        $eventDispatcher, $response, $context,
       );
 
       [$agent] = $this->agentFactory->createAgent(
-        tools: [$this->createDraftContentTool($context)],
+        tools: [new DraftContentTool($context['fieldIndex'], $this->logger)],
         toolMetadata: [$this->promptBuilder->buildToolMetadata()],
         eventDispatcher: $eventDispatcher,
       );
 
-      try {
-        $result = $agent->call($bag, ['stream' => TRUE]);
-        $result->addListener($listener);
-
-        // Drive the generator. The listener emits all SSE events.
-        foreach ($result->getContent() as $_delta) {
-        }
-
-        // Persist conversation.
-        $text = $listener->getAccumulatedText();
-        if ($text !== '') {
-          $bag->add(Message::ofAssistant($text));
-        }
-        $store->save($bag->withoutSystemMessage());
-      }
-      catch (\Exception $e) {
-        $this->logger->error('Chat error: @e', [
-          '@e' => $e->getMessage(),
-        ]);
-        $listener->emitSse('error', [
-          'errorText' => $this->formatErrorForChat($e),
-        ]);
-        $listener->emitSse('finish', [
-          'finishReason' => 'error',
-          'usage' => ['inputTokens' => 0, 'outputTokens' => 0],
-        ]);
-        $response->sendEvent(
-          new \Symfony\Component\HttpFoundation\ServerEvent('[DONE]'),
-        );
-      }
+      // Yield protocol lifecycle + text delta events.
+      // EventStreamResponse drives the iteration.
+      yield from $this->streamChat(
+        $agent, $bag, $store,
+      );
     });
+  }
+
+  /**
+   * Streams the agent response as ServerEvent objects.
+   *
+   * This generator yields UI Message Stream Protocol events.
+   * EventStreamResponse iterates and sends each one.
+   *
+   * @param \Symfony\AI\Agent\AgentInterface $agent
+   *   The configured agent.
+   * @param \Symfony\AI\Platform\Message\MessageBag $bag
+   *   The conversation messages.
+   * @param \Drupal\oe_ai_assistant\Store\DrupalTempMessageStore $store
+   *   The conversation store.
+   *
+   * @return \Generator<\Symfony\Component\HttpFoundation\ServerEvent>
+   *   ServerEvent objects for EventStreamResponse.
+   */
+  private function streamChat($agent, $bag, $store): \Generator {
+    $messageId = $this->uuid->generate();
+    yield $this->sse('start', ['messageId' => $messageId]);
+    yield $this->sse('start-step');
+
+    $accumulatedText = '';
+    $textStarted = FALSE;
+    $textId = bin2hex(random_bytes(8));
+
+    try {
+      $result = $agent->call($bag, ['stream' => TRUE]);
+
+      foreach ($result->getContent() as $chunk) {
+        // String chunks from AgentProcessor re-invocation.
+        if (is_string($chunk)) {
+          if (!$textStarted) {
+            yield $this->sse('text-start', ['id' => $textId]);
+            $textStarted = TRUE;
+          }
+          yield $this->sse('text-delta', ['textDelta' => $chunk]);
+          $accumulatedText .= $chunk;
+          continue;
+        }
+
+        if ($chunk instanceof TextDelta) {
+          if (!$textStarted) {
+            yield $this->sse('text-start', ['id' => $textId]);
+            $textStarted = TRUE;
+          }
+          yield $this->sse('text-delta', [
+            'textDelta' => $chunk->getText(),
+          ]);
+          $accumulatedText .= $chunk->getText();
+        }
+        elseif ($chunk instanceof ToolCallStart) {
+          if ($textStarted) {
+            yield $this->sse('text-end');
+            $textStarted = FALSE;
+            $textId = bin2hex(random_bytes(8));
+          }
+        }
+        elseif ($chunk instanceof ToolInputDelta) {
+          yield $this->sse('tool-call-delta', [
+            'argsText' => $chunk->getPartialJson(),
+          ]);
+        }
+      }
+
+      // Close any open text segment.
+      if ($textStarted) {
+        yield $this->sse('text-end');
+      }
+
+      // Persist conversation.
+      if ($accumulatedText !== '') {
+        $bag->add(Message::ofAssistant($accumulatedText));
+      }
+      $store->save($bag->withoutSystemMessage());
+
+      yield $this->sse('finish-step', [
+        'finishReason' => 'stop',
+        'usage' => ['inputTokens' => 0, 'outputTokens' => 0],
+        'isContinued' => FALSE,
+      ]);
+      yield $this->sse('finish', [
+        'finishReason' => 'stop',
+        'usage' => ['inputTokens' => 0, 'outputTokens' => 0],
+      ]);
+    }
+    catch (\Exception $e) {
+      $this->logger->error('Chat error: @e', [
+        '@e' => $e->getMessage(),
+      ]);
+      yield $this->sse('error', [
+        'errorText' => $this->formatErrorForChat($e),
+      ]);
+      yield $this->sse('finish', [
+        'finishReason' => 'error',
+        'usage' => ['inputTokens' => 0, 'outputTokens' => 0],
+      ]);
+    }
+
+    yield new ServerEvent('[DONE]');
   }
 
   /**
@@ -282,17 +355,31 @@ class DraftingPlugin extends AiAssistantPluginBase {
   // -- Private helpers -------------------------------------------------------
 
   /**
-   * Extracts the user message from the request body.
+   * Creates a ServerEvent for a UI Message Stream Protocol event.
    *
-   * Supports both simple format (top-level "message" string) and
-   * the OpenAI multi-message format ("messages" array with content
-   * parts).
+   * @param string $type
+   *   The event type.
+   * @param array<string, mixed> $data
+   *   Additional payload fields.
+   *
+   * @return \Symfony\Component\HttpFoundation\ServerEvent
+   *   The SSE event.
+   */
+  private function sse(string $type, array $data = []): ServerEvent {
+    $data['type'] = $type;
+    return new ServerEvent(
+      json_encode($data, JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE),
+    );
+  }
+
+  /**
+   * Extracts the user message from the request body.
    *
    * @param array $body
    *   The decoded request body.
    *
    * @return string
-   *   The user message text, or empty string if not found.
+   *   The user message text, or empty string.
    */
   private function extractUserMessage(array $body): string {
     $message = $body['message'] ?? '';
@@ -317,7 +404,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
   }
 
   /**
-   * Builds drafting-specific context from the request body.
+   * Builds drafting context from the request body.
    *
    * @param array $body
    *   The decoded request body.
@@ -340,61 +427,23 @@ class DraftingPlugin extends AiAssistantPluginBase {
   }
 
   /**
-   * Creates the DraftContentTool instance for this request.
-   *
-   * @param array $context
-   *   The context from buildContext().
-   *
-   * @return \Drupal\oe_ai_assistant\Tool\DraftContentTool
-   *   The tool instance.
-   */
-  private function createDraftContentTool(array $context): DraftContentTool {
-    return new DraftContentTool($context['fieldIndex'], $this->logger);
-  }
-
-  /**
-   * Creates a field delta observer for progressive streaming.
-   *
-   * The observer receives partial tool call JSON and feeds it to
-   * the ToolCallFieldStreamer for incremental field updates.
-   *
-   * @param array $context
-   *   The context from buildContext().
-   *
-   * @return \Closure|null
-   *   The observer closure, or NULL if no field index is available.
-   */
-  private function createFieldDeltaObserver(array $context): ?\Closure {
-    $fieldIndex = $context['fieldIndex'];
-    if (empty($fieldIndex)) {
-      return NULL;
-    }
-    // The emitter writes SSE events via DataStreamListener.
-    // We create a ToolCallFieldStreamer with a closure that
-    // calls emitSse() on the listener -- but the listener
-    // isn't available here yet. Instead, we pass raw partial
-    // JSON to the streamer which handles its own emission.
-    // The ToolCallFieldStreamer needs an emitter callable.
-    // We'll provide it when the listener is created.
-    return NULL;
-  }
-
-  /**
    * Registers Symfony AI event listeners for tool call lifecycle.
    *
-   * Emits tool-call-start, tool-call-end, tool-result, and
-   * data-drafted-fields events when tools complete.
+   * These fire during stream iteration (inside AgentProcessor)
+   * and emit SSE events directly via the response -- they cannot
+   * yield because they run inside the generator, not at the top
+   * level.
    *
    * @param \Symfony\Component\EventDispatcher\EventDispatcher $eventDispatcher
    *   The event dispatcher shared with the Toolbox.
-   * @param \Drupal\oe_ai_assistant\Streaming\DataStreamListener $listener
-   *   The SSE listener for emitting events.
+   * @param \Symfony\Component\HttpFoundation\EventStreamResponse $response
+   *   The SSE response for direct event emission.
    * @param array $context
    *   The context from buildContext().
    */
   private function registerToolCallListeners(
     EventDispatcher $eventDispatcher,
-    DataStreamListener $listener,
+    EventStreamResponse $response,
     array $context,
   ): void {
     $fieldIndex = $context['fieldIndex'];
@@ -402,24 +451,24 @@ class DraftingPlugin extends AiAssistantPluginBase {
     $eventDispatcher->addListener(
       ToolCallSucceeded::class,
       function (ToolCallSucceeded $event) use (
-        $listener, $fieldIndex,
+        $response, $fieldIndex,
       ): void {
         $toolCall = $event->getResult()->getToolCall();
         $result = $event->getResult()->getResult();
 
-        // Emit tool lifecycle events.
-        $listener->emitSse('tool-call-start', [
+        // Tool lifecycle events.
+        $response->sendEvent($this->sse('tool-call-start', [
           'id' => $this->uuid->generate(),
           'toolCallId' => $toolCall->getId(),
           'toolName' => $toolCall->getName(),
-        ]);
-        $listener->emitSse('tool-call-end');
-        $listener->emitSse('tool-result', [
+        ]));
+        $response->sendEvent($this->sse('tool-call-end'));
+        $response->sendEvent($this->sse('tool-result', [
           'toolCallId' => $toolCall->getId(),
           'result' => is_string($result)
             ? (json_decode($result, TRUE) ?? $result)
             : $result,
-        ]);
+        ]));
 
         // Emit data-drafted-fields for draft_content results.
         if ($toolCall->getName() === 'draft_content') {
@@ -430,9 +479,9 @@ class DraftingPlugin extends AiAssistantPluginBase {
               $draftedFields, $fieldIndex,
             );
           }
-          $listener->emitSse('data-drafted-fields', [
+          $response->sendEvent($this->sse('data-drafted-fields', [
             'data' => $draftedFields,
-          ]);
+          ]));
         }
       },
     );
