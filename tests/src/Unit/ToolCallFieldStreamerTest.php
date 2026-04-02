@@ -5,74 +5,120 @@ declare(strict_types=1);
 namespace Drupal\Tests\oe_ai_assistant\Unit;
 
 use Drupal\oe_ai_assistant\Plugin\AiEditorialAssistant\Drafting\ToolCallFieldStreamer;
-use Drupal\oe_ai_assistant\Transporter\DrupalSseTransporter;
+use Drupal\oe_ai_assistant\Streaming\DataStreamWriter;
 use PHPUnit\Framework\TestCase;
-use Swis\AgUiServer\Events\AgUiEvent;
-use Swis\AgUiServer\Events\StateDeltaEvent;
-use Swis\AgUiServer\Events\StateSnapshotEvent;
 
 /**
  * Tests the ToolCallFieldStreamer class.
  *
- * Verifies field diffing and SSE event emission for streaming
- * decoded tool call arguments into AG-UI state.
+ * Verifies field diffing and data stream event emission for streaming
+ * decoded tool call arguments into frontend drafted-fields state.
  *
  * @coversDefaultClass \Drupal\oe_ai_assistant\Plugin\AiEditorialAssistant\Drafting\ToolCallFieldStreamer
  */
 class ToolCallFieldStreamerTest extends TestCase {
 
   /**
-   * Captured events from the spy transporter.
+   * Shared container for events captured by the spy writer.
    *
-   * @var \Swis\AgUiServer\Events\AgUiEvent[]
-   */
-  private array $events = [];
-
-  /**
-   * Creates a mock transporter that captures sent events.
+   * An ArrayObject is used so the anonymous subclass can append to it
+   * without needing PHP reference-typed properties (which are not
+   * supported). Test assertions read from this container directly.
    *
-   * @return \Drupal\oe_ai_assistant\Transporter\DrupalSseTransporter
-   *   The spy transporter mock.
+   * @var \ArrayObject
    */
-  private function createSpyTransporter(): DrupalSseTransporter {
-    $transporter = $this->createMock(DrupalSseTransporter::class);
-    $transporter->method('sendEvent')
-      ->willReturnCallback(function (AgUiEvent $event): void {
-        $this->events[] = $event;
-      });
-    return $transporter;
-  }
+  private \ArrayObject $spyContainer;
 
   /**
    * {@inheritdoc}
    */
   protected function setUp(): void {
     parent::setUp();
-    $this->events = [];
+    $this->spyContainer = new \ArrayObject();
+  }
+
+  /**
+   * Creates a spy DataStreamWriter that captures emit() and done() calls.
+   *
+   * The anonymous subclass writes to a shared ArrayObject container
+   * instead of stdout. Use $this->spyContainer->getArrayCopy() in
+   * assertions to inspect captured events.
+   *
+   * @return \Drupal\oe_ai_assistant\Streaming\DataStreamWriter
+   *   The spy writer instance.
+   */
+  private function createSpyWriter(): DataStreamWriter {
+    // Pass the shared container into the anonymous subclass.
+    return new class($this->spyContainer) extends DataStreamWriter {
+
+      /**
+       * Shared container between writer and test.
+       *
+       * @var \ArrayObject
+       */
+      private \ArrayObject $container;
+
+      /**
+       * Constructs the spy writer.
+       *
+       * @param \ArrayObject $container
+       *   Shared container for captured events.
+       */
+      public function __construct(\ArrayObject $container) {
+        $this->container = $container;
+      }
+
+      /**
+       * {@inheritdoc}
+       */
+      public function emit(string $type, array $data = []): void {
+        $data['type'] = $type;
+        $this->container->append($data);
+      }
+
+      /**
+       * {@inheritdoc}
+       */
+      public function done(): void {
+        $this->container->append(['type' => '__done__']);
+      }
+
+    };
+  }
+
+  /**
+   * Returns the list of events captured by the spy writer.
+   *
+   * @return array<int, array<string, mixed>>
+   *   Indexed array of event payloads.
+   */
+  private function capturedEvents(): array {
+    return $this->spyContainer->getArrayCopy();
   }
 
   /**
    * Tests that emitInitialSnapshot sends an empty state only once.
    *
    * Calling the method twice should still produce only a single
-   * StateSnapshotEvent with an empty draftedFields array.
+   * data-drafted-fields event with an empty data object and
+   * transient: true.
    *
    * @covers ::emitInitialSnapshot
    */
   public function testEmitInitialSnapshotSendsEmptyStateOnce(): void {
     $streamer = new ToolCallFieldStreamer(
-      $this->createSpyTransporter(),
+      $this->createSpyWriter(),
       ['title' => TRUE],
     );
 
     $streamer->emitInitialSnapshot();
     $streamer->emitInitialSnapshot();
 
-    $this->assertCount(1, $this->events);
-    $this->assertInstanceOf(StateSnapshotEvent::class, $this->events[0]);
-
-    $data = $this->events[0]->toArray();
-    $this->assertSame([], $data['snapshot']['draftedFields']);
+    $events = $this->capturedEvents();
+    $this->assertCount(1, $events);
+    $this->assertSame('data-drafted-fields', $events[0]['type']);
+    $this->assertTrue($events[0]['transient']);
+    $this->assertEquals((object) [], $events[0]['data']);
   }
 
   /**
@@ -85,72 +131,85 @@ class ToolCallFieldStreamerTest extends TestCase {
    */
   public function testOnDeltaEmitsInitialSnapshotLazily(): void {
     $streamer = new ToolCallFieldStreamer(
-      $this->createSpyTransporter(),
+      $this->createSpyWriter(),
       ['title' => TRUE],
     );
 
     $streamer->onDelta(['fields' => ['title' => 'Hello']]);
 
-    $this->assertCount(2, $this->events);
-    $this->assertInstanceOf(StateSnapshotEvent::class, $this->events[0]);
-    $this->assertInstanceOf(StateDeltaEvent::class, $this->events[1]);
+    $events = $this->capturedEvents();
+    $this->assertCount(2, $events);
+
+    // First event: initial empty snapshot (transient).
+    $this->assertSame('data-drafted-fields', $events[0]['type']);
+    $this->assertTrue($events[0]['transient']);
+    $this->assertEquals((object) [], $events[0]['data']);
+
+    // Second event: delta with full field state (transient).
+    $this->assertSame('data-drafted-fields', $events[1]['type']);
+    $this->assertTrue($events[1]['transient']);
+    $this->assertArrayHasKey('title', $events[1]['data']);
   }
 
   /**
    * Tests that garbage input produces no delta events.
    *
-   * Non-JSON input should still trigger the initial snapshot but
+   * Non-field input should still trigger the initial snapshot but
    * must not emit any delta events.
    *
    * @covers ::onDelta
    */
   public function testGarbageInputEmitsNoEvents(): void {
     $streamer = new ToolCallFieldStreamer(
-      $this->createSpyTransporter(),
+      $this->createSpyWriter(),
       ['title' => TRUE],
     );
 
-    // Pass an array with no valid fields (not a field map).
+    // Pass an array with no valid fields (not in field index).
     $streamer->onDelta(['not' => 'fields']);
 
-    // Initial snapshot + 1 delta for "not" which is not in index.
-    // Since "not" is not in fieldIndex, no delta is emitted.
-    $this->assertCount(1, $this->events);
-    $this->assertInstanceOf(StateSnapshotEvent::class, $this->events[0]);
+    $events = $this->capturedEvents();
+
+    // Only the initial snapshot; "not" is not in fieldIndex so no delta.
+    $this->assertCount(1, $events);
+    $this->assertSame('data-drafted-fields', $events[0]['type']);
+    $this->assertTrue($events[0]['transient']);
   }
 
   /**
    * Tests that empty input produces no delta events.
    *
-   * An empty string should trigger the initial snapshot but must not
+   * An empty array should trigger the initial snapshot but must not
    * emit any delta events.
    *
    * @covers ::onDelta
    */
   public function testEmptyInputEmitsNoDeltas(): void {
     $streamer = new ToolCallFieldStreamer(
-      $this->createSpyTransporter(),
+      $this->createSpyWriter(),
       ['title' => TRUE],
     );
 
     // Empty array: no fields to process.
     $streamer->onDelta([]);
 
-    $this->assertCount(1, $this->events);
-    $this->assertInstanceOf(StateSnapshotEvent::class, $this->events[0]);
+    $events = $this->capturedEvents();
+    $this->assertCount(1, $events);
+    $this->assertSame('data-drafted-fields', $events[0]['type']);
+    $this->assertTrue($events[0]['transient']);
   }
 
   /**
    * Tests incremental streaming of a plain string field.
    *
-   * The first call should emit an "add" operation and the second
-   * call should emit a "replace" operation for the same field.
+   * Each call with a changed value should emit a transient
+   * data-drafted-fields event with the full accumulated fields state.
    *
    * @covers ::onDelta
    */
   public function testPlainStringFieldStreamsIncrementally(): void {
     $streamer = new ToolCallFieldStreamer(
-      $this->createSpyTransporter(),
+      $this->createSpyWriter(),
       ['title' => TRUE],
     );
 
@@ -159,35 +218,33 @@ class ToolCallFieldStreamerTest extends TestCase {
     // Second chunk: extended title.
     $streamer->onDelta(['fields' => ['title' => 'Hello world']]);
 
+    $events = $this->capturedEvents();
+
     // Initial snapshot + 2 deltas.
-    $this->assertCount(3, $this->events);
+    $this->assertCount(3, $events);
 
-    // First delta: "add" operation.
-    $firstDelta = $this->events[1]->toArray();
-    $this->assertSame('add', $firstDelta['delta'][0]['op']);
-    $this->assertSame('/draftedFields/title', $firstDelta['delta'][0]['path']);
-    $this->assertSame('Hel', $firstDelta['delta'][0]['value']);
+    // First delta: full state with partial title (transient).
+    $this->assertSame('data-drafted-fields', $events[1]['type']);
+    $this->assertTrue($events[1]['transient']);
+    $this->assertSame('Hel', $events[1]['data']['title']);
 
-    // Second delta: "replace" operation.
-    $secondDelta = $this->events[2]->toArray();
-    $this->assertSame('replace', $secondDelta['delta'][0]['op']);
-    $this->assertSame('/draftedFields/title', $secondDelta['delta'][0]['path']);
-    $this->assertSame('Hello world', $secondDelta['delta'][0]['value']);
+    // Second delta: full state with extended title (transient).
+    $this->assertSame('data-drafted-fields', $events[2]['type']);
+    $this->assertTrue($events[2]['transient']);
+    $this->assertSame('Hello world', $events[2]['data']['title']);
   }
 
   /**
-   * Tests formatted text field adds whole object then replaces value.
+   * Tests formatted text field emits the full object in each delta.
    *
-   * The first call must emit an "add" with the complete object (not
-   * just the value subkey) because JSON Patch cannot add to a
-   * non-existent parent. The second call should emit a "replace"
-   * targeting the /value subkey only.
+   * Each delta payload should contain the full current field state,
+   * including the formatted text object with both value and format keys.
    *
    * @covers ::onDelta
    */
-  public function testFormattedTextFieldAddsWholeObjectThenReplacesValue(): void {
+  public function testFormattedTextFieldEmitsFullObjectInDeltas(): void {
     $streamer = new ToolCallFieldStreamer(
-      $this->createSpyTransporter(),
+      $this->createSpyWriter(),
       ['body' => TRUE],
     );
 
@@ -196,23 +253,26 @@ class ToolCallFieldStreamerTest extends TestCase {
     // Second chunk: updated body value.
     $streamer->onDelta(['fields' => ['body' => ['value' => 'First paragraph.', 'format' => 'full_html']]]);
 
-    // Initial snapshot + 2 deltas.
-    $this->assertCount(3, $this->events);
+    $events = $this->capturedEvents();
 
-    // First delta: "add" with the WHOLE object.
-    $firstDelta = $this->events[1]->toArray();
-    $this->assertSame('add', $firstDelta['delta'][0]['op']);
-    $this->assertSame('/draftedFields/body', $firstDelta['delta'][0]['path']);
+    // Initial snapshot + 2 deltas.
+    $this->assertCount(3, $events);
+
+    // First delta: full body object (transient).
+    $this->assertSame('data-drafted-fields', $events[1]['type']);
+    $this->assertTrue($events[1]['transient']);
     $this->assertSame(
       ['value' => 'First', 'format' => 'full_html'],
-      $firstDelta['delta'][0]['value'],
+      $events[1]['data']['body'],
     );
 
-    // Second delta: "replace" on the /value subkey only.
-    $secondDelta = $this->events[2]->toArray();
-    $this->assertSame('replace', $secondDelta['delta'][0]['op']);
-    $this->assertSame('/draftedFields/body/value', $secondDelta['delta'][0]['path']);
-    $this->assertSame('First paragraph.', $secondDelta['delta'][0]['value']);
+    // Second delta: updated body value in full object (transient).
+    $this->assertSame('data-drafted-fields', $events[2]['type']);
+    $this->assertTrue($events[2]['transient']);
+    $this->assertSame(
+      ['value' => 'First paragraph.', 'format' => 'full_html'],
+      $events[2]['data']['body'],
+    );
   }
 
   /**
@@ -225,16 +285,19 @@ class ToolCallFieldStreamerTest extends TestCase {
    */
   public function testPhantomFieldsFilteredByFieldIndex(): void {
     $streamer = new ToolCallFieldStreamer(
-      $this->createSpyTransporter(),
+      $this->createSpyWriter(),
       ['title' => TRUE],
     );
 
     // "titl" is not in the field index.
     $streamer->onDelta(['fields' => ['titl' => 'Hello']]);
 
+    $events = $this->capturedEvents();
+
     // Only the initial snapshot, no deltas.
-    $this->assertCount(1, $this->events);
-    $this->assertInstanceOf(StateSnapshotEvent::class, $this->events[0]);
+    $this->assertCount(1, $events);
+    $this->assertSame('data-drafted-fields', $events[0]['type']);
+    $this->assertTrue($events[0]['transient']);
   }
 
   /**
@@ -247,29 +310,31 @@ class ToolCallFieldStreamerTest extends TestCase {
    */
   public function testNoDeltaWhenUnchanged(): void {
     $streamer = new ToolCallFieldStreamer(
-      $this->createSpyTransporter(),
+      $this->createSpyWriter(),
       ['title' => TRUE],
     );
 
     $streamer->onDelta(['fields' => ['title' => 'Same']]);
     $streamer->onDelta(['fields' => ['title' => 'Same']]);
 
-    // Initial snapshot + 1 delta only.
-    $this->assertCount(2, $this->events);
+    $events = $this->capturedEvents();
+
+    // Initial snapshot + 1 delta only (second call is a no-op).
+    $this->assertCount(2, $events);
   }
 
   /**
    * Tests that multiple fields appear progressively.
    *
-   * When a second field appears in the stream, only the new field
-   * should be in the delta (the existing unchanged field should not
-   * produce a duplicate operation).
+   * When a second field appears in the stream, the delta payload
+   * should contain the complete current field state (both fields).
+   * The event is emitted only because the state changed.
    *
    * @covers ::onDelta
    */
   public function testMultipleFieldsAppearProgressively(): void {
     $streamer = new ToolCallFieldStreamer(
-      $this->createSpyTransporter(),
+      $this->createSpyWriter(),
       ['title' => TRUE, 'body' => TRUE],
     );
 
@@ -278,40 +343,51 @@ class ToolCallFieldStreamerTest extends TestCase {
     // Second chunk: title unchanged, body appears.
     $streamer->onDelta(['fields' => ['title' => 'Hello', 'body' => ['value' => 'Text', 'format' => 'html']]]);
 
-    // Initial snapshot + 2 deltas.
-    $this->assertCount(3, $this->events);
+    $events = $this->capturedEvents();
 
-    // Second delta should only contain the "body" add operation.
-    $secondDelta = $this->events[2]->toArray();
-    $this->assertCount(1, $secondDelta['delta']);
-    $this->assertSame('add', $secondDelta['delta'][0]['op']);
-    $this->assertSame('/draftedFields/body', $secondDelta['delta'][0]['path']);
+    // Initial snapshot + 2 deltas.
+    $this->assertCount(3, $events);
+
+    // Second delta: full state contains both title and body (transient).
+    $this->assertSame('data-drafted-fields', $events[2]['type']);
+    $this->assertTrue($events[2]['transient']);
+    $this->assertArrayHasKey('title', $events[2]['data']);
+    $this->assertArrayHasKey('body', $events[2]['data']);
+    $this->assertSame('Hello', $events[2]['data']['title']);
+    $this->assertSame(
+      ['value' => 'Text', 'format' => 'html'],
+      $events[2]['data']['body'],
+    );
   }
 
   /**
-   * Tests that emitFinalSnapshot sends a reconciliation snapshot.
+   * Tests that emitFinalSnapshot sends a reconciliation event.
    *
-   * The final snapshot should contain the complete drafted fields
-   * state, wrapped in the draftedFields key.
+   * The final event should contain the complete drafted fields state
+   * in the data key and must NOT have a transient flag, so that it
+   * is persisted in the message history on the frontend.
    *
    * @covers ::emitFinalSnapshot
    */
   public function testEmitFinalSnapshotSendsCompleteState(): void {
     $streamer = new ToolCallFieldStreamer(
-      $this->createSpyTransporter(),
+      $this->createSpyWriter(),
       ['title' => TRUE],
     );
 
     $fields = ['title' => 'Final title'];
     $streamer->emitFinalSnapshot($fields);
 
-    $this->assertCount(1, $this->events);
-    $this->assertInstanceOf(StateSnapshotEvent::class, $this->events[0]);
+    $events = $this->capturedEvents();
+    $this->assertCount(1, $events);
+    $this->assertSame('data-drafted-fields', $events[0]['type']);
 
-    $data = $this->events[0]->toArray();
+    // Final snapshot must NOT carry the transient flag.
+    $this->assertArrayNotHasKey('transient', $events[0]);
+
     $this->assertSame(
       ['title' => 'Final title'],
-      $data['snapshot']['draftedFields'],
+      $events[0]['data'],
     );
   }
 
@@ -325,20 +401,21 @@ class ToolCallFieldStreamerTest extends TestCase {
    */
   public function testFieldsNormalizedWithoutWrapper(): void {
     $streamer = new ToolCallFieldStreamer(
-      $this->createSpyTransporter(),
+      $this->createSpyWriter(),
       ['title' => TRUE],
     );
 
-    // No "fields" wrapper.
+    // No "fields" wrapper: bare field map.
     $streamer->onDelta(['title' => 'Direct']);
 
-    // Initial snapshot + 1 delta.
-    $this->assertCount(2, $this->events);
+    $events = $this->capturedEvents();
 
-    $delta = $this->events[1]->toArray();
-    $this->assertSame('add', $delta['delta'][0]['op']);
-    $this->assertSame('/draftedFields/title', $delta['delta'][0]['path']);
-    $this->assertSame('Direct', $delta['delta'][0]['value']);
+    // Initial snapshot + 1 delta.
+    $this->assertCount(2, $events);
+
+    $this->assertSame('data-drafted-fields', $events[1]['type']);
+    $this->assertTrue($events[1]['transient']);
+    $this->assertSame('Direct', $events[1]['data']['title']);
   }
 
 }
