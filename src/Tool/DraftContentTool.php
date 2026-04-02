@@ -49,7 +49,7 @@ class DraftContentTool {
    *   JSON-encoded result for the LLM conversation history.
    */
   public function __invoke(
-    array $fields,
+    array $fields = [],
     array $changed_fields = [],
   ): string {
     // Filter fields against the schema. Only fields present in

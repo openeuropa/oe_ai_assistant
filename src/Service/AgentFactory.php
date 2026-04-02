@@ -7,6 +7,7 @@ namespace Drupal\oe_ai_assistant\Service;
 use Drupal\ai\AiProviderPluginManager;
 use Drupal\ai\Service\FunctionCalling\FunctionCallPluginManager;
 use Drupal\Core\Config\ConfigFactoryInterface;
+use Drupal\key\KeyRepositoryInterface;
 use Drupal\oe_ai_assistant\Tool\CompositeToolbox;
 use Drupal\oe_ai_assistant\Tool\CustomSchemaToolFactory;
 use Symfony\AI\Agent\Agent;
@@ -43,12 +44,15 @@ class AgentFactory {
    * @param \Drupal\ai\Service\FunctionCalling\FunctionCallPluginManager $functionCallManager
    *   The FunctionCall plugin manager for tool discovery.
    * @param \Drupal\Core\Config\ConfigFactoryInterface $configFactory
-   *   The Drupal config factory for reading API keys.
+   *   The Drupal config factory for reading provider settings.
+   * @param \Drupal\key\KeyRepositoryInterface $keyRepository
+   *   The Key module repository for resolving API key values.
    */
   public function __construct(
     private readonly AiProviderPluginManager $aiProvider,
     private readonly FunctionCallPluginManager $functionCallManager,
     private readonly ConfigFactoryInterface $configFactory,
+    private readonly KeyRepositoryInterface $keyRepository,
   ) {}
 
   /**
@@ -142,32 +146,48 @@ class AgentFactory {
   }
 
   /**
-   * Resolves the API key for a given provider from Drupal config.
+   * Resolves the API key for a given provider.
    *
-   * Reads from the provider module's settings config, which is
-   * typically set from environment variables via settings.ai.php.
+   * Drupal's AI provider modules store API keys via the Key module.
+   * The provider's settings config contains a Key entity ID in the
+   * 'api_key' field, which we resolve to the actual key value.
    *
    * @param string $providerId
    *   The provider plugin ID.
    *
    * @return string
-   *   The API key.
+   *   The API key value.
    *
    * @throws \RuntimeException
-   *   If no API key is configured.
+   *   If no API key is configured or the Key entity is missing.
    */
   private function resolveApiKey(string $providerId): string {
     $configName = "ai_provider_{$providerId}.settings";
-    $apiKey = $this->configFactory->get($configName)->get('api_key');
+    $keyId = $this->configFactory->get($configName)->get('api_key');
 
-    if (!empty($apiKey)) {
-      return $apiKey;
+    if (empty($keyId)) {
+      throw new \RuntimeException(
+        "No API key configured for AI provider '$providerId'. "
+        . "Set it in the '$configName' configuration.",
+      );
     }
 
-    throw new \RuntimeException(
-      "No API key configured for AI provider '$providerId'. "
-      . "Set it in '$configName' or via environment variables.",
-    );
+    // Resolve the Key entity to get the actual key value.
+    $key = $this->keyRepository->getKey($keyId);
+    if ($key === NULL) {
+      throw new \RuntimeException(
+        "Key entity '$keyId' not found for provider '$providerId'.",
+      );
+    }
+
+    $apiKey = $key->getKeyValue();
+    if (empty($apiKey)) {
+      throw new \RuntimeException(
+        "Key entity '$keyId' has no value for provider '$providerId'.",
+      );
+    }
+
+    return $apiKey;
   }
 
 }

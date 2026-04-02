@@ -28,3 +28,4 @@ services:
       - '@ai.provider'
       - '@plugin.manager.ai.function_calls'
       - '@config.factory'
+      - '@key.repository'
