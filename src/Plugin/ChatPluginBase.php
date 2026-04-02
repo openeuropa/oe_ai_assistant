@@ -183,6 +183,14 @@ abstract class ChatPluginBase extends AiAssistantPluginBase {
           },
         );
 
+        // Allow concrete plugins to register additional event
+        // listeners (e.g. for STATE_SNAPSHOT emission on tool
+        // completion). This hook fires before the Agent is created
+        // so listeners are in place for the entire streaming session.
+        $this->registerToolEventListeners(
+          $eventDispatcher, $context, $isFirstTurn,
+        );
+
         // Build input processors.
         $inputProcessors = $this->buildInputProcessors(
           $sseThreadId, $isFirstTurn,
@@ -502,6 +510,32 @@ abstract class ChatPluginBase extends AiAssistantPluginBase {
     array $context,
     bool $isFirstTurn,
   ): ?\Closure;
+
+  /**
+   * Registers plugin-specific event listeners on the tool dispatcher.
+   *
+   * Called before the Agent is created, so listeners are in place for
+   * the entire streaming session. Concrete plugins override this to
+   * hook into Symfony AI tool lifecycle events (e.g. ToolCallSucceeded)
+   * for side effects like emitting AG-UI STATE_SNAPSHOT events.
+   *
+   * The base implementation is a no-op.
+   *
+   * @param \Symfony\Component\EventDispatcher\EventDispatcher $eventDispatcher
+   *   The event dispatcher shared with the Toolbox and AgentProcessor.
+   * @param array $context
+   *   The context array from buildChatContext().
+   * @param bool $isFirstTurn
+   *   TRUE if the conversation history was empty before this turn.
+   */
+  protected function registerToolEventListeners(
+    EventDispatcher $eventDispatcher,
+    array $context,
+    bool $isFirstTurn,
+  ): void {
+    // No-op by default. Concrete plugins override to register
+    // event listeners for tool call side effects.
+  }
 
   /**
    * Iterates streaming deltas and emits AG-UI events.

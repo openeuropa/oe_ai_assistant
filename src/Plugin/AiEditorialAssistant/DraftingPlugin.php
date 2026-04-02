@@ -20,7 +20,10 @@ use Drupal\oe_ai_assistant\Tool\DraftContentTool;
 use Drupal\ai\PluginManager\AiShortTermMemoryPluginManager;
 use Drupal\ai\Service\FunctionCalling\FunctionCallPluginManager;
 use Psr\Log\LoggerInterface;
+use Swis\AgUiServer\Events\StateSnapshotEvent;
+use Symfony\AI\Agent\Toolbox\Event\ToolCallSucceeded;
 use Symfony\Component\DependencyInjection\ContainerInterface;
+use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\HttpFoundation\Request;
 
 /**
@@ -292,7 +295,6 @@ class DraftingPlugin extends ChatPluginBase {
    */
   protected function buildTools(array $context): array {
     $tool = new DraftContentTool(
-      $this->transporter,
       $context['fieldIndex'],
       $this->logger,
     );
@@ -300,6 +302,56 @@ class DraftingPlugin extends ChatPluginBase {
     return [
       ['instance' => $tool, 'metadata' => $metadata],
     ];
+  }
+
+  /**
+   * {@inheritdoc}
+   *
+   * Registers a ToolCallSucceeded listener that emits a
+   * STATE_SNAPSHOT event when the draft_content tool completes.
+   * This is the correct integration point for SSE side effects --
+   * tools themselves stay pure, and the event fires at the right
+   * time in Symfony AI's lifecycle (after execution, before the
+   * agent re-invokes the LLM).
+   */
+  protected function registerToolEventListeners(
+    EventDispatcher $eventDispatcher,
+    array $context,
+    bool $isFirstTurn,
+  ): void {
+    $fieldIndex = $context['fieldIndex'];
+    $transporter = $this->transporter;
+
+    $eventDispatcher->addListener(
+      ToolCallSucceeded::class,
+      function (ToolCallSucceeded $event) use (
+        $fieldIndex, $transporter,
+      ): void {
+        $toolCall = $event->getResult()->getToolCall();
+        if ($toolCall->getName() !== 'draft_content') {
+          return;
+        }
+
+        // Parse the tool result to extract validated fields.
+        $resultData = json_decode(
+          (string) $event->getResult()->getResult(), TRUE,
+        );
+        $draftedFields = $resultData['fields'] ?? [];
+
+        // Filter against field index (same validation the tool
+        // already applied, but defensive here).
+        if (!empty($fieldIndex)) {
+          $draftedFields = array_intersect_key(
+            $draftedFields, $fieldIndex,
+          );
+        }
+
+        // Emit reconciliation snapshot with validated fields.
+        $transporter->sendEvent(
+          new StateSnapshotEvent(['draftedFields' => $draftedFields]),
+        );
+      },
+    );
   }
 
   /**

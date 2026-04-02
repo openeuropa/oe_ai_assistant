@@ -5,36 +5,34 @@ declare(strict_types=1);
 namespace Drupal\oe_ai_assistant\Tool;
 
 use Drupal\Component\Serialization\Json;
-use Drupal\oe_ai_assistant\Transporter\DrupalSseTransporter;
 use Psr\Log\LoggerInterface;
-use Swis\AgUiServer\Events\StateSnapshotEvent;
 
 /**
  * Tool callable for the draft_content LLM function.
  *
  * Handles the draft_content tool call from the LLM: validates and
- * filters field values against the known field index, emits a
- * reconciliation STATE_SNAPSHOT event via the SSE transporter, and
- * returns a structured result for the LLM's conversation history.
+ * filters field values against the known field index, and returns
+ * a structured result for the LLM's conversation history.
+ *
+ * This tool is pure -- it does not emit SSE events. Side effects
+ * like STATE_SNAPSHOT emission are handled by event listeners on
+ * the ToolCallSucceeded event, registered by DraftingPlugin.
  *
  * This class is instantiated per-request by DraftingPlugin with
- * the current transporter and field index.
+ * the current field index.
  */
 class DraftContentTool {
 
   /**
    * Constructs a DraftContentTool.
    *
-   * @param \Drupal\oe_ai_assistant\Transporter\DrupalSseTransporter $transporter
-   *   The SSE transporter for emitting AG-UI state events.
    * @param array<string, mixed> $fieldIndex
    *   Map of known field machine names to metadata. Only fields
-   *   present in this index are included in state events.
+   *   present in this index are included in the result.
    * @param \Psr\Log\LoggerInterface $logger
    *   Logger for reporting unknown fields from the LLM.
    */
   public function __construct(
-    private readonly DrupalSseTransporter $transporter,
     private readonly array $fieldIndex,
     private readonly LoggerInterface $logger,
   ) {}
@@ -67,13 +65,6 @@ class DraftContentTool {
       }
       $fields = array_intersect_key($fields, $this->fieldIndex);
     }
-
-    // Emit reconciliation snapshot with validated fields.
-    // Incremental deltas were already streamed by
-    // ToolCallFieldStreamer during the LLM iteration.
-    $this->transporter->sendEvent(
-      new StateSnapshotEvent(['draftedFields' => $fields]),
-    );
 
     return Json::encode([
       'success' => TRUE,
