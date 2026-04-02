@@ -20,14 +20,13 @@ use Drupal\oe_ai_assistant\Tool\DraftContentTool;
 use Drupal\ai\PluginManager\AiShortTermMemoryPluginManager;
 use Drupal\ai\Service\FunctionCalling\FunctionCallPluginManager;
 use Psr\Log\LoggerInterface;
-use Swis\AgUiServer\Events\StateSnapshotEvent;
 use Symfony\AI\Agent\Toolbox\Event\ToolCallSucceeded;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\HttpFoundation\Request;
 
 /**
- * Drafting plugin: AI-powered content drafting with AG-UI streaming.
+ * Drafting plugin: AI-powered content drafting with Data Stream Protocol.
  *
  * Extends ChatPluginBase to inherit the full LLM chat lifecycle (message
  * extraction, SSE streaming, conversation history, error handling) and
@@ -37,13 +36,13 @@ use Symfony\Component\HttpFoundation\Request;
  * Drafting-specific responsibilities:
  *   - Building the system prompt and tool definitions via
  *     DraftingPromptBuilder.
- *   - Executing the draft_content tool call and streaming field snapshots.
+ *   - Executing the draft_content tool call and streaming field data events.
  *   - Saving approved drafts as Drupal nodes via DraftFieldMapper.
  */
 #[AiEditorialAssistant(
   id: 'drafting',
   label: 'Drafting',
-  description: 'AI-powered content drafting with AG-UI streaming.',
+  description: 'AI-powered content drafting with SSE streaming.',
 )]
 class DraftingPlugin extends ChatPluginBase {
 
@@ -308,7 +307,7 @@ class DraftingPlugin extends ChatPluginBase {
    * {@inheritdoc}
    *
    * Registers a ToolCallSucceeded listener that emits a
-   * STATE_SNAPSHOT event when the draft_content tool completes.
+   * data-drafted-fields event when the draft_content tool completes.
    * This is the correct integration point for SSE side effects --
    * tools themselves stay pure, and the event fires at the right
    * time in Symfony AI's lifecycle (after execution, before the
@@ -320,12 +319,12 @@ class DraftingPlugin extends ChatPluginBase {
     bool $isFirstTurn,
   ): void {
     $fieldIndex = $context['fieldIndex'];
-    $transporter = $this->transporter;
+    $writer = $this->writer;
 
     $eventDispatcher->addListener(
       ToolCallSucceeded::class,
       function (ToolCallSucceeded $event) use (
-        $fieldIndex, $transporter,
+        $fieldIndex, $writer,
       ): void {
         $toolCall = $event->getResult()->getToolCall();
         if ($toolCall->getName() !== 'draft_content') {
@@ -346,10 +345,10 @@ class DraftingPlugin extends ChatPluginBase {
           );
         }
 
-        // Emit reconciliation snapshot with validated fields.
-        $transporter->sendEvent(
-          new StateSnapshotEvent(['draftedFields' => $draftedFields]),
-        );
+        // Emit reconciliation event with validated fields.
+        $writer->emit('data-drafted-fields', [
+          'data' => $draftedFields,
+        ]);
       },
     );
   }
@@ -358,8 +357,8 @@ class DraftingPlugin extends ChatPluginBase {
    * {@inheritdoc}
    *
    * Creates a ToolCallFieldStreamer that processes partial tool call
-   * argument JSON in real time, emitting STATE_DELTA events as field
-   * values grow token by token from the LLM.
+   * argument JSON in real time, emitting data-drafted-fields events
+   * as field values grow token by token from the LLM.
    */
   protected function createToolCallDeltaObserver(
     array $context,
@@ -367,7 +366,7 @@ class DraftingPlugin extends ChatPluginBase {
   ): ?\Closure {
     $fieldIndex = $context['fieldIndex'];
     $streamer = new ToolCallFieldStreamer(
-      $this->transporter, $fieldIndex,
+      $this->writer, $fieldIndex,
     );
     return function (string $toolName, array $decoded) use ($streamer): void {
       if ($toolName === 'draft_content') {

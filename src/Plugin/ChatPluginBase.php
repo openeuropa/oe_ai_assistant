@@ -13,8 +13,8 @@ use Drupal\oe_ai_assistant\Exception\ActionException;
 use Drupal\oe_ai_assistant\Processor\ShortTermMemoryInputProcessor;
 use Drupal\oe_ai_assistant\Service\AgentFactory;
 use Drupal\oe_ai_assistant\Store\DrupalTempMessageStore;
+use Drupal\oe_ai_assistant\Streaming\DataStreamWriter;
 use Psr\Log\LoggerInterface;
-use Swis\AgUiServer\AgUiState;
 use Symfony\AI\Platform\Message\Message;
 use Symfony\AI\Platform\Message\MessageBag;
 use Symfony\AI\Platform\Result\Stream\Delta\TextDelta;
@@ -32,7 +32,7 @@ use function Cortex\JsonRepair\json_repair_decode;
  * Abstract base class for AI assistant plugins that use LLM chat streaming.
  *
  * Sits between AiAssistantPluginBase (which provides SSE transport, action
- * dispatch, JSON body decoding, and AG-UI state management) and concrete
+ * dispatch, JSON body decoding, and DataStreamWriter management) and concrete
  * chat plugins (which supply domain-specific prompts, tools, and tool
  * executors).
  *
@@ -96,7 +96,7 @@ abstract class ChatPluginBase extends AiAssistantPluginBase {
   }
 
   /**
-   * Streams AI chat responses via AG-UI SSE.
+   * Streams AI chat responses via SSE using the Data Stream Protocol.
    *
    * This is the template method that defines the full lifecycle of a single
    * LLM chat turn. It:
@@ -106,16 +106,16 @@ abstract class ChatPluginBase extends AiAssistantPluginBase {
    *   3. Resolves the default AI provider and model for "chat".
    *   4. Opens an SSE response and runs the LLM streaming loop inside it.
    *   5. Persists the updated conversation history on success, or emits
-   *      an AG-UI error event on failure.
+   *      an error event on failure.
    *
    * Concrete plugins should NOT override this method. Instead, they
    * implement the four abstract hooks to customise behaviour.
    *
    * @param \Symfony\Component\HttpFoundation\Request $request
-   *   The incoming HTTP request with an AG-UI chat message body.
+   *   The incoming HTTP request with a chat message body.
    *
    * @return \Symfony\Component\HttpFoundation\Response
-   *   An SSE streaming response that emits AG-UI protocol events.
+   *   An SSE streaming response that emits Data Stream Protocol events.
    *
    * @throws \Drupal\oe_ai_assistant\Exception\ActionException
    *   If the request body contains no user message.
@@ -139,20 +139,20 @@ abstract class ChatPluginBase extends AiAssistantPluginBase {
 
     // Open the SSE response. Everything inside the callback is executed
     // after the HTTP headers have been sent, so we cannot throw exceptions
-    // that bubble up to the controller -- errors must go through $state.
+    // that bubble up to the controller -- errors must go through the writer.
     return $this->createSseResponse(function () use (
       $systemPrompt, $message, $threadId, $toolDefinitions, $context,
     ) {
       set_time_limit(0);
 
-      // createAgUiState() sets $this->agUiState and returns it.
-      $state = $this->createAgUiState();
-      $runId = $this->uuid->generate();
-      $sseThreadId = !empty($threadId) ? $threadId : $this->uuid->generate();
-
-      $state->startRun($sseThreadId, $runId);
+      // createWriter() sets $this->writer and returns it.
+      $writer = $this->createWriter();
+      $messageId = $this->uuid->generate();
+      $writer->emit('start', ['messageId' => $messageId]);
 
       try {
+        $sseThreadId = !empty($threadId) ? $threadId : $this->uuid->generate();
+
         // Load conversation history from the store.
         $store = new DrupalTempMessageStore(
           $this->tempStoreFactory,
@@ -171,20 +171,28 @@ abstract class ChatPluginBase extends AiAssistantPluginBase {
         // Build the event dispatcher for tool call lifecycle events.
         $eventDispatcher = new EventDispatcher();
 
-        // Register AG-UI event emitter for tool call results.
+        // Register event emitter for tool call results.
         $eventDispatcher->addListener(
           ToolCallSucceeded::class,
-          function (ToolCallSucceeded $event) use ($state): void {
+          function (ToolCallSucceeded $event) use ($writer): void {
             $toolCall = $event->getResult()->getToolCall();
             $result = $event->getResult()->getResult();
-            $content = is_string($result) ? $result : Json::encode($result);
-            $state->toolCallResult($toolCall->getId(), $content, 'tool');
-            $state->finishToolCall($toolCall->getId());
+            $writer->emit('tool-input-available', [
+              'toolCallId' => $toolCall->getId(),
+              'toolName' => $toolCall->getName(),
+              'input' => $toolCall->getArguments(),
+            ]);
+            $writer->emit('tool-output-available', [
+              'toolCallId' => $toolCall->getId(),
+              'output' => is_string($result)
+                ? (json_decode($result, TRUE) ?? $result)
+                : $result,
+            ]);
           },
         );
 
         // Allow concrete plugins to register additional event
-        // listeners (e.g. for STATE_SNAPSHOT emission on tool
+        // listeners (e.g. for data event emission on tool
         // completion). This hook fires before the Agent is created
         // so listeners are in place for the entire streaming session.
         $this->registerToolEventListeners(
@@ -219,13 +227,13 @@ abstract class ChatPluginBase extends AiAssistantPluginBase {
           $context, $isFirstTurn,
         );
 
-        // Call the agent with streaming enabled.
+        // Stream deltas from the agent call.
+        $writer->emit('start-step');
         $result = $agent->call($bag, ['stream' => TRUE]);
-
-        // Iterate deltas and emit AG-UI events.
         $accumulatedText = $this->streamDeltas(
-          $result, $state, $deltaObserver,
+          $result, $writer, $deltaObserver,
         );
+        $writer->emit('finish-step');
 
         // Persist conversation: add final assistant message and save
         // without the system message (rebuilt fresh each request).
@@ -233,17 +241,19 @@ abstract class ChatPluginBase extends AiAssistantPluginBase {
           $bag->add(Message::ofAssistant($accumulatedText));
         }
         $store->save($bag->withoutSystemMessage());
+
+        $writer->emit('finish', ['finishReason' => 'stop']);
       }
       catch (\Exception $e) {
         $this->logger->error('Error in chat: @error', [
           '@error' => $e->getMessage(),
         ]);
-        $state->errorRun($this->formatErrorForChat($e));
+        $writer->emit('error', [
+          'errorText' => $this->formatErrorForChat($e),
+        ]);
       }
 
-      // Always emit RUN_FINISHED to signal the end of the SSE stream,
-      // even if an error occurred, so the frontend can stop loading.
-      $state->finishRun();
+      $writer->done();
     });
   }
 
@@ -265,7 +275,7 @@ abstract class ChatPluginBase extends AiAssistantPluginBase {
   }
 
   /**
-   * Extracts the user message from an AG-UI protocol request body.
+   * Extracts the user message from the request body.
    *
    * The frontend may send a top-level "message" string (simple format)
    * or a "messages" array in the OpenAI conversation format. We support
@@ -517,7 +527,7 @@ abstract class ChatPluginBase extends AiAssistantPluginBase {
    * Called before the Agent is created, so listeners are in place for
    * the entire streaming session. Concrete plugins override this to
    * hook into Symfony AI tool lifecycle events (e.g. ToolCallSucceeded)
-   * for side effects like emitting AG-UI STATE_SNAPSHOT events.
+   * for side effects like emitting data events via the DataStreamWriter.
    *
    * The base implementation is a no-op.
    *
@@ -538,18 +548,18 @@ abstract class ChatPluginBase extends AiAssistantPluginBase {
   }
 
   /**
-   * Iterates streaming deltas and emits AG-UI events.
+   * Iterates streaming deltas and emits Data Stream Protocol events.
    *
    * Processes each delta from the Symfony AI StreamResult: TextDelta
-   * chunks are forwarded as AG-UI message content events, ToolCallStart
-   * deltas trigger AG-UI tool call start events, and ToolInputDelta
-   * chunks are passed to the plugin's delta observer for incremental
-   * field streaming.
+   * chunks are forwarded as text-delta events, ToolCallStart deltas
+   * trigger tool-input-start events, and ToolInputDelta chunks are
+   * emitted as tool-input-delta events and passed to the plugin's
+   * delta observer for incremental field streaming.
    *
    * @param mixed $result
    *   The StreamResult from Agent::call() with streaming enabled.
-   * @param \Swis\AgUiServer\AgUiState $state
-   *   The AG-UI state manager for emitting SSE events.
+   * @param \Drupal\oe_ai_assistant\Streaming\DataStreamWriter $writer
+   *   The DataStreamWriter for emitting SSE events.
    * @param \Closure|null $deltaObserver
    *   Optional callback for incremental tool call argument streaming.
    *
@@ -558,45 +568,53 @@ abstract class ChatPluginBase extends AiAssistantPluginBase {
    */
   private function streamDeltas(
     $result,
-    AgUiState $state,
+    DataStreamWriter $writer,
     ?\Closure $deltaObserver,
   ): string {
     $accumulatedText = '';
-    $messageStarted = FALSE;
-    $messageId = $this->uuid->generate();
+    $textStarted = FALSE;
+    $textId = $this->uuid->generate();
 
     foreach ($result->getContent() as $delta) {
       if ($delta instanceof TextDelta) {
-        if (!$messageStarted) {
-          $state->startMessage('assistant', $messageId);
-          $messageStarted = TRUE;
+        if (!$textStarted) {
+          $writer->emit('text-start', ['id' => $textId]);
+          $textStarted = TRUE;
         }
-        $state->addMessageContent($delta->getText(), $messageId);
+        $writer->emit('text-delta', [
+          'id' => $textId,
+          'delta' => $delta->getText(),
+        ]);
         $accumulatedText .= $delta->getText();
       }
       elseif ($delta instanceof ToolCallStart) {
-        if ($messageStarted) {
-          $state->finishMessage($messageId);
-          $messageStarted = FALSE;
+        if ($textStarted) {
+          $writer->emit('text-end', ['id' => $textId]);
+          $textStarted = FALSE;
         }
-        $state->startToolCall(
-          $delta->getName(), NULL, $delta->getId(),
-        );
+        $writer->emit('tool-input-start', [
+          'toolCallId' => $delta->getId(),
+          'toolName' => $delta->getName(),
+        ]);
       }
-      elseif ($delta instanceof ToolInputDelta
-        && $deltaObserver !== NULL
-      ) {
-        $decoded = $this->repairPartialJson(
-          $delta->getPartialJson(),
-        );
-        if ($decoded !== NULL) {
-          $deltaObserver($delta->getName(), $decoded);
+      elseif ($delta instanceof ToolInputDelta) {
+        $writer->emit('tool-input-delta', [
+          'toolCallId' => $delta->getId(),
+          'inputTextDelta' => $delta->getPartialJson(),
+        ]);
+        if ($deltaObserver !== NULL) {
+          $decoded = $this->repairPartialJson(
+            $delta->getPartialJson(),
+          );
+          if ($decoded !== NULL) {
+            $deltaObserver($delta->getName(), $decoded);
+          }
         }
       }
     }
 
-    if ($messageStarted) {
-      $state->finishMessage($messageId);
+    if ($textStarted) {
+      $writer->emit('text-end', ['id' => $textId]);
     }
 
     return $accumulatedText;
