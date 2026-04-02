@@ -230,9 +230,11 @@ abstract class ChatPluginBase extends AiAssistantPluginBase {
         // Stream deltas from the agent call.
         $writer->emit('start-step');
         $result = $agent->call($bag, ['stream' => TRUE]);
+
         $accumulatedText = $this->streamDeltas(
           $result, $writer, $deltaObserver,
         );
+
         $writer->emit('finish-step');
 
         // Persist conversation: add final assistant message and save
@@ -576,6 +578,22 @@ abstract class ChatPluginBase extends AiAssistantPluginBase {
     $textId = $this->uuid->generate();
 
     foreach ($result->getContent() as $delta) {
+      // The AgentProcessor's StreamListener may replace a
+      // ToolCallComplete delta with a string (the final text from
+      // the re-invoked agent). Handle plain strings as text.
+      if (is_string($delta)) {
+        if (!$textStarted) {
+          $writer->emit('text-start', ['id' => $textId]);
+          $textStarted = TRUE;
+        }
+        $writer->emit('text-delta', [
+          'id' => $textId,
+          'delta' => $delta,
+        ]);
+        $accumulatedText .= $delta;
+        continue;
+      }
+
       if ($delta instanceof TextDelta) {
         if (!$textStarted) {
           $writer->emit('text-start', ['id' => $textId]);
