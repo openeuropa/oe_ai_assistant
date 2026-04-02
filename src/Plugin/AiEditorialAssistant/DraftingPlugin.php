@@ -319,13 +319,10 @@ class DraftingPlugin extends ChatPluginBase {
     bool $isFirstTurn,
   ): void {
     $fieldIndex = $context['fieldIndex'];
-    $writer = $this->writer;
 
     $eventDispatcher->addListener(
       ToolCallSucceeded::class,
-      function (ToolCallSucceeded $event) use (
-        $fieldIndex, $writer,
-      ): void {
+      function (ToolCallSucceeded $event) use ($fieldIndex): void {
         $toolCall = $event->getResult()->getToolCall();
         if ($toolCall->getName() !== 'draft_content') {
           return;
@@ -346,7 +343,7 @@ class DraftingPlugin extends ChatPluginBase {
         }
 
         // Emit reconciliation event with validated fields.
-        $writer->emit('data-drafted-fields', [
+        $this->emitEvent('data-drafted-fields', [
           'data' => $draftedFields,
         ]);
       },
@@ -365,9 +362,8 @@ class DraftingPlugin extends ChatPluginBase {
     bool $isFirstTurn,
   ): ?\Closure {
     $fieldIndex = $context['fieldIndex'];
-    $streamer = new ToolCallFieldStreamer(
-      $this->writer, $fieldIndex,
-    );
+    $emitter = $this->emitEvent(...);
+    $streamer = new ToolCallFieldStreamer($emitter, $fieldIndex);
     return function (string $toolName, array $decoded) use ($streamer): void {
       if ($toolName === 'draft_content') {
         $streamer->onDelta($decoded);

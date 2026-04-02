@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Drupal\Tests\oe_ai_assistant\Unit;
 
 use Drupal\oe_ai_assistant\Plugin\AiEditorialAssistant\Drafting\ToolCallFieldStreamer;
-use Drupal\oe_ai_assistant\Streaming\DataStreamWriter;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -38,51 +37,16 @@ class ToolCallFieldStreamerTest extends TestCase {
   }
 
   /**
-   * Creates a spy DataStreamWriter that captures emit() and done() calls.
+   * Creates a spy emitter closure that captures calls.
    *
-   * The anonymous subclass writes to a shared ArrayObject container
-   * instead of stdout. Use $this->spyContainer->getArrayCopy() in
-   * assertions to inspect captured events.
-   *
-   * @return \Drupal\oe_ai_assistant\Streaming\DataStreamWriter
-   *   The spy writer instance.
+   * @return \Closure
+   *   Emitter with signature fn(string $type, array $data): void.
    */
-  private function createSpyWriter(): DataStreamWriter {
-    // Pass the shared container into the anonymous subclass.
-    return new class($this->spyContainer) extends DataStreamWriter {
-
-      /**
-       * Shared container between writer and test.
-       *
-       * @var \ArrayObject
-       */
-      private \ArrayObject $container;
-
-      /**
-       * Constructs the spy writer.
-       *
-       * @param \ArrayObject $container
-       *   Shared container for captured events.
-       */
-      public function __construct(\ArrayObject $container) {
-        $this->container = $container;
-      }
-
-      /**
-       * {@inheritdoc}
-       */
-      public function emit(string $type, array $data = []): void {
-        $data['type'] = $type;
-        $this->container->append($data);
-      }
-
-      /**
-       * {@inheritdoc}
-       */
-      public function done(): void {
-        $this->container->append(['type' => '__done__']);
-      }
-
+  private function createSpyEmitter(): \Closure {
+    $container = $this->spyContainer;
+    return function (string $type, array $data = []) use ($container): void {
+      $data['type'] = $type;
+      $container->append($data);
     };
   }
 
@@ -107,7 +71,7 @@ class ToolCallFieldStreamerTest extends TestCase {
    */
   public function testEmitInitialSnapshotSendsEmptyStateOnce(): void {
     $streamer = new ToolCallFieldStreamer(
-      $this->createSpyWriter(),
+      $this->createSpyEmitter(),
       ['title' => TRUE],
     );
 
@@ -131,7 +95,7 @@ class ToolCallFieldStreamerTest extends TestCase {
    */
   public function testOnDeltaEmitsInitialSnapshotLazily(): void {
     $streamer = new ToolCallFieldStreamer(
-      $this->createSpyWriter(),
+      $this->createSpyEmitter(),
       ['title' => TRUE],
     );
 
@@ -161,7 +125,7 @@ class ToolCallFieldStreamerTest extends TestCase {
    */
   public function testGarbageInputEmitsNoEvents(): void {
     $streamer = new ToolCallFieldStreamer(
-      $this->createSpyWriter(),
+      $this->createSpyEmitter(),
       ['title' => TRUE],
     );
 
@@ -186,7 +150,7 @@ class ToolCallFieldStreamerTest extends TestCase {
    */
   public function testEmptyInputEmitsNoDeltas(): void {
     $streamer = new ToolCallFieldStreamer(
-      $this->createSpyWriter(),
+      $this->createSpyEmitter(),
       ['title' => TRUE],
     );
 
@@ -209,7 +173,7 @@ class ToolCallFieldStreamerTest extends TestCase {
    */
   public function testPlainStringFieldStreamsIncrementally(): void {
     $streamer = new ToolCallFieldStreamer(
-      $this->createSpyWriter(),
+      $this->createSpyEmitter(),
       ['title' => TRUE],
     );
 
@@ -244,7 +208,7 @@ class ToolCallFieldStreamerTest extends TestCase {
    */
   public function testFormattedTextFieldEmitsFullObjectInDeltas(): void {
     $streamer = new ToolCallFieldStreamer(
-      $this->createSpyWriter(),
+      $this->createSpyEmitter(),
       ['body' => TRUE],
     );
 
@@ -285,7 +249,7 @@ class ToolCallFieldStreamerTest extends TestCase {
    */
   public function testPhantomFieldsFilteredByFieldIndex(): void {
     $streamer = new ToolCallFieldStreamer(
-      $this->createSpyWriter(),
+      $this->createSpyEmitter(),
       ['title' => TRUE],
     );
 
@@ -310,7 +274,7 @@ class ToolCallFieldStreamerTest extends TestCase {
    */
   public function testNoDeltaWhenUnchanged(): void {
     $streamer = new ToolCallFieldStreamer(
-      $this->createSpyWriter(),
+      $this->createSpyEmitter(),
       ['title' => TRUE],
     );
 
@@ -334,7 +298,7 @@ class ToolCallFieldStreamerTest extends TestCase {
    */
   public function testMultipleFieldsAppearProgressively(): void {
     $streamer = new ToolCallFieldStreamer(
-      $this->createSpyWriter(),
+      $this->createSpyEmitter(),
       ['title' => TRUE, 'body' => TRUE],
     );
 
@@ -371,7 +335,7 @@ class ToolCallFieldStreamerTest extends TestCase {
    */
   public function testEmitFinalSnapshotSendsCompleteState(): void {
     $streamer = new ToolCallFieldStreamer(
-      $this->createSpyWriter(),
+      $this->createSpyEmitter(),
       ['title' => TRUE],
     );
 
@@ -401,7 +365,7 @@ class ToolCallFieldStreamerTest extends TestCase {
    */
   public function testFieldsNormalizedWithoutWrapper(): void {
     $streamer = new ToolCallFieldStreamer(
-      $this->createSpyWriter(),
+      $this->createSpyEmitter(),
       ['title' => TRUE],
     );
 

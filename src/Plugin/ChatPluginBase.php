@@ -13,7 +13,6 @@ use Drupal\oe_ai_assistant\Exception\ActionException;
 use Drupal\oe_ai_assistant\Processor\ShortTermMemoryInputProcessor;
 use Drupal\oe_ai_assistant\Service\AgentFactory;
 use Drupal\oe_ai_assistant\Store\DrupalTempMessageStore;
-use Drupal\oe_ai_assistant\Streaming\DataStreamWriter;
 use Psr\Log\LoggerInterface;
 use Symfony\AI\Platform\Message\Message;
 use Symfony\AI\Platform\Message\MessageBag;
@@ -32,7 +31,7 @@ use function Cortex\JsonRepair\json_repair_decode;
  * Abstract base class for AI assistant plugins that use LLM chat streaming.
  *
  * Sits between AiAssistantPluginBase (which provides SSE transport, action
- * dispatch, JSON body decoding, and DataStreamWriter management) and concrete
+ * dispatch, JSON body decoding, and emitEvent() management) and concrete
  * chat plugins (which supply domain-specific prompts, tools, and tool
  * executors).
  *
@@ -145,10 +144,8 @@ abstract class ChatPluginBase extends AiAssistantPluginBase {
     ) {
       set_time_limit(0);
 
-      // createWriter() sets $this->writer and returns it.
-      $writer = $this->createWriter();
       $messageId = $this->uuid->generate();
-      $writer->emit('start', ['messageId' => $messageId]);
+      $this->emitEvent('start', ['messageId' => $messageId]);
 
       try {
         $sseThreadId = !empty($threadId) ? $threadId : $this->uuid->generate();
@@ -179,17 +176,17 @@ abstract class ChatPluginBase extends AiAssistantPluginBase {
         // AgentProcessor before our iterator sees it.
         $eventDispatcher->addListener(
           ToolCallSucceeded::class,
-          function (ToolCallSucceeded $event) use ($writer): void {
+          function (ToolCallSucceeded $event): void {
             $toolCall = $event->getResult()->getToolCall();
             $result = $event->getResult()->getResult();
 
-            $writer->emit('tool-call-start', [
+            $this->emitEvent('tool-call-start', [
               'id' => $this->uuid->generate(),
               'toolCallId' => $toolCall->getId(),
               'toolName' => $toolCall->getName(),
             ]);
-            $writer->emit('tool-call-end');
-            $writer->emit('tool-result', [
+            $this->emitEvent('tool-call-end');
+            $this->emitEvent('tool-result', [
               'toolCallId' => $toolCall->getId(),
               'result' => is_string($result)
                 ? (json_decode($result, TRUE) ?? $result)
@@ -235,14 +232,14 @@ abstract class ChatPluginBase extends AiAssistantPluginBase {
         );
 
         // Stream deltas from the agent call.
-        $writer->emit('start-step');
+        $this->emitEvent('start-step');
         $result = $agent->call($bag, ['stream' => TRUE]);
 
         $accumulatedText = $this->streamDeltas(
-          $result, $writer, $deltaObserver,
+          $result, $deltaObserver,
         );
 
-        $writer->emit('finish-step', [
+        $this->emitEvent('finish-step', [
           'finishReason' => 'stop',
           'usage' => ['inputTokens' => 0, 'outputTokens' => 0],
           'isContinued' => FALSE,
@@ -255,7 +252,7 @@ abstract class ChatPluginBase extends AiAssistantPluginBase {
         }
         $store->save($bag->withoutSystemMessage());
 
-        $writer->emit('finish', [
+        $this->emitEvent('finish', [
           'finishReason' => 'stop',
           'usage' => ['inputTokens' => 0, 'outputTokens' => 0],
         ]);
@@ -264,12 +261,12 @@ abstract class ChatPluginBase extends AiAssistantPluginBase {
         $this->logger->error('Error in chat: @error', [
           '@error' => $e->getMessage(),
         ]);
-        $writer->emit('error', [
+        $this->emitEvent('error', [
           'errorText' => $this->formatErrorForChat($e),
         ]);
       }
 
-      $writer->done();
+      $this->emitDone();
     });
   }
 
@@ -543,7 +540,7 @@ abstract class ChatPluginBase extends AiAssistantPluginBase {
    * Called before the Agent is created, so listeners are in place for
    * the entire streaming session. Concrete plugins override this to
    * hook into Symfony AI tool lifecycle events (e.g. ToolCallSucceeded)
-   * for side effects like emitting data events via the DataStreamWriter.
+   * for side effects like emitting data events via the emitEvent().
    *
    * The base implementation is a no-op.
    *
@@ -574,8 +571,8 @@ abstract class ChatPluginBase extends AiAssistantPluginBase {
    *
    * @param mixed $result
    *   The StreamResult from Agent::call() with streaming enabled.
-   * @param \Drupal\oe_ai_assistant\Streaming\DataStreamWriter $writer
-   *   The DataStreamWriter for emitting SSE events.
+   * @param mixed $result
+   *   The StreamResult from Agent::call() with streaming enabled.
    * @param \Closure|null $deltaObserver
    *   Optional callback for incremental tool call argument streaming.
    *
@@ -584,7 +581,6 @@ abstract class ChatPluginBase extends AiAssistantPluginBase {
    */
   private function streamDeltas(
     $result,
-    DataStreamWriter $writer,
     ?\Closure $deltaObserver,
   ): string {
     $accumulatedText = '';
@@ -597,20 +593,20 @@ abstract class ChatPluginBase extends AiAssistantPluginBase {
       // the re-invoked agent). Handle plain strings as text.
       if (is_string($delta)) {
         if (!$textStarted) {
-          $writer->emit('text-start', ['id' => $textId]);
+          $this->emitEvent('text-start', ['id' => $textId]);
           $textStarted = TRUE;
         }
-        $writer->emit('text-delta', ['textDelta' => $delta]);
+        $this->emitEvent('text-delta', ['textDelta' => $delta]);
         $accumulatedText .= $delta;
         continue;
       }
 
       if ($delta instanceof TextDelta) {
         if (!$textStarted) {
-          $writer->emit('text-start', ['id' => $textId]);
+          $this->emitEvent('text-start', ['id' => $textId]);
           $textStarted = TRUE;
         }
-        $writer->emit('text-delta', [
+        $this->emitEvent('text-delta', [
           'textDelta' => $delta->getText(),
         ]);
         $accumulatedText .= $delta->getText();
@@ -622,12 +618,12 @@ abstract class ChatPluginBase extends AiAssistantPluginBase {
         // ToolCallStart delta may not always reach our iterator
         // (provider-dependent behavior).
         if ($textStarted) {
-          $writer->emit('text-end');
+          $this->emitEvent('text-end');
           $textStarted = FALSE;
         }
       }
       elseif ($delta instanceof ToolInputDelta) {
-        $writer->emit('tool-call-delta', [
+        $this->emitEvent('tool-call-delta', [
           'argsText' => $delta->getPartialJson(),
         ]);
         if ($deltaObserver !== NULL) {
@@ -642,7 +638,7 @@ abstract class ChatPluginBase extends AiAssistantPluginBase {
     }
 
     if ($textStarted) {
-      $writer->emit('text-end');
+      $this->emitEvent('text-end');
     }
 
     return $accumulatedText;

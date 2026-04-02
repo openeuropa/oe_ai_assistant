@@ -15,7 +15,7 @@ use Symfony\Component\HttpFoundation\Response;
  *
  * This is a development/testing plugin that demonstrates the SSE streaming
  * pattern without requiring a real AI backend. Uses custom data events
- * via the DataStreamWriter.
+ * via the emitEvent() helper from AiAssistantPluginBase.
  *
  * The plugin exposes a single action:
  *   /api/ai/plugins/echo/stream -- accepts a message and echoes it back
@@ -114,15 +114,12 @@ class EchoPlugin extends AiAssistantPluginBase {
       // Disable PHP's execution time limit for the streaming callback.
       set_time_limit(0);
 
-      // Create the DataStreamWriter for emitting SSE events.
-      $writer = $this->createWriter();
-
       $total = count($words);
       foreach ($words as $index => $word) {
         // Emit a data-echo event. The frontend's Echo plugin listens
         // for this event type and renders each word progressively.
         $last = $index === $total - 1;
-        $writer->emit('data-echo', [
+        $this->emitEvent('data-echo', [
           'data' => [
             'word' => $word,
             'index' => $index,
@@ -139,7 +136,7 @@ class EchoPlugin extends AiAssistantPluginBase {
         }
       }
 
-      $writer->done();
+      $this->emitDone();
     });
   }
 

@@ -4,15 +4,13 @@ declare(strict_types=1);
 
 namespace Drupal\oe_ai_assistant\Plugin\AiEditorialAssistant\Drafting;
 
-use Drupal\oe_ai_assistant\Streaming\DataStreamWriter;
-
 /**
  * Streams drafted field values as Data Stream Protocol events.
  *
  * Receives already-decoded tool call arguments (repaired by the
  * LLM streaming loop), extracts and filters field values, diffs
  * against the previous state, and emits data-drafted-fields events
- * via the DataStreamWriter.
+ * via the provided emitter callable.
  */
 class ToolCallFieldStreamer {
 
@@ -33,14 +31,15 @@ class ToolCallFieldStreamer {
   /**
    * Constructs a ToolCallFieldStreamer.
    *
-   * @param \Drupal\oe_ai_assistant\Streaming\DataStreamWriter $writer
-   *   The DataStreamWriter for emitting SSE events.
+   * @param \Closure $emitter
+   *   A callable with signature fn(string $type, array $data): void
+   *   for emitting SSE events. Typically AiAssistantPluginBase::emitEvent().
    * @param array<string, mixed> $fieldIndex
    *   An associative array of known field names. Only fields whose
    *   keys appear in this index will be included in data events.
    */
   public function __construct(
-    private readonly DataStreamWriter $writer,
+    private readonly \Closure $emitter,
     private readonly array $fieldIndex,
   ) {}
 
@@ -56,7 +55,7 @@ class ToolCallFieldStreamer {
     }
 
     $this->initialized = TRUE;
-    $this->writer->emit('data-drafted-fields', [
+    ($this->emitter)('data-drafted-fields', [
       'data' => (object) [],
       'transient' => TRUE,
     ]);
@@ -94,7 +93,7 @@ class ToolCallFieldStreamer {
 
     // Emit a data event only when there are actual changes.
     if (!empty($ops)) {
-      $this->writer->emit('data-drafted-fields', [
+      ($this->emitter)('data-drafted-fields', [
         'data' => $fields,
         'transient' => TRUE,
       ]);
@@ -112,7 +111,7 @@ class ToolCallFieldStreamer {
    *   The final drafted fields to include in the event.
    */
   public function emitFinalSnapshot(array $fields): void {
-    $this->writer->emit('data-drafted-fields', [
+    ($this->emitter)('data-drafted-fields', [
       'data' => $fields,
     ]);
   }
@@ -142,8 +141,6 @@ class ToolCallFieldStreamer {
       $escaped = str_replace('/', '~1', $escaped);
 
       if (!array_key_exists($name, $old)) {
-        // New field: add the whole value (including formatted text
-        // objects) so the parent path exists for future patches.
         $ops[] = [
           'op' => 'add',
           'path' => '/draftedFields/' . $escaped,
@@ -151,8 +148,6 @@ class ToolCallFieldStreamer {
         ];
       }
       elseif ($old[$name] !== $value) {
-        // Changed field: for formatted text (array with "value" key
-        // where old is also an array), replace only the value subkey.
         if (is_array($value) && isset($value['value']) && is_array($old[$name])) {
           $ops[] = [
             'op' => 'replace',
