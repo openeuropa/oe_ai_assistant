@@ -4,8 +4,6 @@ services:
 
   Drupal\oe_ai_assistant\Service\RequestValidator: {}
 
-  Drupal\oe_ai_assistant\Service\ManifestReader: {}
-
   Drupal\oe_ai_assistant\Service\ContentTypeSchemaExtractor:
     arguments:
       - '@entity_field.manager'
