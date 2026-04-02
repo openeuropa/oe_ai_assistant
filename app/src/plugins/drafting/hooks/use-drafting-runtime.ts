@@ -1,20 +1,21 @@
 /**
- * Custom runtime hook that connects assistant-ui to our AG-UI
- * backend endpoint via the @assistant-ui/react-ag-ui adapter.
+ * Custom runtime hook that connects assistant-ui to the backend
+ * drafting endpoint via the Data Stream Protocol.
  *
- * Creates an HttpAgent pointing at our /api/plugins/drafting/chat
- * endpoint and returns an AssistantRuntime. Also subscribes to
- * AG-UI state snapshots to populate the drafted fields store.
+ * Uses useDataStreamRuntime from @assistant-ui/react-data-stream
+ * which sends POST requests to /api/plugins/drafting/chat and
+ * consumes UI Message Stream SSE events. The onData callback
+ * intercepts data-drafted-fields events to populate the Zustand
+ * drafting store with transformed field values.
  */
 
-import { HttpAgent } from "@ag-ui/client";
 import {
   CompositeAttachmentAdapter,
   SimpleImageAttachmentAdapter,
   SimpleTextAttachmentAdapter,
 } from "@assistant-ui/react";
-import { useAgUiRuntime } from "@assistant-ui/react-ag-ui";
-import { useEffect, useMemo, useRef } from "react";
+import { useDataStreamRuntime } from "@assistant-ui/react-data-stream";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import { getConfig } from "@/config";
 import type {
   DraftedField,
@@ -181,17 +182,17 @@ function transformFields(
 }
 
 /**
- * Returns an assistant-ui runtime backed by our AG-UI endpoint.
+ * Returns an assistant-ui runtime backed by the Data Stream Protocol.
  *
- * The HttpAgent sends POST requests to /api/plugins/drafting/chat
- * and receives AG-UI SSE events. assistant-ui handles all event
- * parsing, message rendering, and streaming state. We subscribe
- * to the runtime's state to pick up STATE_SNAPSHOT events that
- * contain drafted field values.
+ * The runtime sends POST requests to /api/plugins/drafting/chat
+ * and receives UI Message Stream SSE events. assistant-ui handles
+ * all event parsing, message rendering, and streaming state. The
+ * onData callback intercepts data-drafted-fields events to update
+ * the Zustand drafting store with transformed field values.
  */
 export function useDraftingRuntime() {
   // Read bundle and entity type from the host page's plugin config.
-  const draftingConfig = getConfig().pluginConfig["drafting"] ?? {};
+  const draftingConfig = getConfig().pluginConfig.drafting ?? {};
   const bundle = (draftingConfig.bundle as string) ?? "";
   const entityTypeId = (draftingConfig.entityTypeId as string) ?? "node";
 
@@ -206,29 +207,44 @@ export function useDraftingRuntime() {
     );
   }, [entityTypeId, bundle]);
 
-  const agent = useMemo(() => {
-    const httpAgent = new HttpAgent({
-      url: `${getConfig().apiBaseUrl}/plugins/drafting/chat`,
-    });
+  // Track per-field serialized values to detect which field changed.
+  const lastFieldValuesRef = useRef<Record<string, string>>({});
 
-    // Wrap runAgent to inject forwardedProps with the content type
-    // context on every chat request. The backend reads these to load
-    // the correct schema for tool calls.
-    const originalRun = httpAgent.runAgent.bind(httpAgent);
-    httpAgent.runAgent = (input, ...rest) =>
-      originalRun(
-        {
-          ...input,
-          forwardedProps: {
-            ...(input?.forwardedProps ?? {}),
-            bundle,
-            entityTypeId,
-          },
-        },
-        ...rest,
-      );
-    return httpAgent;
-  }, [bundle, entityTypeId]);
+  // Accumulate all fields that changed during a single run so we
+  // can highlight them when the run finishes.
+  const changedFieldsRef = useRef<Set<string>>(new Set());
+
+  // Callback for data-drafted-fields events from the stream.
+  // Transforms raw LLM values and merges them into the store.
+  const handleDraftedFields = useCallback((raw: Record<string, unknown>) => {
+    const incomingFields = transformFields(raw, fieldIndexRef.current);
+
+    // Merge incoming fields with existing ones so that partial
+    // updates (e.g. single-field regeneration) don't wipe out
+    // fields the backend intentionally omitted.
+    const existing = getDraftingState().draftedFields;
+    const fields = { ...existing, ...incomingFields };
+
+    // Detect which field changed by comparing per-field serialized
+    // values against the previous snapshot. Also accumulate all
+    // changed fields for the highlight effect when the run ends.
+    let changedField: string | null = null;
+    const currentFieldValues: Record<string, string> = {};
+    for (const [name, field] of Object.entries(fields)) {
+      const fieldSerialized = JSON.stringify(field);
+      currentFieldValues[name] = fieldSerialized;
+      if (fieldSerialized !== lastFieldValuesRef.current[name]) {
+        changedField = name;
+        changedFieldsRef.current.add(name);
+      }
+    }
+    lastFieldValuesRef.current = currentFieldValues;
+
+    setDraftingState({
+      draftedFields: fields,
+      streamingFieldName: changedField,
+    });
+  }, []);
 
   // Accept images and common document types as attachments.
   // Files are kept client-side only (no upload); the mock server
@@ -242,118 +258,50 @@ export function useDraftingRuntime() {
     [],
   );
 
-  const runtime = useAgUiRuntime({
-    agent,
+  const runtime = useDataStreamRuntime({
+    api: `${getConfig().apiBaseUrl}/plugins/drafting/chat`,
+    credentials: "include",
+    // Send bundle and entityTypeId in the request body so the
+    // backend can load the correct content type schema.
+    body: { bundle, entityTypeId },
     adapters: {
       attachments: attachmentAdapter,
-      threadList: {
-        threadId: getDraftingState().threadId ?? undefined,
-      },
     },
-    onError: (error) => {
-      console.error("[drafting] AG-UI runtime error:", error);
+    // Handle data-drafted-fields events from the UI message stream.
+    // The onData callback fires for any SSE event whose type starts
+    // with "data-". The name field has the "data-" prefix stripped.
+    onData: (data) => {
+      if (data.name === "drafted-fields") {
+        handleDraftedFields(data.data as Record<string, unknown>);
+      }
     },
-  });
-
-  // Track the last snapshot we processed to avoid infinite loops.
-  // Without this guard, setDraftingState triggers a re-render which
-  // triggers the subscribe callback again.
-  const lastSnapshotRef = useRef<string | null>(null);
-
-  // Track per-field serialized values to detect which field changed.
-  const lastFieldValuesRef = useRef<Record<string, string>>({});
-
-  // Accumulate all fields that changed during a single run so we
-  // can highlight them when the run finishes.
-  const changedFieldsRef = useRef<Set<string>>(new Set());
-
-  useEffect(() => {
-    const unsubscribe = runtime.thread.subscribe(() => {
-      const threadState = runtime.thread.getState();
-
-      // Detect run completion to clear the streaming indicator and
+    onFinish: () => {
+      // When the run finishes, clear the streaming indicator and
       // mark all fields that changed during the run as updated so
       // the UI can highlight them briefly.
-      const status = (threadState as Record<string, unknown>).status as
-        | string
-        | undefined;
-      if (status !== "running" && status !== "streaming") {
-        const state = getDraftingState();
-        if (state.streamingFieldName !== null) {
-          setDraftingState({
-            streamingFieldName: null,
-            updatedFields: new Set(changedFieldsRef.current),
-          });
-          // Clear the highlight after a short delay so the editor
-          // sees which fields were updated, then the highlight fades.
-          const fieldsToClear = new Set(changedFieldsRef.current);
-          changedFieldsRef.current.clear();
-          setTimeout(() => {
-            // Only clear if the set hasn't been replaced by a new run.
-            const current = getDraftingState().updatedFields;
-            if (
-              current.size === fieldsToClear.size &&
-              [...fieldsToClear].every((f) => current.has(f))
-            ) {
-              setDraftingState({ updatedFields: new Set() });
-            }
-          }, 2000);
-        }
-      }
-
-      const snapshot = (threadState as Record<string, unknown>).state as
-        | Record<string, unknown>
-        | undefined;
-
-      if (
-        !snapshot ||
-        typeof snapshot !== "object" ||
-        !("draftedFields" in snapshot)
-      ) {
-        return;
-      }
-
-      // Only update if the snapshot actually changed.
-      const serialized = JSON.stringify(snapshot.draftedFields);
-      if (serialized === lastSnapshotRef.current) {
-        return;
-      }
-
-      lastSnapshotRef.current = serialized;
-      const raw = snapshot.draftedFields as Record<string, unknown>;
-
-      // Transform raw LLM values into DraftedField objects using the
-      // content type schema for label, type, and inline entity resolution.
-      const incomingFields = transformFields(raw, fieldIndexRef.current);
-
-      // Merge incoming fields with existing ones so that partial
-      // snapshots (e.g. single-field regeneration) don't wipe out
-      // fields the backend intentionally omitted.
-      const existing = getDraftingState().draftedFields;
-      const fields = { ...existing, ...incomingFields };
-
-      // Detect which field changed by comparing per-field serialized
-      // values against the previous snapshot. Also accumulate all
-      // changed fields for the highlight effect when the run ends.
-      let changedField: string | null = null;
-      const currentFieldValues: Record<string, string> = {};
-      for (const [name, field] of Object.entries(fields)) {
-        const fieldSerialized = JSON.stringify(field);
-        currentFieldValues[name] = fieldSerialized;
-        if (fieldSerialized !== lastFieldValuesRef.current[name]) {
-          changedField = name;
-          changedFieldsRef.current.add(name);
-        }
-      }
-      lastFieldValuesRef.current = currentFieldValues;
-
       setDraftingState({
-        draftedFields: fields,
-        streamingFieldName: changedField,
+        streamingFieldName: null,
+        updatedFields: new Set(changedFieldsRef.current),
       });
-    });
-    return unsubscribe;
-  }, [runtime]);
+      // Clear the highlight after a short delay so the editor
+      // sees which fields were updated, then the highlight fades.
+      const fieldsToClear = new Set(changedFieldsRef.current);
+      changedFieldsRef.current.clear();
+      setTimeout(() => {
+        // Only clear if the set hasn't been replaced by a new run.
+        const current = getDraftingState().updatedFields;
+        if (
+          current.size === fieldsToClear.size &&
+          [...fieldsToClear].every((f) => current.has(f))
+        ) {
+          setDraftingState({ updatedFields: new Set() });
+        }
+      }, 2000);
+    },
+    onError: (error) => {
+      console.error("[drafting] Data stream runtime error:", error);
+    },
+  });
 
   return runtime;
 }
