@@ -133,7 +133,11 @@ export class DraftingService {
       yield { type: "error", errorText: errorMessage };
     }
 
-    yield { type: "finish", finishReason: "stop" };
+    yield {
+      type: "finish",
+      finishReason: "stop",
+      usage: { inputTokens: 0, outputTokens: 0 },
+    };
   }
 
   /**
@@ -340,12 +344,13 @@ call the draft_content tool for conversational responses.`;
         );
       }
 
-      // tool-output-available tells the client the tool completed
-      // successfully.
+      // tool-call-end closes the tool call, then tool-result
+      // tells the client the tool completed successfully.
+      yield { type: "tool-call-end" };
       yield {
-        type: "tool-output-available",
+        type: "tool-result",
         toolCallId: toolCall.id,
-        output: result,
+        result,
       };
     }
 
@@ -416,8 +421,7 @@ call the draft_content tool for conversational responses.`;
           }
           yield {
             type: "text-delta",
-            id: textPartId,
-            delta: text,
+            textDelta: text,
           };
           streamedText += text;
         }
@@ -448,7 +452,7 @@ call the draft_content tool for conversational responses.`;
 
       // Close text part if one was started.
       if (messageStarted) {
-        yield { type: "text-end", id: textPartId };
+        yield { type: "text-end" };
       }
 
       // Process assembled tool calls (if any).
@@ -464,10 +468,11 @@ call the draft_content tool for conversational responses.`;
           },
         }));
 
-        // Yield tool-input-start events for each tool call.
+        // Yield tool-call-start events for each tool call.
         for (const tc of assembledTools) {
           yield {
-            type: "tool-input-start",
+            type: "tool-call-start",
+            id: randomUUID(),
             toolCallId: tc.id,
             toolName: tc.name,
           };
@@ -480,18 +485,8 @@ call the draft_content tool for conversational responses.`;
           arguments: JSON.parse(tc.arguments) as Record<string, unknown>,
         }));
 
-        // Yield tool-input-available with parsed arguments.
-        for (const tc of parsedToolCalls) {
-          yield {
-            type: "tool-input-available",
-            toolCallId: tc.id,
-            toolName: tc.name,
-            input: tc.arguments,
-          };
-        }
-
         // Execute tools and yield data-drafted-fields +
-        // tool-output-available events. Manual iteration is needed
+        // tool-result events. Manual iteration is needed
         // to extract the generator's return value (tool result
         // messages).
         const gen = this.executeToolCalls(
@@ -507,7 +502,12 @@ call the draft_content tool for conversational responses.`;
         const toolMessages = genResult.value;
 
         // Emit finish-step after the tool execution completes.
-        yield { type: "finish-step" };
+        yield {
+          type: "finish-step",
+          finishReason: "tool-calls",
+          usage: { inputTokens: 0, outputTokens: 0 },
+          isContinued: true,
+        };
 
         // Add assistant + tool messages to history for the next
         // iteration's context.
@@ -526,7 +526,12 @@ call the draft_content tool for conversational responses.`;
 
       // No tool calls: pure text response. Emit finish-step,
       // save and break.
-      yield { type: "finish-step" };
+      yield {
+          type: "finish-step",
+          finishReason: "stop",
+          usage: { inputTokens: 0, outputTokens: 0 },
+          isContinued: false,
+        };
       fullMessage = streamedText;
       break;
     }

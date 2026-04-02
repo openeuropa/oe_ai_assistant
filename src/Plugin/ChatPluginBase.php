@@ -177,14 +177,10 @@ abstract class ChatPluginBase extends AiAssistantPluginBase {
           function (ToolCallSucceeded $event) use ($writer): void {
             $toolCall = $event->getResult()->getToolCall();
             $result = $event->getResult()->getResult();
-            $writer->emit('tool-input-available', [
+            $writer->emit('tool-call-end');
+            $writer->emit('tool-result', [
               'toolCallId' => $toolCall->getId(),
-              'toolName' => $toolCall->getName(),
-              'input' => $toolCall->getArguments(),
-            ]);
-            $writer->emit('tool-output-available', [
-              'toolCallId' => $toolCall->getId(),
-              'output' => is_string($result)
+              'result' => is_string($result)
                 ? (json_decode($result, TRUE) ?? $result)
                 : $result,
             ]);
@@ -235,7 +231,11 @@ abstract class ChatPluginBase extends AiAssistantPluginBase {
           $result, $writer, $deltaObserver,
         );
 
-        $writer->emit('finish-step');
+        $writer->emit('finish-step', [
+          'finishReason' => 'stop',
+          'usage' => ['inputTokens' => 0, 'outputTokens' => 0],
+          'isContinued' => FALSE,
+        ]);
 
         // Persist conversation: add final assistant message and save
         // without the system message (rebuilt fresh each request).
@@ -244,7 +244,10 @@ abstract class ChatPluginBase extends AiAssistantPluginBase {
         }
         $store->save($bag->withoutSystemMessage());
 
-        $writer->emit('finish', ['finishReason' => 'stop']);
+        $writer->emit('finish', [
+          'finishReason' => 'stop',
+          'usage' => ['inputTokens' => 0, 'outputTokens' => 0],
+        ]);
       }
       catch (\Exception $e) {
         $this->logger->error('Error in chat: @error', [
@@ -586,10 +589,7 @@ abstract class ChatPluginBase extends AiAssistantPluginBase {
           $writer->emit('text-start', ['id' => $textId]);
           $textStarted = TRUE;
         }
-        $writer->emit('text-delta', [
-          'id' => $textId,
-          'delta' => $delta,
-        ]);
+        $writer->emit('text-delta', ['textDelta' => $delta]);
         $accumulatedText .= $delta;
         continue;
       }
@@ -600,25 +600,24 @@ abstract class ChatPluginBase extends AiAssistantPluginBase {
           $textStarted = TRUE;
         }
         $writer->emit('text-delta', [
-          'id' => $textId,
-          'delta' => $delta->getText(),
+          'textDelta' => $delta->getText(),
         ]);
         $accumulatedText .= $delta->getText();
       }
       elseif ($delta instanceof ToolCallStart) {
         if ($textStarted) {
-          $writer->emit('text-end', ['id' => $textId]);
+          $writer->emit('text-end');
           $textStarted = FALSE;
         }
-        $writer->emit('tool-input-start', [
+        $writer->emit('tool-call-start', [
+          'id' => $this->uuid->generate(),
           'toolCallId' => $delta->getId(),
           'toolName' => $delta->getName(),
         ]);
       }
       elseif ($delta instanceof ToolInputDelta) {
-        $writer->emit('tool-input-delta', [
-          'toolCallId' => $delta->getId(),
-          'inputTextDelta' => $delta->getPartialJson(),
+        $writer->emit('tool-call-delta', [
+          'argsText' => $delta->getPartialJson(),
         ]);
         if ($deltaObserver !== NULL) {
           $decoded = $this->repairPartialJson(
@@ -632,7 +631,7 @@ abstract class ChatPluginBase extends AiAssistantPluginBase {
     }
 
     if ($textStarted) {
-      $writer->emit('text-end', ['id' => $textId]);
+      $writer->emit('text-end');
     }
 
     return $accumulatedText;
