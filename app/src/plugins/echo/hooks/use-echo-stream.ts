@@ -69,7 +69,10 @@ export function useEchoStream(): UseEchoStreamReturn {
               .split("\n")
               .find((l) => l.startsWith("data: "));
             if (dataLine) {
-              const parsed = JSON.parse(dataLine.slice(6));
+              const raw = dataLine.slice(6);
+              // Skip the [DONE] sentinel -- it is not valid JSON.
+              if (raw === "[DONE]") continue;
+              const parsed = JSON.parse(raw);
               // The backend sends data-echo events in the UI Message
               // Stream format: { type: "data-echo", data: { word, index,
               // done } }. Extract the payload from the data field. Also

@@ -65,8 +65,6 @@ class AgentFactory {
    *   schemas (bypasses ReflectionToolFactory).
    * @param string|null $functionCallGroup
    *   FunctionCall plugin group to auto-discover, or NULL to skip.
-   * @param \Symfony\AI\Agent\InputProcessorInterface[] $inputProcessors
-   *   Additional input processors (e.g. ShortTermMemoryInputProcessor).
    * @param \Psr\EventDispatcher\EventDispatcherInterface|null $eventDispatcher
    *   Event dispatcher for tool call lifecycle events.
    *
@@ -77,7 +75,6 @@ class AgentFactory {
     array $tools = [],
     array $toolMetadata = [],
     ?string $functionCallGroup = NULL,
-    array $inputProcessors = [],
     ?EventDispatcherInterface $eventDispatcher = NULL,
   ): array {
     // Resolve provider and model from Drupal config.
@@ -107,13 +104,11 @@ class AgentFactory {
       $compositeToolbox,
       eventDispatcher: $eventDispatcher,
     );
-    $allInputProcessors = [...$inputProcessors, $agentProcessor];
-
     // Create and return the Agent.
     $agent = new Agent(
       $platform,
       $modelId,
-      $allInputProcessors,
+      [$agentProcessor],
       [$agentProcessor],
     );
 

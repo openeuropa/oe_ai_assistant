@@ -16,7 +16,7 @@ use Symfony\AI\Platform\Message\MessageBag;
  * conversations are isolated per Drupal user session.
  *
  * The system message is NOT stored -- it is rebuilt fresh on each
- * request by ChatPluginBase. Only user, assistant, and tool call
+ * request by the chat plugin. Only user, assistant, and tool call
  * messages are persisted.
  */
 class DrupalTempMessageStore {
@@ -74,8 +74,7 @@ class DrupalTempMessageStore {
    * Saves the conversation history, trimming for storage safety.
    *
    * Keeps the last $maxMessages messages to bound storage size.
-   * Context-window management is handled separately by the
-   * ShortTermMemoryInputProcessor.
+   * This also serves as the context-window safety net.
    *
    * @param \Symfony\AI\Platform\Message\MessageBag $messages
    *   The full conversation to persist.

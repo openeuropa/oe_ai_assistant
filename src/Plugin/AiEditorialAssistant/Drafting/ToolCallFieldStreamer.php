@@ -69,7 +69,7 @@ class ToolCallFieldStreamer {
    * with the full accumulated state if any fields changed. The diff is
    * used only to detect changes; the payload is the complete field map.
    * The JSON repair step is handled upstream by
-   * ChatPluginBase::repairPartialJson() before this method is called.
+   * the caller before this method is invoked.
    *
    * @param array $arguments
    *   Already-decoded associative array from the repaired tool call
