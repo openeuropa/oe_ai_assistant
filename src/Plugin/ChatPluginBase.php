@@ -171,12 +171,23 @@ abstract class ChatPluginBase extends AiAssistantPluginBase {
         // Build the event dispatcher for tool call lifecycle events.
         $eventDispatcher = new EventDispatcher();
 
-        // Register event emitter for tool call results.
+        // Register event emitter for tool call lifecycle.
+        // The ToolCallSucceeded event fires after each tool
+        // executes, giving us the ToolCall ID, name, and result.
+        // We emit tool-call-start here (not in streamDeltas)
+        // because the ToolCallStart delta may be consumed by
+        // AgentProcessor before our iterator sees it.
         $eventDispatcher->addListener(
           ToolCallSucceeded::class,
           function (ToolCallSucceeded $event) use ($writer): void {
             $toolCall = $event->getResult()->getToolCall();
             $result = $event->getResult()->getResult();
+
+            $writer->emit('tool-call-start', [
+              'id' => $this->uuid->generate(),
+              'toolCallId' => $toolCall->getId(),
+              'toolName' => $toolCall->getName(),
+            ]);
             $writer->emit('tool-call-end');
             $writer->emit('tool-result', [
               'toolCallId' => $toolCall->getId(),
@@ -605,15 +616,15 @@ abstract class ChatPluginBase extends AiAssistantPluginBase {
         $accumulatedText .= $delta->getText();
       }
       elseif ($delta instanceof ToolCallStart) {
+        // Close any open text segment before tool calls.
+        // The tool-call-start event itself is emitted by the
+        // ToolCallSucceeded listener, not here, because the
+        // ToolCallStart delta may not always reach our iterator
+        // (provider-dependent behavior).
         if ($textStarted) {
           $writer->emit('text-end');
           $textStarted = FALSE;
         }
-        $writer->emit('tool-call-start', [
-          'id' => $this->uuid->generate(),
-          'toolCallId' => $delta->getId(),
-          'toolName' => $delta->getName(),
-        ]);
       }
       elseif ($delta instanceof ToolInputDelta) {
         $writer->emit('tool-call-delta', [
