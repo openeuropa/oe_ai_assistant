@@ -4,17 +4,13 @@ declare(strict_types=1);
 
 namespace Drupal\oe_ai_assistant\Plugin\AiEditorialAssistant\Drafting;
 
-use Drupal\oe_ai_assistant\Transporter\DrupalSseTransporter;
-use Swis\AgUiServer\Events\StateDeltaEvent;
-use Swis\AgUiServer\Events\StateSnapshotEvent;
-
 /**
- * Streams drafted field values as AG-UI state events.
+ * Streams drafted field values as Data Stream Protocol events.
  *
  * Receives already-decoded tool call arguments (repaired by the
  * LLM streaming loop), extracts and filters field values, diffs
- * against the previous state, and emits AG-UI StateDelta /
- * StateSnapshot events via the SSE transporter.
+ * against the previous state, and emits data-drafted-fields events
+ * via the provided emitter callable.
  */
 class ToolCallFieldStreamer {
 
@@ -35,21 +31,22 @@ class ToolCallFieldStreamer {
   /**
    * Constructs a ToolCallFieldStreamer.
    *
-   * @param \Drupal\oe_ai_assistant\Transporter\DrupalSseTransporter $transporter
-   *   The SSE transporter for sending AG-UI events.
+   * @param \Closure $emitter
+   *   A callable with signature fn(string $type, array $data): void
+   *   for emitting SSE events. Typically AiAssistantPluginBase::emitEvent().
    * @param array<string, mixed> $fieldIndex
    *   An associative array of known field names. Only fields whose
-   *   keys appear in this index will be included in state events.
+   *   keys appear in this index will be included in data events.
    */
   public function __construct(
-    private readonly DrupalSseTransporter $transporter,
+    private readonly \Closure $emitter,
     private readonly array $fieldIndex,
   ) {}
 
   /**
    * Emits the initial empty-state snapshot (idempotent).
    *
-   * Sends a StateSnapshotEvent with an empty draftedFields array.
+   * Sends a data-drafted-fields event with an empty object.
    * Subsequent calls are no-ops.
    */
   public function emitInitialSnapshot(): void {
@@ -58,18 +55,21 @@ class ToolCallFieldStreamer {
     }
 
     $this->initialized = TRUE;
-    $this->transporter->sendEvent(
-      new StateSnapshotEvent(['draftedFields' => []]),
-    );
+    ($this->emitter)('data-drafted-fields', [
+      'data' => (object) [],
+      'transient' => TRUE,
+    ]);
   }
 
   /**
    * Processes decoded tool call arguments from the LLM stream.
    *
    * Extracts and filters fields against the field index, diffs
-   * against the previous state, and emits a StateDeltaEvent if any
-   * fields changed. The JSON repair step is handled upstream by
-   * LlmStreamingLoop before this method is called.
+   * against the previous state, and emits a data-drafted-fields event
+   * with the full accumulated state if any fields changed. The diff is
+   * used only to detect changes; the payload is the complete field map.
+   * The JSON repair step is handled upstream by
+   * the caller before this method is invoked.
    *
    * @param array $arguments
    *   Already-decoded associative array from the repaired tool call
@@ -91,23 +91,29 @@ class ToolCallFieldStreamer {
     // Compute the diff between previous and current state.
     $ops = $this->diff($this->previousState, $fields);
 
-    // Emit a delta event only when there are actual changes.
+    // Emit a data event only when there are actual changes.
     if (!empty($ops)) {
-      $this->transporter->sendEvent(new StateDeltaEvent($ops));
+      ($this->emitter)('data-drafted-fields', [
+        'data' => $fields,
+        'transient' => TRUE,
+      ]);
       $this->previousState = $fields;
     }
   }
 
   /**
-   * Emits a final reconciliation snapshot with the complete field state.
+   * Emits a final reconciliation event with the complete field state.
+   *
+   * Unlike transient delta events, this event has no transient flag
+   * so it is persisted in the message history on the frontend.
    *
    * @param array<string, mixed> $fields
-   *   The final drafted fields to include in the snapshot.
+   *   The final drafted fields to include in the event.
    */
   public function emitFinalSnapshot(array $fields): void {
-    $this->transporter->sendEvent(
-      new StateSnapshotEvent(['draftedFields' => $fields]),
-    );
+    ($this->emitter)('data-drafted-fields', [
+      'data' => $fields,
+    ]);
   }
 
   /**
@@ -135,8 +141,6 @@ class ToolCallFieldStreamer {
       $escaped = str_replace('/', '~1', $escaped);
 
       if (!array_key_exists($name, $old)) {
-        // New field: add the whole value (including formatted text
-        // objects) so the parent path exists for future patches.
         $ops[] = [
           'op' => 'add',
           'path' => '/draftedFields/' . $escaped,
@@ -144,8 +148,6 @@ class ToolCallFieldStreamer {
         ];
       }
       elseif ($old[$name] !== $value) {
-        // Changed field: for formatted text (array with "value" key
-        // where old is also an array), replace only the value subkey.
         if (is_array($value) && isset($value['value']) && is_array($old[$name])) {
           $ops[] = [
             'op' => 'replace',

@@ -18,11 +18,13 @@
         "drupal/ai_agents": "^1.3@beta",
         "drupal/ai_provider_mistral": "^1.1@RC",
         "justinrainbow/json-schema": "^5.0 || ^6.0",
-        "swisnl/ag-ui-server": "^0.5"
+        "symfony/ai-agent": "^0.6",
+        "symfony/ai-mistral-platform": "^0.6",
+        "symfony/ai-open-ai-platform": "^0.6",
+        "symfony/ai-platform": "^0.6"
     },
     "require-dev": {
         "composer/installers": "^2.0",
-        "drupal/agui": "^1.0@RC",
         "drupal/ai_provider_openai": "^1.2",
         "drupal/core-composer-scaffold": "^11",
         "drupal/core-dev": "^11",
@@ -50,9 +52,6 @@
         "patches": {
             "drupal/ai": {
                 "#3579967: Buffer corrupts HTML with relative URLs in streamed responses": "patches/ai-3579967-streaming-buffer-relative-urls.patch"
-            },
-            "drupal/ai_provider_mistral": {
-                "Streaming chunk loss: advance-before-yield overwrites shared Response object": "patches/ai-provider-mistral-streaming-chunk-loss.patch"
             }
         },
         "installer-paths": {

@@ -69,11 +69,15 @@ export function useEchoStream(): UseEchoStreamReturn {
               .split("\n")
               .find((l) => l.startsWith("data: "));
             if (dataLine) {
-              const parsed = JSON.parse(dataLine.slice(6));
-              // The Drupal backend wraps payloads in AG-UI CUSTOM
-              // events ({ type, name, value }), while the mock dev
-              // server sends raw payloads. Handle both formats.
-              const event = (parsed.value ?? parsed) as EchoStreamEvent;
+              const raw = dataLine.slice(6);
+              // Skip the [DONE] sentinel -- it is not valid JSON.
+              if (raw === "[DONE]") continue;
+              const parsed = JSON.parse(raw);
+              // The backend sends data-echo events in the UI Message
+              // Stream format: { type: "data-echo", data: { word, index,
+              // done } }. Extract the payload from the data field. Also
+              // handle raw payloads for backward compatibility.
+              const event = (parsed.data ?? parsed) as EchoStreamEvent;
               // Read current words from the store and append.
               const current = getEchoState();
               setEchoState({ words: [...current.words, event.word] });

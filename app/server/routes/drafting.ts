@@ -12,7 +12,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { Router } from "express";
-import { sendEvent, setupSseResponse } from "../lib/sse";
+import { sendDone, sendEvent, setupSseResponse } from "../lib/sse";
 import type {
   ChatOptions,
   DraftingService,
@@ -41,18 +41,17 @@ function loadSchema(bundle: string): object | null {
  * Creates the drafting router. Receives a DraftingService
  * instance created at server startup.
  */
-export function createDraftingRouter(
-  service: DraftingService,
-): Router {
+export function createDraftingRouter(service: DraftingService): Router {
   const router = Router();
 
   /**
    * POST /chat - Stream AI chat responses via SSE.
    *
-   * Parses the AG-UI request format, loads the content type
-   * schema, and delegates to DraftingService.chat(). Yielded
-   * AG-UI events are written to the SSE response. Each event
-   * flushes individually for progressive streaming.
+   * Parses the request body (supports both legacy AG-UI format
+   * and the new Data Stream Protocol format), loads the content
+   * type schema, and delegates to DraftingService.chat(). Yielded
+   * events are written to the SSE response. Each event flushes
+   * individually for progressive streaming.
    */
   router.post("/chat", async (req, res) => {
     // Parse request body.
@@ -86,11 +85,8 @@ export function createDraftingRouter(
     const forwardedProps =
       (body.forwardedProps as Record<string, string>) ?? {};
     const entityTypeId =
-      forwardedProps.entityTypeId ??
-      (body.entityTypeId as string) ??
-      "node";
-    const bundle =
-      forwardedProps.bundle ?? (body.bundle as string) ?? "";
+      forwardedProps.entityTypeId ?? (body.entityTypeId as string) ?? "node";
+    const bundle = forwardedProps.bundle ?? (body.bundle as string) ?? "";
 
     // Load the content type schema from a static JSON file.
     const schema = bundle ? loadSchema(bundle) : null;
@@ -103,9 +99,9 @@ export function createDraftingRouter(
     // Set up SSE response.
     setupSseResponse(res);
 
-    // Stream AG-UI events from the service to the response.
-    // Each event is written and flushed individually for
-    // progressive streaming.
+    // Stream Data Stream Protocol events from the service to
+    // the response. Each event is written and flushed individually
+    // for progressive streaming.
     try {
       for await (const event of service.chat({
         message,
@@ -123,13 +119,14 @@ export function createDraftingRouter(
       console.error("SSE stream error:", err);
     }
 
+    // Send the [DONE] sentinel to signal stream termination.
+    sendDone(res);
     res.end();
   });
 
   /** POST /reset - Clear conversation thread. */
   router.post("/reset", (req, res) => {
-    const threadId = (req.body as { threadId?: string })
-      ?.threadId;
+    const threadId = (req.body as { threadId?: string })?.threadId;
     res.json(service.reset(threadId));
   });
 
@@ -144,15 +141,12 @@ export function createDraftingRouter(
     if (!entityTypeId || !bundle || !fields) {
       res.status(400).json({
         code: "bad_request",
-        message:
-          "entityTypeId, bundle, and fields are required",
+        message: "entityTypeId, bundle, and fields are required",
       });
       return;
     }
 
-    res.json(
-      service.save({ entityTypeId, bundle, fields }),
-    );
+    res.json(service.save({ entityTypeId, bundle, fields }));
   });
 
   return router;

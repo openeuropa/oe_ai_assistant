@@ -4,8 +4,6 @@ services:
 
   Drupal\oe_ai_assistant\Service\RequestValidator: {}
 
-  Drupal\oe_ai_assistant\Service\ManifestReader: {}
-
   Drupal\oe_ai_assistant\Service\ContentTypeSchemaExtractor:
     arguments:
       - '@entity_field.manager'
@@ -25,11 +23,9 @@ services:
       - '@entity_field.manager'
       - '@content_moderation.moderation_information'
 
-  Drupal\oe_ai_assistant\Service\ConversationHistory:
-    arguments:
-      - '@tempstore.private'
-
-  Drupal\oe_ai_assistant\Service\LlmStreamingLoop:
+  Drupal\oe_ai_assistant\Service\AgentFactory:
     arguments:
       - '@ai.provider'
-      - '@uuid'
+      - '@plugin.manager.ai.function_calls'
+      - '@config.factory'
+      - '@key.repository'

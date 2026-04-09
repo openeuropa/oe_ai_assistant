@@ -9,17 +9,13 @@ use Drupal\oe_ai_assistant\Plugin\AiAssistantPluginBase;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\HttpFoundation\ServerEvent;
 
 /**
  * Echo plugin: streams back the request message word by word via SSE.
  *
- * This is a development/testing plugin that demonstrates the SSE streaming
- * pattern without requiring a real AI backend. Uses custom AG-UI events
- * via the swisnl/ag-ui-server package.
- *
- * The plugin exposes a single action:
- *   /api/ai/plugins/echo/stream -- accepts a message and echoes it back
- *                                   word by word with a small delay.
+ * Development/testing plugin that demonstrates SSE streaming without
+ * a real AI backend.
  */
 #[AiEditorialAssistant(
   id: 'echo',
@@ -30,21 +26,6 @@ class EchoPlugin extends AiAssistantPluginBase {
 
   /**
    * {@inheritdoc}
-   *
-   * This plugin has no additional service dependencies beyond what the base
-   * class provides, so no container wiring is needed.
-   *
-   * @param \Symfony\Component\DependencyInjection\ContainerInterface $container
-   *   The Drupal service container.
-   * @param array $configuration
-   *   Plugin configuration.
-   * @param string $plugin_id
-   *   Plugin ID.
-   * @param mixed $plugin_definition
-   *   Plugin definition.
-   *
-   * @return static
-   *   A new instance of this plugin.
    */
   public static function create(
     ContainerInterface $container,
@@ -57,12 +38,6 @@ class EchoPlugin extends AiAssistantPluginBase {
 
   /**
    * {@inheritdoc}
-   *
-   * Maps the "stream" action to the stream() method. This is the only
-   * action this plugin supports.
-   *
-   * @return array<string, callable>
-   *   Map of action name to callable.
    */
   public function getActionMap(): array {
     return [
@@ -72,12 +47,6 @@ class EchoPlugin extends AiAssistantPluginBase {
 
   /**
    * {@inheritdoc}
-   *
-   * Maps the "stream" action to its JSON Schema for request validation.
-   * The EchoRequest schema requires a non-empty "message" string.
-   *
-   * @return array<string, string>
-   *   Map of action name to schema name.
    */
   public function getRequestSchemas(): array {
     return [
@@ -88,13 +57,6 @@ class EchoPlugin extends AiAssistantPluginBase {
   /**
    * Streams the message back word by word as SSE events.
    *
-   * Splits the incoming message on whitespace and emits one AG-UI custom
-   * event per word. Each event carries the word, its zero-based index, and
-   * a "done" flag set to TRUE on the last word.
-   *
-   * A 75 ms delay is inserted between words to simulate the cadence of a
-   * real LLM token stream. The delay is skipped for the final word.
-   *
    * @param \Symfony\Component\HttpFoundation\Request $request
    *   The incoming request with a validated EchoRequest body.
    *
@@ -104,41 +66,30 @@ class EchoPlugin extends AiAssistantPluginBase {
   public function stream(Request $request): Response {
     $body = $this->decodeJsonBody($request);
     $message = $body['message'] ?? '';
-
-    // Split the message into tokens on any run of whitespace.
-    // PREG_SPLIT_NO_EMPTY ensures consecutive spaces do not produce
-    // empty string tokens.
     $words = preg_split('/\s+/', $message, -1, PREG_SPLIT_NO_EMPTY);
 
-    return $this->createSseResponse(function () use ($words): void {
-      // Disable PHP's execution time limit for the streaming callback.
+    return $this->createSseResponse(function ($response) use ($words): void {
       set_time_limit(0);
-
-      // Initialize the AG-UI state manager. Even though this plugin does
-      // not emit run lifecycle events (RUN_STARTED / RUN_FINISHED), the
-      // state object is available for future extension.
-      $state = $this->createAgUiState();
 
       $total = count($words);
       foreach ($words as $index => $word) {
-        // Emit a custom AG-UI event named "echo". The frontend's Echo plugin
-        // listens for this event type and renders each word progressively.
-        // The custom event wraps the echo-specific payload (word, index, done)
-        // inside the AG-UI Custom event type.
-        $state->custom('echo', [
-          'word' => $word,
-          'index' => $index,
-          // Signal to the frontend that no more words will follow.
-          'done' => $index === $total - 1,
-        ]);
+        $last = $index === $total - 1;
+        $json = json_encode([
+          'type' => 'data-echo',
+          'data' => [
+            'word' => $word,
+            'index' => $index,
+            'done' => $last,
+          ],
+        ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE);
+        $response->sendEvent(new ServerEvent($json));
 
-        // Simulate per-token streaming delay between words. Skip the delay
-        // for the last word so the stream closes promptly.
-        if ($index < $total - 1) {
-          // 75 000 microseconds = 75 ms per word.
+        if (!$last) {
           usleep(75000);
         }
       }
+
+      $response->sendEvent(new ServerEvent('[DONE]'));
     });
   }
 

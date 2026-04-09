@@ -3,26 +3,23 @@
  *
  * Mirrors DraftingPlugin.php method-for-method. Each method has
  * a JSDoc comment referencing the corresponding PHP method. The
- * service yields AG-UI protocol events as an AsyncGenerator;
+ * service yields Data Stream Protocol events as an AsyncGenerator;
  * the route handler writes them to the SSE response.
  */
 
+import { randomUUID } from "node:crypto";
 import type { Mistral } from "@mistralai/mistralai";
 import type {
   AssistantMessage,
   ToolMessage,
 } from "@mistralai/mistralai/models/components";
-import { randomUUID } from "node:crypto";
 import { MISTRAL_MODEL } from "../config";
-import type {
-  ChatMessage,
-  ConversationStore,
-} from "./conversation-store";
+import type { ChatMessage, ConversationStore } from "./conversation-store";
 
 // -- Types -------------------------------------------------------
 
-/** AG-UI event yielded by the service. */
-export interface AgUiEvent {
+/** Data Stream Protocol event yielded by the service. */
+export interface StreamEvent {
   type: string;
   [key: string]: unknown;
 }
@@ -79,16 +76,14 @@ export class DraftingService {
   // -- Public methods --------------------------------------------
 
   /**
-   * Streams AI chat responses via AG-UI SSE events.
+   * Streams AI chat responses via Data Stream Protocol SSE events.
    * Mirrors DraftingPlugin::chat() (lines 128-184) and
    * createStreamResponse() (lines 340-406).
    */
-  async *chat(
-    opts: ChatOptions,
-  ): AsyncGenerator<AgUiEvent> {
+  async *chat(opts: ChatOptions): AsyncGenerator<StreamEvent> {
     const { message, threadId: inputThreadId, schema } = opts;
 
-    const runId = randomUUID();
+    const messageId = randomUUID();
     const threadId = inputThreadId || randomUUID();
     const systemPrompt = this.buildSystemPrompt(schema);
     const fieldIndex = this.buildFieldIndex(schema);
@@ -96,11 +91,9 @@ export class DraftingService {
     // Parse [fields:name1,name2] tag from the user message.
     // Request-scoped to avoid concurrency issues.
     const fieldsMatch = message.match(/\[fields:([^\]]+)\]/);
-    const fieldsToStream = fieldsMatch
-      ? fieldsMatch[1]!.split(",")
-      : [];
+    const fieldsToStream = fieldsMatch ? fieldsMatch[1]!.split(",") : [];
 
-    yield { type: "RUN_STARTED", runId, threadId };
+    yield { type: "start", messageId };
 
     try {
       // Load conversation history.
@@ -135,13 +128,16 @@ export class DraftingService {
       }
       this.store.save(threadId, history);
     } catch (err) {
-      const errorMessage =
-        err instanceof Error ? err.message : String(err);
+      const errorMessage = err instanceof Error ? err.message : String(err);
       console.error("Error in drafting chat:", errorMessage);
-      yield { type: "RUN_ERROR", message: errorMessage };
+      yield { type: "error", errorText: errorMessage };
     }
 
-    yield { type: "RUN_FINISHED", runId, threadId };
+    yield {
+      type: "finish",
+      finishReason: "stop",
+      usage: { inputTokens: 0, outputTokens: 0 },
+    };
   }
 
   /**
@@ -160,14 +156,12 @@ export class DraftingService {
    * Mirrors DraftingPlugin::save() (lines 204-228).
    * Returns fake nodeId and previewUrl since there is no CMS.
    */
-  save(body: {
+  save(_body: {
     entityTypeId?: string;
     bundle?: string;
     fields?: Record<string, unknown>;
   }): { nodeId: string; previewUrl: string } {
-    const nodeId = String(
-      Math.floor(Math.random() * 90000) + 10000,
-    );
+    const nodeId = String(Math.floor(Math.random() * 90000) + 10000);
     return {
       nodeId,
       previewUrl: `/node/${nodeId}/latest`,
@@ -180,9 +174,7 @@ export class DraftingService {
    * Builds the system prompt with content type schema.
    * Mirrors DraftingPlugin::buildSystemPrompt() (lines 233-273).
    */
-  private buildSystemPrompt(
-    schema: ContentTypeSchema | null,
-  ): string {
+  private buildSystemPrompt(schema: ContentTypeSchema | null): string {
     let prompt = `You are a content drafting assistant for a CMS editorial workflow.
 
 You can have normal conversations with the editor. Answer questions, discuss
@@ -206,8 +198,7 @@ does not involve generating content, respond normally in plain text. Do NOT
 call the draft_content tool for conversational responses.`;
 
     if (schema) {
-      prompt +=
-        "\n\nContent type schema:\n" + JSON.stringify(schema);
+      prompt += `\n\nContent type schema:\n${JSON.stringify(schema)}`;
     }
 
     return prompt;
@@ -224,18 +215,17 @@ call the draft_content tool for conversational responses.`;
         function: {
           name: "draft_content",
           description:
-            "Produce a complete set of field values for the "
-            + "content type. Field names and value shapes must "
-            + "match the content type schema provided in the "
-            + "system prompt. Always return ALL fields.",
+            "Produce a complete set of field values for the " +
+            "content type. Field names and value shapes must " +
+            "match the content type schema provided in the " +
+            "system prompt. Always return ALL fields.",
           parameters: {
             type: "object" as const,
             properties: {
               fields: {
                 type: "object",
                 description:
-                  "Complete field values keyed by field "
-                  + "machine name.",
+                  "Complete field values keyed by field " + "machine name.",
               },
             },
             required: ["fields"],
@@ -249,9 +239,7 @@ call the draft_content tool for conversational responses.`;
    * Builds a flat field index from the content type schema.
    * Mirrors DraftingPlugin::buildFieldIndex() (lines 290-307).
    */
-  private buildFieldIndex(
-    schema: ContentTypeSchema | null,
-  ): FieldIndex {
+  private buildFieldIndex(schema: ContentTypeSchema | null): FieldIndex {
     if (!schema) return {};
     const index: FieldIndex = {};
     for (const group of schema.groups) {
@@ -271,22 +259,20 @@ call the draft_content tool for conversational responses.`;
     fields: Record<string, unknown>;
     message: string;
   } {
-    const fields = (args.fields ?? args) as Record<
-      string,
-      unknown
-    >;
+    const fields = (args.fields ?? args) as Record<string, unknown>;
     return {
       success: true,
       fields,
       message:
-        "Draft content generated with "
-        + Object.keys(fields).length
-        + " fields.",
+        "Draft content generated with " +
+        Object.keys(fields).length +
+        " fields.",
     };
   }
 
   /**
-   * Yields a STATE_SNAPSHOT event with all drafted field values.
+   * Yields a data-drafted-fields event with all drafted field
+   * values.
    *
    * Mirrors the PHP backend behavior: all fields arrive as a
    * single snapshot after the tool call completes. No incremental
@@ -297,9 +283,9 @@ call the draft_content tool for conversational responses.`;
    */
   private *streamFieldEvents(
     fields: Record<string, unknown>,
-    fieldIndex: FieldIndex,
+    _fieldIndex: FieldIndex,
     fieldsToStream: string[],
-  ): Generator<AgUiEvent> {
+  ): Generator<StreamEvent> {
     // Filter to target fields on regeneration.
     let targetFields = fields;
     if (fieldsToStream.length > 0) {
@@ -311,14 +297,15 @@ call the draft_content tool for conversational responses.`;
     }
 
     // Emit a single snapshot with all field values at once.
+    // No transient flag -- this is the final reconciliation.
     yield {
-      type: "STATE_SNAPSHOT",
-      snapshot: { draftedFields: { ...targetFields } },
+      type: "data-drafted-fields",
+      data: { ...targetFields },
     };
   }
 
   /**
-   * Executes tool calls and yields AG-UI events.
+   * Executes tool calls and yields Data Stream Protocol events.
    * Mirrors DraftingPlugin::executeToolCalls() (lines 585-614).
    *
    * Uses a synchronous generator so the caller (runLlmLoop) can
@@ -333,7 +320,7 @@ call the draft_content tool for conversational responses.`;
     }>,
     fieldIndex: FieldIndex,
     fieldsToStream: string[],
-  ): Generator<AgUiEvent, ToolMessage[]> {
+  ): Generator<StreamEvent, ToolMessage[]> {
     const toolMessages: ToolMessage[] = [];
 
     for (const toolCall of toolCalls) {
@@ -357,20 +344,13 @@ call the draft_content tool for conversational responses.`;
         );
       }
 
-      // TOOL_CALL_RESULT tells the AG-UI adapter the tool completed
-      // successfully, which transitions the tool UI to "complete"
-      // status (green tick). Must arrive before TOOL_CALL_END.
+      // tool-call-end closes the tool call, then tool-result
+      // tells the client the tool completed successfully.
+      yield { type: "tool-call-end" };
       yield {
-        type: "TOOL_CALL_RESULT",
-        messageId: crypto.randomUUID(),
+        type: "tool-result",
         toolCallId: toolCall.id,
-        role: "tool",
-        content: JSON.stringify(result),
-      };
-
-      yield {
-        type: "TOOL_CALL_END",
-        toolCallId: toolCall.id,
+        result,
       };
     }
 
@@ -378,14 +358,14 @@ call the draft_content tool for conversational responses.`;
   }
 
   /**
-   * Runs the LLM with tool loop, yielding AG-UI events.
-   * Mirrors DraftingPlugin::runLlmLoop() (lines 418-570).
+   * Runs the LLM with tool loop, yielding Data Stream Protocol
+   * events. Mirrors DraftingPlugin::runLlmLoop() (lines 418-570).
    *
    * @param systemPrompt - The system prompt with schema.
    * @param messages - Conversation history (mutated in place).
    * @param fieldIndex - Flat field index for streaming.
    * @param fieldsToStream - Field names to stream progressively.
-
+   *
    * @returns The final assistant text message.
    */
   private async *runLlmLoop(
@@ -393,12 +373,14 @@ call the draft_content tool for conversational responses.`;
     messages: ChatMessage[],
     fieldIndex: FieldIndex,
     fieldsToStream: string[],
-  ): AsyncGenerator<AgUiEvent, string> {
+  ): AsyncGenerator<StreamEvent, string> {
     let fullMessage = "";
 
     for (let i = 0; i < DraftingService.MAX_ITERATIONS; i++) {
+      let textPartId = randomUUID();
 
-      let messageId = randomUUID();
+      // Emit start-step before each LLM call.
+      yield { type: "start-step" };
 
       // Build the messages array for the Mistral API call.
       const apiMessages: ChatMessage[] = [
@@ -424,7 +406,6 @@ call the draft_content tool for conversational responses.`;
 
       // Iterate over streaming chunks from the Mistral API.
       for await (const event of stream) {
-  
         const delta = event.data.choices[0]?.delta;
         if (!delta) continue;
 
@@ -433,16 +414,14 @@ call the draft_content tool for conversational responses.`;
         if (typeof text === "string" && text.length > 0) {
           if (!messageStarted) {
             yield {
-              type: "TEXT_MESSAGE_START",
-              messageId,
-              role: "assistant",
+              type: "text-start",
+              id: textPartId,
             };
             messageStarted = true;
           }
           yield {
-            type: "TEXT_MESSAGE_CONTENT",
-            messageId,
-            delta: text,
+            type: "text-delta",
+            textDelta: text,
           };
           streamedText += text;
         }
@@ -457,29 +436,24 @@ call the draft_content tool for conversational responses.`;
               toolCallMap.set(idx, {
                 id: tc.id ?? randomUUID(),
                 name: tc.function?.name ?? "",
-                arguments: String(
-                  tc.function?.arguments ?? "",
-                ),
+                arguments: String(tc.function?.arguments ?? ""),
               });
             } else {
               if (tc.function?.name) {
                 existing.name += tc.function.name;
               }
               if (tc.function?.arguments != null) {
-                existing.arguments += String(
-                  tc.function.arguments,
-                );
+                existing.arguments += String(tc.function.arguments);
               }
             }
           }
         }
       }
 
-      // Close text message if one was started.
+      // Close text part if one was started.
       if (messageStarted) {
-        yield { type: "TEXT_MESSAGE_END", messageId };
+        yield { type: "text-end" };
       }
-
 
       // Process assembled tool calls (if any).
       const assembledTools = Array.from(toolCallMap.values());
@@ -494,12 +468,13 @@ call the draft_content tool for conversational responses.`;
           },
         }));
 
-        // Yield TOOL_CALL_START events for each tool call.
+        // Yield tool-call-start events for each tool call.
         for (const tc of assembledTools) {
           yield {
-            type: "TOOL_CALL_START",
+            type: "tool-call-start",
+            id: randomUUID(),
             toolCallId: tc.id,
-            toolCallName: tc.name,
+            toolName: tc.name,
           };
         }
 
@@ -507,15 +482,13 @@ call the draft_content tool for conversational responses.`;
         const parsedToolCalls = assembledTools.map((tc) => ({
           id: tc.id,
           name: tc.name,
-          arguments: JSON.parse(tc.arguments) as Record<
-            string,
-            unknown
-          >,
+          arguments: JSON.parse(tc.arguments) as Record<string, unknown>,
         }));
 
-        // Execute tools and yield STATE_SNAPSHOT + TOOL_CALL_END
-        // events. Manual iteration is needed to extract the
-        // generator's return value (tool result messages).
+        // Execute tools and yield data-drafted-fields +
+        // tool-result events. Manual iteration is needed
+        // to extract the generator's return value (tool result
+        // messages).
         const gen = this.executeToolCalls(
           parsedToolCalls,
           fieldIndex,
@@ -528,6 +501,14 @@ call the draft_content tool for conversational responses.`;
         }
         const toolMessages = genResult.value;
 
+        // Emit finish-step after the tool execution completes.
+        yield {
+          type: "finish-step",
+          finishReason: "tool-calls",
+          usage: { inputTokens: 0, outputTokens: 0 },
+          isContinued: true,
+        };
+
         // Add assistant + tool messages to history for the next
         // iteration's context.
         const assistantMsg: AssistantMessage = {
@@ -538,12 +519,19 @@ call the draft_content tool for conversational responses.`;
         messages.push(assistantMsg);
         messages.push(...toolMessages);
 
-        // Generate new messageId for the next iteration.
-        messageId = randomUUID();
+        // Generate new text part ID for the next iteration.
+        textPartId = randomUUID();
         continue;
       }
 
-      // No tool calls: pure text response. Save and break.
+      // No tool calls: pure text response. Emit finish-step,
+      // save and break.
+      yield {
+          type: "finish-step",
+          finishReason: "stop",
+          usage: { inputTokens: 0, outputTokens: 0 },
+          isContinued: false,
+        };
       fullMessage = streamedText;
       break;
     }

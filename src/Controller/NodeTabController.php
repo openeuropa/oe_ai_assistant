@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Drupal\oe_ai_assistant\Controller;
 
 use Drupal\Core\Controller\ControllerBase;
-use Drupal\oe_ai_assistant\Service\ManifestReader;
 use Drupal\node\NodeInterface;
 use Drupal\node\NodeTypeInterface;
 use Symfony\Component\HttpFoundation\RequestStack;
@@ -25,10 +24,6 @@ class NodeTabController extends ControllerBase {
   /**
    * Constructs a NodeTabController instance.
    *
-   * @param \Drupal\oe_ai_assistant\Service\ManifestReader $manifestReader
-   *   Reads the Vite manifest to resolve hashed asset filenames for the
-   *   compiled React bundle. Injected for potential use in asset resolution;
-   *   the library attachment currently goes through Drupal's library system.
    * @param \Symfony\Component\HttpFoundation\RequestStack $requestStack
    *   Provides access to the current HTTP request, used here to derive the
    *   application base path for constructing the API base URL. This ensures
@@ -36,7 +31,6 @@ class NodeTabController extends ControllerBase {
    *   in a subdirectory (e.g. /mysite/api/ai rather than /api/ai).
    */
   public function __construct(
-    private readonly ManifestReader $manifestReader,
     private readonly RequestStack $requestStack,
   ) {}
 
