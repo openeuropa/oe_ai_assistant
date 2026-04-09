@@ -1,15 +1,17 @@
 # OpenEuropa AI Editorial Assistant
 
 Drupal 11 module that embeds an AI-powered editorial assistant into the CMS back-office. Provides a plugin-based
-architecture for AI features including content drafting, schema extraction, and streaming chat via AG-UI.
+architecture for AI features including content drafting, schema extraction, and streaming chat powered by
+Symfony AI.
 
 ## Requirements
 
 - Drupal 11
 - PHP 8.3+
 - [AI module](https://www.drupal.org/project/ai) (^1.3)
-- [AI Provider Mistral](https://www.drupal.org/project/ai_provider_mistral) (^1.1)
-- [AG-UI](https://www.drupal.org/project/agui) (^1.0)
+- [AI Agents](https://www.drupal.org/project/ai_agents) (^1.3)
+- [Symfony AI](https://github.com/symfony/ai) components (`symfony/ai-agent`, `symfony/ai-platform`,
+  `symfony/ai-mistral-platform`, `symfony/ai-open-ai-platform`) (^0.6)
 - Content Moderation (core)
 
 ## Installation
@@ -27,7 +29,8 @@ drush en oe_ai_assistant
 - **Content drafting** -- AI-assisted content creation with structured field output
 - **Schema extraction** -- generates content type schemas (data and form-aware modes) for LLM consumption
 - **Field mapping** -- maps AI-drafted fields to Drupal entities, including paragraphs
-- **SSE streaming** -- real-time streaming of AI responses via AG-UI protocol
+- **SSE streaming** -- real-time streaming of AI responses via Symfony `EventStreamResponse` using the
+  Vercel AI SDK UI Message Stream Protocol v1
 - **Request validation** -- validates API requests against OpenAPI schemas
 
 ### Bundled plugins
@@ -121,7 +124,7 @@ npm run dev          # Vite + Express mock API (standalone, no Drupal needed)
 npm run build        # Production IIFE bundle -> app/dist/
 npm run lint         # Biome check
 npm run typecheck    # TypeScript strict
-npm run test         # Vitest
+npm run test:e2e     # Playwright end-to-end tests
 npm run api:generate # Regenerate types from OpenAPI spec
 ```
 
