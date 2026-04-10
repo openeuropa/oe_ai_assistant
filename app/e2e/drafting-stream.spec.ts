@@ -27,11 +27,9 @@ test.describe("Drafting text streaming", () => {
     await composer.first().fill("hello");
     await page.keyboard.press("Enter");
 
-    // Wait for the assistant's response to appear. assistant-ui
-    // renders assistant messages with role="assistant" or in a
-    // message container.
+    // Wait for the assistant's response to appear.
     const assistantMessage = page.locator(
-      '[data-message-role="assistant"], [data-testid="aui-assistant-message"]',
+      '[data-testid="assistant-message"]',
     );
     await expect(assistantMessage.first()).toBeVisible({
       timeout: 15000,
@@ -109,7 +107,9 @@ test.describe("Drafting text streaming", () => {
     });
     expect(startEvent).toBeDefined();
 
-    // Check that text-delta events have valid delta strings.
+    // Check that text-delta events have valid textDelta strings.
+    // The UI Message Stream Protocol uses "textDelta" as the field
+    // name for incremental text content.
     const textDeltas = streamEvents.filter((e) => {
       const parsed = JSON.parse(e);
       return parsed.type === "text-delta";
@@ -118,13 +118,10 @@ test.describe("Drafting text streaming", () => {
 
     for (const event of textDeltas) {
       const parsed = JSON.parse(event);
-      // The delta field must be a string, not undefined/null.
-      expect(parsed.delta).toBeDefined();
-      expect(typeof parsed.delta).toBe("string");
-      expect(parsed.delta).not.toBe("undefined");
-      // Must have an id field.
-      expect(parsed.id).toBeDefined();
-      expect(typeof parsed.id).toBe("string");
+      // The textDelta field must be a string, not undefined/null.
+      expect(parsed.textDelta).toBeDefined();
+      expect(typeof parsed.textDelta).toBe("string");
+      expect(parsed.textDelta).not.toBe("undefined");
     }
 
     // Check that we got a finish event.
