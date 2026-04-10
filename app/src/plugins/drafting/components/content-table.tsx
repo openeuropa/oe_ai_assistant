@@ -190,8 +190,7 @@ export function ContentTable({ onRegenerate, onSave }: ContentTableProps) {
   // Apply a cosmetic typewriter effect: field values are revealed
   // character by character in parallel, giving the appearance of
   // live streaming even though all data arrives at once.
-  const { fields: displayFields } =
-    useTypewriterFields(draftedFields);
+  const { fields: displayFields } = useTypewriterFields(draftedFields);
   const fieldEntries = Object.entries(displayFields);
   const [showConfirm, setShowConfirm] = useState(false);
 
@@ -243,8 +242,7 @@ export function ContentTable({ onRegenerate, onSave }: ContentTableProps) {
             realField &&
             displayField &&
             displayField.value.length < realField.value.length;
-          const isFieldStreaming =
-            streamingFieldName === name || isTyping;
+          const isFieldStreaming = streamingFieldName === name || isTyping;
           return (
             <div
               key={name}

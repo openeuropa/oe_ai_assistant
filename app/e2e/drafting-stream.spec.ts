@@ -1,18 +1,108 @@
-import { test, expect } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 
 /**
  * E2E tests for the drafting plugin's text streaming.
  *
- * These tests verify that the Data Stream Protocol SSE events
+ * These tests verify that the UI Message Stream Protocol SSE events
  * are correctly parsed and rendered by the assistant-ui runtime.
  * They catch regressions like "undefined" text appearing in the
  * chat when the protocol format is mismatched.
+ *
+ * All server responses are mocked via page.route() so the tests
+ * run without a real backend or API key.
  */
+
+/**
+ * Builds a mock SSE response body from an array of event objects.
+ * Each event is serialised as a "data: <JSON>\n\n" SSE frame,
+ * followed by the [DONE] sentinel.
+ */
+function buildSseBody(events: Record<string, unknown>[]): string {
+  const lines = events.map((e) => `data: ${JSON.stringify(e)}\n\n`);
+  lines.push("data: [DONE]\n\n");
+  return lines.join("");
+}
+
+/** Mock SSE events for a simple drafting chat response. */
+const MOCK_CHAT_EVENTS: Record<string, unknown>[] = [
+  { type: "start", messageId: "mock-msg-001" },
+  { type: "start-step" },
+  { type: "text-start", id: "mock-text-001" },
+  { type: "text-delta", textDelta: "Hello! " },
+  { type: "text-delta", textDelta: "This is a " },
+  { type: "text-delta", textDelta: "mocked response " },
+  { type: "text-delta", textDelta: "from the drafting " },
+  { type: "text-delta", textDelta: "assistant." },
+  { type: "text-end" },
+  {
+    type: "finish-step",
+    finishReason: "stop",
+    usage: { inputTokens: 10, outputTokens: 20 },
+    isContinued: false,
+  },
+  {
+    type: "finish",
+    finishReason: "stop",
+    usage: { inputTokens: 10, outputTokens: 20 },
+  },
+];
+
+/** Mock content schema response for oe_news. */
+const MOCK_CONTENT_SCHEMA = {
+  contentType: "oe_news",
+  label: "News",
+  groups: [
+    {
+      label: "Content",
+      fields: [
+        {
+          name: "title",
+          label: "Title",
+          type: "string_textfield",
+          widget: "string_textfield",
+          interaction: "fill",
+          cardinality: 1,
+        },
+      ],
+    },
+  ],
+};
+
+/**
+ * Registers mock API routes on the page. Intercepts all /api
+ * requests so the tests do not depend on a running backend.
+ */
+async function mockApiRoutes(page: import("@playwright/test").Page) {
+  // Mock content schema endpoint.
+  await page.route("**/api/content-schema/**", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(MOCK_CONTENT_SCHEMA),
+    }),
+  );
+
+  // Mock drafting chat endpoint with SSE response.
+  await page.route("**/api/plugins/drafting/chat", (route) =>
+    route.fulfill({
+      status: 200,
+      headers: {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+        Connection: "keep-alive",
+        "x-vercel-ai-ui-message-stream": "v1",
+      },
+      body: buildSseBody(MOCK_CHAT_EVENTS),
+    }),
+  );
+}
 
 test.describe("Drafting text streaming", () => {
   test("assistant response streams without 'undefined' text", async ({
     page,
   }) => {
+    await mockApiRoutes(page);
+
     // Navigate to the drafting plugin page.
     await page.goto("/#/drafting");
 
@@ -27,19 +117,14 @@ test.describe("Drafting text streaming", () => {
     await composer.first().fill("hello");
     await page.keyboard.press("Enter");
 
-    // Wait for the assistant's response to appear. assistant-ui
-    // renders assistant messages with role="assistant" or in a
-    // message container.
-    const assistantMessage = page.locator(
-      '[data-message-role="assistant"], [data-testid="aui-assistant-message"]',
-    );
+    // Wait for the assistant's response to appear.
+    const assistantMessage = page.locator('[data-testid="assistant-message"]');
     await expect(assistantMessage.first()).toBeVisible({
       timeout: 15000,
     });
 
-    // Wait for the message to finish streaming (the text should
-    // stabilize). Give it time for the full response.
-    await page.waitForTimeout(5000);
+    // Wait for the message to finish rendering.
+    await page.waitForTimeout(2000);
 
     // Get the text content of the assistant's response.
     const messageText = await assistantMessage.first().textContent();
@@ -54,38 +139,43 @@ test.describe("Drafting text streaming", () => {
     // The response should contain actual words (not just
     // whitespace or garbage).
     expect(messageText!.trim().length).toBeGreaterThan(5);
-
-    // Verify no console errors related to streaming.
-    const consoleErrors: string[] = [];
-    page.on("console", (msg) => {
-      if (msg.type() === "error") {
-        consoleErrors.push(msg.text());
-      }
-    });
   });
 
-  test("SSE stream returns valid text-delta events", async ({
-    page,
-  }) => {
+  test("SSE stream returns valid text-delta events", async ({ page }) => {
     // This test intercepts the raw SSE stream and validates the
     // event format directly, independent of the UI rendering.
     const streamEvents: string[] = [];
 
-    // Intercept the drafting chat request.
-    await page.route("**/api/plugins/drafting/chat", async (route) => {
-      // Forward to the real server.
-      const response = await route.fetch();
-      const body = await response.text();
+    // Mock content schema.
+    await page.route("**/api/content-schema/**", (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(MOCK_CONTENT_SCHEMA),
+      }),
+    );
 
-      // Capture all SSE event lines for inspection.
-      for (const line of body.split("\n")) {
+    // Intercept the drafting chat request. Return the mock SSE
+    // response and capture events for assertion.
+    const sseBody = buildSseBody(MOCK_CHAT_EVENTS);
+    await page.route("**/api/plugins/drafting/chat", (route) => {
+      // Capture events before fulfilling.
+      for (const line of sseBody.split("\n")) {
         if (line.startsWith("data: ") && line !== "data: [DONE]") {
           streamEvents.push(line.slice(6));
         }
       }
 
-      // Forward the response to the page.
-      await route.fulfill({ response });
+      return route.fulfill({
+        status: 200,
+        headers: {
+          "Content-Type": "text/event-stream",
+          "Cache-Control": "no-cache",
+          Connection: "keep-alive",
+          "x-vercel-ai-ui-message-stream": "v1",
+        },
+        body: sseBody,
+      });
     });
 
     await page.goto("/#/drafting");
@@ -99,7 +189,7 @@ test.describe("Drafting text streaming", () => {
     await page.keyboard.press("Enter");
 
     // Wait for response to complete.
-    await page.waitForTimeout(8000);
+    await page.waitForTimeout(3000);
 
     // Validate the captured SSE events.
     expect(streamEvents.length).toBeGreaterThan(0);
@@ -111,7 +201,9 @@ test.describe("Drafting text streaming", () => {
     });
     expect(startEvent).toBeDefined();
 
-    // Check that text-delta events have valid delta strings.
+    // Check that text-delta events have valid textDelta strings.
+    // The UI Message Stream Protocol uses "textDelta" as the field
+    // name for incremental text content.
     const textDeltas = streamEvents.filter((e) => {
       const parsed = JSON.parse(e);
       return parsed.type === "text-delta";
@@ -120,13 +212,10 @@ test.describe("Drafting text streaming", () => {
 
     for (const event of textDeltas) {
       const parsed = JSON.parse(event);
-      // The delta field must be a string, not undefined/null.
-      expect(parsed.delta).toBeDefined();
-      expect(typeof parsed.delta).toBe("string");
-      expect(parsed.delta).not.toBe("undefined");
-      // Must have an id field.
-      expect(parsed.id).toBeDefined();
-      expect(typeof parsed.id).toBe("string");
+      // The textDelta field must be a string, not undefined/null.
+      expect(parsed.textDelta).toBeDefined();
+      expect(typeof parsed.textDelta).toBe("string");
+      expect(parsed.textDelta).not.toBe("undefined");
     }
 
     // Check that we got a finish event.

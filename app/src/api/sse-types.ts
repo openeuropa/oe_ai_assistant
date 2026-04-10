@@ -29,14 +29,12 @@ export interface TextStartEvent {
 /** Emitted for each text content delta. */
 export interface TextDeltaEvent {
   type: "text-delta";
-  id: string;
-  delta: string;
+  textDelta: string;
 }
 
 /** Emitted when a text part ends. */
 export interface TextEndEvent {
   type: "text-end";
-  id: string;
 }
 
 /** Emitted when tool input streaming begins. */

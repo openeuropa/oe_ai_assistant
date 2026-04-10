@@ -11,9 +11,9 @@
  * imports would evaluate before dotenv.config() runs).
  */
 
-import { config } from "dotenv";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { config } from "dotenv";
 
 // Load .env before any other modules read env vars.
 // The server runs as a standalone Node process via tsx,
@@ -29,15 +29,9 @@ async function start(): Promise<void> {
   const { createMistralClient } = await import("./lib/mistral");
   const { echoRouter } = await import("./routes/echo");
   const { notesRouter } = await import("./routes/notes");
-  const { createDraftingRouter } = await import(
-    "./routes/drafting"
-  );
-  const { ConversationStore } = await import(
-    "./services/conversation-store"
-  );
-  const { DraftingService } = await import(
-    "./services/drafting-service"
-  );
+  const { createDraftingRouter } = await import("./routes/drafting");
+  const { ConversationStore } = await import("./services/conversation-store");
+  const { DraftingService } = await import("./services/drafting-service");
 
   const app = express();
 
@@ -53,38 +47,30 @@ async function start(): Promise<void> {
   // the Drupal /api/ai/content-schema/{entityTypeId}/{bundle}
   // endpoint. The frontend fetches this to resolve field labels,
   // types, and inline entity definitions.
-  app.get(
-    "/api/content-schema/:entityTypeId/:bundle",
-    (req, res) => {
-      const { bundle } = req.params;
-      const fixturePath = join(
-        import.meta.dirname,
-        "fixtures",
-        `content-schema-${bundle}.json`,
-      );
-      try {
-        const data = readFileSync(fixturePath, "utf-8");
-        res.type("json").send(data);
-      } catch {
-        res.status(404).json({
-          error: `No schema fixture for bundle "${bundle}"`,
-        });
-      }
-    },
-  );
+  app.get("/api/content-schema/:entityTypeId/:bundle", (req, res) => {
+    const { bundle } = req.params;
+    const fixturePath = join(
+      import.meta.dirname,
+      "fixtures",
+      `content-schema-${bundle}.json`,
+    );
+    try {
+      const data = readFileSync(fixturePath, "utf-8");
+      res.type("json").send(data);
+    } catch {
+      res.status(404).json({
+        error: `No schema fixture for bundle "${bundle}"`,
+      });
+    }
+  });
 
   // Mount route modules.
   app.use("/api/plugins/echo", echoRouter);
   app.use("/api/plugins/notes", notesRouter);
-  app.use(
-    "/api/plugins/drafting",
-    createDraftingRouter(draftingService),
-  );
+  app.use("/api/plugins/drafting", createDraftingRouter(draftingService));
 
   app.listen(PORT, () => {
-    console.log(
-      `Dev API server running at http://localhost:${PORT}`,
-    );
+    console.log(`Dev API server running at http://localhost:${PORT}`);
   });
 }
 

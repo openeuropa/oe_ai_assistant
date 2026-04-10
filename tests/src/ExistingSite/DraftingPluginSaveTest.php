@@ -51,6 +51,7 @@ class DraftingPluginSaveTest extends ExistingSiteBase {
     $this->loginUser($user);
 
     $result = $this->httpPost('/api/ai/plugins/drafting/save', [
+      'entityTypeId' => 'node',
       'bundle' => 'oe_news',
       'fields' => [
         'title' => 'Test Save',
@@ -82,6 +83,7 @@ class DraftingPluginSaveTest extends ExistingSiteBase {
     $this->loginUser($user);
 
     $result = $this->httpPost('/api/ai/plugins/drafting/save', [
+      'entityTypeId' => 'node',
       'bundle' => 'nonexistent_bundle',
       'fields' => [
         'title' => 'x',
@@ -102,6 +104,7 @@ class DraftingPluginSaveTest extends ExistingSiteBase {
     $this->loginUser($user);
 
     $result = $this->httpPost('/api/ai/plugins/drafting/save', [
+      'entityTypeId' => 'node',
       'bundle' => 'oe_news',
       'fields' => [
         'title' => 'Fail',

@@ -8,4 +8,5 @@ composer.lock
 .env
 /dist
 .phpunit.result.cache
-/app/test-results/
+test-results
+

@@ -170,9 +170,7 @@ function TypingIndicator() {
  * arrives.
  */
 function AssistantMessage() {
-  const hasContent = useAuiState(
-    (s) => (s.message?.content?.length ?? 0) > 0,
-  );
+  const hasContent = useAuiState((s) => (s.message?.content?.length ?? 0) > 0);
 
   // Show pulsating dots while waiting for the first content
   // part (text or tool call) to arrive from the backend.
@@ -185,12 +183,13 @@ function AssistantMessage() {
   }
 
   return (
-    <MessagePrimitive.Root className="mb-4 flex justify-start">
+    <MessagePrimitive.Root
+      className="mb-4 flex justify-start"
+      data-testid="assistant-message"
+    >
       <div className="max-w-[80%]">
         <div className="rounded-lg bg-gray-100 px-4 py-2 text-gray-900">
-          <MessagePrimitive.Content
-            components={{ Text: AssistantText }}
-          />
+          <MessagePrimitive.Content components={{ Text: AssistantText }} />
         </div>
         <MessageError />
       </div>

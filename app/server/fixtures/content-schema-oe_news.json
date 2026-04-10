@@ -1,1 +1,172 @@
-{"contentType":"oe_news","label":"News","groups":[{"label":"Content","fields":[{"name":"body","label":"Body","type":"html","widget":"textarea_formatted_summary","interaction":"draft","required":false,"cardinality":1,"description":""},{"name":"field_contacts","label":"Contacts","type":"reference","widget":"inline_form","interaction":"draft_inline","required":false,"cardinality":-1,"description":"","inlineForm":{"targetType":"node","allowNew":true,"allowExisting":false,"targetBundles":{"oe_contact":{"label":"Contact","groups":[{"label":"Content","fields":[{"name":"field_contact_email","label":"Contact email","type":"email","widget":"email_default","interaction":"draft","required":false,"cardinality":1,"description":""},{"name":"field_contact_name","label":"Contact name","type":"string","widget":"textfield","interaction":"draft","required":true,"cardinality":1,"description":"","maxLength":255},{"name":"field_contact_role","label":"Contact role","type":"string","widget":"textfield","interaction":"draft","required":false,"cardinality":1,"description":"","maxLength":255},{"name":"status","label":"Published","type":"boolean","widget":"checkbox","interaction":"draft","required":false,"cardinality":1,"description":""},{"name":"title","label":"Title","type":"string","widget":"textfield","interaction":"draft","required":true,"cardinality":1,"description":"","maxLength":255},{"name":"uid","label":"Authored by","type":"reference","widget":"autocomplete","interaction":"select","required":false,"cardinality":1,"description":"The username of the content author.","reference":{"targetType":"user","targetBundles":{"user":{"label":"User"}}}},{"name":"revision_log","label":"Revision log message","type":"string","widget":"textarea","interaction":"draft","required":false,"cardinality":1,"description":"Briefly describe the changes you have made."}]}]}}}},{"name":"field_news_type","label":"News type","type":"select","widget":"select","interaction":"select","required":false,"cardinality":1,"description":"","allowedValues":{"press_release":"Press release","announcement":"Announcement","update":"Update"}},{"name":"field_publication_date","label":"Publication date","type":"date","widget":"date","interaction":"draft","required":false,"cardinality":1,"description":""},{"name":"field_teaser","label":"Teaser","type":"string","widget":"textfield","interaction":"draft","required":false,"cardinality":1,"description":"A short teaser for the news item.","maxLength":255},{"name":"title","label":"Title","type":"string","widget":"textfield","interaction":"draft","required":true,"cardinality":1,"description":"","maxLength":255}]}]}
+{
+  "contentType": "oe_news",
+  "label": "News",
+  "groups": [
+    {
+      "label": "Content",
+      "fields": [
+        {
+          "name": "body",
+          "label": "Body",
+          "type": "html",
+          "widget": "textarea_formatted_summary",
+          "interaction": "draft",
+          "required": false,
+          "cardinality": 1,
+          "description": ""
+        },
+        {
+          "name": "field_contacts",
+          "label": "Contacts",
+          "type": "reference",
+          "widget": "inline_form",
+          "interaction": "draft_inline",
+          "required": false,
+          "cardinality": -1,
+          "description": "",
+          "inlineForm": {
+            "targetType": "node",
+            "allowNew": true,
+            "allowExisting": false,
+            "targetBundles": {
+              "oe_contact": {
+                "label": "Contact",
+                "groups": [
+                  {
+                    "label": "Content",
+                    "fields": [
+                      {
+                        "name": "field_contact_email",
+                        "label": "Contact email",
+                        "type": "email",
+                        "widget": "email_default",
+                        "interaction": "draft",
+                        "required": false,
+                        "cardinality": 1,
+                        "description": ""
+                      },
+                      {
+                        "name": "field_contact_name",
+                        "label": "Contact name",
+                        "type": "string",
+                        "widget": "textfield",
+                        "interaction": "draft",
+                        "required": true,
+                        "cardinality": 1,
+                        "description": "",
+                        "maxLength": 255
+                      },
+                      {
+                        "name": "field_contact_role",
+                        "label": "Contact role",
+                        "type": "string",
+                        "widget": "textfield",
+                        "interaction": "draft",
+                        "required": false,
+                        "cardinality": 1,
+                        "description": "",
+                        "maxLength": 255
+                      },
+                      {
+                        "name": "status",
+                        "label": "Published",
+                        "type": "boolean",
+                        "widget": "checkbox",
+                        "interaction": "draft",
+                        "required": false,
+                        "cardinality": 1,
+                        "description": ""
+                      },
+                      {
+                        "name": "title",
+                        "label": "Title",
+                        "type": "string",
+                        "widget": "textfield",
+                        "interaction": "draft",
+                        "required": true,
+                        "cardinality": 1,
+                        "description": "",
+                        "maxLength": 255
+                      },
+                      {
+                        "name": "uid",
+                        "label": "Authored by",
+                        "type": "reference",
+                        "widget": "autocomplete",
+                        "interaction": "select",
+                        "required": false,
+                        "cardinality": 1,
+                        "description": "The username of the content author.",
+                        "reference": {
+                          "targetType": "user",
+                          "targetBundles": { "user": { "label": "User" } }
+                        }
+                      },
+                      {
+                        "name": "revision_log",
+                        "label": "Revision log message",
+                        "type": "string",
+                        "widget": "textarea",
+                        "interaction": "draft",
+                        "required": false,
+                        "cardinality": 1,
+                        "description": "Briefly describe the changes you have made."
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "name": "field_news_type",
+          "label": "News type",
+          "type": "select",
+          "widget": "select",
+          "interaction": "select",
+          "required": false,
+          "cardinality": 1,
+          "description": "",
+          "allowedValues": {
+            "press_release": "Press release",
+            "announcement": "Announcement",
+            "update": "Update"
+          }
+        },
+        {
+          "name": "field_publication_date",
+          "label": "Publication date",
+          "type": "date",
+          "widget": "date",
+          "interaction": "draft",
+          "required": false,
+          "cardinality": 1,
+          "description": ""
+        },
+        {
+          "name": "field_teaser",
+          "label": "Teaser",
+          "type": "string",
+          "widget": "textfield",
+          "interaction": "draft",
+          "required": false,
+          "cardinality": 1,
+          "description": "A short teaser for the news item.",
+          "maxLength": 255
+        },
+        {
+          "name": "title",
+          "label": "Title",
+          "type": "string",
+          "widget": "textfield",
+          "interaction": "draft",
+          "required": true,
+          "cardinality": 1,
+          "description": "",
+          "maxLength": 255
+        }
+      ]
+    }
+  ]
+}

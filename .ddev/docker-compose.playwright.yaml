@@ -1,6 +1,6 @@
 services:
   playwright:
-    image: mcr.microsoft.com/playwright:v1.52.0-noble
+    image: mcr.microsoft.com/playwright:v1.59.1-noble
     container_name: ddev-${DDEV_SITENAME}-playwright
     working_dir: /app
     volumes:
