@@ -28,9 +28,7 @@ test.describe("Drafting text streaming", () => {
     await page.keyboard.press("Enter");
 
     // Wait for the assistant's response to appear.
-    const assistantMessage = page.locator(
-      '[data-testid="assistant-message"]',
-    );
+    const assistantMessage = page.locator('[data-testid="assistant-message"]');
     await expect(assistantMessage.first()).toBeVisible({
       timeout: 15000,
     });
