@@ -41,8 +41,8 @@ jobs:
       - name: Run tests
         run: ddev phpunit tests/src/
 
-  frontend-lint:
-    name: Frontend Lint
+  app-lint:
+    name: App Lint
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -67,8 +67,8 @@ jobs:
       - name: Type check
         run: npm run typecheck
 
-  frontend-test:
-    name: Frontend Test
+  app-test:
+    name: App Test
     runs-on: ubuntu-latest
     defaults:
       run:
