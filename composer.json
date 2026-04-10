@@ -49,11 +49,6 @@
     "extra": {
         "composer-exit-on-patch-failure": true,
         "enable-patching": true,
-        "patches": {
-            "drupal/ai": {
-                "#3579967: Buffer corrupts HTML with relative URLs in streamed responses": "patches/ai-3579967-streaming-buffer-relative-urls.patch"
-            }
-        },
         "installer-paths": {
             "web/core": ["type:drupal-core"],
             "web/profiles/contrib/{$name}": ["type:drupal-profile"],
