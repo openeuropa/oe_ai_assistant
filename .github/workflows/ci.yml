@@ -6,8 +6,24 @@ on:
       - master
 
 jobs:
-  drupal:
-    name: Drupal
+  drupal-lint:
+    name: Drupal Lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Start DDEV
+        uses: ddev/github-action-setup-ddev@v1
+
+      - name: Install dependencies
+        run: ddev poser
+
+      - name: Check coding standards
+        run: ddev phpcs
+
+  drupal-test:
+    name: Drupal Test
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -19,14 +35,11 @@ jobs:
       - name: Build site
         run: ddev rebuild
 
-      - name: Check coding standards
-        run: ddev phpcs
-
       - name: Run tests
         run: ddev phpunit tests/src/
 
-  frontend:
-    name: Frontend
+  frontend-lint:
+    name: Frontend Lint
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -50,6 +63,26 @@ jobs:
 
       - name: Type check
         run: npm run typecheck
+
+  frontend-test:
+    name: Frontend Test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
 
       - name: Build
         run: npm run build
