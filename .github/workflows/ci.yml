@@ -39,7 +39,7 @@ jobs:
         run: ddev rebuild
 
       - name: Run tests
-        run: ddev phpunit tests/src/
+        run: ddev phpunit
 
   app-lint:
     name: App Lint
