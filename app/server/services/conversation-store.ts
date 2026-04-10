@@ -30,9 +30,7 @@ const DEFAULT_HISTORY_LENGTH = 10;
 export class ConversationStore {
   private store = new Map<string, ChatMessage[]>();
 
-  constructor(
-    private readonly historyLength = DEFAULT_HISTORY_LENGTH,
-  ) {}
+  constructor(private readonly historyLength = DEFAULT_HISTORY_LENGTH) {}
 
   /**
    * Loads conversation history for a thread.

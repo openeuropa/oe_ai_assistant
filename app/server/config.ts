@@ -20,5 +20,4 @@ export const MISTRAL_MODEL =
   process.env.MISTRAL_MODEL ?? "mistral-large-latest";
 
 /** Mistral API key (shared with DDEV env). */
-export const MISTRAL_API_KEY =
-  process.env.DRUPAL_MISTRAL_API_KEY ?? "";
+export const MISTRAL_API_KEY = process.env.DRUPAL_MISTRAL_API_KEY ?? "";

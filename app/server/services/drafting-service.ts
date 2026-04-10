@@ -527,11 +527,11 @@ call the draft_content tool for conversational responses.`;
       // No tool calls: pure text response. Emit finish-step,
       // save and break.
       yield {
-          type: "finish-step",
-          finishReason: "stop",
-          usage: { inputTokens: 0, outputTokens: 0 },
-          isContinued: false,
-        };
+        type: "finish-step",
+        finishReason: "stop",
+        usage: { inputTokens: 0, outputTokens: 0 },
+        isContinued: false,
+      };
       fullMessage = streamedText;
       break;
     }

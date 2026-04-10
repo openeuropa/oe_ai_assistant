@@ -56,12 +56,9 @@ export function useTypewriterFields(
   // Track per-field reveal state across renders.
   const revealRef = useRef<Record<string, FieldRevealState>>({});
   // Force re-renders during animation via a counter.
-  // biome-ignore lint/correctness/noUnusedVariables: tick is read implicitly by React to trigger re-renders
   const [, setTick] = useState(0);
   // Timer ref for cleanup.
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(
-    null,
-  );
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Detect new or changed fields and start their animations.
   useEffect(() => {
@@ -166,10 +163,7 @@ function extractText(field: DraftedField): string {
  * Creates a copy of a DraftedField with only the first N
  * characters of its value revealed.
  */
-function applyReveal(
-  field: DraftedField,
-  revealed: number,
-): DraftedField {
+function applyReveal(field: DraftedField, revealed: number): DraftedField {
   const partial = (field.value ?? "").slice(0, revealed);
   return { ...field, value: partial };
 }

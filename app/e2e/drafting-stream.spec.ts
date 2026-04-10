@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 
 /**
  * E2E tests for the drafting plugin's text streaming.
@@ -64,9 +64,7 @@ test.describe("Drafting text streaming", () => {
     });
   });
 
-  test("SSE stream returns valid text-delta events", async ({
-    page,
-  }) => {
+  test("SSE stream returns valid text-delta events", async ({ page }) => {
     // This test intercepts the raw SSE stream and validates the
     // event format directly, independent of the UI rendering.
     const streamEvents: string[] = [];

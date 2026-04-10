@@ -37,8 +37,7 @@ const now = new Date().toISOString();
 store.set("seed-1", {
   id: "seed-1",
   title: "Welcome note",
-  content:
-    "This is a sample note seeded by the dev API server.",
+  content: "This is a sample note seeded by the dev API server.",
   createdAt: now,
   updatedAt: now,
 });
@@ -46,8 +45,8 @@ store.set("seed-2", {
   id: "seed-2",
   title: "Architecture notes",
   content:
-    "The app uses a plugin-based architecture with Zustand "
-    + "for state and TanStack Query for server state.",
+    "The app uses a plugin-based architecture with Zustand " +
+    "for state and TanStack Query for server state.",
   createdAt: now,
   updatedAt: now,
 });
@@ -73,9 +72,7 @@ function delay(): Promise<void> {
 notesRouter.post("/list", async (_req, res) => {
   await delay();
   const notes = Array.from(store.values()).sort(
-    (a, b) =>
-      new Date(b.createdAt).getTime() -
-      new Date(a.createdAt).getTime(),
+    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
   );
   res.json(notes);
 });
@@ -110,14 +107,8 @@ notesRouter.post("/create", async (req, res) => {
     content?: string;
   };
 
-  if (
-    !title ||
-    typeof title !== "string" ||
-    title.trim().length === 0
-  ) {
-    res
-      .status(400)
-      .json({ code: "bad_request", message: "title is required" });
+  if (!title || typeof title !== "string" || title.trim().length === 0) {
+    res.status(400).json({ code: "bad_request", message: "title is required" });
     return;
   }
 
@@ -150,14 +141,8 @@ notesRouter.post("/update", async (req, res) => {
     return;
   }
 
-  if (
-    !title ||
-    typeof title !== "string" ||
-    title.trim().length === 0
-  ) {
-    res
-      .status(400)
-      .json({ code: "bad_request", message: "title is required" });
+  if (!title || typeof title !== "string" || title.trim().length === 0) {
+    res.status(400).json({ code: "bad_request", message: "title is required" });
     return;
   }
 
