@@ -9,8 +9,7 @@ composer.lock
 /dist
 .phpunit.result.cache
 test-results
-**/CLAUDE.md
-.claude
+.claude/settings.local.json
 .mcp.json
 /docs/*
 !/docs/wiki/
