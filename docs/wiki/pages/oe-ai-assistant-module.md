@@ -37,6 +37,8 @@ AI-powered editorial assistant into the CMS back-office.
 
 ## See Also
 
+- [Drafting Plugin](drafting-plugin.md)
+- [Symfony AI Agent](symfony-ai-agent.md)
 - [Plugin Architecture](plugin-architecture.md)
 - [OpenAPI Contract](openapi-contract.md)
 - [SSE Streaming](sse-streaming.md)

@@ -37,3 +37,13 @@ Chronological record of wiki operations.
   Context Control Center (referenced in 3+ pages);
   drupal.org issues 3575158 / 3492940 / 3542117 worth
   re-checking for status updates
+
+## [2026-04-15] lint
+
+- Pages scanned: 17
+- Issues found: 5 (5 fixed, 0 need review)
+- Pages updated: cms-agnostic-frontend.md,
+  oe-ai-assistant-module.md, symfony-ai-agent.md
+- Also fixed: root AGENTS.md had stale plugin dir
+  name (OeAiAssistant -> AiEditorialAssistant) and
+  reference to removed .ddev/nginx/sse-streaming.conf

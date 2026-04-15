@@ -79,7 +79,7 @@ development aids for AI coding agents.
     Annotation/             # Plugin annotations
     Controller/             # Route controllers
     Exception/              # Custom exceptions
-    Plugin/OeAiAssistant/   # Backend plugins (Drafting, Echo, Notes)
+    Plugin/AiEditorialAssistant/  # Backend plugins (Drafting, Echo, Notes)
     Service/                # Services (schema extraction, field mapping,
                             #   manifest reader, request validation)
   tests/
@@ -178,7 +178,7 @@ Both frontend and backend share a plugin architecture:
 | Echo     | `echo`     | Dev: echoes input as word-by-word SSE       |
 | Notes    | `notes`    | Dev: CRUD via State API                     |
 
-Backend plugins live in `src/Plugin/OeAiAssistant/`. Frontend plugins
+Backend plugins live in `src/Plugin/AiEditorialAssistant/`. Frontend plugins
 live in `app/src/plugins/`. Each frontend plugin is registered in
 `app/src/plugins/registry.ts`.
 
@@ -222,13 +222,6 @@ automatically. To re-apply after editing a patch:
 docker exec ddev-oe-ai-assistant-web bash -c \
   "cd /var/www/html && composer reinstall drupal/ai"
 ```
-
-## Nginx SSE Config
-
-`.ddev/nginx/sse-streaming.conf` disables FastCGI buffering for
-SSE streaming endpoints (`/api/ai/plugins/*/chat` and `stream`).
-Without this, nginx buffers ~16KB before sending to the client,
-causing tokens to arrive in bursts.
 
 ## Git Workflow
 

@@ -38,8 +38,9 @@ Six files contain Symfony AI integration:
 - Still 0.x -- breaking changes possible between
   minor releases
 - Impact contained to the six files above
-- React app never sees Symfony AI types -- only UI
-  Message Stream events over SSE
+- React app never sees Symfony AI types -- only
+  [UI Message Stream](ui-message-stream.md) events
+  over SSE
 - `drupal/ai` still used for Drupal-side plugin
   discovery; Symfony AI handles LLM orchestration
 

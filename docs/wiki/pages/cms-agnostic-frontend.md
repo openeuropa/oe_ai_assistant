@@ -31,7 +31,8 @@ only on the OpenAPI contract.
 3. React shell (Zustand + TanStack Query + Router)
    activates plugin from hash route
 4. API calls use cookie auth inherited from Drupal
-5. SSE stream parsed as UI Message Stream events
+5. SSE stream parsed as
+   [UI Message Stream](ui-message-stream.md) events
 
 ## See Also
 
