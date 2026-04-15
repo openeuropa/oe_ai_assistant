@@ -11,6 +11,4 @@ composer.lock
 test-results
 .claude/settings.local.json
 .mcp.json
-/docs/*
-!/docs/wiki/
-docs/wiki/raw/
+/docs/
