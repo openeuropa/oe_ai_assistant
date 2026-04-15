@@ -9,18 +9,15 @@ updated: 2026-04-14
 
 # Symfony AI Agent
 
-`symfony/ai-agent` + `symfony/ai-platform` (^0.6).
-Drives the agentic tool-call loop in DraftingPlugin.
+`symfony/ai-agent` + `symfony/ai-platform` (^0.6). Drives the agentic tool-call loop in DraftingPlugin.
 
 ## Key Facts
 
 - Toolbox with `DraftContentTool`
-- Streaming via `symfony/ai-mistral-platform` and
-  `symfony/ai-open-ai-platform`
+- Streaming via `symfony/ai-mistral-platform` and `symfony/ai-open-ai-platform`
 - Agent built by `AgentFactory::createAgent()`
-- Tool-call loop handled internally by Symfony AI
-  `AgentProcessor`; we observe via
-  `ToolCallSucceeded` listener and stream deltas
+- Tool-call loop handled internally by Symfony AI `AgentProcessor`; we observe via `ToolCallSucceeded` listener and
+  stream deltas
 
 ## Files Touched
 
@@ -35,14 +32,10 @@ Six files contain Symfony AI integration:
 
 ## Stability Risk
 
-- Still 0.x -- breaking changes possible between
-  minor releases
+- Still 0.x -- breaking changes possible between minor releases
 - Impact contained to the six files above
-- React app never sees Symfony AI types -- only
-  [UI Message Stream](ui-message-stream.md) events
-  over SSE
-- `drupal/ai` still used for Drupal-side plugin
-  discovery; Symfony AI handles LLM orchestration
+- React app never sees Symfony AI types -- only [UI Message Stream](ui-message-stream.md) events over SSE
+- `drupal/ai` still used for Drupal-side plugin discovery; Symfony AI handles LLM orchestration
 
 ## See Also
 

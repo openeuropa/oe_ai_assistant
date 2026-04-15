@@ -9,8 +9,7 @@ updated: 2026-04-14
 
 # OE AI Assistant Module
 
-Drupal 11 module (`oe_ai_assistant`) that embeds an
-AI-powered editorial assistant into the CMS back-office.
+Drupal 11 module (`oe_ai_assistant`) that embeds an AI-powered editorial assistant into the CMS back-office.
 
 ## Key Facts
 
@@ -21,17 +20,14 @@ AI-powered editorial assistant into the CMS back-office.
 - Plugin-based REST API with SSE streaming
 - AI calls happen server-side only -- never in browser
 - Nothing saved without explicit editorial action
-- Patches to contrib modules managed via
-  `cweagans/composer-patches` in `patches/`
+- Patches to contrib modules managed via `cweagans/composer-patches` in `patches/`
 
 ## Backend Structure
 
 - `src/Annotation/` -- plugin annotations
-- `src/Controller/` -- route controllers
-  (PluginController dispatches to plugins)
+- `src/Controller/` -- route controllers (PluginController dispatches to plugins)
 - `src/Plugin/AiEditorialAssistant/` -- backend plugins
-- `src/Service/` -- schema extraction, field mapping,
-  agent factory, request validation
+- `src/Service/` -- schema extraction, field mapping, agent factory, request validation
 - `src/Store/` -- DrupalTempMessageStore (chat history)
 - `src/Tool/` -- CompositeToolbox, CustomSchemaToolFactory
 

@@ -9,8 +9,7 @@ updated: 2026-04-14
 
 # OpenAPI Contract
 
-Single source of truth for the API between frontend
-and backend. OpenAPI 3.1 spec.
+Single source of truth for the API between frontend and backend. OpenAPI 3.1 spec.
 
 ## Structure
 
@@ -23,24 +22,18 @@ and backend. OpenAPI 3.1 spec.
 
 ## Endpoint Styles
 
-- **REST (shell):** resource-oriented, standard HTTP
-  verbs (`GET /api/ai/content-schema/{type}/{bundle}`)
-- **RPC-style (plugins):** all POST, verb in URL,
-  params in body
-  (`POST /api/ai/plugins/{plugin_id}/{action}`)
+- **REST (shell):** resource-oriented, standard HTTP verbs (`GET /api/ai/content-schema/{type}/{bundle}`)
+- **RPC-style (plugins):** all POST, verb in URL, params in body (`POST /api/ai/plugins/{plugin_id}/{action}`)
 
 ## Type Generation
 
-- `npm run api:generate` regenerates TypeScript types
-  from the spec
+- `npm run api:generate` regenerates TypeScript types from the spec
 - TypeScript breaks on spec mismatch -- enforced in CI
 
 ## Notes
 
-- Spec detailed enough for independent backend
-  implementation
-- Server-side state sync (`GET|PUT /api/state/{nodeId}`)
-  defined but not yet wired in frontend
+- Spec detailed enough for independent backend implementation
+- Server-side state sync (`GET|PUT /api/state/{nodeId}`) defined but not yet wired in frontend
 
 ## See Also
 

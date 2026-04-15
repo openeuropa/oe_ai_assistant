@@ -9,8 +9,7 @@ updated: 2026-04-14
 
 # DDEV Environment
 
-DDEV with the ddev-drupal-contrib addon. Module root
-equals repo root.
+DDEV with the ddev-drupal-contrib addon. Module root equals repo root.
 
 ## Setup
 
@@ -42,14 +41,14 @@ ddev restart
 
 Run from `app/`:
 
-| Command              | Purpose                        |
-|----------------------|--------------------------------|
-| `npm run dev`        | Vite + Express mock API        |
-| `npm run build`      | IIFE bundle to `app/dist/`     |
-| `npm run lint`       | Biome check                    |
-| `npm run typecheck`  | TypeScript strict check        |
-| `npm run test:e2e`   | Playwright E2E tests           |
-| `npm run api:generate` | Regen types from OpenAPI     |
+| Command                | Purpose                        |
+|------------------------|--------------------------------|
+| `npm run dev`          | Vite + Express mock API        |
+| `npm run build`        | IIFE bundle to `app/dist/`     |
+| `npm run lint`         | Biome check                    |
+| `npm run typecheck`    | TypeScript strict check        |
+| `npm run test:e2e`     | Playwright E2E tests           |
+| `npm run api:generate` | Regen types from OpenAPI       |
 
 ## After PHP/Drupal Changes
 

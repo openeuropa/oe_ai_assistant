@@ -9,16 +9,15 @@ updated: 2026-04-14
 
 # Plugin Architecture
 
-Both frontend and backend share a plugin pattern.
-Features ship as self-contained plugins on each side.
+Both frontend and backend share a plugin pattern. Features ship as self-contained plugins on each side.
 
 ## Plugins
 
-| Plugin   | ID         | Purpose                          |
-|----------|------------|----------------------------------|
-| Drafting | `drafting` | AI-powered drafting + streaming  |
-| Echo     | `echo`     | Dev: echoes input as SSE         |
-| Notes    | `notes`    | Dev: CRUD via State API          |
+| Plugin   | ID         | Purpose                         |
+|----------|------------|---------------------------------|
+| Drafting | `drafting` | AI-powered drafting + streaming |
+| Echo     | `echo`     | Dev: echoes input as SSE        |
+| Notes    | `notes`    | Dev: CRUD via State API         |
 
 ## Backend
 
@@ -26,16 +25,14 @@ Features ship as self-contained plugins on each side.
 - Base class: `AiAssistantPluginBase`
 - Interface: `AiAssistantPluginInterface`
 - Manager: `AiAssistantPluginManager`
-- Dispatch: `PluginController` receives
-  `/api/ai/plugins/{id}/{action}` and calls
+- Dispatch: `PluginController` receives `/api/ai/plugins/{id}/{action}` and calls
   `$pluginManager->get($id)->$action($request)`
 
 ## Frontend
 
 - Plugins in `app/src/plugins/`
 - Registered in `app/src/plugins/registry.ts`
-- Each plugin is isolated: own UI, state, types, API
-  helpers, and tests
+- Each plugin is isolated: own UI, state, types, API helpers, and tests
 - Dispatch: hash routes activate plugins
 
 ## Isolation Rules

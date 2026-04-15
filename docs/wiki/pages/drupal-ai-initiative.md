@@ -9,22 +9,19 @@ updated: 2026-04-15
 
 # Drupal AI Initiative
 
-Umbrella effort in the Drupal community to provide
-AI-powered capabilities as contrib modules. Led by
-M.J.; tracked on drupal.org.
+Umbrella effort in the Drupal community to provide AI-powered capabilities as contrib modules. Led by M.J.; tracked
+on drupal.org.
 
 ## Relevant Upstream Pieces
 
-| Piece                      | Status / Issue             | Relevance to OE                                    |
-|----------------------------|----------------------------|----------------------------------------------------|
-| AI Content Review module   | drupal/ai_content_review,  | Unified review UX; OE could layer its own UI on top |
-|                            | issue 3575158 (landing)    |                                                    |
-| Context-aware chat         | issue 3542117              | Click a field/context to chat -- aligned with OE    |
-| ChatProcessor abstraction  | issue 3492940              | Bring-your-own-chatbot; decouples chatbot + agent   |
-| Tool API refiners          | in core AI tooling         | Generic tools (e.g. `FieldSetValue`) with dynamic   |
-|                            |                            | input schema per entity/bundle/field                |
-| Automators                 | existing                   | Chain field generation                             |
-| Context Control Center (CCC) | existing                 | Possible home for per-request context injection    |
+| Piece                        | Status / Issue            | Relevance to OE                                |
+|------------------------------|---------------------------|-------------------------------------------------|
+| AI Content Review module     | ai_content_review, 3575158| Unified review UX; OE could layer UI on top     |
+| Context-aware chat           | issue 3542117             | Click a field/context to chat -- aligned with OE|
+| ChatProcessor abstraction    | issue 3492940             | Bring-your-own-chatbot; decouples chatbot+agent |
+| Tool API refiners            | in core AI tooling        | Generic tools (`FieldSetValue`) with dynamic schema |
+| Automators                   | existing                  | Chain field generation                          |
+| Context Control Center (CCC) | existing                  | Possible home for per-request context injection |
 
 ## Key Contacts
 
@@ -37,20 +34,15 @@ M.J.; tracked on drupal.org.
 
 Upstream provides a Claude skill for scaffolding tools:
 
-    ai_agents_experimental_collection/.claude/commands/
-      generate-tool.md
+    ai_agents_experimental_collection/.claude/commands/generate-tool.md
 
-Hosted on drupalcode.org. Worth cross-referencing if we
-start contributing tools.
+Hosted on drupalcode.org. Worth cross-referencing if we start contributing tools.
 
 ## Collaboration Signals (2026-04-15)
 
-- OE should get in touch with A.F. for the review
-  concept before finalizing our own review UX.
-- Generic OE tools could land in the toolbelt;
-  OE-specific ones are welcome as standalone contrib.
-- Coordination preferred before we reinvent upstream
-  pieces.
+- OE should get in touch with A.F. for the review concept before finalizing our own review UX.
+- Generic OE tools could land in the toolbelt; OE-specific ones are welcome as standalone contrib.
+- Coordination preferred before we reinvent upstream pieces.
 
 ## See Also
 

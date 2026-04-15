@@ -13,8 +13,7 @@ Single Zustand store, split into slices.
 
 ## Store Structure
 
-- **Shell slice:** active plugin, user session,
-  notifications
+- **Shell slice:** active plugin, user session, notifications
 - **Plugin slices:** each plugin owns its own slice
 - Plugins can read other slices, never write to them
 
@@ -26,10 +25,8 @@ Single Zustand store, split into slices.
 ## Persistence
 
 - `persist` middleware writes to `localStorage`
-- Transient UI state (e.g. `isSidebarOpen`) excluded
-  via `partialize`
-- Plugin slices hydrated before first render via
-  `initializePluginSlices` in `app/src/init.tsx`
+- Transient UI state (e.g. `isSidebarOpen`) excluded via `partialize`
+- Plugin slices hydrated before first render via `initializePluginSlices` in `app/src/init.tsx`
 
 ## Server-Side State Sync
 
@@ -39,8 +36,7 @@ Single Zustand store, split into slices.
 
 ## Server State
 
-- TanStack Query handles caching, background refetch,
-  deduplication
+- TanStack Query handles caching, background refetch, deduplication
 
 ## See Also
 
