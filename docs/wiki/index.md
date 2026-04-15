@@ -19,6 +19,12 @@ Assistant.
   -- Single store with slices, persist, event bus
 - [DDEV Environment](pages/ddev-environment.md)
   -- Local dev setup with ddev-drupal-contrib
+- [Drupal AI Initiative](pages/drupal-ai-initiative.md)
+  -- Upstream contrib effort and key contacts
+- [AI Content Review Module](pages/ai-content-review.md)
+  -- Upstream drupal/ai_content_review, landing soon
+- [Drupal Tool API](pages/drupal-tool-api.md)
+  -- Toolbelt, refiners, tool-generation skill
 
 ## Concepts
 
@@ -28,12 +34,19 @@ Assistant.
   -- Server-Sent Events via Symfony EventStreamResponse
 - [CMS-Agnostic Frontend](pages/cms-agnostic-frontend.md)
   -- React app with zero Drupal knowledge
+- [Content Schema Approach](pages/content-schema-approach.md)
+  -- Explicit per-field config vs upstream alternatives
 
 ## Sources
 
 - [Onboarding Presentation](pages/onboarding-presentation.md)
   -- Developer onboarding deck, full architecture overview
+- [Drupal AI Sync -- 2026-04-15](pages/drupal-ai-sync-april-15.md)
+  -- Schema / Tool API / upstream collaboration thread
 
 ## Investigations
+
+- [Schema Injection Options](pages/schema-injection-options.md)
+  -- Where to inject schema: homegrown vs upstream primitives
 
 ## Comparisons

@@ -37,3 +37,4 @@ only on the OpenAPI contract.
 
 - [OpenAPI Contract](openapi-contract.md)
 - [OE AI Assistant Module](oe-ai-assistant-module.md)
+- [Zustand State Management](zustand-state-management.md)

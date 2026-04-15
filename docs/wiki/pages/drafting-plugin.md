@@ -2,9 +2,9 @@
 title: "Drafting Plugin"
 type: entity
 tags: [plugin, drafting, ai, streaming]
-sources: [onboarding-presentation]
+sources: [onboarding-presentation, drupal-ai-sync-april-15]
 created: 2026-04-14
-updated: 2026-04-14
+updated: 2026-04-15
 ---
 
 # Drafting Plugin
@@ -50,8 +50,30 @@ drafting with real-time field streaming.
 - No word-by-word splitting -- "typing" effect comes
   from `text-delta` stream of the assistant reply
 
+## Content Schema
+
+- `FormSchemaExtractor` builds a per-form schema so the
+  LLM sees only relevant fields.
+- Constraints (max length, allowed HTML) are surfaced
+  explicitly because the LLM has no form-validation
+  feedback loop.
+- Design rationale and upstream alternatives:
+  [Content Schema Approach](content-schema-approach.md).
+- Open question on injection mechanism:
+  [Schema Injection Options](schema-injection-options.md).
+
+## Upstream Collaboration
+
+- Closest upstream match for OE's review UX:
+  [AI Content Review Module](ai-content-review.md).
+- Tool API / refiners may eventually replace parts of
+  the homegrown schema: [Drupal Tool API](drupal-tool-api.md).
+- Coordination channel and contacts:
+  [Drupal AI Initiative](drupal-ai-initiative.md).
+
 ## See Also
 
 - [Symfony AI Agent](symfony-ai-agent.md)
 - [UI Message Stream Protocol](ui-message-stream.md)
 - [SSE Streaming](sse-streaming.md)
+- [Content Schema Approach](content-schema-approach.md)

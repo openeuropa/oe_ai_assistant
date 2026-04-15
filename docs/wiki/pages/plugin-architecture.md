@@ -48,3 +48,4 @@ Features ship as self-contained plugins on each side.
 
 - [Drafting Plugin](drafting-plugin.md)
 - [OE AI Assistant Module](oe-ai-assistant-module.md)
+- [Zustand State Management](zustand-state-management.md)
