@@ -9,4 +9,5 @@ composer.lock
 /dist
 .phpunit.result.cache
 test-results
-
+/docs
+.idea

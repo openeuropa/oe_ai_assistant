@@ -4,6 +4,11 @@ services:
 
   Drupal\oe_ai_assistant\Service\RequestValidator: {}
 
+  Drupal\oe_ai_assistant\Service\EntityJsonSchemaComposer:
+    arguments:
+      - '@serializer'
+      - '@entity_type.manager'
+
   Drupal\oe_ai_assistant\Service\ContentTypeSchemaExtractor:
     arguments:
       - '@entity_field.manager'
