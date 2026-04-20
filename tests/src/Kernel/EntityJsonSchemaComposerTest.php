@@ -122,4 +122,88 @@ class EntityJsonSchemaComposerTest extends KernelTestBase {
     }
   }
 
+  /**
+   * Asserts multi-property text-with-format fields wrap as object schemas.
+   */
+  public function testFormattedTextFieldIsObjectWithValueAndFormat(): void {
+    $schema = $this->composer()->compose('node', 'oe_news');
+    $body = $schema['properties']['body'];
+
+    $this->assertSame('object', $body['type']);
+    $this->assertArrayHasKey('value', $body['properties']);
+    $this->assertArrayHasKey('format', $body['properties']);
+    $this->assertSame('string', $body['properties']['value']['type']);
+  }
+
+  /**
+   * Asserts single-property single-cardinality fields collapse to a leaf.
+   */
+  public function testTitleSinglePropertyFieldIsFlatString(): void {
+    // The title field is single-property (value), single-cardinality. We
+    // collapse to a primitive-shaped schema for prompt brevity.
+    $schema = $this->composer()->compose('node', 'oe_news');
+    $title = $schema['properties']['title'];
+
+    $this->assertSame('string', $title['type']);
+  }
+
+  /**
+   * Asserts unlimited-cardinality fields are wrapped as JSON Schema arrays.
+   */
+  public function testMultiCardinalityFieldIsArray(): void {
+    // field_contacts has cardinality -1 (unlimited).
+    $schema = $this->composer()->compose('node', 'oe_news');
+    $contacts = $schema['properties']['field_contacts'];
+
+    $this->assertSame('array', $contacts['type']);
+    $this->assertArrayHasKey('items', $contacts);
+  }
+
+  /**
+   * Asserts the schema lifts required field names into a top-level list.
+   */
+  public function testRequiredFieldsListedAtSchemaTop(): void {
+    $schema = $this->composer()->compose('node', 'oe_news');
+    // The title field is required on every node bundle.
+    $this->assertArrayHasKey('required', $schema);
+    $this->assertContains('title', $schema['required']);
+  }
+
+  /**
+   * Asserts no field's per-item schema is a useless empty-properties object.
+   *
+   * A `{type: "object", properties: []}` schema matches anything in JSON
+   * Schema and would silently leak into prompts. This is the regression we'd
+   * see in production if composeItem() ever fell through to the generic
+   * object branch with all properties filtered out.
+   */
+  public function testNoFieldEmitsEmptyPropertiesObject(): void {
+    $schema = $this->composer()->compose('node', 'oe_news');
+    foreach ($schema['properties'] as $fieldName => $fieldSchema) {
+      // Walk into array wrappers to inspect the items schema too.
+      $candidate = ($fieldSchema['type'] ?? NULL) === 'array'
+        ? $fieldSchema['items'] ?? []
+        : $fieldSchema;
+      if (($candidate['type'] ?? NULL) === 'object') {
+        $this->assertNotSame(
+          [],
+          $candidate['properties'] ?? NULL,
+          "Field $fieldName must not have an empty properties object."
+        );
+      }
+    }
+  }
+
+  /**
+   * Asserts fixed cardinality > 1 fields carry a JSON Schema maxItems bound.
+   */
+  public function testFixedCardinalityCarriesMaxItems(): void {
+    $schema = $this->composer()->compose('node', 'oe_news');
+    $keywords = $schema['properties']['field_keywords'];
+
+    $this->assertSame('array', $keywords['type']);
+    $this->assertArrayHasKey('items', $keywords);
+    $this->assertSame(3, $keywords['maxItems']);
+  }
+
 }

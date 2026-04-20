@@ -7,6 +7,7 @@ namespace Drupal\oe_ai_assistant\Service;
 use Drupal\Core\Entity\ContentEntityTypeInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Field\FieldItemListInterface;
+use Drupal\Core\Field\FieldStorageDefinitionInterface;
 use Drupal\Core\TypedData\TypedDataInternalPropertiesHelper;
 use Symfony\Component\Serializer\SerializerInterface;
 
@@ -79,16 +80,25 @@ class EntityJsonSchemaComposer {
     $skip = $this->buildSystemFieldSkipSet($entityType);
 
     $schemaProperties = [];
+    $required = [];
     foreach ($properties as $fieldName => $fieldItemList) {
       if (isset($skip[$fieldName])) {
         continue;
       }
       $schemaProperties[$fieldName] = $this->composeField($fieldItemList);
+      if ($fieldItemList->getFieldDefinition()->isRequired()) {
+        $required[] = $fieldName;
+      }
     }
 
-    return [
+    $schema = [
+      'type' => 'object',
       'properties' => $schemaProperties,
     ];
+    if (!empty($required)) {
+      $schema['required'] = $required;
+    }
+    return $schema;
   }
 
   /**
@@ -127,40 +137,101 @@ class EntityJsonSchemaComposer {
   }
 
   /**
-   * Composes the schema for a single field (FieldItemList).
+   * Composes the schema for one field, applying cardinality wrapping.
    *
-   * Task 1 minimal version: emit the property-level leaf schema for each
-   * non-computed, non-internal property of the first item. Tasks 2-4 expand
-   * this into a properly-wrapped object/array schema with enrichment.
-   *
-   * Tasks 2-4 add wrapping (composeItem), enrichment (enrichField), and
-   * recursion (composeReferenceItem) as SEPARATE private helpers - do NOT
-   * inline new behavior here.
+   * Multi-cardinality fields become {type: "array", items: ...}; single-
+   * cardinality fields return the item schema directly. Per-item shaping
+   * lives in composeItem(); enrichment (Task 3) and reference handling
+   * (Task 4) belong to their own private helpers - do NOT inline new
+   * behavior here.
    *
    * @param \Drupal\Core\Field\FieldItemListInterface $fieldItemList
    *   The field item list to introspect.
    *
    * @return array
-   *   A flat map of {property_name: leaf_schema} for the first item.
+   *   The field-level JSON Schema, wrapped as an array when cardinality > 1.
    */
   private function composeField(FieldItemListInterface $fieldItemList): array {
-    // Materialise an item so we can read property definitions.
+    $fieldDef = $fieldItemList->getFieldDefinition();
+    $itemSchema = $this->composeItem($fieldItemList);
+
+    $cardinality = $fieldDef->getFieldStorageDefinition()->getCardinality();
+    if ($cardinality === 1) {
+      return $itemSchema;
+    }
+    $arraySchema = [
+      'type' => 'array',
+      'items' => $itemSchema,
+    ];
+    if ($cardinality !== FieldStorageDefinitionInterface::CARDINALITY_UNLIMITED) {
+      $arraySchema['maxItems'] = $cardinality;
+    }
+    return $arraySchema;
+  }
+
+  /**
+   * Composes the per-item schema for a field's first item.
+   *
+   * Walks the item's non-computed, non-internal property definitions,
+   * normalises each leaf via core's `'json_schema'` format, then either
+   * collapses single-property items to the leaf schema directly (so
+   * `title.value` -> `{type: "string"}` rather than nesting under
+   * `properties.value`) or wraps multi-property items as a `{type: "object",
+   * properties: {...}}` schema with a `required` list.
+   *
+   * @param \Drupal\Core\Field\FieldItemListInterface $fieldItemList
+   *   The field item list to introspect.
+   *
+   * @return array
+   *   The per-item JSON Schema (leaf primitive for single-property fields,
+   *   object for multi-property fields).
+   */
+  private function composeItem(FieldItemListInterface $fieldItemList): array {
+    // Materialise an item so we can read property definitions. Safe: this
+    // is a stub entity scoped to schema composition, never persisted.
     if ($fieldItemList->count() === 0) {
       $fieldItemList->appendItem([]);
     }
     $item = $fieldItemList->first();
     $itemDef = $item->getDataDefinition();
 
-    $propSchemas = [];
+    $properties = [];
+    $required = [];
     foreach ($itemDef->getPropertyDefinitions() as $propName => $propDef) {
       if ($propDef->isComputed() || $propDef->isInternal()) {
         continue;
       }
-      $property = $item->get($propName);
-      $propSchemas[$propName] = $this->serializer->normalize($property, 'json_schema');
+      $properties[$propName] = $this->serializer->normalize(
+        $item->get($propName),
+        'json_schema'
+      );
+      if ($propDef->isRequired()) {
+        $required[] = $propName;
+      }
     }
 
-    return $propSchemas;
+    // All properties were computed/internal - emit a permissive object schema
+    // without an empty 'properties' key. This is rare in practice but possible
+    // for fields where every item-property is excluded by the walk.
+    if ($properties === []) {
+      return ['type' => 'object'];
+    }
+
+    // Single-property collapse: title.value -> string, not
+    // {value: {type: string}}.
+    if (count($properties) === 1) {
+      $only = array_key_first($properties);
+      return $properties[$only];
+    }
+
+    $schema = [
+      'type' => 'object',
+      'properties' => $properties,
+    ];
+    if (!empty($required)) {
+      $schema['required'] = $required;
+    }
+    return $schema;
   }
 
 }

@@ -5,6 +5,7 @@ dependencies:
     - field.field.node.oe_news.body
     - field.field.node.oe_news.field_contacts
     - field.field.node.oe_news.field_content_paragraphs
+    - field.field.node.oe_news.field_keywords
     - field.field.node.oe_news.field_news_type
     - field.field.node.oe_news.field_publication_date
     - field.field.node.oe_news.field_teaser
@@ -86,6 +87,14 @@ content:
       add_mode: dropdown
       form_display_mode: default
       default_paragraph_type: ''
+    third_party_settings: {  }
+  field_keywords:
+    type: string_textfield
+    weight: 7
+    region: content
+    settings:
+      size: 60
+      placeholder: ''
     third_party_settings: {  }
   status:
     type: boolean_checkbox
