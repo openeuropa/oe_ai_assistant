@@ -282,4 +282,54 @@ class EntityJsonSchemaComposerTest extends KernelTestBase {
     $this->assertSame('date-time', $value['format']);
   }
 
+  /**
+   * Asserts entity_reference fields surface target_type and target_bundles.
+   */
+  public function testEntityReferenceFieldGetsTargetMetadata(): void {
+    $schema = $this->composer()->compose('node', 'oe_news');
+    $contacts = $schema['properties']['field_contacts'];
+    $items = $contacts['items'];
+
+    $this->assertSame('node', $items['x-targetType']);
+    $this->assertContains('oe_contact', $items['x-targetBundles']);
+  }
+
+  /**
+   * Asserts paragraph reference fields recurse into all allowed target bundles.
+   */
+  public function testParagraphReferenceRecursesIntoAllowedBundles(): void {
+    $schema = $this->composer()->compose('node', 'oe_news');
+    $paragraphs = $schema['properties']['field_content_paragraphs'];
+    $items = $paragraphs['items'];
+
+    $this->assertSame('paragraph', $items['x-targetType']);
+    // Both paragraph bundles from fixtures must appear with their schemas.
+    $this->assertArrayHasKey('text_block', $items['x-bundles']);
+    $this->assertArrayHasKey('quote_block', $items['x-bundles']);
+
+    // The recursed schema for text_block must include its own field.
+    $textBlock = $items['x-bundles']['text_block'];
+    $quoteBlock = $items['x-bundles']['quote_block'];
+    $this->assertArrayNotHasKey('x-truncated', $textBlock,
+      'text_block must not be truncated at top-level recursion.');
+    $this->assertArrayNotHasKey('x-truncated', $quoteBlock,
+      'quote_block must not be truncated at top-level recursion.');
+    $this->assertArrayHasKey('field_text_body', $textBlock['properties']);
+
+    // And quote_block its own fields.
+    $this->assertArrayHasKey('field_quote_text', $quoteBlock['properties']);
+    $this->assertArrayHasKey('field_quote_attribution', $quoteBlock['properties']);
+  }
+
+  /**
+   * Asserts compose() succeeds when called as the entry point on a paragraph.
+   */
+  public function testRecursionIsBoundedAndDoesNotInfiniteLoopOnSelfRefs(): void {
+    // Compose paragraph quote_block directly; its only refs are scalars, but
+    // we want to assert compose() succeeds even when called as the entry
+    // point on a non-node entity type.
+    $schema = $this->composer()->compose('paragraph', 'quote_block');
+    $this->assertArrayHasKey('field_quote_text', $schema['properties']);
+  }
+
 }

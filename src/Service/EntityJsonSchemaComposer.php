@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Drupal\oe_ai_assistant\Service;
 
 use Drupal\Core\Entity\ContentEntityTypeInterface;
+use Drupal\Core\Entity\EntityTypeBundleInfoInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Field\FieldDefinitionInterface;
 use Drupal\Core\Field\FieldItemListInterface;
@@ -19,7 +20,17 @@ use Symfony\Component\Serializer\SerializerInterface;
  * core's `'json_schema'` format (which ships real schemas for primitive
  * typed-data plugins), and assembles a per-bundle JSON Schema document.
  * Field-instance metadata that core does not propagate (allowed values,
- * max length, target bundles, etc.) is merged in subsequent tasks.
+ * max length, target bundles, etc.) is merged on top by enrichField() and
+ * composeReferenceItem().
+ *
+ * Reference fields emit JSON Schema extension keys with the `x-` prefix:
+ *  - `x-targetType`: the referenced entity type ID.
+ *  - `x-targetBundles`: list of allowed target bundle machine names.
+ *  - `x-bundles`: per-bundle composed schemas (entity_reference_revisions
+ *    only).
+ *  - `x-truncated`: TRUE on a recursion-budget or cycle-guard hit.
+ * These are non-standard JSON Schema and are intended for LLM consumption,
+ * not for strict validators (which may warn or strip them).
  */
 class EntityJsonSchemaComposer {
 
@@ -42,9 +53,31 @@ class EntityJsonSchemaComposer {
     'owner',
   ];
 
+  /**
+   * Maximum depth for recursive entity-reference composition.
+   *
+   * Generous on purpose - this ticket prefers comprehensive schemas over
+   * compact ones (size optimization is OEL-4692's job). 6 covers
+   * landing-page-with-nested-paragraph-with-nested-paragraph and still
+   * provides a hard stop against runaway cycles.
+   */
+  private const MAX_RECURSION_DEPTH = 6;
+
+  /**
+   * Visited entity-type:bundle pairs in the current composition tree.
+   *
+   * Reset at every public compose() entry; populated/popped during
+   * composeBundle() recursion to break cycles. Use try/finally to ensure
+   * the entry is removed even when composition throws.
+   *
+   * @var array<string, true>
+   */
+  private array $visited = [];
+
   public function __construct(
     private readonly SerializerInterface $serializer,
     private readonly EntityTypeManagerInterface $entityTypeManager,
+    private readonly EntityTypeBundleInfoInterface $bundleInfo,
   ) {}
 
   /**
@@ -59,47 +92,82 @@ class EntityJsonSchemaComposer {
    *   {properties: {field_name: per-field-schema}, ...}
    */
   public function compose(string $entityTypeId, string $bundle): array {
-    $entityType = $this->entityTypeManager->getDefinition($entityTypeId);
-    if (!$entityType instanceof ContentEntityTypeInterface) {
-      throw new \InvalidArgumentException(sprintf(
-        '%s only supports content entity types, got "%s".',
-        static::class,
-        $entityTypeId,
-      ));
+    // Reset cycle guard at every public entry - per-request isolation.
+    $this->visited = [];
+    return $this->composeBundle($entityTypeId, $bundle, self::MAX_RECURSION_DEPTH);
+  }
+
+  /**
+   * Composes the schema for a specific entity type + bundle at a given depth.
+   *
+   * Recursive entry point used both for the top-level node and for paragraph
+   * sub-bundles reached via composeReferenceItem(). Depth and visited-set
+   * guards prevent runaway recursion on circular reference configurations.
+   *
+   * @param string $entityTypeId
+   *   The entity type ID.
+   * @param string $bundle
+   *   The bundle machine name.
+   * @param int $depth
+   *   Remaining recursion budget. Returns a truncated stub when 0 or when
+   *   this entityType:bundle is already in $visited.
+   *
+   * @return array
+   *   The composed schema for this bundle, or a truncation stub.
+   */
+  private function composeBundle(string $entityTypeId, string $bundle, int $depth): array {
+    $visitKey = "$entityTypeId:$bundle";
+    if (isset($this->visited[$visitKey]) || $depth <= 0) {
+      return ['type' => 'object', 'x-truncated' => TRUE];
     }
+    $this->visited[$visitKey] = TRUE;
 
-    $bundleKey = $entityType->getKey('bundle');
-    $values = $bundleKey ? [$bundleKey => $bundle] : [];
-    $stub = $this->entityTypeManager
-      ->getStorage($entityTypeId)
-      ->create($values);
-
-    $properties = TypedDataInternalPropertiesHelper::getNonInternalProperties(
-      $stub->getTypedData()
-    );
-
-    $skip = $this->buildSystemFieldSkipSet($entityType);
-
-    $schemaProperties = [];
-    $required = [];
-    foreach ($properties as $fieldName => $fieldItemList) {
-      if (isset($skip[$fieldName])) {
-        continue;
+    try {
+      $entityType = $this->entityTypeManager->getDefinition($entityTypeId);
+      if (!$entityType instanceof ContentEntityTypeInterface) {
+        throw new \InvalidArgumentException(sprintf(
+          '%s only supports content entity types, got "%s".',
+          static::class,
+          $entityTypeId,
+        ));
       }
-      $schemaProperties[$fieldName] = $this->composeField($fieldItemList);
-      if ($fieldItemList->getFieldDefinition()->isRequired()) {
-        $required[] = $fieldName;
-      }
-    }
 
-    $schema = [
-      'type' => 'object',
-      'properties' => $schemaProperties,
-    ];
-    if (!empty($required)) {
-      $schema['required'] = $required;
+      $bundleKey = $entityType->getKey('bundle');
+      $values = $bundleKey ? [$bundleKey => $bundle] : [];
+      $stub = $this->entityTypeManager
+        ->getStorage($entityTypeId)
+        ->create($values);
+
+      $properties = TypedDataInternalPropertiesHelper::getNonInternalProperties(
+        $stub->getTypedData()
+      );
+
+      $skip = $this->buildSystemFieldSkipSet($entityType);
+
+      $schemaProperties = [];
+      $required = [];
+      foreach ($properties as $fieldName => $fieldItemList) {
+        if (isset($skip[$fieldName])) {
+          continue;
+        }
+        $schemaProperties[$fieldName] = $this->composeField($fieldItemList, $depth);
+        if ($fieldItemList->getFieldDefinition()->isRequired()) {
+          $required[] = $fieldName;
+        }
+      }
+
+      $schema = [
+        'type' => 'object',
+        'properties' => $schemaProperties,
+      ];
+      if (!empty($required)) {
+        $schema['required'] = $required;
+      }
+      return $schema;
     }
-    return $schema;
+    finally {
+      unset($this->visited[$visitKey]);
+    }
   }
 
   /**
@@ -141,21 +209,35 @@ class EntityJsonSchemaComposer {
    * Composes the schema for one field, applying cardinality wrapping.
    *
    * Multi-cardinality fields become {type: "array", items: ...}; single-
-   * cardinality fields return the item schema directly. Per-item shaping
-   * lives in composeItem(); enrichment lives in enrichField(); reference
-   * handling (Task 4) belongs to its own private helper - do NOT inline
-   * new behavior here.
+   * cardinality fields return the item schema directly.
+   *
+   * Per-item shaping lives in composeItem(); enrichment in enrichField();
+   * reference handling in composeReferenceItem(). Future enrichments
+   * belong to their own private helpers - do NOT inline new behavior here.
    *
    * @param \Drupal\Core\Field\FieldItemListInterface $fieldItemList
    *   The field item list to introspect.
+   * @param int $depth
+   *   Remaining recursion budget, decremented before recursing through
+   *   reference targets.
    *
    * @return array
    *   The field-level JSON Schema, wrapped as an array when cardinality > 1.
    */
-  private function composeField(FieldItemListInterface $fieldItemList): array {
+  private function composeField(FieldItemListInterface $fieldItemList, int $depth): array {
     $fieldDef = $fieldItemList->getFieldDefinition();
-    $itemSchema = $this->composeItem($fieldItemList);
-    $itemSchema = $this->enrichField($itemSchema, $fieldDef);
+    $type = $fieldDef->getType();
+
+    // Reference fields short-circuit through composeReferenceItem rather than
+    // walking item properties (which would yield {target_id,
+    // target_revision_id} primitive bags - useless for the LLM).
+    if (in_array($type, ['entity_reference', 'entity_reference_revisions'], TRUE)) {
+      $itemSchema = $this->composeReferenceItem($fieldDef, $depth - 1);
+    }
+    else {
+      $itemSchema = $this->composeItem($fieldItemList);
+      $itemSchema = $this->enrichField($itemSchema, $fieldDef);
+    }
 
     $cardinality = $fieldDef->getFieldStorageDefinition()->getCardinality();
     if ($cardinality === 1) {
@@ -289,15 +371,92 @@ class EntityJsonSchemaComposer {
     }
 
     // Description: prefer field description, fall back to label.
-    $desc = (string) ($fieldDef->getDescription() ?? '');
-    if ($desc === '') {
-      $desc = (string) $fieldDef->getLabel();
-    }
-    if ($desc !== '') {
+    $desc = $this->descriptionFor($fieldDef);
+    if ($desc !== NULL) {
       $itemSchema['description'] = $desc;
     }
 
     return $itemSchema;
+  }
+
+  /**
+   * Composes the per-item schema for a reference field.
+   *
+   * Emits x-targetType / x-targetBundles always. For entity_reference_revisions
+   * (paragraph-style inline entities), recurses into each allowed target
+   * bundle and emits the per-bundle schema under x-bundles. Plain
+   * entity_reference fields skip recursion - the LLM is expected to
+   * reference an existing entity, not draft one.
+   *
+   * Description handling is delegated to descriptionFor() so the rule
+   * stays consistent with enrichField()'s description-with-fallback.
+   *
+   * @param \Drupal\Core\Field\FieldDefinitionInterface $fieldDef
+   *   The reference field definition.
+   * @param int $depth
+   *   Remaining recursion budget after the caller's decrement, used when
+   *   recursing into target bundles for entity_reference_revisions.
+   *
+   * @return array
+   *   The per-item reference schema.
+   */
+  private function composeReferenceItem(FieldDefinitionInterface $fieldDef, int $depth): array {
+    $storage = $fieldDef->getFieldStorageDefinition();
+    $targetType = $storage->getSetting('target_type');
+    $handlerSettings = $fieldDef->getSetting('handler_settings') ?? [];
+    $targetBundles = $handlerSettings['target_bundles'] ?? NULL;
+
+    if ($targetBundles === NULL) {
+      // No restriction: enumerate all bundles to keep the schema bounded.
+      $bundleInfo = $this->bundleInfo->getBundleInfo($targetType);
+      $targetBundles = array_keys($bundleInfo);
+    }
+    else {
+      $targetBundles = array_values($targetBundles);
+    }
+
+    $schema = [
+      'type' => 'object',
+      'x-targetType' => $targetType,
+      'x-targetBundles' => $targetBundles,
+    ];
+
+    // Recurse only for entity_reference_revisions (paragraph-style inline
+    // entities).
+    if ($fieldDef->getType() === 'entity_reference_revisions') {
+      $bundles = [];
+      foreach ($targetBundles as $bundle) {
+        $bundles[$bundle] = $this->composeBundle($targetType, $bundle, $depth);
+      }
+      $schema['x-bundles'] = $bundles;
+    }
+
+    $desc = $this->descriptionFor($fieldDef);
+    if ($desc !== NULL) {
+      $schema['description'] = $desc;
+    }
+    return $schema;
+  }
+
+  /**
+   * Returns the description string for a field, falling back to its label.
+   *
+   * Returns NULL when both description and label resolve to empty - so
+   * callers can omit the 'description' key entirely rather than emitting
+   * "description": "".
+   *
+   * @param \Drupal\Core\Field\FieldDefinitionInterface $fieldDef
+   *   The field definition to read.
+   *
+   * @return string|null
+   *   The chosen description, or NULL when nothing usable is available.
+   */
+  private function descriptionFor(FieldDefinitionInterface $fieldDef): ?string {
+    $desc = (string) ($fieldDef->getDescription() ?? '');
+    if ($desc === '') {
+      $desc = (string) $fieldDef->getLabel();
+    }
+    return $desc === '' ? NULL : $desc;
   }
 
 }
