@@ -13,7 +13,7 @@ use Drupal\oe_ai_assistant\Plugin\AiAssistantPluginBase;
 use Drupal\oe_ai_assistant\Plugin\AiEditorialAssistant\Drafting\DraftingPromptBuilder;
 use Drupal\oe_ai_assistant\Service\AgentFactory;
 use Drupal\oe_ai_assistant\Service\DraftFieldMapper;
-use Drupal\oe_ai_assistant\Service\FormSchemaExtractor;
+use Drupal\oe_ai_assistant\Service\EntityJsonSchemaComposer;
 use Drupal\oe_ai_assistant\Store\DrupalTempMessageStore;
 use Drupal\oe_ai_assistant\Tool\DraftContentTool;
 use Psr\Log\LoggerInterface;
@@ -103,7 +103,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
       $container->get(DraftFieldMapper::class),
       $container->get('current_user'),
       new DraftingPromptBuilder(
-        $container->get(FormSchemaExtractor::class),
+        $container->get(EntityJsonSchemaComposer::class),
         $container->get('logger.factory')->get('oe_ai_assistant'),
       ),
     );
