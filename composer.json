@@ -49,6 +49,11 @@
     "extra": {
         "composer-exit-on-patch-failure": true,
         "enable-patching": true,
+        "patches": {
+            "drupal/ai": {
+                "Fix assembleToolCalls to handle both array and object tool formats": "patches/ai-assemble-tool-calls-array-support.patch"
+            }
+        },
         "installer-paths": {
             "web/core": ["type:drupal-core"],
             "web/profiles/contrib/{$name}": ["type:drupal-profile"],

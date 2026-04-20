@@ -50,8 +50,8 @@ class MockChatMessageIterator extends StreamedChatMessageIterator {
    */
   public function doIterate(): \Generator {
     // If error, throw immediately.
-    if ($this->mockResponse->error !== NULL) {
-      throw $this->mockResponse->error;
+    if ($this->mockResponse->hasError()) {
+      throw $this->mockResponse->createError();
     }
 
     // Text response: split into word tokens and stream with delay.
@@ -92,6 +92,8 @@ class MockChatMessageIterator extends StreamedChatMessageIterator {
     }
 
     // Tool-call response: yield a single chunk with tool data, no text.
+    // Pass tool call arrays directly -- the patched assembleToolCalls()
+    // in drupal/ai handles both arrays and objects.
     if ($this->mockResponse->toolCalls !== NULL) {
       $streamedMessage = $this->createStreamedChatMessage(
         'assistant',

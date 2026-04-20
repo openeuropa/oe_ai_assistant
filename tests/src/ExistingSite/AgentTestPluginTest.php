@@ -59,6 +59,266 @@ class AgentTestPluginTest extends ExistingSiteBase {
   }
 
   /**
+   * Tests that the mock provider logs system prompt and tools.
+   */
+  public function testCallLogCapturesSystemPromptAndTools(): void {
+    $user = $this->createUser(['use oe ai assistant']);
+    $this->loginUser($user);
+
+    MockAiProvider::enqueue(new MockResponse(
+      text: 'I can help with that.',
+    ));
+
+    $this->httpPost('/api/ai/plugins/agent_test/chat', [
+      'message' => 'Hello.',
+    ]);
+
+    \Drupal::state()->resetCache();
+    $log = MockAiProvider::getCallLog();
+    $this->assertCount(1, $log);
+    $this->assertArrayHasKey('system_prompt', $log[0]);
+    $this->assertArrayHasKey('tools', $log[0]);
+    $this->assertArrayHasKey('messages', $log[0]);
+  }
+
+  /**
+   * Tests that the router LLM call includes the draft_content tool.
+   */
+  public function testRouterCallIncludesDraftContentTool(): void {
+    $user = $this->createUser(['use oe ai assistant']);
+    $this->loginUser($user);
+
+    MockAiProvider::enqueue(new MockResponse(
+      text: 'Sure, tell me more about what you want.',
+    ));
+
+    $this->httpPost('/api/ai/plugins/agent_test/chat', [
+      'message' => 'I want to write about climate.',
+    ]);
+
+    \Drupal::state()->resetCache();
+    $log = MockAiProvider::getCallLog();
+    $this->assertCount(1, $log);
+
+    // The router call should have the draft_content tool defined.
+    $tools = $log[0]['tools'];
+    $this->assertNotEmpty($tools, 'Router call should include tools.');
+    $toolNames = array_column(array_column($tools, 'function'), 'name');
+    $this->assertContains('draft_content', $toolNames);
+  }
+
+  /**
+   * Tests that a tool call triggers orchestration with sub-agent steps.
+   */
+  public function testToolCallTriggersOrchestration(): void {
+    $user = $this->createUser(['use oe ai assistant']);
+    $this->loginUser($user);
+
+    // Queue: router returns tool call, then 3 sub-agent responses.
+    MockAiProvider::enqueue(new MockResponse(
+      toolCalls: [
+        [
+          'id' => 'call_1',
+          'type' => 'function',
+          'function' => [
+            'name' => 'draft_content',
+            'arguments' => json_encode([
+              'instructions' => 'Write about EU climate targets.',
+            ]),
+          ],
+        ],
+      ],
+    ));
+    // Main fields sub-agent response.
+    MockAiProvider::enqueue(new MockResponse(
+      text: '{"title": "EU Climate Targets", "summary": "A summary of the 2030 goals."}',
+    ));
+    // Hero item sub-agent response.
+    MockAiProvider::enqueue(new MockResponse(
+      text: '{"type": "hero", "heading": "The 2030 Challenge", "body": "Hero body text."}',
+    ));
+    // Text block item sub-agent response.
+    MockAiProvider::enqueue(new MockResponse(
+      text: '{"type": "text_block", "heading": "Key Policies", "body": "Policy details."}',
+    ));
+
+    $response = $this->httpPost('/api/ai/plugins/agent_test/chat', [
+      'message' => 'Draft it for me.',
+    ]);
+
+    $this->assertEquals(200, $response['status']);
+    $events = $this->parseSseEvents($response['body']);
+
+    // Should have a data-plan event listing all steps upfront.
+    $planEvents = array_filter($events, fn($e) => $e['type'] === 'data-plan');
+    $this->assertNotEmpty($planEvents, 'Expected a data-plan event.');
+    $plan = array_values($planEvents)[0]['data'];
+    $this->assertCount(3, $plan);
+    $this->assertEquals('main_fields', $plan[0]['stepId']);
+    $this->assertEquals('pending', $plan[0]['status']);
+    $this->assertEquals('item_hero', $plan[1]['stepId']);
+    $this->assertEquals('item_text_block', $plan[2]['stepId']);
+
+    // Should have multiple start-step/finish-step pairs (one per sub-agent).
+    $startSteps = array_filter($events, fn($e) => $e['type'] === 'start-step');
+    $finishSteps = array_filter($events, fn($e) => $e['type'] === 'finish-step');
+    $this->assertGreaterThanOrEqual(3, count($startSteps), 'Expected at least 3 start-step events.');
+    $this->assertGreaterThanOrEqual(3, count($finishSteps), 'Expected at least 3 finish-step events.');
+
+    // Should end with a data-drafted-fields event containing the
+    // consolidated JSON object.
+    $draftedEvents = array_filter($events, fn($e) => $e['type'] === 'data-drafted-fields');
+    $this->assertNotEmpty($draftedEvents, 'Expected a data-drafted-fields event.');
+    $drafted = array_values($draftedEvents)[0]['data'];
+    $this->assertEquals('EU Climate Targets', $drafted['title']);
+    $this->assertEquals('A summary of the 2030 goals.', $drafted['summary']);
+    $this->assertCount(2, $drafted['items']);
+    $this->assertEquals('hero', $drafted['items'][0]['type']);
+    $this->assertEquals('text_block', $drafted['items'][1]['type']);
+
+    // All mock responses consumed.
+    \Drupal::state()->resetCache();
+    $this->assertTrue(MockAiProvider::isEmpty());
+
+    // Verify that sub-agent calls used the config entity's system prompt.
+    $log = MockAiProvider::getCallLog();
+    $this->assertGreaterThanOrEqual(4, count($log));
+    // Sub-agent calls (indices 1-3) should have the config entity's prompt.
+    $this->assertStringContainsString('JSON', $log[1]['system_prompt']);
+  }
+
+  /**
+   * Tests that the content drafter agent has no state leak between calls.
+   */
+  public function testSubAgentStateIsolation(): void {
+    $user = $this->createUser(['use oe ai assistant']);
+    $this->loginUser($user);
+
+    MockAiProvider::enqueue(new MockResponse(
+      toolCalls: [
+        [
+          'id' => 'call_1',
+          'type' => 'function',
+          'function' => [
+            'name' => 'draft_content',
+            'arguments' => json_encode(['instructions' => 'Write content.']),
+          ],
+        ],
+      ],
+    ));
+    MockAiProvider::enqueue(new MockResponse(
+      text: '{"title": "Title", "summary": "Summary"}',
+    ));
+    MockAiProvider::enqueue(new MockResponse(
+      text: '{"type": "hero", "heading": "Hero", "body": "Hero body"}',
+    ));
+    MockAiProvider::enqueue(new MockResponse(
+      text: '{"type": "text_block", "heading": "Text", "body": "Text body"}',
+    ));
+
+    $this->httpPost('/api/ai/plugins/agent_test/chat', [
+      'message' => 'Draft it.',
+    ]);
+
+    \Drupal::state()->resetCache();
+    $log = MockAiProvider::getCallLog();
+
+    // Sub-agent calls are log entries 1, 2, 3 (index 0 is the router).
+    // Each call should have a clean system prompt (from config entity)
+    // without accumulated state from previous calls.
+    $this->assertGreaterThanOrEqual(4, count($log));
+
+    // All sub-agent calls should share the same system prompt (from
+    // config entity), proving no prompt accumulation.
+    $subAgent1Prompt = $log[1]['system_prompt'];
+    $subAgent2Prompt = $log[2]['system_prompt'];
+    $subAgent3Prompt = $log[3]['system_prompt'];
+    $this->assertEquals($subAgent1Prompt, $subAgent2Prompt, 'Sub-agent prompts should be identical (no state leak).');
+    $this->assertEquals($subAgent2Prompt, $subAgent3Prompt, 'Sub-agent prompts should be identical (no state leak).');
+
+    // Each call should have only one user message (the Task), not
+    // accumulated messages from previous sub-agent calls.
+    $this->assertCount(1, $log[1]['messages'], 'First sub-agent should have 1 message.');
+    $this->assertCount(1, $log[2]['messages'], 'Second sub-agent should have 1 message.');
+    $this->assertCount(1, $log[3]['messages'], 'Third sub-agent should have 1 message.');
+  }
+
+  /**
+   * Tests graceful handling when a sub-agent fails.
+   */
+  public function testSubAgentFailureEmitsError(): void {
+    $user = $this->createUser(['use oe ai assistant']);
+    $this->loginUser($user);
+
+    // Router calls draft_content.
+    MockAiProvider::enqueue(new MockResponse(
+      toolCalls: [
+        [
+          'id' => 'call_1',
+          'type' => 'function',
+          'function' => [
+            'name' => 'draft_content',
+            'arguments' => json_encode(['instructions' => 'Test.']),
+          ],
+        ],
+      ],
+    ));
+    // Main fields succeeds.
+    MockAiProvider::enqueue(new MockResponse(
+      text: '{"title": "Test", "summary": "Sum"}',
+    ));
+    // Hero sub-agent fails.
+    MockAiProvider::enqueue(new MockResponse(
+      error: new \RuntimeException('LLM service unavailable'),
+    ));
+
+    $response = $this->httpPost('/api/ai/plugins/agent_test/chat', [
+      'message' => 'Draft it.',
+    ]);
+
+    $this->assertEquals(200, $response['status']);
+    $events = $this->parseSseEvents($response['body']);
+
+    // Should contain an error event.
+    $errorEvents = array_filter($events, fn($e) => $e['type'] === 'error');
+    $this->assertNotEmpty($errorEvents, 'Expected an error SSE event.');
+  }
+
+  /**
+   * Tests that a text response does not trigger drafting.
+   */
+  public function testConversationalTurnWithoutDrafting(): void {
+    $user = $this->createUser(['use oe ai assistant']);
+    $this->loginUser($user);
+
+    MockAiProvider::enqueue(new MockResponse(
+      text: 'Got it, tell me more about the topic.',
+    ));
+
+    $response = $this->httpPost('/api/ai/plugins/agent_test/chat', [
+      'message' => 'I want to write about renewable energy.',
+    ]);
+
+    $this->assertEquals(200, $response['status']);
+    $events = $this->parseSseEvents($response['body']);
+
+    // Should have text-delta events.
+    $textDeltas = array_filter($events, fn($e) => $e['type'] === 'text-delta');
+    $this->assertNotEmpty($textDeltas);
+
+    // Should NOT have a data-drafted-fields event.
+    $draftedEvents = array_filter($events, fn($e) => $e['type'] === 'data-drafted-fields');
+    $this->assertEmpty($draftedEvents, 'Should not draft without tool call.');
+
+    // Should have exactly 1 start-step (the router step only).
+    $startSteps = array_filter($events, fn($e) => $e['type'] === 'start-step');
+    $this->assertCount(1, $startSteps);
+
+    \Drupal::state()->resetCache();
+    $this->assertTrue(MockAiProvider::isEmpty());
+  }
+
+  /**
    * Tests that a simple text response is streamed as SSE text-delta events.
    */
   public function testTextResponseStreamedAsSse(): void {

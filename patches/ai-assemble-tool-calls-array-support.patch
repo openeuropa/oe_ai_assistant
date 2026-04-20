@@ -1,0 +1,49 @@
+--- a/src/OperationType/Chat/StreamedChatMessageIterator.php	2026-04-20 15:58:22.467422850 +0200
++++ b/src/OperationType/Chat/StreamedChatMessageIterator.php	2026-04-20 15:58:42.855125285 +0200
+@@ -513,12 +513,19 @@
+     foreach ($this->messages as $message) {
+       if ($message->getTools()) {
+         foreach ($message->getTools() as $tool) {
+-          $array_tool = $tool->toArray();
++          // Handle both objects with toArray() and plain arrays. Some
++          // providers (e.g. Mistral) pass arrays via
++          // ToolCallCollection::toArray().
++          $array_tool = is_array($tool) ? $tool : $tool->toArray();
+           // If it has a new id, it means its a new tool call.
+           if (!empty($array_tool['id'])) {
+             // If the current tool is not empty, we need to save it.
+             if (!empty($current_tool)) {
+-              $arguments = Json::decode($current_tool['function']['arguments']);
++              // Arguments may be a JSON string (OpenAI incremental) or
++              // an already-decoded array (Mistral).
++              $arguments = is_array($current_tool['function']['arguments'])
++                ? $current_tool['function']['arguments']
++                : Json::decode($current_tool['function']['arguments']);
+               $output = new ToolsFunctionOutput(NULL, $current_tool['id'], $arguments);
+               $output->setName($current_tool['function']['name']);
+               $tools[$key] = $output;
+@@ -528,15 +535,21 @@
+             $current_tool = $array_tool;
+           }
+           else {
+-            // Otherwise we just add to the argument of the current tool.
+-            $current_tool['function']['arguments'] .= $array_tool['function']['arguments'] ?? '';
++            // Otherwise we just add to the argument of the current tool
++            // (only applicable for string arguments from incremental
++            // streaming like OpenAI).
++            if (is_string($current_tool['function']['arguments'] ?? NULL)) {
++              $current_tool['function']['arguments'] .= $array_tool['function']['arguments'] ?? '';
++            }
+           }
+         }
+       }
+     }
+     // Save the last tool if it exists.
+     if (!empty($current_tool)) {
+-      $arguments = Json::decode($current_tool['function']['arguments']);
++      $arguments = is_array($current_tool['function']['arguments'])
++        ? $current_tool['function']['arguments']
++        : Json::decode($current_tool['function']['arguments']);
+       $output = new ToolsFunctionOutput(NULL, $current_tool['id'], $arguments);
+       $output->setName($current_tool['function']['name']);
+       $tools[$key] = $output;

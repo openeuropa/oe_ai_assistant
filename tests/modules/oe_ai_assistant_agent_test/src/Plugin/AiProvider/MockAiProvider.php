@@ -126,6 +126,8 @@ class MockAiProvider extends AiProviderClientBase implements ChatInterface {
     $state = \Drupal::state();
     $log = $state->get(static::LOG_KEY, []);
     $log[] = [
+      'system_prompt' => $input->getSystemPrompt() ?? '',
+      'tools' => $input->getChatTools() ? $input->getChatTools()->renderToolsArray() : [],
       'messages' => array_map(fn(ChatMessage $m) => [
         'role' => $m->getRole(),
         'text' => $m->getText(),
@@ -136,8 +138,8 @@ class MockAiProvider extends AiProviderClientBase implements ChatInterface {
     $response = static::dequeue();
 
     // Throw error if the response is configured to fail.
-    if ($response->error !== NULL) {
-      throw $response->error;
+    if ($response->hasError()) {
+      throw $response->createError();
     }
 
     // Streaming mode: return a ChatOutput wrapping the iterator.
