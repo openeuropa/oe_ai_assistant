@@ -7,17 +7,15 @@ namespace Drupal\oe_ai_assistant_agent_test\Plugin\AiEditorialAssistant;
 use Drupal\ai\AiProviderPluginManager;
 use Drupal\ai\OperationType\Chat\ChatInput;
 use Drupal\ai\OperationType\Chat\ChatMessage;
-use Drupal\ai\OperationType\Chat\StreamedChatMessageIteratorInterface;
 use Drupal\ai\OperationType\Chat\Tools\ToolsFunctionOutputInterface;
 use Drupal\ai\OperationType\Chat\Tools\ToolsInput;
-use Drupal\ai\Response\AiStreamedResponse;
 use Drupal\ai\Service\FunctionCalling\FunctionCallPluginManager;
-use Drupal\ai\Service\PromptCodeBlockExtractor\PromptCodeBlockExtractorInterface;
 use Drupal\ai_agents\PluginInterfaces\AiAgentInterface;
 use Drupal\ai_agents\PluginManager\AiAgentManager;
 use Drupal\ai_agents\Task\Task;
 use Drupal\oe_ai_assistant\Annotation\AiEditorialAssistant;
 use Drupal\oe_ai_assistant\Plugin\AiAssistantPluginBase;
+use Drupal\oe_ai_assistant\Service\UiMessageStreamInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -26,12 +24,11 @@ use Symfony\Component\HttpFoundation\Response;
  * Test plugin for agent/sub-agent orchestration spike.
  *
  * Streams LLM responses as SSE events using the Vercel AI SDK
- * UI Message Stream v1 protocol.
+ * UI Message Stream v1 protocol via UiMessageStream.
  *
- * Note: this plugin uses AiStreamedResponse directly instead of the base
- * class's createSseResponse(). If the pattern proves sound after the spike,
- * createSseResponse() on AiAssistantPluginBase may be removed in favour of
- * AiStreamedResponse from drupal/ai.
+ * Note: this plugin uses UiMessageStream instead of the base class's
+ * createSseResponse(). If the pattern proves sound after the spike,
+ * createSseResponse() on AiAssistantPluginBase may be removed.
  */
 #[AiEditorialAssistant(
   id: 'agent_test',
@@ -62,11 +59,11 @@ class AgentTestPlugin extends AiAssistantPluginBase {
   protected AiAgentManager $aiAgentManager;
 
   /**
-   * The code block extractor for parsing LLM JSON responses.
+   * The UI message stream service.
    *
-   * @var \Drupal\ai\Service\PromptCodeBlockExtractor\PromptCodeBlockExtractorInterface
+   * @var \Drupal\oe_ai_assistant\Service\UiMessageStreamInterface
    */
-  protected PromptCodeBlockExtractorInterface $codeBlockExtractor;
+  protected UiMessageStreamInterface $uiMessageStream;
 
   /**
    * {@inheritdoc}
@@ -81,7 +78,7 @@ class AgentTestPlugin extends AiAssistantPluginBase {
     $instance->aiProviderManager = $container->get('ai.provider');
     $instance->functionCallManager = $container->get('plugin.manager.ai.function_calls');
     $instance->aiAgentManager = $container->get('plugin.manager.ai_agents');
-    $instance->codeBlockExtractor = $container->get('ai.prompt_code_block_extractor');
+    $instance->uiMessageStream = $container->get('Drupal\oe_ai_assistant\Service\UiMessageStream');
     return $instance;
   }
 
@@ -139,43 +136,12 @@ class AgentTestPlugin extends AiAssistantPluginBase {
     // Call the LLM (router call).
     $chatOutput = $provider->chat($chatInput, $defaults['model_id'], ['agent_test']);
 
-    // Stream the response as SSE using AiStreamedResponse from drupal/ai.
-    $response = new AiStreamedResponse(NULL, 200, [
-      'Content-Type' => 'text/event-stream',
-      'x-vercel-ai-ui-message-stream' => 'v1',
-    ]);
+    // Stream the response using UiMessageStream.
+    return $this->uiMessageStream->respond(function (UiMessageStreamInterface $stream) use ($chatOutput): void {
+      $stream->start();
 
-    $response->setCallback(function () use ($chatOutput): void {
-      set_time_limit(0);
-
-      $messageId = bin2hex(random_bytes(16));
-      $this->emitSseEvent('start', ['messageId' => $messageId]);
-
-      // Stream the router LLM response and check for tool calls.
-      $normalized = $chatOutput->getNormalized();
-      $toolCalls = [];
-
-      if ($normalized instanceof StreamedChatMessageIteratorInterface) {
-        $this->emitSseEvent('start-step', []);
-        foreach ($normalized as $chunk) {
-          $text = $chunk->getText();
-          if ($text !== '' && $text !== NULL) {
-            $this->emitSseEvent('text-delta', ['textDelta' => $text]);
-          }
-        }
-        $this->emitSseEvent('finish-step', []);
-        // After iteration completes, tool calls are assembled.
-        $toolCalls = $normalized->getTools();
-      }
-      else {
-        $this->emitSseEvent('start-step', []);
-        $text = $normalized->getText();
-        if ($text !== '' && $text !== NULL) {
-          $this->emitSseEvent('text-delta', ['textDelta' => $text]);
-        }
-        $this->emitSseEvent('finish-step', []);
-        $toolCalls = $normalized->getTools() ?? [];
-      }
+      // Stream the router response and collect tool calls.
+      $toolCalls = $stream->streamChatOutput($chatOutput);
 
       // Check if draft_content was called.
       $draftCall = NULL;
@@ -187,38 +153,30 @@ class AgentTestPlugin extends AiAssistantPluginBase {
       }
 
       if ($draftCall !== NULL) {
-        $consolidated = $this->orchestrate($draftCall);
-        $this->emitSseEvent('data-drafted-fields', $consolidated);
+        $consolidated = $this->orchestrate($stream, $draftCall);
+        $stream->customEvent('data-drafted-fields', $consolidated);
       }
 
-      $this->emitSseEvent('finish', [
-        'finishReason' => $draftCall ? 'tool_calls' : 'stop',
-        'usage' => ['inputTokens' => 0, 'outputTokens' => 0],
-      ]);
-
-      echo "data: [DONE]\n\n";
-      flush();
+      $stream->finish($draftCall ? 'tool_calls' : 'stop');
     });
-
-    return $response;
   }
 
   /**
    * Runs the sub-agent orchestration loop.
    *
    * Loads the oe_test_content_drafter agent config entity for each
-   * schema fragment. The agent's system prompt (from config) provides
-   * the generic instruction; the Task carries the per-call schema and
-   * instructions. The default AI provider is resolved automatically
-   * by the agent framework.
+   * schema fragment. Emits SSE events via the stream for progressive
+   * feedback between sub-agent calls.
    *
+   * @param \Drupal\oe_ai_assistant\Service\UiMessageStreamInterface $stream
+   *   The SSE stream to emit events on.
    * @param \Drupal\ai\OperationType\Chat\Tools\ToolsFunctionOutputInterface $draftCall
    *   The draft_content tool call with instructions.
    *
    * @return array
    *   The consolidated draft object.
    */
-  protected function orchestrate(ToolsFunctionOutputInterface $draftCall): array {
+  protected function orchestrate(UiMessageStreamInterface $stream, ToolsFunctionOutputInterface $draftCall): array {
     // Target schema fragments (hardcoded for the spike).
     $fragments = [
       'main_fields' => '{"title": {"type": "string"}, "summary": {"type": "string"}}',
@@ -235,31 +193,28 @@ class AgentTestPlugin extends AiAssistantPluginBase {
       }
     }
 
-    // Emit a plan event listing all steps upfront, so the UI can
-    // render the full task list before execution begins.
+    // Emit the plan upfront so the UI can show all pending steps.
     $plan = [];
     foreach ($fragments as $stepId => $schema) {
       $plan[] = ['stepId' => $stepId, 'status' => 'pending'];
     }
-    $this->emitSseEvent('data-plan', $plan);
+    $stream->customEvent('data-plan', $plan);
 
     $results = [];
 
     foreach ($fragments as $stepId => $schema) {
-      $this->emitSseEvent('start-step', ['stepId' => $stepId]);
+      $stream->startStep($stepId);
 
       try {
         // Load a fresh instance of the sub-agent config entity.
         $agent = $this->aiAgentManager->createInstance('oe_test_content_drafter');
 
         // Set structured output on the agent entity so providers that
-        // support it (Mistral, OpenAI) return clean JSON without
-        // markdown fencing. This modifies the in-memory entity only.
+        // support it return clean JSON without markdown fencing.
         $agent->getAiAgentEntity()->set('structured_output_enabled', TRUE);
         $agent->getAiAgentEntity()->set('structured_output_schema', $schema);
 
-        // Pass instructions as the Task. The schema is enforced via
-        // structured output above.
+        // Pass instructions as the Task.
         $task = new Task("Instructions: $instructions");
         $agent->setTask($task);
 
@@ -275,26 +230,22 @@ class AgentTestPlugin extends AiAssistantPluginBase {
 
         // Emit the sub-agent result as text-delta.
         if ($fullText !== '') {
-          $this->emitSseEvent('text-delta', ['textDelta' => $fullText]);
+          $stream->textDelta($fullText);
         }
 
-        $this->emitSseEvent('finish-step', ['stepId' => $stepId]);
+        $stream->finishStep($stepId);
 
-        // Parse the JSON result. Use drupal/ai's PromptCodeBlockExtractor
-        // to handle markdown fencing (```json...```) that real providers
-        // like Mistral often add despite system prompt instructions.
-        $jsonText = $this->codeBlockExtractor->extract($fullText, 'json');
-        $parsed = json_decode(trim($jsonText), TRUE);
+        // Parse the JSON result. extractJson() handles both raw JSON
+        // and markdown-fenced JSON from providers that ignore
+        // structured output.
+        $parsed = $stream->extractJson($fullText);
         if (is_array($parsed)) {
           $results[$stepId] = $parsed;
         }
       }
       catch (\Exception $e) {
-        $this->emitSseEvent('error', [
-          'errorText' => $e->getMessage(),
-          'step' => $stepId,
-        ]);
-        $this->emitSseEvent('finish-step', ['stepId' => $stepId]);
+        $stream->error($e->getMessage(), $stepId);
+        $stream->finishStep($stepId);
         break;
       }
     }
@@ -310,23 +261,6 @@ class AgentTestPlugin extends AiAssistantPluginBase {
     }
 
     return $consolidated;
-  }
-
-  /**
-   * Emits an SSE event in the Vercel AI SDK UI Message Stream format.
-   *
-   * @param string $type
-   *   The event type (e.g. 'text-delta', 'start', 'finish').
-   * @param array $data
-   *   The event data payload.
-   */
-  protected function emitSseEvent(string $type, array $data): void {
-    $json = json_encode(
-      ['type' => $type, 'data' => $data],
-      JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE
-    );
-    echo "data: $json\n\n";
-    flush();
   }
 
 }

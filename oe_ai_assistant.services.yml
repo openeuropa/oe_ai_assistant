@@ -29,3 +29,8 @@ services:
       - '@plugin.manager.ai.function_calls'
       - '@config.factory'
       - '@key.repository'
+
+  Drupal\oe_ai_assistant\Service\UiMessageStream:
+    class: Drupal\oe_ai_assistant\Service\UiMessageStream
+    arguments:
+      - '@ai.prompt_code_block_extractor'
