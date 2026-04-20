@@ -10,19 +10,6 @@ services:
       - '@entity_type.manager'
       - '@entity_type.bundle.info'
 
-  Drupal\oe_ai_assistant\Service\ContentTypeSchemaExtractor:
-    arguments:
-      - '@entity_field.manager'
-      - '@entity_type.bundle.info'
-
-  Drupal\oe_ai_assistant\Service\FormSchemaExtractor:
-    arguments:
-      - '@entity_type.manager'
-      - '@entity_field.manager'
-      - '@entity_type.bundle.info'
-      - '@Drupal\oe_ai_assistant\Service\ContentTypeSchemaExtractor'
-      - '@config.factory'
-
   Drupal\oe_ai_assistant\Service\DraftFieldMapper:
     arguments:
       - '@entity_type.manager'
