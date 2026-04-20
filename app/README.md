@@ -124,7 +124,7 @@ and a configuration object:
 | `sessionId`      | `string`   | Required | Editorial session ID the app is mounted on.      |
 | `nodeId`         | `string`   | `null`   | CMS content node the editor is working on.       |
 | `userId`         | `string`   | Required | Authenticated user ID from the CMS session.      |
-| `enabledPlugins` | `string[]` | `[]`     | Plugin IDs to activate (empty = all registered). |
+| `enabledPlugins` | `string[]` | `[]`     | Plugin IDs to activate (empty = all non-dev plugins). |
 
 `userId` and `sessionId` are required: persisted state (localStorage) is
 scoped per user and editorial session. Sensible defaults are applied for any

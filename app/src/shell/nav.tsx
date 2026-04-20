@@ -1,7 +1,7 @@
 /**
  * Sidebar plugin navigation.
  *
- * Lists all registered plugins as nav links. Supports two states:
+ * Lists the active plugins as nav links. Supports two states:
  * - Expanded: shows icon + label, with a "Plugins" heading and a
  *   collapse button.
  * - Collapsed: shows icons only with tooltips, and an expand button.
@@ -13,12 +13,13 @@
 import * as NavigationMenu from "@radix-ui/react-navigation-menu";
 import { PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { NavLink } from "react-router-dom";
-import { plugins } from "@/plugins/registry";
+import { getActivePlugins } from "@/plugins/registry";
 import { useAppStore } from "@/store";
 
 export function Nav() {
   const isSidebarOpen = useAppStore((s) => s.isSidebarOpen);
   const setSidebarOpen = useAppStore((s) => s.setSidebarOpen);
+  const plugins = getActivePlugins();
 
   // Nothing to render if no plugins are registered.
   if (plugins.length === 0) {
