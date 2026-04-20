@@ -7,6 +7,7 @@ namespace Drupal\Tests\oe_ai_assistant\ExistingSite;
 use Drupal\Core\Url;
 use Drupal\oe_ai_assistant_agent_test\Plugin\AiProvider\MockAiProvider;
 use Drupal\oe_ai_assistant_agent_test\Plugin\AiProvider\MockResponse;
+use Drupal\Tests\oe_ai_assistant\Traits\ExistingSiteConfigBackupTrait;
 use Drupal\user\UserInterface;
 use weitzman\DrupalTestTraits\ExistingSiteBase;
 
@@ -18,16 +19,32 @@ use weitzman\DrupalTestTraits\ExistingSiteBase;
  */
 class AgentTestPluginTest extends ExistingSiteBase {
 
+  use ExistingSiteConfigBackupTrait;
+
   /**
    * {@inheritdoc}
    */
   protected function setUp(): void {
     parent::setUp();
 
-    // Tell the agent test plugin to use the mock provider. This uses
-    // Drupal state (not config) to avoid settings.php config overrides.
-    \Drupal::state()->set('agent_test.provider_id', 'mock_ai');
-    \Drupal::state()->set('agent_test.model_id', 'mock-model');
+    // Ensure the agent test module is enabled (provides the mock provider
+    // and the agent_test plugin).
+    \Drupal::service('module_installer')->install(['oe_ai_assistant_agent_test']);
+
+    // Backup the AI settings and set mock_ai as default provider.
+    $this->backupSimpleConfig('ai.settings');
+    \Drupal::configFactory()->getEditable('ai.settings')
+      ->set('default_providers', [
+        'chat' => [
+          'provider_id' => 'mock_ai',
+          'model_id' => 'mock-model',
+        ],
+        'chat_with_tools' => [
+          'provider_id' => 'mock_ai',
+          'model_id' => 'mock-model',
+        ],
+      ])
+      ->save();
 
     MockAiProvider::reset();
   }
@@ -37,6 +54,7 @@ class AgentTestPluginTest extends ExistingSiteBase {
    */
   protected function tearDown(): void {
     MockAiProvider::reset();
+    $this->restoreConfiguration();
     parent::tearDown();
   }
 
@@ -82,8 +100,6 @@ class AgentTestPluginTest extends ExistingSiteBase {
     $this->assertNotEmpty($finishEvents, 'Expected a finish SSE event.');
 
     // The mock queue should be empty (all responses consumed).
-    // Reset the state cache to read the latest value from the database
-    // (the web server process consumed the queue, not this process).
     \Drupal::state()->resetCache();
     $this->assertTrue(MockAiProvider::isEmpty(), 'All mock responses should be consumed.');
   }

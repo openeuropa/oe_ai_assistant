@@ -77,23 +77,12 @@ class AgentTestPlugin extends AiAssistantPluginBase {
     ]);
     $chatInput->setStreamedOutput(TRUE);
 
-    // Resolve the provider. State overrides allow tests to specify
-    // which provider to use without conflicting with settings.php
-    // config overrides. Falls back to the site default.
-    $state = \Drupal::state();
-    $providerId = $state->get('agent_test.provider_id');
-    $modelId = $state->get('agent_test.model_id');
-    if ($providerId && $modelId) {
-      $provider = $this->aiProviderManager->createInstance($providerId);
-    }
-    else {
-      $defaults = $this->aiProviderManager->getDefaultProviderForOperationType('chat');
-      $provider = $this->aiProviderManager->createInstance($defaults['provider_id']);
-      $modelId = $defaults['model_id'];
-    }
+    // Get the default provider for chat from configuration.
+    $defaults = $this->aiProviderManager->getDefaultProviderForOperationType('chat');
+    $provider = $this->aiProviderManager->createInstance($defaults['provider_id']);
 
     // Call the LLM.
-    $chatOutput = $provider->chat($chatInput, $modelId, ['agent_test']);
+    $chatOutput = $provider->chat($chatInput, $defaults['model_id'], ['agent_test']);
 
     // Stream the response as SSE using AiStreamedResponse from drupal/ai.
     $response = new AiStreamedResponse(NULL, 200, [
