@@ -8,12 +8,12 @@ use Drupal\ai\AiProviderPluginManager;
 use Drupal\ai\OperationType\Chat\ChatInput;
 use Drupal\ai\OperationType\Chat\ChatMessage;
 use Drupal\ai\OperationType\Chat\StreamedChatMessageIteratorInterface;
+use Drupal\ai\Response\AiStreamedResponse;
 use Drupal\oe_ai_assistant\Annotation\AiEditorialAssistant;
 use Drupal\oe_ai_assistant\Plugin\AiAssistantPluginBase;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
-use Symfony\Component\HttpFoundation\ServerEvent;
 
 /**
  * Test plugin for agent/sub-agent orchestration spike.
@@ -95,24 +95,22 @@ class AgentTestPlugin extends AiAssistantPluginBase {
     // Call the LLM.
     $chatOutput = $provider->chat($chatInput, $modelId, ['agent_test']);
 
-    // Stream the response as SSE events.
-    return $this->createSseResponse(function ($response) use ($chatOutput): void {
-      set_time_limit(0);
+    // Stream the response as SSE using AiStreamedResponse from drupal/ai.
+    $response = new AiStreamedResponse(NULL, 200, [
+      'Content-Type' => 'text/event-stream',
+      'x-vercel-ai-ui-message-stream' => 'v1',
+    ]);
 
-      // Disable all output buffering so SSE events flush immediately.
-      while (ob_get_level() > 0) {
-        ob_end_flush();
-      }
+    $response->setCallback(function () use ($chatOutput): void {
+      set_time_limit(0);
 
       $messageId = bin2hex(random_bytes(16));
 
       // Emit start event.
-      $response->sendEvent(new ServerEvent($this->sseJson('start', [
-        'messageId' => $messageId,
-      ])));
+      $this->emitSseEvent('start', ['messageId' => $messageId]);
 
       // Emit start-step event.
-      $response->sendEvent(new ServerEvent($this->sseJson('start-step', [])));
+      $this->emitSseEvent('start-step', []);
 
       // Stream the LLM response.
       $normalized = $chatOutput->getNormalized();
@@ -122,9 +120,7 @@ class AgentTestPlugin extends AiAssistantPluginBase {
         foreach ($normalized as $chunk) {
           $text = $chunk->getText();
           if ($text !== '' && $text !== NULL) {
-            $response->sendEvent(new ServerEvent($this->sseJson('text-delta', [
-              'textDelta' => $text,
-            ])));
+            $this->emitSseEvent('text-delta', ['textDelta' => $text]);
           }
         }
       }
@@ -132,41 +128,41 @@ class AgentTestPlugin extends AiAssistantPluginBase {
         // Non-streamed response: emit the full text at once.
         $text = $normalized->getText();
         if ($text !== '' && $text !== NULL) {
-          $response->sendEvent(new ServerEvent($this->sseJson('text-delta', [
-            'textDelta' => $text,
-          ])));
+          $this->emitSseEvent('text-delta', ['textDelta' => $text]);
         }
       }
 
       // Emit finish-step event.
-      $response->sendEvent(new ServerEvent($this->sseJson('finish-step', [])));
+      $this->emitSseEvent('finish-step', []);
 
       // Emit finish event.
-      $response->sendEvent(new ServerEvent($this->sseJson('finish', [
+      $this->emitSseEvent('finish', [
         'finishReason' => 'stop',
         'usage' => ['inputTokens' => 0, 'outputTokens' => 0],
-      ])));
+      ]);
 
-      $response->sendEvent(new ServerEvent('[DONE]'));
+      echo "data: [DONE]\n\n";
+      flush();
     });
+
+    return $response;
   }
 
   /**
-   * Encodes an SSE event payload as JSON.
+   * Emits an SSE event in the Vercel AI SDK UI Message Stream format.
    *
    * @param string $type
    *   The event type (e.g. 'text-delta', 'start', 'finish').
    * @param array $data
-   *   The event data.
-   *
-   * @return string
-   *   JSON-encoded event string.
+   *   The event data payload.
    */
-  protected function sseJson(string $type, array $data): string {
-    return json_encode(
+  protected function emitSseEvent(string $type, array $data): void {
+    $json = json_encode(
       ['type' => $type, 'data' => $data],
       JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE
     );
+    echo "data: $json\n\n";
+    flush();
   }
 
 }
