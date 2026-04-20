@@ -45,10 +45,13 @@
   "files": {
     "includes": [
       "**",
-      "!dist/",
-      "!storybook-static/",
-      "!node_modules/",
-      "!.pnpm-store/",
+      "!dist",
+      "!coverage",
+      "!playwright-report",
+      "!storybook-static",
+      "!test-results",
+      "!node_modules",
+      "!.pnpm-store",
       "!src/api/schema.d.ts"
     ]
   }
