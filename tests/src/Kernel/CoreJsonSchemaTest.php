@@ -482,4 +482,44 @@ class CoreJsonSchemaTest extends KernelTestBase {
     $this->assertNotEmpty($schema);
   }
 
+  /**
+   * AC #4: $serializer->deserialize() round-trips schema-conforming JSON.
+   *
+   * Scope note: validation only. DraftFieldMapper still owns node creation
+   * in this ticket; replacing it via core denormalization is future work.
+   *
+   * Note: the JSON shape used here is core's deserialization input shape
+   * (matching what `$serializer->normalize($entity, 'json')` would emit),
+   * NOT the LLM-facing shape produced by EntityJsonSchemaComposer (which
+   * uses x-targetType/x-bundles extension keys and a wrapped envelope).
+   * The LLM is expected to emit values matching core's input contract.
+   */
+  public function testDeserializeFromSchemaConformingJson(): void {
+    $serializer = $this->container->get('serializer');
+
+    $json = json_encode([
+      'type' => [['target_id' => 'oe_news']],
+      'title' => [['value' => 'Deserialisation round-trip']],
+      'body' => [
+        [
+          'value' => '<p>Body text</p>',
+          'format' => 'plain_text',
+        ],
+      ],
+      'field_teaser' => [['value' => 'Teaser']],
+      'field_news_type' => [['value' => 'press_release']],
+      'field_publication_date' => [['value' => '2026-04-20']],
+    ], JSON_THROW_ON_ERROR);
+
+    /** @var \Drupal\node\NodeInterface $node */
+    $node = $serializer->deserialize($json, 'Drupal\node\Entity\Node', 'json');
+
+    $this->assertSame('oe_news', $node->bundle());
+    $this->assertSame('Deserialisation round-trip', $node->getTitle());
+    $this->assertSame('<p>Body text</p>', $node->get('body')->value);
+    $this->assertSame('Teaser', $node->get('field_teaser')->value);
+    $this->assertSame('press_release', $node->get('field_news_type')->value);
+    $this->assertSame('2026-04-20', $node->get('field_publication_date')->value);
+  }
+
 }
