@@ -6,6 +6,7 @@ namespace Drupal\oe_ai_assistant\Service;
 
 use Drupal\Core\Entity\ContentEntityTypeInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
+use Drupal\Core\Field\FieldDefinitionInterface;
 use Drupal\Core\Field\FieldItemListInterface;
 use Drupal\Core\Field\FieldStorageDefinitionInterface;
 use Drupal\Core\TypedData\TypedDataInternalPropertiesHelper;
@@ -141,9 +142,9 @@ class EntityJsonSchemaComposer {
    *
    * Multi-cardinality fields become {type: "array", items: ...}; single-
    * cardinality fields return the item schema directly. Per-item shaping
-   * lives in composeItem(); enrichment (Task 3) and reference handling
-   * (Task 4) belong to their own private helpers - do NOT inline new
-   * behavior here.
+   * lives in composeItem(); enrichment lives in enrichField(); reference
+   * handling (Task 4) belongs to its own private helper - do NOT inline
+   * new behavior here.
    *
    * @param \Drupal\Core\Field\FieldItemListInterface $fieldItemList
    *   The field item list to introspect.
@@ -154,6 +155,7 @@ class EntityJsonSchemaComposer {
   private function composeField(FieldItemListInterface $fieldItemList): array {
     $fieldDef = $fieldItemList->getFieldDefinition();
     $itemSchema = $this->composeItem($fieldItemList);
+    $itemSchema = $this->enrichField($itemSchema, $fieldDef);
 
     $cardinality = $fieldDef->getFieldStorageDefinition()->getCardinality();
     if ($cardinality === 1) {
@@ -232,6 +234,70 @@ class EntityJsonSchemaComposer {
       $schema['required'] = $required;
     }
     return $schema;
+  }
+
+  /**
+   * Layers field-instance metadata onto a per-item schema.
+   *
+   * Core's leaf normalisers know primitive types and basic formats but
+   * do NOT propagate field-instance constraints (allowed values, max
+   * length, datetime granularity, descriptions). This method injects
+   * those on top of the core leaf schema.
+   *
+   * Operates on the schema produced by composeItem(): for single-property
+   * fields that's the leaf schema directly, for multi-property fields
+   * that's the {type: "object", properties: ...} envelope. Either way,
+   * enum / maxLength / format / description attach at the schema's top
+   * level.
+   *
+   * Limitation: for multi-property fields (where composeItem() returns
+   * {type: "object", properties: ...}), enum/maxLength/format are merged
+   * at the OBJECT envelope level, not on a sub-property. Today no field
+   * type exhibits multi-property + max_length together; revisit this rule
+   * if such a type is introduced.
+   *
+   * @param array $itemSchema
+   *   The per-item schema produced by composeItem().
+   * @param \Drupal\Core\Field\FieldDefinitionInterface $fieldDef
+   *   The field definition supplying the enrichment metadata.
+   *
+   * @return array
+   *   The per-item schema with field-instance metadata merged in.
+   */
+  private function enrichField(array $itemSchema, FieldDefinitionInterface $fieldDef): array {
+    $type = $fieldDef->getType();
+    $settings = $fieldDef->getSettings();
+    $storageSettings = $fieldDef->getFieldStorageDefinition()->getSettings();
+
+    // List_string / list_integer / list_float -> enum.
+    if (in_array($type, ['list_string', 'list_integer', 'list_float'], TRUE)) {
+      $allowed = $storageSettings['allowed_values'] ?? [];
+      if ($allowed !== []) {
+        $itemSchema['enum'] = array_keys($allowed);
+      }
+    }
+
+    // String storage max_length.
+    if ($type === 'string' && !empty($storageSettings['max_length'])) {
+      $itemSchema['maxLength'] = (int) $storageSettings['max_length'];
+    }
+
+    // Datetime: date vs date-time.
+    if ($type === 'datetime') {
+      $datetimeType = $settings['datetime_type'] ?? 'datetime';
+      $itemSchema['format'] = $datetimeType === 'date' ? 'date' : 'date-time';
+    }
+
+    // Description: prefer field description, fall back to label.
+    $desc = (string) ($fieldDef->getDescription() ?? '');
+    if ($desc === '') {
+      $desc = (string) $fieldDef->getLabel();
+    }
+    if ($desc !== '') {
+      $itemSchema['description'] = $desc;
+    }
+
+    return $itemSchema;
   }
 
 }

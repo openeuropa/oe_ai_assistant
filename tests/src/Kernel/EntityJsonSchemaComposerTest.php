@@ -206,4 +206,80 @@ class EntityJsonSchemaComposerTest extends KernelTestBase {
     $this->assertSame(3, $keywords['maxItems']);
   }
 
+  /**
+   * Asserts list_string fields publish their allowed_values keys as enum.
+   */
+  public function testListStringInjectsEnumFromAllowedValues(): void {
+    $schema = $this->composer()->compose('node', 'oe_news');
+    $newsType = $schema['properties']['field_news_type'];
+
+    // field_news_type is single-cardinality list_string with allowed values
+    // press_release / announcement / update (per the test fixture).
+    $this->assertSame('string', $newsType['type']);
+    $this->assertEqualsCanonicalizing(
+      ['press_release', 'announcement', 'update'],
+      $newsType['enum'],
+    );
+  }
+
+  /**
+   * Asserts string fields surface the storage max_length as maxLength.
+   */
+  public function testStringFieldGetsMaxLengthFromStorage(): void {
+    $schema = $this->composer()->compose('node', 'oe_news');
+    // title's storage max_length is 255 (Drupal core default).
+    $this->assertSame(255, $schema['properties']['title']['maxLength']);
+  }
+
+  /**
+   * Asserts datetime fields with datetime_type=date use format "date".
+   */
+  public function testDateOnlyDateTimeFieldGetsDateFormat(): void {
+    $schema = $this->composer()->compose('node', 'oe_news');
+    // field_publication_date is configured as date-only in fixtures.
+    $value = $schema['properties']['field_publication_date'];
+    // For single-property single-cardinality the schema collapses to leaf.
+    $this->assertSame('string', $value['type']);
+    $this->assertSame('date', $value['format']);
+  }
+
+  /**
+   * Asserts the field instance description carries through to the schema.
+   *
+   * The field_teaser fixture description is "A short teaser for the news
+   * item." (lowercase "teaser"). The plan snippet asserted "Teaser" (capital),
+   * but enrichField() prefers the description over the label, so we match
+   * the substring that actually appears in the description. The label
+   * fallback branch is exercised by datetime_type / list_string fields whose
+   * instance description is empty (e.g. field_publication_date in the same
+   * fixture).
+   */
+  public function testFieldDescriptionsCarryThrough(): void {
+    $schema = $this->composer()->compose('node', 'oe_news');
+
+    // Description-preferred path: field_teaser has both a description and
+    // label; the description (lowercase 't') wins over the label "Teaser"
+    // (capital T).
+    $teaser = $schema['properties']['field_teaser'];
+    $this->assertStringContainsString('teaser', $teaser['description'] ?? '');
+
+    // Label-fallback path: field_publication_date has an empty description
+    // so the label "Publication date" is what reaches the schema.
+    $pubDate = $schema['properties']['field_publication_date'];
+    $this->assertSame('Publication date', $pubDate['description'] ?? '');
+  }
+
+  /**
+   * Asserts datetime fields with datetime_type=datetime use format "date-time".
+   */
+  public function testDateTimeFieldGetsDateTimeFormat(): void {
+    $schema = $this->composer()->compose('node', 'oe_news');
+    // field_publication_datetime is a datetime field with
+    // datetime_type: datetime (full timestamp, not date-only). enrichField()
+    // must override core's default 'date' format to 'date-time'.
+    $value = $schema['properties']['field_publication_datetime'];
+    $this->assertSame('string', $value['type']);
+    $this->assertSame('date-time', $value['format']);
+  }
+
 }

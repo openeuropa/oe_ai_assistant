@@ -8,6 +8,7 @@ dependencies:
     - field.field.node.oe_news.field_keywords
     - field.field.node.oe_news.field_news_type
     - field.field.node.oe_news.field_publication_date
+    - field.field.node.oe_news.field_publication_datetime
     - field.field.node.oe_news.field_teaser
     - node.type.oe_news
   module:
@@ -50,6 +51,12 @@ content:
   field_publication_date:
     type: datetime_default
     weight: 3
+    region: content
+    settings: {  }
+    third_party_settings: {  }
+  field_publication_datetime:
+    type: datetime_default
+    weight: 4
     region: content
     settings: {  }
     third_party_settings: {  }
