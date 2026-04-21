@@ -108,6 +108,9 @@ class UiMessageStream implements UiMessageStreamInterface {
    *   The text chunk to emit.
    */
   public function textDelta(string $text): void {
+    if ($text === '') {
+      return;
+    }
     $this->emit('text-delta', ['textDelta' => $text]);
   }
 
@@ -191,18 +194,12 @@ class UiMessageStream implements UiMessageStreamInterface {
     $normalized = $chatOutput->getNormalized();
     if ($normalized instanceof StreamedChatMessageIteratorInterface) {
       foreach ($normalized as $chunk) {
-        $text = $chunk->getText();
-        if ($text !== '' && $text !== NULL) {
-          $this->textDelta($text);
-        }
+        $this->textDelta($chunk->getText() ?? '');
       }
       $toolCalls = $normalized->getTools();
     }
     else {
-      $text = $normalized->getText();
-      if ($text !== '' && $text !== NULL) {
-        $this->textDelta($text);
-      }
+      $this->textDelta($normalized->getText() ?? '');
       $toolCalls = $normalized->getTools() ?? [];
     }
 

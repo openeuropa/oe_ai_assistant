@@ -141,7 +141,7 @@ class AgentTestPlugin extends AiAssistantPluginBase {
       $stream->start();
 
       // Stream the router response and collect tool calls.
-      $toolCalls = $stream->streamChatOutput($chatOutput);
+      $toolCalls = $stream->streamChatOutput($chatOutput, 'router');
 
       // Check if draft_content was called.
       $draftCall = NULL;
@@ -293,9 +293,7 @@ class AgentTestPlugin extends AiAssistantPluginBase {
         }
 
         // Emit the sub-agent result as text-delta.
-        if ($fullText !== '') {
-          $stream->textDelta($fullText);
-        }
+        $stream->textDelta($fullText);
 
         $stream->finishStep($stepId);
 
