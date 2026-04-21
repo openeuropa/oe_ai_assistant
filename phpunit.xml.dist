@@ -10,6 +10,9 @@
     <env name="OE_AI_SKIP_PROVIDER_OVERRIDE" value="1"/>
   </php>
   <testsuites>
+    <testsuite name="kernel">
+      <directory>tests/src/Kernel</directory>
+    </testsuite>
     <testsuite name="unit">
       <directory>tests/src/Unit</directory>
     </testsuite>

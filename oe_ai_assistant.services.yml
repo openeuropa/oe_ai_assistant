@@ -37,3 +37,14 @@ services:
 
   Drupal\oe_ai_assistant\Store\ConversationStoreFactory: {}
   Drupal\oe_ai_assistant\Store\ConversationStoreFactoryInterface: '@Drupal\oe_ai_assistant\Store\ConversationStoreFactory'
+
+  Drupal\oe_ai_assistant\Service\ReferenceFieldResolver:
+    arguments:
+      - '@entity_field.manager'
+
+  Drupal\oe_ai_assistant\Service\AgentFactory:
+    arguments:
+      - '@ai.provider'
+      - '@plugin.manager.ai.function_calls'
+      - '@config.factory'
+      - '@key.repository'
