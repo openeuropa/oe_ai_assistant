@@ -9,7 +9,6 @@ use Drupal\ai\OperationType\Chat\ChatInput;
 use Drupal\ai\OperationType\Chat\ChatMessage;
 use Drupal\ai\OperationType\Chat\Tools\ToolsFunctionOutputInterface;
 use Drupal\ai\OperationType\Chat\Tools\ToolsInput;
-use Drupal\ai\Service\FunctionCalling\FunctionCallPluginManager;
 use Drupal\ai_agents\PluginInterfaces\AiAgentInterface;
 use Drupal\ai_agents\PluginManager\AiAgentManager;
 use Drupal\ai_agents\Task\Task;
@@ -45,13 +44,6 @@ class AgentTestPlugin extends AiAssistantPluginBase {
   protected AiProviderPluginManager $aiProviderManager;
 
   /**
-   * The function call plugin manager.
-   *
-   * @var \Drupal\ai\Service\FunctionCalling\FunctionCallPluginManager
-   */
-  protected FunctionCallPluginManager $functionCallManager;
-
-  /**
    * The AI agent plugin manager.
    *
    * @var \Drupal\ai_agents\PluginManager\AiAgentManager
@@ -76,7 +68,6 @@ class AgentTestPlugin extends AiAssistantPluginBase {
   ): static {
     $instance = new static($configuration, $plugin_id, $plugin_definition);
     $instance->aiProviderManager = $container->get('ai.provider');
-    $instance->functionCallManager = $container->get('plugin.manager.ai.function_calls');
     $instance->aiAgentManager = $container->get('plugin.manager.ai_agents');
     $instance->uiMessageStream = $container->get('oe_ai_assistant.ui_message_stream');
     return $instance;
@@ -108,32 +99,28 @@ class AgentTestPlugin extends AiAssistantPluginBase {
     $body = $this->decodeJsonBody($request);
     $message = $body['message'] ?? '';
 
-    // Build a ChatInput with the user's message and streaming enabled.
+    // Load the router agent config entity. It provides the system
+    // prompt and tool definitions. We use its config to build the
+    // ChatInput but call provider->chat() directly so we can stream
+    // the response as SSE.
+    $router = $this->aiAgentManager->createInstance('oe_test_router');
+
+    // Build ChatInput with the user's message.
     $chatInput = new ChatInput([
       new ChatMessage('user', $message),
     ]);
     $chatInput->setStreamedOutput(TRUE);
 
-    // Load the draft_content tool from the FunctionCall plugin manager
-    // and attach it to the request so the LLM can call it.
-    $draftTool = $this->functionCallManager->createInstance(
-      'oe_ai_assistant_agent_test:draft_content'
-    );
-    $chatInput->setChatTools(new ToolsInput([$draftTool->normalize()]));
+    // Get system prompt and tools from the agent config entity.
+    $chatInput->setSystemPrompt($router->getSystemPrompt());
+    $functions = $router->getFunctions();
+    if (!empty($functions['normalized'])) {
+      $chatInput->setChatTools(new ToolsInput($functions['normalized']));
+    }
 
-    // System prompt instructs the LLM when to use the tool.
-    $chatInput->setSystemPrompt(
-      'You are a content assistant. Chat with the user to understand '
-      . 'what they want. When they explicitly ask you to draft, generate, '
-      . 'or write content, call the draft_content tool. Do not call it '
-      . 'unless the user explicitly requests content generation.'
-    );
-
-    // Get the default provider for chat from configuration.
+    // Get the default provider and call the LLM directly for streaming.
     $defaults = $this->aiProviderManager->getDefaultProviderForOperationType('chat');
     $provider = $this->aiProviderManager->createInstance($defaults['provider_id']);
-
-    // Call the LLM (router call).
     $chatOutput = $provider->chat($chatInput, $defaults['model_id'], ['agent_test']);
 
     // Stream the response using UiMessageStream.
