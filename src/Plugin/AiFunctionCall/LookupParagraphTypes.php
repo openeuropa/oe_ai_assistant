@@ -48,7 +48,7 @@ use Symfony\Component\DependencyInjection\ContainerInterface;
     ),
   ],
 )]
-final class LookupParagraphTypes extends FunctionCallBase implements StructuredExecutableFunctionCallInterface {
+class LookupParagraphTypes extends FunctionCallBase implements StructuredExecutableFunctionCallInterface {
 
   /**
    * The current user.

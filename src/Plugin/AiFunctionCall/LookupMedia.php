@@ -61,7 +61,7 @@ use Symfony\Component\DependencyInjection\ContainerInterface;
     ),
   ],
 )]
-final class LookupMedia extends FunctionCallBase implements StructuredExecutableFunctionCallInterface {
+class LookupMedia extends FunctionCallBase implements StructuredExecutableFunctionCallInterface {
 
   /**
    * The current user.

@@ -16,7 +16,7 @@ use Drush\Commands\DrushCommands;
 /**
  * Drush commands for module lookup plugins.
  */
-final class LookupCommands extends DrushCommands {
+class LookupCommands extends DrushCommands {
 
   /**
    * Supported lookup types keyed by their required inputs.
@@ -38,16 +38,6 @@ final class LookupCommands extends DrushCommands {
     'media' => 'lookup_media',
   ];
 
-  /**
-   * Creates the lookup command.
-   *
-   * @param object $functionCallManager
-   *   The AI function-call plugin manager service.
-   * @param \Drupal\Core\Entity\EntityTypeManagerInterface $entityTypeManager
-   *   The entity type manager.
-   * @param \Drupal\Core\Session\AccountSwitcherInterface $accountSwitcher
-   *   The account switcher.
-   */
   public function __construct(
     private readonly object $functionCallManager,
     private readonly EntityTypeManagerInterface $entityTypeManager,
@@ -58,6 +48,20 @@ final class LookupCommands extends DrushCommands {
 
   /**
    * Executes a module lookup and prints its structured result.
+   *
+   * @param string $type
+   *   The lookup type.
+   * @param string $entity_type
+   *   The host entity type.
+   * @param string $bundle
+   *   The host bundle.
+   * @param string $field_name
+   *   The reference field machine name on the host bundle.
+   * @param array<string, mixed> $options
+   *   Command options for the lookup execution.
+   *
+   * @return \Consolidation\OutputFormatters\StructuredData\UnstructuredData
+   *   The structured lookup result.
    */
   #[CLI\Command(name: 'oe-ai-assistant:lookup', aliases: ['oeaia:lookup'])]
   #[CLI\Argument(name: 'type', description: 'Lookup type: paragraphs or media.')]
@@ -119,6 +123,9 @@ final class LookupCommands extends DrushCommands {
 
   /**
    * Validates and normalizes a lookup type argument.
+   *
+   * @param string $lookup
+   *   The lookup type.
    */
   private function normalizeLookupType(string $lookup): string {
     $lookup = trim($lookup);
@@ -166,6 +173,9 @@ final class LookupCommands extends DrushCommands {
 
   /**
    * Resolves the account used for access-checked lookups.
+   *
+   * @param array $options
+   *   The lookup plugin context values.
    */
   private function resolveAccount(array $options): AccountInterface {
     $uid = $options['uid'] ?? 1;

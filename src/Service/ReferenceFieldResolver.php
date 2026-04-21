@@ -10,19 +10,11 @@ use Drupal\Core\Field\FieldDefinitionInterface;
 /**
  * Resolves and validates entity reference host fields for lookup tools.
  */
-final class ReferenceFieldResolver
-{
+class ReferenceFieldResolver {
 
-  /**
-   * Constructs a reference field resolver.
-   *
-   * @param \Drupal\Core\Entity\EntityFieldManagerInterface $entityFieldManager
-   *   The entity field manager.
-   */
   public function __construct(
     private readonly EntityFieldManagerInterface $entityFieldManager,
-  )
-  {
+  ) {
   }
 
   /**
@@ -49,10 +41,9 @@ final class ReferenceFieldResolver
     string $entityTypeId,
     string $bundle,
     string $fieldName,
-    array  $expectedFieldTypes,
+    array $expectedFieldTypes,
     string $expectedTargetEntityType,
-  ): FieldDefinitionInterface
-  {
+  ): FieldDefinitionInterface {
     $definitions = $this->entityFieldManager->getFieldDefinitions(
       $entityTypeId,
       $bundle,
@@ -88,7 +79,7 @@ final class ReferenceFieldResolver
         $entityTypeId,
         $bundle,
         $expectedTargetEntityType,
-        (string)$targetEntityType,
+        (string) $targetEntityType,
       ));
     }
 

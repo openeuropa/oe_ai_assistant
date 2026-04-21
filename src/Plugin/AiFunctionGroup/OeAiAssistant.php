@@ -16,6 +16,6 @@ use Drupal\Core\StringTranslation\TranslatableMarkup;
   group_name: new TranslatableMarkup('OpenEuropa AI Assistant'),
   description: new TranslatableMarkup('Lookup and drafting helper tools exposed by OpenEuropa AI Assistant.'),
 )]
-final class OeAiAssistant implements FunctionGroupInterface {
+class OeAiAssistant implements FunctionGroupInterface {
 
 }
