@@ -190,8 +190,6 @@ class UiMessageStream implements UiMessageStreamInterface {
     $this->startStep($stepId);
 
     $normalized = $chatOutput->getNormalized();
-    $toolCalls = [];
-
     if ($normalized instanceof StreamedChatMessageIteratorInterface) {
       foreach ($normalized as $chunk) {
         $text = $chunk->getText();

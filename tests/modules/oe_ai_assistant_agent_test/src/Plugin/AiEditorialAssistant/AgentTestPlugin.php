@@ -177,11 +177,70 @@ class AgentTestPlugin extends AiAssistantPluginBase {
    *   The consolidated draft object.
    */
   protected function orchestrate(UiMessageStreamInterface $stream, ToolsFunctionOutputInterface $draftCall): array {
-    // Target schema fragments (hardcoded for the spike).
+    // Target schema fragments as valid JSON Schema (hardcoded for the
+    // spike). Must include type/properties/required to satisfy strict
+    // providers like OpenAI. Property descriptions serve as
+    // micro-prompts that guide the LLM's output.
     $fragments = [
-      'main_fields' => '{"title": {"type": "string"}, "summary": {"type": "string"}}',
-      'item_hero' => '{"type": {"type": "string", "enum": ["hero"]}, "heading": {"type": "string"}, "body": {"type": "string"}}',
-      'item_text_block' => '{"type": {"type": "string", "enum": ["text_block"]}, "heading": {"type": "string"}, "body": {"type": "string"}}',
+      'main_fields' => [
+        'type' => 'object',
+        'properties' => [
+          'title' => [
+            'type' => 'string',
+            'maxLength' => 20,
+            'description' => 'A short, punchy headline. Max 20 characters.',
+          ],
+          'summary' => [
+            'type' => 'string',
+            'maxLength' => 50,
+            'description' => 'A one-sentence overview. Max 50 characters.',
+          ],
+        ],
+        'required' => ['title', 'summary'],
+        'additionalProperties' => FALSE,
+      ],
+      'item_hero' => [
+        'type' => 'object',
+        'properties' => [
+          'type' => [
+            'type' => 'string',
+            'enum' => ['hero'],
+          ],
+          'heading' => [
+            'type' => 'string',
+            'maxLength' => 20,
+            'description' => 'A short heading. Max 20 characters.',
+          ],
+          'body' => [
+            'type' => 'string',
+            'maxLength' => 50,
+            'description' => 'Brief hero text. Max 50 characters.',
+          ],
+        ],
+        'required' => ['type', 'heading', 'body'],
+        'additionalProperties' => FALSE,
+      ],
+      'item_text_block' => [
+        'type' => 'object',
+        'properties' => [
+          'type' => [
+            'type' => 'string',
+            'enum' => ['text_block'],
+          ],
+          'heading' => [
+            'type' => 'string',
+            'maxLength' => 20,
+            'description' => 'A short heading. Max 20 characters.',
+          ],
+          'body' => [
+            'type' => 'string',
+            'maxLength' => 50,
+            'description' => 'Brief paragraph text. Max 50 characters.',
+          ],
+        ],
+        'required' => ['type', 'heading', 'body'],
+        'additionalProperties' => FALSE,
+      ],
     ];
 
     // Extract instructions from the tool call arguments.
@@ -211,8 +270,13 @@ class AgentTestPlugin extends AiAssistantPluginBase {
 
         // Set structured output on the agent entity so providers that
         // support it return clean JSON without markdown fencing.
+        // The config value is a JSON string that the agent wrapper
+        // decodes. It must contain a 'schema' key as expected by
+        // ChatInput::setChatStructuredJsonSchema().
         $agent->getAiAgentEntity()->set('structured_output_enabled', TRUE);
-        $agent->getAiAgentEntity()->set('structured_output_schema', $schema);
+        $agent->getAiAgentEntity()->set('structured_output_schema',
+          json_encode(['name' => $stepId, 'schema' => $schema])
+        );
 
         // Pass instructions as the Task.
         $task = new Task("Instructions: $instructions");
