@@ -162,7 +162,6 @@ class UiMessageStream implements UiMessageStreamInterface {
   public function finish(string $finishReason = 'stop'): void {
     $this->emit('finish', [
       'finishReason' => $finishReason,
-      'usage' => ['inputTokens' => 0, 'outputTokens' => 0],
     ]);
     echo "data: [DONE]\n\n";
     flush();
