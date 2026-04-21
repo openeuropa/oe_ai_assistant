@@ -78,7 +78,7 @@ class AgentTestPlugin extends AiAssistantPluginBase {
     $instance->aiProviderManager = $container->get('ai.provider');
     $instance->functionCallManager = $container->get('plugin.manager.ai.function_calls');
     $instance->aiAgentManager = $container->get('plugin.manager.ai_agents');
-    $instance->uiMessageStream = $container->get('Drupal\oe_ai_assistant\Service\UiMessageStream');
+    $instance->uiMessageStream = $container->get('oe_ai_assistant.ui_message_stream');
     return $instance;
   }
 

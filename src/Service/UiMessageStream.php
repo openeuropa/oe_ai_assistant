@@ -21,7 +21,8 @@ use Symfony\Component\HttpFoundation\Response;
  *
  * Usage:
  * @code
- * return UiMessageStream::respond(function (UiMessageStream $stream) {
+ * $stream = \Drupal::service('oe_ai_assistant.ui_message_stream');
+ * return $stream->respond(function ($stream) {
  *   $stream->start();
  *   $stream->startStep('main_fields');
  *   $stream->textDelta('Hello world');
@@ -52,17 +53,7 @@ class UiMessageStream implements UiMessageStreamInterface {
   }
 
   /**
-   * Creates an AiStreamedResponse that executes the given callback.
-   *
-   * The callback receives a UiMessageStream instance and should call
-   * its methods to emit SSE events. The response handles headers,
-   * output buffering, and connection management.
-   *
-   * @param callable $callback
-   *   A callback that receives this UiMessageStream instance.
-   *
-   * @return \Symfony\Component\HttpFoundation\Response
-   *   The streaming response.
+   * {@inheritdoc}
    */
   public function respond(callable $callback): Response {
     $response = new AiStreamedResponse(NULL, 200, [
@@ -80,10 +71,7 @@ class UiMessageStream implements UiMessageStreamInterface {
   }
 
   /**
-   * Emits a start event with a unique message ID.
-   *
-   * @param string|null $messageId
-   *   Optional message ID. Generated if not provided.
+   * {@inheritdoc}
    */
   public function start(?string $messageId = NULL): void {
     $messageId = $messageId ?? bin2hex(random_bytes(16));
@@ -91,10 +79,7 @@ class UiMessageStream implements UiMessageStreamInterface {
   }
 
   /**
-   * Emits a start-step event.
-   *
-   * @param string $stepId
-   *   Optional step identifier for the UI to track.
+   * {@inheritdoc}
    */
   public function startStep(string $stepId = ''): void {
     $data = $stepId !== '' ? ['stepId' => $stepId] : [];
@@ -102,10 +87,7 @@ class UiMessageStream implements UiMessageStreamInterface {
   }
 
   /**
-   * Emits a text-delta event with a chunk of text.
-   *
-   * @param string $text
-   *   The text chunk to emit.
+   * {@inheritdoc}
    */
   public function textDelta(string $text): void {
     if ($text === '') {
@@ -115,10 +97,7 @@ class UiMessageStream implements UiMessageStreamInterface {
   }
 
   /**
-   * Emits a finish-step event.
-   *
-   * @param string $stepId
-   *   Optional step identifier for the UI to mark as completed.
+   * {@inheritdoc}
    */
   public function finishStep(string $stepId = ''): void {
     $data = $stepId !== '' ? ['stepId' => $stepId] : [];
@@ -126,27 +105,14 @@ class UiMessageStream implements UiMessageStreamInterface {
   }
 
   /**
-   * Emits a custom event with arbitrary data.
-   *
-   * Use this for application-specific events like 'data-plan' or
-   * 'data-drafted-fields' that are not part of the base protocol.
-   *
-   * @param string $type
-   *   The event type name.
-   * @param array $data
-   *   The event payload.
+   * {@inheritdoc}
    */
   public function customEvent(string $type, array $data): void {
     $this->emit($type, $data);
   }
 
   /**
-   * Emits an error event.
-   *
-   * @param string $errorText
-   *   The error message.
-   * @param string $step
-   *   Optional step identifier where the error occurred.
+   * {@inheritdoc}
    */
   public function error(string $errorText, string $step = ''): void {
     $data = ['errorText' => $errorText];
@@ -157,10 +123,7 @@ class UiMessageStream implements UiMessageStreamInterface {
   }
 
   /**
-   * Emits a finish event and the [DONE] terminator.
-   *
-   * @param string $finishReason
-   *   The reason for finishing (e.g. 'stop', 'tool_calls').
+   * {@inheritdoc}
    */
   public function finish(string $finishReason = 'stop'): void {
     $this->emit('finish', [
@@ -171,22 +134,7 @@ class UiMessageStream implements UiMessageStreamInterface {
   }
 
   /**
-   * Streams a ChatOutput, emitting text-delta events for each chunk.
-   *
-   * Handles both streamed and non-streamed responses. After streaming
-   * completes, returns any tool calls found in the response.
-   *
-   * This method emits start-step/finish-step around the streaming.
-   * If you need more control over step boundaries, iterate the
-   * ChatOutput yourself and call textDelta() directly.
-   *
-   * @param \Drupal\ai\OperationType\Chat\ChatOutput $chatOutput
-   *   The LLM response to stream.
-   * @param string $stepId
-   *   Optional step identifier.
-   *
-   * @return \Drupal\ai\OperationType\Chat\Tools\ToolsFunctionOutputInterface[]
-   *   Tool calls found in the response (empty array if none).
+   * {@inheritdoc}
    */
   public function streamChatOutput(ChatOutput $chatOutput, string $stepId = ''): array {
     $this->startStep($stepId);
@@ -209,17 +157,7 @@ class UiMessageStream implements UiMessageStreamInterface {
   }
 
   /**
-   * Extracts a JSON object from LLM text output.
-   *
-   * Handles both raw JSON and markdown-fenced JSON (```json...```)
-   * that real providers like Mistral often return despite system
-   * prompt instructions or structured output settings.
-   *
-   * @param string $text
-   *   The raw LLM output text.
-   *
-   * @return array|null
-   *   Decoded JSON as array, or NULL on parse failure.
+   * {@inheritdoc}
    */
   public function extractJson(string $text): ?array {
     $text = trim($text);

@@ -30,7 +30,7 @@ services:
       - '@config.factory'
       - '@key.repository'
 
-  Drupal\oe_ai_assistant\Service\UiMessageStream:
+  oe_ai_assistant.ui_message_stream:
     class: Drupal\oe_ai_assistant\Service\UiMessageStream
     arguments:
       - '@ai.prompt_code_block_extractor'
