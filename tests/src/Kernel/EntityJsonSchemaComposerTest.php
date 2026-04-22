@@ -36,6 +36,9 @@ class EntityJsonSchemaComposerTest extends KernelTestBase {
     'entity_reference_revisions',
     'paragraphs',
     'file',
+    'image',
+    'link',
+    'taxonomy',
     'inline_entity_form',
     'content_moderation',
     'workflows',
@@ -55,6 +58,8 @@ class EntityJsonSchemaComposerTest extends KernelTestBase {
     $this->installEntitySchema('user');
     $this->installEntitySchema('paragraph');
     $this->installEntitySchema('content_moderation_state');
+    $this->installEntitySchema('file');
+    $this->installEntitySchema('taxonomy_term');
     $this->installConfig([
       'system',
       'field',
@@ -330,6 +335,72 @@ class EntityJsonSchemaComposerTest extends KernelTestBase {
     // point on a non-node entity type.
     $schema = $this->composer()->compose('paragraph', 'quote_block');
     $this->assertArrayHasKey('field_quote_text', $schema['properties']);
+  }
+
+  /**
+   * Asserts auto-managed base fields (created, changed) are excluded.
+   */
+  public function testAutoManagedBaseFieldsExcluded(): void {
+    $schema = $this->composer()->compose('node', 'oe_news');
+    // created and changed are auto-managed timestamps. The LLM should never
+    // see them - emitting bogus values would silently overwrite Drupal's
+    // revision tracking via DraftFieldMapper's set() call.
+    $this->assertArrayNotHasKey('created', $schema['properties'],
+      'created is excluded from the schema.');
+    $this->assertArrayNotHasKey('changed', $schema['properties'],
+      'changed is excluded from the schema.');
+  }
+
+  /**
+   * Asserts image fields route through the reference path.
+   */
+  public function testImageFieldRoutesAsReference(): void {
+    // Image fields extend EntityReferenceItem (target_type=file). The
+    // broader reference detection from architect fix 3 should route them
+    // through composeReferenceItem rather than emitting a primitive bag.
+    $schema = $this->composer()->compose('node', 'oe_news');
+    $image = $schema['properties']['field_news_image'];
+
+    $this->assertSame('object', $image['type']);
+    $this->assertSame('file', $image['x-targetType']);
+    // file entity has bundles (default 'file'). Don't recurse - file refs
+    // are NOT entity_reference_revisions, so no x-bundles.
+    $this->assertArrayNotHasKey('x-bundles', $image);
+    $this->assertArrayNotHasKey('properties', $image,
+      'Image fields route through composeReferenceItem and must not emit a properties bag.');
+  }
+
+  /**
+   * Asserts link fields emit a wrapped object schema with uri and title.
+   */
+  public function testLinkFieldIsObjectWithUriAndTitle(): void {
+    // Link fields are multi-property (uri + title + options) with NO
+    // class hierarchy under EntityReferenceItem. Route through composeItem
+    // and emit a wrapped object schema.
+    $schema = $this->composer()->compose('node', 'oe_news');
+    $link = $schema['properties']['field_news_link'];
+
+    $this->assertSame('object', $link['type']);
+    $this->assertArrayHasKey('uri', $link['properties']);
+    $this->assertArrayHasKey('title', $link['properties']);
+  }
+
+  /**
+   * Taxonomy term references exercise the bundle-info enumeration fallback.
+   *
+   * field_news_tags has no target_bundles set in handler_settings, so the
+   * composer falls through to bundleInfo->getBundleInfo('taxonomy_term'),
+   * which returns vocabularies. Asserts the schema picks them up as
+   * x-targetBundles. Multi-cardinality (-1) wraps as array.
+   */
+  public function testTaxonomyReferenceUsesVocabularyAsBundle(): void {
+    $schema = $this->composer()->compose('node', 'oe_news');
+    $tags = $schema['properties']['field_news_tags'];
+    // Multi-cardinality (-1) wraps as array.
+    $this->assertSame('array', $tags['type']);
+    $items = $tags['items'];
+    $this->assertSame('taxonomy_term', $items['x-targetType']);
+    $this->assertContains('news_tags', $items['x-targetBundles']);
   }
 
 }

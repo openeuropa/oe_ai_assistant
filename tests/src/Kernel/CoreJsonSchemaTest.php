@@ -59,6 +59,9 @@ class CoreJsonSchemaTest extends KernelTestBase {
     'entity_reference_revisions',
     'paragraphs',
     'file',
+    'image',
+    'link',
+    'taxonomy',
     'inline_entity_form',
     'content_moderation',
     'workflows',
@@ -84,6 +87,8 @@ class CoreJsonSchemaTest extends KernelTestBase {
     $this->installEntitySchema('user');
     $this->installEntitySchema('paragraph');
     $this->installEntitySchema('content_moderation_state');
+    $this->installEntitySchema('file');
+    $this->installEntitySchema('taxonomy_term');
 
     $this->installConfig([
       'system',

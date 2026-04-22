@@ -10,6 +10,7 @@ use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Field\FieldDefinitionInterface;
 use Drupal\Core\Field\FieldItemListInterface;
 use Drupal\Core\Field\FieldStorageDefinitionInterface;
+use Drupal\Core\Field\Plugin\Field\FieldType\EntityReferenceItem;
 use Drupal\Core\TypedData\TypedDataInternalPropertiesHelper;
 use Symfony\Component\Serializer\SerializerInterface;
 
@@ -51,6 +52,26 @@ class EntityJsonSchemaComposer {
     'default_langcode',
     'revision_translation_affected',
     'owner',
+  ];
+
+  /**
+   * Field machine names that are auto-managed and should never be drafted.
+   *
+   * These are NOT entity-type keys (so they're not caught by SKIP_KEY_ROLES)
+   * but Drupal manages their values on save. Including them in the schema
+   * risks the LLM emitting hallucinated timestamps that DraftFieldMapper
+   * would then write into the entity, bypassing Drupal's revision tracking.
+   *
+   * @todo Replace with class-hierarchy detection
+   *   (is_a($itemClass, CreatedItem::class) || is_a($itemClass, ChangedItem::class))
+   *   so custom entities with non-standard timestamp field names are also caught.
+   *   Tracked under post-OEL-4691 hardening.
+   *
+   * @var string[]
+   */
+  private const AUTO_MANAGED_FIELD_NAMES = [
+    'created',
+    'changed',
   ];
 
   /**
@@ -202,6 +223,11 @@ class EntityJsonSchemaComposer {
       }
     }
 
+    // Auto-managed base fields - typically timestamps not in entity-type keys.
+    foreach (self::AUTO_MANAGED_FIELD_NAMES as $fieldName) {
+      $skip[$fieldName] = TRUE;
+    }
+
     return $skip;
   }
 
@@ -226,12 +252,15 @@ class EntityJsonSchemaComposer {
    */
   private function composeField(FieldItemListInterface $fieldItemList, int $depth): array {
     $fieldDef = $fieldItemList->getFieldDefinition();
-    $type = $fieldDef->getType();
 
     // Reference fields short-circuit through composeReferenceItem rather than
     // walking item properties (which would yield {target_id,
-    // target_revision_id} primitive bags - useless for the LLM).
-    if (in_array($type, ['entity_reference', 'entity_reference_revisions'], TRUE)) {
+    // target_revision_id} primitive bags - useless for the LLM). Detect via
+    // the FieldItem class hierarchy so any FieldItem extending
+    // EntityReferenceItem (image, file, oe_media_entity_reference,
+    // skos_concept_entity_reference, ...) routes through the reference path.
+    $itemClass = $fieldItemList->getItemDefinition()->getClass();
+    if (is_a($itemClass, EntityReferenceItem::class, TRUE)) {
       $itemSchema = $this->composeReferenceItem($fieldDef, $depth - 1);
     }
     else {
@@ -390,6 +419,14 @@ class EntityJsonSchemaComposer {
    *
    * Description handling is delegated to descriptionFor() so the rule
    * stays consistent with enrichField()'s description-with-fallback.
+   *
+   * Known limitation for image/file fields: Drupal stores alt-text, title,
+   * file extensions, max filesize, and upload constraints as field-instance
+   * settings. This composer emits only x-targetType / x-targetBundles for
+   * such fields. The LLM has no signal that alt-text exists or what file
+   * types are allowed. Acceptable today because images are typically
+   * attached post-draft; revisit if the drafting plugin starts populating
+   * media fields directly. (Tracked as future enhancement.)
    *
    * @param \Drupal\Core\Field\FieldDefinitionInterface $fieldDef
    *   The reference field definition.
