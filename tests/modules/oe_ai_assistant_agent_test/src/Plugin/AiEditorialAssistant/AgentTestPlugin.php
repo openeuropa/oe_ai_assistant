@@ -6,9 +6,11 @@ namespace Drupal\oe_ai_assistant_agent_test\Plugin\AiEditorialAssistant;
 
 use Drupal\ai\AiProviderPluginManager;
 use Drupal\ai\OperationType\Chat\ChatInput;
+use Drupal\ai\OperationType\Chat\StreamedChatMessageIteratorInterface;
 use Drupal\ai\OperationType\Chat\ChatMessage;
 use Drupal\ai\OperationType\Chat\Tools\ToolsFunctionOutputInterface;
 use Drupal\ai\OperationType\Chat\Tools\ToolsInput;
+use Drupal\Core\TempStore\PrivateTempStoreFactory;
 use Drupal\ai_agents\PluginInterfaces\AiAgentInterface;
 use Drupal\ai_agents\PluginManager\AiAgentManager;
 use Drupal\ai_agents\Task\Task;
@@ -25,9 +27,8 @@ use Symfony\Component\HttpFoundation\Response;
  * Streams LLM responses as SSE events using the Vercel AI SDK
  * UI Message Stream v1 protocol via UiMessageStream.
  *
- * Note: this plugin uses UiMessageStream instead of the base class's
- * createSseResponse(). If the pattern proves sound after the spike,
- * createSseResponse() on AiAssistantPluginBase may be removed.
+ * Conversation history is persisted via PrivateTempStore so context
+ * accumulates across multiple chat turns before drafting.
  */
 #[AiEditorialAssistant(
   id: 'agent_test',
@@ -35,6 +36,21 @@ use Symfony\Component\HttpFoundation\Response;
   description: 'Test plugin for agent/sub-agent orchestration.',
 )]
 class AgentTestPlugin extends AiAssistantPluginBase {
+
+  /**
+   * The temp store collection name for conversation history.
+   */
+  protected const STORE_COLLECTION = 'oe_ai_assistant_agent_test';
+
+  /**
+   * The temp store key for the conversation thread.
+   */
+  protected const THREAD_KEY = 'conversation';
+
+  /**
+   * Maximum messages to retain in the conversation history.
+   */
+  protected const MAX_MESSAGES = 20;
 
   /**
    * The AI provider plugin manager.
@@ -58,6 +74,13 @@ class AgentTestPlugin extends AiAssistantPluginBase {
   protected UiMessageStreamInterface $uiMessageStream;
 
   /**
+   * The private temp store factory.
+   *
+   * @var \Drupal\Core\TempStore\PrivateTempStoreFactory
+   */
+  protected PrivateTempStoreFactory $tempStoreFactory;
+
+  /**
    * {@inheritdoc}
    */
   public static function create(
@@ -70,6 +93,7 @@ class AgentTestPlugin extends AiAssistantPluginBase {
     $instance->aiProviderManager = $container->get('ai.provider');
     $instance->aiAgentManager = $container->get('plugin.manager.ai_agents');
     $instance->uiMessageStream = $container->get('oe_ai_assistant.ui_message_stream');
+    $instance->tempStoreFactory = $container->get('tempstore.private');
     return $instance;
   }
 
@@ -79,15 +103,17 @@ class AgentTestPlugin extends AiAssistantPluginBase {
   public function getActionMap(): array {
     return [
       'chat' => $this->chat(...),
+      'reset' => $this->reset(...),
     ];
   }
 
   /**
    * Handles a chat request by calling the LLM and streaming the response.
    *
-   * The LLM receives a draft_content tool. If it responds with text, the
-   * text is streamed as SSE. If it calls draft_content, the plugin runs
-   * the sub-agent orchestration loop.
+   * Loads conversation history from the temp store, appends the user's
+   * message, calls the LLM with the full history, and persists the
+   * response. If the LLM calls draft_content, runs the sub-agent
+   * orchestration loop with the full conversation as context.
    *
    * @param \Symfony\Component\HttpFoundation\Request $request
    *   The incoming request with a JSON body containing 'message'.
@@ -99,19 +125,16 @@ class AgentTestPlugin extends AiAssistantPluginBase {
     $body = $this->decodeJsonBody($request);
     $message = $body['message'] ?? '';
 
-    // Load the router agent config entity. It provides the system
-    // prompt and tool definitions. We use its config to build the
-    // ChatInput but call provider->chat() directly so we can stream
-    // the response as SSE.
+    // Load conversation history and append the user's message.
+    $history = $this->loadHistory();
+    $history[] = new ChatMessage('user', $message);
+
+    // Load the router agent config entity for system prompt and tools.
     $router = $this->aiAgentManager->createInstance('oe_test_router');
 
-    // Build ChatInput with the user's message.
-    $chatInput = new ChatInput([
-      new ChatMessage('user', $message),
-    ]);
+    // Build ChatInput with the full conversation history.
+    $chatInput = new ChatInput($history);
     $chatInput->setStreamedOutput(TRUE);
-
-    // Get system prompt and tools from the agent config entity.
     $chatInput->setSystemPrompt($router->getSystemPrompt());
     $functions = $router->getFunctions();
     if (!empty($functions['normalized'])) {
@@ -124,7 +147,7 @@ class AgentTestPlugin extends AiAssistantPluginBase {
     $chatOutput = $provider->chat($chatInput, $defaults['model_id'], ['agent_test']);
 
     // Stream the response using UiMessageStream.
-    return $this->uiMessageStream->respond(function (UiMessageStreamInterface $stream) use ($chatOutput): void {
+    return $this->uiMessageStream->respond(function (UiMessageStreamInterface $stream) use ($chatOutput, $history): void {
       $stream->start();
 
       // Stream the router response and collect tool calls.
@@ -140,8 +163,29 @@ class AgentTestPlugin extends AiAssistantPluginBase {
       }
 
       if ($draftCall !== NULL) {
-        $consolidated = $this->orchestrate($stream, $draftCall);
+        $consolidated = $this->orchestrate($stream, $draftCall, $history);
         $stream->customEvent('data-drafted-fields', $consolidated);
+
+        // Persist the drafted result in history so subsequent turns
+        // can reference it (e.g. "change the title").
+        $history[] = new ChatMessage('assistant', json_encode($consolidated));
+        $this->saveHistory($history);
+      }
+      else {
+        // Persist the text response in history. After streaming, the
+        // reconstructed ChatOutput has the assembled text.
+        $reconstructed = $chatOutput->getNormalized();
+        if ($reconstructed instanceof StreamedChatMessageIteratorInterface) {
+          $output = $reconstructed->reconstructChatOutput();
+          $responseText = $output->getNormalized()->getText() ?? '';
+        }
+        else {
+          $responseText = $reconstructed->getText() ?? '';
+        }
+        if ($responseText !== '') {
+          $history[] = new ChatMessage('assistant', $responseText);
+        }
+        $this->saveHistory($history);
       }
 
       $stream->finish($draftCall ? 'tool_calls' : 'stop');
@@ -149,21 +193,79 @@ class AgentTestPlugin extends AiAssistantPluginBase {
   }
 
   /**
+   * Resets the conversation history.
+   *
+   * @param \Symfony\Component\HttpFoundation\Request $request
+   *   The incoming request.
+   *
+   * @return array
+   *   A confirmation response.
+   */
+  public function reset(Request $request): array {
+    $store = $this->tempStoreFactory->get(static::STORE_COLLECTION);
+    $store->delete(static::THREAD_KEY);
+    return ['status' => 'ok'];
+  }
+
+  /**
+   * Loads conversation history from the temp store.
+   *
+   * @return \Drupal\ai\OperationType\Chat\ChatMessage[]
+   *   The stored messages, or empty array for new conversations.
+   */
+  protected function loadHistory(): array {
+    $store = $this->tempStoreFactory->get(static::STORE_COLLECTION);
+    $data = $store->get(static::THREAD_KEY);
+    if (is_array($data)) {
+      // Reconstruct ChatMessage objects from stored arrays.
+      return array_map(
+        fn(array $m) => new ChatMessage($m['role'], $m['text']),
+        $data,
+      );
+    }
+    return [];
+  }
+
+  /**
+   * Saves conversation history to the temp store.
+   *
+   * Trims to MAX_MESSAGES to bound storage size.
+   *
+   * @param \Drupal\ai\OperationType\Chat\ChatMessage[] $history
+   *   The messages to persist.
+   */
+  protected function saveHistory(array $history): void {
+    // Trim to max messages.
+    if (count($history) > static::MAX_MESSAGES) {
+      $history = array_slice($history, -static::MAX_MESSAGES);
+    }
+    // Store as simple arrays for serialization.
+    $data = array_map(
+      fn(ChatMessage $m) => ['role' => $m->getRole(), 'text' => $m->getText()],
+      $history,
+    );
+    $store = $this->tempStoreFactory->get(static::STORE_COLLECTION);
+    $store->set(static::THREAD_KEY, $data);
+  }
+
+  /**
    * Runs the sub-agent orchestration loop.
    *
    * Loads the oe_test_content_drafter agent config entity for each
-   * schema fragment. Emits SSE events via the stream for progressive
-   * feedback between sub-agent calls.
+   * schema fragment. Passes the full conversation history to each
+   * sub-agent so generated content reflects the user's context.
    *
    * @param \Drupal\oe_ai_assistant\Service\UiMessageStreamInterface $stream
    *   The SSE stream to emit events on.
    * @param \Drupal\ai\OperationType\Chat\Tools\ToolsFunctionOutputInterface $draftCall
    *   The draft_content tool call with instructions.
+   * @param \Drupal\ai\OperationType\Chat\ChatMessage[] $history
+   *   The full conversation history.
    *
    * @return array
    *   The consolidated draft object.
    */
-  protected function orchestrate(UiMessageStreamInterface $stream, ToolsFunctionOutputInterface $draftCall): array {
+  protected function orchestrate(UiMessageStreamInterface $stream, ToolsFunctionOutputInterface $draftCall, array $history): array {
     // Target schema fragments as valid JSON Schema (hardcoded for the
     // spike). Must include type/properties/required to satisfy strict
     // providers like OpenAI. Property descriptions serve as
@@ -239,6 +341,12 @@ class AgentTestPlugin extends AiAssistantPluginBase {
       }
     }
 
+    // Serialize conversation history for sub-agent context.
+    $conversationContext = '';
+    foreach ($history as $msg) {
+      $conversationContext .= $msg->getRole() . ': ' . $msg->getText() . "\n";
+    }
+
     // Emit the plan upfront so the UI can show all pending steps.
     $plan = [];
     foreach ($fragments as $stepId => $schema) {
@@ -257,16 +365,16 @@ class AgentTestPlugin extends AiAssistantPluginBase {
 
         // Set structured output on the agent entity so providers that
         // support it return clean JSON without markdown fencing.
-        // The config value is a JSON string that the agent wrapper
-        // decodes. It must contain a 'schema' key as expected by
-        // ChatInput::setChatStructuredJsonSchema().
         $agent->getAiAgentEntity()->set('structured_output_enabled', TRUE);
         $agent->getAiAgentEntity()->set('structured_output_schema',
           json_encode(['name' => $stepId, 'schema' => $schema])
         );
 
-        // Pass instructions as the Task.
-        $task = new Task("Instructions: $instructions");
+        // Pass conversation history + instructions as the Task so the
+        // sub-agent has full context of what the user discussed.
+        $taskPrompt = "Conversation context:\n$conversationContext\n"
+          . "Instructions: $instructions";
+        $task = new Task($taskPrompt);
         $agent->setTask($task);
 
         // Run the agent. Provider resolves automatically from defaults.
@@ -281,12 +389,9 @@ class AgentTestPlugin extends AiAssistantPluginBase {
 
         // Emit the sub-agent result as text-delta.
         $stream->textDelta($fullText);
-
         $stream->finishStep($stepId);
 
-        // Parse the JSON result. extractJson() handles both raw JSON
-        // and markdown-fenced JSON from providers that ignore
-        // structured output.
+        // Parse the JSON result.
         $parsed = $stream->extractJson($fullText);
         if (is_array($parsed)) {
           $results[$stepId] = $parsed;

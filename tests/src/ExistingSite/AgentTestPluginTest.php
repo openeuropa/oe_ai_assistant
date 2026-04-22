@@ -108,6 +108,103 @@ class AgentTestPluginTest extends ExistingSiteBase {
   }
 
   /**
+   * Tests multi-turn conversation with context building then drafting.
+   *
+   * Turn 1: user provides topic context.
+   * Turn 2: user adds specifics.
+   * Turn 3: user asks to draft -- sub-agents receive full history.
+   */
+  public function testMultiTurnConversationThenDraft(): void {
+    $user = $this->createUser(['use oe ai assistant']);
+    $this->loginUser($user);
+
+    // Queue all responses upfront: 2 conversational + 1 tool call +
+    // 3 sub-agent responses. They are consumed in order across the
+    // 3 HTTP requests.
+    // Turn 1 response: conversational text.
+    MockAiProvider::enqueue(new MockResponse(
+      text: 'Got it, I can help with that topic.',
+    ));
+    // Turn 2 response: conversational text.
+    MockAiProvider::enqueue(new MockResponse(
+      text: 'Understood, focusing on 2030 targets.',
+    ));
+    // Turn 3 response: tool call triggers orchestration.
+    MockAiProvider::enqueue(new MockResponse(
+      toolCalls: [
+        [
+          'id' => 'call_1',
+          'type' => 'function',
+          'function' => [
+            'name' => 'draft_content',
+            'arguments' => json_encode([
+              'instructions' => 'Draft about EU climate 2030 targets.',
+            ]),
+          ],
+        ],
+      ],
+    ));
+    // Sub-agent responses.
+    MockAiProvider::enqueue(new MockResponse(
+      text: '{"title": "EU 2030 Targets", "summary": "Emissions goals."}',
+    ));
+    MockAiProvider::enqueue(new MockResponse(
+      text: '{"type": "hero", "heading": "2030 Goals", "body": "55% cut."}',
+    ));
+    MockAiProvider::enqueue(new MockResponse(
+      text: '{"type": "text_block", "heading": "Policies", "body": "Fit for 55."}',
+    ));
+
+    // Turn 1: user provides context.
+    $this->httpPost('/api/ai/plugins/agent_test/chat', [
+      'message' => 'I want to write about the EU climate deal.',
+    ]);
+
+    // Turn 2: user adds more context.
+    $this->httpPost('/api/ai/plugins/agent_test/chat', [
+      'message' => 'Focus specifically on the 2030 emissions targets.',
+    ]);
+
+    $response = $this->httpPost('/api/ai/plugins/agent_test/chat', [
+      'message' => 'Draft it for me.',
+    ]);
+
+    $this->assertEquals(200, $response['status']);
+    $events = $this->parseSseEvents($response['body']);
+
+    // Should produce a consolidated draft.
+    $draftedEvents = array_filter($events, fn($e) => $e['type'] === 'data-drafted-fields');
+    $this->assertNotEmpty($draftedEvents, 'Expected data-drafted-fields event.');
+    $drafted = array_values($draftedEvents)[0]['data'];
+    $this->assertEquals('EU 2030 Targets', $drafted['title']);
+
+    // Verify that sub-agents received conversation history.
+    // The router call (turn 3) should have 5 messages in history:
+    // turn 1 user, turn 1 assistant, turn 2 user, turn 2 assistant,
+    // turn 3 user.
+    \Drupal::state()->resetCache();
+    $log = MockAiProvider::getCallLog();
+    // Third router call (index 2).
+    $routerCall = $log[2];
+    $this->assertCount(5, $routerCall['messages'],
+      'Router should receive full 5-message conversation history.');
+
+    // Sub-agent calls should include conversation context in their
+    // task prompt (system prompt comes from config, user message is
+    // the task which includes the conversation).
+    // First sub-agent call (index 3).
+    $subAgentCall = $log[3];
+    $subAgentMsg = $subAgentCall['messages'][0]['text'] ?? '';
+    $this->assertStringContainsString('EU climate deal', $subAgentMsg,
+      'Sub-agent should receive conversation history as context.');
+    $this->assertStringContainsString('2030 emissions targets', $subAgentMsg,
+      'Sub-agent should see context from turn 2.');
+
+    // All mock responses consumed.
+    $this->assertTrue(MockAiProvider::isEmpty());
+  }
+
+  /**
    * Tests that a tool call triggers orchestration with sub-agent steps.
    */
   public function testToolCallTriggersOrchestration(): void {
