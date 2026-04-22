@@ -34,3 +34,8 @@ services:
     class: Drupal\oe_ai_assistant\Service\UiMessageStream
     arguments:
       - '@ai.prompt_code_block_extractor'
+
+  oe_ai_assistant.conversation_store_factory:
+    class: Drupal\oe_ai_assistant\Store\ConversationStoreFactory
+    arguments:
+      - '@tempstore.private'

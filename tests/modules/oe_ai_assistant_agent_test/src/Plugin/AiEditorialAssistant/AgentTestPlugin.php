@@ -10,13 +10,13 @@ use Drupal\ai\OperationType\Chat\StreamedChatMessageIteratorInterface;
 use Drupal\ai\OperationType\Chat\ChatMessage;
 use Drupal\ai\OperationType\Chat\Tools\ToolsFunctionOutputInterface;
 use Drupal\ai\OperationType\Chat\Tools\ToolsInput;
-use Drupal\Core\TempStore\PrivateTempStoreFactory;
 use Drupal\ai_agents\PluginInterfaces\AiAgentInterface;
 use Drupal\ai_agents\PluginManager\AiAgentManager;
 use Drupal\ai_agents\Task\Task;
 use Drupal\oe_ai_assistant\Annotation\AiEditorialAssistant;
 use Drupal\oe_ai_assistant\Plugin\AiAssistantPluginBase;
 use Drupal\oe_ai_assistant\Service\UiMessageStreamInterface;
+use Drupal\oe_ai_assistant\Store\ConversationStoreInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -36,21 +36,6 @@ use Symfony\Component\HttpFoundation\Response;
   description: 'Test plugin for agent/sub-agent orchestration.',
 )]
 class AgentTestPlugin extends AiAssistantPluginBase {
-
-  /**
-   * The temp store collection name for conversation history.
-   */
-  protected const STORE_COLLECTION = 'oe_ai_assistant_agent_test';
-
-  /**
-   * The temp store key for the conversation thread.
-   */
-  protected const THREAD_KEY = 'conversation';
-
-  /**
-   * Maximum messages to retain in the conversation history.
-   */
-  protected const MAX_MESSAGES = 20;
 
   /**
    * The AI provider plugin manager.
@@ -74,11 +59,11 @@ class AgentTestPlugin extends AiAssistantPluginBase {
   protected UiMessageStreamInterface $uiMessageStream;
 
   /**
-   * The private temp store factory.
+   * The conversation store for this plugin's thread.
    *
-   * @var \Drupal\Core\TempStore\PrivateTempStoreFactory
+   * @var \Drupal\oe_ai_assistant\Store\ConversationStoreInterface
    */
-  protected PrivateTempStoreFactory $tempStoreFactory;
+  protected ConversationStoreInterface $conversationStore;
 
   /**
    * {@inheritdoc}
@@ -93,7 +78,8 @@ class AgentTestPlugin extends AiAssistantPluginBase {
     $instance->aiProviderManager = $container->get('ai.provider');
     $instance->aiAgentManager = $container->get('plugin.manager.ai_agents');
     $instance->uiMessageStream = $container->get('oe_ai_assistant.ui_message_stream');
-    $instance->tempStoreFactory = $container->get('tempstore.private');
+    $instance->conversationStore = $container->get('oe_ai_assistant.conversation_store_factory')
+      ->getStore('oe_ai_assistant_agent_test', 'conversation');
     return $instance;
   }
 
@@ -126,7 +112,7 @@ class AgentTestPlugin extends AiAssistantPluginBase {
     $message = $body['message'] ?? '';
 
     // Load conversation history and append the user's message.
-    $history = $this->loadHistory();
+    $history = $this->conversationStore->load();
     $history[] = new ChatMessage('user', $message);
 
     // Load the router agent config entity for system prompt and tools.
@@ -169,7 +155,7 @@ class AgentTestPlugin extends AiAssistantPluginBase {
         // Persist the drafted result in history so subsequent turns
         // can reference it (e.g. "change the title").
         $history[] = new ChatMessage('assistant', json_encode($consolidated));
-        $this->saveHistory($history);
+        $this->conversationStore->save($history);
       }
       else {
         // Persist the text response in history. After streaming, the
@@ -185,7 +171,7 @@ class AgentTestPlugin extends AiAssistantPluginBase {
         if ($responseText !== '') {
           $history[] = new ChatMessage('assistant', $responseText);
         }
-        $this->saveHistory($history);
+        $this->conversationStore->save($history);
       }
 
       $stream->finish($draftCall ? 'tool_calls' : 'stop');
@@ -202,50 +188,8 @@ class AgentTestPlugin extends AiAssistantPluginBase {
    *   A confirmation response.
    */
   public function reset(Request $request): array {
-    $store = $this->tempStoreFactory->get(static::STORE_COLLECTION);
-    $store->delete(static::THREAD_KEY);
+    $this->conversationStore->drop();
     return ['status' => 'ok'];
-  }
-
-  /**
-   * Loads conversation history from the temp store.
-   *
-   * @return \Drupal\ai\OperationType\Chat\ChatMessage[]
-   *   The stored messages, or empty array for new conversations.
-   */
-  protected function loadHistory(): array {
-    $store = $this->tempStoreFactory->get(static::STORE_COLLECTION);
-    $data = $store->get(static::THREAD_KEY);
-    if (is_array($data)) {
-      // Reconstruct ChatMessage objects from stored arrays.
-      return array_map(
-        fn(array $m) => new ChatMessage($m['role'], $m['text']),
-        $data,
-      );
-    }
-    return [];
-  }
-
-  /**
-   * Saves conversation history to the temp store.
-   *
-   * Trims to MAX_MESSAGES to bound storage size.
-   *
-   * @param \Drupal\ai\OperationType\Chat\ChatMessage[] $history
-   *   The messages to persist.
-   */
-  protected function saveHistory(array $history): void {
-    // Trim to max messages.
-    if (count($history) > static::MAX_MESSAGES) {
-      $history = array_slice($history, -static::MAX_MESSAGES);
-    }
-    // Store as simple arrays for serialization.
-    $data = array_map(
-      fn(ChatMessage $m) => ['role' => $m->getRole(), 'text' => $m->getText()],
-      $history,
-    );
-    $store = $this->tempStoreFactory->get(static::STORE_COLLECTION);
-    $store->set(static::THREAD_KEY, $data);
   }
 
   /**
