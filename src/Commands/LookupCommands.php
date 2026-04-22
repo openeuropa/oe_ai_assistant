@@ -25,6 +25,7 @@ class LookupCommands extends DrushCommands {
    */
   private const REQUIRED_INPUTS = [
     'paragraphs' => ['entity_type', 'bundle', 'field_name'],
+    'taxonomy' => ['entity_type', 'bundle', 'field_name'],
     'media' => ['entity_type', 'bundle', 'field_name'],
   ];
 
@@ -35,6 +36,7 @@ class LookupCommands extends DrushCommands {
    */
   private const LOOKUP_FUNCTIONS = [
     'paragraphs' => 'lookup_paragraph_types',
+    'taxonomy' => 'lookup_taxonomy_terms',
     'media' => 'lookup_media',
   ];
 
@@ -64,14 +66,15 @@ class LookupCommands extends DrushCommands {
    *   The structured lookup result.
    */
   #[CLI\Command(name: 'oe-ai-assistant:lookup', aliases: ['oeaia:lookup'])]
-  #[CLI\Argument(name: 'type', description: 'Lookup type: paragraphs or media.')]
+  #[CLI\Argument(name: 'type', description: 'Lookup type: paragraphs, taxonomy or media.')]
   #[CLI\Argument(name: 'entity_type', description: 'Host entity type, for example node or paragraph.')]
   #[CLI\Argument(name: 'bundle', description: 'Host bundle.')]
   #[CLI\Argument(name: 'field_name', description: 'Reference field machine name on the host bundle.')]
-  #[CLI\Option(name: 'query', description: 'Search text required for media lookups.')]
-  #[CLI\Option(name: 'limit', description: 'Maximum number of matches to return for media lookups.')]
+  #[CLI\Option(name: 'query', description: 'Search text used by taxonomy and media lookups.')]
+  #[CLI\Option(name: 'limit', description: 'Maximum number of matches to return for taxonomy and media lookups.')]
   #[CLI\Option(name: 'uid', description: 'Drupal user ID used for access-checked lookup execution. Defaults to 1.')]
   #[CLI\Usage(name: 'drush oe-ai-assistant:lookup paragraphs node oe_news field_content_paragraphs --uid=1', description: 'List the paragraph bundles allowed by a paragraph reference field as user 1.')]
+  #[CLI\Usage(name: 'drush oe-ai-assistant:lookup taxonomy node oe_news field_topics --query=climate --limit=5 --uid=1 --format=json', description: 'Search the taxonomy terms allowed by a taxonomy reference field as user 1.')]
   #[CLI\Usage(name: 'drush oe-ai-assistant:lookup media node article field_media_assets --query=autumn --limit=5 --uid=1 --format=json', description: 'Search the media items allowed by a media reference field as user 1.')]
   #[CLI\Bootstrap(level: DrupalBootLevels::FULL)]
   public function lookup(
