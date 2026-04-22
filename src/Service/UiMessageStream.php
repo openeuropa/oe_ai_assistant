@@ -141,6 +141,9 @@ class UiMessageStream implements UiMessageStreamInterface {
 
     $normalized = $chatOutput->getNormalized();
     if ($normalized instanceof StreamedChatMessageIteratorInterface) {
+      // Reduce the buffer so text-delta events arrive in small
+      // chunks rather than 100-char batches.
+      $normalized->setMaxBufferSize(5);
       foreach ($normalized as $chunk) {
         $this->textDelta($chunk->getText() ?? '');
       }

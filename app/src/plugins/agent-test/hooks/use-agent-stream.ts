@@ -75,7 +75,7 @@ export function useAgentStream() {
           }
         }
 
-        // Finalize: add the assistant message if there was text.
+        // Finalize: move streaming text into messages and clear it.
         const state = getAgentTestState();
         if (assistantText !== "") {
           setAgentTestState({
@@ -83,10 +83,11 @@ export function useAgentStream() {
               ...state.messages,
               { role: "assistant", text: assistantText },
             ],
+            streamingText: "",
             status: "done",
           });
         } else {
-          setAgentTestState({ status: "done" });
+          setAgentTestState({ streamingText: "", status: "done" });
         }
       } catch (err) {
         setAgentTestState({
@@ -107,6 +108,7 @@ export function useAgentStream() {
     }
     setAgentTestState({
       messages: [],
+      streamingText: "",
       plan: [],
       draft: null,
       status: "idle",
@@ -114,7 +116,8 @@ export function useAgentStream() {
     });
   }, []);
 
-  return { messages, plan, draft, status, error, send, reset };
+  const { streamingText } = useAgentTestSlice();
+  return { messages, streamingText, plan, draft, status, error, send, reset };
 }
 
 /**
@@ -126,9 +129,13 @@ function handleEvent(
   setAssistantText: (text: string) => void,
 ): void {
   switch (event.type) {
-    case "text-delta":
-      setAssistantText(assistantText + event.data.textDelta);
+    case "text-delta": {
+      const updated = assistantText + event.data.textDelta;
+      setAssistantText(updated);
+      // Push to store so the UI renders progressively.
+      setAgentTestState({ streamingText: updated });
       break;
+    }
 
     case "data-plan":
       setAgentTestState({ plan: event.data as PlanStep[] });

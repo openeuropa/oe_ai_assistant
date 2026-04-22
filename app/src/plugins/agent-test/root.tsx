@@ -15,7 +15,7 @@ import { PlanSteps } from "./components/plan-steps";
 import { useAgentStream } from "./hooks/use-agent-stream";
 
 export default function AgentTestRoot() {
-  const { messages, plan, draft, status, error, send, reset } =
+  const { messages, streamingText, plan, draft, status, error, send, reset } =
     useAgentStream();
   const [input, setInput] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -71,10 +71,13 @@ export default function AgentTestRoot() {
         {/* Draft result */}
         {draft && <DraftResultView draft={draft} />}
 
-        {/* Streaming indicator */}
-        {status === "streaming" && plan.length === 0 && (
-          <div className="text-sm text-muted-foreground animate-pulse">
-            Thinking...
+        {/* Live streaming text from the assistant. */}
+        {streamingText && (
+          <div className="text-sm text-left">
+            <span className="inline-block max-w-[80%] rounded-lg bg-muted px-3 py-2">
+              {streamingText}
+              <span className="animate-pulse">|</span>
+            </span>
           </div>
         )}
 

@@ -13,6 +13,8 @@ const PLUGIN_ID = "agent-test";
 
 export interface AgentTestSliceState {
   messages: ChatMessage[];
+  /** Text being streamed from the assistant, shown as a typing indicator. */
+  streamingText: string;
   plan: PlanStep[];
   draft: DraftResult | null;
   status: "idle" | "streaming" | "done" | "error";
@@ -22,6 +24,7 @@ export interface AgentTestSliceState {
 export const agentTestSliceConfig: PluginSliceConfig<AgentTestSliceState> = {
   initialState: {
     messages: [],
+    streamingText: "",
     plan: [],
     draft: null,
     status: "idle",
