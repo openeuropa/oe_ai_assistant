@@ -92,12 +92,15 @@ class LookupCommands extends DrushCommands {
       'bundle' => trim($bundle),
       'field_name' => trim($field_name),
     ];
-
-    $inputs['query'] = trim((string) ($options['query'] ?? ''));
+    $query = trim((string) ($options['query'] ?? ''));
+    if ($query !== '') {
+      $inputs['query'] = $query;
+    }
 
     $limit = $options['limit'] ?? NULL;
     if (isset($limit)) {
-      if ($validatedLimit = filter_var($limit, FILTER_VALIDATE_INT) === FALSE) {
+      $validatedLimit = filter_var($limit, FILTER_VALIDATE_INT);
+      if ($validatedLimit === FALSE) {
         throw new \InvalidArgumentException('The "limit" option must be an integer.');
       }
       $inputs['limit'] = $validatedLimit;

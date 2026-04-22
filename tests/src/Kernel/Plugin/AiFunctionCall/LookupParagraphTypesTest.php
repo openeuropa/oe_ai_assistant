@@ -12,16 +12,20 @@ use Drupal\field\Entity\FieldConfig;
 use Drupal\field\Entity\FieldStorageConfig;
 use Drupal\KernelTests\KernelTestBase;
 use Drupal\node\Entity\NodeType;
+use Drupal\oe_ai_assistant\Commands\LookupCommands;
 use Drupal\oe_ai_assistant\Plugin\AiFunctionCall\LookupParagraphTypes;
 use Drupal\paragraphs\Entity\ParagraphsType;
 use Drupal\user\Entity\Role;
 use Drupal\user\Entity\User;
+use PHPUnit\Framework\Attributes\Group;
+use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
+use PHPUnit\Framework\Attributes\Test;
 
 /**
  * Tests the lookup_paragraph_types function-call plugin.
- *
- * @group oe_ai_assistant
  */
+#[Group('oe_ai_assistant')]
+#[RunTestsInSeparateProcesses]
 final class LookupParagraphTypesTest extends KernelTestBase {
 
   /**
@@ -153,7 +157,8 @@ final class LookupParagraphTypesTest extends KernelTestBase {
   /**
    * Tests plugin discovery and field-scoped paragraph bundle lookup.
    */
-  public function testLookupParagraphTypes(): void {
+  #[Test]
+  public function lookupParagraphTypes(): void {
     $this->assertTrue(
       $this->functionCallManager->functionExists('lookup_paragraph_types'),
     );
@@ -197,6 +202,37 @@ final class LookupParagraphTypesTest extends KernelTestBase {
       Json::encode($expected),
       $plugin->getReadableOutput(),
     );
+  }
+
+  /**
+   * Tests that the command executes the paragraph lookup in-process.
+   */
+  #[Test]
+  public function lookupParagraphTypesCommand(): void {
+    $command = new LookupCommands(
+      $this->functionCallManager,
+      $this->container->get('entity_type.manager'),
+      $this->container->get('account_switcher'),
+    );
+
+    $result = $command->lookup(
+      'paragraphs',
+      'node',
+      'oe_news',
+      'field_content_paragraphs',
+    );
+    $this->assertSame([
+      'paragraph_types' => [
+        [
+          'bundle' => 'quote_block',
+          'label' => 'Quote block',
+        ],
+        [
+          'bundle' => 'text_block',
+          'label' => 'Text block',
+        ],
+      ],
+    ], $result->getArrayCopy());
   }
 
 }

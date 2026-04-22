@@ -1,0 +1,9 @@
+services:
+  oe_ai_assistant.lookup_commands:
+    class: Drupal\oe_ai_assistant\Commands\LookupCommands
+    arguments:
+      - '@plugin.manager.ai.function_calls'
+      - '@entity_type.manager'
+      - '@account_switcher'
+    tags:
+      - { name: drush.command }

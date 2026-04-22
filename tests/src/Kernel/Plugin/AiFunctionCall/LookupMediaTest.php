@@ -16,15 +16,19 @@ use Drupal\media\Entity\Media;
 use Drupal\media\Entity\MediaType;
 use Drupal\media\MediaTypeInterface;
 use Drupal\node\Entity\NodeType;
+use Drupal\oe_ai_assistant\Commands\LookupCommands;
 use Drupal\oe_ai_assistant\Plugin\AiFunctionCall\LookupMedia;
 use Drupal\user\Entity\Role;
 use Drupal\user\Entity\User;
+use PHPUnit\Framework\Attributes\Group;
+use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
+use PHPUnit\Framework\Attributes\Test;
 
 /**
  * Tests the lookup_media function-call plugin.
- *
- * @group oe_ai_assistant
  */
+#[Group('oe_ai_assistant')]
+#[RunTestsInSeparateProcesses]
 final class LookupMediaTest extends KernelTestBase {
 
   /**
@@ -172,7 +176,8 @@ final class LookupMediaTest extends KernelTestBase {
   /**
    * Tests plugin discovery and media lookup results.
    */
-  public function testLookupMedia(): void {
+  #[Test]
+  public function lookupMedia(): void {
     $this->assertTrue(
       $this->functionCallManager->functionExists('lookup_media'),
     );
@@ -221,7 +226,8 @@ final class LookupMediaTest extends KernelTestBase {
   /**
    * Tests that the optional limit reduces the result set.
    */
-  public function testLookupMediaLimit(): void {
+  #[Test]
+  public function lookupMediaLimit(): void {
     $plugin = $this->functionCallManager
       ->getFunctionCallFromFunctionName('lookup_media');
 
@@ -241,6 +247,68 @@ final class LookupMediaTest extends KernelTestBase {
         ],
       ],
     ], $plugin->getStructuredOutput());
+  }
+
+  /**
+   * Tests that the command executes the media lookup in-process.
+   */
+  #[Test]
+  public function lookupMediaCommand(): void {
+    $command = new LookupCommands(
+      $this->functionCallManager,
+      $this->container->get('entity_type.manager'),
+      $this->container->get('account_switcher'),
+    );
+
+    $result = $command->lookup(
+      'media',
+      'node',
+      'oe_news',
+      'field_media_assets',
+      [
+        'uid' => '1',
+        'query' => 'Autumn',
+        'limit' => '1',
+      ],
+    );
+
+    $this->assertSame([
+      'media' => [
+        [
+          'target_id' => $this->mediaIds['Autumn Briefing'],
+          'label' => 'Autumn Briefing',
+          'bundle' => 'document',
+        ],
+      ],
+    ], $result->getArrayCopy());
+
+    $result = $command->lookup(
+      'media',
+      'node',
+      'oe_news',
+      'field_media_assets',
+    );
+
+    $this->assertSame([
+      'media' => [
+        [
+          'target_id' => $this->mediaIds['Autumn Briefing'],
+          'label' => 'Autumn Briefing',
+          'bundle' => 'document',
+        ],
+        [
+          'target_id' => $this->mediaIds['Autumn Sunrise'],
+          'label' => 'Autumn Sunrise',
+          'bundle' => 'image',
+        ],
+        [
+          'target_id' => $this->mediaIds['Winter Photo'],
+          'label' => 'Winter Photo',
+          'bundle' => 'image',
+        ],
+
+      ],
+    ], $result->getArrayCopy());
   }
 
   /**
