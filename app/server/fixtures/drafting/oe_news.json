@@ -1,0 +1,59 @@
+{
+  "bundle": "oe_news",
+  "conversationReplies": {
+    "default": "Mock drafting mode is active. Ask me to draft or regenerate content and I will return deterministic fixture data for the oe_news bundle.",
+    "saveWithoutDraft": "There is no drafted content to save yet in mock mode. Generate a fixture-backed draft first, then try Save draft again."
+  },
+  "drafts": {
+    "initial": {
+      "assistantText": "Using the standalone fixture set, I prepared a mock news draft for the editor.",
+      "fields": {
+        "title": "EU launches coastal restoration call for regional pilot teams",
+        "field_teaser": "Regional teams can now apply for a new EU-backed coastal restoration call focused on measurable pilot actions and reusable data.",
+        "field_publication_date": "2026-04-15",
+        "field_news_type": "announcement",
+        "body": {
+          "value": "<p>The European Commission has opened a new call for regional pilot teams working on coastal restoration and shoreline resilience.</p><p>The programme will support small-scale actions that combine community participation, practical restoration work, and evidence gathering for future policy decisions.</p><p>Selected projects will publish their methods and findings in a reusable format so local administrations and partner organisations can compare outcomes across different coastal contexts.</p>",
+          "format": "full_html"
+        },
+        "field_contacts": [
+          {
+            "field_contact_name": "Elena Popescu",
+            "field_contact_email": "elena.popescu@example.eu",
+            "field_contact_role": "Programme coordinator"
+          },
+          {
+            "field_contact_name": "Martin Keller",
+            "field_contact_email": "martin.keller@example.eu",
+            "field_contact_role": "Press officer"
+          }
+        ]
+      }
+    },
+    "regenerated": {
+      "assistantText": "I regenerated the requested content using the alternate standalone fixture variant.",
+      "fields": {
+        "title": "Member states invited to test shoreline resilience measures in new EU pilot round",
+        "field_teaser": "A second fixture variant reframes the story around shoreline resilience pilots, updated messaging, and coordinated reporting before autumn.",
+        "field_publication_date": "2026-05-02",
+        "field_news_type": "update",
+        "body": {
+          "value": "<p>The European Commission has refreshed the coastal restoration announcement with a stronger focus on shoreline resilience measures and operational reporting.</p><p>Under the updated framing, participating teams will test practical interventions, document implementation constraints, and share evidence with a common editorial structure.</p><p>The revised draft highlights coordinated reporting milestones so editors can compare pilot outcomes before the next policy review window.</p>",
+          "format": "full_html"
+        },
+        "field_contacts": [
+          {
+            "field_contact_name": "Elena Popescu",
+            "field_contact_email": "elena.popescu@example.eu",
+            "field_contact_role": "Senior programme coordinator"
+          },
+          {
+            "field_contact_name": "Martin Keller",
+            "field_contact_email": "martin.keller@example.eu",
+            "field_contact_role": "Media relations lead"
+          }
+        ]
+      }
+    }
+  }
+}
