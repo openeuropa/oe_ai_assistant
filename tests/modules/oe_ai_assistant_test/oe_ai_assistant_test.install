@@ -7,6 +7,8 @@
 
 declare(strict_types=1);
 
+use Drupal\taxonomy\Entity\Term;
+
 /**
  * Implements hook_install().
  *
@@ -55,4 +57,50 @@ function oe_ai_assistant_test_install(): void {
     ->set('api_key', 'openai_api_key')
     ->set('moderation', FALSE)
     ->save();
+
+  oe_ai_assistant_test_install_editorial_taxonomy_terms();
+}
+
+/**
+ * Installs the default editorial taxonomy terms used by tests.
+ */
+function oe_ai_assistant_test_install_editorial_taxonomy_terms(): void {
+  foreach (oe_ai_assistant_test_get_editorial_taxonomy_terms() as $vid => $terms) {
+    foreach ($terms as $name => $text) {
+      $term = Term::create([
+        'vid' => $vid,
+        'name' => $name,
+        'description' => [
+          'value' => $text,
+          'format' => 'plain_text',
+        ],
+        'field_ai_prompt' => $text,
+      ]);
+      $term->save();
+    }
+  }
+}
+
+/**
+ * Returns the default editorial taxonomy terms keyed by vocabulary.
+ *
+ * @return array<string, array<string, string>>
+ *   The default term labels keyed to their editor and prompt guidance text.
+ */
+function oe_ai_assistant_test_get_editorial_taxonomy_terms(): array {
+  return [
+    'ai_target_audience' => [
+      'General public' => 'Write in clear, accessible language. Avoid jargon and acronyms. Use short sentences. Assume no prior knowledge of EU policy.',
+      'Policy makers' => 'Use precise language. Reference regulatory frameworks and legislative instruments where relevant. Assume domain expertise.',
+      'Press and media' => 'Lead with the newsworthy angle. Use a factual, quotable style. Include key figures and dates. Keep paragraphs short.',
+      'Young audience' => 'Use an approachable, engaging tone. Explain concepts simply. Avoid bureaucratic language. Use concrete examples.',
+      'Business and industry' => 'Use professional language. Emphasize practical implications, compliance requirements, and economic impact. Be specific about timelines and actions.',
+    ],
+    'ai_tone' => [
+      'Formal' => 'Use professional, institutional language. Maintain a neutral, authoritative voice. Avoid contractions and colloquialisms.',
+      'Conversational' => 'Write in a friendly, approachable style. Use contractions naturally. Address the reader directly. Keep sentences varied in length.',
+      'Technical' => 'Use domain-specific terminology precisely. Include technical detail and data. Structure content with clear headings and logical flow.',
+      'Inspirational' => 'Use forward-looking, motivational language. Emphasize positive outcomes and shared goals. Appeal to values and aspirations.',
+    ],
+  ];
 }

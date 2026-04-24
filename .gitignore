@@ -10,5 +10,12 @@ composer.lock
 .phpunit.result.cache
 test-results
 /docs
-.idea
+/.idea
 composer.contrib-patches.lock.json
+## Editors and tools
+/.vscode
+/.zed
+.phpactor.json
+
+## DDEV
+/.ddev/web-build

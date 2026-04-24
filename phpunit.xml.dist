@@ -9,6 +9,9 @@
     <env name="DTT_MINK_DRIVER_ARGS" value='["chromium", {"browserName": "chromium", "goog:chromeOptions": {"args": ["--disable-gpu", "--headless", "--no-sandbox"]}}, "http://localhost:9515"]'/>
   </php>
   <testsuites>
+    <testsuite name="kernel">
+      <directory>tests/src/Kernel</directory>
+    </testsuite>
     <testsuite name="unit">
       <directory>tests/src/Unit</directory>
     </testsuite>

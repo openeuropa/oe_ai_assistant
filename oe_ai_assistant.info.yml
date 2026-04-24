@@ -11,3 +11,4 @@ dependencies:
   - drupal:options
   - drupal:serialization
   - key:key
+  - drupal:taxonomy
