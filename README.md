@@ -133,7 +133,7 @@ npm run api:generate # Regenerate types from OpenAPI spec
 ```
 
 For `npm run dev:integration`, copy `app/.env.dist` to `app/.env` and set
-`DRUPAL_MISTRAL_API_KEY`. The default `npm run dev` path stays fixture-backed
+`MISTRAL_API_KEY`. The default `npm run dev` path stays fixture-backed
 and deterministic so frontend work does not depend on live provider access.
 
 Or build via DDEV:
