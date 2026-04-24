@@ -15,19 +15,39 @@ back-office, communicating exclusively through a CMS-agnostic REST API.
 # Install dependencies
 npm install
 
-# Start dev server (client + mock API)
+# Start standalone frontend development
+# Drafting runs against fixture-backed mock data by default.
 npm run dev
 
-# Or run individually
-npm run dev:client   # Vite dev server only
-npm run dev:server   # Mock API server only
+# Optional: run the real Mistral-backed drafting flow instead
+cp .env.dist .env
+# then set MISTRAL_API_KEY in app/.env
+npm run dev:integration
+
+# Or run the pieces individually
+npm run dev:client              # Vite dev server only
+npm run dev:server              # Mock API server only
+npm run dev:server:integration  # Mistral-backed API server only
 ```
+
+### Supported Development Modes
+
+- `npm run dev`: default standalone workflow. No provider credentials are
+  required. The drafting plugin uses deterministic fixture data from
+  `server/fixtures/drafting/`.
+- `npm run dev:integration`: opt-in provider-backed workflow. This keeps the
+  frontend running locally, but the drafting route uses the real Mistral client
+  and requires `MISTRAL_API_KEY` in `app/.env`.
+
+The standalone mock mode is the expected default for frontend-only work. Use
+integration mode only when you need to validate prompt/provider behaviour.
 
 ## Scripts
 
 | Command              | Description                                   |
 |----------------------|-----------------------------------------------|
-| `npm run dev`        | Start client and API server together           |
+| `npm run dev`        | Start client + standalone mock API server      |
+| `npm run dev:integration` | Start client + Mistral-backed API server |
 | `npm run build`      | Type-check and build for production            |
 | `npm run typecheck`  | Run TypeScript type checking                   |
 | `npm run lint`       | Lint with Biome                                |
@@ -46,10 +66,11 @@ src/
   config.ts             # Runtime configuration store (set/get)
   plugins/              # Plugin directory (each plugin is self-contained)
   api/                  # API client, generated types, SSE type helpers
+  components/           # Shared UI primitives
+  shell/                # App shell layout components
   store/                # Zustand global state with plugin slice support
-  shared/               # Shared UI components and utilities
-  mocks/                # MSW mock handlers, fixtures, and SSE streams
 server/                 # Express mock API server for development
+  fixtures/             # Content schema + drafting fixtures for mock mode
 api/                    # OpenAPI 3.1 specification (source of truth)
 ```
 

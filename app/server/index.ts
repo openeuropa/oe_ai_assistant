@@ -1,10 +1,10 @@
 /**
  * Development API server.
  *
- * Express server with real Mistral LLM integration for the
- * drafting plugin and mock endpoints for echo and notes.
- * Runs alongside the Vite dev server and receives proxied
- * requests from /api/*.
+ * Express server with mock endpoints for standalone frontend
+ * work. The drafting plugin runs in fixture-backed mock mode by
+ * default and can be switched to explicit Mistral integration
+ * mode when provider-backed development is needed.
  *
  * Uses dynamic imports so dotenv loads before any module that
  * reads process.env (ES module imports are hoisted, so static
@@ -14,6 +14,8 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { config } from "dotenv";
+import type { ConversationStore } from "./services/conversation-store";
+import type { DraftingService } from "./services/drafting-service";
 
 // Load .env before any other modules read env vars.
 // The server runs as a standalone Node process via tsx,
@@ -26,19 +28,21 @@ async function start(): Promise<void> {
   // Dynamic imports so modules that read process.env at the
   // top level (config.ts) see the dotenv-injected values.
   const { default: express } = await import("express");
-  const { createMistralClient } = await import("./lib/mistral");
+  const { resolveDraftingMode } = await import("./config");
+  const { createDraftingRouter } = await import("./routes/drafting");
   const { echoRouter } = await import("./routes/echo");
   const { notesRouter } = await import("./routes/notes");
-  const { createDraftingRouter } = await import("./routes/drafting");
   const { ConversationStore } = await import("./services/conversation-store");
-  const { DraftingService } = await import("./services/drafting-service");
+  const draftingMode = resolveDraftingMode();
 
   const app = express();
 
   // Create shared service instances.
-  const mistral = createMistralClient();
   const store = new ConversationStore();
-  const draftingService = new DraftingService(mistral, store);
+  const draftingService: DraftingService =
+    draftingMode === "mistral"
+      ? await createMistralDraftingService(store)
+      : await createMockDraftingService(store);
 
   // Parse JSON bodies for all routes.
   app.use(express.json());
@@ -70,8 +74,31 @@ async function start(): Promise<void> {
   app.use("/api/plugins/drafting", createDraftingRouter(draftingService));
 
   app.listen(PORT, () => {
-    console.log(`Dev API server running at http://localhost:${PORT}`);
+    console.log(
+      `Dev API server running at http://localhost:${PORT} ` +
+        `(drafting mode: ${draftingMode})`,
+    );
   });
+}
+
+async function createMockDraftingService(
+  store: ConversationStore,
+): Promise<DraftingService> {
+  const { MockDraftingService } = await import(
+    "./services/mock-drafting-service"
+  );
+  return new MockDraftingService(store);
+}
+
+async function createMistralDraftingService(
+  store: ConversationStore,
+): Promise<DraftingService> {
+  const { createMistralClient } = await import("./lib/mistral");
+  const { MistralDraftingService } = await import(
+    "./services/drafting-service"
+  );
+
+  return new MistralDraftingService(createMistralClient(), store);
 }
 
 start().catch((err) => {

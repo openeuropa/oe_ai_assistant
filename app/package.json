@@ -7,12 +7,14 @@
     "node": ">=22"
   },
   "scripts": {
-    "dev": "concurrently -n vite,api -c cyan,yellow \"vite\" \"tsx watch server/index.ts\"",
+    "dev": "concurrently -n vite,api -c cyan,yellow \"vite\" \"tsx watch server/index.ts --drafting-mode=mock\"",
+    "dev:integration": "concurrently -n vite,api -c cyan,yellow \"vite\" \"tsx watch server/index.ts --drafting-mode=mistral\"",
     "dev:client": "vite",
-    "dev:server": "tsx watch server/index.ts",
+    "dev:server": "tsx watch server/index.ts --drafting-mode=mock",
+    "dev:server:integration": "tsx watch server/index.ts --drafting-mode=mistral",
     "build": "tsc -b && vite build --emptyOutDir && node scripts/build-schemas.js",
     "build:schemas": "node scripts/build-schemas.js",
-    "typecheck": "tsc -b",
+    "typecheck": "tsc -b && tsc -p server/tsconfig.json",
     "api:generate": "openapi-typescript api/openapi.yaml -o src/api/schema.d.ts",
     "lint": "biome check .",
     "lint:fix": "biome check --fix .",
