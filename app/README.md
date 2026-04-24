@@ -21,7 +21,7 @@ npm run dev
 
 # Optional: run the real Mistral-backed drafting flow instead
 cp .env.dist .env
-# then set DRUPAL_MISTRAL_API_KEY in app/.env
+# then set MISTRAL_API_KEY in app/.env
 npm run dev:integration
 
 # Or run the pieces individually
@@ -37,7 +37,7 @@ npm run dev:server:integration  # Mistral-backed API server only
   `server/fixtures/drafting/`.
 - `npm run dev:integration`: opt-in provider-backed workflow. This keeps the
   frontend running locally, but the drafting route uses the real Mistral client
-  and requires `DRUPAL_MISTRAL_API_KEY` in `app/.env`.
+  and requires `MISTRAL_API_KEY` in `app/.env`.
 
 The standalone mock mode is the expected default for frontend-only work. Use
 integration mode only when you need to validate prompt/provider behaviour.

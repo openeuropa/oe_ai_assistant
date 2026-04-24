@@ -71,7 +71,7 @@ Copy the environment template and add your API key:
 cp .ddev/.env.dist .ddev/.env
 ```
 
-Edit `.ddev/.env` and set `DRUPAL_MISTRAL_API_KEY` to your Mistral API key, then restart:
+Edit `.ddev/.env` and set `MISTRAL_API_KEY` to your Mistral API key, then restart:
 
 ```bash
 ddev restart
@@ -133,7 +133,7 @@ npm run api:generate # Regenerate types from OpenAPI spec
 ```
 
 For `npm run dev:integration`, copy `app/.env.dist` to `app/.env` and set
-`DRUPAL_MISTRAL_API_KEY`. The default `npm run dev` path stays fixture-backed
+`MISTRAL_API_KEY`. The default `npm run dev` path stays fixture-backed
 and deterministic so frontend work does not depend on live provider access.
 
 Or build via DDEV:
