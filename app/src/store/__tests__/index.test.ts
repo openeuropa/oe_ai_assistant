@@ -1,7 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { loadFreshStore } from "./test-utils";
-
-const STORAGE_KEY = "ai-editorial-assistant";
+import { loadFreshStore, persistedStoreState } from "./test-utils";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -65,28 +63,35 @@ describe("global app store", () => {
     });
   });
 
-  it("persists durable state and excludes transient sidebar state", async () => {
-    const { storage, useAppStore } = await loadFreshStore();
+  it("persists durable state and excludes transient sidebar and context state", async () => {
+    const { getScopedStorageKey, storage, useAppStore } =
+      await loadFreshStore();
 
     useAppStore.getState().setActivePlugin("notes");
     useAppStore.getState().setUserContext("user-2", "node-10");
     useAppStore.getState().setSidebarOpen(false);
 
-    const persisted = JSON.parse(storage.getItem(STORAGE_KEY) ?? "{}");
+    const persisted = JSON.parse(
+      storage.getItem(getScopedStorageKey(null, null)) ?? "{}",
+    );
 
     expect(persisted.state).toMatchObject({
       activePluginId: "notes",
-      userId: "user-2",
-      nodeId: "node-10",
       notifications: [],
       pluginStates: {},
     });
     expect(persisted.state).not.toHaveProperty("isSidebarOpen");
+    expect(persisted.state).not.toHaveProperty("userId");
+    expect(persisted.state).not.toHaveProperty("nodeId");
   });
 
   it("filters persisted plugin slices through registered partializers", async () => {
-    const { registerPluginPartialize, storage, useAppStore } =
-      await loadFreshStore();
+    const {
+      getScopedStorageKey,
+      registerPluginPartialize,
+      storage,
+      useAppStore,
+    } = await loadFreshStore();
 
     registerPluginPartialize("drafting", (state) => ({
       threadId: state.threadId,
@@ -104,11 +109,144 @@ describe("global app store", () => {
       value: "persisted",
     });
 
-    const persisted = JSON.parse(storage.getItem(STORAGE_KEY) ?? "{}");
+    const persisted = JSON.parse(
+      storage.getItem(getScopedStorageKey(null, null)) ?? "{}",
+    );
 
     expect(persisted.state.pluginStates).toEqual({
       drafting: { threadId: "thread-1" },
       unregistered: { value: "persisted" },
+    });
+  });
+});
+
+describe("app store persistence scoping", () => {
+  it("rehydrates persisted state for the active user/node scope", async () => {
+    const storageKey = "ai-editorial-assistant:user:editor-7:node:123";
+    const { initializeAppStoreContext, useAppStore } = await loadFreshStore({
+      [storageKey]: persistedStoreState({
+        activePluginId: "drafting",
+        notifications: [
+          {
+            id: "n-1",
+            type: "info",
+            message: "Resume drafting",
+          },
+        ],
+        pluginStates: {
+          drafting: {
+            threadId: "thread-123",
+          },
+        },
+      }),
+    });
+
+    await initializeAppStoreContext("editor-7", "123");
+
+    expect(useAppStore.getState()).toMatchObject({
+      activePluginId: "drafting",
+      userId: "editor-7",
+      nodeId: "123",
+      notifications: [
+        {
+          id: "n-1",
+          type: "info",
+          message: "Resume drafting",
+        },
+      ],
+      pluginStates: {
+        drafting: {
+          threadId: "thread-123",
+        },
+      },
+    });
+  });
+
+  it("does not reuse persisted state from another user on the same node", async () => {
+    const {
+      getScopedStorageKey,
+      initializeAppStoreContext,
+      storage,
+      useAppStore,
+    } = await loadFreshStore();
+
+    storage.setItem(
+      getScopedStorageKey("editor-7", "123"),
+      persistedStoreState({
+        activePluginId: "drafting",
+        notifications: [],
+        pluginStates: {
+          drafting: {
+            threadId: "thread-123",
+          },
+        },
+      }),
+    );
+
+    await initializeAppStoreContext("editor-7", "123");
+    expect(useAppStore.getState().pluginStates).toEqual({
+      drafting: {
+        threadId: "thread-123",
+      },
+    });
+
+    await initializeAppStoreContext("editor-8", "123");
+
+    expect(useAppStore.getState()).toMatchObject({
+      activePluginId: null,
+      userId: "editor-8",
+      nodeId: "123",
+      notifications: [],
+      pluginStates: {},
+    });
+  });
+
+  it("uses a dedicated create-flow scope when nodeId is absent", async () => {
+    const {
+      getScopedStorageKey,
+      initializeAppStoreContext,
+      storage,
+      useAppStore,
+    } = await loadFreshStore();
+
+    storage.setItem(
+      getScopedStorageKey("editor-7", null),
+      persistedStoreState({
+        activePluginId: "drafting",
+        notifications: [],
+        pluginStates: {
+          drafting: {
+            threadId: "create-thread",
+          },
+        },
+      }),
+    );
+
+    storage.setItem(
+      getScopedStorageKey("editor-7", "987"),
+      persistedStoreState({
+        activePluginId: "drafting",
+        notifications: [],
+        pluginStates: {
+          drafting: {
+            threadId: "saved-thread",
+          },
+        },
+      }),
+    );
+
+    await initializeAppStoreContext("editor-7", null);
+    expect(useAppStore.getState().pluginStates).toEqual({
+      drafting: {
+        threadId: "create-thread",
+      },
+    });
+
+    await initializeAppStoreContext("editor-7", "987");
+    expect(useAppStore.getState().pluginStates).toEqual({
+      drafting: {
+        threadId: "saved-thread",
+      },
     });
   });
 });

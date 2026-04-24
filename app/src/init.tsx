@@ -28,6 +28,7 @@ import { App } from "./app";
 import type { AppConfig } from "./config";
 import { setConfig } from "./config";
 import { plugins } from "./plugins/registry";
+import { initializeAppStoreContext } from "./store";
 import { initializePluginSlices } from "./store/plugin-store";
 
 /** Handle returned by init() so the host page can unmount the app. */
@@ -64,6 +65,10 @@ export async function init(
 
   // Store config so the rest of the app can read it via getConfig().
   setConfig(config);
+
+  // Write the host-provided context into the store, then rehydrate the
+  // matching persisted scope before any plugin slices read from storage.
+  await initializeAppStoreContext(config.userId ?? null, config.nodeId ?? null);
 
   // Hydrate plugin store slices before the first render. Merges each
   // plugin's initialState with any values already persisted in localStorage.

@@ -6,17 +6,19 @@
  * Plugin-owned state lives under `pluginStates[pluginId]`.
  *
  * Persisted to localStorage via Zustand's `persist` middleware so the
- * editor can close the browser and resume where they left off. Transient
- * UI state (e.g. sidebar open/closed) is excluded from persistence via
- * `partialize`. Each plugin can also specify its own partialize function
- * to control which parts of its slice are persisted.
+ * editor can close the browser and resume where they left off. Persistence
+ * is scoped per user/node context so state cannot bleed between editors or
+ * content items in the same browser. Transient UI state (e.g. sidebar
+ * open/closed) is excluded from persistence via `partialize`. Each plugin
+ * can also specify its own partialize function to control which parts of
+ * its slice are persisted.
  *
  * Server-side persistence (syncing state to the backend API) will be
  * added later when the API layer is in place.
  */
 
 import { create } from "zustand";
-import { persist } from "zustand/middleware";
+import { createJSONStorage, persist } from "zustand/middleware";
 
 /** A user-facing notification displayed in the shell. */
 export interface Notification {
@@ -63,6 +65,66 @@ interface AppState {
   /** Shallow-merge partial state into a plugin's slice. */
   setPluginState: (pluginId: string, partial: Record<string, unknown>) => void;
 }
+
+type PersistedAppState = Pick<
+  AppState,
+  "activePluginId" | "notifications" | "pluginStates"
+>;
+
+const STORAGE_KEY_PREFIX = "ai-editorial-assistant";
+const NULL_USER_SCOPE = "__anonymous__";
+const NULL_NODE_SCOPE = "__create__";
+
+let arePersistWritesPaused = false;
+
+function createPersistedState(): PersistedAppState {
+  return {
+    activePluginId: null,
+    notifications: [],
+    pluginStates: {},
+  };
+}
+
+function createInitialState() {
+  return {
+    ...createPersistedState(),
+    userId: null,
+    nodeId: null,
+    isSidebarOpen: true,
+  };
+}
+
+/**
+ * Build the storage key for the current CMS context.
+ *
+ * A missing node ID is treated as a dedicated "create" scope so unsaved
+ * flows do not reuse persisted state from an existing content node.
+ */
+export function getScopedStorageKey(
+  userId: string | null,
+  nodeId: string | null,
+): string {
+  const userScope = encodeURIComponent(userId ?? NULL_USER_SCOPE);
+  const nodeScope = encodeURIComponent(nodeId ?? NULL_NODE_SCOPE);
+
+  return `${STORAGE_KEY_PREFIX}:user:${userScope}:node:${nodeScope}`;
+}
+
+const scopedStorage = createJSONStorage<PersistedAppState>(() => {
+  const storage = window.localStorage;
+
+  return {
+    getItem: (name) => storage.getItem(name),
+    setItem: (name, value) => {
+      if (arePersistWritesPaused) return;
+      storage.setItem(name, value);
+    },
+    removeItem: (name) => {
+      if (arePersistWritesPaused) return;
+      storage.removeItem(name);
+    },
+  };
+});
 
 // -- Plugin partialize registry --
 // Stores per-plugin functions that filter which state keys are persisted.
@@ -117,12 +179,7 @@ function partializePluginStates(
 export const useAppStore = create<AppState>()(
   persist(
     (set) => ({
-      activePluginId: null,
-      userId: null,
-      nodeId: null,
-      notifications: [],
-      pluginStates: {},
-      isSidebarOpen: true,
+      ...createInitialState(),
 
       setActivePlugin: (id) => set({ activePluginId: id }),
       setUserContext: (userId, nodeId) => set({ userId, nodeId }),
@@ -145,16 +202,41 @@ export const useAppStore = create<AppState>()(
         })),
     }),
     {
-      name: "ai-editorial-assistant",
+      name: getScopedStorageKey(null, null),
+      storage: scopedStorage,
+      skipHydration: true,
       // Only persist durable state; transient UI flags are excluded.
       // Plugin slices are filtered through their own partialize functions.
       partialize: (state) => ({
         activePluginId: state.activePluginId,
-        userId: state.userId,
-        nodeId: state.nodeId,
         notifications: state.notifications,
         pluginStates: partializePluginStates(state.pluginStates),
       }),
     },
   ),
 );
+
+/**
+ * Prepare the store for a specific host context before rendering.
+ *
+ * This updates the persistence key, writes the host-provided context into
+ * the store, clears any in-memory durable state from a previous context,
+ * and then rehydrates from the matching scoped localStorage entry.
+ */
+export async function initializeAppStoreContext(
+  userId: string | null,
+  nodeId: string | null,
+): Promise<void> {
+  arePersistWritesPaused = true;
+
+  try {
+    useAppStore.persist.setOptions({
+      name: getScopedStorageKey(userId, nodeId),
+    });
+    useAppStore.getState().setUserContext(userId, nodeId);
+    useAppStore.setState(createPersistedState());
+    await useAppStore.persist.rehydrate();
+  } finally {
+    arePersistWritesPaused = false;
+  }
+}
