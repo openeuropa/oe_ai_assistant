@@ -27,3 +27,36 @@ oe_ai_assistant.content_schema:
     _permission: 'use oe ai assistant'
     entity_type_id: '[a-z][a-z0-9_]*'
     bundle: '[a-z][a-z0-9_]*'
+
+# Templates
+entity.ai_drafting_template.collection:
+  path: '/admin/config/ai-editorial/templates'
+  defaults:
+    _entity_list: 'ai_drafting_template'
+    _title: 'AI Drafting template configuration'
+  requirements:
+    _permission: 'administer ai_drafting_template'
+
+entity.ai_drafting_template.add_form:
+  path: '/admin/config/ai-editorial/templates/add'
+  defaults:
+    _entity_form: 'ai_drafting_template.add'
+    _title: 'Add an ai drafting template'
+  requirements:
+    _permission: 'administer ai_drafting_template'
+
+entity.ai_drafting_template.edit_form:
+  path: '/admin/config/ai-editorial/templates/{ai_drafting_template}'
+  defaults:
+    _entity_form: 'ai_drafting_template.edit'
+    _title: 'Edit an ai drafting template'
+  requirements:
+    _permission: 'administer ai_drafting_template'
+
+entity.ai_drafting_template.delete_form:
+  path: '/admin/config/ai-editorial/templates/{ai_drafting_template}/delete'
+  defaults:
+    _entity_form: 'ai_drafting_template.delete'
+    _title: 'Delete an ai drafting template'
+  requirements:
+    _permission: 'administer ai_drafting_template'

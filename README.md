@@ -27,6 +27,9 @@ drush en oe_ai_assistant
 
 - **Plugin system** -- extensible architecture for AI-powered editorial tools
 - **Content drafting** -- AI-assisted content creation with structured field output
+- **AI Drafting Templates** -- config entities defining field structure, per-slot prompts, and default values for
+  each content type; managed at `/admin/config/ai-editorial/templates` with two-level validation (structural +
+  Drupal field definitions)
 - **Schema extraction** -- generates content type schemas (data and form-aware modes) for LLM consumption
 - **Field mapping** -- maps AI-drafted fields to Drupal entities, including paragraphs
 - **SSE streaming** -- real-time streaming of AI responses via Symfony `EventStreamResponse` using the

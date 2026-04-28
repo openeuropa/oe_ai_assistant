@@ -11,3 +11,10 @@ oe_ai_assistant.dashboard:
   route_name: entity.ai_editorial_session.collection
   parent: oe_ai_assistant.admin_settings
   weight: 20
+
+entity.ai_drafting_template.collection:
+  title: 'AI Drafting Templates'
+  description: 'Manage templates that define field structure and prompts for AI content generation.'
+  parent: ai.admin_config_content
+  route_name: entity.ai_drafting_template.collection
+  weight: 10

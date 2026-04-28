@@ -12,3 +12,41 @@ oe_ai_assistant.ai_editorial_session_type.*:
     uuid:
       type: uuid
       label: 'UUID'
+    field_whitelist:
+      type: sequence
+      label: 'Per-content-type field whitelist'
+      sequence:
+        type: sequence
+        label: 'Field names'
+        sequence:
+          type: string
+          label: 'Field name'
+
+oe_ai_assistant.ai_drafting_template.*:
+  type: config_entity
+  label: 'AI Drafting Template'
+  mapping:
+    id:
+      type: string
+      label: ID
+    label:
+      type: label
+      label: Label
+    uuid:
+      type: string
+      label: UUID
+    status:
+      type: boolean
+      label: Status
+    description:
+      type: string
+      label: Description
+    content_type:
+      type: string
+      label: 'Content type'
+    fields:
+      type: ignore
+      label: 'Field definitions'
+    defaults:
+      type: ignore
+      label: 'Default values'
