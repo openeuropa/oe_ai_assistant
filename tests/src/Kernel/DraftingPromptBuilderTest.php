@@ -12,14 +12,13 @@ use PHPUnit\Framework\Attributes\Group;
 use Psr\Log\NullLogger;
 
 /**
- * Tests DraftingPromptBuilder against the EntityJsonSchemaComposer.
+ * Tests DraftingPromptBuilder against EntityJsonSchemaComposer as schema source.
  *
- * Task 6 of the OEL-4691 Path A plan: the prompt builder's schema source
- * is the new composer service. The builder's public surface is unchanged
- * (buildSystemPrompt / buildToolMetadata / buildFieldIndex) but the schema
- * payload it inlines is now a real JSON Schema document with a flat
- * properties map - hence buildFieldIndex() now reads $schema['properties']
- * keys directly instead of walking a grouped form-display tree.
+ * The prompt builder's public surface (buildSystemPrompt / buildToolMetadata
+ * / buildFieldIndex) is unchanged but the schema payload it inlines is now a
+ * real JSON Schema document with a flat properties map. buildFieldIndex()
+ * reads $schema['properties'] keys directly instead of walking a grouped
+ * form-display tree.
  *
  * Integration test: exercises the real EntityJsonSchemaComposer via the
  * service container. Builder-only assertions are limited to the prompt
@@ -96,6 +95,12 @@ class DraftingPromptBuilderTest extends KernelTestBase {
 
     $this->assertStringContainsString('draft_content tool', $prompt);
     $this->assertStringContainsString("Content type schema:\n", $prompt);
+    $this->assertStringContainsString(
+      '"title": [{"value":',
+      $prompt,
+      'The prompt must teach the denormalize-input shape via a literal example; ' .
+      'without it, the LLM would have to infer shape from the schema alone.',
+    );
 
     // Decode the JSON tail and assert structurally - substring matching is
     // too permissive (a stub schema would pass with just "properties" present).

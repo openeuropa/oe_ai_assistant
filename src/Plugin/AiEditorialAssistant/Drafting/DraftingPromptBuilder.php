@@ -88,6 +88,11 @@ the editor explicitly asks you to generate or draft content.
 When the editor asks you to draft or generate content:
 - Use the draft_content tool to return structured field values matching the
   content type schema provided below.
+- Field values are arrays of items where each item is an object with property
+  keys (e.g. `"title": [{"value": "Headline"}]`, `"body": [{"value":
+  "<p>...</p>", "format": "plain_text"}]`). Match the schema's
+  array/object/property shape exactly - the system deserialises your output
+  via the Drupal core serialiser.
 - Always return the COMPLETE set of fields in every tool call, not just the
   ones you changed.
 - In the changed_fields parameter, list ONLY the field machine names you

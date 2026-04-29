@@ -26,12 +26,16 @@ use Symfony\Component\Serializer\SerializerInterface;
  *
  * Reference fields emit JSON Schema extension keys with the `x-` prefix:
  *  - `x-targetType`: the referenced entity type ID.
- *  - `x-targetBundles`: list of allowed target bundle machine names.
- *  - `x-bundles`: per-bundle composed schemas (entity_reference_revisions
- *    only).
  *  - `x-truncated`: TRUE on a recursion-budget or cycle-guard hit.
  * These are non-standard JSON Schema and are intended for LLM consumption,
  * not for strict validators (which may warn or strip them).
+ *
+ * Denormalize-input shape: every field emits `{type: "array",
+ * items: {type: "object", ...}}` so the LLM's output is consumable by
+ * `$serializer->deserialize()` without translation. Plain references
+ * carry `properties: {target_id: ...}`; entity_reference_revisions emits
+ * a `oneOf` over per-bundle variants so paragraph payloads are delivered
+ * inline as discriminated unions.
  */
 class EntityJsonSchemaComposer {
 
@@ -59,13 +63,13 @@ class EntityJsonSchemaComposer {
    *
    * These are NOT entity-type keys (so they're not caught by SKIP_KEY_ROLES)
    * but Drupal manages their values on save. Including them in the schema
-   * risks the LLM emitting hallucinated timestamps that DraftFieldMapper
-   * would then write into the entity, bypassing Drupal's revision tracking.
+   * risks the LLM emitting hallucinated timestamps that would flow through
+   * `$serializer->deserialize()` into the entity unchanged, bypassing
+   * Drupal's revision tracking.
    *
    * @todo Replace with class-hierarchy detection
    *   (is_a($itemClass, CreatedItem::class) || is_a($itemClass, ChangedItem::class))
    *   so custom entities with non-standard timestamp field names are also caught.
-   *   Tracked under post-OEL-4691 hardening.
    *
    * @var string[]
    */
@@ -77,8 +81,8 @@ class EntityJsonSchemaComposer {
   /**
    * Maximum depth for recursive entity-reference composition.
    *
-   * Generous on purpose - this ticket prefers comprehensive schemas over
-   * compact ones (size optimization is OEL-4692's job). 6 covers
+   * Generous on purpose. Comprehensive schemas are preferred over compact
+   * ones; size optimization can be addressed separately if needed. 6 covers
    * landing-page-with-nested-paragraph-with-nested-paragraph and still
    * provides a hard stop against runaway cycles.
    */
@@ -234,12 +238,17 @@ class EntityJsonSchemaComposer {
   /**
    * Composes the schema for one field, applying cardinality wrapping.
    *
-   * Multi-cardinality fields become {type: "array", items: ...}; single-
-   * cardinality fields return the item schema directly.
+   * Always wraps the item schema in `{type: "array", items: ...}`: the
+   * denormalize-input shape requires every field to be array-shaped so the
+   * LLM's output matches what `$serializer->deserialize()` expects without
+   * translation.
    *
    * Per-item shaping lives in composeItem(); enrichment in enrichField();
-   * reference handling in composeReferenceItem(). Future enrichments
-   * belong to their own private helpers - do NOT inline new behavior here.
+   * reference handling in composeReferenceItem(). Future enrichments belong to
+   * their own private helpers - do NOT inline new behavior here.
+   *
+   * Description is attached to the array wrapper (it describes the field, not
+   * the leaf), AFTER composeItem() / enrichField() return their item schema.
    *
    * @param \Drupal\Core\Field\FieldItemListInterface $fieldItemList
    *   The field item list to introspect.
@@ -248,17 +257,13 @@ class EntityJsonSchemaComposer {
    *   reference targets.
    *
    * @return array
-   *   The field-level JSON Schema, wrapped as an array when cardinality > 1.
+   *   The field-level JSON Schema in `{type: "array", items: {...},
+   *   maxItems?: N, description?: "..."}` shape.
    */
   private function composeField(FieldItemListInterface $fieldItemList, int $depth): array {
     $fieldDef = $fieldItemList->getFieldDefinition();
 
-    // Reference fields short-circuit through composeReferenceItem rather than
-    // walking item properties (which would yield {target_id,
-    // target_revision_id} primitive bags - useless for the LLM). Detect via
-    // the FieldItem class hierarchy so any FieldItem extending
-    // EntityReferenceItem (image, file, oe_media_entity_reference,
-    // skos_concept_entity_reference, ...) routes through the reference path.
+    // Reference fields short-circuit through composeReferenceItem.
     $itemClass = $fieldItemList->getItemDefinition()->getClass();
     if (is_a($itemClass, EntityReferenceItem::class, TRUE)) {
       $itemSchema = $this->composeReferenceItem($fieldDef, $depth - 1);
@@ -268,36 +273,42 @@ class EntityJsonSchemaComposer {
       $itemSchema = $this->enrichField($itemSchema, $fieldDef);
     }
 
-    $cardinality = $fieldDef->getFieldStorageDefinition()->getCardinality();
-    if ($cardinality === 1) {
-      return $itemSchema;
-    }
+    // Always wrap as array. Cardinality 1 -> maxItems 1; cardinality N>1 ->
+    // maxItems N; CARDINALITY_UNLIMITED -> no maxItems.
     $arraySchema = [
       'type' => 'array',
       'items' => $itemSchema,
     ];
+    $cardinality = $fieldDef->getFieldStorageDefinition()->getCardinality();
     if ($cardinality !== FieldStorageDefinitionInterface::CARDINALITY_UNLIMITED) {
       $arraySchema['maxItems'] = $cardinality;
     }
+
+    // Description on the field wrapper, not the item schema.
+    $desc = $this->descriptionFor($fieldDef);
+    if ($desc !== NULL) {
+      $arraySchema['description'] = $desc;
+    }
+
     return $arraySchema;
   }
 
   /**
    * Composes the per-item schema for a field's first item.
    *
-   * Walks the item's non-computed, non-internal property definitions,
-   * normalises each leaf via core's `'json_schema'` format, then either
-   * collapses single-property items to the leaf schema directly (so
-   * `title.value` -> `{type: "string"}` rather than nesting under
-   * `properties.value`) or wraps multi-property items as a `{type: "object",
-   * properties: {...}}` schema with a `required` list.
+   * Walks the item's non-computed, non-internal property definitions and
+   * normalises each leaf via core's `'json_schema'` format. Always wraps as
+   * `{type: "object", properties: {...}, required?: [...]}`. Single-property
+   * collapse is intentionally absent because the denormalize-input shape
+   * requires the LLM to emit the wrapped form (`[{"value": "..."}]`) so
+   * deserialize accepts it without a translation layer.
    *
    * @param \Drupal\Core\Field\FieldItemListInterface $fieldItemList
    *   The field item list to introspect.
    *
    * @return array
-   *   The per-item JSON Schema (leaf primitive for single-property fields,
-   *   object for multi-property fields).
+   *   The per-item JSON Schema as `{type: "object", properties: {...},
+   *   required?: [...]}`.
    */
   private function composeItem(FieldItemListInterface $fieldItemList): array {
     // Materialise an item so we can read property definitions. Safe: this
@@ -324,17 +335,9 @@ class EntityJsonSchemaComposer {
     }
 
     // All properties were computed/internal - emit a permissive object schema
-    // without an empty 'properties' key. This is rare in practice but possible
-    // for fields where every item-property is excluded by the walk.
+    // without an empty 'properties' key.
     if ($properties === []) {
       return ['type' => 'object'];
-    }
-
-    // Single-property collapse: title.value -> string, not
-    // {value: {type: string}}.
-    if (count($properties) === 1) {
-      $only = array_key_first($properties);
-      return $properties[$only];
     }
 
     $schema = [
@@ -351,58 +354,58 @@ class EntityJsonSchemaComposer {
    * Layers field-instance metadata onto a per-item schema.
    *
    * Core's leaf normalisers know primitive types and basic formats but
-   * do NOT propagate field-instance constraints (allowed values, max
-   * length, datetime granularity, descriptions). This method injects
-   * those on top of the core leaf schema.
+   * do NOT propagate field-instance constraints (allowed values, max length,
+   * datetime granularity). This method injects those at the LEAF property
+   * level (typically `properties.value`), not on the object envelope.
+   * Because the composer always wraps items as objects, the constraint must
+   * live on the constrained property to be meaningful.
    *
-   * Operates on the schema produced by composeItem(): for single-property
-   * fields that's the leaf schema directly, for multi-property fields
-   * that's the {type: "object", properties: ...} envelope. Either way,
-   * enum / maxLength / format / description attach at the schema's top
-   * level.
+   * `description` is NOT injected here. composeField() attaches it to the
+   * array wrapper one level up.
    *
-   * Limitation: for multi-property fields (where composeItem() returns
-   * {type: "object", properties: ...}), enum/maxLength/format are merged
-   * at the OBJECT envelope level, not on a sub-property. Today no field
-   * type exhibits multi-property + max_length together; revisit this rule
-   * if such a type is introduced.
+   * @todo When adding constraints for property
+   *   names other than `value` (e.g. text_long's `summary`, datetime's
+   *   `end_value`), drop the isset() guards in favour of explicit
+   *   property-name routing per field type. The current silent no-op is
+   *   intentional today (every type we support has its constraint on
+   *   `value`) but is a known foot-gun for the next round of enrichment.
+   *   To be done in: OEL-4692.
    *
    * @param array $itemSchema
-   *   The per-item schema produced by composeItem().
+   *   The per-item schema produced by composeItem(); always `{type: "object",
+   *   properties: {...}, ...}`.
    * @param \Drupal\Core\Field\FieldDefinitionInterface $fieldDef
    *   The field definition supplying the enrichment metadata.
    *
    * @return array
-   *   The per-item schema with field-instance metadata merged in.
+   *   The per-item schema with field-instance metadata merged into the
+   *   appropriate sub-property.
    */
   private function enrichField(array $itemSchema, FieldDefinitionInterface $fieldDef): array {
     $type = $fieldDef->getType();
     $settings = $fieldDef->getSettings();
     $storageSettings = $fieldDef->getFieldStorageDefinition()->getSettings();
 
-    // List_string / list_integer / list_float -> enum.
+    // List_string / list_integer / list_float -> enum on properties.value.
     if (in_array($type, ['list_string', 'list_integer', 'list_float'], TRUE)) {
       $allowed = $storageSettings['allowed_values'] ?? [];
-      if ($allowed !== []) {
-        $itemSchema['enum'] = array_keys($allowed);
+      if ($allowed !== [] && isset($itemSchema['properties']['value'])) {
+        $itemSchema['properties']['value']['enum'] = array_keys($allowed);
       }
     }
 
-    // String storage max_length.
-    if ($type === 'string' && !empty($storageSettings['max_length'])) {
-      $itemSchema['maxLength'] = (int) $storageSettings['max_length'];
+    // String storage max_length -> maxLength on properties.value.
+    if ($type === 'string'
+      && !empty($storageSettings['max_length'])
+      && isset($itemSchema['properties']['value'])
+    ) {
+      $itemSchema['properties']['value']['maxLength'] = (int) $storageSettings['max_length'];
     }
 
-    // Datetime: date vs date-time.
-    if ($type === 'datetime') {
+    // Datetime: date vs date-time -> format on properties.value.
+    if ($type === 'datetime' && isset($itemSchema['properties']['value'])) {
       $datetimeType = $settings['datetime_type'] ?? 'datetime';
-      $itemSchema['format'] = $datetimeType === 'date' ? 'date' : 'date-time';
-    }
-
-    // Description: prefer field description, fall back to label.
-    $desc = $this->descriptionFor($fieldDef);
-    if ($desc !== NULL) {
-      $itemSchema['description'] = $desc;
+      $itemSchema['properties']['value']['format'] = $datetimeType === 'date' ? 'date' : 'date-time';
     }
 
     return $itemSchema;
@@ -411,31 +414,30 @@ class EntityJsonSchemaComposer {
   /**
    * Composes the per-item schema for a reference field.
    *
-   * Emits x-targetType / x-targetBundles always. For entity_reference_revisions
-   * (paragraph-style inline entities), recurses into each allowed target
-   * bundle and emits the per-bundle schema under x-bundles. Plain
-   * entity_reference fields skip recursion - the LLM is expected to
-   * reference an existing entity, not draft one.
+   * Emits a denormalize-input shape: `{type: "object", properties: {target_id:
+   * <leaf>, alt?, title?, ...}, x-targetType: "<entity_type>"}`. For
+   * entity_reference_revisions (paragraph-style inline entities), recurses
+   * into each allowed target bundle and emits a `oneOf` over the bundle
+   * variants: the LLM picks one bundle per item and emits its full payload
+   * inline.
    *
-   * Description handling is delegated to descriptionFor() so the rule
-   * stays consistent with enrichField()'s description-with-fallback.
+   * Description is NOT injected here. composeField() attaches it to the
+   * array wrapper one level up after this method returns. This mirrors
+   * enrichField()'s contract.
    *
-   * Known limitation for image/file fields: Drupal stores alt-text, title,
-   * file extensions, max filesize, and upload constraints as field-instance
-   * settings. This composer emits only x-targetType / x-targetBundles for
-   * such fields. The LLM has no signal that alt-text exists or what file
-   * types are allowed. Acceptable today because images are typically
-   * attached post-draft; revisit if the drafting plugin starts populating
-   * media fields directly. (Tracked as future enhancement.)
+   * Known limitation for image/file fields: alt-text and title appear under
+   * `properties` (the LLM CAN emit them) but file_extensions / max_filesize /
+   * max_resolution constraints are not surfaced. Acceptable today because
+   * images are typically attached post-draft.
    *
    * @param \Drupal\Core\Field\FieldDefinitionInterface $fieldDef
    *   The reference field definition.
    * @param int $depth
-   *   Remaining recursion budget after the caller's decrement, used when
-   *   recursing into target bundles for entity_reference_revisions.
+   *   Remaining recursion budget. Already decremented by composeField() before
+   *   this method is called.
    *
    * @return array
-   *   The per-item reference schema.
+   *   The per-item schema in denormalize-input shape.
    */
   private function composeReferenceItem(FieldDefinitionInterface $fieldDef, int $depth): array {
     $storage = $fieldDef->getFieldStorageDefinition();
@@ -444,7 +446,6 @@ class EntityJsonSchemaComposer {
     $targetBundles = $handlerSettings['target_bundles'] ?? NULL;
 
     if ($targetBundles === NULL) {
-      // No restriction: enumerate all bundles to keep the schema bounded.
       $bundleInfo = $this->bundleInfo->getBundleInfo($targetType);
       $targetBundles = array_keys($bundleInfo);
     }
@@ -452,27 +453,68 @@ class EntityJsonSchemaComposer {
       $targetBundles = array_values($targetBundles);
     }
 
-    $schema = [
-      'type' => 'object',
-      'x-targetType' => $targetType,
-      'x-targetBundles' => $targetBundles,
+    // entity_reference_revisions: recurse into each target bundle, emit oneOf
+    // so the LLM picks one bundle per inline item.
+    if ($fieldDef->getType() === 'entity_reference_revisions') {
+      // The bundle key is typically 'type' for paragraphs but we look it up
+      // so this works for any inline-entity reference (e.g. revisionable
+      // custom blocks). composeBundle() strips the bundle key via
+      // SKIP_KEY_ROLES, so we re-inject it here as the discriminator the
+      // denormalizer routes on.
+      $targetEntityType = $this->entityTypeManager->getDefinition($targetType);
+      $bundleKey = $targetEntityType->getKey('bundle') ?: 'type';
+
+      $variants = [];
+      foreach ($targetBundles as $bundle) {
+        $bundleSchema = $this->composeBundle($targetType, $bundle, $depth);
+        // Inject the bundle-key property as the discriminator: an array of one
+        // item whose target_id matches the bundle name. The LLM produces a
+        // discriminated union the denormalizer can route.
+        if (!isset($bundleSchema['properties'])) {
+          $bundleSchema['properties'] = [];
+        }
+        $bundleSchema['properties'][$bundleKey] = [
+          'type' => 'array',
+          'items' => [
+            'type' => 'object',
+            'properties' => [
+              'target_id' => ['type' => 'string', 'const' => $bundle],
+            ],
+          ],
+          'maxItems' => 1,
+        ];
+        $variants[] = $bundleSchema;
+      }
+      // Include `type: object` alongside `oneOf` so the field-level invariant
+      // "items.type === 'object'" holds (each variant IS an object schema; the
+      // `oneOf` simply discriminates among allowed bundles). Standard JSON
+      // Schema permits combining `type` with `oneOf`.
+      return [
+        'type' => 'object',
+        'oneOf' => $variants,
+        'x-targetType' => $targetType,
+      ];
+    }
+
+    // Plain entity_reference / image / file / taxonomy: emit
+    // {properties: {target_id, ...}, x-targetType}. target_id is integer for
+    // numeric-id entities, string for string-keyed (config) entities; the
+    // overwhelming common case is integer.
+    $properties = [
+      'target_id' => ['type' => 'integer'],
     ];
 
-    // Recurse only for entity_reference_revisions (paragraph-style inline
-    // entities).
-    if ($fieldDef->getType() === 'entity_reference_revisions') {
-      $bundles = [];
-      foreach ($targetBundles as $bundle) {
-        $bundles[$bundle] = $this->composeBundle($targetType, $bundle, $depth);
-      }
-      $schema['x-bundles'] = $bundles;
+    // Image fields carry alt + title columns the LLM can populate.
+    if ($fieldDef->getType() === 'image') {
+      $properties['alt'] = ['type' => 'string'];
+      $properties['title'] = ['type' => 'string'];
     }
 
-    $desc = $this->descriptionFor($fieldDef);
-    if ($desc !== NULL) {
-      $schema['description'] = $desc;
-    }
-    return $schema;
+    return [
+      'type' => 'object',
+      'properties' => $properties,
+      'x-targetType' => $targetType,
+    ];
   }
 
   /**

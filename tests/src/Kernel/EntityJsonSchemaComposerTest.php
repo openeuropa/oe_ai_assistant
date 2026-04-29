@@ -11,12 +11,10 @@ use PHPUnit\Framework\Attributes\Group;
 /**
  * Tests the leaf-level normalisation produced by EntityJsonSchemaComposer.
  *
- * Task 1 of the OEL-4691 Path A plan: assert that the composer walks a stub
- * `oe_news` node, returns a flat per-field map under `properties`, normalises
- * each leaf via Drupal core's `'json_schema'` format, and excludes the
- * internal base fields that core already filters out via
- * TypedDataInternalPropertiesHelper. Subsequent tasks layer on enrichment,
- * envelope wrapping and recursion.
+ * Tests that EntityJsonSchemaComposer walks a stub `oe_news` node, returns
+ * a flat per-field map under `properties`, normalises each leaf via Drupal
+ * core's `'json_schema'` format, and excludes the internal base fields that
+ * core already filters out via TypedDataInternalPropertiesHelper.
  */
 #[Group('oe_ai_assistant')]
 class EntityJsonSchemaComposerTest extends KernelTestBase {
@@ -102,10 +100,13 @@ class EntityJsonSchemaComposerTest extends KernelTestBase {
    */
   public function testTitleHasStringTypeFromCoreLeaf(): void {
     $schema = $this->composer()->compose('node', 'oe_news');
-    // After Task 1 we accept any non-empty per-field schema; Tasks 2-4 tighten.
-    // @todo Task 2: assert $schema['properties']['title']['type'] === 'string'
-    //   once envelope wrapping lands.
-    $this->assertNotEmpty($schema['properties']['title'], 'title schema is non-empty.');
+    $title = $schema['properties']['title'];
+
+    // title is array-wrapped, items are objects with a 'value' string.
+    $this->assertSame('array', $title['type']);
+    $this->assertSame(1, $title['maxItems']);
+    $this->assertSame('object', $title['items']['type']);
+    $this->assertSame('string', $title['items']['properties']['value']['type']);
   }
 
   /**
@@ -130,26 +131,30 @@ class EntityJsonSchemaComposerTest extends KernelTestBase {
   /**
    * Asserts multi-property text-with-format fields wrap as object schemas.
    */
-  public function testFormattedTextFieldIsObjectWithValueAndFormat(): void {
+  public function testFormattedTextFieldHasValueAndFormatProperties(): void {
     $schema = $this->composer()->compose('node', 'oe_news');
     $body = $schema['properties']['body'];
 
-    $this->assertSame('object', $body['type']);
-    $this->assertArrayHasKey('value', $body['properties']);
-    $this->assertArrayHasKey('format', $body['properties']);
-    $this->assertSame('string', $body['properties']['value']['type']);
+    // The body field is array-wrapped with multi-property items.
+    $this->assertSame('array', $body['type']);
+    $this->assertSame('object', $body['items']['type']);
+    $this->assertArrayHasKey('value', $body['items']['properties']);
+    $this->assertArrayHasKey('format', $body['items']['properties']);
+    $this->assertSame('string', $body['items']['properties']['value']['type']);
   }
 
   /**
-   * Asserts single-property single-cardinality fields collapse to a leaf.
+   * Asserts single-property fields are NOT collapsed.
    */
-  public function testTitleSinglePropertyFieldIsFlatString(): void {
-    // The title field is single-property (value), single-cardinality. We
-    // collapse to a primitive-shaped schema for prompt brevity.
+  public function testTitleIsArrayWrappedNotCollapsed(): void {
+    // Sanity: the old single-property collapse is gone.
+    // title used to be {type: "string"}; now it's array-wrapped.
     $schema = $this->composer()->compose('node', 'oe_news');
     $title = $schema['properties']['title'];
 
-    $this->assertSame('string', $title['type']);
+    $this->assertSame('array', $title['type'],
+      'No single-property collapse, title must be array-wrapped.');
+    $this->assertArrayHasKey('value', $title['items']['properties']);
   }
 
   /**
@@ -185,16 +190,29 @@ class EntityJsonSchemaComposerTest extends KernelTestBase {
   public function testNoFieldEmitsEmptyPropertiesObject(): void {
     $schema = $this->composer()->compose('node', 'oe_news');
     foreach ($schema['properties'] as $fieldName => $fieldSchema) {
-      // Walk into array wrappers to inspect the items schema too.
-      $candidate = ($fieldSchema['type'] ?? NULL) === 'array'
-        ? $fieldSchema['items'] ?? []
-        : $fieldSchema;
-      if (($candidate['type'] ?? NULL) === 'object') {
-        $this->assertNotSame(
-          [],
-          $candidate['properties'] ?? NULL,
-          "Field $fieldName must not have an empty properties object."
-        );
+      // Walk into array wrappers (every field) to inspect the items schema,
+      // and into oneOf variants for paragraph fields.
+      $candidates = [];
+      $items = $fieldSchema['items'] ?? NULL;
+      if ($items === NULL) {
+        continue;
+      }
+      if (isset($items['oneOf'])) {
+        foreach ($items['oneOf'] as $variant) {
+          $candidates[] = $variant;
+        }
+      }
+      else {
+        $candidates[] = $items;
+      }
+      foreach ($candidates as $candidate) {
+        if (($candidate['type'] ?? NULL) === 'object') {
+          $this->assertNotSame(
+            [],
+            $candidate['properties'] ?? NULL,
+            "Field $fieldName must not have an empty properties object."
+          );
+        }
       }
     }
   }
@@ -218,12 +236,14 @@ class EntityJsonSchemaComposerTest extends KernelTestBase {
     $schema = $this->composer()->compose('node', 'oe_news');
     $newsType = $schema['properties']['field_news_type'];
 
-    // field_news_type is single-cardinality list_string with allowed values
-    // press_release / announcement / update (per the test fixture).
-    $this->assertSame('string', $newsType['type']);
+    // field_news_type is single-cardinality list_string. Enum lives on
+    // properties.value (leaf), not on the object envelope.
+    $this->assertSame('array', $newsType['type']);
+    $this->assertSame('object', $newsType['items']['type']);
+    $this->assertSame('string', $newsType['items']['properties']['value']['type']);
     $this->assertEqualsCanonicalizing(
       ['press_release', 'announcement', 'update'],
-      $newsType['enum'],
+      $newsType['items']['properties']['value']['enum'],
     );
   }
 
@@ -232,8 +252,9 @@ class EntityJsonSchemaComposerTest extends KernelTestBase {
    */
   public function testStringFieldGetsMaxLengthFromStorage(): void {
     $schema = $this->composer()->compose('node', 'oe_news');
-    // title's storage max_length is 255 (Drupal core default).
-    $this->assertSame(255, $schema['properties']['title']['maxLength']);
+    // title's storage max_length is 255 (Drupal core default). maxLength
+    // lives on properties.value (leaf).
+    $this->assertSame(255, $schema['properties']['title']['items']['properties']['value']['maxLength']);
   }
 
   /**
@@ -241,35 +262,28 @@ class EntityJsonSchemaComposerTest extends KernelTestBase {
    */
   public function testDateOnlyDateTimeFieldGetsDateFormat(): void {
     $schema = $this->composer()->compose('node', 'oe_news');
-    // field_publication_date is configured as date-only in fixtures.
     $value = $schema['properties']['field_publication_date'];
-    // For single-property single-cardinality the schema collapses to leaf.
-    $this->assertSame('string', $value['type']);
-    $this->assertSame('date', $value['format']);
+    // Date-only datetime: format on properties.value.
+    $this->assertSame('array', $value['type']);
+    $this->assertSame('string', $value['items']['properties']['value']['type']);
+    $this->assertSame('date', $value['items']['properties']['value']['format']);
   }
 
   /**
    * Asserts the field instance description carries through to the schema.
-   *
-   * The field_teaser fixture description is "A short teaser for the news
-   * item." (lowercase "teaser"). The plan snippet asserted "Teaser" (capital),
-   * but enrichField() prefers the description over the label, so we match
-   * the substring that actually appears in the description. The label
-   * fallback branch is exercised by datetime_type / list_string fields whose
-   * instance description is empty (e.g. field_publication_date in the same
-   * fixture).
    */
   public function testFieldDescriptionsCarryThrough(): void {
     $schema = $this->composer()->compose('node', 'oe_news');
 
     // Description-preferred path: field_teaser has both a description and
     // label; the description (lowercase 't') wins over the label "Teaser"
-    // (capital T).
+    // (capital T). Description lives on the array wrapper (the field), not
+    // the item schema.
     $teaser = $schema['properties']['field_teaser'];
     $this->assertStringContainsString('teaser', $teaser['description'] ?? '');
 
-    // Label-fallback path: field_publication_date has an empty description
-    // so the label "Publication date" is what reaches the schema.
+    // Label-fallback path: field_publication_date has empty description so the
+    // label "Publication date" reaches the schema.
     $pubDate = $schema['properties']['field_publication_date'];
     $this->assertSame('Publication date', $pubDate['description'] ?? '');
   }
@@ -279,12 +293,11 @@ class EntityJsonSchemaComposerTest extends KernelTestBase {
    */
   public function testDateTimeFieldGetsDateTimeFormat(): void {
     $schema = $this->composer()->compose('node', 'oe_news');
-    // field_publication_datetime is a datetime field with
-    // datetime_type: datetime (full timestamp, not date-only). enrichField()
-    // must override core's default 'date' format to 'date-time'.
     $value = $schema['properties']['field_publication_datetime'];
-    $this->assertSame('string', $value['type']);
-    $this->assertSame('date-time', $value['format']);
+    // datetime_type=datetime: format on properties.value.
+    $this->assertSame('array', $value['type']);
+    $this->assertSame('string', $value['items']['properties']['value']['type']);
+    $this->assertSame('date-time', $value['items']['properties']['value']['format']);
   }
 
   /**
@@ -293,10 +306,13 @@ class EntityJsonSchemaComposerTest extends KernelTestBase {
   public function testEntityReferenceFieldGetsTargetMetadata(): void {
     $schema = $this->composer()->compose('node', 'oe_news');
     $contacts = $schema['properties']['field_contacts'];
-    $items = $contacts['items'];
 
+    // Reference fields emit denormalize-shape items: properties.target_id +
+    // x-targetType.
+    $this->assertSame('array', $contacts['type']);
+    $items = $contacts['items'];
     $this->assertSame('node', $items['x-targetType']);
-    $this->assertContains('oe_contact', $items['x-targetBundles']);
+    $this->assertSame('integer', $items['properties']['target_id']['type']);
   }
 
   /**
@@ -307,23 +323,31 @@ class EntityJsonSchemaComposerTest extends KernelTestBase {
     $paragraphs = $schema['properties']['field_content_paragraphs'];
     $items = $paragraphs['items'];
 
+    // Paragraphs emit oneOf over bundles. Each variant is the bundle's
+    // composed schema with `type` constrained to the bundle name.
     $this->assertSame('paragraph', $items['x-targetType']);
-    // Both paragraph bundles from fixtures must appear with their schemas.
-    $this->assertArrayHasKey('text_block', $items['x-bundles']);
-    $this->assertArrayHasKey('quote_block', $items['x-bundles']);
+    $this->assertArrayHasKey('oneOf', $items);
+    $this->assertCount(2, $items['oneOf'], 'One variant per allowed bundle.');
 
-    // The recursed schema for text_block must include its own field.
-    $textBlock = $items['x-bundles']['text_block'];
-    $quoteBlock = $items['x-bundles']['quote_block'];
-    $this->assertArrayNotHasKey('x-truncated', $textBlock,
-      'text_block must not be truncated at top-level recursion.');
-    $this->assertArrayNotHasKey('x-truncated', $quoteBlock,
-      'quote_block must not be truncated at top-level recursion.');
-    $this->assertArrayHasKey('field_text_body', $textBlock['properties']);
+    // Find the text_block variant by its constrained type.
+    $textBlockVariant = NULL;
+    $quoteBlockVariant = NULL;
+    foreach ($items['oneOf'] as $variant) {
+      $bundleConst = $variant['properties']['type']['items']['properties']['target_id']['const'] ?? NULL;
+      if ($bundleConst === 'text_block') {
+        $textBlockVariant = $variant;
+      }
+      if ($bundleConst === 'quote_block') {
+        $quoteBlockVariant = $variant;
+      }
+    }
+    $this->assertNotNull($textBlockVariant, 'oneOf includes a text_block variant.');
+    $this->assertNotNull($quoteBlockVariant, 'oneOf includes a quote_block variant.');
 
-    // And quote_block its own fields.
-    $this->assertArrayHasKey('field_quote_text', $quoteBlock['properties']);
-    $this->assertArrayHasKey('field_quote_attribution', $quoteBlock['properties']);
+    // Each variant carries the bundle's editorially meaningful fields.
+    $this->assertArrayHasKey('field_text_body', $textBlockVariant['properties']);
+    $this->assertArrayHasKey('field_quote_text', $quoteBlockVariant['properties']);
+    $this->assertArrayHasKey('field_quote_attribution', $quoteBlockVariant['properties']);
   }
 
   /**
@@ -342,9 +366,10 @@ class EntityJsonSchemaComposerTest extends KernelTestBase {
    */
   public function testAutoManagedBaseFieldsExcluded(): void {
     $schema = $this->composer()->compose('node', 'oe_news');
-    // created and changed are auto-managed timestamps. The LLM should never
-    // see them - emitting bogus values would silently overwrite Drupal's
-    // revision tracking via DraftFieldMapper's set() call.
+    // The created and changed fields are auto-managed timestamps. The LLM
+    // should never see them - emitting bogus values would silently overwrite
+    // Drupal's revision tracking via $serializer->deserialize() in the save
+    // endpoint.
     $this->assertArrayNotHasKey('created', $schema['properties'],
       'created is excluded from the schema.');
     $this->assertArrayNotHasKey('changed', $schema['properties'],
@@ -355,52 +380,90 @@ class EntityJsonSchemaComposerTest extends KernelTestBase {
    * Asserts image fields route through the reference path.
    */
   public function testImageFieldRoutesAsReference(): void {
-    // Image fields extend EntityReferenceItem (target_type=file). The
-    // broader reference detection from architect fix 3 should route them
-    // through composeReferenceItem rather than emitting a primitive bag.
+    // Image fields extend EntityReferenceItem (target_type=file). Routes
+    // through composeReferenceItem and emits target_id + alt + title.
     $schema = $this->composer()->compose('node', 'oe_news');
     $image = $schema['properties']['field_news_image'];
 
-    $this->assertSame('object', $image['type']);
-    $this->assertSame('file', $image['x-targetType']);
-    // file entity has bundles (default 'file'). Don't recurse - file refs
-    // are NOT entity_reference_revisions, so no x-bundles.
-    $this->assertArrayNotHasKey('x-bundles', $image);
-    $this->assertArrayNotHasKey('properties', $image,
-      'Image fields route through composeReferenceItem and must not emit a properties bag.');
+    $this->assertSame('array', $image['type']);
+    $items = $image['items'];
+    $this->assertSame('object', $items['type']);
+    $this->assertSame('file', $items['x-targetType']);
+    $this->assertSame('integer', $items['properties']['target_id']['type']);
+    $this->assertSame('string', $items['properties']['alt']['type']);
+    $this->assertSame('string', $items['properties']['title']['type']);
+
+    // Image is NOT entity_reference_revisions; no oneOf/recursion.
+    $this->assertArrayNotHasKey('oneOf', $items,
+      'Plain reference fields do not recurse into bundles.');
   }
 
   /**
    * Asserts link fields emit a wrapped object schema with uri and title.
    */
   public function testLinkFieldIsObjectWithUriAndTitle(): void {
-    // Link fields are multi-property (uri + title + options) with NO
-    // class hierarchy under EntityReferenceItem. Route through composeItem
-    // and emit a wrapped object schema.
+    // Link fields are multi-property (uri + title) with NO class hierarchy
+    // under EntityReferenceItem. Route through composeItem and emit a wrapped
+    // object schema.
     $schema = $this->composer()->compose('node', 'oe_news');
     $link = $schema['properties']['field_news_link'];
 
-    $this->assertSame('object', $link['type']);
-    $this->assertArrayHasKey('uri', $link['properties']);
-    $this->assertArrayHasKey('title', $link['properties']);
+    $this->assertSame('array', $link['type']);
+    $this->assertSame('object', $link['items']['type']);
+    $this->assertArrayHasKey('uri', $link['items']['properties']);
+    $this->assertArrayHasKey('title', $link['items']['properties']);
   }
 
   /**
    * Taxonomy term references exercise the bundle-info enumeration fallback.
    *
-   * field_news_tags has no target_bundles set in handler_settings, so the
-   * composer falls through to bundleInfo->getBundleInfo('taxonomy_term'),
-   * which returns vocabularies. Asserts the schema picks them up as
-   * x-targetBundles. Multi-cardinality (-1) wraps as array.
+   * The field_news_tags field has no target_bundles set in handler_settings,
+   * so the composer falls through to
+   * bundleInfo->getBundleInfo('taxonomy_term'). Asserts the schema picks them
+   * up as x-targetType (the bundle list itself is not surfaced for
+   * non-revisions references, only the entity type). Multi-cardinality (-1)
+   * wraps as array.
    */
   public function testTaxonomyReferenceUsesVocabularyAsBundle(): void {
     $schema = $this->composer()->compose('node', 'oe_news');
     $tags = $schema['properties']['field_news_tags'];
-    // Multi-cardinality (-1) wraps as array.
+
     $this->assertSame('array', $tags['type']);
+    $this->assertArrayNotHasKey('maxItems', $tags,
+      'Cardinality unlimited has no maxItems.');
     $items = $tags['items'];
     $this->assertSame('taxonomy_term', $items['x-targetType']);
-    $this->assertContains('news_tags', $items['x-targetBundles']);
+    $this->assertSame('integer', $items['properties']['target_id']['type']);
+  }
+
+  /**
+   * Locks the new contract: every field is an array-of-objects.
+   *
+   * The denormalize-input shape requires that no field collapses to a leaf
+   * primitive: the composer must emit
+   * `{type: "array", items: {type: "object", ...}}` for every non-skipped
+   * field on the bundle. This invariant catches accidental regressions to
+   * the old single-property-collapse behavior.
+   */
+  public function testEveryFieldIsArrayOfObjects(): void {
+    $schema = $this->composer()->compose('node', 'oe_news');
+    foreach ($schema['properties'] as $fieldName => $fieldSchema) {
+      $this->assertSame('array', $fieldSchema['type'] ?? NULL,
+        "Field '$fieldName' must be wrapped as 'type: array'.");
+      $this->assertArrayHasKey('items', $fieldSchema,
+        "Field '$fieldName' must have an 'items' key.");
+      $this->assertSame('object', $fieldSchema['items']['type'] ?? NULL,
+        "Field '$fieldName' items must be 'type: object'.");
+
+      // For paragraph fields the items wrap a oneOf and each variant must also
+      // be type: object so the discriminator pattern stays intact.
+      if (isset($fieldSchema['items']['oneOf'])) {
+        foreach ($fieldSchema['items']['oneOf'] as $i => $variant) {
+          $this->assertSame('object', $variant['type'] ?? NULL,
+            "Field '$fieldName' oneOf variant $i must be 'type: object'.");
+        }
+      }
+    }
   }
 
 }

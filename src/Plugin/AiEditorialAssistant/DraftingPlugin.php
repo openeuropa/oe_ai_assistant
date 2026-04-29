@@ -5,15 +5,19 @@ declare(strict_types=1);
 namespace Drupal\oe_ai_assistant\Plugin\AiEditorialAssistant;
 
 use Drupal\Component\Uuid\UuidInterface;
+use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Session\AccountProxyInterface;
 use Drupal\Core\TempStore\PrivateTempStoreFactory;
+use Drupal\content_moderation\ModerationInformationInterface;
+use Drupal\node\Entity\Node;
+use Drupal\node\NodeInterface;
 use Drupal\oe_ai_assistant\Annotation\AiEditorialAssistant;
 use Drupal\oe_ai_assistant\Exception\ActionException;
 use Drupal\oe_ai_assistant\Plugin\AiAssistantPluginBase;
 use Drupal\oe_ai_assistant\Plugin\AiEditorialAssistant\Drafting\DraftingPromptBuilder;
 use Drupal\oe_ai_assistant\Service\AgentFactory;
-use Drupal\oe_ai_assistant\Service\DraftFieldMapper;
 use Drupal\oe_ai_assistant\Service\EntityJsonSchemaComposer;
+use Drupal\oe_ai_assistant\Service\InlineEntityHydrator;
 use Drupal\oe_ai_assistant\Store\DrupalTempMessageStore;
 use Drupal\oe_ai_assistant\Tool\DraftContentTool;
 use Psr\Log\LoggerInterface;
@@ -28,6 +32,7 @@ use Symfony\Component\HttpFoundation\EventStreamResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpFoundation\ServerEvent;
+use Symfony\Component\Serializer\SerializerInterface;
 
 /**
  * Drafting plugin: AI-powered content drafting with SSE streaming.
@@ -61,12 +66,18 @@ class DraftingPlugin extends AiAssistantPluginBase {
    *   Factory for creating Symfony AI Agent instances.
    * @param \Drupal\Core\TempStore\PrivateTempStoreFactory $tempStoreFactory
    *   Factory for per-user temp stores (conversation history).
-   * @param \Drupal\oe_ai_assistant\Service\DraftFieldMapper $fieldMapper
-   *   Maps LLM field values to Drupal nodes.
    * @param \Drupal\Core\Session\AccountProxyInterface $currentUser
    *   The authenticated Drupal user.
    * @param \Drupal\oe_ai_assistant\Plugin\AiEditorialAssistant\Drafting\DraftingPromptBuilder $promptBuilder
    *   Builds the system prompt and tool metadata.
+   * @param \Symfony\Component\Serializer\SerializerInterface $serializer
+   *   The serializer used to deserialize the LLM-produced JSON into entities.
+   * @param \Drupal\content_moderation\ModerationInformationInterface $moderationInformation
+   *   Used to detect moderated bundles and set the initial moderation state.
+   * @param \Drupal\Core\Entity\EntityTypeManagerInterface $entityTypeManager
+   *   Used to load the node_type storage and validate the bundle.
+   * @param \Drupal\oe_ai_assistant\Service\InlineEntityHydrator $inlineEntityHydrator
+   *   Builds inline child paragraph entities for the parent node.
    */
   public function __construct(
     array $configuration,
@@ -76,9 +87,12 @@ class DraftingPlugin extends AiAssistantPluginBase {
     protected readonly LoggerInterface $logger,
     protected readonly AgentFactory $agentFactory,
     protected readonly PrivateTempStoreFactory $tempStoreFactory,
-    protected readonly DraftFieldMapper $fieldMapper,
     protected readonly AccountProxyInterface $currentUser,
     protected readonly DraftingPromptBuilder $promptBuilder,
+    protected readonly SerializerInterface $serializer,
+    protected readonly ModerationInformationInterface $moderationInformation,
+    protected readonly EntityTypeManagerInterface $entityTypeManager,
+    protected readonly InlineEntityHydrator $inlineEntityHydrator,
   ) {
     parent::__construct($configuration, $plugin_id, $plugin_definition);
   }
@@ -100,12 +114,15 @@ class DraftingPlugin extends AiAssistantPluginBase {
       $container->get('logger.factory')->get('oe_ai_assistant'),
       $container->get(AgentFactory::class),
       $container->get('tempstore.private'),
-      $container->get(DraftFieldMapper::class),
       $container->get('current_user'),
       new DraftingPromptBuilder(
         $container->get(EntityJsonSchemaComposer::class),
         $container->get('logger.factory')->get('oe_ai_assistant'),
       ),
+      $container->get('serializer'),
+      $container->get('content_moderation.moderation_information'),
+      $container->get('entity_type.manager'),
+      $container->get(InlineEntityHydrator::class),
     );
   }
 
@@ -318,18 +335,35 @@ class DraftingPlugin extends AiAssistantPluginBase {
   }
 
   /**
-   * Creates a Drupal node from an approved draft.
+   * Saves a drafted node by deserialising the LLM-produced JSON.
+   *
+   * Strips entity_reference_revisions fields (paragraphs) out of the parent
+   * JSON before deserialize because core 11.3 silently drops inline children
+   * (see CoreJsonSchemaTest::testDeserializeSilentlyDropsInlineParagraphs).
+   * Delegates to InlineEntityHydrator for paragraph creation; the parent's
+   * EntityReferenceRevisionsItem::preSave() chain saves the whole tree
+   * transactionally during $node->save().
    *
    * @param \Symfony\Component\HttpFoundation\Request $request
-   *   The request with bundle and fields keys.
+   *   The save request.
    *
    * @return array<string, string>
-   *   An array with nodeId and previewUrl.
+   *   An array with `nodeId` and `previewUrl`.
+   *
+   * @throws \Drupal\oe_ai_assistant\Exception\ActionException
+   *   - 'invalid_bundle' (400) if the bundle does not exist.
+   *   - 'forbidden' (403) if the current user lacks create permission.
+   *   - 'invalid_payload' (400) if deserialize / denormalize throws.
    */
   public function save(Request $request): array {
     $body = $this->decodeJsonBody($request);
     $bundle = $body['bundle'] ?? '';
     $fields = $body['fields'] ?? [];
+
+    if (!$this->entityTypeManager->getStorage('node_type')->load($bundle)) {
+      throw new ActionException('invalid_bundle',
+        sprintf('Content type "%s" does not exist.', $bundle), 400);
+    }
 
     if (!$this->currentUser->hasPermission("create $bundle content")) {
       throw new ActionException(
@@ -340,16 +374,68 @@ class DraftingPlugin extends AiAssistantPluginBase {
     }
 
     try {
-      $node = $this->fieldMapper->createNode($bundle, $fields);
+      // Encode the parent JSON. $serializer->deserialize() will silently drop
+      // any entity_reference_revisions items, so we re-attach them via
+      // InlineEntityHydrator::hydrateInto() immediately after.
+      $json = json_encode(
+        ['type' => [['target_id' => $bundle]], ...$fields],
+        JSON_THROW_ON_ERROR,
+      );
+      /** @var \Drupal\node\NodeInterface $node */
+      $node = $this->serializer->deserialize($json, Node::class, 'json');
+
+      // Hydrate inline paragraphs (UNSAVED, saved transactionally by the
+      // parent's preSave chain) and attach them onto the parent node.
+      $this->inlineEntityHydrator->hydrateInto($fields, $node, 'node', $bundle);
     }
-    catch (\InvalidArgumentException $e) {
-      throw new ActionException('invalid_bundle', $e->getMessage(), 400);
+    catch (\Throwable $e) {
+      // Log the raw exception for operators; return a stable, generic message
+      // to the client to avoid leaking deserializer internals (class names,
+      // JSON path internals, constraint detail) over HTTP.
+      $this->logger->error('Failed to deserialize draft payload: @e', [
+        '@e' => (string) $e,
+      ]);
+      throw new ActionException(
+        'invalid_payload',
+        'The submitted draft payload could not be processed. See the system log for details.',
+        400,
+      );
     }
+
+    $node->setOwnerId((int) $this->currentUser->id());
+    if ($this->moderationInformation->isModeratedEntity($node)) {
+      $node->set('moderation_state', 'draft');
+    }
+    else {
+      $node->setPublished(FALSE);
+    }
+    // Atomic save: parent's EntityReferenceRevisionsItem::preSave() saves
+    // the inline paragraphs in the same transaction.
+    $node->save();
 
     return [
       'nodeId' => (string) $node->id(),
-      'previewUrl' => $this->fieldMapper->getPreviewUrl($node),
+      'previewUrl' => $this->buildPreviewUrl($node),
     ];
+  }
+
+  /**
+   * Builds the preview URL for a freshly saved node.
+   *
+   * Moderated entities expose a /latest revision route; unmoderated nodes
+   * use the canonical route.
+   *
+   * @param \Drupal\node\NodeInterface $node
+   *   The newly saved node.
+   *
+   * @return string
+   *   Relative URL pointing at either the latest revision or the canonical
+   *   page.
+   */
+  private function buildPreviewUrl(NodeInterface $node): string {
+    return $this->moderationInformation->isModeratedEntity($node)
+      ? '/node/' . $node->id() . '/latest'
+      : '/node/' . $node->id();
   }
 
   // -- Private helpers -------------------------------------------------------

@@ -9,7 +9,7 @@ use Drupal\node\Entity\Node;
 use PHPUnit\Framework\Attributes\Group;
 
 /**
- * Spike: establish the Drupal core 11.3 JSON Schema API for content entities.
+ * Documents the Drupal core 11.3 JSON Schema API behaviour for content entities.
  *
  * Pins down which of the two candidate APIs described in change record
  * https://www.drupal.org/node/3424710 is the real, working entry point in
@@ -23,14 +23,14 @@ use PHPUnit\Framework\Attributes\Group;
  *
  * The `\Drupal\serialization\Serializer\Serializer::getJsonSchema()` helper
  * also works and is a thin wrapper around `normalize(..., 'json_schema')`
- * (see `JsonSchemaProviderSerializerTrait`) — but it requires a `$context`
+ * (see `JsonSchemaProviderSerializerTrait`), but it requires a `$context`
  * array argument and otherwise delegates to the same normalizer chain.
  *
- * IMPORTANT SHAPE CAVEAT discovered by this spike:
+ * IMPORTANT SHAPE CAVEAT:
  *   As of Drupal 11.3.7, `ContentEntityNormalizer` / `ComplexDataNormalizer`
  *   does NOT use `SchematicNormalizerTrait`. Calling
  *   `normalize($entity, 'json_schema')` therefore returns a flat map of
- *   `{field_name: schema_for_that_field}` at the top level — NOT a fully
+ *   `{field_name: schema_for_that_field}` at the top level, NOT a fully
  *   wrapped `{type: "object", properties: {...}}` JSON Schema document.
  *   Additionally, `FieldItemList` and friends do not yet implement a
  *   schematic normalizer either, so each field currently normalizes to a
@@ -39,7 +39,7 @@ use PHPUnit\Framework\Attributes\Group;
  *   This means core alone is insufficient to produce a meaningful JSON
  *   Schema for an `oe_news` node today; this module will have to contribute
  *   its own normalizers (or an envelope) on top of the core output. That
- *   gap is the reason this spike exists.
+ *   gap is why this module composes its own schema.
  */
 #[Group('oe_ai_assistant')]
 class CoreJsonSchemaTest extends KernelTestBase {
@@ -124,7 +124,7 @@ class CoreJsonSchemaTest extends KernelTestBase {
 
     // As of Drupal 11.3.7, the top level is a flat map of field_name => schema
     // rather than a wrapped {type: "object", properties: {...}} document.
-    // Assert that the node's two most canonical fields — title and body —
+    // Assert that the node's two most canonical fields (title and body)
     // appear at the top level.
     $this->assertArrayHasKey('title', $schema, 'Schema contains "title" at the top level.');
     $this->assertArrayHasKey('body', $schema, 'Schema contains "body" at the top level.');
@@ -143,9 +143,9 @@ class CoreJsonSchemaTest extends KernelTestBase {
 
     $schema = $serializer->normalize($stub, 'json_schema');
 
-    // Core currently returns a flat per-field map — assert that shape.
+    // Core currently returns a flat per-field map; assert that shape.
     // There is NO JSON Schema envelope (no top-level "properties" key, no
-    // JSON-Schema "type" keyword — instead, any "type" key present is the
+    // JSON-Schema "type" keyword: instead, any "type" key present is the
     // node's bundle-reference field, not the schema's $type).
     $this->assertIsArray($schema);
     $this->assertArrayNotHasKey(
@@ -261,8 +261,8 @@ class CoreJsonSchemaTest extends KernelTestBase {
    * Probe: normalize a single property of a FieldItem (title.value).
    *
    * This is the level at which `PrimitiveDataNormalizer` /
-   * `StringData::getCastedValue()` — both of which carry JsonSchema attribute
-   * metadata — are expected to take over.
+   * `StringData::getCastedValue()` (both of which carry JsonSchema attribute
+   * metadata) are expected to take over.
    */
   public function testNormalizeFieldItemProperty(): void {
     $serializer = $this->container->get('serializer');
@@ -278,7 +278,7 @@ class CoreJsonSchemaTest extends KernelTestBase {
   }
 
   /**
-   * Probe: normalize the body field (formatted text — multi-property).
+   * Probe: normalize the body field (formatted text, multi-property).
    */
   public function testNormalizeTextFieldItem(): void {
     $serializer = $this->container->get('serializer');
@@ -490,8 +490,11 @@ class CoreJsonSchemaTest extends KernelTestBase {
   /**
    * AC #4: $serializer->deserialize() round-trips schema-conforming JSON.
    *
-   * Scope note: validation only. DraftFieldMapper still owns node creation
-   * in this ticket; replacing it via core denormalization is future work.
+   * Scope note: validation only. This test proves core's deserializer
+   * accepts the shape. `DraftingPlugin::save()` now uses it for the parent
+   * node (with `InlineEntityHydrator` handling inline paragraphs separately,
+   * since core 11.3.x drops them silently; see
+   * `testDeserializeSilentlyDropsInlineParagraphs`).
    *
    * Note: the JSON shape used here is core's deserialization input shape
    * (matching what `$serializer->normalize($entity, 'json')` would emit),
@@ -525,6 +528,57 @@ class CoreJsonSchemaTest extends KernelTestBase {
     $this->assertSame('Teaser', $node->get('field_teaser')->value);
     $this->assertSame('press_release', $node->get('field_news_type')->value);
     $this->assertSame('2026-04-20', $node->get('field_publication_date')->value);
+  }
+
+  /**
+   * Documents core gap: $serializer->deserialize() drops inline paragraphs.
+   *
+   * Documents core 11.3.x's inline-paragraph-deserialize gap. Originally a
+   * Originally added (2026-04-20) for the work that retired DraftFieldMapper; now
+   * serves as the regression alert that fires if/when core lands inline
+   * child entity creation (at which point `InlineEntityHydrator` can be
+   * retired). Verified against Drupal core 11.3.8: deserialize() succeeds
+   * for the parent node and sets scalar fields correctly, but
+   * `entity_reference_revisions` items containing inline child entity data
+   * are silently dropped: no Paragraph entity is created and the field
+   * ends up with zero references.
+   *
+   * Consequence: `DraftingPlugin::save()` delegates to `InlineEntityHydrator`
+   * to pre-create Paragraph entities and rewrite the parent JSON with
+   * {target_id, target_revision_id} references before deserializing the
+   * parent.
+   *
+   * REGRESSION ALERT: when this test FAILS (i.e. paragraphs ARE created
+   * inline), core has landed the feature and `InlineEntityHydrator` can be
+   * retired in favour of a single $serializer->deserialize() call.
+   */
+  public function testDeserializeSilentlyDropsInlineParagraphs(): void {
+    $serializer = $this->container->get('serializer');
+
+    $json = json_encode([
+      'type' => [['target_id' => 'oe_news']],
+      'title' => [['value' => 'Spike']],
+      'field_content_paragraphs' => [
+        [
+          'type' => [['target_id' => 'text_block']],
+          'field_text_body' => [['value' => 'Spike body']],
+        ],
+      ],
+    ], JSON_THROW_ON_ERROR);
+
+    /** @var \Drupal\node\NodeInterface $node */
+    $node = $serializer->deserialize($json, 'Drupal\node\Entity\Node', 'json');
+
+    // Parent node deserializes cleanly.
+    $this->assertSame('oe_news', $node->bundle());
+    $this->assertSame('Spike', $node->getTitle());
+
+    // But the inline paragraph data is silently dropped.
+    $paragraphs = $node->get('field_content_paragraphs')->referencedEntities();
+    $this->assertCount(0, $paragraphs,
+      'Inline paragraph data is silently dropped by core 11.3.8. ' .
+      'If this assertion fails, core has landed inline paragraph creation; ' .
+      'simplify DraftingPlugin::save() to drop the InlineEntityHydrator delegation.');
   }
 
 }

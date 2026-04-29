@@ -41,7 +41,7 @@ class DraftingPluginSaveTest extends ExistingSiteBase {
   }
 
   /**
-   * Tests that save creates a node with simple fields.
+   * Tests that save creates a node with simple fields in the new payload shape.
    */
   public function testSaveCreatesNodeWithSimpleFields(): void {
     $user = $this->createUser([
@@ -54,7 +54,7 @@ class DraftingPluginSaveTest extends ExistingSiteBase {
       'entityTypeId' => 'node',
       'bundle' => 'oe_news',
       'fields' => [
-        'title' => 'Test Save',
+        'title' => [['value' => 'Test Save']],
       ],
     ]);
 
@@ -69,6 +69,62 @@ class DraftingPluginSaveTest extends ExistingSiteBase {
     $this->assertEquals('Test Save', $node->getTitle());
     $this->assertEquals('oe_news', $node->bundle());
     $this->assertEquals('draft', $node->get('moderation_state')->value);
+    // Owner must be the current user, set explicitly post-deserialize.
+    $this->assertEquals((int) $user->id(), (int) $node->getOwnerId(),
+      'Saved node owner must be the current user.');
+  }
+
+  /**
+   * Tests that save creates a node with inline paragraphs.
+   *
+   * End-to-end exercise of the deserialize-paragraph path through
+   * `InlineEntityHydrator`, the load-bearing regression guard for the
+   * inline-paragraph creation that retired `DraftFieldMapper`. Core 11.3.x
+   * silently drops inline children (see
+   * `CoreJsonSchemaTest::testDeserializeSilentlyDropsInlineParagraphs`), so
+   * the hydrator handles paragraph creation while the parent goes through
+   * plain `$serializer->deserialize()`.
+   */
+  public function testSaveCreatesNodeWithParagraphs(): void {
+    $user = $this->createUser([
+      'use oe ai assistant',
+      'create oe_news content',
+    ]);
+    $this->loginUser($user);
+
+    $result = $this->httpPost('/api/ai/plugins/drafting/save', [
+      'entityTypeId' => 'node',
+      'bundle' => 'oe_news',
+      'fields' => [
+        'title' => [['value' => 'Paragraph round-trip']],
+        'field_content_paragraphs' => [
+          [
+            'type' => [['target_id' => 'text_block']],
+            'field_text_body' => [['value' => 'First paragraph.']],
+          ],
+          [
+            'type' => [['target_id' => 'quote_block']],
+            'field_quote_text' => [['value' => 'A wise quote.']],
+            'field_quote_attribution' => [['value' => 'Anon']],
+          ],
+        ],
+      ],
+    ]);
+
+    $this->assertEquals(200, $result['status'],
+      'Expected 200 response. Body: ' . json_encode($result['body']));
+    $nodeId = $result['body']['nodeId'];
+    $node = \Drupal::entityTypeManager()->getStorage('node')->load($nodeId);
+    $this->assertNotNull($node, 'Saved node exists.');
+    $this->assertEquals('Paragraph round-trip', $node->getTitle());
+
+    $paragraphs = $node->get('field_content_paragraphs')->referencedEntities();
+    $this->assertCount(2, $paragraphs, 'Both inline paragraphs were created.');
+    $this->assertSame('text_block', $paragraphs[0]->bundle());
+    $this->assertSame('First paragraph.', $paragraphs[0]->get('field_text_body')->value);
+    $this->assertSame('quote_block', $paragraphs[1]->bundle());
+    $this->assertSame('A wise quote.', $paragraphs[1]->get('field_quote_text')->value);
+    $this->assertSame('Anon', $paragraphs[1]->get('field_quote_attribution')->value);
   }
 
   /**
