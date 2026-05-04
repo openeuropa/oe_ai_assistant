@@ -1,4 +1,14 @@
 # Plugin dispatch route: handles all plugin API calls.
+oe_ai_assistant.admin_config:
+  path: /admin/config/ai-editorial
+  defaults:
+    _controller: '\Drupal\oe_ai_assistant\Controller\AiEditorialSessionController::adminConfigPage'
+    _title: 'AI Editorial Assistant'
+  requirements:
+    _permission: 'administer ai editorial sessions'
+  options:
+    _admin_route: TRUE
+
 oe_ai_assistant.plugin.dispatch:
   path: /api/ai/plugins/{plugin_id}/{action}
   defaults:

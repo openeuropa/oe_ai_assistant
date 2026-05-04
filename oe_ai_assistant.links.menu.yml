@@ -1,0 +1,13 @@
+oe_ai_assistant.dashboard:
+  title: 'AI Editorial Assistant'
+  description: 'List and manage AI editorial sessions.'
+  route_name: entity.ai_editorial_session.collection
+  parent: system.admin_content
+  weight: 20
+
+oe_ai_assistant.admin_config:
+  title: 'AI Editorial Assistant'
+  description: 'Configure AI editorial assistant features.'
+  route_name: oe_ai_assistant.admin_config
+  parent: system.admin_config
+  weight: 20

@@ -1,0 +1,22 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - field.storage.ai_editorial_session.node_id
+    - oe_ai_assistant.ai_editorial_session_type.drafting
+  module:
+    - node
+id: ai_editorial_session.drafting.node_id
+field_name: node_id
+entity_type: ai_editorial_session
+bundle: drafting
+label: Node
+description: 'The created or edited node associated with the session.'
+required: false
+translatable: false
+default_value: {  }
+default_value_callback: ''
+settings:
+  handler: 'default:node'
+  handler_settings: {  }
+field_type: entity_reference

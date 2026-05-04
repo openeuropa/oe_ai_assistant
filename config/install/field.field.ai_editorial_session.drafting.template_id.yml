@@ -1,0 +1,18 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - field.storage.ai_editorial_session.template_id
+    - oe_ai_assistant.ai_editorial_session_type.drafting
+id: ai_editorial_session.drafting.template_id
+field_name: template_id
+entity_type: ai_editorial_session
+bundle: drafting
+label: 'Template ID'
+description: 'The optional template identifier.'
+required: false
+translatable: false
+default_value: {  }
+default_value_callback: ''
+settings: {  }
+field_type: string
