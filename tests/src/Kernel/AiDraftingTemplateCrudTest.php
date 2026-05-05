@@ -359,7 +359,7 @@ class AiDraftingTemplateCrudTest extends KernelTestBase {
   public function testSavingInvalidTemplateThrowsTemplateValidationException(): void {
     try {
       AiDraftingTemplate::create([
-        'id' => 'test_news_crud',
+        'id' => 'test_news_invalid',
         'label' => 'Bad template',
         'status' => TRUE,
         'content_type' => 'oe_news',
@@ -371,9 +371,13 @@ class AiDraftingTemplateCrudTest extends KernelTestBase {
     catch (TemplateValidationException $e) {
       $this->assertFalse($e->getResult()->isValid());
       $this->assertNotEmpty($e->getResult()->getErrors());
-      $this->assertEquals('test_news_crud', $e->getTemplateId());
+      $this->assertEquals('test_news_invalid', $e->getTemplateId());
     }
   }
+
+  // ---------------------------------------------------------------------------
+  // Helpers
+  // ---------------------------------------------------------------------------
 
   /**
    * Builds an unsaved in-memory template for validation testing.

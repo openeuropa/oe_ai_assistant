@@ -11,8 +11,6 @@ use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Field\FieldDefinitionInterface;
 use Drupal\oe_ai_assistant\AiDraftingTemplateInterface;
 use Drupal\oe_ai_assistant\TemplateValidationResult;
-use JsonSchema\Constraints\Drafts\Draft07\Factory as JsonSchemaDraft07Factory;
-use JsonSchema\Validator as JsonSchemaValidator;
 
 /**
  * Loads templates and validates them against structural and Drupal field rules.
@@ -55,15 +53,10 @@ final class AiDraftingTemplateManager implements AiDraftingTemplateManagerInterf
    */
   public function validateTemplate(AiDraftingTemplateInterface $template): TemplateValidationResult {
     $result = new TemplateValidationResult();
-
     $fields = $template->getFields();
     $defaults = $template->getDefaults();
 
-    // Level 1: structural validation.
-    $this->validateFieldsWithSchema($fields, $result);
-    $this->validateDefaultsStructure($defaults, $result);
-
-    // Level 2: validate against actual Drupal field definitions.
+    // Validate against actual Drupal field definitions.
     $contentType = $template->getContentType();
     if ($contentType !== '') {
       $this->validateContentTypeExists($contentType, $result);
@@ -85,149 +78,6 @@ final class AiDraftingTemplateManager implements AiDraftingTemplateManagerInterf
       static fn($value) => $value === '__NOW__' ? $now : $value,
       $defaults,
     );
-  }
-
-  /**
-   * Validates the fields map structure using JSON Schema (draft-07).
-   *
-   * Level 1: structural validation
-   *
-   * @param array<string, mixed> $fields
-   * @param \Drupal\oe_ai_assistant\TemplateValidationResult $result
-   */
-  private function validateFieldsWithSchema(array $fields, TemplateValidationResult $result): void {
-    $data = $this->fieldsToStdClass($fields);
-    $validator = new JsonSchemaValidator(new JsonSchemaDraft07Factory());
-    $validator->validate($data, $this->fieldsSchema());
-    foreach ($validator->getErrors() as $error) {
-      $property = $error['property'] ?? '';
-      $message = $error['message'] ?? '';
-      $result->addError($property !== '' ? "$property: $message" : $message);
-    }
-  }
-
-  /**
-   * Recursively converts the fields PHP array to stdClass for JSON Schema validation.
-   *
-   * PHP encodes empty arrays as JSON arrays, not objects. Since every field
-   * definition is an associative map, all arrays are converted to stdClass
-   * except the value of the 'items' key, which is always a sequential list.
-   *
-   * @param array<string, mixed> $arr
-   * @param bool $isList
-   *
-   * @return \stdClass|array<mixed>
-   */
-  private function fieldsToStdClass(array $arr, bool $isList = FALSE): \stdClass|array {
-    if ($isList) {
-      return array_map(fn($v) => is_array($v) ? $this->fieldsToStdClass($v) : $v, $arr);
-    }
-    $obj = new \stdClass();
-    foreach ($arr as $k => $v) {
-      $obj->$k = is_array($v) ? $this->fieldsToStdClass($v, $k === 'items') : $v;
-    }
-    return $obj;
-  }
-
-  /**
-   * Returns the cached JSON Schema object describing valid fields map structure.
-   *
-   * The schema uses if/then/else to route each field definition to its specific
-   * sub-schema based on the presence and value of the 'type' key, so error
-   * messages come only from the applicable branch.
-   */
-  private function fieldsSchema(): object {
-    static $schema;
-    if ($schema === NULL) {
-      $schema = json_decode(<<<'JSON'
-        {
-          "$schema": "http://json-schema.org/draft-07/schema#",
-          "type": "object",
-          "patternProperties": { ".*": { "$ref": "#/definitions/fieldDefinition" } },
-          "definitions": {
-            "fieldDefinition": {
-              "type": "object",
-              "if":   { "required": ["type"] },
-              "then": {
-                "if":   { "properties": { "type": { "const": "paragraphs" } } },
-                "then": { "$ref": "#/definitions/paragraphsField" },
-                "else": {
-                  "if":   { "properties": { "type": { "const": "entity_reference" } } },
-                  "then": { "$ref": "#/definitions/entityReferenceField" },
-                  "else": { "properties": { "type": { "enum": ["paragraphs", "entity_reference"] } } }
-                }
-              },
-              "else": { "$ref": "#/definitions/scalarField" }
-            },
-            "scalarField": {
-              "required": ["prompt"],
-              "properties": { "prompt": { "type": "string" } },
-              "additionalProperties": false
-            },
-            "paragraphsField": {
-              "required": ["type", "items"],
-              "properties": {
-                "type":  { "const": "paragraphs" },
-                "items": { "type": "array", "items": { "$ref": "#/definitions/paragraphItem" } }
-              },
-              "additionalProperties": false
-            },
-            "paragraphItem": {
-              "type": "object",
-              "required": ["paragraph_type", "prompt"],
-              "properties": {
-                "paragraph_type": { "type": "string", "minLength": 1 },
-                "prompt":         { "type": "string" },
-                "fields": {
-                  "type": "object",
-                  "additionalProperties": { "$ref": "#/definitions/fieldDefinition" }
-                }
-              },
-              "additionalProperties": false
-            },
-            "entityReferenceField": {
-              "required": ["type", "items"],
-              "properties": {
-                "type":  { "const": "entity_reference" },
-                "items": { "type": "array", "items": { "$ref": "#/definitions/entityReferenceItem" } }
-              },
-              "additionalProperties": false
-            },
-            "entityReferenceItem": {
-              "type": "object",
-              "required": ["entity_type", "bundle", "prompt"],
-              "properties": {
-                "entity_type": { "type": "string", "minLength": 1 },
-                "bundle":      { "type": "string", "minLength": 1 },
-                "prompt":      { "type": "string" },
-                "fields": {
-                  "type": "object",
-                  "additionalProperties": { "$ref": "#/definitions/fieldDefinition" }
-                }
-              },
-              "additionalProperties": false
-            }
-          }
-        }
-        JSON);
-    }
-    return $schema;
-  }
-
-  /**
-   * Validates that all keys in the defaults map are strings.
-   *
-   * Level 1: structural validation
-   *
-   * @param array<string, mixed> $defaults
-   * @param \Drupal\oe_ai_assistant\TemplateValidationResult $result
-   */
-  private function validateDefaultsStructure(array $defaults, TemplateValidationResult $result): void {
-    foreach (array_keys($defaults) as $key) {
-      if (!is_string($key)) {
-        $result->addError("Default keys must be strings.", 'defaults');
-      }
-    }
   }
 
   /**
