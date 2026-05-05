@@ -7,10 +7,9 @@ namespace Drupal\Tests\oe_ai_assistant\Kernel;
 use Drupal\KernelTests\KernelTestBase;
 use Drupal\oe_ai_assistant\Entity\AiDraftingTemplate;
 use Drupal\oe_ai_assistant\Exception\TemplateValidationException;
-use Drupal\oe_ai_assistant\Service\AiDraftingTemplateManagerInterface;
 
 /**
- * Kernel tests for AiDraftingTemplate CRUD and AiDraftingTemplateManager.
+ * Kernel tests for AiDraftingTemplate CRUD and entity-level operations.
  *
  * The oe_ai_assistant_test module provides the oe_news content type, the
  * paragraph types, and the news_default / news_with_paragraphs templates,
@@ -44,8 +43,6 @@ class AiDraftingTemplateCrudTest extends KernelTestBase {
     'oe_ai_assistant_test',
   ];
 
-  private AiDraftingTemplateManagerInterface $manager;
-
   protected function setUp(): void {
     parent::setUp();
 
@@ -53,8 +50,6 @@ class AiDraftingTemplateCrudTest extends KernelTestBase {
     $this->installEntitySchema('node');
     $this->installEntitySchema('paragraph');
     $this->installConfig(['oe_ai_assistant_test']);
-
-    $this->manager = $this->container->get(AiDraftingTemplateManagerInterface::class);
   }
 
   protected function tearDown(): void {
@@ -140,7 +135,9 @@ class AiDraftingTemplateCrudTest extends KernelTestBase {
    * Tests that both installed test templates are returned for the oe_news type.
    */
   public function testGetTemplatesForContentType(): void {
-    $templates = $this->manager->getTemplatesForContentType('oe_news');
+    $storage = $this->container->get('entity_type.manager')->getStorage('ai_drafting_template');
+    $templates = $storage->loadByProperties(['content_type' => 'oe_news']);
+
     $this->assertArrayHasKey('news_default', $templates);
     $this->assertArrayHasKey('news_with_paragraphs', $templates);
 
@@ -153,42 +150,37 @@ class AiDraftingTemplateCrudTest extends KernelTestBase {
    * Tests that an empty array is returned when no templates exist for the type.
    */
   public function testGetTemplatesForContentTypeReturnsEmptyForUnknownType(): void {
-    $templates = $this->manager->getTemplatesForContentType('nonexistent_type');
+    $storage = $this->container->get('entity_type.manager')->getStorage('ai_drafting_template');
+    $templates = $storage->loadByProperties(['content_type' => 'nonexistent_type']);
+
     $this->assertSame([], $templates);
   }
 
   /**
-   * Tests that loadTemplate returns the correct installed template by ID.
+   * Tests that the installed news_default template can be loaded by ID.
    */
-  public function testLoadTemplateReturnsInstalledTemplate(): void {
-    $template = $this->manager->loadTemplate('news_default');
+  public function testLoadTemplateById(): void {
+    $template = AiDraftingTemplate::load('news_default');
+    $this->assertNotNull($template);
     $this->assertEquals('news_default', $template->id());
     $this->assertEquals('oe_news', $template->getContentType());
   }
 
   /**
-   * Tests that loadTemplate throws InvalidArgumentException for a non-existent ID.
-   */
-  public function testLoadTemplateThrowsForMissingId(): void {
-    $this->expectException(\InvalidArgumentException::class);
-    $this->manager->loadTemplate('nonexistent_template');
-  }
-
-  /**
-   * Tests that the installed news_default template passes Level-2 validation.
+   * Tests that the installed news_default template passes validation.
    */
   public function testInstalledNewsDefaultTemplateIsValid(): void {
-    $template = $this->manager->loadTemplate('news_default');
-    $result = $this->manager->validateTemplate($template);
+    $template = AiDraftingTemplate::load('news_default');
+    $result = $template->validate();
     $this->assertTrue($result->isValid(), implode(', ', $result->getErrors()));
   }
 
   /**
-   * Tests that the installed news_with_paragraphs template passes Level-2 validation.
+   * Tests that the installed news_with_paragraphs template passes validation.
    */
   public function testInstalledNewsWithParagraphsTemplateIsValid(): void {
-    $template = $this->manager->loadTemplate('news_with_paragraphs');
-    $result = $this->manager->validateTemplate($template);
+    $template = AiDraftingTemplate::load('news_with_paragraphs');
+    $result = $template->validate();
     $this->assertTrue($result->isValid(), implode(', ', $result->getErrors()));
   }
 
@@ -199,7 +191,7 @@ class AiDraftingTemplateCrudTest extends KernelTestBase {
     $template = $this->buildTemplate('oe_nonexistent', [
       'title' => ['prompt' => 'Headline.'],
     ]);
-    $result = $this->manager->validateTemplate($template);
+    $result = $template->validate();
 
     $this->assertFalse($result->isValid());
     $this->assertErrorMatches("/Content type 'oe_nonexistent' does not exist/", $result->getErrors());
@@ -212,7 +204,7 @@ class AiDraftingTemplateCrudTest extends KernelTestBase {
     $template = $this->buildTemplate('oe_news', [
       'field_does_not_exist' => ['prompt' => 'Prompt.'],
     ]);
-    $result = $this->manager->validateTemplate($template);
+    $result = $template->validate();
 
     $this->assertFalse($result->isValid());
     $this->assertErrorMatches(
@@ -234,7 +226,7 @@ class AiDraftingTemplateCrudTest extends KernelTestBase {
         ]],
       ],
     ]);
-    $result = $this->manager->validateTemplate($template);
+    $result = $template->validate();
 
     $this->assertFalse($result->isValid());
     $this->assertErrorMatches(
@@ -259,7 +251,7 @@ class AiDraftingTemplateCrudTest extends KernelTestBase {
         ]],
       ],
     ]);
-    $result = $this->manager->validateTemplate($template);
+    $result = $template->validate();
 
     $this->assertFalse($result->isValid());
     $this->assertErrorMatches(
@@ -282,7 +274,7 @@ class AiDraftingTemplateCrudTest extends KernelTestBase {
         ]],
       ],
     ]);
-    $result = $this->manager->validateTemplate($template);
+    $result = $template->validate();
 
     $this->assertFalse($result->isValid());
     $this->assertErrorMatches(
@@ -305,7 +297,7 @@ class AiDraftingTemplateCrudTest extends KernelTestBase {
         ]],
       ],
     ]);
-    $result = $this->manager->validateTemplate($template);
+    $result = $template->validate();
 
     $this->assertFalse($result->isValid());
     $this->assertErrorMatches(
@@ -321,7 +313,7 @@ class AiDraftingTemplateCrudTest extends KernelTestBase {
     $template = $this->buildTemplate('oe_news', [], [
       'field_ghost' => 'value',
     ]);
-    $result = $this->manager->validateTemplate($template);
+    $result = $template->validate();
 
     $this->assertFalse($result->isValid());
     $this->assertErrorMatches(
@@ -336,10 +328,11 @@ class AiDraftingTemplateCrudTest extends KernelTestBase {
   public function testResolveDefaultsNowTokenIsReplaced(): void {
     $expectedTime = $this->container->get('datetime.time')->getRequestTime();
 
-    $resolved = $this->manager->resolveDefaults([
+    $template = $this->buildTemplate('oe_news', [], [
       'created' => '__NOW__',
       'langcode' => 'en',
     ]);
+    $resolved = $template->resolveDefaults();
 
     $this->assertSame($expectedTime, $resolved['created']);
     $this->assertSame('en', $resolved['langcode']);
@@ -350,7 +343,8 @@ class AiDraftingTemplateCrudTest extends KernelTestBase {
    */
   public function testResolveDefaultsNoTokensIsPassthrough(): void {
     $defaults = ['langcode' => 'en', 'moderation_state' => 'draft'];
-    $this->assertSame($defaults, $this->manager->resolveDefaults($defaults));
+    $template = $this->buildTemplate('oe_news', [], $defaults);
+    $this->assertSame($defaults, $template->resolveDefaults());
   }
 
   /**

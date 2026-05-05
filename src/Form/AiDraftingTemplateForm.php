@@ -8,7 +8,6 @@ use Drupal\Core\Entity\EntityForm;
 use Drupal\Core\Entity\EntityTypeBundleInfoInterface;
 use Drupal\Core\Form\FormStateInterface;
 use Drupal\oe_ai_assistant\Entity\AiDraftingTemplate;
-use Drupal\oe_ai_assistant\Service\AiDraftingTemplateManagerInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\Yaml\Exception\ParseException;
 use Symfony\Component\Yaml\Yaml;
@@ -24,7 +23,6 @@ final class AiDraftingTemplateForm extends EntityForm {
 
   public function __construct(
     private readonly EntityTypeBundleInfoInterface $entityTypeBundleInfo,
-    private readonly AiDraftingTemplateManagerInterface $templateManager,
   ) {}
 
   /**
@@ -33,7 +31,6 @@ final class AiDraftingTemplateForm extends EntityForm {
   public static function create(ContainerInterface $container): static {
     return new static(
       $container->get('entity_type.bundle.info'),
-      $container->get(AiDraftingTemplateManagerInterface::class),
     );
   }
 
@@ -137,8 +134,8 @@ final class AiDraftingTemplateForm extends EntityForm {
     // it now so validateTemplate() receives the correct submitted values.
     $this->entity = $this->buildEntity($form, $form_state);
 
-    // Run Level-2 structural validation on the fully-built entity.
-    $result = $this->templateManager->validateTemplate($this->entity);
+    // Run structural validation on the fully-built entity.
+    $result = $this->entity->validate();
     foreach ($result->getErrors('content_type') as $error) {
       $form_state->setErrorByName('content_type', $error);
     }
