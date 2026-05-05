@@ -2,21 +2,20 @@
 
 declare(strict_types=1);
 
-namespace Drupal\Tests\oe_ai_assistant\ExistingSite;
+namespace Drupal\Tests\oe_ai_assistant\Kernel;
 
 use Drupal\oe_ai_assistant\Entity\AiEditorialSession;
-use weitzman\DrupalTestTraits\ExistingSiteBase;
 
 /**
- * Integration tests for AI editorial sessions.
+ * Kernel tests for AI editorial sessions.
  */
-class AiEditorialSessionTest extends ExistingSiteBase {
+class AiEditorialSessionTest extends AiEditorialSessionKernelTestBase {
 
   /**
-   * Tests the drafting bundle is installed and sessions can be persisted.
+   * Tests the drafting bundle metadata and session CRUD lifecycle.
    */
   public function testDraftingBundleAndCrud(): void {
-    $bundle = \Drupal::entityTypeManager()
+    $bundle = $this->container->get('entity_type.manager')
       ->getStorage('ai_editorial_session_type')
       ->load('drafting');
 
@@ -26,7 +25,7 @@ class AiEditorialSessionTest extends ExistingSiteBase {
     $user = $this->createUser();
 
     /** @var \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $session */
-    $session = \Drupal::entityTypeManager()
+    $session = $this->container->get('entity_type.manager')
       ->getStorage('ai_editorial_session')
       ->create([
         'bundle' => 'drafting',
@@ -34,7 +33,6 @@ class AiEditorialSessionTest extends ExistingSiteBase {
         'content_type' => 'oe_news',
         'template_id' => 'landing_page',
       ]);
-
     $session->save();
 
     $loaded = AiEditorialSession::load($session->id());
@@ -43,7 +41,12 @@ class AiEditorialSessionTest extends ExistingSiteBase {
     $this->assertSame('oe_news', $loaded->getContentType());
     $this->assertSame(AiEditorialSession::STATUS_ACTIVE, $loaded->getStatus());
     $this->assertSame((string) $user->id(), (string) $loaded->getOwnerId());
-    $this->assertStringContainsString('Drafting - ', $loaded->label());
+    $this->assertStringStartsWith('Drafting - ', $loaded->label());
+
+    $entity_type = $this->container->get('entity_type.manager')
+      ->getDefinition('ai_editorial_session');
+    $this->assertFalse($entity_type->hasLinkTemplate('edit-form'));
+    $this->assertNull($entity_type->getFormClass('edit'));
 
     $loaded->setStatus(AiEditorialSession::STATUS_COMPLETED);
     $loaded->set('base_revision_id', 42);
