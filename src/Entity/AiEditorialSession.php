@@ -23,7 +23,7 @@ use Drupal\user\EntityOwnerTrait;
  *   bundle_label = @Translation("AI editorial session type"),
  *   handlers = {
  *     "list_builder" = "Drupal\oe_ai_assistant\AiEditorialSessionListBuilder",
- *     "access" = "Drupal\Core\Entity\EntityAccessControlHandler",
+ *     "access" = "Drupal\oe_ai_assistant\AiEditorialSessionAccessControlHandler",
  *     "form" = {
  *       "add" = "Drupal\oe_ai_assistant\Form\AiEditorialSessionAddForm",
  *       "delete" = "Drupal\Core\Entity\ContentEntityDeleteForm",

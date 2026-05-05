@@ -6,3 +6,36 @@
  */
 
 declare(strict_types=1);
+
+use Drupal\Core\Database\Query\AlterableInterface;
+use Drupal\Core\Database\Query\SelectInterface;
+
+/**
+ * Implements hook_query_ai_editorial_session_access_alter().
+ */
+function oe_ai_assistant_query_ai_editorial_session_access_alter(AlterableInterface $query): void {
+  if (!$query instanceof SelectInterface) {
+    return;
+  }
+
+  $account = \Drupal::currentUser();
+  if ($account->hasPermission('administer ai editorial sessions')) {
+    return;
+  }
+
+  $access = $query->orConditionGroup()
+    ->condition('base_table.uid', (int) $account->id());
+
+  $node_ids = \Drupal::entityTypeManager()
+    ->getStorage('node')
+    ->getQuery()
+    ->accessCheck(TRUE)
+    ->execute();
+
+  if ($node_ids !== []) {
+    $query->leftJoin('ai_editorial_session__node_id', 'session_node', 'session_node.entity_id = base_table.id');
+    $access->condition('session_node.node_id_target_id', array_values($node_ids), 'IN');
+  }
+
+  $query->condition($access);
+}
