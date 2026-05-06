@@ -82,6 +82,16 @@ class AiEditorialSessionListBuilder extends EntityListBuilder {
   /**
    * {@inheritdoc}
    */
+  public function load(): array {
+    return array_filter(
+      parent::load(),
+      static fn (EntityInterface $entity): bool => $entity->access('view')
+    );
+  }
+
+  /**
+   * {@inheritdoc}
+   */
   public function buildRow(EntityInterface $entity): array {
     /** @var \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $entity */
     $row['label']['data'] = [

@@ -20,13 +20,11 @@ abstract class AiEditorialSessionBrowserTestBase extends BrowserTestBase {
    */
   protected static $modules = [
     'ai',
-    'content_moderation',
     'field',
     'key',
     'node',
     'oe_ai_assistant',
     'options',
-    'workflows',
   ];
 
   /**

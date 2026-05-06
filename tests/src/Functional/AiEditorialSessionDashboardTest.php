@@ -78,6 +78,63 @@ class AiEditorialSessionDashboardTest extends AiEditorialSessionBrowserTestBase 
   }
 
   /**
+   * Tests the collection route can be accessed with the overview permission.
+   */
+  public function testDashboardAccessWithOverviewPermission(): void {
+    $user = $this->drupalCreateUser([
+      'access ai editorial sessions overview',
+      'access content',
+    ]);
+    $owner = $this->drupalCreateUser();
+
+    $visible_node = $this->createPublishedNode('oe_news', 'Visible node');
+    $hidden_node = $this->drupalCreateNode([
+      'type' => 'oe_news',
+      'title' => 'Hidden node',
+      'status' => 0,
+    ]);
+
+    $owned_session = $this->createSession($user, $hidden_node);
+    $owned_session->set('label', 'Owned session');
+    $owned_session->save();
+
+    $shared_visible_session = $this->createSession($owner, $visible_node);
+    $shared_visible_session->set('label', 'Shared visible session');
+    $shared_visible_session->save();
+
+    $private_session = $this->createSession($owner);
+    $private_session->set('label', 'Private session');
+    $private_session->save();
+
+    $hidden_session = $this->createSession($owner, $hidden_node);
+    $hidden_session->set('label', 'Hidden session');
+    $hidden_session->save();
+
+    $this->assertTrue($owned_session->access('view', $user));
+    $this->assertTrue($shared_visible_session->access('view', $user));
+    $this->assertFalse($private_session->access('view', $user));
+    $this->assertFalse($hidden_session->access('view', $user));
+
+    $this->drupalLogin($user);
+
+    $this->drupalGet(Url::fromRoute('entity.ai_editorial_session.collection'));
+    $this->assertSession()->statusCodeEquals(200);
+    $this->assertSession()->pageTextContains('AI editorial sessions');
+    $this->assertSession()->pageTextContains('Owned session');
+    $this->assertSession()->pageTextContains('Shared visible session');
+    $this->assertSession()->pageTextNotContains('Private session');
+    $this->assertSession()->pageTextNotContains('Hidden session');
+
+    $this->drupalLogout();
+
+    $user = $this->drupalCreateUser();
+    $this->drupalLogin($user);
+
+    $this->drupalGet(Url::fromRoute('entity.ai_editorial_session.collection'));
+    $this->assertSession()->statusCodeEquals(403);
+  }
+
+  /**
    * Tests creating a drafting session from the add flow.
    */
   public function testAddSessionFlow(): void {

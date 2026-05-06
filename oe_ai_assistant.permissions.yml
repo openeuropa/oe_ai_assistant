@@ -5,3 +5,7 @@ use oe ai assistant:
 administer ai editorial sessions:
   title: 'Administer AI editorial sessions'
   description: 'Create, update, and delete AI editorial sessions and their bundles.'
+
+access ai editorial sessions overview:
+  title: 'Access overview page of AI editorial sessions'
+  description: 'Access overview page of AI editorial sessions.'

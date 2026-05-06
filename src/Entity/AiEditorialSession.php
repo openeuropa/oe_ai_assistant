@@ -41,6 +41,7 @@ use Drupal\user\EntityOwnerTrait;
  *   },
  *   base_table = "ai_editorial_session",
  *   admin_permission = "administer ai editorial sessions",
+ *   collection_permission = "access ai editorial sessions overview",
  *   bundle_entity_type = "ai_editorial_session_type",
  *   links = {
  *     "canonical" = "/admin/content/ai/{ai_editorial_session}",
