@@ -18,9 +18,6 @@ use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
  */
 class AiEditorialSessionController extends ControllerBase {
 
-  /**
-   * Constructs the controller.
-   */
   public function __construct(
     private readonly EntityTypeManagerInterface $sessionEntityTypeManager,
   ) {}
@@ -36,24 +33,17 @@ class AiEditorialSessionController extends ControllerBase {
 
   /**
    * Displays the bundle selection page or redirects to the only bundle.
+   *
+   * @return array
+   *   The render array to show in the page.
    */
-  public function addPage(): array|RedirectResponse {
+  public function addPage(): array {
     $bundles = $this->sessionEntityTypeManager
       ->getStorage('ai_editorial_session_type')
       ->loadMultiple();
 
     if ($bundles === []) {
       throw new NotFoundHttpException();
-    }
-
-    uasort($bundles, static fn (AiEditorialSessionType $a, AiEditorialSessionType $b): int => strnatcasecmp($a->label(), $b->label()));
-
-    if (count($bundles) === 1) {
-      /** @var \Drupal\oe_ai_assistant\Entity\AiEditorialSessionType $bundle */
-      $bundle = reset($bundles);
-      return $this->redirect('entity.ai_editorial_session.add_form', [
-        'ai_editorial_session_type' => $bundle->id(),
-      ]);
     }
 
     $items = [];
@@ -80,6 +70,9 @@ class AiEditorialSessionController extends ControllerBase {
 
   /**
    * Displays the admin configuration parent page.
+   *
+   * @return array
+   *   The render array to show in the page.
    */
   public function adminConfigPage(): array {
     return [
@@ -91,6 +84,12 @@ class AiEditorialSessionController extends ControllerBase {
 
   /**
    * Displays the session placeholder page.
+   *
+   * @param \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $ai_editorial_session
+   *  The entity to view.
+   *
+   * @return array
+   *  The render array to show on the page.
    */
   public function view(AiEditorialSessionInterface $ai_editorial_session): array {
     $items = [
