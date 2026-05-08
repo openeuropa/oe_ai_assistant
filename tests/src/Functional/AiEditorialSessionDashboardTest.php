@@ -145,6 +145,9 @@ class AiEditorialSessionDashboardTest extends AiEditorialSessionBrowserTestBase 
 
     $this->drupalGet(Url::fromRoute('entity.ai_editorial_session.add_page'));
 
+    $this->assertSession()->linkExists('Drafting');
+    $this->clickLink('Drafting');
+
     $this->assertSession()->statusCodeEquals(200);
     $this->assertSession()->fieldExists('content_type');
     $this->assertSession()->fieldExists('template_id');

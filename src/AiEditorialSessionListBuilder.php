@@ -75,8 +75,9 @@ class AiEditorialSessionListBuilder extends EntityListBuilder {
     $header['status'] = $this->t('Status');
     $header['created'] = $this->t('Created');
     $header['changed'] = $this->t('Changed');
+    $header['operations'] = $this->t('Operations');
 
-    return $header + parent::buildHeader();
+    return $header;
   }
 
   /**
