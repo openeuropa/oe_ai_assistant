@@ -1,31 +1,29 @@
 /**
- * Drafting service: AI-powered content drafting via Mistral.
- *
- * Mirrors DraftingPlugin.php method-for-method. Each method has
- * a JSDoc comment referencing the corresponding PHP method. The
- * service yields Data Stream Protocol events as an AsyncGenerator;
- * the route handler writes them to the SSE response.
+ * Shared drafting service contracts and the Mistral-backed
+ * drafting implementation used by the local integration mode.
  */
 
 import { randomUUID } from "node:crypto";
 import type { Mistral } from "@mistralai/mistralai";
 import type {
   AssistantMessage,
+  SystemMessage,
   ToolMessage,
+  UserMessage,
 } from "@mistralai/mistralai/models/components";
 import { MISTRAL_MODEL } from "../config";
 import type { ChatMessage, ConversationStore } from "./conversation-store";
 
 // -- Types -------------------------------------------------------
 
-/** Data Stream Protocol event yielded by the service. */
+/** Data Stream Protocol event yielded by a drafting service. */
 export interface StreamEvent {
   type: string;
   [key: string]: unknown;
 }
 
 /** A single field definition from the content type schema. */
-interface SchemaField {
+export interface SchemaField {
   name: string;
   label: string;
   type: string;
@@ -41,14 +39,14 @@ interface SchemaField {
 }
 
 /** Content type schema (output of FormSchemaExtractor). */
-interface ContentTypeSchema {
+export interface ContentTypeSchema {
   contentType: string;
   label: string;
   groups: { label: string; fields: SchemaField[] }[];
 }
 
 /** Flattened field lookup keyed by machine name. */
-type FieldIndex = Record<string, SchemaField>;
+export type FieldIndex = Record<string, SchemaField>;
 
 /** Options for the chat() method. */
 export interface ChatOptions {
@@ -59,9 +57,58 @@ export interface ChatOptions {
   schema: ContentTypeSchema | null;
 }
 
-// -- Service class -----------------------------------------------
+/** Request body for the mock save action. */
+export interface DraftSavePayload {
+  entityTypeId?: string;
+  bundle?: string;
+  fields?: Record<string, unknown>;
+}
 
-export class DraftingService {
+/** Mock save result returned by the dev server. */
+export interface DraftSaveResult {
+  nodeId: string;
+  previewUrl: string;
+}
+
+/** Common interface implemented by all drafting services. */
+export interface DraftingService {
+  chat(opts: ChatOptions): AsyncGenerator<StreamEvent>;
+  reset(threadId?: string): { threadId: string };
+  save(body: DraftSavePayload): DraftSaveResult;
+}
+
+/**
+ * Parse the optional "[fields:field_a,field_b]" tag from a
+ * drafting prompt. The frontend appends this when requesting a
+ * targeted regeneration.
+ */
+export function extractFieldsToStream(message: string): string[] {
+  const match = message.match(/\[fields:([^\]]+)\]/);
+  if (!match?.[1]) {
+    return [];
+  }
+
+  return match[1]
+    .split(",")
+    .map((field) => field.trim())
+    .filter(Boolean);
+}
+
+type MistralApiMessage =
+  | SystemMessage
+  | UserMessage
+  | ToolMessage
+  | (AssistantMessage & { role: "assistant" });
+
+/**
+ * Drafting service: AI-powered content drafting via Mistral.
+ *
+ * Mirrors DraftingPlugin.php method-for-method. Each method has
+ * a JSDoc comment referencing the corresponding PHP method. The
+ * service yields Data Stream Protocol events as an AsyncGenerator;
+ * the route handler writes them to the SSE response.
+ */
+export class MistralDraftingService implements DraftingService {
   /**
    * Maximum iterations for the tool-call loop.
    * Mirrors DraftingPlugin::MAX_ITERATIONS (line 45).
@@ -87,11 +134,7 @@ export class DraftingService {
     const threadId = inputThreadId || randomUUID();
     const systemPrompt = this.buildSystemPrompt(schema);
     const fieldIndex = this.buildFieldIndex(schema);
-
-    // Parse [fields:name1,name2] tag from the user message.
-    // Request-scoped to avoid concurrency issues.
-    const fieldsMatch = message.match(/\[fields:([^\]]+)\]/);
-    const fieldsToStream = fieldsMatch ? fieldsMatch[1]!.split(",") : [];
+    const fieldsToStream = extractFieldsToStream(message);
 
     yield { type: "start", messageId };
 
@@ -117,7 +160,7 @@ export class DraftingService {
         yield result.value;
         result = await gen.next();
       }
-      const assistantText: string = result.value;
+      const assistantText = result.value;
 
       // Save updated history.
       if (assistantText) {
@@ -156,11 +199,7 @@ export class DraftingService {
    * Mirrors DraftingPlugin::save() (lines 204-228).
    * Returns fake nodeId and previewUrl since there is no CMS.
    */
-  save(_body: {
-    entityTypeId?: string;
-    bundle?: string;
-    fields?: Record<string, unknown>;
-  }): { nodeId: string; previewUrl: string } {
+  save(_body: DraftSavePayload): DraftSaveResult {
     const nodeId = String(Math.floor(Math.random() * 90000) + 10000);
     return {
       nodeId,
@@ -376,17 +415,17 @@ call the draft_content tool for conversational responses.`;
   ): AsyncGenerator<StreamEvent, string> {
     let fullMessage = "";
 
-    for (let i = 0; i < DraftingService.MAX_ITERATIONS; i++) {
+    for (let i = 0; i < MistralDraftingService.MAX_ITERATIONS; i++) {
       let textPartId = randomUUID();
 
       // Emit start-step before each LLM call.
       yield { type: "start-step" };
 
       // Build the messages array for the Mistral API call.
-      const apiMessages: ChatMessage[] = [
+      const apiMessages = [
         { role: "system" as const, content: systemPrompt },
         ...messages,
-      ];
+      ] as MistralApiMessage[];
 
       // Call Mistral with streaming.
       const stream = await this.mistral.chat.stream({
