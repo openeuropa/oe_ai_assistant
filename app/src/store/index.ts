@@ -72,9 +72,12 @@ type PersistedAppState = Pick<
 >;
 
 const STORAGE_KEY_PREFIX = "ai-editorial-assistant";
-const NULL_USER_SCOPE = "__anonymous__";
+const PREINIT_STORAGE_KEY = `${STORAGE_KEY_PREFIX}:pending-init`;
 const NULL_NODE_SCOPE = "__create__";
 
+// Prevent writes while switching storage keys. Without this guard, the
+// temporary reset to empty durable state would overwrite the target scope
+// in localStorage before rehydration has a chance to read from it.
 let arePersistWritesPaused = false;
 
 function createPersistedState(): PersistedAppState {
@@ -101,10 +104,10 @@ function createInitialState() {
  * flows do not reuse persisted state from an existing content node.
  */
 export function getScopedStorageKey(
-  userId: string | null,
+  userId: string,
   nodeId: string | null,
 ): string {
-  const userScope = encodeURIComponent(userId ?? NULL_USER_SCOPE);
+  const userScope = encodeURIComponent(userId);
   const nodeScope = encodeURIComponent(nodeId ?? NULL_NODE_SCOPE);
 
   return `${STORAGE_KEY_PREFIX}:user:${userScope}:node:${nodeScope}`;
@@ -202,7 +205,7 @@ export const useAppStore = create<AppState>()(
         })),
     }),
     {
-      name: getScopedStorageKey(null, null),
+      name: PREINIT_STORAGE_KEY,
       storage: scopedStorage,
       skipHydration: true,
       // Only persist durable state; transient UI flags are excluded.
@@ -224,7 +227,7 @@ export const useAppStore = create<AppState>()(
  * and then rehydrates from the matching scoped localStorage entry.
  */
 export async function initializeAppStoreContext(
-  userId: string | null,
+  userId: string,
   nodeId: string | null,
 ): Promise<void> {
   arePersistWritesPaused = true;

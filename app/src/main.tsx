@@ -10,6 +10,7 @@ import { init } from "./init";
 import "./index.css";
 
 init("#root", {
+  userId: "dev-editor",
   pluginConfig: {
     drafting: {
       entityTypeId: "node",

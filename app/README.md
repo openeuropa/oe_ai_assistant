@@ -122,10 +122,10 @@ and a configuration object:
 |------------------|------------|----------|--------------------------------------------------|
 | `apiBaseUrl`     | `string`   | `"/api"` | Base URL for all API requests.                   |
 | `nodeId`         | `string`   | `null`   | CMS content node the editor is working on.       |
-| `userId`         | `string`   | `null`   | Authenticated user ID from the CMS session.      |
+| `userId`         | `string`   | Required | Authenticated user ID from the CMS session.      |
 | `enabledPlugins` | `string[]` | `[]`     | Plugin IDs to activate (empty = all registered). |
 
-All options are optional. Sensible defaults are applied for any omitted values.
+`userId` is required. Sensible defaults are applied for any other omitted values.
 
 ### Return Value
 
