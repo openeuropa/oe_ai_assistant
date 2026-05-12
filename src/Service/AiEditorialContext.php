@@ -87,8 +87,11 @@ class AiEditorialContext implements AiEditorialContextInterface {
   protected function loadVocabularyTerms(string $vid): array {
     /** @var \Drupal\taxonomy\TermInterface[] $terms */
     $storage = $this->entityTypeManager->getStorage('taxonomy_term');
-    $terms = $storage->loadByProperties(['vid' => $vid]);
-
+    $terms = $storage->loadByProperties([
+      'vid' => $vid,
+      'status' => 1,
+    ],
+    );
     if ($terms === []) {
       return [];
     }

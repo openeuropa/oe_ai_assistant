@@ -49,17 +49,44 @@ class EditorialTaxonomyInstallTest extends KernelTestBase {
     $this->assertSame('string_long', $toneField->getType());
 
     $expectedAudiences = [
-      'Business and industry' => 'Use professional language. Emphasize practical implications, compliance requirements, and economic impact. Be specific about timelines and actions.',
-      'General public' => 'Write in clear, accessible language. Avoid jargon and acronyms. Use short sentences. Assume no prior knowledge of EU policy.',
-      'Policy makers' => 'Use precise language. Reference regulatory frameworks and legislative instruments where relevant. Assume domain expertise.',
-      'Press and media' => 'Lead with the newsworthy angle. Use a factual, quotable style. Include key figures and dates. Keep paragraphs short.',
-      'Young audience' => 'Use an approachable, engaging tone. Explain concepts simply. Avoid bureaucratic language. Use concrete examples.',
+      'Business and industry' => [
+        'description' => 'Content focused on professional stakeholders, emphasizing practical impact, compliance, and business relevance.',
+        'prompt' => 'Use professional language. Emphasize practical implications, compliance requirements, and economic impact. Be specific about timelines and actions.',
+      ],
+      'General public' => [
+        'description' => 'Content should be easy to understand for non-experts, using plain language and minimal jargon.',
+        'prompt' => 'Write in clear, accessible language. Avoid jargon and acronyms. Use short sentences. Assume no prior knowledge of EU policy.',
+      ],
+      'Policy makers' => [
+        'description' => 'Content tailored for experts, using precise terminology and references to policy and legislation.',
+        'prompt' => 'Use precise language. Reference regulatory frameworks and legislative instruments where relevant. Assume domain expertise.',
+      ],
+      'Press and media' => [
+        'description' => 'Content optimized for news coverage, highlighting key facts, figures, and timely angles.',
+        'prompt' => 'Lead with the newsworthy angle. Use a factual, quotable style. Include key figures and dates. Keep paragraphs short.',
+      ],
+      'Young audience' => [
+        'description' => 'Content aimed at younger readers, with a simple, engaging tone and relatable examples.',
+        'prompt' => 'Use an approachable, engaging tone. Explain concepts simply. Avoid bureaucratic language. Use concrete examples.',
+      ],
     ];
     $expectedTones = [
-      'Conversational' => 'Write in a friendly, approachable style. Use contractions naturally. Address the reader directly. Keep sentences varied in length.',
-      'Formal' => 'Use professional, institutional language. Maintain a neutral, authoritative voice. Avoid contractions and colloquialisms.',
-      'Inspirational' => 'Use forward-looking, motivational language. Emphasize positive outcomes and shared goals. Appeal to values and aspirations.',
-      'Technical' => 'Use domain-specific terminology precisely. Include technical detail and data. Structure content with clear headings and logical flow.',
+      'Conversational' => [
+        'description' => 'A friendly and informal tone that speaks directly to the reader.',
+        'prompt' => 'Write in a friendly, approachable style. Use contractions naturally. Address the reader directly. Keep sentences varied in length.',
+      ],
+      'Formal' => [
+        'description' => 'A professional and neutral tone suitable for official or institutional communication.',
+        'prompt' => 'Use professional, institutional language. Maintain a neutral, authoritative voice. Avoid contractions and colloquialisms.',
+      ],
+      'Inspirational' => [
+        'description' => 'A motivating and forward-looking tone that emphasizes positive outcomes and shared goals.',
+        'prompt' => 'Use forward-looking, motivational language. Emphasize positive outcomes and shared goals. Appeal to values and aspirations.',
+      ],
+      'Technical' => [
+        'description' => 'A detailed and structured tone using specialized terminology for expert audiences.',
+        'prompt' => 'Use domain-specific terminology precisely. Include technical detail and data. Structure content with clear headings and logical flow.',
+      ],
     ];
 
     $this->assertSame($expectedAudiences, $this->loadTermsByVocabulary('ai_target_audience'));
@@ -81,8 +108,8 @@ class EditorialTaxonomyInstallTest extends KernelTestBase {
     $terms = $storage->loadByProperties(['vid' => $vid]);
     $values = [];
     foreach ($terms as $term) {
-      $values[$term->label()] = $term->get('field_ai_prompt')->value;
-      $this->assertSame($term->getDescription(), $term->get('field_ai_prompt')->value);
+      $values[$term->label()]['description'] = $term->get('description')->value;
+      $values[$term->label()]['prompt'] = $term->get('field_ai_prompt')->value;
     }
     ksort($values);
     return $values;

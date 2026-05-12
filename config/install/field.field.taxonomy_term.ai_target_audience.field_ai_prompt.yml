@@ -11,7 +11,7 @@ bundle: ai_target_audience
 label: 'AI prompt'
 description: 'LLM-facing guidance injected into the system prompt.'
 required: false
-translatable: true
+translatable: false
 default_value: {  }
 default_value_callback: ''
 settings: {  }
