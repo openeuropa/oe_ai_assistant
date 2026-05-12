@@ -158,7 +158,7 @@ class LookupMedia extends FunctionCallBase implements StructuredExecutableFuncti
       ->accessCheck(TRUE)
       ->sort($labelKey, 'ASC')
       ->range(0, $limit);
-    if (isset($searchText)) {
+    if ($searchText !== '') {
       $query->condition(
         $labelKey,
         '%' . $this->database->escapeLike($searchText) . '%',

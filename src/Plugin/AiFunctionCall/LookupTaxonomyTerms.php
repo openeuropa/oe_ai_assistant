@@ -177,12 +177,15 @@ class LookupTaxonomyTerms extends FunctionCallBase implements StructuredExecutab
       if (!$entity->access('view', $this->currentUser)) {
         continue;
       }
-
+      $parents = [0];
+      if ($term_parents = $storage->loadParents($entity->id())) {
+        $parents = array_keys($term_parents);
+      }
       $matches[] = [
         'target_id' => (int) $entity->id(),
         'label' => $entity->label(),
         'vocabulary' => $entity->bundle(),
-        'parent' => (int) ($entity->get('parent')->target_id ?? 0),
+        'parents' => $parents,
       ];
     }
 

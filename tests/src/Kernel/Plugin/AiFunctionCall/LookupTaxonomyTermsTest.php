@@ -153,7 +153,13 @@ final class LookupTaxonomyTermsTest extends KernelTestBase {
       ->createTerm('topics', 'Climate Action')
       ->id();
     $this->termIds['Climate Finance'] = (int) $this
-      ->createTerm('topics', 'Climate Finance', $this->termIds['Climate Action'])
+      ->createTerm('topics', 'Climate Finance')
+      ->id();
+    $this->termIds['Climate Status'] = (int) $this
+      ->createTerm('topics', 'Climate Status', [$this->termIds['Climate Action']])
+      ->id();
+    $this->termIds['Climate Union'] = (int) $this
+      ->createTerm('topics', 'Climate Union', [$this->termIds['Climate Action'], $this->termIds['Climate Status']])
       ->id();
     $this->termIds['Energy Union'] = (int) $this
       ->createTerm('topics', 'Energy Union')
@@ -197,17 +203,28 @@ final class LookupTaxonomyTermsTest extends KernelTestBase {
           'target_id' => $this->termIds['Climate Action'],
           'label' => 'Climate Action',
           'vocabulary' => 'topics',
-          'parent' => 0,
+          'parents' => [0],
         ],
         [
           'target_id' => $this->termIds['Climate Finance'],
           'label' => 'Climate Finance',
           'vocabulary' => 'topics',
-          'parent' => $this->termIds['Climate Action'],
+          'parents' => [0],
+        ],
+        [
+          'target_id' => $this->termIds['Climate Status'],
+          'label' => 'Climate Status',
+          'vocabulary' => 'topics',
+          'parents' => [$this->termIds['Climate Action']],
+        ],
+        [
+          'target_id' => $this->termIds['Climate Union'],
+          'label' => 'Climate Union',
+          'vocabulary' => 'topics',
+          'parents' => [$this->termIds['Climate Action'], $this->termIds['Climate Status']],
         ],
       ],
     ];
-
     $this->assertSame($expected, $plugin->getStructuredOutput());
     $this->assertSame(
       Json::encode($expected),
@@ -236,7 +253,7 @@ final class LookupTaxonomyTermsTest extends KernelTestBase {
           'target_id' => $this->termIds['Climate Action'],
           'label' => 'Climate Action',
           'vocabulary' => 'topics',
-          'parent' => 0,
+          'parents' => [0],
         ],
       ],
     ], $plugin->getStructuredOutput());
@@ -271,7 +288,7 @@ final class LookupTaxonomyTermsTest extends KernelTestBase {
           'target_id' => $this->termIds['Climate Action'],
           'label' => 'Climate Action',
           'vocabulary' => 'topics',
-          'parent' => 0,
+          'parents' => [0],
         ],
       ],
     ], $result->getArrayCopy());
@@ -289,19 +306,31 @@ final class LookupTaxonomyTermsTest extends KernelTestBase {
           'target_id' => $this->termIds['Climate Action'],
           'label' => 'Climate Action',
           'vocabulary' => 'topics',
-          'parent' => 0,
+          'parents' => [0],
         ],
         [
           'target_id' => $this->termIds['Climate Finance'],
           'label' => 'Climate Finance',
           'vocabulary' => 'topics',
-          'parent' => $this->termIds['Climate Action'],
+          'parents' => [0],
+        ],
+        [
+          'target_id' => $this->termIds['Climate Status'],
+          'label' => 'Climate Status',
+          'vocabulary' => 'topics',
+          'parents' => [$this->termIds['Climate Action']],
+        ],
+        [
+          'target_id' => $this->termIds['Climate Union'],
+          'label' => 'Climate Union',
+          'vocabulary' => 'topics',
+          'parents' => [$this->termIds['Climate Action'], $this->termIds['Climate Status']],
         ],
         [
           'target_id' => $this->termIds['Energy Union'],
           'label' => 'Energy Union',
           'vocabulary' => 'topics',
-          'parent' => 0,
+          'parents' => [0],
         ],
       ],
     ], $result->getArrayCopy());
@@ -314,8 +343,8 @@ final class LookupTaxonomyTermsTest extends KernelTestBase {
    *   The vocabulary ID.
    * @param string $name
    *   The term label.
-   * @param int $parentId
-   *   The parent term ID.
+   * @param array $parentIds
+   *   The parents term ID's.
    *
    * @return \Drupal\taxonomy\Entity\Term
    *   The saved term.
@@ -323,7 +352,7 @@ final class LookupTaxonomyTermsTest extends KernelTestBase {
   private function createTerm(
     string $vocabulary,
     string $name,
-    int $parentId = 0,
+    array $parentIds = [0],
   ): Term {
     $values = [
       'vid' => $vocabulary,
@@ -331,8 +360,8 @@ final class LookupTaxonomyTermsTest extends KernelTestBase {
       'status' => TRUE,
     ];
 
-    if ($parentId > 0) {
-      $values['parent'] = [$parentId];
+    if ($parentIds !== [0]) {
+      $values['parent'] = $parentIds;
     }
 
     $term = Term::create($values);
