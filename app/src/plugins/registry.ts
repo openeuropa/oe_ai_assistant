@@ -4,7 +4,7 @@
  * Static list of all plugins known at build time. The shell reads this
  * to build the sidebar, set up routes, and lazy-load each plugin's
  * root component. Availability is resolved at runtime from host config
- * (`enabledPlugins`) plus the dev-only plugin environment flag.
+ * (`enabledPlugins`) plus the build/dev-server dev-only plugin flag.
  *
  * To add a new plugin, create its directory under src/plugins/ and
  * append an entry here.
@@ -58,14 +58,13 @@ export const registeredPlugins: PluginDefinition[] = [
  * Runtime plugin availability.
  *
  * - Host config (`enabledPlugins`) can allowlist plugins by ID.
- * - Dev-only plugins are only exposed when the Vite dev flag is enabled.
+ * - Dev-only plugins are only exposed when the build/dev server enables them.
  * - Unknown IDs in `enabledPlugins` are ignored safely.
  */
 export function getActivePlugins(): PluginDefinition[] {
   const { enabledPlugins } = getConfig();
   const enabledIds = new Set(enabledPlugins);
-  const devPluginsEnabled =
-    import.meta.env.DEV && import.meta.env.VITE_DEV_PLUGINS === "true";
+  const devPluginsEnabled = __DEV_PLUGINS__;
 
   return registeredPlugins.filter((plugin) => {
     if (plugin.devOnly && !devPluginsEnabled) {

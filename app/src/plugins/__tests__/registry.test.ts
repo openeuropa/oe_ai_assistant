@@ -4,6 +4,7 @@ import { getActivePlugins, registeredPlugins } from "../registry";
 
 describe("plugin registry", () => {
   beforeEach(() => {
+    vi.stubGlobal("__DEV_PLUGINS__", false);
     setConfig({
       userId: "editor-7",
       sessionId: "session-1",
@@ -11,7 +12,7 @@ describe("plugin registry", () => {
   });
 
   afterEach(() => {
-    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
   });
 
   it("registers plugins with unique ids and paths", () => {
@@ -66,7 +67,7 @@ describe("plugin registry", () => {
   });
 
   it("exposes dev-only plugins when explicitly enabled in dev", () => {
-    vi.stubEnv("VITE_DEV_PLUGINS", "true");
+    vi.stubGlobal("__DEV_PLUGINS__", true);
 
     setConfig({
       userId: "editor-7",
