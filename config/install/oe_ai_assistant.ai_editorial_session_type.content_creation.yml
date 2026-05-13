@@ -1,6 +1,6 @@
 langcode: en
 status: true
 dependencies: {  }
-id: drafting
-label: Drafting
+id: content_creation
+label: Content creation
 uuid: a7d1b895-25c6-4b20-a0e2-a0bc222f8c28

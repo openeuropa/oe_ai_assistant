@@ -69,9 +69,7 @@ class AiEditorialSessionListBuilder extends EntityListBuilder {
     $header['label'] = $this->t('Label');
     $header['bundle'] = $this->t('Bundle');
     $header['content_type'] = $this->t('Content type');
-    $header['template_id'] = $this->t('Template');
-    $header['node_id'] = $this->t('Node');
-    $header['owner'] = $this->t('Owner');
+    $header['creator'] = $this->t('Initiated by');
     $header['status'] = $this->t('Status');
     $header['created'] = $this->t('Created');
     $header['changed'] = $this->t('Changed');
@@ -102,9 +100,8 @@ class AiEditorialSessionListBuilder extends EntityListBuilder {
     ];
     $row['bundle'] = $entity->bundle();
     $row['content_type'] = $entity->get('content_type')->value ?? '';
-    $row['template_id'] = $entity->get('template_id')->value ?? '';
-    $row['node_id'] = $this->buildNodeCell($entity);
-    $row['owner']['data'] = [
+    $row['label'] = $entity->get('label')->value ?? '';
+    $row['creator']['data'] = [
       '#theme' => 'username',
       '#account' => $entity->getOwner(),
     ];
@@ -135,7 +132,7 @@ class AiEditorialSessionListBuilder extends EntityListBuilder {
   /**
    * {@inheritdoc}
    */
-  protected function getDefaultOperations(EntityInterface $entity/* , ?CacheableMetadata $cacheability = NULL */): array {
+  protected function getDefaultOperations(EntityInterface $entity): array {
     $args = func_get_args();
     $cacheability = $args[1] ?? new CacheableMetadata();
 
@@ -153,24 +150,6 @@ class AiEditorialSessionListBuilder extends EntityListBuilder {
     }
 
     return $operations;
-  }
-
-  /**
-   * Builds the node column cell.
-   */
-  protected function buildNodeCell(EntityInterface $entity): array|string {
-    $node = $entity->get('node_id')->entity;
-    if (!$node) {
-      return '';
-    }
-
-    return [
-      'data' => [
-        '#type' => 'link',
-        '#title' => $node->label(),
-        '#url' => $node->toUrl(),
-      ],
-    ];
   }
 
 }

@@ -35,13 +35,13 @@ use Drupal\user\EntityOwnerTrait;
  *   entity_keys = {
  *     "id" = "id",
  *     "uuid" = "uuid",
- *     "bundle" = "bundle",
+ *     "bundle" = "type",
  *     "label" = "label",
  *     "owner" = "uid",
  *   },
  *   base_table = "ai_editorial_session",
  *   admin_permission = "administer ai editorial sessions",
- *   collection_permission = "access ai editorial sessions overview",
+ *   collection_permission = "view_update own sessions",
  *   bundle_entity_type = "ai_editorial_session_type",
  *   links = {
  *     "canonical" = "/admin/content/ai/{ai_editorial_session}",
@@ -125,7 +125,7 @@ class AiEditorialSession extends ContentEntityBase implements AiEditorialSession
   public static function baseFieldDefinitions(EntityTypeInterface $entity_type): array {
     $fields = parent::baseFieldDefinitions($entity_type);
 
-    $fields['bundle']
+    $fields['type']
       ->setLabel(t('Session type'))
       ->setDescription(t('The AI editorial session bundle.'));
 

@@ -33,16 +33,13 @@ class AiEditorialSessionDashboardTest extends AiEditorialSessionBrowserTestBase 
     $this->assertSession()->pageTextContains('Label');
     $this->assertSession()->pageTextContains('Bundle');
     $this->assertSession()->pageTextContains('Content type');
-    $this->assertSession()->pageTextContains('Template');
-    $this->assertSession()->pageTextContains('Node');
-    $this->assertSession()->pageTextContains('Owner');
+    $this->assertSession()->pageTextContains('Initiated by');
     $this->assertSession()->pageTextContains('Status');
     $this->assertSession()->pageTextContains('Created');
     $this->assertSession()->pageTextContains('Changed');
     $this->assertSession()->pageTextContains($session->label());
     $this->assertSession()->pageTextContains('oe_news');
-    $this->assertSession()->pageTextContains('landing_page');
-    $this->assertSession()->pageTextContains('Linked node');
+    $this->assertSession()->pageTextContains('content_creation');
     $this->assertSession()->pageTextContains('active');
     $this->assertSession()->linkExists('Continue');
     $this->assertSession()->linkExists('Delete');
@@ -82,7 +79,7 @@ class AiEditorialSessionDashboardTest extends AiEditorialSessionBrowserTestBase 
    */
   public function testDashboardAccessWithOverviewPermission(): void {
     $user = $this->drupalCreateUser([
-      'access ai editorial sessions overview',
+      'view_update own sessions',
       'access content',
     ]);
     $owner = $this->drupalCreateUser();
@@ -97,11 +94,6 @@ class AiEditorialSessionDashboardTest extends AiEditorialSessionBrowserTestBase 
     $owned_session = $this->createSession($user, $hidden_node);
     $owned_session->set('label', 'Owned session');
     $owned_session->save();
-
-    $shared_visible_session = $this->createSession($owner, $visible_node);
-    $shared_visible_session->set('label', 'Shared visible session');
-    $shared_visible_session->save();
-
     $private_session = $this->createSession($owner);
     $private_session->set('label', 'Private session');
     $private_session->save();
@@ -111,7 +103,6 @@ class AiEditorialSessionDashboardTest extends AiEditorialSessionBrowserTestBase 
     $hidden_session->save();
 
     $this->assertTrue($owned_session->access('view', $user));
-    $this->assertTrue($shared_visible_session->access('view', $user));
     $this->assertFalse($private_session->access('view', $user));
     $this->assertFalse($hidden_session->access('view', $user));
 
@@ -121,7 +112,6 @@ class AiEditorialSessionDashboardTest extends AiEditorialSessionBrowserTestBase 
     $this->assertSession()->statusCodeEquals(200);
     $this->assertSession()->pageTextContains('AI editorial sessions');
     $this->assertSession()->pageTextContains('Owned session');
-    $this->assertSession()->pageTextContains('Shared visible session');
     $this->assertSession()->pageTextNotContains('Private session');
     $this->assertSession()->pageTextNotContains('Hidden session');
 
@@ -144,17 +134,13 @@ class AiEditorialSessionDashboardTest extends AiEditorialSessionBrowserTestBase 
     $this->drupalLogin($user);
 
     $this->drupalGet(Url::fromRoute('entity.ai_editorial_session.add_page'));
-
-    $this->assertSession()->linkExists('Drafting');
-    $this->clickLink('Drafting');
-
     $this->assertSession()->statusCodeEquals(200);
     $this->assertSession()->fieldExists('content_type');
-    $this->assertSession()->fieldExists('template_id');
+    $this->assertSession()->fieldExists('label');
 
     $this->submitForm([
       'content_type' => 'oe_news',
-      'template_id' => 'landing_page',
+      'label' => 'my session',
     ], 'Save');
 
     $this->assertSession()->statusCodeEquals(200);
@@ -167,12 +153,12 @@ class AiEditorialSessionDashboardTest extends AiEditorialSessionBrowserTestBase 
       ->loadByProperties([
         'uid' => $user->id(),
         'content_type' => 'oe_news',
-        'template_id' => 'landing_page',
+        'label' => 'my session',
       ]);
 
     $session = reset($sessions);
     $this->assertNotFalse($session);
-    $this->assertSame('drafting', $session->bundle());
+    $this->assertSame('content_creation', $session->bundle());
   }
 
 }

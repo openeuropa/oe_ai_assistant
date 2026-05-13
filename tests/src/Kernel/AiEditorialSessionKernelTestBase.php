@@ -106,11 +106,9 @@ abstract class AiEditorialSessionKernelTestBase extends KernelTestBase {
     $session = $this->container->get('entity_type.manager')
       ->getStorage('ai_editorial_session')
       ->create([
-        'bundle' => 'drafting',
+        'type' => 'content_creation',
         'uid' => $owner->id(),
         'content_type' => 'oe_news',
-        'template_id' => 'landing_page',
-        'node_id' => $node?->id(),
       ]);
     $session->save();
 

@@ -75,25 +75,10 @@ class AiEditorialSessionAccessControlHandler extends EntityAccessControlHandler 
     if ($owner_access->isAllowed()) {
       return $owner_access;
     }
-
-    $node = $entity->get('node_id')->entity;
-    if (!$node) {
-      return AccessResult::forbidden()
-        ->addCacheableDependency($entity)
-        ->cachePerUser();
-    }
-
-    $node_operation = $operation === 'update' ? 'update' : 'view';
-    $node_access = $node->access($node_operation, $account, TRUE)
-      ->addCacheableDependency($entity);
-    if ($node_access->isAllowed()) {
-      return $node_access;
-    }
-
     return AccessResult::forbidden()
       ->addCacheableDependency($entity)
-      ->addCacheableDependency($node_access)
       ->cachePerUser();
+
   }
 
 }

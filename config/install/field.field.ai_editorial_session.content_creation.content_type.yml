@@ -3,11 +3,11 @@ status: true
 dependencies:
   config:
     - field.storage.ai_editorial_session.content_type
-    - oe_ai_assistant.ai_editorial_session_type.drafting
-id: ai_editorial_session.drafting.content_type
+    - oe_ai_assistant.ai_editorial_session_type.content_creation
+id: ai_editorial_session.content_creation.content_type
 field_name: content_type
 entity_type: ai_editorial_session
-bundle: drafting
+bundle: content_creation
 label: 'Content type'
 description: 'The target content type machine name.'
 required: true

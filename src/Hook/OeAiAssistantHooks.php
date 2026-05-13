@@ -32,21 +32,9 @@ final class OeAiAssistantHooks {
     if ($this->currentUser->hasPermission('administer ai editorial sessions')) {
       return;
     }
-
+    // List `ai_editorial_session` entities the created by the user.
     $access = $query->orConditionGroup()
       ->condition('base_table.uid', (int) $this->currentUser->id());
-
-    $node_ids = $this->entityTypeManager
-      ->getStorage('node')
-      ->getQuery()
-      ->accessCheck(TRUE)
-      ->execute();
-
-    if ($node_ids !== []) {
-      $query->leftJoin('ai_editorial_session__node_id', 'session_node', 'session_node.entity_id = base_table.id');
-      $access->condition('session_node.node_id_target_id', array_values($node_ids), 'IN');
-    }
-
     $query->condition($access);
   }
 

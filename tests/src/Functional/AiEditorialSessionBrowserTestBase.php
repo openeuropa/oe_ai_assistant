@@ -9,6 +9,7 @@ use Drupal\node\Entity\NodeType;
 use Drupal\node\NodeInterface;
 use Drupal\Tests\BrowserTestBase;
 use Drupal\user\UserInterface;
+use Drupal\oe_ai_assistant\Entity\AiEditorialSession;
 
 /**
  * Base helpers for AI editorial session browser tests.
@@ -55,16 +56,14 @@ abstract class AiEditorialSessionBrowserTestBase extends BrowserTestBase {
   /**
    * Creates a session for the given owner.
    */
-  protected function createSession(UserInterface $owner, ?NodeInterface $node = NULL): \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface {
+  protected function createSession(UserInterface $owner, ?NodeInterface $node = NULL): AiEditorialSession {
     /** @var \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $session */
     $session = $this->container->get('entity_type.manager')
       ->getStorage('ai_editorial_session')
       ->create([
-        'bundle' => 'drafting',
+        'type' => 'content_creation',
         'uid' => $owner->id(),
         'content_type' => 'oe_news',
-        'template_id' => 'landing_page',
-        'node_id' => $node?->id(),
       ]);
     $session->save();
 

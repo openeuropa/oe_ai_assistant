@@ -12,15 +12,15 @@ use Drupal\oe_ai_assistant\Entity\AiEditorialSession;
 class AiEditorialSessionTest extends AiEditorialSessionKernelTestBase {
 
   /**
-   * Tests the drafting bundle metadata and session CRUD lifecycle.
+   * Tests the content_creation bundle metadata and session CRUD lifecycle.
    */
-  public function testDraftingBundleAndCrud(): void {
+  public function testContentCreationCrud(): void {
     $bundle = $this->container->get('entity_type.manager')
       ->getStorage('ai_editorial_session_type')
-      ->load('drafting');
+      ->load('content_creation');
 
     $this->assertNotNull($bundle);
-    $this->assertSame('Drafting', $bundle->label());
+    $this->assertSame('Content creation', $bundle->label());
 
     $user = $this->createUser();
 
@@ -28,20 +28,20 @@ class AiEditorialSessionTest extends AiEditorialSessionKernelTestBase {
     $session = $this->container->get('entity_type.manager')
       ->getStorage('ai_editorial_session')
       ->create([
-        'bundle' => 'drafting',
+        'type' => 'content_creation',
+        'label' => 'Content creation',
         'uid' => $user->id(),
         'content_type' => 'oe_news',
-        'template_id' => 'landing_page',
       ]);
     $session->save();
 
     $loaded = AiEditorialSession::load($session->id());
     $this->assertNotNull($loaded);
-    $this->assertSame('drafting', $loaded->bundle());
+    $this->assertSame('content_creation', $loaded->bundle());
     $this->assertSame('oe_news', $loaded->getContentType());
     $this->assertSame(AiEditorialSession::STATUS_ACTIVE, $loaded->getStatus());
     $this->assertSame((string) $user->id(), (string) $loaded->getOwnerId());
-    $this->assertStringStartsWith('Drafting - ', $loaded->label());
+    $this->assertStringStartsWith('Content creation', $loaded->label());
 
     $entity_type = $this->container->get('entity_type.manager')
       ->getDefinition('ai_editorial_session');
@@ -49,12 +49,10 @@ class AiEditorialSessionTest extends AiEditorialSessionKernelTestBase {
     $this->assertNull($entity_type->getFormClass('edit'));
 
     $loaded->setStatus(AiEditorialSession::STATUS_COMPLETED);
-    $loaded->set('base_revision_id', 42);
     $loaded->save();
 
     $reloaded = AiEditorialSession::load($session->id());
     $this->assertSame(AiEditorialSession::STATUS_COMPLETED, $reloaded?->getStatus());
-    $this->assertSame(42, (int) $reloaded?->get('base_revision_id')->value);
 
     $reloaded?->delete();
     $this->assertNull(AiEditorialSession::load($session->id()));

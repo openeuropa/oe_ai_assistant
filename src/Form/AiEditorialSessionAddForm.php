@@ -39,16 +39,6 @@ class AiEditorialSessionAddForm extends ContentEntityForm {
   public function form(array $form, FormStateInterface $form_state): array {
     $form = parent::form($form, $form_state);
 
-    unset(
-      $form['label'],
-      $form['uid'],
-      $form['status'],
-      $form['created'],
-      $form['changed'],
-      $form['content_type'],
-      $form['template_id']
-    );
-
     $content_type_options = $this->getCreateableContentTypeOptions();
     $has_content_type_options = $content_type_options !== [];
 
@@ -59,16 +49,16 @@ class AiEditorialSessionAddForm extends ContentEntityForm {
       '#options' => $content_type_options,
       '#empty_option' => $this->t('- Select -'),
       '#default_value' => $this->entity->get('content_type')->value ?: NULL,
-      '#description' => $this->t('Choose the target content type for this drafting session.'),
+      '#description' => $this->t('Choose the target content type for this content creation session.'),
       '#disabled' => !$has_content_type_options,
     ];
 
-    $form['template_id'] = [
+    $form['label'] = [
       '#type' => 'textfield',
-      '#title' => $this->t('Template'),
-      '#default_value' => $this->entity->get('template_id')->value ?? '',
-      '#required' => FALSE,
-      '#description' => $this->t('Optional. This can also be set later during the AI session.'),
+      '#title' => $this->t('Label'),
+      '#default_value' => $this->entity->get('label')->value ?? '',
+      '#required' => TRUE,
+      '#description' => $this->t('Label for the session.'),
     ];
 
     if (!$has_content_type_options) {
@@ -87,7 +77,7 @@ class AiEditorialSessionAddForm extends ContentEntityForm {
    */
   public function save(array $form, FormStateInterface $form_state): int {
     $this->entity->set('content_type', $form_state->getValue('content_type'));
-    $this->entity->set('template_id', $form_state->getValue('template_id'));
+    $this->entity->set('label', $form_state->getValue('label'));
     $this->entity->setOwnerId((int) $this->currentUserAccount->id());
 
     $status = parent::save($form, $form_state);

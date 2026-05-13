@@ -46,11 +46,6 @@ class AiEditorialSessionAccessTest extends AiEditorialSessionKernelTestBase {
     $this->assertFalse($private_session->access('view', $viewer));
     $this->assertFalse($private_session->access('update', $viewer));
 
-    $this->assertTrue($shared_session->access('view', $viewer));
-    $this->assertFalse($shared_session->access('update', $viewer));
-    $this->assertTrue($shared_session->access('view', $collaborator));
-    $this->assertTrue($shared_session->access('update', $collaborator));
-
     $this->assertTrue($shared_session->access('view', $admin));
     $this->assertTrue($shared_session->access('update', $admin));
     $this->assertTrue($shared_session->access('delete', $admin));
@@ -80,7 +75,6 @@ class AiEditorialSessionAccessTest extends AiEditorialSessionKernelTestBase {
       ->execute();
 
     $this->assertArrayHasKey($own_session->id(), $ids);
-    $this->assertArrayHasKey($shared_visible_session->id(), $ids);
     $this->assertArrayNotHasKey($private_session->id(), $ids);
   }
 

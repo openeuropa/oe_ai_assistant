@@ -37,7 +37,7 @@ class AiEditorialSessionController extends ControllerBase {
    * @return array
    *   The render array to show in the page.
    */
-  public function addPage(): array {
+  public function addPage(): array|RedirectResponse {
     $bundles = $this->sessionEntityTypeManager
       ->getStorage('ai_editorial_session_type')
       ->loadMultiple();
@@ -45,7 +45,14 @@ class AiEditorialSessionController extends ControllerBase {
     if ($bundles === []) {
       throw new NotFoundHttpException();
     }
-
+    uasort($bundles, static fn (AiEditorialSessionType $a, AiEditorialSessionType $b): int => strnatcasecmp($a->label(), $b->label()));
+    if (count($bundles) === 1) {
+      /** @var \Drupal\oe_ai_assistant\Entity\AiEditorialSessionType $bundle */
+      $bundle = reset($bundles);
+      return $this->redirect('entity.ai_editorial_session.add_form', [
+        'ai_editorial_session_type' => $bundle->id(),
+      ]);
+    }
     $items = [];
     foreach ($bundles as $bundle) {
       $items[] = [
@@ -86,10 +93,10 @@ class AiEditorialSessionController extends ControllerBase {
    * Displays the session placeholder page.
    *
    * @param \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $ai_editorial_session
-   *  The entity to view.
+   *   The entity to view.
    *
    * @return array
-   *  The render array to show on the page.
+   *   The render array to show on the page.
    */
   public function view(AiEditorialSessionInterface $ai_editorial_session): array {
     $items = [
