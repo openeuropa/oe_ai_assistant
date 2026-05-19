@@ -101,7 +101,7 @@ class AiEditorialSession extends ContentEntityBase implements AiEditorialSession
    * {@inheritdoc}
    */
   public function getContentType(): string {
-    return (string) $this->get('content_type')->value;
+    return (string) $this->get('content_type')->target_id;
   }
 
   /**

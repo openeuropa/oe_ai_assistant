@@ -6,9 +6,9 @@ dependencies:
 id: ai_editorial_session.content_type
 field_name: content_type
 entity_type: ai_editorial_session
-type: string
+type: entity_reference
 settings:
-  max_length: 128
+  target_type: node_type
 module: core
 locked: false
 cardinality: 1

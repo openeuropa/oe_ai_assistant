@@ -103,7 +103,7 @@ class AiEditorialSessionController extends ControllerBase {
       $this->t('Session ID: @id', ['@id' => $ai_editorial_session->id()]),
       $this->t('Bundle: @bundle', ['@bundle' => $ai_editorial_session->bundle()]),
       $this->t('Content type: @content_type', [
-        '@content_type' => $ai_editorial_session->get('content_type')->value ?? '',
+        '@content_type' => $ai_editorial_session->get('content_type')->target_id ?? '',
       ]),
       $this->t('Status: @status', ['@status' => $ai_editorial_session->getStatus()]),
     ];

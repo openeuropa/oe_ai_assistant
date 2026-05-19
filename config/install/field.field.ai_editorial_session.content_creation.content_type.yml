@@ -9,10 +9,12 @@ field_name: content_type
 entity_type: ai_editorial_session
 bundle: content_creation
 label: 'Content type'
-description: 'The target content type machine name.'
+description: 'The target content type.'
 required: true
 translatable: false
 default_value: {  }
 default_value_callback: ''
-settings: {  }
-field_type: string
+settings:
+  handler: 'default:node_type'
+  handler_settings: {  }
+field_type: entity_reference

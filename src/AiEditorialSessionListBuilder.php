@@ -99,7 +99,7 @@ class AiEditorialSessionListBuilder extends EntityListBuilder {
       '#url' => $entity->toUrl('canonical'),
     ];
     $row['bundle'] = $entity->bundle();
-    $row['content_type'] = $entity->get('content_type')->value ?? '';
+    $row['content_type'] = $entity->get('content_type')->target_id ?? '';
     $row['label'] = $entity->get('label')->value ?? '';
     $row['creator']['data'] = [
       '#theme' => 'username',

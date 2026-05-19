@@ -38,4 +38,36 @@ final class OeAiAssistantHooks {
     $query->condition($access);
   }
 
+  /**
+   * Implements hook_options_list_alter().
+   *
+   * Check create permissions to create the node types selector.
+   *
+   * @param array<int,mixed> $options
+   *   Node types options.
+   * @param array<int,mixed> $context
+   *   Context of the call.
+   */
+  #[Hook('options_list_alter')]
+  public function nodeTypesOptionsAccess(array &$options, array $context): void {
+    if (!isset($context['entity']) || $context['entity']->getEntityType()->id() !== 'ai_editorial_session') {
+      return;
+    }
+    $settings = $context['fieldDefinition']?->getSettings();
+    if (isset($settings['handler'])
+      && isset($settings['target_type'])
+      && $settings['handler'] == 'default:node_type'
+      && $settings['target_type'] == 'node_type'
+    ) {
+      $accessHandler = \Drupal::entityTypeManager()->getAccessControlHandler('node');
+      $valid_options = [];
+      foreach ($options as $type => $option) {
+        if ($accessHandler->createAccess($type)) {
+          $valid_options[$type] = $option;
+        }
+      }
+      $options = $valid_options;
+    }
+  }
+
 }
