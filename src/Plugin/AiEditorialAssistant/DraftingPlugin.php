@@ -9,15 +9,14 @@ use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Session\AccountProxyInterface;
 use Drupal\Core\TempStore\PrivateTempStoreFactory;
 use Drupal\content_moderation\ModerationInformationInterface;
-use Drupal\node\Entity\Node;
 use Drupal\node\NodeInterface;
 use Drupal\oe_ai_assistant\Annotation\AiEditorialAssistant;
 use Drupal\oe_ai_assistant\Exception\ActionException;
 use Drupal\oe_ai_assistant\Plugin\AiAssistantPluginBase;
 use Drupal\oe_ai_assistant\Plugin\AiEditorialAssistant\Drafting\DraftingPromptBuilder;
 use Drupal\oe_ai_assistant\Service\AgentFactory;
+use Drupal\oe_ai_assistant\Service\DraftEntityBuilder;
 use Drupal\oe_ai_assistant\Service\EntityJsonSchemaComposer;
-use Drupal\oe_ai_assistant\Service\InlineEntityHydrator;
 use Drupal\oe_ai_assistant\Store\DrupalTempMessageStore;
 use Drupal\oe_ai_assistant\Tool\DraftContentTool;
 use Psr\Log\LoggerInterface;
@@ -32,7 +31,6 @@ use Symfony\Component\HttpFoundation\EventStreamResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpFoundation\ServerEvent;
-use Symfony\Component\Serializer\SerializerInterface;
 
 /**
  * Drafting plugin: AI-powered content drafting with SSE streaming.
@@ -70,14 +68,12 @@ class DraftingPlugin extends AiAssistantPluginBase {
    *   The authenticated Drupal user.
    * @param \Drupal\oe_ai_assistant\Plugin\AiEditorialAssistant\Drafting\DraftingPromptBuilder $promptBuilder
    *   Builds the system prompt and tool metadata.
-   * @param \Symfony\Component\Serializer\SerializerInterface $serializer
-   *   The serializer used to deserialize the LLM-produced JSON into entities.
    * @param \Drupal\content_moderation\ModerationInformationInterface $moderationInformation
    *   Used to detect moderated bundles and set the initial moderation state.
    * @param \Drupal\Core\Entity\EntityTypeManagerInterface $entityTypeManager
    *   Used to load the node_type storage and validate the bundle.
-   * @param \Drupal\oe_ai_assistant\Service\InlineEntityHydrator $inlineEntityHydrator
-   *   Builds inline child paragraph entities for the parent node.
+   * @param \Drupal\oe_ai_assistant\Service\DraftEntityBuilder $draftEntityBuilder
+   *   Builds an unsaved node from the LLM-produced fields map.
    */
   public function __construct(
     array $configuration,
@@ -89,10 +85,9 @@ class DraftingPlugin extends AiAssistantPluginBase {
     protected readonly PrivateTempStoreFactory $tempStoreFactory,
     protected readonly AccountProxyInterface $currentUser,
     protected readonly DraftingPromptBuilder $promptBuilder,
-    protected readonly SerializerInterface $serializer,
     protected readonly ModerationInformationInterface $moderationInformation,
     protected readonly EntityTypeManagerInterface $entityTypeManager,
-    protected readonly InlineEntityHydrator $inlineEntityHydrator,
+    protected readonly DraftEntityBuilder $draftEntityBuilder,
   ) {
     parent::__construct($configuration, $plugin_id, $plugin_definition);
   }
@@ -119,10 +114,9 @@ class DraftingPlugin extends AiAssistantPluginBase {
         $container->get(EntityJsonSchemaComposer::class),
         $container->get('logger.factory')->get('oe_ai_assistant'),
       ),
-      $container->get('serializer'),
       $container->get('content_moderation.moderation_information'),
       $container->get('entity_type.manager'),
-      $container->get(InlineEntityHydrator::class),
+      $container->get(DraftEntityBuilder::class),
     );
   }
 
@@ -335,14 +329,11 @@ class DraftingPlugin extends AiAssistantPluginBase {
   }
 
   /**
-   * Saves a drafted node by deserialising the LLM-produced JSON.
+   * Saves a drafted node built from the LLM-produced fields map.
    *
-   * Strips entity_reference_revisions fields (paragraphs) out of the parent
-   * JSON before deserialize because core 11.3 silently drops inline children
-   * (see CoreJsonSchemaTest::testDeserializeSilentlyDropsInlineParagraphs).
-   * Delegates to InlineEntityHydrator for paragraph creation; the parent's
-   * EntityReferenceRevisionsItem::preSave() chain saves the whole tree
-   * transactionally during $node->save().
+   * The unsaved node (and any inline children) come from DraftEntityBuilder;
+   * $node->save() commits the whole tree transactionally via the parent's
+   * preSave chain.
    *
    * @param \Symfony\Component\HttpFoundation\Request $request
    *   The save request.
@@ -353,7 +344,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
    * @throws \Drupal\oe_ai_assistant\Exception\ActionException
    *   - 'invalid_bundle' (400) if the bundle does not exist.
    *   - 'forbidden' (403) if the current user lacks create permission.
-   *   - 'invalid_payload' (400) if deserialize / denormalize throws.
+   *   - 'invalid_payload' (400) if the builder rejects the payload.
    */
   public function save(Request $request): array {
     $body = $this->decodeJsonBody($request);
@@ -374,25 +365,13 @@ class DraftingPlugin extends AiAssistantPluginBase {
     }
 
     try {
-      // Encode the parent JSON. $serializer->deserialize() will silently drop
-      // any entity_reference_revisions items, so we re-attach them via
-      // InlineEntityHydrator::hydrateInto() immediately after.
-      $json = json_encode(
-        ['type' => [['target_id' => $bundle]], ...$fields],
-        JSON_THROW_ON_ERROR,
-      );
       /** @var \Drupal\node\NodeInterface $node */
-      $node = $this->serializer->deserialize($json, Node::class, 'json');
-
-      // Hydrate inline paragraphs (UNSAVED, saved transactionally by the
-      // parent's preSave chain) and attach them onto the parent node.
-      $this->inlineEntityHydrator->hydrateInto($fields, $node, 'node', $bundle);
+      $node = $this->draftEntityBuilder->fromLlmFields('node', $bundle, $fields);
     }
     catch (\Throwable $e) {
       // Log the raw exception for operators; return a stable, generic message
-      // to the client to avoid leaking deserializer internals (class names,
-      // JSON path internals, constraint detail) over HTTP.
-      $this->logger->error('Failed to deserialize draft payload: @e', [
+      // to the client to avoid leaking internals over HTTP.
+      $this->logger->error('Failed to build draft entity: @e', [
         '@e' => (string) $e,
       ]);
       throw new ActionException(
@@ -409,8 +388,8 @@ class DraftingPlugin extends AiAssistantPluginBase {
     else {
       $node->setPublished(FALSE);
     }
-    // Atomic save: parent's EntityReferenceRevisionsItem::preSave() saves
-    // the inline paragraphs in the same transaction.
+    // Atomic save: the parent's preSave chain saves any inline children in
+    // the same transaction.
     $node->save();
 
     return [

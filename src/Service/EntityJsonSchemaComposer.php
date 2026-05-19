@@ -462,7 +462,13 @@ class EntityJsonSchemaComposer {
       // SKIP_KEY_ROLES, so we re-inject it here as the discriminator the
       // denormalizer routes on.
       $targetEntityType = $this->entityTypeManager->getDefinition($targetType);
-      $bundleKey = $targetEntityType->getKey('bundle') ?: 'type';
+      $bundleKey = $targetEntityType->getKey('bundle');
+      if (!$bundleKey) {
+        throw new \InvalidArgumentException(sprintf(
+          'Reference target "%s" has no bundle key; entity_reference_revisions only targets bundled entity types.',
+          $targetType,
+        ));
+      }
 
       $variants = [];
       foreach ($targetBundles as $bundle) {

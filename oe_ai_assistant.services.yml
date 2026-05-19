@@ -16,6 +16,12 @@ services:
       - '@entity_field.manager'
       - '@entity_type.manager'
 
+  Drupal\oe_ai_assistant\Service\DraftEntityBuilder:
+    arguments:
+      - '@serializer'
+      - '@entity_type.manager'
+      - '@Drupal\oe_ai_assistant\Service\InlineEntityHydrator'
+
   Drupal\oe_ai_assistant\Service\AgentFactory:
     arguments:
       - '@ai.provider'

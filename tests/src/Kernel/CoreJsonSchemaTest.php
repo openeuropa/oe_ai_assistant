@@ -533,12 +533,10 @@ class CoreJsonSchemaTest extends KernelTestBase {
   /**
    * Documents core gap: $serializer->deserialize() drops inline paragraphs.
    *
-   * Documents core 11.3.x's inline-paragraph-deserialize gap. Originally a
-   * Originally added (2026-04-20) for the work that retired DraftFieldMapper; now
-   * serves as the regression alert that fires if/when core lands inline
-   * child entity creation (at which point `InlineEntityHydrator` can be
-   * retired). Verified against Drupal core 11.3.8: deserialize() succeeds
-   * for the parent node and sets scalar fields correctly, but
+   * Regression alert that fires if/when core lands inline child entity
+   * creation (at which point `InlineEntityHydrator` can be retired).
+   * Verified against Drupal core 11.3.8: deserialize() succeeds for the
+   * parent node and sets scalar fields correctly, but
    * `entity_reference_revisions` items containing inline child entity data
    * are silently dropped: no Paragraph entity is created and the field
    * ends up with zero references.
