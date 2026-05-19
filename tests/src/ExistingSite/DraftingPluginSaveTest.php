@@ -78,9 +78,7 @@ class DraftingPluginSaveTest extends ExistingSiteBase {
    * Tests that save creates a node with inline paragraphs.
    *
    * End-to-end exercise of the deserialize-paragraph path through
-   * `InlineEntityHydrator`, the load-bearing regression guard for the
-   * inline-paragraph creation that retired `DraftFieldMapper`. Core 11.3.x
-   * silently drops inline children (see
+   * `InlineEntityHydrator`. Core 11.3.x silently drops inline children (see
    * `CoreJsonSchemaTest::testDeserializeSilentlyDropsInlineParagraphs`), so
    * the hydrator handles paragraph creation while the parent goes through
    * plain `$serializer->deserialize()`.

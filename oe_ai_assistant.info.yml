@@ -10,6 +10,4 @@ dependencies:
   - drupal:node
   - drupal:options
   - drupal:serialization
-  - entity_reference_revisions:entity_reference_revisions
   - key:key
-  - paragraphs:paragraphs

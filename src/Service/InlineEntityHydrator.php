@@ -103,9 +103,15 @@ class InlineEntityHydrator {
    *   Unsaved entities, ready for appendItem onto the parent's field.
    */
   public function buildInlineEntities(array $items, string $targetEntityType): array {
-    $entityClass = $this->entityTypeManager
-      ->getDefinition($targetEntityType)
-      ->getClass();
+    $entityType = $this->entityTypeManager->getDefinition($targetEntityType);
+    $bundleKey = $entityType->getKey('bundle');
+    if (!$bundleKey) {
+      throw new \InvalidArgumentException(sprintf(
+        'Entity type "%s" has no bundle key; cannot build inline entities of an unbundled type.',
+        $targetEntityType,
+      ));
+    }
+    $entityClass = $entityType->getClass();
 
     $entities = [];
     foreach ($items as $i => $item) {
@@ -115,11 +121,12 @@ class InlineEntityHydrator {
           $i,
         ));
       }
-      $bundle = $item['type'][0]['target_id'] ?? NULL;
+      $bundle = $item[$bundleKey][0]['target_id'] ?? NULL;
       if ($bundle === NULL) {
         throw new \InvalidArgumentException(sprintf(
-          'Inline entity item at index %d is missing type[0][target_id].',
+          'Inline entity item at index %d is missing %s[0][target_id].',
           $i,
+          $bundleKey,
         ));
       }
 
@@ -128,12 +135,12 @@ class InlineEntityHydrator {
         $item, $targetEntityType, $bundle,
       );
 
-      // Drop 'type' from the JSON we pass to denormalize: that's the bundle,
-      // already supplied via the outer key.
-      unset($ownFields['type']);
+      // Drop the bundle key from the JSON we pass to denormalize: it's
+      // already supplied via the outer key we inject below.
+      unset($ownFields[$bundleKey]);
 
       $entityJson = json_encode(
-        ['type' => [['target_id' => $bundle]], ...$ownFields],
+        [$bundleKey => [['target_id' => $bundle]], ...$ownFields],
         JSON_THROW_ON_ERROR,
       );
       /** @var \Drupal\Core\Entity\ContentEntityInterface $entity */
