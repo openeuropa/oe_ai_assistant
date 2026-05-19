@@ -11,3 +11,4 @@ composer.lock
 test-results
 /docs
 .idea
+composer.contrib-patches.lock.json
