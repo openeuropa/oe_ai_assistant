@@ -28,10 +28,10 @@
         "drupal/ai_provider_openai": "^1.2",
         "drupal/core-composer-scaffold": "^11",
         "drupal/core-dev": "^11",
-        "drupal/seven": "^2.0",
-        "drupal/paragraphs": "^1.0",
         "drupal/entity_reference_revisions": "^1.0",
         "drupal/inline_entity_form": "^3.0",
+        "drupal/paragraphs": "^1.0",
+        "drupal/seven": "^2.0",
         "weitzman/drupal-test-traits": "^2.0",
         "drush/drush": "^13.0",
         "drupal/coder": "^8.3"

@@ -1,0 +1,18 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - field.storage.node.field_keywords
+    - node.type.oe_news
+id: node.oe_news.field_keywords
+field_name: field_keywords
+entity_type: node
+bundle: oe_news
+label: Keywords
+description: 'Up to 3 keywords describing the article.'
+required: false
+translatable: false
+default_value: {  }
+default_value_callback: ''
+settings: {  }
+field_type: string

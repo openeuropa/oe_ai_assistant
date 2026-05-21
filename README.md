@@ -47,7 +47,6 @@ drush en oe_ai_assistant
 |-------|--------|-------------|
 | `/api/ai/plugins/{plugin_id}/{action}` | POST | Dispatch plugin actions |
 | `/node/{node}/ai-assistant` | GET | AI Assistant tab on node pages |
-| `/api/ai/content-schema/{entity_type_id}/{bundle}` | GET | Content type schema (supports `?mode=form` and `?mode=data`) |
 
 ## Development
 

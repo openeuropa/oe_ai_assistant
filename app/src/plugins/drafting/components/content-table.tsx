@@ -39,6 +39,13 @@ function HtmlFieldValue({ html }: { html: string }) {
   );
 }
 
+/** Formats a string value for display: booleans become Yes/No. */
+function formatValue(value: string): string {
+  if (value === "true") return "Yes";
+  if (value === "false") return "No";
+  return value;
+}
+
 /** Renders a field value based on its type. */
 function FieldValue({
   field,
@@ -60,7 +67,7 @@ function FieldValue({
   }
   return (
     <p className="text-sm text-gray-700">
-      {field.value}
+      {formatValue(field.value)}
       {isStreaming && <StreamingCursor />}
     </p>
   );
@@ -91,9 +98,10 @@ function InlineEntityCard({
   const [expanded, setExpanded] = useState(true);
   const subFields = Object.entries(entity.fields);
 
-  // Use the first field's value as the card title (usually "name").
-  const titleField = entity.fields.name ?? subFields[0]?.[1];
-  const title = titleField?.value ?? `${entity.bundleLabel} #${index + 1}`;
+  // Label-only title to avoid duplicating field values.
+  const title = entity.bundleLabel
+    ? `${entity.bundleLabel} #${index + 1}`
+    : `#${index + 1}`;
 
   return (
     <div className="rounded-md border border-gray-200 bg-white">
@@ -109,21 +117,24 @@ function InlineEntityCard({
           <ChevronRight size={14} className="shrink-0 text-gray-400" />
         )}
         <span className="text-sm font-medium text-gray-800">{title}</span>
-        <span className="text-xs text-gray-400">{entity.bundleLabel}</span>
       </button>
 
       {/* Sub-fields (collapsible) */}
       {expanded && (
         <div className="border-t border-gray-100 px-3 py-2">
           <dl className="space-y-1.5">
-            {subFields.map(([name, subField]) => (
-              <div key={name} className="flex gap-3 text-sm">
-                <dt className="w-24 shrink-0 text-gray-400">
-                  {subField.label}
-                </dt>
-                <dd className="min-w-0 text-gray-700">{subField.value}</dd>
-              </div>
-            ))}
+            {subFields
+              .filter(([, sf]) => sf.value !== "")
+              .map(([name, subField]) => (
+                <div key={name} className="flex gap-3 text-sm">
+                  <dt className="w-24 shrink-0 text-gray-400">
+                    {subField.label}
+                  </dt>
+                  <dd className="min-w-0 text-gray-700">
+                    {formatValue(subField.value)}
+                  </dd>
+                </div>
+              ))}
           </dl>
         </div>
       )}
@@ -230,74 +241,82 @@ export function ContentTable({ onRegenerate, onSave }: ContentTableProps) {
 
       {/* Field rows */}
       <div className="min-h-0 flex-1 overflow-y-auto">
-        {fieldEntries.map(([name, field]) => {
-          const isRejected = rejectedFields.has(name);
-          const isUpdated = updatedFields.has(name);
-          // Show streaming indicator during real streaming OR
-          // during the cosmetic typewriter animation (when the
-          // displayed value is shorter than the real value).
-          const realField = draftedFields[name];
-          const displayField = displayFields[name];
-          const isTyping =
-            realField &&
-            displayField &&
-            displayField.value.length < realField.value.length;
-          const isFieldStreaming = streamingFieldName === name || isTyping;
-          return (
-            <div
-              key={name}
-              className={`border-b border-gray-100 px-4 py-3 transition-colors duration-700 ${
-                isRejected
-                  ? "bg-red-50"
-                  : isUpdated
-                    ? "bg-blue-50"
-                    : "hover:bg-gray-50/50"
-              }`}
-            >
-              {/* Field header: streaming spinner or toggle + label */}
-              <div className="mb-1.5 flex items-center gap-3">
-                {isFieldStreaming ? (
-                  <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-blue-100 text-blue-500">
-                    <Loader2 size={12} className="animate-spin" />
+        {fieldEntries
+          .filter(
+            ([, f]) =>
+              f.value !== "" ||
+              (f.inlineEntities && f.inlineEntities.length > 0),
+          )
+          .map(([name, field]) => {
+            const isRejected = rejectedFields.has(name);
+            const isUpdated = updatedFields.has(name);
+            // Show streaming indicator during real streaming OR
+            // during the cosmetic typewriter animation (when the
+            // displayed value is shorter than the real value).
+            const realField = draftedFields[name];
+            const displayField = displayFields[name];
+            const isTyping =
+              realField &&
+              displayField &&
+              displayField.value.length < realField.value.length;
+            const isFieldStreaming = streamingFieldName === name || isTyping;
+            return (
+              <div
+                key={name}
+                className={`border-b border-gray-100 px-4 py-3 transition-colors duration-700 ${
+                  isRejected
+                    ? "bg-red-50"
+                    : isUpdated
+                      ? "bg-blue-50"
+                      : "hover:bg-gray-50/50"
+                }`}
+              >
+                {/* Field header: streaming spinner or toggle + label */}
+                <div className="mb-1.5 flex items-center gap-3">
+                  {isFieldStreaming ? (
+                    <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-blue-100 text-blue-500">
+                      <Loader2 size={12} className="animate-spin" />
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => toggleFieldRejected(name)}
+                      className={`flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center rounded-full transition-colors ${
+                        isRejected
+                          ? "bg-red-100 text-red-600 hover:bg-red-200"
+                          : "bg-green-100 text-green-600 hover:bg-green-200"
+                      }`}
+                      title={
+                        isRejected ? "Mark as accepted" : "Reject this field"
+                      }
+                    >
+                      {isRejected ? <X size={12} /> : <Check size={12} />}
+                    </button>
+                  )}
+                  <div>
+                    <span
+                      className={`text-sm font-medium ${
+                        isRejected
+                          ? "text-red-700 line-through"
+                          : "text-gray-900"
+                      }`}
+                    >
+                      {field.label}
+                    </span>
+                    <span className="ml-1.5 text-xs text-gray-400">{name}</span>
                   </div>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => toggleFieldRejected(name)}
-                    className={`flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center rounded-full transition-colors ${
-                      isRejected
-                        ? "bg-red-100 text-red-600 hover:bg-red-200"
-                        : "bg-green-100 text-green-600 hover:bg-green-200"
-                    }`}
-                    title={
-                      isRejected ? "Mark as accepted" : "Reject this field"
-                    }
-                  >
-                    {isRejected ? <X size={12} /> : <Check size={12} />}
-                  </button>
-                )}
-                <div>
-                  <span
-                    className={`text-sm font-medium ${
-                      isRejected ? "text-red-700 line-through" : "text-gray-900"
-                    }`}
-                  >
-                    {field.label}
-                  </span>
-                  <span className="ml-1.5 text-xs text-gray-400">{name}</span>
+                </div>
+
+                {/* Field value */}
+                <div className={`pl-8 ${isRejected ? "opacity-50" : ""}`}>
+                  <FieldValue
+                    field={field}
+                    isStreaming={streamingFieldName === name}
+                  />
                 </div>
               </div>
-
-              {/* Field value */}
-              <div className={`pl-8 ${isRejected ? "opacity-50" : ""}`}>
-                <FieldValue
-                  field={field}
-                  isStreaming={streamingFieldName === name}
-                />
-              </div>
-            </div>
-          );
-        })}
+            );
+          })}
       </div>
 
       {/* Save confirmation dialog */}
