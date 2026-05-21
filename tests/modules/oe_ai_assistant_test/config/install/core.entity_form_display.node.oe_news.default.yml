@@ -5,13 +5,20 @@ dependencies:
     - field.field.node.oe_news.body
     - field.field.node.oe_news.field_contacts
     - field.field.node.oe_news.field_content_paragraphs
+    - field.field.node.oe_news.field_keywords
+    - field.field.node.oe_news.field_news_image
+    - field.field.node.oe_news.field_news_link
+    - field.field.node.oe_news.field_news_tags
     - field.field.node.oe_news.field_news_type
     - field.field.node.oe_news.field_publication_date
+    - field.field.node.oe_news.field_publication_datetime
     - field.field.node.oe_news.field_teaser
     - node.type.oe_news
   module:
     - datetime
+    - image
     - inline_entity_form
+    - link
     - options
     - paragraphs
     - text
@@ -52,6 +59,12 @@ content:
     region: content
     settings: {  }
     third_party_settings: {  }
+  field_publication_datetime:
+    type: datetime_default
+    weight: 4
+    region: content
+    settings: {  }
+    third_party_settings: {  }
   field_news_type:
     type: options_select
     weight: 4
@@ -86,6 +99,40 @@ content:
       add_mode: dropdown
       form_display_mode: default
       default_paragraph_type: ''
+    third_party_settings: {  }
+  field_keywords:
+    type: string_textfield
+    weight: 7
+    region: content
+    settings:
+      size: 60
+      placeholder: ''
+    third_party_settings: {  }
+  field_news_image:
+    type: image_image
+    weight: 8
+    region: content
+    settings:
+      progress_indicator: throbber
+      preview_image_style: thumbnail
+    third_party_settings: {  }
+  field_news_link:
+    type: link_default
+    weight: 9
+    region: content
+    settings:
+      placeholder_url: ''
+      placeholder_title: ''
+    third_party_settings: {  }
+  field_news_tags:
+    type: entity_reference_autocomplete
+    weight: 10
+    region: content
+    settings:
+      match_operator: CONTAINS
+      match_limit: 10
+      size: 60
+      placeholder: ''
     third_party_settings: {  }
   status:
     type: boolean_checkbox

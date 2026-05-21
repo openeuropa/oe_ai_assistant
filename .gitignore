@@ -9,4 +9,6 @@ composer.lock
 /dist
 .phpunit.result.cache
 test-results
-
+/docs
+.idea
+composer.contrib-patches.lock.json
