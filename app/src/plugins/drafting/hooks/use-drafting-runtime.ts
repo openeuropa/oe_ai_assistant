@@ -22,38 +22,149 @@ import type {
   DraftedInlineEntity,
   DraftedSubField,
 } from "../store";
-import { getDraftingState, setDraftingState } from "../store";
+import { getDraftingState, setDraftingState, useDraftingSlice } from "../store";
 
 // -- Schema types -----------------------------------------------------------
 
-/** A single field definition from the content type schema. */
-interface SchemaField {
-  name: string;
-  label: string;
+/**
+ * JSON Schema for a single field item as produced by
+ * EntityJsonSchemaComposer. Each property in the top-level
+ * schema maps to one of these.
+ */
+interface JsonSchemaField {
   type: string;
-  widget: string;
-  interaction: string;
-  cardinality: number;
-  inlineForm?: {
-    targetBundles: Record<
-      string,
-      { label: string; groups: { fields: SchemaField[] }[] }
-    >;
-  };
+  items?: JsonSchemaItem;
+  maxItems?: number;
+  description?: string;
 }
 
-/** Top-level content type schema returned by the API. */
+/** Per-item schema: either a plain object or a oneOf discriminated union. */
+interface JsonSchemaItem {
+  type: string;
+  properties?: Record<string, JsonSchemaProperty>;
+  oneOf?: JsonSchemaVariant[];
+  "x-targetType"?: string;
+}
+
+/** Leaf property within an item (e.g. value, format, target_id). */
+interface JsonSchemaProperty {
+  type?: string;
+  const?: string;
+  enum?: string[];
+  format?: string;
+  maxLength?: number;
+  oneOf?: { type: string }[];
+}
+
+/** A oneOf variant representing a paragraph bundle. */
+interface JsonSchemaVariant {
+  type: string;
+  properties?: Record<string, JsonSchemaField>;
+}
+
+/**
+ * Top-level schema returned by GET /content-schema/{entityTypeId}/{bundle}.
+ * Produced by EntityJsonSchemaComposer.
+ */
 interface ContentTypeSchema {
-  contentType: string;
+  type: string;
+  properties: Record<string, JsonSchemaField>;
+  required?: string[];
+}
+
+/**
+ * Resolved field metadata used for label and type lookup
+ * when transforming LLM output into DraftedField objects.
+ */
+interface ResolvedField {
   label: string;
-  groups: { label: string; fields: SchemaField[] }[];
+  type: string;
+  /** Sub-field labels keyed by bundle, for paragraph fields. */
+  variants?: Record<string, { label: string; fields: Record<string, string> }>;
 }
 
 /** Flattened field lookup keyed by machine name. */
-type FieldIndex = Record<string, SchemaField>;
+type FieldIndex = Record<string, ResolvedField>;
 
 /**
- * Fetches the form-mode content type schema and returns a flat
+ * Resolves the simplified field type from a JSON Schema item.
+ * Maps JSON Schema shapes to the type strings the UI uses for
+ * rendering (e.g. "string", "html", "boolean", "reference").
+ */
+function resolveFieldType(field: JsonSchemaField): string {
+  const items = field.items;
+  if (!items) return "string";
+
+  // Inline entity references (paragraphs): oneOf + x-targetType.
+  if (items.oneOf && items["x-targetType"]) return "inline_form";
+
+  // Plain entity references: x-targetType without oneOf.
+  if (items["x-targetType"]) return "reference";
+
+  // Inspect the item properties to detect formatted text vs scalar.
+  const props = items.properties ?? {};
+  if (props.value) {
+    // Has a 'format' property alongside 'value' -> formatted text.
+    if (props.format) return "html";
+    // Leaf type from the value property.
+    const valueType = props.value.type ?? "string";
+    if (valueType === "boolean") return "boolean";
+    if (valueType === "integer" || valueType === "number") return "number";
+    if (props.value.format === "date" || props.value.format === "date-time")
+      return "date";
+    if (props.value.enum) return "select";
+    return "string";
+  }
+
+  // Link fields (uri + title), or other multi-property objects.
+  if (props.uri) return "link";
+
+  return "string";
+}
+
+/**
+ * Extracts the bundle discriminator from a oneOf variant.
+ * The composer injects `type.items.properties.target_id.const`
+ * as the bundle key (e.g. "text_block", "quote_block").
+ */
+function variantBundle(variant: JsonSchemaVariant): string {
+  const typeProp = variant.properties?.type;
+  return typeProp?.items?.properties?.target_id?.const ?? "";
+}
+
+/**
+ * Builds variant metadata (bundle label + sub-field labels)
+ * from the oneOf array of a paragraph reference field.
+ */
+function buildVariants(
+  variants: JsonSchemaVariant[],
+): Record<string, { label: string; fields: Record<string, string> }> {
+  const result: Record<
+    string,
+    { label: string; fields: Record<string, string> }
+  > = {};
+  for (const variant of variants) {
+    const bundle = variantBundle(variant);
+    if (!bundle) continue;
+    const fields: Record<string, string> = {};
+    for (const [name, prop] of Object.entries(variant.properties ?? {})) {
+      // Skip system fields (type, status, parent_*, behavior_settings).
+      if (
+        name === "type" ||
+        name === "status" ||
+        name.startsWith("parent_") ||
+        name === "behavior_settings"
+      )
+        continue;
+      fields[name] = (prop as JsonSchemaField).description ?? name;
+    }
+    result[bundle] = { label: bundle, fields };
+  }
+  return result;
+}
+
+/**
+ * Fetches the JSON Schema for a content type and returns a flat
  * field index keyed by machine name.
  */
 async function fetchFieldIndex(
@@ -62,15 +173,22 @@ async function fetchFieldIndex(
   bundle: string,
 ): Promise<FieldIndex> {
   try {
-    const url = `${apiBaseUrl}/content-schema/${entityTypeId}/${bundle}?mode=form`;
+    const url = `${apiBaseUrl}/content-schema/${entityTypeId}/${bundle}`;
     const res = await fetch(url, { credentials: "include" });
     if (!res.ok) return {};
     const schema = (await res.json()) as ContentTypeSchema;
     const index: FieldIndex = {};
-    for (const group of schema.groups) {
-      for (const field of group.fields) {
-        index[field.name] = field;
+    for (const [name, field] of Object.entries(schema.properties ?? {})) {
+      const resolved: ResolvedField = {
+        label: field.description ?? labelFromName(name),
+        type: resolveFieldType(field),
+      };
+      // For paragraph fields, extract per-bundle sub-field labels.
+      const variants = field.items?.oneOf;
+      if (variants) {
+        resolved.variants = buildVariants(variants);
       }
+      index[name] = resolved;
     }
     return index;
   } catch {
@@ -93,39 +211,35 @@ function labelFromName(name: string): string {
 
 /**
  * Converts a raw inline entity object from the LLM into the
- * DraftedInlineEntity shape, using the schema's inline form
- * definition to resolve sub-field labels.
+ * DraftedInlineEntity shape, using the schema's variant metadata
+ * to resolve sub-field labels.
  */
 function toInlineEntity(
   raw: Record<string, unknown>,
-  schemaField?: SchemaField,
+  schemaField?: ResolvedField,
 ): DraftedInlineEntity {
-  // Find the first target bundle definition for sub-field labels.
-  const bundles = schemaField?.inlineForm?.targetBundles ?? {};
-  const firstBundle = Object.entries(bundles)[0];
-  const bundleKey = firstBundle?.[0] ?? "";
-  const bundleDef = firstBundle?.[1];
-  const subFieldIndex: Record<string, SchemaField> = {};
-  if (bundleDef) {
-    for (const group of bundleDef.groups) {
-      for (const f of group.fields) {
-        subFieldIndex[f.name] = f;
-      }
-    }
-  }
+  // Determine bundle from the raw data or fall back to the first variant.
+  const variants = schemaField?.variants ?? {};
+  const rawBundle =
+    (raw.bundle as string) ??
+    (raw.type as string) ??
+    Object.keys(variants)[0] ??
+    "";
+  const variantDef = variants[rawBundle];
+  const subFieldLabels = variantDef?.fields ?? {};
 
   const fields: Record<string, DraftedSubField> = {};
   for (const [key, val] of Object.entries(raw)) {
     if (typeof val === "string" || typeof val === "number") {
       fields[key] = {
-        label: subFieldIndex[key]?.label ?? labelFromName(key),
+        label: subFieldLabels[key] ?? labelFromName(key),
         value: String(val),
       };
     }
   }
   return {
-    bundle: bundleKey,
-    bundleLabel: bundleDef?.label ?? "",
+    bundle: rawBundle,
+    bundleLabel: variantDef?.label ?? "",
     fields,
   };
 }
@@ -142,9 +256,9 @@ function transformFields(
   const fields: Record<string, DraftedField> = {};
 
   for (const [name, val] of Object.entries(raw)) {
-    const schema = fieldIndex[name];
-    const label = schema?.label ?? labelFromName(name);
-    const fieldType = schema?.type ?? "string";
+    const resolved = fieldIndex[name];
+    const label = resolved?.label ?? labelFromName(name);
+    const fieldType = resolved?.type ?? "string";
 
     // Formatted text: { value: "<p>...</p>", format: "full_html" }
     if (
@@ -168,7 +282,7 @@ function transformFields(
         value: "",
         type: "inline_form",
         inlineEntities: val.map((item) =>
-          toInlineEntity(item as Record<string, unknown>, schema),
+          toInlineEntity(item as Record<string, unknown>, resolved),
         ),
       };
       continue;
@@ -258,21 +372,30 @@ export function useDraftingRuntime() {
     [],
   );
 
+  // Read the persisted threadId so multi-turn conversations
+  // share server-side history across requests.
+  const { threadId } = useDraftingSlice();
+
   const runtime = useDataStreamRuntime({
     api: `${getConfig().apiBaseUrl}/plugins/drafting/chat`,
     credentials: "include",
-    // Send bundle and entityTypeId in the request body so the
-    // backend can load the correct content type schema.
-    body: { bundle, entityTypeId },
+    // Send bundle, entityTypeId, and threadId in the request body.
+    body: { bundle, entityTypeId, threadId },
     adapters: {
       attachments: attachmentAdapter,
     },
-    // Handle data-drafted-fields events from the UI message stream.
-    // The onData callback fires for any SSE event whose type starts
-    // with "data-". The name field has the "data-" prefix stripped.
+    // Handle custom data-* events from the UI message stream.
     onData: (data) => {
       if (data.name === "drafted-fields") {
         handleDraftedFields(data.data as Record<string, unknown>);
+      }
+      // Capture the threadId from the backend and persist it
+      // so subsequent requests include it for history continuity.
+      if (data.name === "thread-id") {
+        const incoming = (data.data as { threadId?: string }).threadId;
+        if (incoming) {
+          setDraftingState({ threadId: incoming });
+        }
       }
     },
     onFinish: () => {

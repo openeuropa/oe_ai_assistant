@@ -4,24 +4,23 @@ services:
 
   Drupal\oe_ai_assistant\Service\RequestValidator: {}
 
-  Drupal\oe_ai_assistant\Service\ContentTypeSchemaExtractor:
+  Drupal\oe_ai_assistant\Service\EntityJsonSchemaComposer:
     arguments:
-      - '@entity_field.manager'
+      - '@serializer'
+      - '@entity_type.manager'
       - '@entity_type.bundle.info'
 
-  Drupal\oe_ai_assistant\Service\FormSchemaExtractor:
+  Drupal\oe_ai_assistant\Service\InlineEntityHydrator:
     arguments:
-      - '@entity_type.manager'
+      - '@serializer'
       - '@entity_field.manager'
-      - '@entity_type.bundle.info'
-      - '@Drupal\oe_ai_assistant\Service\ContentTypeSchemaExtractor'
-      - '@config.factory'
+      - '@entity_type.manager'
 
-  Drupal\oe_ai_assistant\Service\DraftFieldMapper:
+  Drupal\oe_ai_assistant\Service\DraftEntityBuilder:
     arguments:
+      - '@serializer'
       - '@entity_type.manager'
-      - '@entity_field.manager'
-      - '@content_moderation.moderation_information'
+      - '@Drupal\oe_ai_assistant\Service\InlineEntityHydrator'
 
   Drupal\oe_ai_assistant\Service\AgentFactory:
     arguments:
@@ -29,3 +28,13 @@ services:
       - '@plugin.manager.ai.function_calls'
       - '@config.factory'
       - '@key.repository'
+
+  oe_ai_assistant.ui_message_stream:
+    class: Drupal\oe_ai_assistant\Service\UiMessageStream
+    arguments:
+      - '@ai.prompt_code_block_extractor'
+
+  oe_ai_assistant.conversation_store_factory:
+    class: Drupal\oe_ai_assistant\Store\ConversationStoreFactory
+    arguments:
+      - '@tempstore.private'
