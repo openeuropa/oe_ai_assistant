@@ -1,0 +1,75 @@
+<?php
+
+/**
+ * @file
+ * Install hooks for the OE AI Assistant Agent Test module.
+ */
+
+declare(strict_types=1);
+
+/**
+ * Implements hook_install().
+ */
+function oe_ai_assistant_agent_test_install(): void {
+  $storage = \Drupal::entityTypeManager()->getStorage('ai_context_item');
+
+  // Avoid duplicates if the module is reinstalled in development.
+  $existing = $storage->loadByProperties([
+    'label' => 'EU Digital Content Guidelines',
+  ]);
+
+  if ($existing) {
+    foreach ($existing as $item) {
+      $item->set('status', TRUE);
+      if ($item->hasField('moderation_state')) {
+        $item->set('moderation_state', 'published');
+      }
+      $item->save();
+    }
+    return;
+  }
+
+  $item = $storage->create([
+    'type' => 'default',
+    'label' => 'EU Digital Content Guidelines',
+    'description' => 'Provides standardized editorial, accessibility, inclusiveness, clarity, and governance instructions for AI-generated content based on European Union digital communication and web accessibility principles.',
+    'purpose' => 'Use this context item whenever AI generates, rewrites, summarizes, translates, or reviews website content intended for public-facing digital channels.',
+    'content' => [
+      'value' => <<<'MARKDOWN'
+# EU Digital Content Guidelines
+
+Always generate content that is clear, accessible, inclusive, trustworthy, citizen-focused, privacy-conscious, and suitable for public-facing European Union digital channels.
+
+## Rules
+
+- Use plain language.
+- Prefer short sentences and common vocabulary.
+- Avoid jargon, acronyms, marketing hype, and bureaucratic wording.
+- Structure content with clear headings and logical hierarchy.
+- Use short paragraphs and lists where helpful.
+- Avoid phrases like “click here”; use descriptive link text.
+- Suggest meaningful alt text when images are referenced.
+- Use inclusive, respectful, neutral language.
+- Do not invent facts, statistics, laws, citations, or sources.
+- Clearly distinguish facts from assumptions.
+- State uncertainty when needed.
+- Avoid collecting or exposing unnecessary personal data.
+- Respect GDPR-conscious wording.
+- Write in a professional, calm, human, informative tone.
+- Avoid clickbait, exaggeration, fear-based messaging, and aggressive marketing language.
+- Optimize for readability, not keyword stuffing.
+- Keep output publication-ready and Markdown-compatible.
+MARKDOWN,
+      'format' => 'plain_text',
+    ],
+    'status' => TRUE,
+    'moderation_state' => 'published',
+    'scope' => [
+      'oe_assistant_plugin' => [
+        'agent_test',
+      ],
+    ],
+  ]);
+
+  $item->save();
+}

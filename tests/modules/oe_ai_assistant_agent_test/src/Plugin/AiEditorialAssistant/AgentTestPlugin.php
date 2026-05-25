@@ -8,6 +8,7 @@ use Drupal\ai\AiProviderPluginManager;
 use Drupal\ai\OperationType\Chat\ChatInput;
 use Drupal\ai\OperationType\Chat\StreamedChatMessageIteratorInterface;
 use Drupal\ai\OperationType\Chat\ChatMessage;
+use Drupal\ai\OperationType\Chat\ChatOutput;
 use Drupal\ai\OperationType\Chat\Tools\ToolsFunctionOutputInterface;
 use Drupal\ai\OperationType\Chat\Tools\ToolsInput;
 use Drupal\ai_agents\PluginInterfaces\AiAgentInterface;
@@ -127,10 +128,15 @@ class AgentTestPlugin extends AiAssistantPluginBase {
       $chatInput->setChatTools(new ToolsInput($functions['normalized']));
     }
 
-    // Get the default provider and call the LLM directly for streaming.
-    $defaults = $this->aiProviderManager->getDefaultProviderForOperationType('chat');
-    $provider = $this->aiProviderManager->createInstance($defaults['provider_id']);
-    $chatOutput = $provider->chat($chatInput, $defaults['model_id'], ['agent_test']);
+    // Run the router agent once, without letting ai_agents execute the
+    // returned tools. This keeps the routing decision in the agent wrapper
+    // while this plugin remains responsible for the orchestration stream.
+    $router->setChatInput($chatInput);
+    $router->setLooped(FALSE);
+    $router->determineSolvability();
+    $routerHistory = $router->getChatHistory();
+    $routerResponse = end($routerHistory);
+    $chatOutput = new ChatOutput($routerResponse, $chatInput->getMessages(), []);
 
     // Stream the response using UiMessageStream.
     return $this->uiMessageStream->respond(function (UiMessageStreamInterface $stream) use ($chatOutput, $history): void {

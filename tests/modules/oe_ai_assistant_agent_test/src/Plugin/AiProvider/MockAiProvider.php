@@ -149,7 +149,13 @@ class MockAiProvider extends AiProviderClientBase implements ChatInterface {
     }
 
     // Non-streaming mode: return complete message at once.
-    $message = new ChatMessage('assistant', $response->text);
+    $message = $response->toolCalls !== NULL
+      ? ChatMessage::fromArray([
+        'role' => 'assistant',
+        'text' => '',
+        'tools' => $response->toolCalls,
+      ])
+      : new ChatMessage('assistant', $response->text);
     return new ChatOutput($message, $input->getMessages(), []);
   }
 

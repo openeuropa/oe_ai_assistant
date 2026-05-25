@@ -7,4 +7,5 @@ dependencies:
   - oe_ai_assistant:oe_ai_assistant
   - ai:ai
   - ai_agents:ai_agents
+  - ai_context:ai_context
 hidden: true

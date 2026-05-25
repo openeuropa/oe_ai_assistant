@@ -9,4 +9,8 @@ composer.lock
 /dist
 .phpunit.result.cache
 test-results
+/.vscode
+/.zed
+/.idea
+.phpactor.json
 

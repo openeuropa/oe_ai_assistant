@@ -22,6 +22,13 @@ class AgentTestPluginTest extends ExistingSiteBase {
   use ExistingSiteConfigBackupTrait;
 
   /**
+   * Context item to inject into the system prompt.
+   *
+   * @var string
+   */
+  protected string $contextPrompt;
+
+  /**
    * {@inheritdoc}
    */
   protected function setUp(): void {
@@ -31,6 +38,11 @@ class AgentTestPluginTest extends ExistingSiteBase {
     // and the agent_test plugin).
     \Drupal::service('module_installer')->install(['oe_ai_assistant_agent_test']);
 
+    $storage = \Drupal::entityTypeManager()->getStorage('ai_context_item');
+    $contextItems = $storage->loadByProperties([
+      'label' => 'EU Digital Content Guidelines',
+    ]);
+    $this->contextPrompt = preg_replace('/\s+/', '', array_pop($contextItems)->get('content')->value);
     // Backup the AI settings and set mock_ai as default provider.
     $this->backupSimpleConfig('ai.settings');
     \Drupal::configFactory()->getEditable('ai.settings')
@@ -79,6 +91,7 @@ class AgentTestPluginTest extends ExistingSiteBase {
     $this->assertArrayHasKey('system_prompt', $log[0]);
     $this->assertArrayHasKey('tools', $log[0]);
     $this->assertArrayHasKey('messages', $log[0]);
+    $this->assertStringContainsContextPrompt($log[0]['system_prompt']);
   }
 
   /**
@@ -105,6 +118,7 @@ class AgentTestPluginTest extends ExistingSiteBase {
     $this->assertNotEmpty($tools, 'Router call should include tools.');
     $toolNames = array_column(array_column($tools, 'function'), 'name');
     $this->assertContains('draft_content', $toolNames);
+    $this->assertStringContainsContextPrompt($log[0]['system_prompt']);
   }
 
   /**
@@ -202,6 +216,9 @@ class AgentTestPluginTest extends ExistingSiteBase {
 
     // All mock responses consumed.
     $this->assertTrue(MockAiProvider::isEmpty());
+    foreach ($log as $log_data) {
+      $this->assertStringContainsContextPrompt($log_data['system_prompt']);
+    }
   }
 
   /**
@@ -282,6 +299,9 @@ class AgentTestPluginTest extends ExistingSiteBase {
     $this->assertGreaterThanOrEqual(4, count($log));
     // Sub-agent calls (indices 1-3) should have the config entity's prompt.
     $this->assertStringContainsString('JSON', $log[1]['system_prompt']);
+    foreach ($log as $log_data) {
+      $this->assertStringContainsContextPrompt($log_data['system_prompt']);
+    }
   }
 
   /**
@@ -338,6 +358,9 @@ class AgentTestPluginTest extends ExistingSiteBase {
     $this->assertCount(1, $log[1]['messages'], 'First sub-agent should have 1 message.');
     $this->assertCount(1, $log[2]['messages'], 'Second sub-agent should have 1 message.');
     $this->assertCount(1, $log[3]['messages'], 'Third sub-agent should have 1 message.');
+    foreach ($log as $log_data) {
+      $this->assertStringContainsContextPrompt($log_data['system_prompt']);
+    }
   }
 
   /**
@@ -560,4 +583,8 @@ class AgentTestPluginTest extends ExistingSiteBase {
     return $events;
   }
 
+  public function assertStringContainsContextPrompt(string $prompt) {
+    $prompt = preg_replace('/\s+/', '', $prompt);
+    $this->assertStringContainsString($this->contextPrompt, $prompt);
+  }
 }
