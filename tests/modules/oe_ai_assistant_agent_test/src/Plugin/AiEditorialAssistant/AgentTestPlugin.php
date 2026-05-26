@@ -98,7 +98,7 @@ class AgentTestPlugin extends AiAssistantPluginBase {
    *
    * Loads conversation history from the temp store, appends the user's
    * message, calls the LLM with the full history, and persists the
-   * response. If the LLM calls draft_content, runs the sub-agent
+   * response. If the LLM calls test_draft_content, runs the sub-agent
    * orchestration loop with the full conversation as context.
    *
    * @param \Symfony\Component\HttpFoundation\Request $request
@@ -139,10 +139,10 @@ class AgentTestPlugin extends AiAssistantPluginBase {
       // Stream the router response and collect tool calls.
       $toolCalls = $stream->streamChatOutput($chatOutput, 'router');
 
-      // Check if draft_content was called.
+      // Check if test_draft_content was called.
       $draftCall = NULL;
       foreach ($toolCalls as $tool) {
-        if ($tool->getName() === 'draft_content') {
+        if ($tool->getName() === 'test_draft_content') {
           $draftCall = $tool;
           break;
         }
@@ -202,7 +202,7 @@ class AgentTestPlugin extends AiAssistantPluginBase {
    * @param \Drupal\oe_ai_assistant\Service\UiMessageStreamInterface $stream
    *   The SSE stream to emit events on.
    * @param \Drupal\ai\OperationType\Chat\Tools\ToolsFunctionOutputInterface $draftCall
-   *   The draft_content tool call with instructions.
+   *   The test_draft_content tool call with instructions.
    * @param \Drupal\ai\OperationType\Chat\ChatMessage[] $history
    *   The full conversation history.
    *

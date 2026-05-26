@@ -404,8 +404,6 @@ class DraftingPlugin extends AiAssistantPluginBase {
       : '/node/' . $node->id();
   }
 
-  // -- Private helpers -------------------------------------------------------
-
   /**
    * Extracts the user message from the request body.
    *
@@ -458,32 +456,6 @@ class DraftingPlugin extends AiAssistantPluginBase {
       'fieldIndex' => $this->promptBuilder
         ->buildFieldIndex($entityTypeId, $bundle),
     ];
-  }
-
-  /**
-   * Formats an exception into a user-friendly error message.
-   *
-   * @param \Exception $e
-   *   The caught exception.
-   *
-   * @return string
-   *   A user-facing error message.
-   */
-  private function formatErrorForChat(\Exception $e): string {
-    $msg = $e->getMessage();
-    if (preg_match('/\b401\b|unauthorized/i', $msg)) {
-      return 'The AI service rejected the API key.';
-    }
-    if (preg_match('/\b429\b|rate.?limit/i', $msg)) {
-      return 'The AI service is overloaded. Try again shortly.';
-    }
-    if (preg_match('/\b5\d{2}\b|server error/i', $msg)) {
-      return 'The AI service is temporarily unavailable.';
-    }
-    if (preg_match('/timeout|timed? out/i', $msg)) {
-      return 'The AI service did not respond in time.';
-    }
-    return $msg;
   }
 
 }

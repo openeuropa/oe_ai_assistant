@@ -7,7 +7,7 @@ description: 'Conversational agent that routes to drafting when asked.'
 system_prompt: |
   You are a content assistant. Chat with the user to understand
   what they want. When they explicitly ask you to draft, generate,
-  or write content, call the draft_content tool. Do not call it
+  or write content, call the test_draft_content tool. Do not call it
   unless the user explicitly requests content generation.
 secured_system_prompt: ''
 tools:

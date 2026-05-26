@@ -82,7 +82,7 @@ class AgentTestPluginTest extends ExistingSiteBase {
   }
 
   /**
-   * Tests that the router LLM call includes the draft_content tool.
+   * Tests that the router LLM call includes the test_draft_content tool.
    */
   public function testRouterCallIncludesDraftContentTool(): void {
     $user = $this->createUser(['use oe ai assistant']);
@@ -100,11 +100,11 @@ class AgentTestPluginTest extends ExistingSiteBase {
     $log = MockAiProvider::getCallLog();
     $this->assertCount(1, $log);
 
-    // The router call should have the draft_content tool defined.
+    // The router call should have the test_draft_content tool defined.
     $tools = $log[0]['tools'];
     $this->assertNotEmpty($tools, 'Router call should include tools.');
     $toolNames = array_column(array_column($tools, 'function'), 'name');
-    $this->assertContains('draft_content', $toolNames);
+    $this->assertContains('test_draft_content', $toolNames);
   }
 
   /**
@@ -136,7 +136,7 @@ class AgentTestPluginTest extends ExistingSiteBase {
           'id' => 'call_1',
           'type' => 'function',
           'function' => [
-            'name' => 'draft_content',
+            'name' => 'test_draft_content',
             'arguments' => json_encode([
               'instructions' => 'Draft about EU climate 2030 targets.',
             ]),
@@ -218,7 +218,7 @@ class AgentTestPluginTest extends ExistingSiteBase {
           'id' => 'call_1',
           'type' => 'function',
           'function' => [
-            'name' => 'draft_content',
+            'name' => 'test_draft_content',
             'arguments' => json_encode([
               'instructions' => 'Write about EU climate targets.',
             ]),
@@ -297,7 +297,7 @@ class AgentTestPluginTest extends ExistingSiteBase {
           'id' => 'call_1',
           'type' => 'function',
           'function' => [
-            'name' => 'draft_content',
+            'name' => 'test_draft_content',
             'arguments' => json_encode(['instructions' => 'Write content.']),
           ],
         ],
@@ -347,14 +347,14 @@ class AgentTestPluginTest extends ExistingSiteBase {
     $user = $this->createUser(['use oe ai assistant']);
     $this->loginUser($user);
 
-    // Router calls draft_content.
+    // Router calls test_draft_content.
     MockAiProvider::enqueue(new MockResponse(
       toolCalls: [
         [
           'id' => 'call_1',
           'type' => 'function',
           'function' => [
-            'name' => 'draft_content',
+            'name' => 'test_draft_content',
             'arguments' => json_encode(['instructions' => 'Test.']),
           ],
         ],
