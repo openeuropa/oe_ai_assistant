@@ -1,10 +1,12 @@
 /**
  * Drafting plugin routes.
  *
- * Thin Express route handlers that delegate to DraftingService.
- * The chat endpoint is real (calls Mistral); save is mocked.
+ * Thin Express route handlers that delegate to the active
+ * drafting service. Depending on the selected dev mode, the
+ * chat endpoint is either fixture-backed mock streaming or
+ * Mistral-backed integration streaming. Save remains mocked.
  *
- * POST /api/plugins/drafting/chat   - SSE stream (real LLM)
+ * POST /api/plugins/drafting/chat   - SSE stream (mock or Mistral)
  * POST /api/plugins/drafting/reset  - Clear conversation
  * POST /api/plugins/drafting/save   - Mock save
  */

@@ -47,7 +47,6 @@ drush en oe_ai_assistant
 |-------|--------|-------------|
 | `/api/ai/plugins/{plugin_id}/{action}` | POST | Dispatch plugin actions |
 | `/node/{node}/ai-assistant` | GET | AI Assistant tab on node pages |
-| `/api/ai/content-schema/{entity_type_id}/{bundle}` | GET | Content type schema (supports `?mode=form` and `?mode=data`) |
 
 ## Development
 
@@ -76,6 +75,9 @@ Edit `.ddev/.env` and set `DRUPAL_MISTRAL_API_KEY` to your Mistral API key, then
 ```bash
 ddev restart
 ```
+
+This DDEV key is needed for the Drupal-backed integration flow. The standalone
+React app mock workflow does not require provider credentials.
 
 ### DDEV commands
 
@@ -120,13 +122,18 @@ definition points directly to `app/dist/`.
 ```bash
 cd app
 npm install
-npm run dev          # Vite + Express mock API (standalone, no Drupal needed)
+npm run dev          # Vite + Express mock API (standalone, no Drupal or API key needed)
+npm run dev:integration # Vite + Express API with real Mistral drafting
 npm run build        # Production IIFE bundle -> app/dist/
 npm run lint         # Biome check
 npm run typecheck    # TypeScript strict
 npm run test:e2e     # Playwright end-to-end tests
 npm run api:generate # Regenerate types from OpenAPI spec
 ```
+
+For `npm run dev:integration`, copy `app/.env.dist` to `app/.env` and set
+`MISTRAL_API_KEY`. The default `npm run dev` path stays fixture-backed
+and deterministic so frontend work does not depend on live provider access.
 
 Or build via DDEV:
 

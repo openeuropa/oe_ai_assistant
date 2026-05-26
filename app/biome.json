@@ -46,9 +46,12 @@
     "includes": [
       "**",
       "!dist/",
+      "!coverage",
+      "!playwright-report",
       "!storybook-static/",
       "!node_modules/",
       "!.pnpm-store/",
+      "!test-results",
       "!src/api/schema.d.ts"
     ]
   }

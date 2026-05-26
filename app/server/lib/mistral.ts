@@ -16,8 +16,10 @@ import { MISTRAL_API_KEY } from "../config";
 export function createMistralClient(): Mistral {
   if (!MISTRAL_API_KEY) {
     throw new Error(
-      "DRUPAL_MISTRAL_API_KEY is not set. " +
-        "Copy .env.dist to .env and add your Mistral API key.",
+      "MISTRAL_API_KEY is not set. " +
+        "Standalone mock mode does not need credentials; " +
+        'for provider-backed development, copy "app/.env.dist" ' +
+        'to "app/.env" and run "npm run dev:integration".',
     );
   }
   return new Mistral({ apiKey: MISTRAL_API_KEY });

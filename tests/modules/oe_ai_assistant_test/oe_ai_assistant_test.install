@@ -10,23 +10,10 @@ declare(strict_types=1);
 /**
  * Implements hook_install().
  *
- * Configures the content schema whitelist, AI defaults, and Mistral provider.
+ * Configures AI defaults and the Mistral provider for the test environment.
  */
 function oe_ai_assistant_test_install(): void {
   $configFactory = \Drupal::configFactory();
-
-  // Populate the content schema whitelist with the test oe_news fields.
-  $configFactory->getEditable('oe_ai_assistant.content_schema')
-    ->set('field_whitelist.oe_news', [
-      'title',
-      'field_teaser',
-      'body',
-      'field_publication_date',
-      'field_news_type',
-      'field_contacts',
-      'field_content_paragraphs',
-    ])
-    ->save();
 
   // Set Mistral as the default LLM provider for all operation types.
   $configFactory->getEditable('ai.settings')

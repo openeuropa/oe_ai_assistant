@@ -7,8 +7,11 @@ dependencies:
   - oe_ai_assistant:oe_ai_assistant
   - drupal:content_moderation
   - drupal:datetime
+  - drupal:image
+  - drupal:link
   - drupal:node
   - drupal:options
+  - drupal:taxonomy
   - drupal:text
   - drupal:workflows
   - ai:ai_provider_mistral
