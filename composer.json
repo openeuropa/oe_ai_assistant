@@ -62,6 +62,11 @@
         }
     },
     "config": {
+        "audit": {
+            "ignore": {
+                "PKSA-dwsq-ppd2-mb1x": "Required by drupal/core-recommended 11.3.10; remove when Symfony or Drupal publishes a fixed release."
+            }
+        },
         "sort-packages": true,
         "allow-plugins": {
             "composer/installers": true,
