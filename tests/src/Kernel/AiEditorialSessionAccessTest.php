@@ -4,9 +4,12 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\oe_ai_assistant\Kernel;
 
+use PHPUnit\Framework\Attributes\Group;
+
 /**
  * Kernel tests for AI editorial session access control.
  */
+#[Group('oe_ai_assistant')]
 class AiEditorialSessionAccessTest extends AiEditorialSessionKernelTestBase {
 
   /**

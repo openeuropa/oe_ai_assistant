@@ -5,10 +5,12 @@ declare(strict_types=1);
 namespace Drupal\Tests\oe_ai_assistant\Kernel;
 
 use Drupal\oe_ai_assistant\Entity\AiEditorialSession;
+use PHPUnit\Framework\Attributes\Group;
 
 /**
  * Kernel tests for AI editorial sessions.
  */
+#[Group('oe_ai_assistant')]
 class AiEditorialSessionTest extends AiEditorialSessionKernelTestBase {
 
   /**
