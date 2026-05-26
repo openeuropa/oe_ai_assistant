@@ -32,6 +32,10 @@ class AiDraftingTemplateCrudTest extends KernelTestBase {
     'user',
     'workflows',
     'content_moderation',
+    'serialization',
+    'image',
+    'link',
+    'taxonomy',
     // Contrib.
     'ai',
     'entity_reference_revisions',
@@ -49,6 +53,9 @@ class AiDraftingTemplateCrudTest extends KernelTestBase {
     $this->installEntitySchema('user');
     $this->installEntitySchema('node');
     $this->installEntitySchema('paragraph');
+    $this->installEntitySchema('content_moderation_state');
+    $this->installEntitySchema('file');
+    $this->installEntitySchema('taxonomy_term');
     $this->installConfig(['oe_ai_assistant_test']);
   }
 
