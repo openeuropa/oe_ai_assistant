@@ -4,41 +4,36 @@ declare(strict_types=1);
 
 namespace Drupal\oe_ai_assistant\Plugin\AiEditorialAssistant;
 
-use Drupal\Component\Uuid\UuidInterface;
+use Drupal\ai\AiProviderPluginManager;
+use Drupal\ai\OperationType\Chat\ChatInput;
+use Drupal\ai\OperationType\Chat\ChatMessage;
+use Drupal\ai\OperationType\Chat\StreamedChatMessageIteratorInterface;
+use Drupal\ai\OperationType\Chat\Tools\ToolsInput;
+use Drupal\ai_agents\PluginManager\AiAgentManager;
+use Drupal\Component\Serialization\Json;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Session\AccountProxyInterface;
-use Drupal\Core\TempStore\PrivateTempStoreFactory;
 use Drupal\content_moderation\ModerationInformationInterface;
 use Drupal\node\NodeInterface;
 use Drupal\oe_ai_assistant\Annotation\AiEditorialAssistant;
 use Drupal\oe_ai_assistant\Exception\ActionException;
 use Drupal\oe_ai_assistant\Plugin\AiAssistantPluginBase;
 use Drupal\oe_ai_assistant\Plugin\AiEditorialAssistant\Drafting\DraftingPromptBuilder;
-use Drupal\oe_ai_assistant\Service\AgentFactory;
 use Drupal\oe_ai_assistant\Service\DraftEntityBuilder;
 use Drupal\oe_ai_assistant\Service\EntityJsonSchemaComposer;
-use Drupal\oe_ai_assistant\Store\DrupalTempMessageStore;
-use Drupal\oe_ai_assistant\Tool\DraftContentTool;
+use Drupal\oe_ai_assistant\Service\UiMessageStreamInterface;
+use Drupal\oe_ai_assistant\Store\ConversationStoreInterface;
 use Psr\Log\LoggerInterface;
-use Symfony\AI\Agent\Toolbox\Event\ToolCallSucceeded;
-use Symfony\AI\Platform\Message\Message;
-use Symfony\AI\Platform\Result\Stream\Delta\TextDelta;
-use Symfony\AI\Platform\Result\Stream\Delta\ToolCallStart;
-use Symfony\AI\Platform\Result\Stream\Delta\ToolInputDelta;
 use Symfony\Component\DependencyInjection\ContainerInterface;
-use Symfony\Component\EventDispatcher\EventDispatcher;
-use Symfony\Component\HttpFoundation\EventStreamResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
-use Symfony\Component\HttpFoundation\ServerEvent;
 
 /**
  * Drafting plugin: AI-powered content drafting with SSE streaming.
  *
- * Self-contained chat plugin that uses Symfony AI's Agent for LLM
- * orchestration and EventStreamResponse for SSE output. The chat
- * callback is a generator that yields ServerEvent objects --
- * EventStreamResponse drives the iteration.
+ * Uses Drupal AI's provider plugin manager for LLM calls with
+ * streaming, ai_agents config entities for system prompt and tool
+ * definitions, and UiMessageStream for SSE output.
  */
 #[AiEditorialAssistant(
   id: 'drafting',
@@ -48,49 +43,74 @@ use Symfony\Component\HttpFoundation\ServerEvent;
 class DraftingPlugin extends AiAssistantPluginBase {
 
   /**
-   * Constructs a DraftingPlugin.
+   * The AI provider plugin manager.
    *
-   * @param array $configuration
-   *   Plugin configuration array.
-   * @param string $plugin_id
-   *   The plugin ID.
-   * @param mixed $plugin_definition
-   *   The plugin definition.
-   * @param \Drupal\Component\Uuid\UuidInterface $uuid
-   *   UUID generator.
-   * @param \Psr\Log\LoggerInterface $logger
-   *   Logger channel for oe_ai_assistant.
-   * @param \Drupal\oe_ai_assistant\Service\AgentFactory $agentFactory
-   *   Factory for creating Symfony AI Agent instances.
-   * @param \Drupal\Core\TempStore\PrivateTempStoreFactory $tempStoreFactory
-   *   Factory for per-user temp stores (conversation history).
-   * @param \Drupal\Core\Session\AccountProxyInterface $currentUser
-   *   The authenticated Drupal user.
-   * @param \Drupal\oe_ai_assistant\Plugin\AiEditorialAssistant\Drafting\DraftingPromptBuilder $promptBuilder
-   *   Builds the system prompt and tool metadata.
-   * @param \Drupal\content_moderation\ModerationInformationInterface $moderationInformation
-   *   Used to detect moderated bundles and set the initial moderation state.
-   * @param \Drupal\Core\Entity\EntityTypeManagerInterface $entityTypeManager
-   *   Used to load the node_type storage and validate the bundle.
-   * @param \Drupal\oe_ai_assistant\Service\DraftEntityBuilder $draftEntityBuilder
-   *   Builds an unsaved node from the LLM-produced fields map.
+   * @var \Drupal\ai\AiProviderPluginManager
    */
-  public function __construct(
-    array $configuration,
-    $plugin_id,
-    $plugin_definition,
-    protected readonly UuidInterface $uuid,
-    protected readonly LoggerInterface $logger,
-    protected readonly AgentFactory $agentFactory,
-    protected readonly PrivateTempStoreFactory $tempStoreFactory,
-    protected readonly AccountProxyInterface $currentUser,
-    protected readonly DraftingPromptBuilder $promptBuilder,
-    protected readonly ModerationInformationInterface $moderationInformation,
-    protected readonly EntityTypeManagerInterface $entityTypeManager,
-    protected readonly DraftEntityBuilder $draftEntityBuilder,
-  ) {
-    parent::__construct($configuration, $plugin_id, $plugin_definition);
-  }
+  protected AiProviderPluginManager $aiProviderManager;
+
+  /**
+   * The AI agent plugin manager.
+   *
+   * @var \Drupal\ai_agents\PluginManager\AiAgentManager
+   */
+  protected AiAgentManager $aiAgentManager;
+
+  /**
+   * The UI message stream service.
+   *
+   * @var \Drupal\oe_ai_assistant\Service\UiMessageStreamInterface
+   */
+  protected UiMessageStreamInterface $uiMessageStream;
+
+  /**
+   * The conversation store for this plugin's threads.
+   *
+   * @var \Drupal\oe_ai_assistant\Store\ConversationStoreInterface
+   */
+  protected ConversationStoreInterface $conversationStore;
+
+  /**
+   * Logger channel for oe_ai_assistant.
+   *
+   * @var \Psr\Log\LoggerInterface
+   */
+  protected LoggerInterface $logger;
+
+  /**
+   * The prompt builder for schema composition.
+   *
+   * @var \Drupal\oe_ai_assistant\Plugin\AiEditorialAssistant\Drafting\DraftingPromptBuilder
+   */
+  protected DraftingPromptBuilder $promptBuilder;
+
+  /**
+   * The current Drupal user.
+   *
+   * @var \Drupal\Core\Session\AccountProxyInterface
+   */
+  protected AccountProxyInterface $currentUser;
+
+  /**
+   * Content moderation information service.
+   *
+   * @var \Drupal\content_moderation\ModerationInformationInterface
+   */
+  protected ModerationInformationInterface $moderationInformation;
+
+  /**
+   * The entity type manager.
+   *
+   * @var \Drupal\Core\Entity\EntityTypeManagerInterface
+   */
+  protected EntityTypeManagerInterface $entityTypeManager;
+
+  /**
+   * The draft entity builder.
+   *
+   * @var \Drupal\oe_ai_assistant\Service\DraftEntityBuilder
+   */
+  protected DraftEntityBuilder $draftEntityBuilder;
 
   /**
    * {@inheritdoc}
@@ -101,23 +121,22 @@ class DraftingPlugin extends AiAssistantPluginBase {
     $plugin_id,
     $plugin_definition,
   ): static {
-    return new static(
-      $configuration,
-      $plugin_id,
-      $plugin_definition,
-      $container->get('uuid'),
-      $container->get('logger.factory')->get('oe_ai_assistant'),
-      $container->get(AgentFactory::class),
-      $container->get('tempstore.private'),
-      $container->get('current_user'),
-      new DraftingPromptBuilder(
-        $container->get(EntityJsonSchemaComposer::class),
-        $container->get('logger.factory')->get('oe_ai_assistant'),
-      ),
-      $container->get('content_moderation.moderation_information'),
-      $container->get('entity_type.manager'),
-      $container->get(DraftEntityBuilder::class),
+    $instance = new static($configuration, $plugin_id, $plugin_definition);
+    $instance->aiProviderManager = $container->get('ai.provider');
+    $instance->aiAgentManager = $container->get('plugin.manager.ai_agents');
+    $instance->uiMessageStream = $container->get('oe_ai_assistant.ui_message_stream');
+    $instance->conversationStore = $container->get('oe_ai_assistant.conversation_store_factory')
+      ->getStore('oe_ai_drafting', 'conversation');
+    $instance->logger = $container->get('logger.factory')->get('oe_ai_assistant');
+    $instance->promptBuilder = new DraftingPromptBuilder(
+      $container->get(EntityJsonSchemaComposer::class),
+      $instance->logger,
     );
+    $instance->currentUser = $container->get('current_user');
+    $instance->moderationInformation = $container->get('content_moderation.moderation_information');
+    $instance->entityTypeManager = $container->get('entity_type.manager');
+    $instance->draftEntityBuilder = $container->get(DraftEntityBuilder::class);
+    return $instance;
   }
 
   /**
@@ -144,10 +163,6 @@ class DraftingPlugin extends AiAssistantPluginBase {
   /**
    * Streams an AI chat response via SSE.
    *
-   * The callback is a generator that yields ServerEvent objects.
-   * EventStreamResponse drives the iteration, flushing each event
-   * to the client automatically.
-   *
    * @param \Symfony\Component\HttpFoundation\Request $request
    *   The incoming request with a chat message body.
    *
@@ -157,7 +172,6 @@ class DraftingPlugin extends AiAssistantPluginBase {
   public function chat(Request $request): Response {
     $body = $this->decodeJsonBody($request);
     $message = $this->extractUserMessage($body);
-    $threadId = $body['threadId'] ?? '';
 
     if (empty($message)) {
       throw new ActionException(
@@ -166,174 +180,157 @@ class DraftingPlugin extends AiAssistantPluginBase {
     }
 
     $context = $this->buildContext($body);
-    $prompt = $this->promptBuilder->buildSystemPrompt(
-      $context['entityTypeId'], $context['bundle'],
+
+    // Load conversation history and append the user's message.
+    $history = $this->conversationStore->load();
+    $history[] = new ChatMessage('user', $message);
+
+    // Load the router agent config entity for system prompt and tools.
+    $router = $this->aiAgentManager->createInstance('oe_drafting_router');
+
+    // Append content type schema to the agent's system prompt.
+    $systemPrompt = $router->getSystemPrompt()
+      . $this->promptBuilder->buildSchemaText(
+        $context['entityTypeId'], $context['bundle']
+      );
+
+    // Build ChatInput with the full conversation history.
+    $chatInput = new ChatInput($history);
+    $chatInput->setStreamedOutput(TRUE);
+    $chatInput->setSystemPrompt($systemPrompt);
+    $functions = $router->getFunctions();
+    if (!empty($functions['normalized'])) {
+      $chatInput->setChatTools(new ToolsInput($functions['normalized']));
+    }
+
+    // Get the default provider and call the LLM directly.
+    $defaults = $this->aiProviderManager
+      ->getDefaultProviderForOperationType('chat');
+    $provider = $this->aiProviderManager
+      ->createInstance($defaults['provider_id']);
+    $chatOutput = $provider->chat(
+      $chatInput, $defaults['model_id'], ['drafting']
     );
 
-    return $this->createSseResponse(function (EventStreamResponse $response) use (
-      $message, $prompt, $context, $threadId,
-    ) {
-      set_time_limit(0);
-      $sseThreadId = !empty($threadId)
-        ? $threadId : $this->uuid->generate();
+    // Stream the response using UiMessageStream.
+    return $this->uiMessageStream->respond(
+      function (UiMessageStreamInterface $stream) use (
+        $chatOutput, $history, $context,
+      ): void {
+        $stream->start();
 
-      // Load conversation history.
-      $store = new DrupalTempMessageStore(
-        $this->tempStoreFactory, 'oe_ai_drafting', $sseThreadId,
-      );
-      $bag = $store->load();
-      $bag->add(Message::ofUser($message));
-      $bag = $bag->withSystemMessage(Message::forSystem($prompt));
+        // Stream the router response and collect tool calls.
+        $toolCalls = $stream->streamChatOutput($chatOutput, 'router');
 
-      // Tool call events are emitted directly via $response
-      // during stream iteration (inside AgentProcessor).
-      $eventDispatcher = new EventDispatcher();
-      $this->registerToolCallListeners(
-        $eventDispatcher, $response, $context,
-      );
+        // Check if draft_content was called.
+        $draftCall = NULL;
+        foreach ($toolCalls as $tool) {
+          if ($tool->getName() === 'draft_content') {
+            $draftCall = $tool;
+            break;
+          }
+        }
 
-      [$agent] = $this->agentFactory->createAgent(
-        tools: [new DraftContentTool($context['fieldIndex'], $this->logger)],
-        toolMetadata: [$this->promptBuilder->buildToolMetadata()],
-        eventDispatcher: $eventDispatcher,
-      );
+        if ($draftCall !== NULL) {
+          $this->handleDraftToolCall(
+            $stream, $draftCall, $history, $context
+          );
+        }
+        else {
+          // Persist the text response in history.
+          $reconstructed = $chatOutput->getNormalized();
+          if ($reconstructed instanceof StreamedChatMessageIteratorInterface) {
+            $output = $reconstructed->reconstructChatOutput();
+            $responseText = $output->getNormalized()->getText() ?? '';
+          }
+          else {
+            $responseText = $reconstructed->getText() ?? '';
+          }
+          if ($responseText !== '') {
+            $history[] = new ChatMessage('assistant', $responseText);
+          }
+          $this->conversationStore->save($history);
+        }
 
-      // Yield protocol lifecycle + text delta events.
-      // EventStreamResponse drives the iteration.
-      yield from $this->streamChat(
-        $agent, $bag, $store,
-      );
-    });
+        $stream->finish($draftCall ? 'tool_calls' : 'stop');
+      }
+    );
   }
 
   /**
-   * Streams the agent response as ServerEvent objects.
+   * Handles the draft_content tool call result.
    *
-   * This generator yields UI Message Stream Protocol events.
-   * EventStreamResponse iterates and sends each one.
+   * Extracts field values from the tool call arguments, filters
+   * against the known field index, emits a data-drafted-fields
+   * SSE event, and persists the result in conversation history.
    *
-   * @param \Symfony\AI\Agent\AgentInterface $agent
-   *   The configured agent.
-   * @param \Symfony\AI\Platform\Message\MessageBag $bag
-   *   The conversation messages.
-   * @param \Drupal\oe_ai_assistant\Store\DrupalTempMessageStore $store
-   *   The conversation store.
-   *
-   * @return \Generator<\Symfony\Component\HttpFoundation\ServerEvent>
-   *   ServerEvent objects for EventStreamResponse.
+   * @param \Drupal\oe_ai_assistant\Service\UiMessageStreamInterface $stream
+   *   The SSE stream.
+   * @param \Drupal\ai\OperationType\Chat\Tools\ToolsFunctionOutputInterface $draftCall
+   *   The draft_content tool call.
+   * @param \Drupal\ai\OperationType\Chat\ChatMessage[] $history
+   *   The conversation history (mutated in place).
+   * @param array $context
+   *   The drafting context with entityTypeId, bundle, fieldIndex.
    */
-  private function streamChat($agent, $bag, $store): \Generator {
-    $messageId = $this->uuid->generate();
-    yield $this->sse('start', ['messageId' => $messageId]);
-    yield $this->sse('start-step');
-
-    $accumulatedText = '';
-    $textStarted = FALSE;
-    $textId = bin2hex(random_bytes(8));
-
-    try {
-      $result = $agent->call($bag, ['stream' => TRUE]);
-
-      foreach ($result->getContent() as $chunk) {
-        // String chunks from AgentProcessor re-invocation.
-        if (is_string($chunk)) {
-          if (!$textStarted) {
-            yield $this->sse('text-start', ['id' => $textId]);
-            $textStarted = TRUE;
-          }
-          yield $this->sse('text-delta', ['textDelta' => $chunk]);
-          $accumulatedText .= $chunk;
-          continue;
-        }
-
-        if ($chunk instanceof TextDelta) {
-          if (!$textStarted) {
-            yield $this->sse('text-start', ['id' => $textId]);
-            $textStarted = TRUE;
-          }
-          yield $this->sse('text-delta', [
-            'textDelta' => $chunk->getText(),
-          ]);
-          $accumulatedText .= $chunk->getText();
-        }
-        elseif ($chunk instanceof ToolCallStart) {
-          if ($textStarted) {
-            yield $this->sse('text-end');
-            $textStarted = FALSE;
-            $textId = bin2hex(random_bytes(8));
-          }
-        }
-        elseif ($chunk instanceof ToolInputDelta) {
-          yield $this->sse('tool-call-delta', [
-            'argsText' => $chunk->getPartialJson(),
-          ]);
-        }
+  protected function handleDraftToolCall(
+    UiMessageStreamInterface $stream,
+    $draftCall,
+    array &$history,
+    array $context,
+  ): void {
+    // Extract fields from tool call arguments.
+    $fields = [];
+    $changedFields = [];
+    foreach ($draftCall->getArguments() as $arg) {
+      if ($arg->getName() === 'fields') {
+        $fields = $arg->getValue();
       }
-
-      // Close any open text segment.
-      if ($textStarted) {
-        yield $this->sse('text-end');
+      if ($arg->getName() === 'changed_fields') {
+        $changedFields = $arg->getValue();
       }
-
-      // Persist conversation.
-      if ($accumulatedText !== '') {
-        $bag->add(Message::ofAssistant($accumulatedText));
-      }
-      $store->save($bag->withoutSystemMessage());
-
-      yield $this->sse('finish-step', [
-        'finishReason' => 'stop',
-        'usage' => ['inputTokens' => 0, 'outputTokens' => 0],
-        'isContinued' => FALSE,
-      ]);
-      yield $this->sse('finish', [
-        'finishReason' => 'stop',
-        'usage' => ['inputTokens' => 0, 'outputTokens' => 0],
-      ]);
-    }
-    catch (\Exception $e) {
-      $this->logger->error('Chat error: @e', [
-        '@e' => $e->getMessage(),
-      ]);
-      yield $this->sse('error', [
-        'errorText' => $this->formatErrorForChat($e),
-      ]);
-      yield $this->sse('finish', [
-        'finishReason' => 'error',
-        'usage' => ['inputTokens' => 0, 'outputTokens' => 0],
-      ]);
     }
 
-    yield new ServerEvent('[DONE]');
+    // Filter fields against the schema.
+    $fieldIndex = $context['fieldIndex'];
+    if (!empty($fieldIndex)) {
+      $unknownFields = array_diff_key($fields, $fieldIndex);
+      if (!empty($unknownFields)) {
+        $this->logger->notice(
+          'LLM generated unknown fields: @fields',
+          ['@fields' => implode(', ', array_keys($unknownFields))],
+        );
+      }
+      $fields = array_intersect_key($fields, $fieldIndex);
+    }
+
+    // Emit data-drafted-fields event.
+    $stream->customEvent('data-drafted-fields', $fields);
+
+    // Persist the drafted result in history.
+    $history[] = new ChatMessage('assistant', Json::encode([
+      'fields' => $fields,
+      'changedFields' => $changedFields,
+    ]));
+    $this->conversationStore->save($history);
   }
 
   /**
    * Resets the conversation thread.
    *
    * @param \Symfony\Component\HttpFoundation\Request $request
-   *   The incoming request with a threadId key.
+   *   The incoming request.
    *
    * @return array<string, string>
-   *   An array with a new threadId.
+   *   A confirmation response.
    */
   public function reset(Request $request): array {
-    $body = $this->decodeJsonBody($request);
-    $threadId = $body['threadId'] ?? '';
-    if (!empty($threadId)) {
-      $store = new DrupalTempMessageStore(
-        $this->tempStoreFactory, 'oe_ai_drafting', $threadId,
-      );
-      $store->drop();
-    }
-    return ['threadId' => $this->uuid->generate()];
+    $this->conversationStore->drop();
+    return ['status' => 'ok'];
   }
 
   /**
    * Saves a drafted node built from the LLM-produced fields map.
-   *
-   * The unsaved node (and any inline children) come from DraftEntityBuilder;
-   * $node->save() commits the whole tree transactionally via the parent's
-   * preSave chain.
    *
    * @param \Symfony\Component\HttpFoundation\Request $request
    *   The save request.
@@ -342,9 +339,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
    *   An array with `nodeId` and `previewUrl`.
    *
    * @throws \Drupal\oe_ai_assistant\Exception\ActionException
-   *   - 'invalid_bundle' (400) if the bundle does not exist.
-   *   - 'forbidden' (403) if the current user lacks create permission.
-   *   - 'invalid_payload' (400) if the builder rejects the payload.
+   *   On invalid bundle, missing permission, or builder rejection.
    */
   public function save(Request $request): array {
     $body = $this->decodeJsonBody($request);
@@ -369,8 +364,6 @@ class DraftingPlugin extends AiAssistantPluginBase {
       $node = $this->draftEntityBuilder->fromLlmFields('node', $bundle, $fields);
     }
     catch (\Throwable $e) {
-      // Log the raw exception for operators; return a stable, generic message
-      // to the client to avoid leaking internals over HTTP.
       $this->logger->error('Failed to build draft entity: @e', [
         '@e' => (string) $e,
       ]);
@@ -388,8 +381,6 @@ class DraftingPlugin extends AiAssistantPluginBase {
     else {
       $node->setPublished(FALSE);
     }
-    // Atomic save: the parent's preSave chain saves any inline children in
-    // the same transaction.
     $node->save();
 
     return [
@@ -401,15 +392,11 @@ class DraftingPlugin extends AiAssistantPluginBase {
   /**
    * Builds the preview URL for a freshly saved node.
    *
-   * Moderated entities expose a /latest revision route; unmoderated nodes
-   * use the canonical route.
-   *
    * @param \Drupal\node\NodeInterface $node
    *   The newly saved node.
    *
    * @return string
-   *   Relative URL pointing at either the latest revision or the canonical
-   *   page.
+   *   Relative URL for the node preview.
    */
   private function buildPreviewUrl(NodeInterface $node): string {
     return $this->moderationInformation->isModeratedEntity($node)
@@ -418,24 +405,6 @@ class DraftingPlugin extends AiAssistantPluginBase {
   }
 
   // -- Private helpers -------------------------------------------------------
-
-  /**
-   * Creates a ServerEvent for a UI Message Stream Protocol event.
-   *
-   * @param string $type
-   *   The event type.
-   * @param array<string, mixed> $data
-   *   Additional payload fields.
-   *
-   * @return \Symfony\Component\HttpFoundation\ServerEvent
-   *   The SSE event.
-   */
-  private function sse(string $type, array $data = []): ServerEvent {
-    $data['type'] = $type;
-    return new ServerEvent(
-      json_encode($data, JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE),
-    );
-  }
 
   /**
    * Extracts the user message from the request body.
@@ -489,67 +458,6 @@ class DraftingPlugin extends AiAssistantPluginBase {
       'fieldIndex' => $this->promptBuilder
         ->buildFieldIndex($entityTypeId, $bundle),
     ];
-  }
-
-  /**
-   * Registers Symfony AI event listeners for tool call lifecycle.
-   *
-   * These fire during stream iteration (inside AgentProcessor)
-   * and emit SSE events directly via the response -- they cannot
-   * yield because they run inside the generator, not at the top
-   * level.
-   *
-   * @param \Symfony\Component\EventDispatcher\EventDispatcher $eventDispatcher
-   *   The event dispatcher shared with the Toolbox.
-   * @param \Symfony\Component\HttpFoundation\EventStreamResponse $response
-   *   The SSE response for direct event emission.
-   * @param array $context
-   *   The context from buildContext().
-   */
-  private function registerToolCallListeners(
-    EventDispatcher $eventDispatcher,
-    EventStreamResponse $response,
-    array $context,
-  ): void {
-    $fieldIndex = $context['fieldIndex'];
-
-    $eventDispatcher->addListener(
-      ToolCallSucceeded::class,
-      function (ToolCallSucceeded $event) use (
-        $response, $fieldIndex,
-      ): void {
-        $toolCall = $event->getResult()->getToolCall();
-        $result = $event->getResult()->getResult();
-
-        // Tool lifecycle events.
-        $response->sendEvent($this->sse('tool-call-start', [
-          'id' => $this->uuid->generate(),
-          'toolCallId' => $toolCall->getId(),
-          'toolName' => $toolCall->getName(),
-        ]));
-        $response->sendEvent($this->sse('tool-call-end'));
-        $response->sendEvent($this->sse('tool-result', [
-          'toolCallId' => $toolCall->getId(),
-          'result' => is_string($result)
-            ? (json_decode($result, TRUE) ?? $result)
-            : $result,
-        ]));
-
-        // Emit data-drafted-fields for draft_content results.
-        if ($toolCall->getName() === 'draft_content') {
-          $resultData = json_decode((string) $result, TRUE);
-          $draftedFields = $resultData['fields'] ?? [];
-          if (!empty($fieldIndex)) {
-            $draftedFields = array_intersect_key(
-              $draftedFields, $fieldIndex,
-            );
-          }
-          $response->sendEvent($this->sse('data-drafted-fields', [
-            'data' => $draftedFields,
-          ]));
-        }
-      },
-    );
   }
 
   /**
