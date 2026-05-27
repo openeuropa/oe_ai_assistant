@@ -204,27 +204,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
     $chatInput->setStreamedOutput(TRUE);
     $chatInput->setSystemPrompt($systemPrompt);
 
-    // Define the draft_content tool inline so the LLM can return
-    // structured field values. No FunctionCall plugin needed; the
-    // tool call result is handled directly after streaming.
-    // Note: 'required' is set via setRequired() rather than in the
-    // property array to avoid rendering it as a boolean inside the
-    // property schema (providers reject that).
-    $fieldsProp = new ToolsPropertyInput('fields', [
-      'type' => 'object',
-      'description' => 'An object mapping field machine names to their values.',
-    ]);
-    $fieldsProp->setRequired(TRUE);
-    $changedProp = new ToolsPropertyInput('changed_fields', [
-      'type' => 'array',
-      'description' => 'List of field machine names that were created or modified.',
-      'items' => ['type' => 'string'],
-    ]);
-    $draftTool = new ToolsFunctionInput();
-    $draftTool->setName('draft_content');
-    $draftTool->setDescription('Generate or update field values for a content draft. Call this whenever the user asks to draft, create, update, or modify content fields.');
-    $draftTool->setProperties([$fieldsProp, $changedProp]);
-    $chatInput->setChatTools(new ToolsInput([$draftTool]));
+    $chatInput->setChatTools(new ToolsInput([$this->buildDraftTool()]));
 
     // Get the default provider and call the LLM directly.
     $defaults = $this->aiProviderManager
@@ -387,6 +367,44 @@ class DraftingPlugin extends AiAssistantPluginBase {
       'nodeId' => (string) $node->id(),
       'previewUrl' => $this->buildPreviewUrl($node),
     ];
+  }
+
+  /**
+   * Builds the draft_content tool definition.
+   *
+   * Defines the tool schema inline so the LLM can return structured
+   * field values. No FunctionCall plugin class needed; the tool call
+   * result is handled directly after streaming.
+   *
+   * @return \Drupal\ai\OperationType\Chat\Tools\ToolsFunctionInput
+   *   The draft_content tool definition.
+   */
+  private function buildDraftTool(): ToolsFunctionInput {
+    // Note: 'required' is set via setRequired() rather than in the
+    // property array to avoid rendering it as a boolean inside the
+    // property schema (providers reject that).
+    $fieldsProp = new ToolsPropertyInput('fields', [
+      'type' => 'object',
+      'description' => 'An object mapping field machine names to their values.',
+    ]);
+    $fieldsProp->setRequired(TRUE);
+
+    $changedProp = new ToolsPropertyInput('changed_fields', [
+      'type' => 'array',
+      'description' => 'List of field machine names that were created or modified.',
+      'items' => ['type' => 'string'],
+    ]);
+
+    $tool = new ToolsFunctionInput();
+    $tool->setName('draft_content');
+    $tool->setDescription(
+      'Generate or update field values for a content draft.'
+      . ' Call this whenever the user asks to draft, create,'
+      . ' update, or modify content fields.'
+    );
+    $tool->setProperties([$fieldsProp, $changedProp]);
+
+    return $tool;
   }
 
   /**
