@@ -4,18 +4,18 @@ services:
 
   Drupal\oe_ai_assistant\Service\RequestValidator: {}
 
+  Drupal\oe_ai_assistant\Service\EntityJsonSchemaComposer:
+    arguments:
+      - '@serializer'
+      - '@entity_type.manager'
+      - '@entity_type.bundle.info'
+
   Drupal\oe_ai_assistant\Service\AiEditorialContext:
     arguments:
       - '@entity_type.manager'
 
   Drupal\oe_ai_assistant\Service\AiEditorialContextInterface:
     alias: Drupal\oe_ai_assistant\Service\AiEditorialContext
-
-  Drupal\oe_ai_assistant\Service\ContentTypeSchemaExtractor:
-    arguments:
-      - '@serializer'
-      - '@entity_type.manager'
-      - '@entity_type.bundle.info'
 
   Drupal\oe_ai_assistant\Service\InlineEntityHydrator:
     arguments:
