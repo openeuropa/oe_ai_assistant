@@ -5,13 +5,20 @@ declare(strict_types=1);
 namespace Drupal\oe_ai_assistant_agent_test\Plugin\AiProvider;
 
 use Drupal\ai\OperationType\Chat\StreamedChatMessageIterator;
+use Drupal\ai\OperationType\Chat\Tools\ToolsFunctionOutput;
 
 /**
  * Streams a MockResponse as word-by-word chat message chunks.
  *
  * Extends the base StreamedChatMessageIterator so the Drupal AI framework
- * handles buffering, security filtering, tool call assembly, and ChatOutput
- * reconstruction identically to a real provider like Mistral or OpenAI.
+ * handles buffering, security filtering, and ChatOutput reconstruction
+ * identically to a real provider like Mistral or OpenAI.
+ *
+ * Tool calls are returned as proper ToolsFunctionOutput objects via
+ * getTools(), bypassing the base class's assembleToolCalls() which
+ * expects the OpenAI incremental delta format. The mock provider
+ * delivers complete tool calls at once (like Mistral), so no
+ * incremental assembly is needed.
  */
 class MockChatMessageIterator extends StreamedChatMessageIterator {
 
@@ -91,15 +98,15 @@ class MockChatMessageIterator extends StreamedChatMessageIterator {
       return;
     }
 
-    // Tool-call response: yield a single chunk with tool data, no text.
-    // Pass tool call arrays directly -- the patched assembleToolCalls()
-    // in drupal/ai handles both arrays and objects.
+    // Tool-call response: yield a single empty chunk. Tool calls
+    // are returned via getTools() as proper ToolsFunctionOutput
+    // objects, bypassing assembleToolCalls().
     if ($this->mockResponse->toolCalls !== NULL) {
       $streamedMessage = $this->createStreamedChatMessage(
         'assistant',
         '',
         [],
-        $this->mockResponse->toolCalls,
+        NULL,
         [],
       );
 
@@ -112,6 +119,38 @@ class MockChatMessageIterator extends StreamedChatMessageIterator {
 
       yield $streamedMessage;
     }
+  }
+
+  /**
+   * {@inheritdoc}
+   *
+   * Builds ToolsFunctionOutput objects directly from the mock response
+   * instead of relying on assembleToolCalls(), which expects the
+   * OpenAI incremental delta format with toArray() on each chunk.
+   */
+  public function getTools(): array {
+    if ($this->mockResponse->toolCalls === NULL) {
+      return [];
+    }
+
+    $tools = [];
+    foreach ($this->mockResponse->toolCalls as $toolCall) {
+      $fn = $toolCall['function'] ?? [];
+      $arguments = $fn['arguments'] ?? [];
+      // Arguments may be a JSON string or an already-decoded array.
+      if (is_string($arguments)) {
+        $arguments = json_decode($arguments, TRUE) ?? [];
+      }
+      $output = new ToolsFunctionOutput(
+        NULL,
+        $toolCall['id'] ?? '',
+        $arguments,
+      );
+      $output->setName($fn['name'] ?? '');
+      $tools[] = $output;
+    }
+
+    return $tools;
   }
 
 }
