@@ -444,7 +444,7 @@ class AgentTestPluginTest extends ExistingSiteBase {
     // Reconstruct the full text from all text-delta events.
     $fullText = '';
     foreach ($textDeltas as $delta) {
-      $fullText .= $delta['data']['textDelta'];
+      $fullText .= $delta['textDelta'];
     }
     $this->assertEquals(
       'Hello from the mock LLM provider.',
