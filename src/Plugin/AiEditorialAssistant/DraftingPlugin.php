@@ -8,6 +8,9 @@ use Drupal\ai\AiProviderPluginManager;
 use Drupal\ai\OperationType\Chat\ChatInput;
 use Drupal\ai\OperationType\Chat\ChatMessage;
 use Drupal\ai\OperationType\Chat\StreamedChatMessageIteratorInterface;
+use Drupal\ai\OperationType\Chat\Tools\ToolsFunctionInput;
+use Drupal\ai\OperationType\Chat\Tools\ToolsInput;
+use Drupal\ai\OperationType\Chat\Tools\ToolsPropertyInput;
 use Drupal\ai_agents\PluginManager\AiAgentManager;
 use Drupal\Component\Serialization\Json;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
@@ -201,6 +204,26 @@ class DraftingPlugin extends AiAssistantPluginBase {
     $chatInput->setStreamedOutput(TRUE);
     $chatInput->setSystemPrompt($systemPrompt);
 
+    // Define the draft_content tool inline so the LLM can return
+    // structured field values. No FunctionCall plugin needed; the
+    // tool call result is handled directly after streaming.
+    $draftTool = new ToolsFunctionInput();
+    $draftTool->setName('draft_content');
+    $draftTool->setDescription('Generate or update field values for a content draft. Call this whenever the user asks to draft, create, update, or modify content fields.');
+    $draftTool->setProperties([
+      new ToolsPropertyInput('fields', [
+        'type' => 'object',
+        'description' => 'An object mapping field machine names to their values.',
+        'required' => TRUE,
+      ]),
+      new ToolsPropertyInput('changed_fields', [
+        'type' => 'array',
+        'description' => 'List of field machine names that were created or modified.',
+        'required' => FALSE,
+      ]),
+    ]);
+    $chatInput->setChatTools(new ToolsInput([$draftTool]));
+
     // Get the default provider and call the LLM directly.
     $defaults = $this->aiProviderManager
       ->getDefaultProviderForOperationType('chat');
@@ -211,30 +234,73 @@ class DraftingPlugin extends AiAssistantPluginBase {
     );
 
     // Stream the response using UiMessageStream.
+    $fieldIndex = $this->buildFieldIndex(
+      $context['entityTypeId'], $context['bundle']
+    );
+
     return $this->uiMessageStream->respond(
       function (UiMessageStreamInterface $stream) use (
-        $chatOutput, $history,
+        $chatOutput, $history, $fieldIndex,
       ): void {
         $stream->start();
 
-        // Stream the LLM response as SSE text-delta events.
-        $stream->streamChatOutput($chatOutput, 'router');
+        // Stream the LLM response and collect any tool calls.
+        $toolCalls = $stream->streamChatOutput($chatOutput, 'router');
 
-        // Persist the text response in history.
-        $reconstructed = $chatOutput->getNormalized();
-        if ($reconstructed instanceof StreamedChatMessageIteratorInterface) {
-          $output = $reconstructed->reconstructChatOutput();
-          $responseText = $output->getNormalized()->getText() ?? '';
+        // Check if draft_content was called.
+        $draftCall = NULL;
+        foreach ($toolCalls as $tool) {
+          if ($tool->getName() === 'draft_content') {
+            $draftCall = $tool;
+            break;
+          }
+        }
+
+        if ($draftCall !== NULL) {
+          // Extract fields from tool call arguments.
+          $fields = [];
+          foreach ($draftCall->getArguments() as $arg) {
+            if ($arg->getName() === 'fields') {
+              $fields = $arg->getValue();
+            }
+          }
+
+          // Filter fields against the schema.
+          if (!empty($fieldIndex)) {
+            $unknownFields = array_diff_key($fields, $fieldIndex);
+            if (!empty($unknownFields)) {
+              $this->logger->notice(
+                'LLM generated unknown fields: @fields',
+                ['@fields' => implode(', ', array_keys($unknownFields))],
+              );
+            }
+            $fields = array_intersect_key($fields, $fieldIndex);
+          }
+
+          // Emit data-drafted-fields for the frontend content table.
+          $stream->customEvent('data-drafted-fields', $fields);
+
+          // Persist the drafted result in history.
+          $history[] = new ChatMessage('assistant', Json::encode($fields));
+          $this->conversationStore->save($history);
         }
         else {
-          $responseText = $reconstructed->getText() ?? '';
+          // Persist the text response in history.
+          $reconstructed = $chatOutput->getNormalized();
+          if ($reconstructed instanceof StreamedChatMessageIteratorInterface) {
+            $output = $reconstructed->reconstructChatOutput();
+            $responseText = $output->getNormalized()->getText() ?? '';
+          }
+          else {
+            $responseText = $reconstructed->getText() ?? '';
+          }
+          if ($responseText !== '') {
+            $history[] = new ChatMessage('assistant', $responseText);
+          }
+          $this->conversationStore->save($history);
         }
-        if ($responseText !== '') {
-          $history[] = new ChatMessage('assistant', $responseText);
-        }
-        $this->conversationStore->save($history);
 
-        $stream->finish();
+        $stream->finish($draftCall ? 'tool_calls' : 'stop');
       }
     );
   }
@@ -378,6 +444,32 @@ class DraftingPlugin extends AiAssistantPluginBase {
       'entityTypeId' => $entityTypeId,
       'bundle' => $bundle,
     ];
+  }
+
+  /**
+   * Builds a flat field index from the content type schema.
+   *
+   * Used to filter LLM-generated fields against known field names.
+   *
+   * @param string $entityTypeId
+   *   The entity type ID (e.g. "node").
+   * @param string $bundle
+   *   The bundle machine name (e.g. "article").
+   *
+   * @return array<string, array>
+   *   Field schemas keyed by machine name, or empty array on failure.
+   */
+  private function buildFieldIndex(string $entityTypeId, string $bundle): array {
+    if (empty($bundle)) {
+      return [];
+    }
+    try {
+      $schema = $this->getComposedSchema($entityTypeId, $bundle);
+      return $schema['properties'] ?? [];
+    }
+    catch (\Exception) {
+      return [];
+    }
   }
 
   /**

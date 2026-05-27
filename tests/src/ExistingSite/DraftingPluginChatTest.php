@@ -173,6 +173,65 @@ class DraftingPluginChatTest extends ExistingSiteBase {
   }
 
   /**
+   * Tests that a draft_content tool call emits data-drafted-fields.
+   *
+   * When the LLM calls the draft_content tool, the plugin should
+   * emit a data-drafted-fields custom event with the field values
+   * so the frontend can populate the content table.
+   */
+  public function testToolCallEmitsDraftedFields(): void {
+    $user = $this->createUser(['use oe ai assistant']);
+    $this->loginUser($user);
+
+    MockAiProvider::enqueue(new MockResponse(
+      toolCalls: [
+        [
+          'id' => 'call_1',
+          'type' => 'function',
+          'function' => [
+            'name' => 'draft_content',
+            'arguments' => json_encode([
+              'fields' => [
+                'title' => [['value' => 'Test Title']],
+                'body' => [['value' => '<p>Test body.</p>', 'format' => 'full_html']],
+              ],
+              'changed_fields' => ['title', 'body'],
+            ]),
+          ],
+        ],
+      ],
+    ));
+
+    $result = $this->httpPost('/api/ai/plugins/drafting/chat', [
+      'message' => 'Draft a news article about testing.',
+      'bundle' => 'oe_news',
+      'entityTypeId' => 'node',
+    ]);
+
+    $this->assertEquals(200, $result['status'],
+      'Expected 200 response. Body: ' . substr($result['body'], 0, 500));
+
+    $events = $this->parseSseEvents($result['body']);
+
+    // Find the data-drafted-fields event.
+    $draftedEvents = array_filter(
+      $events,
+      fn($e) => $e['type'] === 'data-drafted-fields',
+    );
+    $this->assertNotEmpty($draftedEvents,
+      'SSE must include a data-drafted-fields event.');
+
+    // Verify the drafted fields contain the expected data.
+    $draftedEvent = reset($draftedEvents);
+    $fields = $draftedEvent['data'] ?? [];
+    $this->assertArrayHasKey('title', $fields,
+      'Drafted fields should include title.');
+    $this->assertEquals('Test Title',
+      $fields['title'][0]['value'] ?? '',
+      'Title value should match the mock response.');
+  }
+
+  /**
    * Tests that an empty message returns a 400 error.
    */
   public function testEmptyMessageReturns400(): void {
