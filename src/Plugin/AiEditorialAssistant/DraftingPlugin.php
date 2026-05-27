@@ -18,7 +18,6 @@ use Drupal\node\NodeInterface;
 use Drupal\oe_ai_assistant\Annotation\AiEditorialAssistant;
 use Drupal\oe_ai_assistant\Exception\ActionException;
 use Drupal\oe_ai_assistant\Plugin\AiAssistantPluginBase;
-use Drupal\oe_ai_assistant\Plugin\AiEditorialAssistant\Drafting\DraftingPromptBuilder;
 use Drupal\oe_ai_assistant\Service\DraftEntityBuilder;
 use Drupal\oe_ai_assistant\Service\EntityJsonSchemaComposer;
 use Drupal\oe_ai_assistant\Service\UiMessageStreamInterface;
@@ -78,11 +77,18 @@ class DraftingPlugin extends AiAssistantPluginBase {
   protected LoggerInterface $logger;
 
   /**
-   * The prompt builder for schema composition.
+   * The JSON Schema composer service.
    *
-   * @var \Drupal\oe_ai_assistant\Plugin\AiEditorialAssistant\Drafting\DraftingPromptBuilder
+   * @var \Drupal\oe_ai_assistant\Service\EntityJsonSchemaComposer
    */
-  protected DraftingPromptBuilder $promptBuilder;
+  protected EntityJsonSchemaComposer $schemaComposer;
+
+  /**
+   * Per-request schema cache keyed by "entityTypeId:bundle".
+   *
+   * @var array<string, array>
+   */
+  private array $cachedSchema = [];
 
   /**
    * The current Drupal user.
@@ -128,10 +134,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
     $instance->conversationStore = $container->get('oe_ai_assistant.conversation_store_factory')
       ->getStore('oe_ai_drafting', 'conversation');
     $instance->logger = $container->get('logger.factory')->get('oe_ai_assistant');
-    $instance->promptBuilder = new DraftingPromptBuilder(
-      $container->get(EntityJsonSchemaComposer::class),
-      $instance->logger,
-    );
+    $instance->schemaComposer = $container->get(EntityJsonSchemaComposer::class);
     $instance->currentUser = $container->get('current_user');
     $instance->moderationInformation = $container->get('content_moderation.moderation_information');
     $instance->entityTypeManager = $container->get('entity_type.manager');
@@ -190,7 +193,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
 
     // Append content type schema to the agent's system prompt.
     $systemPrompt = $router->getSystemPrompt()
-      . $this->promptBuilder->buildSchemaText(
+      . $this->buildSchemaText(
         $context['entityTypeId'], $context['bundle']
       );
 
@@ -453,9 +456,84 @@ class DraftingPlugin extends AiAssistantPluginBase {
     return [
       'entityTypeId' => $entityTypeId,
       'bundle' => $bundle,
-      'fieldIndex' => $this->promptBuilder
-        ->buildFieldIndex($entityTypeId, $bundle),
+      'fieldIndex' => $this->buildFieldIndex($entityTypeId, $bundle),
     ];
+  }
+
+  /**
+   * Returns the content type schema as text for the system prompt.
+   *
+   * @param string $entityTypeId
+   *   The entity type ID (e.g. "node").
+   * @param string $bundle
+   *   The bundle machine name (e.g. "oe_news").
+   *
+   * @return string
+   *   The schema as "\n\nContent type schema:\n{json}", or empty
+   *   string if the bundle is empty or composition fails.
+   */
+  private function buildSchemaText(string $entityTypeId, string $bundle): string {
+    if (empty($bundle)) {
+      return '';
+    }
+    try {
+      $schema = $this->getComposedSchema($entityTypeId, $bundle);
+      return "\n\nContent type schema:\n" . Json::encode($schema);
+    }
+    catch (\Exception $e) {
+      $this->logger->warning('Could not load schema for @type/@bundle: @error', [
+        '@type' => $entityTypeId,
+        '@bundle' => $bundle,
+        '@error' => $e->getMessage(),
+      ]);
+      return '';
+    }
+  }
+
+  /**
+   * Builds a flat field index from the content type schema.
+   *
+   * @param string $entityTypeId
+   *   The entity type ID (e.g. "node").
+   * @param string $bundle
+   *   The bundle machine name (e.g. "article").
+   *
+   * @return array<string, array>
+   *   Field schemas keyed by machine name, or empty array on failure.
+   */
+  private function buildFieldIndex(string $entityTypeId, string $bundle): array {
+    if (empty($bundle)) {
+      return [];
+    }
+    try {
+      $schema = $this->getComposedSchema($entityTypeId, $bundle);
+      return $schema['properties'] ?? [];
+    }
+    catch (\Exception) {
+      return [];
+    }
+  }
+
+  /**
+   * Returns the composed schema, using a per-request cache.
+   *
+   * @param string $entityTypeId
+   *   The entity type ID.
+   * @param string $bundle
+   *   The bundle machine name.
+   *
+   * @return array<string, mixed>
+   *   The composed schema array.
+   */
+  private function getComposedSchema(string $entityTypeId, string $bundle): array {
+    $cacheKey = "$entityTypeId:$bundle";
+    if (!isset($this->cachedSchema[$cacheKey])) {
+      $this->cachedSchema[$cacheKey] = $this->schemaComposer->compose(
+        $entityTypeId,
+        $bundle,
+      );
+    }
+    return $this->cachedSchema[$cacheKey];
   }
 
 }
