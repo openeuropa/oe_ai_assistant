@@ -8,7 +8,6 @@ use Drupal\ai\AiProviderPluginManager;
 use Drupal\ai\OperationType\Chat\ChatInput;
 use Drupal\ai\OperationType\Chat\ChatMessage;
 use Drupal\ai\OperationType\Chat\StreamedChatMessageIteratorInterface;
-use Drupal\ai\OperationType\Chat\Tools\ToolsInput;
 use Drupal\ai_agents\PluginManager\AiAgentManager;
 use Drupal\Component\Serialization\Json;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
@@ -201,10 +200,6 @@ class DraftingPlugin extends AiAssistantPluginBase {
     $chatInput = new ChatInput($history);
     $chatInput->setStreamedOutput(TRUE);
     $chatInput->setSystemPrompt($systemPrompt);
-    $functions = $router->getFunctions();
-    if (!empty($functions['normalized'])) {
-      $chatInput->setChatTools(new ToolsInput($functions['normalized']));
-    }
 
     // Get the default provider and call the LLM directly.
     $defaults = $this->aiProviderManager
@@ -218,104 +213,30 @@ class DraftingPlugin extends AiAssistantPluginBase {
     // Stream the response using UiMessageStream.
     return $this->uiMessageStream->respond(
       function (UiMessageStreamInterface $stream) use (
-        $chatOutput, $history, $context,
+        $chatOutput, $history,
       ): void {
         $stream->start();
 
-        // Stream the router response and collect tool calls.
-        $toolCalls = $stream->streamChatOutput($chatOutput, 'router');
+        // Stream the LLM response as SSE text-delta events.
+        $stream->streamChatOutput($chatOutput, 'router');
 
-        // Check if draft_content was called.
-        $draftCall = NULL;
-        foreach ($toolCalls as $tool) {
-          if ($tool->getName() === 'draft_content') {
-            $draftCall = $tool;
-            break;
-          }
-        }
-
-        if ($draftCall !== NULL) {
-          $this->handleDraftToolCall(
-            $stream, $draftCall, $history, $context
-          );
+        // Persist the text response in history.
+        $reconstructed = $chatOutput->getNormalized();
+        if ($reconstructed instanceof StreamedChatMessageIteratorInterface) {
+          $output = $reconstructed->reconstructChatOutput();
+          $responseText = $output->getNormalized()->getText() ?? '';
         }
         else {
-          // Persist the text response in history.
-          $reconstructed = $chatOutput->getNormalized();
-          if ($reconstructed instanceof StreamedChatMessageIteratorInterface) {
-            $output = $reconstructed->reconstructChatOutput();
-            $responseText = $output->getNormalized()->getText() ?? '';
-          }
-          else {
-            $responseText = $reconstructed->getText() ?? '';
-          }
-          if ($responseText !== '') {
-            $history[] = new ChatMessage('assistant', $responseText);
-          }
-          $this->conversationStore->save($history);
+          $responseText = $reconstructed->getText() ?? '';
         }
+        if ($responseText !== '') {
+          $history[] = new ChatMessage('assistant', $responseText);
+        }
+        $this->conversationStore->save($history);
 
-        $stream->finish($draftCall ? 'tool_calls' : 'stop');
+        $stream->finish();
       }
     );
-  }
-
-  /**
-   * Handles the draft_content tool call result.
-   *
-   * Extracts field values from the tool call arguments, filters
-   * against the known field index, emits a data-drafted-fields
-   * SSE event, and persists the result in conversation history.
-   *
-   * @param \Drupal\oe_ai_assistant\Service\UiMessageStreamInterface $stream
-   *   The SSE stream.
-   * @param \Drupal\ai\OperationType\Chat\Tools\ToolsFunctionOutputInterface $draftCall
-   *   The draft_content tool call.
-   * @param \Drupal\ai\OperationType\Chat\ChatMessage[] $history
-   *   The conversation history (mutated in place).
-   * @param array $context
-   *   The drafting context with entityTypeId, bundle, fieldIndex.
-   */
-  protected function handleDraftToolCall(
-    UiMessageStreamInterface $stream,
-    $draftCall,
-    array &$history,
-    array $context,
-  ): void {
-    // Extract fields from tool call arguments.
-    $fields = [];
-    $changedFields = [];
-    foreach ($draftCall->getArguments() as $arg) {
-      if ($arg->getName() === 'fields') {
-        $fields = $arg->getValue();
-      }
-      if ($arg->getName() === 'changed_fields') {
-        $changedFields = $arg->getValue();
-      }
-    }
-
-    // Filter fields against the schema.
-    $fieldIndex = $context['fieldIndex'];
-    if (!empty($fieldIndex)) {
-      $unknownFields = array_diff_key($fields, $fieldIndex);
-      if (!empty($unknownFields)) {
-        $this->logger->notice(
-          'LLM generated unknown fields: @fields',
-          ['@fields' => implode(', ', array_keys($unknownFields))],
-        );
-      }
-      $fields = array_intersect_key($fields, $fieldIndex);
-    }
-
-    // Emit data-drafted-fields event.
-    $stream->customEvent('data-drafted-fields', $fields);
-
-    // Persist the drafted result in history.
-    $history[] = new ChatMessage('assistant', Json::encode([
-      'fields' => $fields,
-      'changedFields' => $changedFields,
-    ]));
-    $this->conversationStore->save($history);
   }
 
   /**
@@ -445,7 +366,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
    *   The decoded request body.
    *
    * @return array
-   *   Context with entityTypeId, bundle, and fieldIndex.
+   *   Context with entityTypeId and bundle.
    */
   private function buildContext(array $body): array {
     $forwardedProps = $body['forwardedProps'] ?? [];
@@ -456,7 +377,6 @@ class DraftingPlugin extends AiAssistantPluginBase {
     return [
       'entityTypeId' => $entityTypeId,
       'bundle' => $bundle,
-      'fieldIndex' => $this->buildFieldIndex($entityTypeId, $bundle),
     ];
   }
 
@@ -487,30 +407,6 @@ class DraftingPlugin extends AiAssistantPluginBase {
         '@error' => $e->getMessage(),
       ]);
       return '';
-    }
-  }
-
-  /**
-   * Builds a flat field index from the content type schema.
-   *
-   * @param string $entityTypeId
-   *   The entity type ID (e.g. "node").
-   * @param string $bundle
-   *   The bundle machine name (e.g. "article").
-   *
-   * @return array<string, array>
-   *   Field schemas keyed by machine name, or empty array on failure.
-   */
-  private function buildFieldIndex(string $entityTypeId, string $bundle): array {
-    if (empty($bundle)) {
-      return [];
-    }
-    try {
-      $schema = $this->getComposedSchema($entityTypeId, $bundle);
-      return $schema['properties'] ?? [];
-    }
-    catch (\Exception) {
-      return [];
     }
   }
 
