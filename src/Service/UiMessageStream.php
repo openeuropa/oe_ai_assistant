@@ -108,7 +108,7 @@ class UiMessageStream implements UiMessageStreamInterface {
    * {@inheritdoc}
    */
   public function customEvent(string $type, array $data): void {
-    $this->emit($type, $data);
+    $this->emit($type, ['data' => $data]);
   }
 
   /**
@@ -195,8 +195,9 @@ class UiMessageStream implements UiMessageStreamInterface {
    *   The event data payload.
    */
   protected function emit(string $type, array $data): void {
+    $data['type'] = $type;
     $json = json_encode(
-      ['type' => $type, 'data' => $data],
+      $data,
       JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE
     );
     echo "data: $json\n\n";

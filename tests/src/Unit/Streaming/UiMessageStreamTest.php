@@ -121,11 +121,11 @@ class UiMessageStreamTest extends TestCase {
     }
 
     $this->assertEquals('start', $events[0]['type']);
-    $this->assertEquals('test-message-id', $events[0]['data']['messageId']);
+    $this->assertEquals('test-message-id', $events[0]['messageId']);
     $this->assertEquals('text-delta', $events[1]['type']);
-    $this->assertEquals('Hello', $events[1]['data']['textDelta']);
+    $this->assertEquals('Hello', $events[1]['textDelta']);
     $this->assertEquals('finish', $events[2]['type']);
-    $this->assertEquals('stop', $events[2]['data']['finishReason']);
+    $this->assertEquals('stop', $events[2]['finishReason']);
   }
 
   /**
@@ -163,9 +163,9 @@ class UiMessageStreamTest extends TestCase {
     $events = array_map(fn($f) => json_decode(str_replace('data: ', '', trim($f)), TRUE), $frames);
 
     $this->assertEquals('start-step', $events[0]['type']);
-    $this->assertEquals('main_fields', $events[0]['data']['stepId']);
+    $this->assertEquals('main_fields', $events[0]['stepId']);
     $this->assertEquals('finish-step', $events[1]['type']);
-    $this->assertEquals('main_fields', $events[1]['data']['stepId']);
+    $this->assertEquals('main_fields', $events[1]['stepId']);
   }
 
   /**
@@ -180,8 +180,8 @@ class UiMessageStreamTest extends TestCase {
 
     $data = json_decode(str_replace('data: ', '', trim($output)), TRUE);
     $this->assertEquals('error', $data['type']);
-    $this->assertEquals('Something failed', $data['data']['errorText']);
-    $this->assertEquals('item_hero', $data['data']['step']);
+    $this->assertEquals('Something failed', $data['errorText']);
+    $this->assertEquals('item_hero', $data['step']);
   }
 
 }
