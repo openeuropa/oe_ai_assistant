@@ -282,8 +282,16 @@ class DraftingPlugin extends AiAssistantPluginBase {
           // Emit data-drafted-fields for the frontend content table.
           $stream->customEvent('data-drafted-fields', $fields);
 
+          // Emit a text confirmation so the chat UI shows a response
+          // instead of infinite loading dots.
+          $confirmText = 'Draft generated with '
+            . count($fields) . ' fields. Review the content on the right.';
+          $stream->startStep('confirmation');
+          $stream->textDelta($confirmText);
+          $stream->finishStep('confirmation');
+
           // Persist the drafted result in history.
-          $history[] = new ChatMessage('assistant', Json::encode($fields));
+          $history[] = new ChatMessage('assistant', $confirmText);
           $this->conversationStore->save($history);
         }
         else {
