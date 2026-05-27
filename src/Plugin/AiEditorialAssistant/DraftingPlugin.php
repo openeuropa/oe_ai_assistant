@@ -207,21 +207,23 @@ class DraftingPlugin extends AiAssistantPluginBase {
     // Define the draft_content tool inline so the LLM can return
     // structured field values. No FunctionCall plugin needed; the
     // tool call result is handled directly after streaming.
+    // Note: 'required' is set via setRequired() rather than in the
+    // property array to avoid rendering it as a boolean inside the
+    // property schema (providers reject that).
+    $fieldsProp = new ToolsPropertyInput('fields', [
+      'type' => 'object',
+      'description' => 'An object mapping field machine names to their values.',
+    ]);
+    $fieldsProp->setRequired(TRUE);
+    $changedProp = new ToolsPropertyInput('changed_fields', [
+      'type' => 'array',
+      'description' => 'List of field machine names that were created or modified.',
+      'items' => ['type' => 'string'],
+    ]);
     $draftTool = new ToolsFunctionInput();
     $draftTool->setName('draft_content');
     $draftTool->setDescription('Generate or update field values for a content draft. Call this whenever the user asks to draft, create, update, or modify content fields.');
-    $draftTool->setProperties([
-      new ToolsPropertyInput('fields', [
-        'type' => 'object',
-        'description' => 'An object mapping field machine names to their values.',
-        'required' => TRUE,
-      ]),
-      new ToolsPropertyInput('changed_fields', [
-        'type' => 'array',
-        'description' => 'List of field machine names that were created or modified.',
-        'required' => FALSE,
-      ]),
-    ]);
+    $draftTool->setProperties([$fieldsProp, $changedProp]);
     $chatInput->setChatTools(new ToolsInput([$draftTool]));
 
     // Get the default provider and call the LLM directly.
