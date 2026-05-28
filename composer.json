@@ -50,8 +50,8 @@
         "composer-exit-on-patch-failure": true,
         "enable-patching": true,
         "patches": {
-            "drupal/ai": {
-                "Fix assembleToolCalls to handle both array and object tool formats": "patches/ai-assemble-tool-calls-array-support.patch"
+            "drupal/ai_provider_mistral": {
+                "Return proper ToolsFunctionOutput objects from streaming tool calls": "patches/ai-provider-mistral-streaming-tool-calls.patch"
             }
         },
         "installer-paths": {

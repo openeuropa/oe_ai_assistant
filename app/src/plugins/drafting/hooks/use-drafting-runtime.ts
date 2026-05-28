@@ -22,7 +22,7 @@ import type {
   DraftedInlineEntity,
   DraftedSubField,
 } from "../store";
-import { getDraftingState, setDraftingState } from "../store";
+import { getDraftingState, setDraftingState, useDraftingSlice } from "../store";
 
 // -- Schema types -----------------------------------------------------------
 
@@ -372,21 +372,30 @@ export function useDraftingRuntime() {
     [],
   );
 
+  // Read the persisted threadId so multi-turn conversations
+  // share server-side history across requests.
+  const { threadId } = useDraftingSlice();
+
   const runtime = useDataStreamRuntime({
     api: `${getConfig().apiBaseUrl}/plugins/drafting/chat`,
     credentials: "include",
-    // Send bundle and entityTypeId in the request body so the
-    // backend can load the correct content type schema.
-    body: { bundle, entityTypeId },
+    // Send bundle, entityTypeId, and threadId in the request body.
+    body: { bundle, entityTypeId, threadId },
     adapters: {
       attachments: attachmentAdapter,
     },
-    // Handle data-drafted-fields events from the UI message stream.
-    // The onData callback fires for any SSE event whose type starts
-    // with "data-". The name field has the "data-" prefix stripped.
+    // Handle custom data-* events from the UI message stream.
     onData: (data) => {
       if (data.name === "drafted-fields") {
         handleDraftedFields(data.data as Record<string, unknown>);
+      }
+      // Capture the threadId from the backend and persist it
+      // so subsequent requests include it for history continuity.
+      if (data.name === "thread-id") {
+        const incoming = (data.data as { threadId?: string }).threadId;
+        if (incoming) {
+          setDraftingState({ threadId: incoming });
+        }
       }
     },
     onFinish: () => {

@@ -130,7 +130,7 @@ function handleEvent(
 ): void {
   switch (event.type) {
     case "text-delta": {
-      const updated = assistantText + event.data.textDelta;
+      const updated = assistantText + event.textDelta;
       setAssistantText(updated);
       // Push to store so the UI renders progressively.
       setAgentTestState({ streamingText: updated });
@@ -142,11 +142,11 @@ function handleEvent(
       break;
 
     case "start-step": {
-      if (!event.data.stepId) break;
+      if (!event.stepId) break;
       const state = getAgentTestState();
       setAgentTestState({
         plan: state.plan.map((step) =>
-          step.stepId === event.data.stepId
+          step.stepId === event.stepId
             ? { ...step, status: "in_progress" }
             : step,
         ),
@@ -155,13 +155,11 @@ function handleEvent(
     }
 
     case "finish-step": {
-      if (!event.data.stepId) break;
+      if (!event.stepId) break;
       const state = getAgentTestState();
       setAgentTestState({
         plan: state.plan.map((step) =>
-          step.stepId === event.data.stepId
-            ? { ...step, status: "done" }
-            : step,
+          step.stepId === event.stepId ? { ...step, status: "done" } : step,
         ),
       });
       break;
@@ -173,7 +171,7 @@ function handleEvent(
 
     case "error":
       setAgentTestState({
-        error: event.data.errorText,
+        error: event.errorText,
         status: "error",
       });
       break;

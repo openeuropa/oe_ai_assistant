@@ -17,13 +17,20 @@ export interface PlanStep {
 /** The consolidated draft result. */
 export type DraftResult = Record<string, unknown>;
 
-/** SSE event types from the agent_test backend. */
+/**
+ * SSE event types from the agent_test backend.
+ *
+ * Uses the flat format where type and payload fields are at the
+ * same level (e.g. {"type": "text-delta", "textDelta": "..."}).
+ * Custom events (data-plan, data-drafted-fields) carry their
+ * payload under an explicit "data" key.
+ */
 export type SseEvent =
-  | { type: "start"; data: { messageId: string } }
-  | { type: "start-step"; data: { stepId?: string } }
-  | { type: "text-delta"; data: { textDelta: string } }
-  | { type: "finish-step"; data: { stepId?: string } }
+  | { type: "start"; messageId: string }
+  | { type: "start-step"; stepId?: string }
+  | { type: "text-delta"; textDelta: string }
+  | { type: "finish-step"; stepId?: string }
   | { type: "data-plan"; data: PlanStep[] }
   | { type: "data-drafted-fields"; data: DraftResult }
-  | { type: "error"; data: { errorText: string; step?: string } }
-  | { type: "finish"; data: { finishReason: string } };
+  | { type: "error"; errorText: string; step?: string }
+  | { type: "finish"; finishReason: string };

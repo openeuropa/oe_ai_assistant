@@ -19,7 +19,7 @@ use Drupal\ai\Service\FunctionCalling\ExecutableFunctionCallInterface;
  */
 #[FunctionCall(
   id: 'oe_ai_assistant_agent_test:draft_content',
-  function_name: 'draft_content',
+  function_name: 'test_draft_content',
   name: 'Draft Content',
   description: 'Generate draft content based on the conversation context. Call this when the user asks to draft, generate, or write content.',
   context_definitions: [
