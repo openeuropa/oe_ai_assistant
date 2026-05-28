@@ -13,6 +13,7 @@ import { useCallback } from "react";
 import { ArtifactPlaceholder } from "./components/artifact-placeholder";
 import { ContentTable } from "./components/content-table";
 import { DraftingThread } from "./components/drafting-thread";
+import { PlanSteps } from "./components/plan-steps";
 import {
   DraftContentToolUI,
   RegenerateFieldsToolUI,
@@ -34,7 +35,7 @@ function ArtifactLoading() {
 
 export default function DraftingRoot() {
   const runtime = useDraftingRuntime();
-  const { draftedFields, isDrafting } = useDraftingSlice();
+  const { draftedFields, isDrafting, plan } = useDraftingSlice();
   const hasFields = Object.keys(draftedFields).length > 0;
 
   /** Send rejected fields back to the chat for regeneration. */
@@ -75,6 +76,13 @@ export default function DraftingRoot() {
     if (hasFields) {
       return (
         <ContentTable onRegenerate={handleRegenerate} onSave={handleSave} />
+      );
+    }
+    if (plan.length > 0) {
+      return (
+        <div className="flex min-h-0 flex-1 flex-col p-4">
+          <PlanSteps steps={plan} />
+        </div>
       );
     }
     if (isDrafting) {

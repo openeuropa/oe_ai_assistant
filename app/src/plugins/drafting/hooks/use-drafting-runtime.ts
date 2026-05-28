@@ -22,7 +22,12 @@ import type {
   DraftedInlineEntity,
   DraftedSubField,
 } from "../store";
-import { getDraftingState, setDraftingState, useDraftingSlice } from "../store";
+import {
+  getDraftingState,
+  type PlanStep,
+  setDraftingState,
+  useDraftingSlice,
+} from "../store";
 
 // -- Schema types -----------------------------------------------------------
 
@@ -396,6 +401,11 @@ export function useDraftingRuntime() {
         if (incoming) {
           setDraftingState({ threadId: incoming });
         }
+      }
+      // Handle orchestration plan updates. The backend emits the
+      // full plan array each time a step status changes.
+      if (data.name === "plan") {
+        setDraftingState({ plan: data.data as PlanStep[] });
       }
     },
     onFinish: () => {

@@ -29,6 +29,13 @@ export interface DraftedInlineEntity {
   fields: Record<string, DraftedSubField>;
 }
 
+/** A step in the orchestration plan. */
+export interface PlanStep {
+  stepId: string;
+  label: string;
+  status: "pending" | "in_progress" | "done" | "error";
+}
+
 /** A single drafted field value from the agent. */
 export interface DraftedField {
   label: string;
@@ -39,8 +46,10 @@ export interface DraftedField {
 }
 
 export interface DraftingSliceState {
-  /** AG-UI thread ID for conversation continuity. */
+  /** Thread ID for conversation continuity. */
   threadId: string | null;
+  /** Orchestration plan steps (transient). */
+  plan: PlanStep[];
   /** Drafted field values keyed by field machine name. */
   draftedFields: Record<string, DraftedField>;
   /** Set of field names the editor has rejected. */
@@ -58,6 +67,7 @@ export interface DraftingSliceState {
 export const draftingSliceConfig: PluginSliceConfig<DraftingSliceState> = {
   initialState: {
     threadId: null,
+    plan: [],
     draftedFields: {},
     rejectedFields: new Set(),
     hasPrompted: false,
