@@ -231,9 +231,15 @@ class DraftingPlugin extends AiAssistantPluginBase {
 
     return $this->uiMessageStream->respond(
       function (UiMessageStreamInterface $stream) use (
-        $chatOutput, $history, $fieldIndex, $store,
+        $chatOutput, $history, $fieldIndex, $store, $threadId,
       ): void {
         $stream->start();
+
+        // Emit the threadId so the frontend can persist it and
+        // send it back on subsequent requests for history continuity.
+        $stream->customEvent('data-thread-id', [
+          'threadId' => $threadId,
+        ]);
 
         // Stream the LLM response and collect any tool calls.
         $toolCalls = $stream->streamChatOutput($chatOutput, 'router');
