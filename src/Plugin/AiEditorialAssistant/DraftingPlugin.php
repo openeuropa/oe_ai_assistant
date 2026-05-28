@@ -23,7 +23,7 @@ use Drupal\oe_ai_assistant\Plugin\AiAssistantPluginBase;
 use Drupal\oe_ai_assistant\Service\DraftEntityBuilder;
 use Drupal\oe_ai_assistant\Service\EntityJsonSchemaComposer;
 use Drupal\oe_ai_assistant\Service\UiMessageStreamInterface;
-use Drupal\oe_ai_assistant\Store\ConversationStoreInterface;
+use Drupal\oe_ai_assistant\Store\ConversationStoreFactoryInterface;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\Request;
@@ -65,11 +65,11 @@ class DraftingPlugin extends AiAssistantPluginBase {
   protected UiMessageStreamInterface $uiMessageStream;
 
   /**
-   * The conversation store for this plugin's threads.
+   * The conversation store factory.
    *
-   * @var \Drupal\oe_ai_assistant\Store\ConversationStoreInterface
+   * @var \Drupal\oe_ai_assistant\Store\ConversationStoreFactoryInterface
    */
-  protected ConversationStoreInterface $conversationStore;
+  protected ConversationStoreFactoryInterface $conversationStoreFactory;
 
   /**
    * Logger channel for oe_ai_assistant.
@@ -133,8 +133,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
     $instance->aiProviderManager = $container->get('ai.provider');
     $instance->aiAgentManager = $container->get('plugin.manager.ai_agents');
     $instance->uiMessageStream = $container->get('oe_ai_assistant.ui_message_stream');
-    $instance->conversationStore = $container->get('oe_ai_assistant.conversation_store_factory')
-      ->getStore('oe_ai_drafting', 'conversation');
+    $instance->conversationStoreFactory = $container->get('oe_ai_assistant.conversation_store_factory');
     $instance->logger = $container->get('logger.factory')->get('oe_ai_assistant');
     $instance->schemaComposer = $container->get(EntityJsonSchemaComposer::class);
     $instance->currentUser = $container->get('current_user');
@@ -185,9 +184,19 @@ class DraftingPlugin extends AiAssistantPluginBase {
     }
 
     $context = $this->buildContext($body);
+    $threadId = $body['threadId'] ?? '';
+
+    // Create a scoped store for this thread. If no threadId is
+    // provided, generate one so new conversations get their own
+    // isolated history.
+    if (empty($threadId)) {
+      $threadId = bin2hex(random_bytes(16));
+    }
+    $store = $this->conversationStoreFactory
+      ->getStore('oe_ai_drafting', $threadId);
 
     // Load conversation history and append the user's message.
-    $history = $this->conversationStore->load();
+    $history = $store->load();
     $history[] = new ChatMessage('user', $message);
 
     // Load the router agent config entity for system prompt and tools.
@@ -222,7 +231,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
 
     return $this->uiMessageStream->respond(
       function (UiMessageStreamInterface $stream) use (
-        $chatOutput, $history, $fieldIndex,
+        $chatOutput, $history, $fieldIndex, $store,
       ): void {
         $stream->start();
 
@@ -272,7 +281,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
 
           // Persist the drafted result in history.
           $history[] = new ChatMessage('assistant', $confirmText);
-          $this->conversationStore->save($history);
+          $store->save($history);
         }
         else {
           // Persist the text response in history.
@@ -287,7 +296,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
           if ($responseText !== '') {
             $history[] = new ChatMessage('assistant', $responseText);
           }
-          $this->conversationStore->save($history);
+          $store->save($history);
         }
 
         $stream->finish($draftCall ? 'tool_calls' : 'stop');
@@ -305,8 +314,14 @@ class DraftingPlugin extends AiAssistantPluginBase {
    *   A confirmation response.
    */
   public function reset(Request $request): array {
-    $this->conversationStore->drop();
-    return ['status' => 'ok'];
+    $body = $this->decodeJsonBody($request);
+    $threadId = $body['threadId'] ?? '';
+    if (!empty($threadId)) {
+      $this->conversationStoreFactory
+        ->getStore('oe_ai_drafting', $threadId)
+        ->drop();
+    }
+    return ['threadId' => bin2hex(random_bytes(16))];
   }
 
   /**

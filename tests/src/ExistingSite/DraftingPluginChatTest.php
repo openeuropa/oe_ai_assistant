@@ -127,14 +127,15 @@ class DraftingPluginChatTest extends ExistingSiteBase {
   /**
    * Tests that conversation history persists across turns.
    *
-   * Turn 1: user sends a message, gets a response.
-   * Turn 2: user sends another message; the system prompt and
-   * conversation history from turn 1 should be present in the
-   * LLM call.
+   * Both requests share the same threadId so history accumulates
+   * on the server. Turn 2's LLM call should include the user
+   * message from turn 1.
    */
   public function testConversationHistoryPersists(): void {
     $user = $this->createUser(['use oe ai assistant']);
     $this->loginUser($user);
+
+    $threadId = bin2hex(random_bytes(16));
 
     // Turn 1.
     MockAiProvider::enqueue(new MockResponse(
@@ -142,14 +143,16 @@ class DraftingPluginChatTest extends ExistingSiteBase {
     ));
     $this->httpPost('/api/ai/plugins/drafting/chat', [
       'message' => 'I want to write about climate change.',
+      'threadId' => $threadId,
     ]);
 
-    // Turn 2.
+    // Turn 2 with the same threadId.
     MockAiProvider::enqueue(new MockResponse(
       text: 'Sure, focusing on EU policy.',
     ));
     $this->httpPost('/api/ai/plugins/drafting/chat', [
       'message' => 'Focus on EU policy please.',
+      'threadId' => $threadId,
     ]);
 
     // Check that turn 2's LLM call includes both messages.
