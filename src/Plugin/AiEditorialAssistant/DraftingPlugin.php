@@ -215,9 +215,10 @@ class DraftingPlugin extends AiAssistantPluginBase {
 
     $chatInput->setChatTools(new ToolsInput([$this->buildDraftTool()]));
 
-    // Get the default provider and call the LLM directly.
+    // Resolve the provider for chat_with_tools since we always
+    // include the draft_content tool definition.
     $defaults = $this->aiProviderManager
-      ->getDefaultProviderForOperationType('chat');
+      ->getDefaultProviderForOperationType('chat_with_tools');
     $provider = $this->aiProviderManager
       ->createInstance($defaults['provider_id']);
     $chatOutput = $provider->chat(
