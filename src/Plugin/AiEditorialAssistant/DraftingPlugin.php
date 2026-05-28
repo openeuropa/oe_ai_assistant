@@ -10,9 +10,9 @@ use Drupal\ai\OperationType\Chat\ChatMessage;
 use Drupal\ai\OperationType\Chat\StreamedChatMessageIteratorInterface;
 use Drupal\ai\OperationType\Chat\Tools\ToolsFunctionInput;
 use Drupal\ai\OperationType\Chat\Tools\ToolsInput;
-use Drupal\ai\OperationType\Chat\Tools\ToolsPropertyInput;
+use Drupal\ai_agents\PluginInterfaces\AiAgentInterface;
 use Drupal\ai_agents\PluginManager\AiAgentManager;
-use Drupal\Component\Serialization\Json;
+use Drupal\ai_agents\Task\Task;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Session\AccountProxyInterface;
 use Drupal\content_moderation\ModerationInformationInterface;
@@ -32,9 +32,10 @@ use Symfony\Component\HttpFoundation\Response;
 /**
  * Drafting plugin: AI-powered content drafting with SSE streaming.
  *
- * Uses Drupal AI's provider plugin manager for LLM calls with
- * streaming, ai_agents config entities for system prompt and tool
- * definitions, and UiMessageStream for SSE output.
+ * Uses a two-tool conversational flow:
+ * 1. get_content_schema: LLM discovers available fields
+ * 2. draft_content: LLM signals readiness, orchestrator dispatches
+ *    sub-agents per field group.
  */
 #[AiEditorialAssistant(
   id: 'drafting',
@@ -84,13 +85,6 @@ class DraftingPlugin extends AiAssistantPluginBase {
    * @var \Drupal\oe_ai_assistant\Service\EntityJsonSchemaComposer
    */
   protected EntityJsonSchemaComposer $schemaComposer;
-
-  /**
-   * Per-request schema cache keyed by "entityTypeId:bundle".
-   *
-   * @var array<string, array>
-   */
-  private array $cachedSchema = [];
 
   /**
    * The current Drupal user.
@@ -167,6 +161,11 @@ class DraftingPlugin extends AiAssistantPluginBase {
   /**
    * Streams an AI chat response via SSE.
    *
+   * Supports a multi-turn tool flow: the LLM can call
+   * get_content_schema (executed by ai_agents), chat with the
+   * user, then call draft_content to trigger sub-agent
+   * orchestration.
+   *
    * @param \Symfony\Component\HttpFoundation\Request $request
    *   The incoming request with a chat message body.
    *
@@ -186,9 +185,6 @@ class DraftingPlugin extends AiAssistantPluginBase {
     $context = $this->buildContext($body);
     $threadId = $body['threadId'] ?? '';
 
-    // Create a scoped store for this thread. If no threadId is
-    // provided, generate one so new conversations get their own
-    // isolated history.
     if (empty($threadId)) {
       $threadId = bin2hex(random_bytes(16));
     }
@@ -199,24 +195,34 @@ class DraftingPlugin extends AiAssistantPluginBase {
     $history = $store->load();
     $history[] = new ChatMessage('user', $message);
 
-    // Load the router agent config entity for system prompt and tools.
+    // Load the router agent config entity for system prompt and
+    // tools (get_content_schema is registered there).
     $router = $this->aiAgentManager->createInstance('oe_drafting_router');
 
-    // Append content type schema to the agent's system prompt.
+    // Build the system prompt: agent base + bundle/entityTypeId
+    // hint so the LLM knows what values to pass to
+    // get_content_schema.
     $systemPrompt = $router->getSystemPrompt()
-      . $this->buildSchemaText(
-        $context['entityTypeId'], $context['bundle']
-      );
+      . "\n\nContent type context:\n"
+      . "bundle: " . $context['bundle'] . "\n"
+      . "entity_type_id: " . $context['entityTypeId'] . "\n";
+
+    // Collect tools: get_content_schema from agent config +
+    // inline draft_content signal tool.
+    $functions = $router->getFunctions();
+    $tools = [];
+    if (!empty($functions['normalized'])) {
+      $tools = $functions['normalized'];
+    }
+    $tools[] = $this->buildDraftTool();
 
     // Build ChatInput with the full conversation history.
     $chatInput = new ChatInput($history);
     $chatInput->setStreamedOutput(TRUE);
     $chatInput->setSystemPrompt($systemPrompt);
+    $chatInput->setChatTools(new ToolsInput($tools));
 
-    $chatInput->setChatTools(new ToolsInput([$this->buildDraftTool()]));
-
-    // Resolve the provider for chat_with_tools since we always
-    // include the draft_content tool definition.
+    // Resolve the provider for chat_with_tools.
     $defaults = $this->aiProviderManager
       ->getDefaultProviderForOperationType('chat_with_tools');
     $provider = $this->aiProviderManager
@@ -226,18 +232,12 @@ class DraftingPlugin extends AiAssistantPluginBase {
     );
 
     // Stream the response using UiMessageStream.
-    $fieldIndex = $this->buildFieldIndex(
-      $context['entityTypeId'], $context['bundle']
-    );
-
     return $this->uiMessageStream->respond(
       function (UiMessageStreamInterface $stream) use (
-        $chatOutput, $history, $fieldIndex, $store, $threadId,
+        $chatOutput, $history, $store, $threadId, $context,
       ): void {
         $stream->start();
 
-        // Emit the threadId so the frontend can persist it and
-        // send it back on subsequent requests for history continuity.
         $stream->customEvent('data-thread-id', [
           'threadId' => $threadId,
         ]);
@@ -245,7 +245,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
         // Stream the LLM response and collect any tool calls.
         $toolCalls = $stream->streamChatOutput($chatOutput, 'router');
 
-        // Check if draft_content was called.
+        // Check for draft_content (orchestration signal).
         $draftCall = NULL;
         foreach ($toolCalls as $tool) {
           if ($tool->getName() === 'draft_content') {
@@ -255,39 +255,12 @@ class DraftingPlugin extends AiAssistantPluginBase {
         }
 
         if ($draftCall !== NULL) {
-          // Extract fields from tool call arguments.
-          $fields = [];
-          foreach ($draftCall->getArguments() as $arg) {
-            if ($arg->getName() === 'fields') {
-              $fields = $arg->getValue();
-            }
-          }
+          // Run the sub-agent orchestration loop.
+          $this->orchestrate($stream, $history, $context);
 
-          // Filter fields against the schema.
-          if (!empty($fieldIndex)) {
-            $unknownFields = array_diff_key($fields, $fieldIndex);
-            if (!empty($unknownFields)) {
-              $this->logger->notice(
-                'LLM generated unknown fields: @fields',
-                ['@fields' => implode(', ', array_keys($unknownFields))],
-              );
-            }
-            $fields = array_intersect_key($fields, $fieldIndex);
-          }
-
-          // Emit data-drafted-fields for the frontend content table.
-          $stream->customEvent('data-drafted-fields', $fields);
-
-          // Emit a text confirmation so the chat UI shows a response
-          // instead of infinite loading dots.
-          $confirmText = 'Draft generated with '
-            . count($fields) . ' fields. Review the content on the right.';
-          $stream->startStep('confirmation');
-          $stream->textDelta($confirmText);
-          $stream->finishStep('confirmation');
-
-          // Persist the drafted result in history.
-          $history[] = new ChatMessage('assistant', $confirmText);
+          // Persist confirmation in history.
+          $history[] = new ChatMessage('assistant',
+            'Draft content generated.');
           $store->save($history);
         }
         else {
@@ -309,6 +282,162 @@ class DraftingPlugin extends AiAssistantPluginBase {
         $stream->finish($draftCall ? 'tool_calls' : 'stop');
       }
     );
+  }
+
+  /**
+   * Runs the sub-agent orchestration loop.
+   *
+   * Splits the content type schema into groups, dispatches one
+   * sub-agent per group, streams plan/step progress, consolidates
+   * results, and emits data-drafted-fields.
+   *
+   * @param \Drupal\oe_ai_assistant\Service\UiMessageStreamInterface $stream
+   *   The SSE stream.
+   * @param \Drupal\ai\OperationType\Chat\ChatMessage[] $history
+   *   The conversation history for sub-agent context.
+   * @param array $context
+   *   The drafting context with entityTypeId and bundle.
+   */
+  protected function orchestrate(
+    UiMessageStreamInterface $stream,
+    array $history,
+    array $context,
+  ): void {
+    // Split schema into groups using the composer service.
+    $groups = $this->schemaComposer->splitSchemaIntoGroups(
+      $context['entityTypeId'], $context['bundle']
+    );
+
+    if (empty($groups)) {
+      $stream->textDelta('No fields available for drafting.');
+      return;
+    }
+
+    // Build the plan array and emit initial state (all pending).
+    $plan = array_map(fn($g) => [
+      'stepId' => $g['groupId'],
+      'label' => $g['label'],
+      'status' => 'pending',
+    ], $groups);
+    $stream->customEvent('data-plan', $plan);
+
+    // Serialize conversation history for sub-agent context.
+    $conversationContext = '';
+    foreach ($history as $msg) {
+      $conversationContext .= $msg->getRole() . ': '
+        . $msg->getText() . "\n";
+    }
+
+    $results = [];
+    $mainFieldsResult = '';
+
+    foreach ($groups as $index => $group) {
+      $stepId = $group['groupId'];
+
+      // Update plan: mark this step as in_progress.
+      $plan[$index]['status'] = 'in_progress';
+      $stream->customEvent('data-plan', $plan);
+
+      try {
+        // Load a fresh instance of the sub-agent config entity.
+        $agent = $this->aiAgentManager
+          ->createInstance('oe_content_drafter');
+
+        // Set structured output on the agent entity.
+        $agent->getAiAgentEntity()
+          ->set('structured_output_enabled', TRUE);
+        $agent->getAiAgentEntity()
+          ->set('structured_output_schema', json_encode([
+            'name' => $stepId,
+            'schema' => $group['schemaSlice'],
+          ]));
+
+        // Build task prompt with conversation context.
+        // Subsequent sub-agents receive the main fields result
+        // as additional context.
+        $taskPrompt = "Conversation context:\n$conversationContext\n";
+        if ($stepId !== 'main_fields' && $mainFieldsResult !== '') {
+          $taskPrompt .= "Main fields already generated:\n"
+            . $mainFieldsResult . "\n\n";
+        }
+        $taskPrompt .= "Generate content for the fields in the "
+          . "provided schema. Follow the conversation context.";
+
+        $task = new Task($taskPrompt);
+        $agent->setTask($task);
+
+        // Run the agent.
+        $solvability = $agent->determineSolvability();
+        $fullText = '';
+        if ($solvability === AiAgentInterface::JOB_SOLVABLE) {
+          $fullText = $agent->solve() ?? '';
+        }
+        elseif ($solvability === AiAgentInterface::JOB_SHOULD_ANSWER_QUESTION) {
+          $fullText = $agent->answerQuestion() ?? '';
+        }
+
+        // Parse the JSON result.
+        $parsed = $stream->extractJson($fullText);
+        if (is_array($parsed)) {
+          $results[$stepId] = $parsed;
+          if ($stepId === 'main_fields') {
+            $mainFieldsResult = $fullText;
+          }
+        }
+
+        // Update plan: mark this step as done.
+        $plan[$index]['status'] = 'done';
+        $stream->customEvent('data-plan', $plan);
+      }
+      catch (\Exception $e) {
+        $this->logger->error('Sub-agent @step failed: @error', [
+          '@step' => $stepId,
+          '@error' => $e->getMessage(),
+        ]);
+        $plan[$index]['status'] = 'error';
+        $stream->customEvent('data-plan', $plan);
+        $stream->error($e->getMessage(), $stepId);
+      }
+    }
+
+    // Consolidate all sub-agent results into a single flat fields
+    // map. Main fields are top-level; entity reference groups are
+    // merged by their field name.
+    $consolidated = [];
+    foreach ($groups as $group) {
+      $stepId = $group['groupId'];
+      if (!isset($results[$stepId])) {
+        continue;
+      }
+      if ($stepId === 'main_fields') {
+        $consolidated = array_merge($consolidated, $results[$stepId]);
+      }
+      else {
+        // Entity reference groups: the result should be keyed by
+        // field name, or we wrap it under the group's field name.
+        foreach ($group['fieldNames'] as $fieldName) {
+          if (isset($results[$stepId][$fieldName])) {
+            $consolidated[$fieldName] = $results[$stepId][$fieldName];
+          }
+          else {
+            // The sub-agent returned the value directly without
+            // wrapping it under the field name.
+            $consolidated[$fieldName] = $results[$stepId];
+          }
+        }
+      }
+    }
+
+    // Emit data-drafted-fields for the frontend content table.
+    $stream->customEvent('data-drafted-fields', $consolidated);
+
+    // Emit a text confirmation.
+    $fieldCount = count($consolidated);
+    $confirmText = "Draft generated with $fieldCount fields."
+      . ' Review the content on the right.';
+    $stream->startStep('confirmation');
+    $stream->textDelta($confirmText);
+    $stream->finishStep('confirmation');
   }
 
   /**
@@ -392,40 +521,23 @@ class DraftingPlugin extends AiAssistantPluginBase {
   }
 
   /**
-   * Builds the draft_content tool definition.
+   * Builds the draft_content signal tool definition.
    *
-   * Defines the tool schema inline so the LLM can return structured
-   * field values. No FunctionCall plugin class needed; the tool call
-   * result is handled directly after streaming.
+   * No arguments. When the LLM calls this, the orchestrator takes
+   * over and dispatches sub-agents per field group.
    *
    * @return \Drupal\ai\OperationType\Chat\Tools\ToolsFunctionInput
    *   The draft_content tool definition.
    */
   private function buildDraftTool(): ToolsFunctionInput {
-    // Note: 'required' is set via setRequired() rather than in the
-    // property array to avoid rendering it as a boolean inside the
-    // property schema (providers reject that).
-    $fieldsProp = new ToolsPropertyInput('fields', [
-      'type' => 'object',
-      'description' => 'An object mapping field machine names to their values.',
-    ]);
-    $fieldsProp->setRequired(TRUE);
-
-    $changedProp = new ToolsPropertyInput('changed_fields', [
-      'type' => 'array',
-      'description' => 'List of field machine names that were created or modified.',
-      'items' => ['type' => 'string'],
-    ]);
-
     $tool = new ToolsFunctionInput();
     $tool->setName('draft_content');
     $tool->setDescription(
-      'Generate or update field values for a content draft.'
-      . ' Call this whenever the user asks to draft, create,'
-      . ' update, or modify content fields.'
+      'Signal that you are ready to generate the content draft.'
+      . ' Call this after you have gathered enough information'
+      . ' from the user. The system will generate field values'
+      . ' automatically using sub-agents.'
     );
-    $tool->setProperties([$fieldsProp, $changedProp]);
-
     return $tool;
   }
 
@@ -494,84 +606,6 @@ class DraftingPlugin extends AiAssistantPluginBase {
       'entityTypeId' => $entityTypeId,
       'bundle' => $bundle,
     ];
-  }
-
-  /**
-   * Builds a flat field index from the content type schema.
-   *
-   * Used to filter LLM-generated fields against known field names.
-   *
-   * @param string $entityTypeId
-   *   The entity type ID (e.g. "node").
-   * @param string $bundle
-   *   The bundle machine name (e.g. "article").
-   *
-   * @return array<string, array>
-   *   Field schemas keyed by machine name, or empty array on failure.
-   */
-  private function buildFieldIndex(string $entityTypeId, string $bundle): array {
-    if (empty($bundle)) {
-      return [];
-    }
-    try {
-      $schema = $this->getComposedSchema($entityTypeId, $bundle);
-      return $schema['properties'] ?? [];
-    }
-    catch (\Exception) {
-      return [];
-    }
-  }
-
-  /**
-   * Returns the content type schema as text for the system prompt.
-   *
-   * @param string $entityTypeId
-   *   The entity type ID (e.g. "node").
-   * @param string $bundle
-   *   The bundle machine name (e.g. "oe_news").
-   *
-   * @return string
-   *   The schema as "\n\nContent type schema:\n{json}", or empty
-   *   string if the bundle is empty or composition fails.
-   */
-  private function buildSchemaText(string $entityTypeId, string $bundle): string {
-    if (empty($bundle)) {
-      return '';
-    }
-    try {
-      $schema = $this->getComposedSchema($entityTypeId, $bundle);
-      return "\n\nContent type schema:\n" . Json::encode($schema);
-    }
-    catch (\Exception $e) {
-      $this->logger->warning('Could not load schema for @type/@bundle: @error', [
-        '@type' => $entityTypeId,
-        '@bundle' => $bundle,
-        '@error' => $e->getMessage(),
-      ]);
-      return '';
-    }
-  }
-
-  /**
-   * Returns the composed schema, using a per-request cache.
-   *
-   * @param string $entityTypeId
-   *   The entity type ID.
-   * @param string $bundle
-   *   The bundle machine name.
-   *
-   * @return array<string, mixed>
-   *   The composed schema array.
-   */
-  private function getComposedSchema(string $entityTypeId, string $bundle): array {
-    $cacheKey = "$entityTypeId:$bundle";
-    if (!isset($this->cachedSchema[$cacheKey])) {
-      $this->cachedSchema[$cacheKey] = $this->schemaComposer->compose(
-        $entityTypeId,
-        $bundle,
-      );
-    }
-    return $this->cachedSchema[$cacheKey];
   }
 
 }
