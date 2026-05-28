@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Drupal\oe_ai_assistant\Service;
 
 use Drupal\Core\Entity\ContentEntityTypeInterface;
+use Drupal\Core\Entity\EntityFieldManagerInterface;
 use Drupal\Core\Entity\EntityTypeBundleInfoInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Field\FieldDefinitionInterface;
@@ -103,6 +104,7 @@ class EntityJsonSchemaComposer {
     private readonly SerializerInterface $serializer,
     private readonly EntityTypeManagerInterface $entityTypeManager,
     private readonly EntityTypeBundleInfoInterface $bundleInfo,
+    private readonly EntityFieldManagerInterface $entityFieldManager,
   ) {}
 
   /**
@@ -542,6 +544,106 @@ class EntityJsonSchemaComposer {
       $desc = (string) $fieldDef->getLabel();
     }
     return $desc === '' ? NULL : $desc;
+  }
+
+  /**
+   * Splits a composed schema into named field groups for sub-agents.
+   *
+   * Groups:
+   * - main_fields: all scalar fields and plain entity references
+   *   (taxonomy, media) that only need a target_id.
+   * - One group per entity reference field targeting a draftable
+   *   content entity type (entity_reference_revisions like
+   *   paragraphs, or entity_reference to content entities like
+   *   contacts).
+   *
+   * @param string $entityTypeId
+   *   The entity type ID (e.g. "node").
+   * @param string $bundle
+   *   The bundle machine name (e.g. "oe_news").
+   *
+   * @return array
+   *   Array of groups, each with 'groupId', 'label', 'fieldNames',
+   *   and 'schemaSlice' keys.
+   */
+  public function splitSchemaIntoGroups(string $entityTypeId, string $bundle): array {
+    $schema = $this->compose($entityTypeId, $bundle);
+    $properties = $schema['properties'] ?? [];
+
+    // Build a field label map from Drupal's field definitions.
+    $fieldLabels = [];
+    $definitions = $this->entityFieldManager
+      ->getFieldDefinitions($entityTypeId, $bundle);
+    foreach ($definitions as $name => $definition) {
+      $label = $definition->getLabel();
+      $fieldLabels[$name] = is_string($label) ? $label : (string) $label;
+    }
+
+    $mainFields = [];
+    $entityGroups = [];
+
+    foreach ($properties as $fieldName => $fieldSchema) {
+      $items = $fieldSchema['items'] ?? [];
+      $targetType = $items['x-targetType'] ?? NULL;
+
+      if ($targetType !== NULL && !$this->isSimpleReferenceTarget($targetType)) {
+        $label = $fieldLabels[$fieldName] ?? $fieldName;
+        $entityGroups[] = [
+          'groupId' => $fieldName,
+          'label' => $label,
+          'fieldNames' => [$fieldName],
+          'schemaSlice' => [
+            'type' => 'object',
+            'properties' => [$fieldName => $fieldSchema],
+          ],
+        ];
+      }
+      else {
+        $mainFields[$fieldName] = $fieldSchema;
+      }
+    }
+
+    $groups = [];
+
+    if (!empty($mainFields)) {
+      $groups[] = [
+        'groupId' => 'main_fields',
+        'label' => 'Main fields',
+        'fieldNames' => array_keys($mainFields),
+        'schemaSlice' => [
+          'type' => 'object',
+          'properties' => $mainFields,
+        ],
+      ];
+    }
+
+    foreach ($entityGroups as $group) {
+      $groups[] = $group;
+    }
+
+    return $groups;
+  }
+
+  /**
+   * Checks if a target entity type is a simple reference (not draftable).
+   *
+   * Simple references like taxonomy_term and media only need a
+   * target_id; they should not get their own sub-agent.
+   *
+   * @param string $targetType
+   *   The entity type ID from x-targetType.
+   *
+   * @return bool
+   *   TRUE if this is a simple reference target.
+   */
+  private function isSimpleReferenceTarget(string $targetType): bool {
+    $simpleTypes = [
+      'taxonomy_term',
+      'media',
+      'file',
+      'user',
+    ];
+    return in_array($targetType, $simpleTypes, TRUE);
   }
 
 }
