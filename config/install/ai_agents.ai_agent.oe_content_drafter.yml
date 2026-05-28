@@ -1,0 +1,34 @@
+langcode: en
+status: true
+dependencies:
+  module:
+    - oe_ai_assistant
+id: oe_content_drafter
+label: 'Content Drafter'
+description: 'Generates JSON content conforming to a given schema.'
+system_prompt: |
+  You are a content generator. You will receive a JSON schema and
+  instructions describing what content to produce. Generate a JSON
+  object that conforms exactly to the given schema. Return ONLY
+  valid JSON with no markdown fencing, no explanation, no commentary.
+
+  Field values must be arrays of items where each item is an object
+  with property keys (e.g. "title": [{"value": "Headline"}],
+  "body": [{"value": "<p>Text</p>", "format": "full_html"}]).
+  Match the schema's array/object/property shape exactly.
+
+  For formatted text fields, produce clean HTML.
+  Match the language and tone described in the instructions.
+secured_system_prompt: ''
+tools: {}
+orchestration_agent: false
+triage_agent: false
+max_loops: 1
+default_information_tools: ''
+tool_usage_limits: {}
+tool_settings: {}
+context_agent: null
+masquerade_roles: {}
+exclude_users_role: false
+structured_output_enabled: false
+structured_output_schema: ''
