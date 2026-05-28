@@ -1,10 +1,8 @@
 /**
  * Zustand store slice for the drafting plugin.
  *
- * Tracks the current thread ID and drafted field values
- * received from the agent via AG-UI STATE_SNAPSHOT events.
- * Also tracks which fields the editor has rejected so the
- * agent can regenerate them.
+ * Tracks the current thread ID, orchestration plan steps,
+ * and raw drafted field values from the AI agent.
  */
 
 import type { PluginSliceConfig } from "@/store/plugin-slice-config";
@@ -16,19 +14,6 @@ import {
 
 const PLUGIN_ID = "drafting";
 
-/** A single sub-field inside an inline entity (e.g. a contact). */
-export interface DraftedSubField {
-  label: string;
-  value: string;
-}
-
-/** A single inline entity instance (e.g. one contact card). */
-export interface DraftedInlineEntity {
-  bundle: string;
-  bundleLabel: string;
-  fields: Record<string, DraftedSubField>;
-}
-
 /** A step in the orchestration plan. */
 export interface PlanStep {
   stepId: string;
@@ -36,32 +21,13 @@ export interface PlanStep {
   status: "pending" | "in_progress" | "done" | "error";
 }
 
-/** A single drafted field value from the agent. */
-export interface DraftedField {
-  label: string;
-  value: string;
-  type: string;
-  /** For inline_form fields: nested entity instances. */
-  inlineEntities?: DraftedInlineEntity[];
-}
-
 export interface DraftingSliceState {
   /** Thread ID for conversation continuity. */
   threadId: string | null;
   /** Orchestration plan steps (transient). */
   plan: PlanStep[];
-  /** Drafted field values keyed by field machine name. */
-  draftedFields: Record<string, DraftedField>;
-  /** Set of field names the editor has rejected. */
-  rejectedFields: Set<string>;
-  /** Whether the user has sent at least one message. */
-  hasPrompted: boolean;
-  /** Whether a draft_content tool call is currently running. */
-  isDrafting: boolean;
-  /** Field currently being streamed (null when idle). */
-  streamingFieldName: string | null;
-  /** Fields recently updated by the agent (for highlight effect). */
-  updatedFields: Set<string>;
+  /** Raw drafted field values keyed by field machine name. */
+  draftedFields: Record<string, unknown>;
 }
 
 export const draftingSliceConfig: PluginSliceConfig<DraftingSliceState> = {
@@ -69,13 +35,8 @@ export const draftingSliceConfig: PluginSliceConfig<DraftingSliceState> = {
     threadId: null,
     plan: [],
     draftedFields: {},
-    rejectedFields: new Set(),
-    hasPrompted: false,
-    isDrafting: false,
-    streamingFieldName: null,
-    updatedFields: new Set(),
   },
-  /** Only persist thread ID -- drafted fields are transient. */
+  /** Only persist thread ID. */
   partialize: (state) =>
     ({ threadId: state.threadId }) as unknown as Partial<DraftingSliceState>,
 };
@@ -97,16 +58,4 @@ export function getDraftingState(): DraftingSliceState {
 /** Typed setter for mutations. */
 export function setDraftingState(partial: Partial<DraftingSliceState>): void {
   setPluginState(PLUGIN_ID, partial as Record<string, unknown>);
-}
-
-/** Toggle a field's rejected status. */
-export function toggleFieldRejected(fieldName: string): void {
-  const state = getDraftingState();
-  const next = new Set(state.rejectedFields);
-  if (next.has(fieldName)) {
-    next.delete(fieldName);
-  } else {
-    next.add(fieldName);
-  }
-  setDraftingState({ rejectedFields: next });
 }
