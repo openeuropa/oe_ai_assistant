@@ -10,6 +10,9 @@ use Drupal\ai\OperationType\Chat\ChatMessage;
 use Drupal\ai\OperationType\Chat\StreamedChatMessageIteratorInterface;
 use Drupal\ai\OperationType\Chat\Tools\ToolsFunctionInput;
 use Drupal\ai\OperationType\Chat\Tools\ToolsInput;
+use Drupal\ai\Service\FunctionCalling\ExecutableFunctionCallInterface;
+use Drupal\ai\Service\FunctionCalling\FunctionCallPluginManager;
+use Drupal\ai\Service\FunctionCalling\StructuredExecutableFunctionCallInterface;
 use Drupal\ai_agents\PluginInterfaces\AiAgentInterface;
 use Drupal\ai_agents\PluginManager\AiAgentManager;
 use Drupal\ai_agents\Task\Task;
@@ -115,6 +118,13 @@ class DraftingPlugin extends AiAssistantPluginBase {
   protected DraftEntityBuilder $draftEntityBuilder;
 
   /**
+   * The FunctionCall plugin manager for tool execution.
+   *
+   * @var \Drupal\ai\Service\FunctionCalling\FunctionCallPluginManager
+   */
+  protected FunctionCallPluginManager $functionCallManager;
+
+  /**
    * {@inheritdoc}
    */
   public static function create(
@@ -134,6 +144,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
     $instance->moderationInformation = $container->get('content_moderation.moderation_information');
     $instance->entityTypeManager = $container->get('entity_type.manager');
     $instance->draftEntityBuilder = $container->get(DraftEntityBuilder::class);
+    $instance->functionCallManager = $container->get('plugin.manager.ai.function_calls');
     return $instance;
   }
 
@@ -222,25 +233,20 @@ class DraftingPlugin extends AiAssistantPluginBase {
     }
     $tools[] = $this->buildDraftTool();
 
-    // Build ChatInput with the full conversation history.
-    $chatInput = new ChatInput($history);
-    $chatInput->setStreamedOutput(TRUE);
-    $chatInput->setSystemPrompt($systemPrompt);
-    $chatInput->setChatTools(new ToolsInput($tools));
-
     // Resolve the provider for chat_with_tools.
     $defaults = $this->aiProviderManager
       ->getDefaultProviderForOperationType('chat_with_tools');
     $provider = $this->aiProviderManager
       ->createInstance($defaults['provider_id']);
-    $chatOutput = $provider->chat(
-      $chatInput, $defaults['model_id'], ['drafting']
-    );
 
-    // Stream the response using UiMessageStream.
+    // Stream the response using UiMessageStream. The callback
+    // runs a tool execution loop: call LLM, check for tool calls,
+    // execute tools, feed results back, repeat until draft_content
+    // is called or the LLM responds with text.
     return $this->uiMessageStream->respond(
       function (UiMessageStreamInterface $stream) use (
-        $chatOutput, $history, $store, $threadId, $context,
+        $history, $store, $threadId, $context,
+        $systemPrompt, $tools, $defaults, $provider,
       ): void {
         $stream->start();
 
@@ -248,44 +254,77 @@ class DraftingPlugin extends AiAssistantPluginBase {
           'threadId' => $threadId,
         ]);
 
-        // Stream the LLM response and collect any tool calls.
-        $toolCalls = $stream->streamChatOutput($chatOutput, 'router');
+        $maxIterations = 5;
+        $finishReason = 'stop';
 
-        // Check for draft_content (orchestration signal).
-        $draftCall = NULL;
-        foreach ($toolCalls as $tool) {
-          if ($tool->getName() === 'draft_content') {
-            $draftCall = $tool;
+        for ($i = 0; $i < $maxIterations; $i++) {
+          // Build ChatInput with current conversation history.
+          $chatInput = new ChatInput($history);
+          $chatInput->setStreamedOutput(TRUE);
+          $chatInput->setSystemPrompt($systemPrompt);
+          $chatInput->setChatTools(new ToolsInput($tools));
+
+          $chatOutput = $provider->chat(
+            $chatInput, $defaults['model_id'], ['drafting']
+          );
+
+          // Stream the LLM response and collect tool calls.
+          $toolCalls = $stream->streamChatOutput(
+            $chatOutput, 'router'
+          );
+
+          if (empty($toolCalls)) {
+            // No tool calls: text response. Persist and break.
+            $reconstructed = $chatOutput->getNormalized();
+            if ($reconstructed instanceof StreamedChatMessageIteratorInterface) {
+              $output = $reconstructed->reconstructChatOutput();
+              $responseText = $output->getNormalized()->getText() ?? '';
+            }
+            else {
+              $responseText = $reconstructed->getText() ?? '';
+            }
+            if ($responseText !== '') {
+              $history[] = new ChatMessage('assistant', $responseText);
+            }
+            $store->save($history);
             break;
           }
+
+          // Check if draft_content was called.
+          $draftCall = NULL;
+          foreach ($toolCalls as $tool) {
+            if ($tool->getName() === 'draft_content') {
+              $draftCall = $tool;
+              break;
+            }
+          }
+
+          if ($draftCall !== NULL) {
+            // Run the sub-agent orchestration loop.
+            $this->orchestrate($stream, $history, $context);
+            $history[] = new ChatMessage('assistant',
+              'Draft content generated.');
+            $store->save($history);
+            $finishReason = 'tool_calls';
+            break;
+          }
+
+          // Execute other tool calls (e.g. get_content_schema)
+          // and feed results back for the next LLM iteration.
+          // Add the assistant message with tool calls to history.
+          $assistantMsg = new ChatMessage('assistant', '');
+          $assistantMsg->setTools($toolCalls);
+          $history[] = $assistantMsg;
+
+          foreach ($toolCalls as $toolCall) {
+            $result = $this->executeTool($toolCall);
+            $toolResultMsg = new ChatMessage('tool', $result);
+            $toolResultMsg->setToolsId($toolCall->getToolId());
+            $history[] = $toolResultMsg;
+          }
         }
 
-        if ($draftCall !== NULL) {
-          // Run the sub-agent orchestration loop.
-          $this->orchestrate($stream, $history, $context);
-
-          // Persist confirmation in history.
-          $history[] = new ChatMessage('assistant',
-            'Draft content generated.');
-          $store->save($history);
-        }
-        else {
-          // Persist the text response in history.
-          $reconstructed = $chatOutput->getNormalized();
-          if ($reconstructed instanceof StreamedChatMessageIteratorInterface) {
-            $output = $reconstructed->reconstructChatOutput();
-            $responseText = $output->getNormalized()->getText() ?? '';
-          }
-          else {
-            $responseText = $reconstructed->getText() ?? '';
-          }
-          if ($responseText !== '') {
-            $history[] = new ChatMessage('assistant', $responseText);
-          }
-          $store->save($history);
-        }
-
-        $stream->finish($draftCall ? 'tool_calls' : 'stop');
+        $stream->finish($finishReason);
       }
     );
   }
@@ -444,6 +483,39 @@ class DraftingPlugin extends AiAssistantPluginBase {
     $stream->startStep('confirmation');
     $stream->textDelta($confirmText);
     $stream->finishStep('confirmation');
+  }
+
+  /**
+   * Executes a FunctionCall plugin and returns the result as JSON.
+   *
+   * Used by the tool execution loop to handle tool calls other
+   * than draft_content (which triggers orchestration instead).
+   *
+   * @param \Drupal\ai\OperationType\Chat\Tools\ToolsFunctionOutputInterface $toolCall
+   *   The tool call from the LLM response.
+   *
+   * @return string
+   *   JSON-encoded tool result for the conversation history.
+   */
+  private function executeTool($toolCall): string {
+    try {
+      $plugin = $this->functionCallManager
+        ->convertToolResponseToObject($toolCall);
+      if ($plugin instanceof ExecutableFunctionCallInterface) {
+        $plugin->execute();
+      }
+      if ($plugin instanceof StructuredExecutableFunctionCallInterface) {
+        return json_encode($plugin->getStructuredOutput());
+      }
+      return $plugin->getReadableOutput();
+    }
+    catch (\Throwable $e) {
+      $this->logger->error('Tool @name failed: @error', [
+        '@name' => $toolCall->getName(),
+        '@error' => $e->getMessage(),
+      ]);
+      return json_encode(['error' => $e->getMessage()]);
+    }
   }
 
   /**
