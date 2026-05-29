@@ -2,11 +2,12 @@ langcode: en
 status: true
 dependencies:
   config:
+    - field.storage.node.field_body
     - node.type.oe_news
   module:
     - text
-id: node.oe_news.body
-field_name: body
+id: node.oe_news.field_body
+field_name: field_body
 entity_type: node
 bundle: oe_news
 label: Body

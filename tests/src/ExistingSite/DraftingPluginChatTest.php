@@ -203,7 +203,7 @@ class DraftingPluginChatTest extends ExistingSiteBase {
     // Sub-agent responses: one per group (main_fields,
     // field_contacts, field_content_paragraphs).
     MockAiProvider::enqueue(new MockResponse(
-      text: '{"title": [{"value": "Test Title"}], "body": [{"value": "<p>Body</p>", "format": "full_html"}]}',
+      text: '{"title": [{"value": "Test Title"}], "field_body": [{"value": "<p>Body</p>", "format": "full_html"}]}',
     ));
     MockAiProvider::enqueue(new MockResponse(
       text: '{"field_contacts": []}',

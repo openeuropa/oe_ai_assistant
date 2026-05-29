@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace Drupal\oe_ai_assistant\Plugin\AiFunctionCall;
 
-use Drupal\ai\AiDataTypeConverter\AiDataTypeConverterPluginManager;
-use Drupal\ai\ContextDefinition\ContextDefinitionNormalizer;
 use Drupal\Core\Plugin\Context\ContextDefinition;
 use Drupal\Core\StringTranslation\TranslatableMarkup;
 use Drupal\ai\Attribute\FunctionCall;
@@ -59,40 +57,6 @@ class GetContentSchema extends FunctionCallBase implements StructuredExecutableF
   protected array $output = [];
 
   /**
-   * Constructs a GetContentSchema plugin.
-   *
-   * @param array $configuration
-   *   Plugin configuration.
-   * @param string $plugin_id
-   *   The plugin ID.
-   * @param mixed $plugin_definition
-   *   The plugin definition.
-   * @param \Drupal\ai\ContextDefinition\ContextDefinitionNormalizer $context_definition_normalizer
-   *   The context definition normalizer.
-   * @param \Drupal\ai\AiDataTypeConverter\AiDataTypeConverterPluginManager|null $data_type_converter_manager
-   *   The data type converter manager.
-   * @param \Drupal\oe_ai_assistant\Service\EntityJsonSchemaComposer $composer
-   *   The JSON Schema composer service.
-   */
-  public function __construct(
-    array $configuration,
-    $plugin_id,
-    $plugin_definition,
-    ContextDefinitionNormalizer $context_definition_normalizer,
-    ?AiDataTypeConverterPluginManager $data_type_converter_manager,
-    EntityJsonSchemaComposer $composer,
-  ) {
-    parent::__construct(
-      $configuration,
-      $plugin_id,
-      $plugin_definition,
-      $context_definition_normalizer,
-      $data_type_converter_manager,
-    );
-    $this->composer = $composer;
-  }
-
-  /**
    * {@inheritdoc}
    */
   public static function create(
@@ -101,14 +65,11 @@ class GetContentSchema extends FunctionCallBase implements StructuredExecutableF
     $plugin_id,
     $plugin_definition,
   ): FunctionCallInterface|static {
-    return new static(
-      $configuration,
-      $plugin_id,
-      $plugin_definition,
-      $container->get('ai.context_definition_normalizer'),
-      $container->get('plugin.manager.ai_data_type_converter'),
-      $container->get(EntityJsonSchemaComposer::class),
+    $instance = parent::create(
+      $container, $configuration, $plugin_id, $plugin_definition
     );
+    $instance->composer = $container->get(EntityJsonSchemaComposer::class);
+    return $instance;
   }
 
   /**

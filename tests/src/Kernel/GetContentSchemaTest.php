@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\oe_ai_assistant\Kernel;
 
-use Drupal\field\Entity\FieldStorageConfig;
 use Drupal\KernelTests\KernelTestBase;
 use Drupal\oe_ai_assistant\Service\EntityJsonSchemaComposer;
 use PHPUnit\Framework\Attributes\Group;
@@ -65,17 +64,6 @@ class GetContentSchemaTest extends KernelTestBase {
       'node',
     ]);
 
-    // Create the body field storage before installing test config.
-    // The Standard profile normally provides this, but kernel tests
-    // do not install profiles.
-    if (!FieldStorageConfig::loadByName('node', 'body')) {
-      FieldStorageConfig::create([
-        'field_name' => 'body',
-        'entity_type' => 'node',
-        'type' => 'text_with_summary',
-      ])->save();
-    }
-
     $this->installConfig(['oe_ai_assistant_test']);
   }
 
@@ -104,7 +92,7 @@ class GetContentSchemaTest extends KernelTestBase {
     // Main fields should contain title and body.
     $mainGroup = $groups[array_search('main_fields', $groupIds)];
     $this->assertContains('title', $mainGroup['fieldNames']);
-    $this->assertContains('body', $mainGroup['fieldNames']);
+    $this->assertContains('field_body', $mainGroup['fieldNames']);
 
     // Main fields should NOT contain the paragraph field.
     $this->assertNotContains('field_content_paragraphs',

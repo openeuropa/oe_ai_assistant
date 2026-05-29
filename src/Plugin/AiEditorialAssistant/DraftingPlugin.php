@@ -199,13 +199,19 @@ class DraftingPlugin extends AiAssistantPluginBase {
     // tools (get_content_schema is registered there).
     $router = $this->aiAgentManager->createInstance('oe_drafting_router');
 
-    // Build the system prompt: agent base + bundle/entityTypeId
-    // hint so the LLM knows what values to pass to
-    // get_content_schema.
+    // Build the system prompt: agent base + bundle/entityTypeId +
+    // schema groups so the LLM has full field information upfront
+    // and can ask the user about missing context before calling
+    // draft_content.
+    $groups = $this->schemaComposer->splitSchemaIntoGroups(
+      $context['entityTypeId'], $context['bundle']
+    );
     $systemPrompt = $router->getSystemPrompt()
       . "\n\nContent type context:\n"
       . "bundle: " . $context['bundle'] . "\n"
-      . "entity_type_id: " . $context['entityTypeId'] . "\n";
+      . "entity_type_id: " . $context['entityTypeId'] . "\n"
+      . "\nAvailable field groups:\n"
+      . json_encode($groups, JSON_PRETTY_PRINT) . "\n";
 
     // Collect tools: get_content_schema from agent config +
     // inline draft_content signal tool.
