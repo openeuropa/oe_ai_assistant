@@ -504,6 +504,58 @@ class EntityJsonSchemaComposer {
       ];
     }
 
+    // entity_reference with inline_entity_form widget: treat like
+    // entity_reference_revisions. The editor drafts full entities
+    // inline, not just target_id references.
+    //
+    // @todo The inline detection currently relies on the form
+    //   display widget type (inline_entity_form_*). This may not
+    //   cover all cases where fields should be drafted inline
+    //   (e.g. custom widgets, contrib modules with their own
+    //   inline editing patterns). A more robust approach would be
+    //   a dedicated per-field config flag that explicitly marks
+    //   fields for inline drafting, independent of the widget.
+    if ($fieldDef->getType() === 'entity_reference'
+      && $this->isInlineEntityFormWidget($fieldDef)
+    ) {
+      $targetEntityType = $this->entityTypeManager->getDefinition($targetType);
+      $bundleKey = $targetEntityType->getKey('bundle');
+
+      $variants = [];
+      foreach ($targetBundles as $bundle) {
+        $bundleSchema = $this->composeBundle($targetType, $bundle, $depth);
+        // Inject the bundle-key discriminator if the entity type
+        // has bundles. Single-bundle entity types (e.g. user) skip
+        // this.
+        if ($bundleKey && isset($bundleSchema['properties'])) {
+          $bundleSchema['properties'][$bundleKey] = [
+            'type' => 'array',
+            'items' => [
+              'type' => 'object',
+              'properties' => [
+                'target_id' => ['type' => 'string', 'const' => $bundle],
+              ],
+            ],
+            'maxItems' => 1,
+          ];
+        }
+        $variants[] = $bundleSchema;
+      }
+
+      // Single target bundle: no need for oneOf.
+      if (count($variants) === 1) {
+        return array_merge($variants[0], [
+          'x-targetType' => $targetType,
+        ]);
+      }
+
+      return [
+        'type' => 'object',
+        'oneOf' => $variants,
+        'x-targetType' => $targetType,
+      ];
+    }
+
     // Plain entity_reference / image / file / taxonomy: emit
     // {properties: {target_id, ...}, x-targetType}. target_id is integer for
     // numeric-id entities, string for string-keyed (config) entities; the
@@ -523,6 +575,42 @@ class EntityJsonSchemaComposer {
       'properties' => $properties,
       'x-targetType' => $targetType,
     ];
+  }
+
+  /**
+   * Checks if a field uses an inline_entity_form widget.
+   *
+   * Loads the default form display for the field's parent entity
+   * type and bundle, then checks if the widget type starts with
+   * "inline_entity_form".
+   *
+   * @param \Drupal\Core\Field\FieldDefinitionInterface $fieldDef
+   *   The field definition.
+   *
+   * @return bool
+   *   TRUE if the field uses an inline entity form widget.
+   */
+  private function isInlineEntityFormWidget(FieldDefinitionInterface $fieldDef): bool {
+    $entityTypeId = $fieldDef->getTargetEntityTypeId();
+    $bundle = $fieldDef->getTargetBundle();
+    if (!$entityTypeId || !$bundle) {
+      return FALSE;
+    }
+
+    /** @var \Drupal\Core\Entity\Display\EntityFormDisplayInterface|null $formDisplay */
+    $formDisplay = $this->entityTypeManager
+      ->getStorage('entity_form_display')
+      ->load("$entityTypeId.$bundle.default");
+    if (!$formDisplay) {
+      return FALSE;
+    }
+
+    $component = $formDisplay->getComponent($fieldDef->getName());
+    if (!$component || empty($component['type'])) {
+      return FALSE;
+    }
+
+    return str_starts_with($component['type'], 'inline_entity_form');
   }
 
   /**
