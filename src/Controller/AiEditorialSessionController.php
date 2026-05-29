@@ -9,6 +9,7 @@ use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Url;
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionType;
+use Drupal\system\SystemManager;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\RedirectResponse;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
@@ -20,6 +21,7 @@ class AiEditorialSessionController extends ControllerBase {
 
   public function __construct(
     private readonly EntityTypeManagerInterface $sessionEntityTypeManager,
+    private readonly SystemManager $systemManager,
   ) {}
 
   /**
@@ -28,6 +30,7 @@ class AiEditorialSessionController extends ControllerBase {
   public static function create(ContainerInterface $container): static {
     return new static(
       $container->get('entity_type.manager'),
+      $container->get('system.manager'),
     );
   }
 
@@ -82,11 +85,7 @@ class AiEditorialSessionController extends ControllerBase {
    *   The render array to show in the page.
    */
   public function adminConfigPage(): array {
-    return [
-      'intro' => [
-        '#markup' => '<p>' . $this->t('Configuration pages for the AI Editorial Assistant will appear here.') . '</p>',
-      ],
-    ];
+    return $this->systemManager->getBlockContents();
   }
 
   /**
