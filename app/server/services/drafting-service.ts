@@ -1,6 +1,12 @@
 /**
  * Shared drafting service contracts and the Mistral-backed
- * drafting implementation used by the local integration mode.
+ * drafting implementation for the local dev server.
+ *
+ * Mirrors the Drupal backend's orchestration flow:
+ * 1. Router LLM calls get_content_schema (schema splitting)
+ * 2. Router LLM calls draft_content (orchestration signal)
+ * 3. Orchestrator dispatches one Mistral call per field group
+ * 4. Results consolidated and emitted as data-drafted-fields
  */
 
 import { randomUUID } from "node:crypto";
@@ -22,31 +28,25 @@ export interface StreamEvent {
   [key: string]: unknown;
 }
 
-/** A single field definition from the content type schema. */
-export interface SchemaField {
-  name: string;
-  label: string;
-  type: string;
-  widget: string;
-  interaction: string;
-  cardinality: number;
-  inlineForm?: {
-    targetBundles: Record<
-      string,
-      { label: string; groups: { fields: SchemaField[] }[] }
-    >;
-  };
-}
-
-/** Content type schema (output of FormSchemaExtractor). */
+/**
+ * Content type schema from EntityJsonSchemaComposer.
+ * JSON Schema with a flat properties map keyed by field name.
+ */
 export interface ContentTypeSchema {
-  contentType: string;
-  label: string;
-  groups: { label: string; fields: SchemaField[] }[];
+  type: string;
+  properties: Record<string, Record<string, unknown>>;
 }
 
 /** Flattened field lookup keyed by machine name. */
-export type FieldIndex = Record<string, SchemaField>;
+export type FieldIndex = Record<string, Record<string, unknown>>;
+
+/** A named group of fields for sub-agent orchestration. */
+interface SchemaGroup {
+  groupId: string;
+  label: string;
+  fieldNames: string[];
+  schemaSlice: { type: string; properties: Record<string, unknown> };
+}
 
 /** Options for the chat() method. */
 export interface ChatOptions {
@@ -79,8 +79,7 @@ export interface DraftingService {
 
 /**
  * Parse the optional "[fields:field_a,field_b]" tag from a
- * drafting prompt. The frontend appends this when requesting a
- * targeted regeneration.
+ * drafting prompt.
  */
 export function extractFieldsToStream(message: string): string[] {
   const match = message.match(/\[fields:([^\]]+)\]/);
@@ -94,6 +93,64 @@ export function extractFieldsToStream(message: string): string[] {
     .filter(Boolean);
 }
 
+// -- Schema splitting (mirrors EntityJsonSchemaComposer) ----------
+
+/** Entity types that are simple references, not draftable inline. */
+const SIMPLE_REFERENCE_TYPES = new Set([
+  "taxonomy_term",
+  "media",
+  "file",
+  "user",
+]);
+
+/**
+ * Splits a content type schema into named field groups.
+ * Mirrors EntityJsonSchemaComposer::splitSchemaIntoGroups().
+ */
+function splitSchemaIntoGroups(schema: ContentTypeSchema): SchemaGroup[] {
+  const properties = schema.properties ?? {};
+  const mainFields: Record<string, Record<string, unknown>> = {};
+  const entityGroups: SchemaGroup[] = [];
+
+  for (const [fieldName, fieldSchema] of Object.entries(properties)) {
+    const items = (fieldSchema.items ?? {}) as Record<string, unknown>;
+    const targetType = items["x-targetType"] as string | undefined;
+
+    if (targetType && !SIMPLE_REFERENCE_TYPES.has(targetType)) {
+      entityGroups.push({
+        groupId: fieldName,
+        label: fieldName
+          .replace(/^field_/, "")
+          .replace(/_/g, " ")
+          .replace(/\b\w/g, (c) => c.toUpperCase()),
+        fieldNames: [fieldName],
+        schemaSlice: {
+          type: "object",
+          properties: { [fieldName]: fieldSchema },
+        },
+      });
+    } else {
+      mainFields[fieldName] = fieldSchema;
+    }
+  }
+
+  const groups: SchemaGroup[] = [];
+
+  if (Object.keys(mainFields).length > 0) {
+    groups.push({
+      groupId: "main_fields",
+      label: "Main fields",
+      fieldNames: Object.keys(mainFields),
+      schemaSlice: { type: "object", properties: mainFields },
+    });
+  }
+
+  groups.push(...entityGroups);
+  return groups;
+}
+
+// -- Mistral service ----------------------------------------------
+
 type MistralApiMessage =
   | SystemMessage
   | UserMessage
@@ -103,16 +160,14 @@ type MistralApiMessage =
 /**
  * Drafting service: AI-powered content drafting via Mistral.
  *
- * Mirrors DraftingPlugin.php method-for-method. Each method has
- * a JSDoc comment referencing the corresponding PHP method. The
- * service yields Data Stream Protocol events as an AsyncGenerator;
- * the route handler writes them to the SSE response.
+ * Implements the two-tool conversational flow:
+ * 1. Router LLM decides to call get_content_schema or
+ *    draft_content based on conversation
+ * 2. get_content_schema returns schema groups
+ * 3. draft_content triggers sub-agent orchestration: one
+ *    Mistral call per schema group with structured output
  */
 export class MistralDraftingService implements DraftingService {
-  /**
-   * Maximum iterations for the tool-call loop.
-   * Mirrors DraftingPlugin::MAX_ITERATIONS (line 45).
-   */
   private static readonly MAX_ITERATIONS = 10;
 
   constructor(
@@ -120,41 +175,23 @@ export class MistralDraftingService implements DraftingService {
     private readonly store: ConversationStore,
   ) {}
 
-  // -- Public methods --------------------------------------------
-
-  /**
-   * Streams AI chat responses via Data Stream Protocol SSE events.
-   * Mirrors DraftingPlugin::chat() (lines 128-184) and
-   * createStreamResponse() (lines 340-406).
-   */
   async *chat(opts: ChatOptions): AsyncGenerator<StreamEvent> {
     const { message, threadId: inputThreadId, schema } = opts;
 
     const messageId = randomUUID();
     const threadId = inputThreadId || randomUUID();
-    const systemPrompt = this.buildSystemPrompt(schema);
-    const fieldIndex = this.buildFieldIndex(schema);
-    const fieldsToStream = extractFieldsToStream(message);
+    const systemPrompt = this.buildSystemPrompt(schema, opts);
+    const groups = schema ? splitSchemaIntoGroups(schema) : [];
 
     yield { type: "start", messageId };
+    yield { type: "data-thread-id", data: { threadId } };
 
     try {
-      // Load conversation history.
       const history = this.store.load(threadId);
+      history.push({ role: "user" as const, content: message });
 
-      // Add the new user message to history.
-      history.push({
-        role: "user" as const,
-        content: message,
-      });
-
-      // Run the LLM with tool loop.
-      const gen = this.runLlmLoop(
-        systemPrompt,
-        history,
-        fieldIndex,
-        fieldsToStream,
-      );
+      // Run the router LLM with tool loop.
+      const gen = this.runRouterLoop(systemPrompt, history, schema, groups);
       let result = await gen.next();
       while (!result.done) {
         yield result.value;
@@ -162,7 +199,6 @@ export class MistralDraftingService implements DraftingService {
       }
       const assistantText = result.value;
 
-      // Save updated history.
       if (assistantText) {
         history.push({
           role: "assistant" as const,
@@ -183,290 +219,130 @@ export class MistralDraftingService implements DraftingService {
     };
   }
 
-  /**
-   * Resets the conversation thread.
-   * Mirrors DraftingPlugin::reset() (lines 189-199).
-   */
   reset(threadId?: string): { threadId: string } {
-    if (threadId) {
-      this.store.delete(threadId);
-    }
+    if (threadId) this.store.delete(threadId);
     return { threadId: randomUUID() };
   }
 
-  /**
-   * Mock: saves a draft as a new node.
-   * Mirrors DraftingPlugin::save() (lines 204-228).
-   * Returns fake nodeId and previewUrl since there is no CMS.
-   */
   save(_body: DraftSavePayload): DraftSaveResult {
     const nodeId = String(Math.floor(Math.random() * 90000) + 10000);
-    return {
-      nodeId,
-      previewUrl: `/node/${nodeId}/latest`,
-    };
+    return { nodeId, previewUrl: `/node/${nodeId}/latest` };
   }
 
-  // -- Private methods -------------------------------------------
+  // -- Private: system prompt and tools ---------------------------
 
-  /**
-   * Builds the system prompt with content type schema.
-   * Mirrors DraftingPlugin::buildSystemPrompt() (lines 233-273).
-   */
-  private buildSystemPrompt(schema: ContentTypeSchema | null): string {
+  private buildSystemPrompt(
+    schema: ContentTypeSchema | null,
+    opts: ChatOptions,
+  ): string {
     let prompt = `You are a content drafting assistant for a CMS editorial workflow.
 
-You can have normal conversations with the editor. Answer questions, discuss
-ideas, and help them plan their content. Only use the draft_content tool when
-the editor explicitly asks you to generate or draft content.
+You have two tools available:
 
-When the editor asks you to draft or generate content:
-- Use the draft_content tool to return structured field values matching the
-  content type schema provided below.
-- Always return the COMPLETE set of fields in every tool call, not just the
-  ones you changed. The frontend replaces the entire draft on each call.
-- When the editor asks to regenerate specific fields, return the full draft
-  with those fields updated and all other fields unchanged.
-- Do NOT produce values for entity reference fields (media, taxonomies, etc.).
-  These are handled separately by the editor.
-- For formatted text fields, produce clean HTML appropriate for the field.
-- Match the language and tone the editor requests.
+1. get_content_schema: Call this first to discover what fields are
+   available for the content type. It returns groups of fields with
+   their types and descriptions. Use bundle "${opts.bundle}" and
+   entity_type_id "${opts.entityTypeId}".
 
-When the editor asks a question, makes a comment, or has a conversation that
-does not involve generating content, respond normally in plain text. Do NOT
-call the draft_content tool for conversational responses.`;
+2. draft_content: Call this when you have gathered enough information
+   from the user to generate the content. This triggers the content
+   generation process.
+
+Workflow:
+- When the user asks to draft content, call get_content_schema to see
+  what fields are available.
+- Review the field groups. If you need more information from the user
+  to fill certain fields, ask them.
+- Once you have enough context, call draft_content to start generating.
+- You can have normal conversations with the user at any point. Only
+  call draft_content when you are ready to generate.`;
 
     if (schema) {
-      prompt += `\n\nContent type schema:\n${JSON.stringify(schema)}`;
+      prompt += `\n\nContent type context:\nbundle: ${opts.bundle}\nentity_type_id: ${opts.entityTypeId}`;
     }
 
     return prompt;
   }
 
-  /**
-   * Builds tool definitions for the Mistral chat call.
-   * Mirrors DraftingPlugin::buildTools() (lines 315-332).
-   */
-  private buildTools() {
+  private buildRouterTools() {
     return [
+      {
+        type: "function" as const,
+        function: {
+          name: "get_content_schema",
+          description:
+            "Returns the content type schema split into field groups.",
+          parameters: {
+            type: "object" as const,
+            properties: {
+              bundle: { type: "string", description: "Bundle machine name." },
+              entity_type_id: { type: "string", description: "Entity type." },
+            },
+            required: ["bundle", "entity_type_id"],
+          },
+        },
+      },
       {
         type: "function" as const,
         function: {
           name: "draft_content",
           description:
-            "Produce a complete set of field values for the " +
-            "content type. Field names and value shapes must " +
-            "match the content type schema provided in the " +
-            "system prompt. Always return ALL fields.",
-          parameters: {
-            type: "object" as const,
-            properties: {
-              fields: {
-                type: "object",
-                description:
-                  "Complete field values keyed by field " + "machine name.",
-              },
-            },
-            required: ["fields"],
-          },
+            "Signal that you are ready to generate the content draft.",
+          parameters: { type: "object" as const, properties: {} },
         },
       },
     ];
   }
 
-  /**
-   * Builds a flat field index from the content type schema.
-   * Mirrors DraftingPlugin::buildFieldIndex() (lines 290-307).
-   */
-  private buildFieldIndex(schema: ContentTypeSchema | null): FieldIndex {
-    if (!schema) return {};
-    const index: FieldIndex = {};
-    for (const group of schema.groups) {
-      for (const field of group.fields) {
-        index[field.name] = field;
-      }
-    }
-    return index;
-  }
+  // -- Private: router LLM loop -----------------------------------
 
   /**
-   * Tool handler: draft_content.
-   * Mirrors DraftingPlugin::toolDraftContent() (lines 711-718).
+   * Runs the router LLM with a tool loop. Handles get_content_schema
+   * (returns schema groups) and draft_content (triggers orchestration).
    */
-  private toolDraftContent(args: Record<string, unknown>): {
-    success: boolean;
-    fields: Record<string, unknown>;
-    message: string;
-  } {
-    const fields = (args.fields ?? args) as Record<string, unknown>;
-    return {
-      success: true,
-      fields,
-      message:
-        "Draft content generated with " +
-        Object.keys(fields).length +
-        " fields.",
-    };
-  }
-
-  /**
-   * Yields a data-drafted-fields event with all drafted field
-   * values.
-   *
-   * Mirrors the PHP backend behavior: all fields arrive as a
-   * single snapshot after the tool call completes. No incremental
-   * streaming -- Mistral sends tool call arguments in one shot.
-   *
-   * Any progressive display (typewriter effect) is handled
-   * entirely on the frontend.
-   */
-  private *streamFieldEvents(
-    fields: Record<string, unknown>,
-    _fieldIndex: FieldIndex,
-    fieldsToStream: string[],
-  ): Generator<StreamEvent> {
-    // Filter to target fields on regeneration.
-    let targetFields = fields;
-    if (fieldsToStream.length > 0) {
-      targetFields = Object.fromEntries(
-        Object.entries(fields).filter(([name]) =>
-          fieldsToStream.includes(name),
-        ),
-      );
-    }
-
-    // Emit a single snapshot with all field values at once.
-    // No transient flag -- this is the final reconciliation.
-    yield {
-      type: "data-drafted-fields",
-      data: { ...targetFields },
-    };
-  }
-
-  /**
-   * Executes tool calls and yields Data Stream Protocol events.
-   * Mirrors DraftingPlugin::executeToolCalls() (lines 585-614).
-   *
-   * Uses a synchronous generator so the caller (runLlmLoop) can
-   * manually iterate to extract both yielded events AND the
-   * return value (tool result messages for conversation history).
-   */
-  private *executeToolCalls(
-    toolCalls: Array<{
-      id: string;
-      name: string;
-      arguments: Record<string, unknown>;
-    }>,
-    fieldIndex: FieldIndex,
-    fieldsToStream: string[],
-  ): Generator<StreamEvent, ToolMessage[]> {
-    const toolMessages: ToolMessage[] = [];
-
-    for (const toolCall of toolCalls) {
-      const result =
-        toolCall.name === "draft_content"
-          ? this.toolDraftContent(toolCall.arguments)
-          : { error: `Unknown tool: ${toolCall.name}` };
-
-      toolMessages.push({
-        role: "tool" as const,
-        content: JSON.stringify(result),
-        toolCallId: toolCall.id,
-      });
-
-      // Stream field events if the tool produced fields.
-      if ("fields" in result && result.fields) {
-        yield* this.streamFieldEvents(
-          result.fields as Record<string, unknown>,
-          fieldIndex,
-          fieldsToStream,
-        );
-      }
-
-      // tool-call-end closes the tool call, then tool-result
-      // tells the client the tool completed successfully.
-      yield { type: "tool-call-end" };
-      yield {
-        type: "tool-result",
-        toolCallId: toolCall.id,
-        result,
-      };
-    }
-
-    return toolMessages;
-  }
-
-  /**
-   * Runs the LLM with tool loop, yielding Data Stream Protocol
-   * events. Mirrors DraftingPlugin::runLlmLoop() (lines 418-570).
-   *
-   * @param systemPrompt - The system prompt with schema.
-   * @param messages - Conversation history (mutated in place).
-   * @param fieldIndex - Flat field index for streaming.
-   * @param fieldsToStream - Field names to stream progressively.
-   *
-   * @returns The final assistant text message.
-   */
-  private async *runLlmLoop(
+  private async *runRouterLoop(
     systemPrompt: string,
     messages: ChatMessage[],
-    fieldIndex: FieldIndex,
-    fieldsToStream: string[],
+    schema: ContentTypeSchema | null,
+    groups: SchemaGroup[],
   ): AsyncGenerator<StreamEvent, string> {
     let fullMessage = "";
 
     for (let i = 0; i < MistralDraftingService.MAX_ITERATIONS; i++) {
-      let textPartId = randomUUID();
-
-      // Emit start-step before each LLM call.
       yield { type: "start-step" };
 
-      // Build the messages array for the Mistral API call.
       const apiMessages = [
         { role: "system" as const, content: systemPrompt },
         ...messages,
       ] as MistralApiMessage[];
 
-      // Call Mistral with streaming.
       const stream = await this.mistral.chat.stream({
         model: MISTRAL_MODEL,
         messages: apiMessages,
-        tools: this.buildTools(),
+        tools: this.buildRouterTools(),
       });
 
       let streamedText = "";
       let messageStarted = false;
-
-      // Accumulate tool call deltas across streaming chunks.
       const toolCallMap = new Map<
         number,
         { id: string; name: string; arguments: string }
       >();
 
-      // Iterate over streaming chunks from the Mistral API.
       for await (const event of stream) {
         const delta = event.data.choices[0]?.delta;
         if (!delta) continue;
 
-        // Text content deltas.
         const text = delta.content;
         if (typeof text === "string" && text.length > 0) {
           if (!messageStarted) {
-            yield {
-              type: "text-start",
-              id: textPartId,
-            };
+            yield { type: "text-start", id: randomUUID() };
             messageStarted = true;
           }
-          yield {
-            type: "text-delta",
-            textDelta: text,
-          };
+          yield { type: "text-delta", textDelta: text };
           streamedText += text;
         }
 
-        // Tool call deltas: accumulate fragments until the
-        // stream ends, then assemble complete tool calls.
         if (delta.toolCalls) {
           for (const tc of delta.toolCalls) {
             const idx = tc.index ?? 0;
@@ -478,69 +354,64 @@ call the draft_content tool for conversational responses.`;
                 arguments: String(tc.function?.arguments ?? ""),
               });
             } else {
-              if (tc.function?.name) {
-                existing.name += tc.function.name;
-              }
-              if (tc.function?.arguments != null) {
+              if (tc.function?.name) existing.name += tc.function.name;
+              if (tc.function?.arguments != null)
                 existing.arguments += String(tc.function.arguments);
-              }
             }
           }
         }
       }
 
-      // Close text part if one was started.
-      if (messageStarted) {
-        yield { type: "text-end" };
-      }
+      if (messageStarted) yield { type: "text-end" };
 
-      // Process assembled tool calls (if any).
       const assembledTools = Array.from(toolCallMap.values());
       if (assembledTools.length > 0) {
-        // Build tool calls array for the assistant message history.
         const toolCallsForHistory = assembledTools.map((tc) => ({
           id: tc.id,
           type: "function" as const,
-          function: {
-            name: tc.name,
-            arguments: tc.arguments,
-          },
+          function: { name: tc.name, arguments: tc.arguments },
         }));
 
-        // Yield tool-call-start events for each tool call.
-        for (const tc of assembledTools) {
-          yield {
-            type: "tool-call-start",
-            id: randomUUID(),
-            toolCallId: tc.id,
-            toolName: tc.name,
-          };
-        }
-
-        // Parse accumulated argument strings into objects.
-        const parsedToolCalls = assembledTools.map((tc) => ({
-          id: tc.id,
-          name: tc.name,
-          arguments: JSON.parse(tc.arguments) as Record<string, unknown>,
-        }));
-
-        // Execute tools and yield data-drafted-fields +
-        // tool-result events. Manual iteration is needed
-        // to extract the generator's return value (tool result
-        // messages).
-        const gen = this.executeToolCalls(
-          parsedToolCalls,
-          fieldIndex,
-          fieldsToStream,
+        // Check if draft_content was called.
+        const draftCall = assembledTools.find(
+          (tc) => tc.name === "draft_content",
         );
-        let genResult = gen.next();
-        while (!genResult.done) {
-          yield genResult.value;
-          genResult = gen.next();
-        }
-        const toolMessages = genResult.value;
 
-        // Emit finish-step after the tool execution completes.
+        if (draftCall) {
+          // Emit finish-step for the router, then orchestrate.
+          yield {
+            type: "finish-step",
+            finishReason: "tool-calls",
+            usage: { inputTokens: 0, outputTokens: 0 },
+            isContinued: false,
+          };
+
+          // Run sub-agent orchestration.
+          yield* this.orchestrate(groups, messages);
+          fullMessage = "Draft content generated.";
+          break;
+        }
+
+        // Handle get_content_schema: return groups as tool result.
+        const toolMessages: ToolMessage[] = [];
+        for (const tc of assembledTools) {
+          let result: unknown;
+          if (tc.name === "get_content_schema") {
+            result = groups.map((g) => ({
+              groupId: g.groupId,
+              label: g.label,
+              fieldNames: g.fieldNames,
+            }));
+          } else {
+            result = { error: `Unknown tool: ${tc.name}` };
+          }
+          toolMessages.push({
+            role: "tool" as const,
+            content: JSON.stringify(result),
+            toolCallId: tc.id,
+          });
+        }
+
         yield {
           type: "finish-step",
           finishReason: "tool-calls",
@@ -548,8 +419,6 @@ call the draft_content tool for conversational responses.`;
           isContinued: true,
         };
 
-        // Add assistant + tool messages to history for the next
-        // iteration's context.
         const assistantMsg: AssistantMessage = {
           role: "assistant" as const,
           content: streamedText || "",
@@ -557,14 +426,10 @@ call the draft_content tool for conversational responses.`;
         };
         messages.push(assistantMsg);
         messages.push(...toolMessages);
-
-        // Generate new text part ID for the next iteration.
-        textPartId = randomUUID();
         continue;
       }
 
-      // No tool calls: pure text response. Emit finish-step,
-      // save and break.
+      // No tool calls: pure text response.
       yield {
         type: "finish-step",
         finishReason: "stop",
@@ -576,5 +441,139 @@ call the draft_content tool for conversational responses.`;
     }
 
     return fullMessage;
+  }
+
+  // -- Private: sub-agent orchestration ---------------------------
+
+  /**
+   * Dispatches one Mistral call per schema group and consolidates
+   * results. Mirrors DraftingPlugin::orchestrate().
+   */
+  private async *orchestrate(
+    groups: SchemaGroup[],
+    history: ChatMessage[],
+  ): AsyncGenerator<StreamEvent> {
+    if (groups.length === 0) {
+      yield { type: "text-delta", textDelta: "No fields available." };
+      return;
+    }
+
+    // Emit initial plan (all pending).
+    const plan = groups.map((g) => ({
+      stepId: g.groupId,
+      label: g.label,
+      status: "pending",
+    }));
+    yield { type: "data-plan", data: [...plan] };
+
+    // Build conversation context for sub-agents.
+    const conversationContext = history
+      .map((m) => `${m.role}: ${m.content}`)
+      .join("\n");
+
+    const results: Record<string, Record<string, unknown>> = {};
+    let mainFieldsResult = "";
+
+    for (let i = 0; i < groups.length; i++) {
+      const group = groups[i];
+      const stepId = group.groupId;
+
+      // Update plan: in_progress.
+      plan[i].status = "in_progress";
+      yield { type: "data-plan", data: [...plan] };
+
+      try {
+        // Build the sub-agent prompt.
+        let taskPrompt = `Conversation context:\n${conversationContext}\n\n`;
+        if (stepId !== "main_fields" && mainFieldsResult) {
+          taskPrompt += `Main fields already generated:\n${mainFieldsResult}\n\n`;
+        }
+        taskPrompt +=
+          "Generate content for the fields in the provided schema. " +
+          "Return ONLY valid JSON conforming to the schema. " +
+          "No markdown fencing, no explanation.";
+
+        const subAgentMessages: MistralApiMessage[] = [
+          {
+            role: "system" as const,
+            content:
+              "You are a content generator. Generate a JSON object " +
+              "conforming exactly to the given schema. Return ONLY " +
+              "valid JSON with no markdown fencing.\n\n" +
+              `Schema:\n${JSON.stringify(group.schemaSlice)}`,
+          },
+          { role: "user" as const, content: taskPrompt },
+        ];
+
+        // Call Mistral for this group (non-streaming, structured).
+        const response = await this.mistral.chat.complete({
+          model: MISTRAL_MODEL,
+          messages: subAgentMessages,
+          responseFormat: { type: "json_object" },
+        });
+
+        const fullText =
+          response.choices?.[0]?.message?.content?.toString() ?? "";
+
+        // Parse JSON result.
+        try {
+          const parsed = JSON.parse(fullText) as Record<string, unknown>;
+          results[stepId] = parsed;
+          if (stepId === "main_fields") {
+            mainFieldsResult = fullText;
+          }
+        } catch {
+          console.error(
+            `[orchestrate] Failed to parse JSON for ${stepId}:`,
+            fullText.substring(0, 200),
+          );
+        }
+
+        // Mark done.
+        plan[i].status = "done";
+        yield { type: "data-plan", data: [...plan] };
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error(`[orchestrate] Sub-agent ${stepId} failed:`, msg);
+        plan[i].status = "error";
+        yield { type: "data-plan", data: [...plan] };
+        yield { type: "error", errorText: msg, step: stepId };
+      }
+    }
+
+    // Consolidate results into a flat fields map.
+    const consolidated: Record<string, unknown> = {};
+    for (const group of groups) {
+      const stepId = group.groupId;
+      if (!results[stepId]) continue;
+      if (stepId === "main_fields") {
+        Object.assign(consolidated, results[stepId]);
+      } else {
+        for (const fieldName of group.fieldNames) {
+          if (results[stepId][fieldName]) {
+            consolidated[fieldName] = results[stepId][fieldName];
+          } else {
+            consolidated[fieldName] = results[stepId];
+          }
+        }
+      }
+    }
+
+    // Emit data-drafted-fields.
+    yield { type: "data-drafted-fields", data: consolidated };
+
+    // Confirmation text.
+    const fieldCount = Object.keys(consolidated).length;
+    yield { type: "start-step" };
+    yield {
+      type: "text-delta",
+      textDelta: `Draft generated with ${fieldCount} fields. Review the content on the right.`,
+    };
+    yield {
+      type: "finish-step",
+      finishReason: "stop",
+      usage: { inputTokens: 0, outputTokens: 0 },
+      isContinued: false,
+    };
   }
 }

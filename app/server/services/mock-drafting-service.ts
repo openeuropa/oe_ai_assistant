@@ -232,40 +232,43 @@ export class MockDraftingService implements DraftingService {
     variant: DraftFixtureVariant,
     fieldsToStream: string[],
   ): AsyncGenerator<StreamEvent> {
-    const toolCallId = randomUUID();
     const selectedFields = selectDraftedFields(variant.fields, fieldsToStream);
 
     yield { type: "start-step" };
     yield* this.streamText(variant.assistantText);
     await delay(FIELD_GAP_DELAY_MS);
 
-    yield {
-      type: "tool-call-start",
-      id: randomUUID(),
-      toolCallId,
-      toolName: "draft_content",
-    };
+    // Emit orchestration plan to match the Drupal backend flow.
+    const fieldNames = Object.keys(selectedFields);
+    const plan = [
+      { stepId: "main_fields", label: "Main fields", status: "pending" },
+    ];
+    yield { type: "data-plan", data: plan };
     await delay(SSE_CHUNK_DELAY_MS);
 
+    // Simulate sub-agent progress.
+    plan[0].status = "in_progress";
+    yield { type: "data-plan", data: [...plan] };
+    await delay(FIELD_GAP_DELAY_MS);
+
+    plan[0].status = "done";
+    yield { type: "data-plan", data: [...plan] };
+
+    // Emit the drafted fields.
     yield {
       type: "data-drafted-fields",
       data: selectedFields,
     };
-    yield { type: "tool-call-end" };
-    yield {
-      type: "tool-result",
-      toolCallId,
-      result: {
-        success: true,
-        fields: variant.fields,
-        message:
-          "Draft content loaded from standalone fixture data " +
-          `(${Object.keys(variant.fields).length} fields).`,
-      },
-    };
+
+    // Confirmation text.
+    const confirmText =
+      `Draft generated with ${fieldNames.length} fields. ` +
+      "Review the content on the right.";
+    yield { type: "start-step" };
+    yield* this.streamText(confirmText);
     yield {
       type: "finish-step",
-      finishReason: "tool-calls",
+      finishReason: "stop",
       usage: DEFAULT_USAGE,
       isContinued: false,
     };
