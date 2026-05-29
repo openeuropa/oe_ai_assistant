@@ -84,7 +84,7 @@ class EntityJsonSchemaComposerTest extends KernelTestBase {
     $this->assertArrayHasKey('properties', $schema);
     foreach ([
       'title',
-      'body',
+      'field_body',
       'field_teaser',
       'field_publication_date',
       'field_news_type',
@@ -133,7 +133,7 @@ class EntityJsonSchemaComposerTest extends KernelTestBase {
    */
   public function testFormattedTextFieldHasValueAndFormatProperties(): void {
     $schema = $this->composer()->compose('node', 'oe_news');
-    $body = $schema['properties']['body'];
+    $body = $schema['properties']['field_body'];
 
     // The body field is array-wrapped with multi-property items.
     $this->assertSame('array', $body['type']);
@@ -301,18 +301,25 @@ class EntityJsonSchemaComposerTest extends KernelTestBase {
   }
 
   /**
-   * Asserts entity_reference fields surface target_type and target_bundles.
+   * Asserts entity_reference fields with inline_entity_form recurse into
+   * target bundles (same as entity_reference_revisions).
    */
-  public function testEntityReferenceFieldGetsTargetMetadata(): void {
+  public function testInlineEntityFormReferenceRecursesIntoBundles(): void {
     $schema = $this->composer()->compose('node', 'oe_news');
     $contacts = $schema['properties']['field_contacts'];
 
-    // Reference fields emit denormalize-shape items: properties.target_id +
-    // x-targetType.
+    // Inline entity form references recurse into the target bundle
+    // and emit the full entity schema, not just target_id.
     $this->assertSame('array', $contacts['type']);
     $items = $contacts['items'];
     $this->assertSame('node', $items['x-targetType']);
-    $this->assertSame('integer', $items['properties']['target_id']['type']);
+    // Should have contact-specific fields, not just target_id.
+    $this->assertArrayHasKey('field_contact_name',
+      $items['properties'],
+      'Inline entity form reference should include target bundle fields.');
+    $this->assertArrayHasKey('field_contact_email',
+      $items['properties'],
+      'Inline entity form reference should include target bundle fields.');
   }
 
   /**

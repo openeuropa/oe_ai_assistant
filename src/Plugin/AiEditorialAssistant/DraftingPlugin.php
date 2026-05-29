@@ -214,15 +214,19 @@ class DraftingPlugin extends AiAssistantPluginBase {
     // schema groups so the LLM has full field information upfront
     // and can ask the user about missing context before calling
     // draft_content.
-    $groups = $this->schemaComposer->splitSchemaIntoGroups(
-      $context['entityTypeId'], $context['bundle']
-    );
     $systemPrompt = $router->getSystemPrompt()
       . "\n\nContent type context:\n"
       . "bundle: " . $context['bundle'] . "\n"
-      . "entity_type_id: " . $context['entityTypeId'] . "\n"
-      . "\nAvailable field groups:\n"
-      . json_encode($groups, JSON_PRETTY_PRINT) . "\n";
+      . "entity_type_id: " . $context['entityTypeId'] . "\n";
+
+    // Append schema groups when a bundle is known.
+    if (!empty($context['bundle'])) {
+      $groups = $this->schemaComposer->splitSchemaIntoGroups(
+        $context['entityTypeId'], $context['bundle']
+      );
+      $systemPrompt .= "\nAvailable field groups:\n"
+        . json_encode($groups, JSON_PRETTY_PRINT) . "\n";
+    }
 
     // Collect tools: get_content_schema from agent config +
     // inline draft_content signal tool.
