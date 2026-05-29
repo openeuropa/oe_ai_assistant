@@ -24,6 +24,7 @@ abstract class AiEditorialSessionKernelTestBase extends KernelTestBase {
     'ai',
     'content_moderation',
     'field',
+    'text',
     'node',
     'oe_ai_assistant',
     'options',

@@ -69,9 +69,23 @@ class AiEditorialSessionDashboardTest extends AiEditorialSessionBrowserTestBase 
     $this->assertSession()->statusCodeEquals(200);
     $this->assertSession()->pageTextContains('AI editorial sessions');
 
-    $this->drupalGet(Url::fromRoute('oe_ai_assistant.admin_config'));
+    $admin_settings_url = Url::fromRoute('oe_ai_assistant.admin_settings');
+    $dashboard_url = Url::fromRoute('entity.ai_editorial_session.collection');
+
+    $this->drupalGet(Url::fromRoute('system.admin_config'));
     $this->assertSession()->statusCodeEquals(200);
-    $this->assertSession()->pageTextContains('AI Editorial Assistant');
+    $this->assertSession()->pageTextContains('AI Editorial tools');
+    $this->assertSession()->pageTextContains('AI Editorial Sessions');
+    $this->assertSession()->linkExists('AI Editorial Sessions');
+    $this->assertSession()->linkByHrefExists($dashboard_url->toString());
+
+    $this->drupalGet($admin_settings_url);
+    $this->assertSession()->statusCodeEquals(200);
+    $this->assertSession()->pageTextContains('AI Editorial Tools');
+    $this->assertSession()->pageTextContains('AI Editorial Sessions');
+    $this->assertSession()->pageTextContains('List and manage AI editorial sessions.');
+    $this->assertSession()->linkExists('AI Editorial Sessions');
+    $this->assertSession()->linkByHrefExists($dashboard_url->toString());
   }
 
   /**
