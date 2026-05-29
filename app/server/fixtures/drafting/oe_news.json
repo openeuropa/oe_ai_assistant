@@ -26,6 +26,22 @@
             "format": "full_html"
           }
         ],
+        "field_contacts": [
+          {
+            "type": [{ "target_id": "oe_contact" }],
+            "title": [{ "value": "Elena Popescu" }],
+            "field_contact_name": [{ "value": "Elena Popescu" }],
+            "field_contact_email": [{ "value": "elena.popescu@example.eu" }],
+            "field_contact_role": [{ "value": "Programme coordinator" }]
+          },
+          {
+            "type": [{ "target_id": "oe_contact" }],
+            "title": [{ "value": "Martin Keller" }],
+            "field_contact_name": [{ "value": "Martin Keller" }],
+            "field_contact_email": [{ "value": "martin.keller@example.eu" }],
+            "field_contact_role": [{ "value": "Press officer" }]
+          }
+        ],
         "field_content_paragraphs": [
           {
             "type": [{ "target_id": "text_block" }],
@@ -70,6 +86,15 @@
           {
             "value": "<p>The European Commission has refreshed the coastal restoration announcement with a stronger focus on shoreline resilience measures and operational reporting.</p><p>Under the updated framing, participating teams will test practical interventions, document implementation constraints, and share evidence with a common editorial structure.</p>",
             "format": "full_html"
+          }
+        ],
+        "field_contacts": [
+          {
+            "type": [{ "target_id": "oe_contact" }],
+            "title": [{ "value": "Elena Popescu" }],
+            "field_contact_name": [{ "value": "Elena Popescu" }],
+            "field_contact_email": [{ "value": "elena.popescu@example.eu" }],
+            "field_contact_role": [{ "value": "Senior programme coordinator" }]
           }
         ],
         "field_content_paragraphs": [

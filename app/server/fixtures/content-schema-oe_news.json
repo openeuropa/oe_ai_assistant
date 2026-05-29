@@ -6,7 +6,9 @@
       "items": {
         "type": "object",
         "properties": {
-          "value": { "type": "boolean" }
+          "value": {
+            "type": "boolean"
+          }
         },
         "required": ["value"]
       },
@@ -18,24 +20,86 @@
       "items": {
         "type": "object",
         "properties": {
-          "value": { "type": "string", "maxLength": 255 }
+          "value": {
+            "type": "string",
+            "maxLength": 255
+          }
         },
         "required": ["value"]
       },
       "maxItems": 1,
       "description": "Title"
     },
+    "promote": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "value": {
+            "type": "boolean"
+          }
+        },
+        "required": ["value"]
+      },
+      "maxItems": 1,
+      "description": "Promoted to front page"
+    },
+    "sticky": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "value": {
+            "type": "boolean"
+          }
+        },
+        "required": ["value"]
+      },
+      "maxItems": 1,
+      "description": "Sticky at top of lists"
+    },
+    "moderation_state": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "value": {
+            "type": "string",
+            "maxLength": 255
+          }
+        },
+        "required": ["value"]
+      },
+      "maxItems": 1,
+      "description": "The moderation state of this piece of content."
+    },
     "body": {
       "type": "array",
       "items": {
         "type": "object",
         "properties": {
-          "value": { "type": "string" },
+          "value": {
+            "type": "string"
+          },
           "format": {
-            "oneOf": [{ "type": "string" }, { "type": "null" }]
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "summary": {
-            "oneOf": [{ "type": "string" }, { "type": "null" }]
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": ["value"]
@@ -48,8 +112,138 @@
       "items": {
         "type": "object",
         "properties": {
-          "target_id": { "type": "integer" }
+          "status": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "value": {
+                  "type": "boolean"
+                }
+              },
+              "required": ["value"]
+            },
+            "maxItems": 1,
+            "description": "Published"
+          },
+          "title": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "value": {
+                  "type": "string",
+                  "maxLength": 255
+                }
+              },
+              "required": ["value"]
+            },
+            "maxItems": 1,
+            "description": "Title"
+          },
+          "promote": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "value": {
+                  "type": "boolean"
+                }
+              },
+              "required": ["value"]
+            },
+            "maxItems": 1,
+            "description": "Promoted to front page"
+          },
+          "sticky": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "value": {
+                  "type": "boolean"
+                }
+              },
+              "required": ["value"]
+            },
+            "maxItems": 1,
+            "description": "Sticky at top of lists"
+          },
+          "moderation_state": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "value": {
+                  "type": "string",
+                  "maxLength": 255
+                }
+              },
+              "required": ["value"]
+            },
+            "maxItems": 1,
+            "description": "The moderation state of this piece of content."
+          },
+          "field_contact_email": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "value": {
+                  "type": "string",
+                  "format": "email"
+                }
+              },
+              "required": ["value"]
+            },
+            "maxItems": 1,
+            "description": "Contact email"
+          },
+          "field_contact_name": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "value": {
+                  "type": "string",
+                  "maxLength": 255
+                }
+              },
+              "required": ["value"]
+            },
+            "maxItems": 1,
+            "description": "Contact name"
+          },
+          "field_contact_role": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "value": {
+                  "type": "string",
+                  "maxLength": 255
+                }
+              },
+              "required": ["value"]
+            },
+            "maxItems": 1,
+            "description": "Contact role"
+          },
+          "type": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "target_id": {
+                  "type": "string",
+                  "const": "oe_contact"
+                }
+              }
+            },
+            "maxItems": 1
+          }
         },
+        "required": ["title", "field_contact_name"],
         "x-targetType": "node"
       },
       "description": "Contacts"
@@ -62,14 +256,96 @@
           {
             "type": "object",
             "properties": {
+              "status": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "value": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": ["value"]
+                },
+                "maxItems": 1,
+                "description": "Published"
+              },
+              "parent_id": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "value": {
+                      "type": "string",
+                      "maxLength": 255
+                    }
+                  },
+                  "required": ["value"]
+                },
+                "maxItems": 1,
+                "description": "The ID of the parent entity of which this entity is referenced."
+              },
+              "parent_type": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "value": {
+                      "type": "string",
+                      "maxLength": 32
+                    }
+                  },
+                  "required": ["value"]
+                },
+                "maxItems": 1,
+                "description": "The entity parent type to which this entity is referenced."
+              },
+              "parent_field_name": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "value": {
+                      "type": "string",
+                      "maxLength": 32
+                    }
+                  },
+                  "required": ["value"]
+                },
+                "maxItems": 1,
+                "description": "The entity parent field name to which this entity is referenced."
+              },
+              "behavior_settings": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "value": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["value"]
+                },
+                "maxItems": 1,
+                "description": "The behavior plugin settings"
+              },
               "field_text_body": {
                 "type": "array",
                 "items": {
                   "type": "object",
                   "properties": {
-                    "value": { "type": "string" },
+                    "value": {
+                      "type": "string"
+                    },
                     "format": {
-                      "oneOf": [{ "type": "string" }, { "type": "null" }]
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     }
                   },
                   "required": ["value"]
@@ -95,12 +371,88 @@
           {
             "type": "object",
             "properties": {
+              "status": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "value": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": ["value"]
+                },
+                "maxItems": 1,
+                "description": "Published"
+              },
+              "parent_id": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "value": {
+                      "type": "string",
+                      "maxLength": 255
+                    }
+                  },
+                  "required": ["value"]
+                },
+                "maxItems": 1,
+                "description": "The ID of the parent entity of which this entity is referenced."
+              },
+              "parent_type": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "value": {
+                      "type": "string",
+                      "maxLength": 32
+                    }
+                  },
+                  "required": ["value"]
+                },
+                "maxItems": 1,
+                "description": "The entity parent type to which this entity is referenced."
+              },
+              "parent_field_name": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "value": {
+                      "type": "string",
+                      "maxLength": 32
+                    }
+                  },
+                  "required": ["value"]
+                },
+                "maxItems": 1,
+                "description": "The entity parent field name to which this entity is referenced."
+              },
+              "behavior_settings": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "value": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["value"]
+                },
+                "maxItems": 1,
+                "description": "The behavior plugin settings"
+              },
               "field_quote_attribution": {
                 "type": "array",
                 "items": {
                   "type": "object",
                   "properties": {
-                    "value": { "type": "string", "maxLength": 255 }
+                    "value": {
+                      "type": "string",
+                      "maxLength": 255
+                    }
                   },
                   "required": ["value"]
                 },
@@ -112,9 +464,18 @@
                 "items": {
                   "type": "object",
                   "properties": {
-                    "value": { "type": "string" },
+                    "value": {
+                      "type": "string"
+                    },
                     "format": {
-                      "oneOf": [{ "type": "string" }, { "type": "null" }]
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     }
                   },
                   "required": ["value"]
@@ -147,7 +508,10 @@
       "items": {
         "type": "object",
         "properties": {
-          "value": { "type": "string", "maxLength": 64 }
+          "value": {
+            "type": "string",
+            "maxLength": 64
+          }
         },
         "required": ["value"]
       },
@@ -159,9 +523,15 @@
       "items": {
         "type": "object",
         "properties": {
-          "target_id": { "type": "integer" },
-          "alt": { "type": "string" },
-          "title": { "type": "string" }
+          "target_id": {
+            "type": "integer"
+          },
+          "alt": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
         },
         "x-targetType": "file"
       },
@@ -174,10 +544,28 @@
         "type": "object",
         "properties": {
           "uri": {
-            "oneOf": [{ "type": "string", "format": "uri" }, { "type": "null" }]
+            "oneOf": [
+              {
+                "type": "string",
+                "format": "uri"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "title": {
-            "oneOf": [{ "type": "string" }, { "type": "null" }]
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "options": {
+            "$comment": "No schema is defined for property of type Drupal\\Core\\TypedData\\Plugin\\DataType\\Map. See https://www.drupal.org/node/3424710 for information on implementing schemas in your program code."
           }
         }
       },
@@ -189,7 +577,9 @@
       "items": {
         "type": "object",
         "properties": {
-          "target_id": { "type": "integer" }
+          "target_id": {
+            "type": "integer"
+          }
         },
         "x-targetType": "taxonomy_term"
       },
@@ -215,19 +605,40 @@
       "items": {
         "type": "object",
         "properties": {
-          "value": { "type": "string", "format": "date" }
+          "value": {
+            "type": "string",
+            "format": "date"
+          }
         },
         "required": ["value"]
       },
       "maxItems": 1,
       "description": "Publication date"
     },
+    "field_publication_datetime": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "value": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": ["value"]
+      },
+      "maxItems": 1,
+      "description": "Publication datetime"
+    },
     "field_teaser": {
       "type": "array",
       "items": {
         "type": "object",
         "properties": {
-          "value": { "type": "string", "maxLength": 255 }
+          "value": {
+            "type": "string",
+            "maxLength": 255
+          }
         },
         "required": ["value"]
       },

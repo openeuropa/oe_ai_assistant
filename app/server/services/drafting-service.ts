@@ -235,31 +235,45 @@ export class MistralDraftingService implements DraftingService {
     schema: ContentTypeSchema | null,
     opts: ChatOptions,
   ): string {
+    // Must match config/install/ai_agents.ai_agent.oe_drafting_router.yml
     let prompt = `You are a content drafting assistant for a CMS editorial workflow.
 
 You have two tools available:
 
 1. get_content_schema: Call this first to discover what fields are
-   available for the content type. It returns groups of fields with
-   their types and descriptions. Use bundle "${opts.bundle}" and
-   entity_type_id "${opts.entityTypeId}".
+   available for the content type. It returns groups of fields
+   with their types and descriptions. Use the bundle and
+   entity_type_id values provided below.
 
-2. draft_content: Call this when you have gathered enough information
-   from the user to generate the content. This triggers the content
-   generation process.
+2. draft_content: Call this ONLY when you have gathered ALL the
+   information needed to fill every field in the schema. This
+   triggers the content generation process.
 
 Workflow:
-- When the user asks to draft content, call get_content_schema to see
-  what fields are available.
-- Review the field groups. If you need more information from the user
-  to fill certain fields, ask them.
-- Once you have enough context, call draft_content to start generating.
-- You can have normal conversations with the user at any point. Only
-  call draft_content when you are ready to generate.`;
+- When the user asks to draft content, call get_content_schema
+  to see what fields are available.
+- Review ALL field groups carefully. For each group, determine
+  whether you have enough information from the conversation to
+  generate meaningful content. If ANY field group lacks context,
+  ask the user about it specifically.
+- Do NOT proceed to draft_content until you have addressed every
+  field group. Ask the user about each group you are unsure about.
+  For example: if there is a contacts group, ask the user for
+  contact details. If there is a paragraphs group, ask what
+  content sections they want.
+- The user may tell you to skip certain fields, use your best
+  judgment, or just go ahead. In that case, proceed with
+  draft_content using whatever context you have.
+- Only call draft_content when either:
+  (a) you have gathered specific information for all field groups, or
+  (b) the user has explicitly told you to proceed without it.
+- You can have normal conversations with the user at any point.`;
 
-    if (schema) {
-      prompt += `\n\nContent type context:\nbundle: ${opts.bundle}\nentity_type_id: ${opts.entityTypeId}`;
-    }
+    // Append bundle/entityTypeId context (mirrors DraftingPlugin).
+    prompt +=
+      `\n\nContent type context:\n` +
+      `bundle: ${opts.bundle}\n` +
+      `entity_type_id: ${opts.entityTypeId}\n`;
 
     return prompt;
   }
@@ -493,13 +507,21 @@ Workflow:
           "Return ONLY valid JSON conforming to the schema. " +
           "No markdown fencing, no explanation.";
 
+        // Must match config/install/ai_agents.ai_agent.oe_content_drafter.yml
         const subAgentMessages: MistralApiMessage[] = [
           {
             role: "system" as const,
             content:
-              "You are a content generator. Generate a JSON object " +
-              "conforming exactly to the given schema. Return ONLY " +
-              "valid JSON with no markdown fencing.\n\n" +
+              "You are a content generator. You will receive a JSON schema and\n" +
+              "instructions describing what content to produce. Generate a JSON\n" +
+              "object that conforms exactly to the given schema. Return ONLY\n" +
+              "valid JSON with no markdown fencing, no explanation, no commentary.\n\n" +
+              "Field values must be arrays of items where each item is an object\n" +
+              'with property keys (e.g. "title": [{"value": "Headline"}],\n' +
+              '"body": [{"value": "<p>Text</p>", "format": "full_html"}]).\n' +
+              "Match the schema's array/object/property shape exactly.\n\n" +
+              "For formatted text fields, produce clean HTML.\n" +
+              "Match the language and tone described in the instructions.\n\n" +
               `Schema:\n${JSON.stringify(group.schemaSlice)}`,
           },
           { role: "user" as const, content: taskPrompt },
