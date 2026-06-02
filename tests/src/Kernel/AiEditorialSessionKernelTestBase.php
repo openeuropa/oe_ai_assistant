@@ -8,6 +8,7 @@ use Drupal\KernelTests\KernelTestBase;
 use Drupal\node\Entity\Node;
 use Drupal\node\Entity\NodeType;
 use Drupal\node\NodeInterface;
+use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
 use Drupal\user\Entity\Role;
 use Drupal\user\Entity\User;
 use Drupal\user\UserInterface;
@@ -53,6 +54,7 @@ abstract class AiEditorialSessionKernelTestBase extends KernelTestBase {
     $this->installEntitySchema('user');
     $this->installEntitySchema('node');
     $this->installEntitySchema('ai_editorial_session');
+    $this->installEntitySchema('ai_editorial_session_plugin');
 
     $this->installConfig(['system', 'user', 'node', 'oe_ai_assistant']);
 
@@ -104,7 +106,7 @@ abstract class AiEditorialSessionKernelTestBase extends KernelTestBase {
   /**
    * Creates a session for the given owner.
    */
-  protected function createSession(UserInterface $owner, ?NodeInterface $node = NULL): \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface {
+  protected function createSession(UserInterface $owner, ?NodeInterface $node = NULL): AiEditorialSessionInterface {
     /** @var \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $session */
     $session = $this->container->get('entity_type.manager')
       ->getStorage('ai_editorial_session')
