@@ -200,7 +200,7 @@ class DraftingPluginChatTest extends ExistingSiteBase {
       'message' => 'Remember this in the session.',
       'sessionId' => (string) $session->id(),
       'threadId' => 'request-thread-1',
-      'bundle' => 'oe_news',
+      'bundle' => 'oe_contact',
       'entityTypeId' => 'node',
     ]);
 
@@ -214,6 +214,10 @@ class DraftingPluginChatTest extends ExistingSiteBase {
     $pluginStore = \Drupal::service(AiEditorialSessionPluginStore::class);
     $pluginInstance = $pluginStore->loadForSession($session, 'drafting');
     $this->assertNotNull($pluginInstance);
+    $this->assertSame([
+      'entityTypeId' => 'node',
+      'bundle' => 'oe_news',
+    ], $pluginInstance->getConfiguration());
     $this->assertSame($firstThreadId, $pluginInstance->getStateValue('threadId'));
 
     MockAiProvider::enqueue(new MockResponse(
@@ -223,7 +227,7 @@ class DraftingPluginChatTest extends ExistingSiteBase {
       'message' => 'Continue with the same session.',
       'sessionId' => (string) $session->id(),
       'threadId' => 'request-thread-2',
-      'bundle' => 'oe_news',
+      'bundle' => 'oe_contact',
       'entityTypeId' => 'node',
     ]);
 
@@ -234,6 +238,16 @@ class DraftingPluginChatTest extends ExistingSiteBase {
     \Drupal::state()->resetCache();
     $log = MockAiProvider::getCallLog();
     $this->assertCount(2, $log, 'Two LLM calls should have been made.');
+    $this->assertStringContainsString(
+      'field_news_link',
+      $log[0]['system_prompt'],
+      'Session-backed requests should use the session content type schema.',
+    );
+    $this->assertStringNotContainsString(
+      'field_contact_email',
+      $log[0]['system_prompt'],
+      'Session-backed requests should not trust a conflicting request bundle.',
+    );
 
     $turn2Texts = array_column($log[1]['messages'], 'text');
     $this->assertContains(

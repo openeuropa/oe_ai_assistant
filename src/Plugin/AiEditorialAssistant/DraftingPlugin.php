@@ -194,8 +194,8 @@ class DraftingPlugin extends AiAssistantPluginBase {
       );
     }
 
-    $context = $this->buildContext($body);
     $pluginInstance = $this->loadSessionPluginInstance($body);
+    $context = $this->buildContext($body, $pluginInstance);
     $threadId = $this->resolveThreadId($body, $pluginInstance);
 
     $store = $this->conversationStoreFactory
@@ -482,15 +482,25 @@ class DraftingPlugin extends AiAssistantPluginBase {
   }
 
   /**
-   * Builds drafting context from the request body.
+   * Builds drafting context from plugin configuration or request body.
    *
    * @param array $body
    *   The decoded request body.
+   * @param \Drupal\oe_ai_assistant\Entity\AiEditorialSessionPluginInterface|null $pluginInstance
+   *   The session plugin instance, or NULL for non-session requests.
    *
    * @return array
    *   Context with entityTypeId and bundle.
    */
-  private function buildContext(array $body): array {
+  private function buildContext(array $body, ?AiEditorialSessionPluginInterface $pluginInstance): array {
+    if ($pluginInstance !== NULL) {
+      $configuration = $pluginInstance->getConfiguration();
+      return [
+        'entityTypeId' => $configuration['entityTypeId'] ?? 'node',
+        'bundle' => $configuration['bundle'] ?? '',
+      ];
+    }
+
     $forwardedProps = $body['forwardedProps'] ?? [];
     $entityTypeId = $forwardedProps['entityTypeId']
       ?? $body['entityTypeId'] ?? 'node';
@@ -540,8 +550,23 @@ class DraftingPlugin extends AiAssistantPluginBase {
       );
     }
 
-    return $this->pluginInstanceStore
-      ->loadOrCreateForSession($session, 'drafting');
+    $pluginInstance = $this->pluginInstanceStore
+      ->loadOrCreateForSession($session, 'drafting', [
+        'entityTypeId' => 'node',
+        'bundle' => $session->getContentType(),
+      ]);
+
+    $configuration = $pluginInstance->getConfiguration();
+    if (($configuration['entityTypeId'] ?? NULL) !== 'node'
+      || ($configuration['bundle'] ?? NULL) !== $session->getContentType()) {
+      $pluginInstance->setConfiguration([
+        'entityTypeId' => 'node',
+        'bundle' => $session->getContentType(),
+      ]);
+      $pluginInstance->save();
+    }
+
+    return $pluginInstance;
   }
 
   /**
