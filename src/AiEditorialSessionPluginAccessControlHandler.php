@@ -8,7 +8,6 @@ use Drupal\Core\Access\AccessResult;
 use Drupal\Core\Entity\EntityAccessControlHandler;
 use Drupal\Core\Entity\EntityInterface;
 use Drupal\Core\Session\AccountInterface;
-use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionPluginInterface;
 
 /**
@@ -29,8 +28,10 @@ class AiEditorialSessionPluginAccessControlHandler extends EntityAccessControlHa
       return $admin_access;
     }
 
-    $session = $entity->get('session')->entity;
-    if (!$session instanceof AiEditorialSessionInterface) {
+    try {
+      $session = $entity->getSession();
+    }
+    catch (\UnexpectedValueException) {
       return AccessResult::forbidden()
         ->addCacheableDependency($entity);
     }

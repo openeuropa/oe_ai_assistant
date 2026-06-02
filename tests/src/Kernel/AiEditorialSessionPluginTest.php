@@ -21,6 +21,11 @@ class AiEditorialSessionPluginTest extends AiEditorialSessionKernelTestBase {
     $viewer = $this->createUser();
     $admin = $this->createUser(['administer ai editorial sessions']);
     $session = $this->createSession($owner);
+    $access_handler = $this->container->get('entity_type.manager')
+      ->getAccessControlHandler('ai_editorial_session_plugin');
+
+    $this->assertTrue($access_handler->createAccess(NULL, $admin));
+    $this->assertFalse($access_handler->createAccess(NULL, $owner));
 
     /** @var \Drupal\oe_ai_assistant\Entity\AiEditorialSessionPluginInterface $plugin */
     $plugin = $this->container->get('entity_type.manager')
@@ -66,8 +71,10 @@ class AiEditorialSessionPluginTest extends AiEditorialSessionKernelTestBase {
     ], $reloaded?->getState());
 
     $this->assertTrue($loaded->access('view', $owner));
+    $this->assertTrue($loaded->access('view label', $owner));
     $this->assertTrue($loaded->access('update', $owner));
     $this->assertFalse($loaded->access('view', $viewer));
+    $this->assertFalse($loaded->access('update', $viewer));
     $this->assertTrue($loaded->access('delete', $admin));
     $this->assertFalse($loaded->access('delete', $owner));
 
