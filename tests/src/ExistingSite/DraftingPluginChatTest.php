@@ -322,6 +322,75 @@ class DraftingPluginChatTest extends ExistingSiteBase {
   }
 
   /**
+   * Tests session-backed tool calls persist drafted fields in plugin state.
+   */
+  public function testSessionBackedToolCallPersistsDraftedFields(): void {
+    $user = $this->createUser(['use oe ai assistant']);
+    $this->loginUser($user);
+
+    /** @var \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $session */
+    $session = \Drupal::entityTypeManager()
+      ->getStorage('ai_editorial_session')
+      ->create([
+        'type' => 'content_creation',
+        'uid' => $user->id(),
+        'content_type' => 'oe_news',
+      ]);
+    $session->save();
+
+    MockAiProvider::enqueue(new MockResponse(
+      toolCalls: [
+        [
+          'id' => 'call_1',
+          'type' => 'function',
+          'function' => [
+            'name' => 'draft_content',
+            'arguments' => json_encode([
+              'fields' => [
+                'title' => [['value' => 'Session Title']],
+                'body' => [['value' => '<p>Session body.</p>', 'format' => 'full_html']],
+                'unknown_field' => [['value' => 'Filtered out']],
+              ],
+              'changed_fields' => ['title', 'body'],
+            ]),
+          ],
+        ],
+      ],
+    ));
+
+    $result = $this->httpPost('/api/ai/plugins/drafting/chat', [
+      'message' => 'Draft a session-backed news article.',
+      'sessionId' => (string) $session->id(),
+      'bundle' => 'oe_news',
+      'entityTypeId' => 'node',
+    ]);
+
+    $this->assertEquals(200, $result['status'],
+      'Expected 200 response. Body: ' . substr($result['body'], 0, 500));
+
+    $events = $this->parseSseEvents($result['body']);
+    $draftedEvents = array_filter(
+      $events,
+      fn($e) => $e['type'] === 'data-drafted-fields',
+    );
+    $this->assertNotEmpty($draftedEvents,
+      'SSE must include a data-drafted-fields event.');
+
+    $draftedEvent = reset($draftedEvents);
+    $fields = $draftedEvent['data'] ?? [];
+    $this->assertArrayHasKey('title', $fields);
+    $this->assertArrayHasKey('body', $fields);
+    $this->assertArrayNotHasKey('unknown_field', $fields);
+
+    /** @var \Drupal\oe_ai_assistant\Service\AiEditorialSessionPluginStore $pluginStore */
+    $pluginStore = \Drupal::service(AiEditorialSessionPluginStore::class);
+    $pluginInstance = $pluginStore->loadForSession($session, 'drafting');
+    $this->assertNotNull($pluginInstance);
+    $this->assertSame($this->extractThreadId($result['body']), $pluginInstance->getStateValue('threadId'));
+    $this->assertSame($fields, $pluginInstance->getStateValue('draftedFields'));
+  }
+
+  /**
    * Tests that an empty message returns a 400 error.
    */
   public function testEmptyMessageReturns400(): void {

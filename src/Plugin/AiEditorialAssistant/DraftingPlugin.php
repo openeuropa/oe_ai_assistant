@@ -238,7 +238,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
 
     return $this->uiMessageStream->respond(
       function (UiMessageStreamInterface $stream) use (
-        $chatOutput, $history, $fieldIndex, $store, $threadId,
+        $chatOutput, $history, $fieldIndex, $pluginInstance, $store, $threadId,
       ): void {
         $stream->start();
 
@@ -283,6 +283,14 @@ class DraftingPlugin extends AiAssistantPluginBase {
 
           // Emit data-drafted-fields for the frontend content table.
           $stream->customEvent('data-drafted-fields', $fields);
+
+          if ($pluginInstance !== NULL) {
+            $pluginInstance->setState([
+              'threadId' => $threadId,
+              'draftedFields' => $fields,
+            ]);
+            $pluginInstance->save();
+          }
 
           // Emit a text confirmation so the chat UI shows a response
           // instead of infinite loading dots.
