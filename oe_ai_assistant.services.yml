@@ -29,6 +29,10 @@ services:
       - '@config.factory'
       - '@key.repository'
 
+  Drupal\oe_ai_assistant\Service\AiEditorialSessionPluginStore:
+    arguments:
+      - '@entity_type.manager'
+
   oe_ai_assistant.ui_message_stream:
     class: Drupal\oe_ai_assistant\Service\UiMessageStream
     arguments:

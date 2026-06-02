@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Drupal\Tests\oe_ai_assistant\Kernel;
 
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionPlugin;
+use Drupal\oe_ai_assistant\Service\AiEditorialSessionPluginStore;
 use PHPUnit\Framework\Attributes\Group;
 
 /**
@@ -80,6 +81,52 @@ class AiEditorialSessionPluginTest extends AiEditorialSessionKernelTestBase {
 
     $loaded->delete();
     $this->assertNull(AiEditorialSessionPlugin::load($plugin->id()));
+  }
+
+  /**
+   * Tests the plugin instance repository service.
+   */
+  public function testPluginInstanceStore(): void {
+    $owner = $this->createUser();
+    $session = $this->createSession($owner);
+    $other_session = $this->createSession($owner);
+
+    /** @var \Drupal\oe_ai_assistant\Service\AiEditorialSessionPluginStore $store */
+    $store = $this->container->get(AiEditorialSessionPluginStore::class);
+
+    $this->assertNull($store->loadForSession($session, 'drafting'));
+
+    $plugin = $store->loadOrCreateForSession($session, 'drafting', [
+      'content_type' => 'oe_news',
+    ]);
+
+    $this->assertSame('drafting', $plugin->getPluginId());
+    $this->assertSame((string) $session->id(), (string) $plugin->getSession()->id());
+    $this->assertSame(['content_type' => 'oe_news'], $plugin->getConfiguration());
+    $this->assertSame((string) $plugin->id(), (string) $store->loadForSession($session, 'drafting')?->id());
+    $this->assertSame((string) $plugin->id(), (string) $store->loadOrCreateForSession($session, 'drafting')?->id());
+
+    $updated = $store->saveState($session, 'drafting', [
+      'threadId' => 'thread-1',
+    ]);
+    $this->assertSame(['threadId' => 'thread-1'], $updated->getState());
+
+    $notes = $store->loadOrCreateForSession($session, 'notes');
+    $other_drafting = $store->loadOrCreateForSession($other_session, 'drafting');
+    $other_drafting->setStatus(AiEditorialSessionPlugin::STATUS_COMPLETED);
+    $other_drafting->save();
+
+    $active_drafting = $store->loadActiveByPlugin('drafting');
+    $this->assertArrayHasKey($plugin->id(), $active_drafting);
+    $this->assertArrayNotHasKey($other_drafting->id(), $active_drafting);
+    $this->assertArrayNotHasKey($notes->id(), $active_drafting);
+
+    $this->assertSame(1, $store->deleteForSession($session, 'notes'));
+    $this->assertNull($store->loadForSession($session, 'notes'));
+
+    $this->assertSame(1, $store->deleteForSession($session));
+    $this->assertNull($store->loadForSession($session, 'drafting'));
+    $this->assertNotNull($store->loadForSession($other_session, 'drafting'));
   }
 
 }
