@@ -20,6 +20,11 @@ DraftingChatRequest:
       description: >
         Optional thread ID for conversation continuity.
         Omit to start a new conversation.
+    sessionId:
+      type: string
+      description: >
+        Optional AI editorial session ID. When provided, the backend stores
+        conversation continuity in the session-scoped drafting plugin state.
     entityTypeId:
       type: string
       description: The entity type ID (e.g. "node").

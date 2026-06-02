@@ -16,6 +16,8 @@ export interface AppConfig {
   apiBaseUrl: string;
   /** CMS content node ID the editor is currently working on. */
   nodeId: string | null;
+  /** AI editorial session ID when the app is mounted on a session page. */
+  sessionId: string | null;
   /** Authenticated user ID from the CMS session. */
   userId: string | null;
   /** List of plugin IDs that the host page wants enabled. */
@@ -28,6 +30,7 @@ export interface AppConfig {
 const defaults: AppConfig = {
   apiBaseUrl: "/api",
   nodeId: null,
+  sessionId: null,
   userId: null,
   enabledPlugins: [],
   pluginConfig: {},

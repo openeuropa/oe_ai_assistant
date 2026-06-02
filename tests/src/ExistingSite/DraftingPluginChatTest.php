@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Drupal\Tests\oe_ai_assistant\ExistingSite;
 
 use Drupal\Core\Url;
+use Drupal\oe_ai_assistant\Service\AiEditorialSessionPluginStore;
 use Drupal\oe_ai_assistant_agent_test\Plugin\AiProvider\MockAiProvider;
 use Drupal\oe_ai_assistant_agent_test\Plugin\AiProvider\MockResponse;
 use Drupal\Tests\oe_ai_assistant\Traits\ExistingSiteConfigBackupTrait;
@@ -170,6 +171,78 @@ class DraftingPluginChatTest extends ExistingSiteBase {
     );
     $this->assertContains(
       'Focus on EU policy please.',
+      $turn2Texts,
+      'Turn 2 should include the current user message.',
+    );
+  }
+
+  /**
+   * Tests session-backed chat persists the thread ID in plugin state.
+   */
+  public function testSessionBackedConversationUsesPluginStateThreadId(): void {
+    $user = $this->createUser(['use oe ai assistant']);
+    $this->loginUser($user);
+
+    /** @var \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $session */
+    $session = \Drupal::entityTypeManager()
+      ->getStorage('ai_editorial_session')
+      ->create([
+        'type' => 'content_creation',
+        'uid' => $user->id(),
+        'content_type' => 'oe_news',
+      ]);
+    $session->save();
+
+    MockAiProvider::enqueue(new MockResponse(
+      text: 'Stored session thread.',
+    ));
+    $first = $this->httpPost('/api/ai/plugins/drafting/chat', [
+      'message' => 'Remember this in the session.',
+      'sessionId' => (string) $session->id(),
+      'threadId' => 'request-thread-1',
+      'bundle' => 'oe_news',
+      'entityTypeId' => 'node',
+    ]);
+
+    $this->assertEquals(200, $first['status'],
+      'Expected 200 response. Body: ' . substr($first['body'], 0, 500));
+
+    $firstThreadId = $this->extractThreadId($first['body']);
+    $this->assertNotEmpty($firstThreadId);
+
+    /** @var \Drupal\oe_ai_assistant\Service\AiEditorialSessionPluginStore $pluginStore */
+    $pluginStore = \Drupal::service(AiEditorialSessionPluginStore::class);
+    $pluginInstance = $pluginStore->loadForSession($session, 'drafting');
+    $this->assertNotNull($pluginInstance);
+    $this->assertSame($firstThreadId, $pluginInstance->getStateValue('threadId'));
+
+    MockAiProvider::enqueue(new MockResponse(
+      text: 'Continuing session thread.',
+    ));
+    $second = $this->httpPost('/api/ai/plugins/drafting/chat', [
+      'message' => 'Continue with the same session.',
+      'sessionId' => (string) $session->id(),
+      'threadId' => 'request-thread-2',
+      'bundle' => 'oe_news',
+      'entityTypeId' => 'node',
+    ]);
+
+    $this->assertEquals(200, $second['status'],
+      'Expected 200 response. Body: ' . substr($second['body'], 0, 500));
+    $this->assertSame($firstThreadId, $this->extractThreadId($second['body']));
+
+    \Drupal::state()->resetCache();
+    $log = MockAiProvider::getCallLog();
+    $this->assertCount(2, $log, 'Two LLM calls should have been made.');
+
+    $turn2Texts = array_column($log[1]['messages'], 'text');
+    $this->assertContains(
+      'Remember this in the session.',
+      $turn2Texts,
+      'Turn 2 should include turn 1 user message from the stored session thread.',
+    );
+    $this->assertContains(
+      'Continue with the same session.',
       $turn2Texts,
       'Turn 2 should include the current user message.',
     );
@@ -343,6 +416,22 @@ class DraftingPluginChatTest extends ExistingSiteBase {
     }
 
     return $events;
+  }
+
+  /**
+   * Extracts the thread ID emitted by the drafting SSE stream.
+   */
+  protected function extractThreadId(string $body): ?string {
+    $events = $this->parseSseEvents($body);
+    foreach ($events as $event) {
+      if (($event['type'] ?? '') !== 'data-thread-id') {
+        continue;
+      }
+      $threadId = $event['data']['threadId'] ?? NULL;
+      return is_string($threadId) ? $threadId : NULL;
+    }
+
+    return NULL;
   }
 
 }

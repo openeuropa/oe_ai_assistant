@@ -268,6 +268,8 @@ export interface components {
             message: string;
             /** @description Optional thread ID for conversation continuity. Omit to start a new conversation. */
             threadId?: string;
+            /** @description Optional AI editorial session ID. When provided, the backend stores conversation continuity in the session-scoped drafting plugin state. */
+            sessionId?: string;
             /** @description The entity type ID (e.g. "node"). */
             entityTypeId: string;
             /** @description The content type machine name (e.g. "oe_news"). */

@@ -18,8 +18,11 @@ use Drupal\Core\Session\AccountProxyInterface;
 use Drupal\content_moderation\ModerationInformationInterface;
 use Drupal\node\NodeInterface;
 use Drupal\oe_ai_assistant\Annotation\AiEditorialAssistant;
+use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
+use Drupal\oe_ai_assistant\Entity\AiEditorialSessionPluginInterface;
 use Drupal\oe_ai_assistant\Exception\ActionException;
 use Drupal\oe_ai_assistant\Plugin\AiAssistantPluginBase;
+use Drupal\oe_ai_assistant\Service\AiEditorialSessionPluginStore;
 use Drupal\oe_ai_assistant\Service\DraftEntityBuilder;
 use Drupal\oe_ai_assistant\Service\EntityJsonSchemaComposer;
 use Drupal\oe_ai_assistant\Service\UiMessageStreamInterface;
@@ -121,6 +124,13 @@ class DraftingPlugin extends AiAssistantPluginBase {
   protected DraftEntityBuilder $draftEntityBuilder;
 
   /**
+   * Plugin instance repository.
+   *
+   * @var \Drupal\oe_ai_assistant\Service\AiEditorialSessionPluginStore
+   */
+  protected AiEditorialSessionPluginStore $pluginInstanceStore;
+
+  /**
    * {@inheritdoc}
    */
   public static function create(
@@ -140,6 +150,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
     $instance->moderationInformation = $container->get('content_moderation.moderation_information');
     $instance->entityTypeManager = $container->get('entity_type.manager');
     $instance->draftEntityBuilder = $container->get(DraftEntityBuilder::class);
+    $instance->pluginInstanceStore = $container->get(AiEditorialSessionPluginStore::class);
     return $instance;
   }
 
@@ -184,14 +195,9 @@ class DraftingPlugin extends AiAssistantPluginBase {
     }
 
     $context = $this->buildContext($body);
-    $threadId = $body['threadId'] ?? '';
+    $pluginInstance = $this->loadSessionPluginInstance($body);
+    $threadId = $this->resolveThreadId($body, $pluginInstance);
 
-    // Create a scoped store for this thread. If no threadId is
-    // provided, generate one so new conversations get their own
-    // isolated history.
-    if (empty($threadId)) {
-      $threadId = bin2hex(random_bytes(16));
-    }
     $store = $this->conversationStoreFactory
       ->getStore('oe_ai_drafting', $threadId);
 
@@ -494,6 +500,78 @@ class DraftingPlugin extends AiAssistantPluginBase {
       'entityTypeId' => $entityTypeId,
       'bundle' => $bundle,
     ];
+  }
+
+  /**
+   * Loads or creates the drafting plugin instance for a session-backed chat.
+   *
+   * @param array $body
+   *   The decoded request body.
+   *
+   * @return \Drupal\oe_ai_assistant\Entity\AiEditorialSessionPluginInterface|null
+   *   The session plugin instance, or NULL for non-session requests.
+   *
+   * @throws \Drupal\oe_ai_assistant\Exception\ActionException
+   *   When the session ID is invalid or inaccessible.
+   */
+  private function loadSessionPluginInstance(array $body): ?AiEditorialSessionPluginInterface {
+    $forwardedProps = $body['forwardedProps'] ?? [];
+    $sessionId = $forwardedProps['sessionId'] ?? $body['sessionId'] ?? NULL;
+    if (empty($sessionId)) {
+      return NULL;
+    }
+
+    $session = $this->entityTypeManager
+      ->getStorage('ai_editorial_session')
+      ->load($sessionId);
+    if (!$session instanceof AiEditorialSessionInterface) {
+      throw new ActionException(
+        'invalid_session',
+        sprintf('AI editorial session "%s" does not exist.', $sessionId),
+        404,
+      );
+    }
+
+    if (!$session->access('update', $this->currentUser)) {
+      throw new ActionException(
+        'forbidden',
+        'You do not have access to update this AI editorial session.',
+        403,
+      );
+    }
+
+    return $this->pluginInstanceStore
+      ->loadOrCreateForSession($session, 'drafting');
+  }
+
+  /**
+   * Resolves the drafting thread ID for session and non-session requests.
+   *
+   * @param array $body
+   *   The decoded request body.
+   * @param \Drupal\oe_ai_assistant\Entity\AiEditorialSessionPluginInterface|null $pluginInstance
+   *   The session plugin instance, or NULL for non-session requests.
+   *
+   * @return string
+   *   The resolved thread ID.
+   */
+  private function resolveThreadId(array $body, ?AiEditorialSessionPluginInterface $pluginInstance): string {
+    if ($pluginInstance !== NULL) {
+      $threadId = $pluginInstance->getStateValue('threadId');
+      if (is_string($threadId) && $threadId !== '') {
+        return $threadId;
+      }
+
+      $threadId = bin2hex(random_bytes(16));
+      $pluginInstance->setStateValue('threadId', $threadId);
+      $pluginInstance->save();
+      return $threadId;
+    }
+
+    $threadId = $body['threadId'] ?? '';
+    return is_string($threadId) && $threadId !== ''
+      ? $threadId
+      : bin2hex(random_bytes(16));
   }
 
   /**

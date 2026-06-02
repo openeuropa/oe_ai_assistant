@@ -380,7 +380,7 @@ export function useDraftingRuntime() {
     api: `${getConfig().apiBaseUrl}/plugins/drafting/chat`,
     credentials: "include",
     // Send bundle, entityTypeId, and threadId in the request body.
-    body: { bundle, entityTypeId, threadId },
+    body: { bundle, entityTypeId, threadId, sessionId: getConfig().sessionId },
     adapters: {
       attachments: attachmentAdapter,
     },
