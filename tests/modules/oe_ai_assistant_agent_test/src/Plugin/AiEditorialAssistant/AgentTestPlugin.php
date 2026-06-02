@@ -330,6 +330,9 @@ class AgentTestPlugin extends AiAssistantPluginBase {
         elseif ($solvability === AiAgentInterface::JOB_SHOULD_ANSWER_QUESTION) {
           $fullText = $agent->answerQuestion() ?? '';
         }
+        else {
+          throw new \RuntimeException('Sub-agent failed to generate content.');
+        }
 
         // Emit the sub-agent result as text-delta.
         $stream->textDelta($fullText);
@@ -341,7 +344,7 @@ class AgentTestPlugin extends AiAssistantPluginBase {
           $results[$stepId] = $parsed;
         }
       }
-      catch (\Exception $e) {
+      catch (\Throwable $e) {
         $stream->error($e->getMessage(), $stepId);
         $stream->finishStep($stepId);
         break;
