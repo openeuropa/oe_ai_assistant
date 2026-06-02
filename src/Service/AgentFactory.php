@@ -9,6 +9,7 @@ use Drupal\ai\Service\FunctionCalling\FunctionCallPluginManager;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\key\KeyRepositoryInterface;
 use Drupal\oe_ai_assistant\Tool\CompositeToolbox;
+use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Drupal\oe_ai_assistant\Tool\CustomSchemaToolFactory;
 use Symfony\AI\Agent\Agent;
 use Symfony\AI\Agent\AgentInterface;
@@ -49,9 +50,12 @@ class AgentFactory {
    *   The Key module repository for resolving API key values.
    */
   public function __construct(
+    #[Autowire(service: 'ai.provider')]
     private readonly AiProviderPluginManager $aiProvider,
+    #[Autowire(service: 'plugin.manager.ai.function_calls')]
     private readonly FunctionCallPluginManager $functionCallManager,
     private readonly ConfigFactoryInterface $configFactory,
+    #[Autowire(service: 'key.repository')]
     private readonly KeyRepositoryInterface $keyRepository,
   ) {}
 
