@@ -48,6 +48,7 @@ class DraftEntityBuilderTest extends KernelTestBase {
     'options',
     'key',
     'ai',
+    'ai_agents',
     'oe_ai_assistant',
     'oe_ai_assistant_test',
   ];

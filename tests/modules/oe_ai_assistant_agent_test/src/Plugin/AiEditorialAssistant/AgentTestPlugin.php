@@ -16,6 +16,7 @@ use Drupal\ai_agents\Task\Task;
 use Drupal\oe_ai_assistant\Annotation\AiEditorialAssistant;
 use Drupal\oe_ai_assistant\Plugin\AiAssistantPluginBase;
 use Drupal\oe_ai_assistant\Service\UiMessageStreamInterface;
+use Drupal\oe_ai_assistant\Store\ConversationStoreFactoryInterface;
 use Drupal\oe_ai_assistant\Store\ConversationStoreInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\Request;
@@ -77,8 +78,8 @@ class AgentTestPlugin extends AiAssistantPluginBase {
     $instance = new static($configuration, $plugin_id, $plugin_definition);
     $instance->aiProviderManager = $container->get('ai.provider');
     $instance->aiAgentManager = $container->get('plugin.manager.ai_agents');
-    $instance->uiMessageStream = $container->get('oe_ai_assistant.ui_message_stream');
-    $instance->conversationStore = $container->get('oe_ai_assistant.conversation_store_factory')
+    $instance->uiMessageStream = $container->get(UiMessageStreamInterface::class);
+    $instance->conversationStore = $container->get(ConversationStoreFactoryInterface::class)
       ->getStore('oe_ai_assistant_agent_test', 'conversation');
     return $instance;
   }
