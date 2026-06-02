@@ -41,12 +41,29 @@ class AiEditorialSessionPluginTest extends AiEditorialSessionKernelTestBase {
     $loaded = AiEditorialSessionPlugin::load($plugin->id());
 
     $this->assertNotNull($loaded);
-    $this->assertSame((string) $session->id(), (string) $loaded->get('session')->target_id);
-    $this->assertSame('drafting', $loaded->get('plugin_id')->value);
-    $this->assertSame(AiEditorialSessionPlugin::STATUS_ACTIVE, $loaded->get('status')->value);
-    $this->assertSame(['content_type' => 'oe_news'], $loaded->get('configuration')->first()?->getValue());
-    $this->assertSame(['threadId' => 'thread-1'], $loaded->get('state')->first()?->getValue());
+    $this->assertSame((string) $session->id(), (string) $loaded->getSession()->id());
+    $this->assertSame('drafting', $loaded->getPluginId());
+    $this->assertSame(AiEditorialSessionPlugin::STATUS_ACTIVE, $loaded->getStatus());
+    $this->assertSame(['content_type' => 'oe_news'], $loaded->getConfiguration());
+    $this->assertSame(['threadId' => 'thread-1'], $loaded->getState());
+    $this->assertSame('thread-1', $loaded->getStateValue('threadId'));
+    $this->assertSame('fallback', $loaded->getStateValue('missing', 'fallback'));
     $this->assertSame('10', (string) $loaded->get('weight')->value);
+
+    $loaded
+      ->setStatus(AiEditorialSessionPlugin::STATUS_COMPLETED)
+      ->setConfiguration(['content_type' => 'oe_contact'])
+      ->setState(['threadId' => 'thread-2'])
+      ->setStateValue('lastMessageId', 'message-1');
+    $loaded->save();
+
+    $reloaded = AiEditorialSessionPlugin::load($plugin->id());
+    $this->assertSame(AiEditorialSessionPlugin::STATUS_COMPLETED, $reloaded?->getStatus());
+    $this->assertSame(['content_type' => 'oe_contact'], $reloaded?->getConfiguration());
+    $this->assertSame([
+      'threadId' => 'thread-2',
+      'lastMessageId' => 'message-1',
+    ], $reloaded?->getState());
 
     $this->assertTrue($loaded->access('view', $owner));
     $this->assertTrue($loaded->access('update', $owner));

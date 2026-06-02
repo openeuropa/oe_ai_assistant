@@ -71,6 +71,87 @@ class AiEditorialSessionPlugin extends ContentEntityBase implements AiEditorialS
   /**
    * {@inheritdoc}
    */
+  public function getSession(): AiEditorialSessionInterface {
+    $session = $this->get('session')->entity;
+    if (!$session instanceof AiEditorialSessionInterface) {
+      throw new \UnexpectedValueException('The plugin instance does not reference a valid AI editorial session.');
+    }
+
+    return $session;
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function getPluginId(): string {
+    return (string) $this->get('plugin_id')->value;
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function getStatus(): string {
+    return (string) $this->get('status')->value;
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function setStatus(string $status): AiEditorialSessionPluginInterface {
+    $this->set('status', $status);
+    return $this;
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function getConfiguration(): array {
+    return $this->get('configuration')->first()?->getValue() ?? [];
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function setConfiguration(array $configuration): AiEditorialSessionPluginInterface {
+    $this->set('configuration', $configuration);
+    return $this;
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function getState(): array {
+    return $this->get('state')->first()?->getValue() ?? [];
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function setState(array $state): AiEditorialSessionPluginInterface {
+    $this->set('state', $state);
+    return $this;
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function getStateValue(string $key, mixed $default = NULL): mixed {
+    $state = $this->getState();
+    return array_key_exists($key, $state) ? $state[$key] : $default;
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function setStateValue(string $key, mixed $value): AiEditorialSessionPluginInterface {
+    $state = $this->getState();
+    $state[$key] = $value;
+    return $this->setState($state);
+  }
+
+  /**
+   * {@inheritdoc}
+   */
   public static function baseFieldDefinitions(EntityTypeInterface $entity_type): array {
     $fields = parent::baseFieldDefinitions($entity_type);
 
