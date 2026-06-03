@@ -91,6 +91,7 @@ class ToolExecutionLoopTest extends TestCase {
     $result = $this->loop->run(
       $provider, 'gpt-4o', 'System prompt.', [],
       $history, $this->stream,
+      terminalToolNames: ['draft_content'],
     );
 
     $this->assertEquals('tool_calls', $result->finishReason);

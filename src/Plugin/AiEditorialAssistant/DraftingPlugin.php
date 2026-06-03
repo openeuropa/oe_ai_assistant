@@ -229,6 +229,8 @@ class DraftingPlugin extends AiAssistantPluginBase {
           $tools,
           $history,
           $stream,
+          terminalToolNames: ['draft_content'],
+          tags: ['drafting'],
         );
 
         if ($result->hasTerminalTool()

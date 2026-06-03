@@ -5,11 +5,11 @@ declare(strict_types=1);
 namespace Drupal\oe_ai_assistant\Service;
 
 /**
- * Interface for the multi-turn LLM tool execution loop.
+ * Generic multi-turn LLM tool execution loop.
  *
- * Calls the LLM, streams the response, checks for tool calls,
- * executes non-terminal tools, feeds results back, and repeats
- * until a terminal condition is reached.
+ * Reusable by any plugin that needs multi-turn tool interactions
+ * with streaming. The loop is plugin-agnostic: callers provide
+ * their own provider, tools, terminal tool names, and tags.
  */
 interface ToolExecutionLoopInterface {
 
@@ -31,8 +31,9 @@ interface ToolExecutionLoopInterface {
    *   The SSE stream for emitting text-delta events.
    * @param string[] $terminalToolNames
    *   Tool names that should stop the loop when called. The
-   *   caller handles these tools (e.g. triggering orchestration
-   *   for 'draft_content'). Defaults to ['draft_content'].
+   *   caller handles these tools (e.g. triggering orchestration).
+   * @param string[] $tags
+   *   Provider tags for logging and filtering (e.g. ['drafting']).
    *
    * @return \Drupal\oe_ai_assistant\Service\ToolLoopResult
    *   Describes how the loop ended.
@@ -44,7 +45,8 @@ interface ToolExecutionLoopInterface {
     array $tools,
     array &$history,
     UiMessageStreamInterface $stream,
-    array $terminalToolNames = ['draft_content'],
+    array $terminalToolNames = [],
+    array $tags = [],
   ): ToolLoopResult;
 
 }

@@ -10,25 +10,20 @@ use Drupal\ai\OperationType\Chat\StreamedChatMessageIteratorInterface;
 use Drupal\ai\OperationType\Chat\Tools\ToolsInput;
 
 /**
- * Runs a multi-turn LLM tool loop with streaming.
+ * Generic multi-turn LLM tool loop with streaming.
  *
+ * Reusable by any plugin that needs multi-turn tool interactions.
  * Calls the LLM, streams the response, checks for tool calls,
  * executes non-terminal tools, feeds results back to the LLM,
  * and repeats. Stops when:
- * - A "terminal tool" is called (e.g. draft_content) -- the
- *   caller handles what happens next.
+ * - A "terminal tool" is called -- the caller handles what
+ *   happens next (e.g. orchestration, save, export).
  * - The LLM responds with text (no tool calls).
  * - The maximum iteration count is reached.
  *
- * Why this is a separate service:
- * - The loop was inside an anonymous closure in DraftingPlugin,
- *   making it impossible to unit test independently.
- * - The loop logic (iteration, terminal tool detection, tool
- *   execution, history building) is reusable by any plugin
- *   that needs multi-turn tool interactions.
- * - With the loop extracted, it can be tested with a mock
- *   provider (returning predetermined responses), a mock
- *   FunctionCallPluginManager, and a mock stream.
+ * The loop is plugin-agnostic: the caller provides the provider,
+ * model, tools, terminal tool names, and tags. No drafting-
+ * specific logic lives here.
  */
 class ToolExecutionLoop implements ToolExecutionLoopInterface {
 
@@ -57,7 +52,8 @@ class ToolExecutionLoop implements ToolExecutionLoopInterface {
     array $tools,
     array &$history,
     UiMessageStreamInterface $stream,
-    array $terminalToolNames = ['draft_content'],
+    array $terminalToolNames = [],
+    array $tags = [],
   ): ToolLoopResult {
 
     for ($i = 0; $i < self::MAX_ITERATIONS; $i++) {
@@ -68,7 +64,7 @@ class ToolExecutionLoop implements ToolExecutionLoopInterface {
       $chatInput->setChatTools(new ToolsInput($tools));
 
       $chatOutput = $provider->chat(
-        $chatInput, $modelId, ['drafting']
+        $chatInput, $modelId, $tags
       );
 
       // Stream the LLM response and collect tool calls.
