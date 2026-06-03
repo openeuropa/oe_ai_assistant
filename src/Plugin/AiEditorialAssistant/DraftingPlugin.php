@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Drupal\oe_ai_assistant\Plugin\AiEditorialAssistant;
 
-use Drupal\ai\AiProviderPluginManager;
 use Drupal\ai\OperationType\Chat\ChatMessage;
 use Drupal\ai\OperationType\Chat\Tools\ToolsFunctionInput;
 use Drupal\ai_agents\PluginManager\AiAgentManager;
@@ -16,8 +15,6 @@ use Drupal\oe_ai_assistant\Service\DraftSaverInterface;
 use Drupal\oe_ai_assistant\Service\EntityJsonSchemaComposer;
 use Drupal\oe_ai_assistant\Service\ToolExecutionLoopInterface;
 use Drupal\oe_ai_assistant\Service\UiMessageStreamInterface;
-use Drupal\oe_ai_assistant\Store\ConversationStoreFactoryInterface;
-use Psr\Log\LoggerInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -38,39 +35,11 @@ use Symfony\Component\HttpFoundation\Response;
 class DraftingPlugin extends AiAssistantPluginBase {
 
   /**
-   * The AI provider plugin manager.
-   *
-   * @var \Drupal\ai\AiProviderPluginManager
-   */
-  protected AiProviderPluginManager $aiProviderManager;
-
-  /**
    * The AI agent plugin manager.
    *
    * @var \Drupal\ai_agents\PluginManager\AiAgentManager
    */
   protected AiAgentManager $aiAgentManager;
-
-  /**
-   * The UI message stream service.
-   *
-   * @var \Drupal\oe_ai_assistant\Service\UiMessageStreamInterface
-   */
-  protected UiMessageStreamInterface $uiMessageStream;
-
-  /**
-   * The conversation store factory.
-   *
-   * @var \Drupal\oe_ai_assistant\Store\ConversationStoreFactoryInterface
-   */
-  protected ConversationStoreFactoryInterface $conversationStoreFactory;
-
-  /**
-   * Logger channel for oe_ai_assistant.
-   *
-   * @var \Psr\Log\LoggerInterface
-   */
-  protected LoggerInterface $logger;
 
   /**
    * The JSON Schema composer service.
@@ -109,12 +78,8 @@ class DraftingPlugin extends AiAssistantPluginBase {
     $plugin_id,
     $plugin_definition,
   ): static {
-    $instance = new static($configuration, $plugin_id, $plugin_definition);
-    $instance->aiProviderManager = $container->get('ai.provider');
+    $instance = parent::create($container, $configuration, $plugin_id, $plugin_definition);
     $instance->aiAgentManager = $container->get('plugin.manager.ai_agents');
-    $instance->uiMessageStream = $container->get(UiMessageStreamInterface::class);
-    $instance->conversationStoreFactory = $container->get(ConversationStoreFactoryInterface::class);
-    $instance->logger = $container->get('logger.channel.oe_ai_assistant');
     $instance->schemaComposer = $container->get(EntityJsonSchemaComposer::class);
     $instance->draftSaver = $container->get(DraftSaverInterface::class);
     $instance->toolLoop = $container->get(ToolExecutionLoopInterface::class);
@@ -310,37 +275,6 @@ class DraftingPlugin extends AiAssistantPluginBase {
       . ' automatically using sub-agents.'
     );
     return $tool;
-  }
-
-  /**
-   * Extracts the user message from the request body.
-   *
-   * @param array $body
-   *   The decoded request body.
-   *
-   * @return string
-   *   The user message text, or empty string.
-   */
-  private function extractUserMessage(array $body): string {
-    $message = $body['message'] ?? '';
-    if (!empty($message)) {
-      return $message;
-    }
-    if (empty($body['messages'])) {
-      return '';
-    }
-    $userMessages = array_filter(
-      $body['messages'],
-      fn($m) => ($m['role'] ?? '') === 'user',
-    );
-    $last = end($userMessages);
-    if (is_array($last['content'] ?? '')) {
-      return implode('', array_map(
-        fn($p) => $p['text'] ?? '',
-        $last['content'],
-      ));
-    }
-    return $last['content'] ?? '';
   }
 
   /**

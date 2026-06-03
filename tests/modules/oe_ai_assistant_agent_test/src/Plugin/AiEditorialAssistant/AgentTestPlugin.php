@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Drupal\oe_ai_assistant_agent_test\Plugin\AiEditorialAssistant;
 
-use Drupal\ai\AiProviderPluginManager;
 use Drupal\ai\OperationType\Chat\ChatInput;
 use Drupal\ai\OperationType\Chat\StreamedChatMessageIteratorInterface;
 use Drupal\ai\OperationType\Chat\ChatMessage;
@@ -16,7 +15,6 @@ use Drupal\ai_agents\Task\Task;
 use Drupal\oe_ai_assistant\Annotation\AiEditorialAssistant;
 use Drupal\oe_ai_assistant\Plugin\AiAssistantPluginBase;
 use Drupal\oe_ai_assistant\Service\UiMessageStreamInterface;
-use Drupal\oe_ai_assistant\Store\ConversationStoreFactoryInterface;
 use Drupal\oe_ai_assistant\Store\ConversationStoreInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\Request;
@@ -39,25 +37,11 @@ use Symfony\Component\HttpFoundation\Response;
 class AgentTestPlugin extends AiAssistantPluginBase {
 
   /**
-   * The AI provider plugin manager.
-   *
-   * @var \Drupal\ai\AiProviderPluginManager
-   */
-  protected AiProviderPluginManager $aiProviderManager;
-
-  /**
    * The AI agent plugin manager.
    *
    * @var \Drupal\ai_agents\PluginManager\AiAgentManager
    */
   protected AiAgentManager $aiAgentManager;
-
-  /**
-   * The UI message stream service.
-   *
-   * @var \Drupal\oe_ai_assistant\Service\UiMessageStreamInterface
-   */
-  protected UiMessageStreamInterface $uiMessageStream;
 
   /**
    * The conversation store for this plugin's thread.
@@ -75,11 +59,9 @@ class AgentTestPlugin extends AiAssistantPluginBase {
     $plugin_id,
     $plugin_definition,
   ): static {
-    $instance = new static($configuration, $plugin_id, $plugin_definition);
-    $instance->aiProviderManager = $container->get('ai.provider');
+    $instance = parent::create($container, $configuration, $plugin_id, $plugin_definition);
     $instance->aiAgentManager = $container->get('plugin.manager.ai_agents');
-    $instance->uiMessageStream = $container->get(UiMessageStreamInterface::class);
-    $instance->conversationStore = $container->get(ConversationStoreFactoryInterface::class)
+    $instance->conversationStore = $instance->conversationStoreFactory
       ->getStore('oe_ai_assistant_agent_test', 'conversation');
     return $instance;
   }
