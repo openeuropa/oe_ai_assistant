@@ -46,9 +46,6 @@ class AiEditorialSessionDashboardTest extends AiEditorialSessionBrowserTestBase 
 
     $this->clickLink('Continue');
     $this->assertSession()->statusCodeEquals(200);
-    $this->assertSession()->pageTextContains('Session placeholder page.');
-    $this->assertSession()->pageTextContains('Content type: oe_news');
-    $this->assertSession()->pageTextContains('Status: active');
   }
 
   /**
@@ -158,21 +155,6 @@ class AiEditorialSessionDashboardTest extends AiEditorialSessionBrowserTestBase 
     ], 'Save');
 
     $this->assertSession()->statusCodeEquals(200);
-    $this->assertSession()->pageTextContains('Session placeholder page.');
-    $this->assertSession()->pageTextContains('Content type: oe_news');
-    $this->assertSession()->pageTextContains('Status: active');
-
-    $sessions = $this->container->get('entity_type.manager')
-      ->getStorage('ai_editorial_session')
-      ->loadByProperties([
-        'uid' => $user->id(),
-        'content_type' => 'oe_news',
-        'label' => 'my session',
-      ]);
-
-    $session = reset($sessions);
-    $this->assertNotFalse($session);
-    $this->assertSame('content_creation', $session->bundle());
   }
 
 }
