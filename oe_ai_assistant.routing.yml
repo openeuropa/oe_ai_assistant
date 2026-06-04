@@ -17,35 +17,6 @@ oe_ai_assistant.plugin.dispatch:
     plugin_id: '[a-z][a-z0-9_-]*'
     action: '[a-z][a-z0-9_-]*'
 
-# Node tab route: renders the AI Assistant page on nodes.
-oe_ai_assistant.node_tab:
-  path: /node/{node}/ai-assistant
-  defaults:
-    _controller: \Drupal\oe_ai_assistant\Controller\NodeTabController::content
-    _title: 'AI Assistant'
-  requirements:
-    _permission: 'use oe ai assistant'
-    node: \d+
-  options:
-    _admin_route: TRUE
-    parameters:
-      node:
-        type: entity:node
-
-# Node add tab route: renders the AI Assistant on the node creation form.
-oe_ai_assistant.node_add_tab:
-  path: /node/add/{node_type}/ai-assistant
-  defaults:
-    _controller: \Drupal\oe_ai_assistant\Controller\NodeTabController::addContent
-    _title: 'AI Assistant'
-  requirements:
-    _permission: 'use oe ai assistant'
-  options:
-    _admin_route: TRUE
-    parameters:
-      node_type:
-        type: entity:node_type
-
 # Content schema route: returns the JSON Schema for an entity type/bundle.
 oe_ai_assistant.content_schema:
   path: /api/ai/content-schema/{entity_type_id}/{bundle}

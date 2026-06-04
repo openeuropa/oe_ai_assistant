@@ -42,10 +42,13 @@ class AiEditorialSessionDashboardTest extends AiEditorialSessionBrowserTestBase 
     $this->assertSession()->pageTextContains('content_creation');
     $this->assertSession()->pageTextContains('active');
     $this->assertSession()->linkExists('Continue');
+    $this->assertSession()->linkByHrefExists($session->toUrl('canonical')->toString());
     $this->assertSession()->linkExists('Delete');
 
     $this->clickLink('Continue');
     $this->assertSession()->statusCodeEquals(200);
+    $this->assertSame($session->toUrl('canonical', ['absolute' => TRUE])->toString(), $this->getUrl());
+    $this->assertSessionAppPage('oe_news');
   }
 
   /**
@@ -136,6 +139,50 @@ class AiEditorialSessionDashboardTest extends AiEditorialSessionBrowserTestBase 
   }
 
   /**
+   * Tests the session route renders the AI Assistant app and checks access.
+   */
+  public function testSessionPageRendersAppAndChecksAccess(): void {
+    $owner = $this->drupalCreateUser([
+      'view_update own sessions',
+      'access content',
+    ]);
+    $other_user = $this->drupalCreateUser([
+      'view_update own sessions',
+      'access content',
+    ]);
+
+    $session = $this->createSession($owner);
+
+    $this->drupalLogin($owner);
+    $this->drupalGet($session->toUrl('canonical'));
+    $this->assertSession()->statusCodeEquals(200);
+    $this->assertSessionAppPage('oe_news');
+
+    $this->drupalLogin($other_user);
+    $this->drupalGet($session->toUrl('canonical'));
+    $this->assertSession()->statusCodeEquals(403);
+    $this->assertSession()->elementNotExists('css', '#oe-ai-assistant[data-ai-app]');
+  }
+
+  /**
+   * Tests the session route delegates access to the session entity handler.
+   */
+  public function testSessionRouteUsesEntityAccessRequirement(): void {
+    $route = $this->container
+      ->get('router.route_provider')
+      ->getRouteByName('entity.ai_editorial_session.canonical');
+
+    $this->assertSame('/admin/content/ai/{ai_editorial_session}', $route->getPath());
+    $this->assertSame(
+      '\Drupal\oe_ai_assistant\Controller\AiEditorialSessionController::view',
+      $route->getDefault('_controller')
+    );
+    $this->assertSame('ai_editorial_session.view', $route->getRequirement('_entity_access'));
+    $parameters = $route->getOption('parameters');
+    $this->assertSame('entity:ai_editorial_session', $parameters['ai_editorial_session']['type']);
+  }
+
+  /**
    * Tests creating a drafting session from the add flow.
    */
   public function testAddSessionFlow(): void {
@@ -155,6 +202,51 @@ class AiEditorialSessionDashboardTest extends AiEditorialSessionBrowserTestBase 
     ], 'Save');
 
     $this->assertSession()->statusCodeEquals(200);
+    $session = $this->container->get('entity_type.manager')
+      ->getStorage('ai_editorial_session')
+      ->loadByProperties(['label' => 'my session']);
+    $session = reset($session);
+    $this->assertNotFalse($session);
+    $this->assertSame($session->toUrl('canonical', ['absolute' => TRUE])->toString(), $this->getUrl());
+    $this->assertSessionAppPage('oe_news');
+  }
+
+  /**
+   * Tests the node tab no longer exposes or launches the app.
+   */
+  public function testNodeTabDoesNotExposeApp(): void {
+    $user = $this->drupalCreateUser([
+      'access content',
+      'use oe ai assistant',
+    ]);
+    $this->drupalLogin($user);
+    $node = $this->createPublishedNode('oe_news', 'Node without assistant tab');
+
+    $this->drupalGet($node->toUrl());
+    $this->assertSession()->statusCodeEquals(200);
+    $this->assertSession()->linkNotExists('AI Assistant');
+
+    $this->drupalGet('/node/' . $node->id() . '/ai-assistant');
+    $this->assertSession()->statusCodeEquals(404);
+    $this->assertSession()->elementNotExists('css', '#oe-ai-assistant[data-ai-app]');
+  }
+
+  /**
+   * Asserts the current page contains the React app bootstrap.
+   *
+   * @param string $bundle
+   *   The expected drafting bundle configured for the session.
+   */
+  protected function assertSessionAppPage(string $bundle): void {
+    $this->assertSession()->elementExists('css', '#oe-ai-assistant[data-ai-app]');
+    $this->assertSession()->responseContains('oe_ai_assistant/js/init.js');
+    $this->assertSession()->responseContains('dist/ai-editorial-assistant.iife.js');
+    $this->assertSession()->responseContains('oeAiAssistant');
+    $this->assertSession()->responseContains('"apiBaseUrl":"\/api\/ai"');
+    $this->assertSession()->responseContains('"userId":"' . $this->loggedInUser->id() . '"');
+    $this->assertSession()->responseContains('"enabledPlugins":["echo","notes","drafting"]');
+    $this->assertSession()->responseContains('"entityTypeId":"node"');
+    $this->assertSession()->responseContains('"bundle":"' . $bundle . '"');
   }
 
 }
