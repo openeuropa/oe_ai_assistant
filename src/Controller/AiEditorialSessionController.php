@@ -95,10 +95,6 @@ class AiEditorialSessionController extends ControllerBase {
   /**
    * Builds the common render array for the AI Assistant.
    *
-   * Centralises the render array construction shared by both the existing-node
-   * tab (content()) and the node-add tab (addContent()). The only difference
-   * is whether a nodeId is present in the configuration payload.
-   *
    * @param string $entityTypeId
    *   The entity type ID (always 'node' for now).
    * @param string $bundle
