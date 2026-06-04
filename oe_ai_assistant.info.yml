@@ -6,8 +6,8 @@ package: OpenEuropa
 dependencies:
   - ai:ai
   - drupal:content_moderation
-  - drupal:datetime
   - drupal:node
+  - drupal:datetime
   - drupal:options
   - drupal:serialization
   - key:key

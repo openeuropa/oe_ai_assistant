@@ -1,0 +1,14 @@
+
+oe_ai_assistant.ai_editorial_session_type.*:
+  type: config_entity
+  label: 'AI editorial session type'
+  mapping:
+    id:
+      type: machine_name
+      label: 'ID'
+    label:
+      type: label
+      label: 'Label'
+    uuid:
+      type: uuid
+      label: 'UUID'
