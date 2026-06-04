@@ -212,6 +212,24 @@ class AiEditorialSessionDashboardTest extends AiEditorialSessionBrowserTestBase 
   }
 
   /**
+   * Tests the add form only lists content types the user can create.
+   */
+  public function testAddSessionContentTypeOptionsRespectCreateAccess(): void {
+    $user = $this->drupalCreateUser([
+      'create oe_news content',
+    ]);
+    $this->drupalLogin($user);
+
+    $this->drupalGet(Url::fromRoute('entity.ai_editorial_session.add_form', [
+      'ai_editorial_session_type' => 'content_creation',
+    ]));
+
+    $this->assertSession()->statusCodeEquals(200);
+    $this->assertSession()->elementExists('css', 'select[name="content_type"] option[value="oe_news"]');
+    $this->assertSession()->elementNotExists('css', 'select[name="content_type"] option[value="oe_contact"]');
+  }
+
+  /**
    * Tests the node tab no longer exposes or launches the app.
    */
   public function testNodeTabDoesNotExposeApp(): void {
