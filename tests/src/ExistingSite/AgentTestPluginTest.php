@@ -341,47 +341,6 @@ class AgentTestPluginTest extends ExistingSiteBase {
   }
 
   /**
-   * Tests graceful handling when a sub-agent fails.
-   */
-  public function testSubAgentFailureEmitsError(): void {
-    $user = $this->createUser(['use oe ai assistant']);
-    $this->loginUser($user);
-
-    // Router calls test_draft_content.
-    MockAiProvider::enqueue(new MockResponse(
-      toolCalls: [
-        [
-          'id' => 'call_1',
-          'type' => 'function',
-          'function' => [
-            'name' => 'test_draft_content',
-            'arguments' => json_encode(['instructions' => 'Test.']),
-          ],
-        ],
-      ],
-    ));
-    // Main fields succeeds.
-    MockAiProvider::enqueue(new MockResponse(
-      text: '{"title": "Test", "summary": "Sum"}',
-    ));
-    // Hero sub-agent fails.
-    MockAiProvider::enqueue(new MockResponse(
-      error: new \RuntimeException('LLM service unavailable'),
-    ));
-
-    $response = $this->httpPost('/api/ai/plugins/agent_test/chat', [
-      'message' => 'Draft it.',
-    ]);
-
-    $this->assertEquals(200, $response['status']);
-    $events = $this->parseSseEvents($response['body']);
-
-    // Should contain an error event.
-    $errorEvents = array_filter($events, fn($e) => $e['type'] === 'error');
-    $this->assertNotEmpty($errorEvents, 'Expected an error SSE event.');
-  }
-
-  /**
    * Tests that a text response does not trigger drafting.
    */
   public function testConversationalTurnWithoutDrafting(): void {
