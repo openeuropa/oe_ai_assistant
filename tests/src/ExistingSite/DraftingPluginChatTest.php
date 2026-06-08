@@ -196,9 +196,9 @@ class DraftingPluginChatTest extends ExistingSiteBase {
             'arguments' => json_encode([
               'fields' => [
                 'title' => [['value' => 'Test Title']],
-                'body' => [['value' => '<p>Test body.</p>', 'format' => 'full_html']],
+                'field_body' => [['value' => '<p>Test body.</p>', 'format' => 'full_html']],
               ],
-              'changed_fields' => ['title', 'body'],
+              'changed_fields' => ['title', 'field_body'],
             ]),
           ],
         ],

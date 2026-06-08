@@ -84,7 +84,7 @@ class EntityJsonSchemaComposerTest extends KernelTestBase {
     $this->assertArrayHasKey('properties', $schema);
     foreach ([
       'title',
-      'body',
+      'field_body',
       'field_teaser',
       'field_publication_date',
       'field_news_type',
@@ -133,7 +133,7 @@ class EntityJsonSchemaComposerTest extends KernelTestBase {
    */
   public function testFormattedTextFieldHasValueAndFormatProperties(): void {
     $schema = $this->composer()->compose('node', 'oe_news');
-    $body = $schema['properties']['body'];
+    $body = $schema['properties']['field_body'];
 
     // The body field is array-wrapped with multi-property items.
     $this->assertSame('array', $body['type']);
