@@ -120,8 +120,7 @@ class AiDraftingTemplateFormTest extends ExistingSiteBase {
   }
 
   /**
-   * Tests that an existing template's label and fields can be updated through
-   * the edit form, and that the changes are persisted to the database.
+   * Tests template's edit form.
    */
   public function testEditFormUpdatesTemplate(): void {
     $template = AiDraftingTemplate::create([
@@ -168,8 +167,7 @@ class AiDraftingTemplateFormTest extends ExistingSiteBase {
   }
 
   /**
-   * Tests that invalid YAML in the fields textarea produces a visible error and
-   * does not create an entity in the database.
+   * Tests that invalid YAML in the fields textarea produces a visible error.
    */
   public function testInvalidYamlInFieldsShowsError(): void {
     $this->drupalGet('/admin/config/ai-editorial/templates/add');
@@ -194,8 +192,7 @@ class AiDraftingTemplateFormTest extends ExistingSiteBase {
   }
 
   /**
-   * Tests that structurally valid YAML referencing a non-existent field shows a
-   * validation error and does not persist any entity.
+   * Tests that a valid YAML referencing a non-existent field shows a error.
    */
   public function testNonExistentFieldShowsValidationError(): void {
     $this->drupalGet('/admin/config/ai-editorial/templates/add');
@@ -221,8 +218,7 @@ class AiDraftingTemplateFormTest extends ExistingSiteBase {
   }
 
   /**
-   * Tests that invalid YAML in the defaults textarea produces a visible error
-   * and does not create an entity in the database.
+   * Tests that invalid YAML in the defaults textarea produces a error.
    */
   public function testInvalidYamlInDefaultsShowsError(): void {
     $this->drupalGet('/admin/config/ai-editorial/templates/add');
@@ -246,8 +242,7 @@ class AiDraftingTemplateFormTest extends ExistingSiteBase {
   }
 
   /**
-   * Tests that a defaults value referencing a non-existent field highlights the
-   * defaults textarea, not the fields textarea.
+   * Tests that a value referencing a non-existent field highlights defaults.
    */
   public function testNonExistentDefaultFieldHighlightsDefaultsElement(): void {
     $this->drupalGet('/admin/config/ai-editorial/templates/add');
@@ -267,8 +262,7 @@ class AiDraftingTemplateFormTest extends ExistingSiteBase {
   }
 
   /**
-   * Tests that a template can be deleted through the delete form and is removed
-   * from the database.
+   * Tests that a template can be deleted through the delete form.
    */
   public function testDeleteFormRemovesTemplate(): void {
     $template = AiDraftingTemplate::create([

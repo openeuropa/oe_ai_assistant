@@ -111,7 +111,8 @@ final class AiDraftingTemplateForm extends EntityForm {
    */
   public function validateForm(array &$form, FormStateInterface $form_state): void {
     // Parse YAML before parent::validateForm() calls buildEntity(), which
-    // triggers copyFormValuesToEntity() and unsets these values from form state.
+    // triggers copyFormValuesToEntity() and unsets these values from form
+    // state.
     $fieldsArray = $this->parseYamlField($form_state, 'fields_yaml', 'Fields');
     $defaultsArray = $this->parseYamlField($form_state, 'defaults_yaml', 'Defaults');
 
@@ -130,8 +131,9 @@ final class AiDraftingTemplateForm extends EntityForm {
     }
 
     // afterBuild() ran before validateForm() with parsed_fields/defaults absent
-    // from form state, so $this->entity still has empty fields/defaults. Rebuild
-    // it now so validateTemplate() receives the correct submitted values.
+    // from form state, so $this->entity still has empty fields/defaults.
+    // Rebuild it now so validateTemplate() receives the correct submitted
+    // values.
     $this->entity = $this->buildEntity($form, $form_state);
 
     // Run structural validation on the fully-built entity.

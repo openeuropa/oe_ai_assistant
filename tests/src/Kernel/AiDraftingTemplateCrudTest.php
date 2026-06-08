@@ -19,6 +19,9 @@ use Drupal\oe_ai_assistant\Exception\TemplateValidationException;
  */
 class AiDraftingTemplateCrudTest extends KernelTestBase {
 
+  /**
+   * {@inheritdoc}
+   */
   protected static $modules = [
     // Drupal core.
     'datetime',
@@ -47,6 +50,9 @@ class AiDraftingTemplateCrudTest extends KernelTestBase {
     'oe_ai_assistant_test',
   ];
 
+  /**
+   * {@inheritdoc}
+   */
   protected function setUp(): void {
     parent::setUp();
 
@@ -59,6 +65,9 @@ class AiDraftingTemplateCrudTest extends KernelTestBase {
     $this->installConfig(['oe_ai_assistant_test']);
   }
 
+  /**
+   * {@inheritdoc}
+   */
   protected function tearDown(): void {
     foreach (['test_news_crud', 'test_paragraphs_crud', 'test_contacts_crud'] as $id) {
       $template = AiDraftingTemplate::load($id);
@@ -70,7 +79,7 @@ class AiDraftingTemplateCrudTest extends KernelTestBase {
   }
 
   /**
-   * Tests creating a template and loading it back by ID with all properties intact.
+   * Tests creating a template and loading by ID with all properties intact.
    */
   public function testCreateAndLoadTemplate(): void {
     $template = AiDraftingTemplate::create([
@@ -139,7 +148,7 @@ class AiDraftingTemplateCrudTest extends KernelTestBase {
   }
 
   /**
-   * Tests that both installed test templates are returned for the oe_news type.
+   * Tests that installed test templates are returned for the oe_news type.
    */
   public function testGetTemplatesForContentType(): void {
     $storage = $this->container->get('entity_type.manager')->getStorage('ai_drafting_template');
@@ -154,7 +163,7 @@ class AiDraftingTemplateCrudTest extends KernelTestBase {
   }
 
   /**
-   * Tests that an empty array is returned when no templates exist for the type.
+   * Tests that an empty array is returned when no templates exist for a type.
    */
   public function testGetTemplatesForContentTypeReturnsEmptyForUnknownType(): void {
     $storage = $this->container->get('entity_type.manager')->getStorage('ai_drafting_template');
@@ -205,7 +214,7 @@ class AiDraftingTemplateCrudTest extends KernelTestBase {
   }
 
   /**
-   * Tests that a template referencing a non-existent field on oe_news is invalid.
+   * Tests that a template referencing a non-existent field is invalid.
    */
   public function testNonExistentFieldIsInvalid(): void {
     $template = $this->buildTemplate('oe_news', [
@@ -221,7 +230,7 @@ class AiDraftingTemplateCrudTest extends KernelTestBase {
   }
 
   /**
-   * Tests that a template referencing a non-existent paragraph type is invalid.
+   * Tests that a template referencing a non-existent paragraph is invalid.
    */
   public function testNonExistentParagraphTypeIsInvalid(): void {
     $template = $this->buildTemplate('oe_news', [
@@ -230,7 +239,8 @@ class AiDraftingTemplateCrudTest extends KernelTestBase {
         'items' => [[
           'paragraph_type' => 'no_such_type',
           'prompt' => 'Nope.',
-        ]],
+        ],
+        ],
       ],
     ]);
     $result = $template->validate();
@@ -243,7 +253,7 @@ class AiDraftingTemplateCrudTest extends KernelTestBase {
   }
 
   /**
-   * Tests that a non-existent sub-field on a paragraph type produces a validation error.
+   * Tests that a non-existent sub-field on a paragraph type produces an error.
    */
   public function testNonExistentSubFieldOnParagraphTypeIsInvalid(): void {
     $template = $this->buildTemplate('oe_news', [
@@ -255,7 +265,8 @@ class AiDraftingTemplateCrudTest extends KernelTestBase {
           'fields' => [
             'field_nonexistent_sub' => ['prompt' => 'Nope.'],
           ],
-        ]],
+        ],
+        ],
       ],
     ]);
     $result = $template->validate();
@@ -278,7 +289,8 @@ class AiDraftingTemplateCrudTest extends KernelTestBase {
           'entity_type' => 'taxonomy_term',
           'bundle' => 'tags',
           'prompt' => 'Contact.',
-        ]],
+        ],
+        ],
       ],
     ]);
     $result = $template->validate();
@@ -301,7 +313,8 @@ class AiDraftingTemplateCrudTest extends KernelTestBase {
           'entity_type' => 'node',
           'bundle' => 'oe_news',
           'prompt' => 'Contact.',
-        ]],
+        ],
+        ],
       ],
     ]);
     $result = $template->validate();
@@ -355,7 +368,7 @@ class AiDraftingTemplateCrudTest extends KernelTestBase {
   }
 
   /**
-   * Tests that saving a template with an invalid field throws TemplateValidationException.
+   * Tests that saving a template with an invalid field throws an exception.
    */
   public function testSavingInvalidTemplateThrowsTemplateValidationException(): void {
     try {
@@ -376,12 +389,15 @@ class AiDraftingTemplateCrudTest extends KernelTestBase {
     }
   }
 
-  // ---------------------------------------------------------------------------
-  // Helpers
-  // ---------------------------------------------------------------------------
-
   /**
    * Builds an unsaved in-memory template for validation testing.
+   *
+   * @param string $contentType
+   *   The content type.
+   * @param array $fields
+   *   The fields mapping.
+   * @param array $defaults
+   *   The defaults mapping.
    */
   private function buildTemplate(string $contentType, array $fields, array $defaults = []): AiDraftingTemplate {
     /** @var \Drupal\oe_ai_assistant\Entity\AiDraftingTemplate $template */
@@ -399,7 +415,10 @@ class AiDraftingTemplateCrudTest extends KernelTestBase {
   /**
    * Asserts that at least one error matches a regex pattern.
    *
-   * @param string[] $errors
+   * @param string $pattern
+   *   The pattern for matching errors.
+   * @param array $errors
+   *   The errors matched.
    */
   private function assertErrorMatches(string $pattern, array $errors): void {
     foreach ($errors as $error) {
