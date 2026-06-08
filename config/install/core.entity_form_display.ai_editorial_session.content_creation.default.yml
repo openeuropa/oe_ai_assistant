@@ -1,0 +1,20 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - field.field.ai_editorial_session.content_creation.content_type
+    - oe_ai_assistant.ai_editorial_session_type.content_creation
+  module:
+    - oe_ai_assistant
+id: ai_editorial_session.content_creation.default
+targetEntityType: ai_editorial_session
+bundle: content_creation
+mode: default
+content:
+  content_type:
+    type: options_select
+    weight: 0
+    region: content
+    settings: {  }
+    third_party_settings: {  }
+hidden: {  }

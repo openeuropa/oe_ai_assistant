@@ -7,6 +7,7 @@ namespace Drupal\oe_ai_assistant\Service;
 use Drupal\Core\Entity\EntityFieldManagerInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Entity\FieldableEntityInterface;
+use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Component\Serializer\SerializerInterface;
 
 /**
@@ -36,6 +37,7 @@ use Symfony\Component\Serializer\SerializerInterface;
 class InlineEntityHydrator {
 
   public function __construct(
+    #[Autowire(service: 'serializer')]
     private readonly SerializerInterface $serializer,
     private readonly EntityFieldManagerInterface $entityFieldManager,
     private readonly EntityTypeManagerInterface $entityTypeManager,
@@ -93,6 +95,7 @@ class InlineEntityHydrator {
    *
    * @param array $items
    *   Array of item arrays in denormalize-input shape, e.g.
+   * // phpcs:ignore Drupal.Files.LineLength.TooLong
    *   `[{type: [{target_id: "text_block"}], field_text_body: [{value: "..."}]}, ...]`.
    * @param string $targetEntityType
    *   The entity type ID the items target (e.g. "paragraph"). Used to derive

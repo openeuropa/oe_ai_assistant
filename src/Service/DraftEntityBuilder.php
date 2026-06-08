@@ -7,6 +7,7 @@ namespace Drupal\oe_ai_assistant\Service;
 use Drupal\Component\Plugin\Exception\PluginNotFoundException;
 use Drupal\Core\Entity\ContentEntityInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
+use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Component\Serializer\SerializerInterface;
 
 /**
@@ -23,6 +24,7 @@ use Symfony\Component\Serializer\SerializerInterface;
 class DraftEntityBuilder {
 
   public function __construct(
+    #[Autowire(service: 'serializer')]
     private readonly SerializerInterface $serializer,
     private readonly EntityTypeManagerInterface $entityTypeManager,
     private readonly InlineEntityHydrator $inlineEntityHydrator,
