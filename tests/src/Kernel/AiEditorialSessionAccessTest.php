@@ -35,7 +35,7 @@ class AiEditorialSessionAccessTest extends AiEditorialSessionKernelTestBase {
    */
   public function testEntityAccess(): void {
     $owner = $this->createUser();
-    $collaborator = $this->createUser(['access content', 'bypass node access']);
+    $this->createUser(['access content', 'bypass node access']);
     $viewer = $this->createUser(['access content']);
     $admin = $this->createUser(['administer ai editorial sessions']);
 
@@ -65,7 +65,7 @@ class AiEditorialSessionAccessTest extends AiEditorialSessionKernelTestBase {
     $visible_node = $this->createPublishedNode('oe_news', 'Visible node');
 
     $own_session = $this->createSession($viewer);
-    $shared_visible_session = $this->createSession($owner, $visible_node);
+    $this->createSession($owner, $visible_node);
     $private_session = $this->createSession($owner);
 
     $this->container->get('current_user')->setAccount($viewer);

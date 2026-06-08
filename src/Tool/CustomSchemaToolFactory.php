@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Drupal\oe_ai_assistant\Tool;
 
 use Symfony\AI\Agent\Toolbox\ToolFactoryInterface;
-use Symfony\AI\Platform\Tool\Tool;
 
 /**
  * Tool factory that uses pre-built Tool metadata.

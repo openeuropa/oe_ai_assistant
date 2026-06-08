@@ -417,8 +417,6 @@ class DraftingPlugin extends AiAssistantPluginBase {
       : '/node/' . $node->id();
   }
 
-  // -- Private helpers -------------------------------------------------------
-
   /**
    * Creates a ServerEvent for a UI Message Stream Protocol event.
    *
