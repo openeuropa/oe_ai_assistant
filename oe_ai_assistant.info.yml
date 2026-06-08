@@ -7,8 +7,8 @@ dependencies:
   - ai:ai
   - ai_agents:ai_agents
   - drupal:content_moderation
-  - drupal:datetime
   - drupal:node
+  - drupal:datetime
   - drupal:options
   - drupal:serialization
   - key:key
