@@ -12,7 +12,7 @@ use PHPUnit\Framework\Attributes\Group;
 use Psr\Log\NullLogger;
 
 /**
- * Tests DraftingPromptBuilder against EntityJsonSchemaComposer as schema source.
+ * Tests DraftingPromptBuilder on EntityJsonSchemaComposer as schema source.
  *
  * The prompt builder's public surface (buildSystemPrompt / buildToolMetadata
  * / buildFieldIndex) is unchanged but the schema payload it inlines is now a

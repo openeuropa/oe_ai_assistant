@@ -23,7 +23,7 @@ jobs:
           ddev symlink-project
 
       - name: Check coding standards
-        run: ddev phpcs
+        run: ddev exec ./vendor/bin/phpcs
 
   drupal-test:
     name: Drupal Test

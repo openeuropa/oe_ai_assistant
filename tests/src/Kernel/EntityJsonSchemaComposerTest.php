@@ -102,7 +102,7 @@ class EntityJsonSchemaComposerTest extends KernelTestBase {
     $schema = $this->composer()->compose('node', 'oe_news');
     $title = $schema['properties']['title'];
 
-    // title is array-wrapped, items are objects with a 'value' string.
+    // Title is array-wrapped, items are objects with a 'value' string.
     $this->assertSame('array', $title['type']);
     $this->assertSame(1, $title['maxItems']);
     $this->assertSame('object', $title['items']['type']);
