@@ -98,7 +98,7 @@ class AiEditorialSessionDashboardTest extends AiEditorialSessionBrowserTestBase 
     ]);
     $owner = $this->drupalCreateUser();
 
-    $visible_node = $this->createPublishedNode('oe_news', 'Visible node');
+    $this->createPublishedNode('oe_news', 'Visible node');
     $hidden_node = $this->drupalCreateNode([
       'type' => 'oe_news',
       'title' => 'Hidden node',

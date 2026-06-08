@@ -71,7 +71,7 @@ class DraftContentTool {
       'fields' => $fields,
       'changedFields' => $changed_fields,
       'message' => 'Draft content generated with '
-        . count($fields) . ' fields.',
+      . count($fields) . ' fields.',
     ]);
   }
 

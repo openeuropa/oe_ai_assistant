@@ -68,8 +68,9 @@ class EntityJsonSchemaComposer {
    * Drupal's revision tracking.
    *
    * @todo Replace with class-hierarchy detection
+   * // phpcs:ignore Drupal.Files.LineLength.TooLong
    *   (is_a($itemClass, CreatedItem::class) || is_a($itemClass, ChangedItem::class))
-   *   so custom entities with non-standard timestamp field names are also caught.
+   *   so custom entities with non-standard timestamp field names are caught.
    *
    * @var string[]
    */

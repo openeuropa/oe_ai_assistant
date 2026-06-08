@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\oe_ai_assistant\Unit;
 
+use Symfony\AI\Platform\Message\UserMessage;
 use Drupal\Core\TempStore\PrivateTempStore;
 use Drupal\Core\TempStore\PrivateTempStoreFactory;
 use Drupal\oe_ai_assistant\Store\DrupalTempMessageStore;
@@ -112,7 +113,7 @@ class DrupalTempMessageStoreTest extends TestCase {
     $messages = $loaded->getMessages();
     $firstRetained = $messages[0];
     $this->assertInstanceOf(
-      \Symfony\AI\Platform\Message\UserMessage::class,
+      UserMessage::class,
       $firstRetained,
     );
   }

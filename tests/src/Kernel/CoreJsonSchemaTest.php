@@ -9,7 +9,7 @@ use Drupal\node\Entity\Node;
 use PHPUnit\Framework\Attributes\Group;
 
 /**
- * Documents the Drupal core 11.3 JSON Schema API behaviour for content entities.
+ * Documents Drupal core 11.3 JSON Schema API behaviour content entities.
  *
  * Pins down which of the two candidate APIs described in change record
  * https://www.drupal.org/node/3424710 is the real, working entry point in
