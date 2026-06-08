@@ -2,13 +2,13 @@ langcode: en
 status: true
 dependencies:
   config:
-    - field.field.taxonomy_term.ai_tone.field_ai_prompt
-    - taxonomy.vocabulary.ai_tone
+    - field.field.taxonomy_term.oe_ai_tone.field_oe_ai_prompt
+    - taxonomy.vocabulary.oe_ai_tone
   module:
     - text
-id: taxonomy_term.ai_tone.default
+id: taxonomy_term.oe_ai_tone.default
 targetEntityType: taxonomy_term
-bundle: ai_tone
+bundle: oe_ai_tone
 mode: default
 content:
   description:
@@ -19,7 +19,7 @@ content:
       rows: 5
       placeholder: ''
     third_party_settings: {  }
-  field_ai_prompt:
+  field_oe_ai_prompt:
     type: string_textarea
     weight: 3
     region: content

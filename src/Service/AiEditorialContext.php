@@ -15,12 +15,12 @@ class AiEditorialContext implements AiEditorialContextInterface {
   /**
    * The vocabulary ID for target audiences.
    */
-  protected const string AUDIENCE_VID = 'ai_target_audience';
+  protected const string AUDIENCE_VID = 'oe_ai_target_audience';
 
   /**
    * The vocabulary ID for tones.
    */
-  protected const string TONE_VID = 'ai_tone';
+  protected const string TONE_VID = 'oe_ai_tone';
 
   public function __construct(
     protected readonly EntityTypeManagerInterface $entityTypeManager,
@@ -103,7 +103,7 @@ class AiEditorialContext implements AiEditorialContextInterface {
         $values[] = [
           'id' => (string) $term->id(),
           'name' => $term->label(),
-          'ai_prompt' => $ai_prompt,
+          'oe_ai_prompt' => $ai_prompt,
         ];
       }
     }
@@ -153,7 +153,7 @@ class AiEditorialContext implements AiEditorialContextInterface {
   protected function formatPromptOptions(array $options): array {
     $lines = [];
     foreach ($options as $option) {
-      $lines[] = sprintf('- %s: %s', $option['name'], $option['ai_prompt']);
+      $lines[] = sprintf('- %s: %s', $option['name'], $option['oe_ai_prompt']);
     }
 
     return $lines;
@@ -169,7 +169,7 @@ class AiEditorialContext implements AiEditorialContextInterface {
    *   The prompt text.
    */
   protected function getTermPrompt(TermInterface $term): string {
-    return trim((string) $term->get('field_ai_prompt')->value);
+    return trim((string) $term->get('field_oe_ai_prompt')->value);
   }
 
 }

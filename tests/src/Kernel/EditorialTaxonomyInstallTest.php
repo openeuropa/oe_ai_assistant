@@ -33,15 +33,15 @@ class EditorialTaxonomyInstallTest extends KernelTestBase {
     $this->assertTrue(\Drupal::service('module_handler')->moduleExists('oe_ai_assistant'));
     $this->assertTrue(\Drupal::service('module_handler')->moduleExists('oe_ai_assistant_test'));
 
-    $this->assertNotNull(Vocabulary::load('ai_target_audience'));
-    $this->assertNotNull(Vocabulary::load('ai_tone'));
+    $this->assertNotNull(Vocabulary::load('oe_ai_target_audience'));
+    $this->assertNotNull(Vocabulary::load('oe_ai_tone'));
 
-    $fieldStorage = FieldStorageConfig::loadByName('taxonomy_term', 'field_ai_prompt');
+    $fieldStorage = FieldStorageConfig::loadByName('taxonomy_term', 'field_oe_ai_prompt');
     $this->assertNotNull($fieldStorage);
     $this->assertSame('string_long', $fieldStorage->getType());
 
-    $audienceField = FieldConfig::loadByName('taxonomy_term', 'ai_target_audience', 'field_ai_prompt');
-    $toneField = FieldConfig::loadByName('taxonomy_term', 'ai_tone', 'field_ai_prompt');
+    $audienceField = FieldConfig::loadByName('taxonomy_term', 'oe_ai_target_audience', 'field_oe_ai_prompt');
+    $toneField = FieldConfig::loadByName('taxonomy_term', 'oe_ai_tone', 'field_oe_ai_prompt');
 
     $this->assertNotNull($audienceField);
     $this->assertNotNull($toneField);
@@ -89,8 +89,8 @@ class EditorialTaxonomyInstallTest extends KernelTestBase {
       ],
     ];
 
-    $this->assertSame($expectedAudiences, $this->loadTermsByVocabulary('ai_target_audience'));
-    $this->assertSame($expectedTones, $this->loadTermsByVocabulary('ai_tone'));
+    $this->assertSame($expectedAudiences, $this->loadTermsByVocabulary('oe_ai_target_audience'));
+    $this->assertSame($expectedTones, $this->loadTermsByVocabulary('oe_ai_tone'));
   }
 
   /**
@@ -109,7 +109,7 @@ class EditorialTaxonomyInstallTest extends KernelTestBase {
     $values = [];
     foreach ($terms as $term) {
       $values[$term->label()]['description'] = $term->get('description')->value;
-      $values[$term->label()]['prompt'] = $term->get('field_ai_prompt')->value;
+      $values[$term->label()]['prompt'] = $term->get('field_oe_ai_prompt')->value;
     }
     ksort($values);
     return $values;

@@ -56,42 +56,42 @@ class AiEditorialContextTest extends KernelTestBase {
     $this->assertSame([
       [
         'name' => 'Business and industry',
-        'ai_prompt' => 'Use professional language. Emphasize practical implications, compliance requirements, and economic impact. Be specific about timelines and actions.',
+        'oe_ai_prompt' => 'Use professional language. Emphasize practical implications, compliance requirements, and economic impact. Be specific about timelines and actions.',
       ],
       [
         'name' => 'General public',
-        'ai_prompt' => 'Write in clear, accessible language. Avoid jargon and acronyms. Use short sentences. Assume no prior knowledge of EU policy.',
+        'oe_ai_prompt' => 'Write in clear, accessible language. Avoid jargon and acronyms. Use short sentences. Assume no prior knowledge of EU policy.',
       ],
       [
         'name' => 'Policy makers',
-        'ai_prompt' => 'Use precise language. Reference regulatory frameworks and legislative instruments where relevant. Assume domain expertise.',
+        'oe_ai_prompt' => 'Use precise language. Reference regulatory frameworks and legislative instruments where relevant. Assume domain expertise.',
       ],
       [
         'name' => 'Press and media',
-        'ai_prompt' => 'Lead with the newsworthy angle. Use a factual, quotable style. Include key figures and dates. Keep paragraphs short.',
+        'oe_ai_prompt' => 'Lead with the newsworthy angle. Use a factual, quotable style. Include key figures and dates. Keep paragraphs short.',
       ],
       [
         'name' => 'Young audience',
-        'ai_prompt' => 'Use an approachable, engaging tone. Explain concepts simply. Avoid bureaucratic language. Use concrete examples.',
+        'oe_ai_prompt' => 'Use an approachable, engaging tone. Explain concepts simply. Avoid bureaucratic language. Use concrete examples.',
       ],
     ], $this->stripIds($audiences));
 
     $this->assertSame([
       [
         'name' => 'Conversational',
-        'ai_prompt' => 'Write in a friendly, approachable style. Use contractions naturally. Address the reader directly. Keep sentences varied in length.',
+        'oe_ai_prompt' => 'Write in a friendly, approachable style. Use contractions naturally. Address the reader directly. Keep sentences varied in length.',
       ],
       [
         'name' => 'Formal',
-        'ai_prompt' => 'Use professional, institutional language. Maintain a neutral, authoritative voice. Avoid contractions and colloquialisms.',
+        'oe_ai_prompt' => 'Use professional, institutional language. Maintain a neutral, authoritative voice. Avoid contractions and colloquialisms.',
       ],
       [
         'name' => 'Inspirational',
-        'ai_prompt' => 'Use forward-looking, motivational language. Emphasize positive outcomes and shared goals. Appeal to values and aspirations.',
+        'oe_ai_prompt' => 'Use forward-looking, motivational language. Emphasize positive outcomes and shared goals. Appeal to values and aspirations.',
       ],
       [
         'name' => 'Technical',
-        'ai_prompt' => 'Use domain-specific terminology precisely. Include technical detail and data. Structure content with clear headings and logical flow.',
+        'oe_ai_prompt' => 'Use domain-specific terminology precisely. Include technical detail and data. Structure content with clear headings and logical flow.',
       ],
     ], $this->stripIds($tones));
   }
@@ -169,7 +169,7 @@ class AiEditorialContextTest extends KernelTestBase {
     return array_map(
       static fn (array $option): array => [
         'name' => $option['name'],
-        'ai_prompt' => $option['ai_prompt'],
+        'oe_ai_prompt' => $option['oe_ai_prompt'],
       ],
       $options,
     );

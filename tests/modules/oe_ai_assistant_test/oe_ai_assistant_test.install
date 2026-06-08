@@ -74,7 +74,7 @@ function oe_ai_assistant_test_install_editorial_taxonomy_terms(): void {
           'value' => $text['description'],
           'format' => 'plain_text',
         ],
-        'field_ai_prompt' => $text['prompt'],
+        'field_oe_ai_prompt' => $text['prompt'],
       ]);
       $term->save();
     }
@@ -89,7 +89,7 @@ function oe_ai_assistant_test_install_editorial_taxonomy_terms(): void {
  */
 function oe_ai_assistant_test_get_editorial_taxonomy_terms(): array {
   return [
-    'ai_target_audience' => [
+    'oe_ai_target_audience' => [
       'Business and industry' => [
         'description' => 'Content focused on professional stakeholders, emphasizing practical impact, compliance, and business relevance.',
         'prompt' => 'Use professional language. Emphasize practical implications, compliance requirements, and economic impact. Be specific about timelines and actions.',
@@ -111,7 +111,7 @@ function oe_ai_assistant_test_get_editorial_taxonomy_terms(): array {
         'prompt' => 'Use an approachable, engaging tone. Explain concepts simply. Avoid bureaucratic language. Use concrete examples.',
       ],
     ],
-    'ai_tone' => [
+    'oe_ai_tone' => [
       'Conversational' => [
         'description' => 'A friendly and informal tone that speaks directly to the reader.',
         'prompt' => 'Write in a friendly, approachable style. Use contractions naturally. Address the reader directly. Keep sentences varied in length.',
