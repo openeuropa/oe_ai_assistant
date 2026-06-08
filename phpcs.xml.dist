@@ -6,13 +6,12 @@
   <arg name="colors"/>
   <arg value="sp"/>
 
-  <file>src</file>
-  <file>tests</file>
-  <file>oe_ai_assistant.module</file>
-
+  <file>.</file>
   <rule ref="Drupal"/>
   <rule ref="DrupalPractice"/>
 
+  <exclude-pattern>.ddev</exclude-pattern>
+  <exclude-pattern>.sink</exclude-pattern>
   <exclude-pattern>vendor</exclude-pattern>
   <exclude-pattern>web</exclude-pattern>
   <exclude-pattern>dist</exclude-pattern>
