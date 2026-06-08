@@ -18,10 +18,6 @@ use Symfony\AI\Platform\Message\MessageBag;
  * The system message is NOT stored -- it is rebuilt fresh on each
  * request by the chat plugin. Only user, assistant, and tool call
  * messages are persisted.
- *
- * @deprecated in oe_ai_assistant:1.0.0 and is removed from
- *   oe_ai_assistant:2.0.0. Use ConversationStore instead.
- * @see https://www.drupal.org/project/oe_ai_assistant
  */
 class DrupalTempMessageStore {
 
