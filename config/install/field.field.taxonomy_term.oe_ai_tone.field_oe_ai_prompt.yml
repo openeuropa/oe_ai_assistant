@@ -4,7 +4,7 @@ dependencies:
   config:
     - field.storage.taxonomy_term.field_oe_ai_prompt
     - taxonomy.vocabulary.oe_ai_tone
-id: taxonomy_term.ai_tone.field_oe_ai_prompt
+id: taxonomy_term.oe_ai_tone.field_oe_ai_prompt
 field_name: field_oe_ai_prompt
 entity_type: taxonomy_term
 bundle: oe_ai_tone
