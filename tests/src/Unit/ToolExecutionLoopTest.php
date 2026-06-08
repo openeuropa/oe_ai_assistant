@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\oe_ai_assistant\Unit;
 
+use Drupal\ai\OperationType\Chat\Tools\ToolsFunctionOutputInterface;
 use Drupal\ai\OperationType\Chat\ChatMessage;
 use Drupal\ai\OperationType\Chat\ChatOutput;
 use Drupal\ai\OperationType\Chat\StreamedChatMessageIteratorInterface;
@@ -179,8 +180,6 @@ class ToolExecutionLoopTest extends TestCase {
     $this->assertFalse($maxResult->hasText());
   }
 
-  // -- Test helpers ---------------------------------------------------
-
   /**
    * Creates a mock provider that returns chat outputs in sequence.
    */
@@ -230,7 +229,7 @@ class ToolExecutionLoopTest extends TestCase {
    */
   private function createMockToolCall(string $name, string $id): object {
     $toolCall = $this->createMock(
-      \Drupal\ai\OperationType\Chat\Tools\ToolsFunctionOutputInterface::class
+      ToolsFunctionOutputInterface::class
     );
     $toolCall->method('getName')->willReturn($name);
     $toolCall->method('getToolId')->willReturn($id);

@@ -6,7 +6,6 @@ namespace Drupal\oe_ai_assistant\Plugin\AiEditorialAssistant;
 
 use Drupal\oe_ai_assistant\Annotation\AiEditorialAssistant;
 use Drupal\oe_ai_assistant\Plugin\AiAssistantPluginBase;
-use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\EventStreamResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -24,18 +23,6 @@ use Symfony\Component\HttpFoundation\ServerEvent;
   description: 'Echoes the input message back as a word-by-word SSE stream.',
 )]
 class EchoPlugin extends AiAssistantPluginBase {
-
-  /**
-   * {@inheritdoc}
-   */
-  public static function create(
-    ContainerInterface $container,
-    array $configuration,
-    $plugin_id,
-    $plugin_definition,
-  ): static {
-    return parent::create($container, $configuration, $plugin_id, $plugin_definition);
-  }
 
   /**
    * {@inheritdoc}

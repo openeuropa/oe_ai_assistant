@@ -302,6 +302,8 @@ class EntityJsonSchemaComposerTest extends KernelTestBase {
   }
 
   /**
+   * Test that inline entity form reference recurses into bundles.
+   *
    * Asserts entity_reference fields with inline_entity_form recurse into
    * target bundles (same as entity_reference_revisions).
    */
