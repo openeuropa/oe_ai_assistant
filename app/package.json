@@ -15,6 +15,7 @@
     "build": "tsc -b && vite build --emptyOutDir && node scripts/build-schemas.js",
     "build:schemas": "node scripts/build-schemas.js",
     "typecheck": "tsc -b && tsc -p server/tsconfig.json",
+    "test:unit": "vitest run --project unit",
     "api:generate": "openapi-typescript api/openapi.yaml -o src/api/schema.d.ts",
     "lint": "biome check .",
     "lint:fix": "biome check --fix .",

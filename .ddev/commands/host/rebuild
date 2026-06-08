@@ -13,5 +13,5 @@ echo "Symlinking module into Drupal..."
 export PROJECT_FILES=$(ls -A)
 ddev symlink-project
 
-ddev build-app
 ddev install
+ddev build-app

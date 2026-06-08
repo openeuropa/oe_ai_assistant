@@ -1,3 +1,11 @@
 use oe ai assistant:
   title: 'Use OpenEuropa AI Assistant'
   description: 'Access the AI Assistant tab on nodes and use its API endpoints.'
+
+administer ai editorial sessions:
+  title: 'Administer AI editorial sessions'
+  description: 'Create, update, and delete AI editorial sessions and their bundles.'
+
+view_update own sessions:
+  title: 'View update own session'
+  description: 'Access overview page of AI editorial sessions and view/update your own session.'

@@ -1,0 +1,20 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - field.storage.ai_editorial_session.content_type
+    - oe_ai_assistant.ai_editorial_session_type.content_creation
+id: ai_editorial_session.content_creation.content_type
+field_name: content_type
+entity_type: ai_editorial_session
+bundle: content_creation
+label: 'Content type'
+description: 'The target content type.'
+required: true
+translatable: false
+default_value: {  }
+default_value_callback: ''
+settings:
+  handler: 'default:node_type'
+  handler_settings: {  }
+field_type: entity_reference
