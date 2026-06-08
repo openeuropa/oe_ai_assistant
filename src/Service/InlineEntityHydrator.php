@@ -95,6 +95,7 @@ class InlineEntityHydrator {
    *
    * @param array $items
    *   Array of item arrays in denormalize-input shape, e.g.
+   * // phpcs:ignore Drupal.Files.LineLength.TooLong
    *   `[{type: [{target_id: "text_block"}], field_text_body: [{value: "..."}]}, ...]`.
    * @param string $targetEntityType
    *   The entity type ID the items target (e.g. "paragraph"). Used to derive

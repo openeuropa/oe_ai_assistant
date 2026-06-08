@@ -22,4 +22,3 @@ masquerade_roles: {}
 exclude_users_role: false
 structured_output_enabled: false
 structured_output_schema: ''
-

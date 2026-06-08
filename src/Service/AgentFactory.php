@@ -12,8 +12,6 @@ use Drupal\oe_ai_assistant\Tool\CompositeToolbox;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Drupal\oe_ai_assistant\Tool\CustomSchemaToolFactory;
 use Symfony\AI\Agent\Agent;
-use Symfony\AI\Agent\AgentInterface;
-use Symfony\AI\Agent\InputProcessorInterface;
 use Symfony\AI\Agent\Toolbox\AgentProcessor;
 use Symfony\AI\Agent\Toolbox\Toolbox;
 use Symfony\AI\Agent\Toolbox\ToolFactory\ReflectionToolFactory;
@@ -22,8 +20,6 @@ use Symfony\AI\Platform\Bridge\Mistral\PlatformFactory
 use Symfony\AI\Platform\Bridge\OpenAi\PlatformFactory
   as OpenAiPlatformFactory;
 use Symfony\AI\Platform\PlatformInterface;
-use Symfony\AI\Platform\Tool\Tool;
-use Symfony\AI\Platform\Tool\ExecutionReference;
 use Psr\EventDispatcher\EventDispatcherInterface;
 
 /**
