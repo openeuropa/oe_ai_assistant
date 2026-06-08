@@ -42,9 +42,11 @@ final class LookupTaxonomyTermsTest extends KernelTestBase {
     'node',
     'taxonomy',
     'text',
+    'options',
     'key',
     'ai',
     'workflows',
+    'serialization',
     'content_moderation',
     'oe_ai_assistant',
   ];

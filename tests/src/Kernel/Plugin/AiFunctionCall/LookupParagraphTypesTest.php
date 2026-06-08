@@ -42,9 +42,11 @@ final class LookupParagraphTypesTest extends KernelTestBase {
     'key',
     'ai',
     'workflows',
+    'options',
     'content_moderation',
     'entity_reference_revisions',
     'paragraphs',
+    'serialization',
     'oe_ai_assistant',
   ];
 

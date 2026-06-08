@@ -13,3 +13,5 @@ test-results
 /.zed
 /.vscode
 .phpactor.json
+/docs
+composer.contrib-patches.lock.json
