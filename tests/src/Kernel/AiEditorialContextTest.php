@@ -159,10 +159,10 @@ class AiEditorialContextTest extends KernelTestBase {
   /**
    * Removes IDs from the service output for stable assertions.
    *
-   * @param array<int, array{id: string, name: string, ai_prompt: string}> $options
+   * @param array<int, array{id: string, name: string, oe_ai_prompt: string}> $options
    *   The service output.
    *
-   * @return array<int, array{name: string, ai_prompt: string}>
+   * @return array<int, array{name: string, oe_ai_prompt: string}>
    *   The options without IDs.
    */
   protected function stripIds(array $options): array {
@@ -178,7 +178,7 @@ class AiEditorialContextTest extends KernelTestBase {
   /**
    * Returns the generated ID for an option label.
    *
-   * @param array<int, array{id: string, name: string, ai_prompt: string}> $options
+   * @param array<int, array{id: string, name: string, oe_ai_prompt: string}> $options
    *   The service output.
    * @param string $name
    *   The option label to find.
