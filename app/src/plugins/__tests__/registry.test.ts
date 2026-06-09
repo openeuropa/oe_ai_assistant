@@ -14,7 +14,6 @@ describe("plugin registry", () => {
     expect(
       plugins.map((plugin) => ({ id: plugin.id, path: plugin.path })),
     ).toEqual([
-      { id: "agent-test", path: "/agent-test" },
       { id: "drafting", path: "/drafting" },
       { id: "echo", path: "/echo" },
       { id: "notes", path: "/notes" },
