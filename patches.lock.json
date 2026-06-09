@@ -1,17 +1,4 @@
 {
     "_hash": "26e7db124d4848b44d1a5c226d0827280d847ecb9d6a936d814c8ff91694b6f3",
-    "patches": {
-        "drupal/ai": [
-            {
-                "package": "drupal/ai",
-                "description": "Fix assembleToolCalls to handle both array and object tool formats",
-                "url": "patches/ai-assemble-tool-calls-array-support.patch",
-                "sha256": "e2e10612eac62385f33d52831518c6acff3c7ff6a52e92a25f36970d4db8dd0c",
-                "depth": 1,
-                "extra": {
-                    "provenance": "root"
-                }
-            }
-        ]
-    }
+    "patches": {}
 }
