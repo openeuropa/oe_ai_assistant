@@ -64,15 +64,19 @@ describe("global app store", () => {
   });
 
   it("persists durable state and excludes transient sidebar and context state", async () => {
-    const { getScopedStorageKey, storage, useAppStore } =
-      await loadFreshStore();
+    const {
+      getScopedStorageKey,
+      initializeAppStoreContext,
+      storage,
+      useAppStore,
+    } = await loadFreshStore();
 
+    await initializeAppStoreContext("user-2", "node-10");
     useAppStore.getState().setActivePlugin("notes");
-    useAppStore.getState().setUserContext("user-2", "node-10");
     useAppStore.getState().setSidebarOpen(false);
 
     const persisted = JSON.parse(
-      storage.getItem(getScopedStorageKey(null, null)) ?? "{}",
+      storage.getItem(getScopedStorageKey("user-2", "node-10")) ?? "{}",
     );
 
     expect(persisted.state).toMatchObject({
@@ -88,11 +92,13 @@ describe("global app store", () => {
   it("filters persisted plugin slices through registered partializers", async () => {
     const {
       getScopedStorageKey,
+      initializeAppStoreContext,
       registerPluginPartialize,
       storage,
       useAppStore,
     } = await loadFreshStore();
 
+    await initializeAppStoreContext("user-1", "node-1");
     registerPluginPartialize("drafting", (state) => ({
       threadId: state.threadId,
     }));
@@ -110,7 +116,7 @@ describe("global app store", () => {
     });
 
     const persisted = JSON.parse(
-      storage.getItem(getScopedStorageKey(null, null)) ?? "{}",
+      storage.getItem(getScopedStorageKey("user-1", "node-1")) ?? "{}",
     );
 
     expect(persisted.state.pluginStates).toEqual({
