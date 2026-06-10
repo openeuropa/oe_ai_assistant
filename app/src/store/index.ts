@@ -2,21 +2,24 @@
  * Global application state (Zustand).
  *
  * Holds state shared across the shell and all plugins: which plugin is
- * active, user/node context from the CMS, and in-app notifications.
- * Plugin-owned state lives under `pluginStates[pluginId]`.
+ * active and in-app notifications. Host context (user, session, node)
+ * lives in the config singleton, not here. Plugin-owned state lives
+ * under `pluginStates[pluginId]`.
  *
  * Persisted to localStorage via Zustand's `persist` middleware so the
- * editor can close the browser and resume where they left off. Transient
- * UI state (e.g. sidebar open/closed) is excluded from persistence via
- * `partialize`. Each plugin can also specify its own partialize function
- * to control which parts of its slice are persisted.
+ * editor can close the browser and resume where they left off. Persistence
+ * is scoped per user/session context so state cannot bleed between editors
+ * or editorial sessions in the same browser. Transient UI state (e.g. sidebar
+ * open/closed) is excluded from persistence via `partialize`. Each plugin
+ * can also specify its own partialize function to control which parts of
+ * its slice are persisted.
  *
  * Server-side persistence (syncing state to the backend API) will be
  * added later when the API layer is in place.
  */
 
 import { create } from "zustand";
-import { persist } from "zustand/middleware";
+import { createJSONStorage, persist } from "zustand/middleware";
 
 /** A user-facing notification displayed in the shell. */
 export interface Notification {
@@ -31,10 +34,6 @@ interface AppState {
 
   /** ID of the currently active plugin (matches PluginDefinition.id). */
   activePluginId: string | null;
-  /** Authenticated user ID from the CMS session. */
-  userId: string | null;
-  /** CMS content node ID the editor is working on. */
-  nodeId: string | null;
   /** Queue of notifications shown to the user. */
   notifications: Notification[];
 
@@ -55,7 +54,6 @@ interface AppState {
   // -- Actions --
 
   setActivePlugin: (id: string) => void;
-  setUserContext: (userId: string | null, nodeId: string | null) => void;
   addNotification: (notification: Notification) => void;
   removeNotification: (id: string) => void;
   clearNotifications: () => void;
@@ -63,6 +61,64 @@ interface AppState {
   /** Shallow-merge partial state into a plugin's slice. */
   setPluginState: (pluginId: string, partial: Record<string, unknown>) => void;
 }
+
+type PersistedAppState = Pick<
+  AppState,
+  "activePluginId" | "notifications" | "pluginStates"
+>;
+
+const STORAGE_KEY_PREFIX = "ai-editorial-assistant";
+const PREINIT_STORAGE_KEY = `${STORAGE_KEY_PREFIX}:pending-init`;
+
+// Prevent writes while switching storage keys. Without this guard, the
+// temporary reset to empty durable state would overwrite the target scope
+// in localStorage before rehydration has a chance to read from it.
+let arePersistWritesPaused = false;
+
+function createPersistedState(): PersistedAppState {
+  return {
+    activePluginId: null,
+    notifications: [],
+    pluginStates: {},
+  };
+}
+
+function createInitialState() {
+  return {
+    ...createPersistedState(),
+    isSidebarOpen: true,
+  };
+}
+
+/**
+ * Build the storage key for the current host context.
+ *
+ * Keyed by user and editorial session: the session is the unit of
+ * editorial work, and the user scope prevents state bleeding between
+ * editors sharing the same browser.
+ */
+export function getScopedStorageKey(userId: string, sessionId: string): string {
+  const userScope = encodeURIComponent(userId);
+  const sessionScope = encodeURIComponent(sessionId);
+
+  return `${STORAGE_KEY_PREFIX}:user:${userScope}:session:${sessionScope}`;
+}
+
+const scopedStorage = createJSONStorage<PersistedAppState>(() => {
+  const storage = window.localStorage;
+
+  return {
+    getItem: (name) => storage.getItem(name),
+    setItem: (name, value) => {
+      if (arePersistWritesPaused) return;
+      storage.setItem(name, value);
+    },
+    removeItem: (name) => {
+      if (arePersistWritesPaused) return;
+      storage.removeItem(name);
+    },
+  };
+});
 
 // -- Plugin partialize registry --
 // Stores per-plugin functions that filter which state keys are persisted.
@@ -117,15 +173,9 @@ function partializePluginStates(
 export const useAppStore = create<AppState>()(
   persist(
     (set) => ({
-      activePluginId: null,
-      userId: null,
-      nodeId: null,
-      notifications: [],
-      pluginStates: {},
-      isSidebarOpen: false,
+      ...createInitialState(),
 
       setActivePlugin: (id) => set({ activePluginId: id }),
-      setUserContext: (userId, nodeId) => set({ userId, nodeId }),
       addNotification: (notification) =>
         set((state) => ({
           notifications: [...state.notifications, notification],
@@ -145,16 +195,40 @@ export const useAppStore = create<AppState>()(
         })),
     }),
     {
-      name: "ai-editorial-assistant",
+      name: PREINIT_STORAGE_KEY,
+      storage: scopedStorage,
+      skipHydration: true,
       // Only persist durable state; transient UI flags are excluded.
       // Plugin slices are filtered through their own partialize functions.
       partialize: (state) => ({
         activePluginId: state.activePluginId,
-        userId: state.userId,
-        nodeId: state.nodeId,
         notifications: state.notifications,
         pluginStates: partializePluginStates(state.pluginStates),
       }),
     },
   ),
 );
+
+/**
+ * Prepare the store for a specific host context before rendering.
+ *
+ * This updates the persistence key, clears any in-memory durable state
+ * from a previous context, and then rehydrates from the matching scoped
+ * localStorage entry.
+ */
+export async function initializeAppStoreContext(
+  userId: string,
+  sessionId: string,
+): Promise<void> {
+  arePersistWritesPaused = true;
+
+  try {
+    useAppStore.persist.setOptions({
+      name: getScopedStorageKey(userId, sessionId),
+    });
+    useAppStore.setState(createPersistedState());
+    await useAppStore.persist.rehydrate();
+  } finally {
+    arePersistWritesPaused = false;
+  }
+}

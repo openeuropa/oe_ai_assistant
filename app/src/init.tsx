@@ -12,7 +12,7 @@
  *   <script>
  *     AiEditorialAssistant.init("#ai-assistant", {
  *       apiBaseUrl: "/api",
- *       nodeId: "123",
+ *       sessionId: "42",
  *       userId: "editor-7",
  *     });
  *   </script>
@@ -25,9 +25,10 @@ import { StrictMode } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { App } from "./app";
-import type { AppConfig } from "./config";
+import type { AppInitConfig } from "./config";
 import { setConfig } from "./config";
 import { plugins } from "./plugins/registry";
+import { initializeAppStoreContext } from "./store";
 import { initializePluginSlices } from "./store/plugin-store";
 
 /** Handle returned by init() so the host page can unmount the app. */
@@ -45,7 +46,7 @@ export interface AppHandle {
  */
 export async function init(
   target: string | HTMLElement,
-  config: Partial<AppConfig> = {},
+  config: AppInitConfig,
 ): Promise<AppHandle> {
   // Resolve the mount node from a selector or direct reference.
   const container =
@@ -64,6 +65,10 @@ export async function init(
 
   // Store config so the rest of the app can read it via getConfig().
   setConfig(config);
+
+  // Point the store at the host-provided scope, then rehydrate the
+  // matching persisted state before any plugin slices read from storage.
+  await initializeAppStoreContext(config.userId, config.sessionId);
 
   // Hydrate plugin store slices before the first render. Merges each
   // plugin's initialState with any values already persisted in localStorage.
