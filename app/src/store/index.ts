@@ -2,8 +2,9 @@
  * Global application state (Zustand).
  *
  * Holds state shared across the shell and all plugins: which plugin is
- * active, user/node context from the CMS, and in-app notifications.
- * Plugin-owned state lives under `pluginStates[pluginId]`.
+ * active and in-app notifications. Host context (user, session, node)
+ * lives in the config singleton, not here. Plugin-owned state lives
+ * under `pluginStates[pluginId]`.
  *
  * Persisted to localStorage via Zustand's `persist` middleware so the
  * editor can close the browser and resume where they left off. Persistence
@@ -33,10 +34,6 @@ interface AppState {
 
   /** ID of the currently active plugin (matches PluginDefinition.id). */
   activePluginId: string | null;
-  /** Authenticated user ID from the CMS session. */
-  userId: string | null;
-  /** CMS content node ID the editor is working on. */
-  nodeId: string | null;
   /** Queue of notifications shown to the user. */
   notifications: Notification[];
 
@@ -57,7 +54,6 @@ interface AppState {
   // -- Actions --
 
   setActivePlugin: (id: string) => void;
-  setUserContext: (userId: string | null, nodeId: string | null) => void;
   addNotification: (notification: Notification) => void;
   removeNotification: (id: string) => void;
   clearNotifications: () => void;
@@ -90,8 +86,6 @@ function createPersistedState(): PersistedAppState {
 function createInitialState() {
   return {
     ...createPersistedState(),
-    userId: null,
-    nodeId: null,
     isSidebarOpen: true,
   };
 }
@@ -182,7 +176,6 @@ export const useAppStore = create<AppState>()(
       ...createInitialState(),
 
       setActivePlugin: (id) => set({ activePluginId: id }),
-      setUserContext: (userId, nodeId) => set({ userId, nodeId }),
       addNotification: (notification) =>
         set((state) => ({
           notifications: [...state.notifications, notification],
@@ -219,14 +212,13 @@ export const useAppStore = create<AppState>()(
 /**
  * Prepare the store for a specific host context before rendering.
  *
- * This updates the persistence key, writes the host-provided context into
- * the store, clears any in-memory durable state from a previous context,
- * and then rehydrates from the matching scoped localStorage entry.
+ * This updates the persistence key, clears any in-memory durable state
+ * from a previous context, and then rehydrates from the matching scoped
+ * localStorage entry.
  */
 export async function initializeAppStoreContext(
   userId: string,
   sessionId: string,
-  nodeId: string | null,
 ): Promise<void> {
   arePersistWritesPaused = true;
 
@@ -234,7 +226,6 @@ export async function initializeAppStoreContext(
     useAppStore.persist.setOptions({
       name: getScopedStorageKey(userId, sessionId),
     });
-    useAppStore.getState().setUserContext(userId, nodeId);
     useAppStore.setState(createPersistedState());
     await useAppStore.persist.rehydrate();
   } finally {

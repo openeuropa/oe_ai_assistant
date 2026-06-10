@@ -56,7 +56,7 @@ describe("plugin store infrastructure", () => {
       }),
     );
 
-    await initializeAppStoreContext("editor-1", "session-1", null);
+    await initializeAppStoreContext("editor-1", "session-1");
 
     initializePluginSlices([
       plugin("alpha", {
@@ -80,7 +80,7 @@ describe("plugin store infrastructure", () => {
       useAppStore,
     } = await loadFreshStore();
 
-    await initializeAppStoreContext("editor-1", "session-1", null);
+    await initializeAppStoreContext("editor-1", "session-1");
 
     initializePluginSlices([
       plugin("alpha", {

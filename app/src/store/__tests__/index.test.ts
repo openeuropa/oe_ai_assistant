@@ -11,15 +11,13 @@ describe("global app store", () => {
 
     expect(useAppStore.getState()).toMatchObject({
       activePluginId: null,
-      userId: null,
-      nodeId: null,
       notifications: [],
       pluginStates: {},
       isSidebarOpen: true,
     });
   });
 
-  it("updates active plugin, user context, notifications, and sidebar state", async () => {
+  it("updates active plugin, notifications, and sidebar state", async () => {
     const { useAppStore } = await loadFreshStore();
     const notification = {
       id: "n-1",
@@ -28,14 +26,11 @@ describe("global app store", () => {
     };
 
     useAppStore.getState().setActivePlugin("drafting");
-    useAppStore.getState().setUserContext("user-1", "node-9");
     useAppStore.getState().addNotification(notification);
     useAppStore.getState().setSidebarOpen(false);
 
     expect(useAppStore.getState()).toMatchObject({
       activePluginId: "drafting",
-      userId: "user-1",
-      nodeId: "node-9",
       notifications: [notification],
       isSidebarOpen: false,
     });
@@ -63,7 +58,7 @@ describe("global app store", () => {
     });
   });
 
-  it("persists durable state and excludes transient sidebar and context state", async () => {
+  it("persists durable state and excludes transient sidebar state", async () => {
     const {
       getScopedStorageKey,
       initializeAppStoreContext,
@@ -71,7 +66,7 @@ describe("global app store", () => {
       useAppStore,
     } = await loadFreshStore();
 
-    await initializeAppStoreContext("user-2", "session-10", null);
+    await initializeAppStoreContext("user-2", "session-10");
     useAppStore.getState().setActivePlugin("notes");
     useAppStore.getState().setSidebarOpen(false);
 
@@ -85,8 +80,6 @@ describe("global app store", () => {
       pluginStates: {},
     });
     expect(persisted.state).not.toHaveProperty("isSidebarOpen");
-    expect(persisted.state).not.toHaveProperty("userId");
-    expect(persisted.state).not.toHaveProperty("nodeId");
   });
 
   it("filters persisted plugin slices through registered partializers", async () => {
@@ -98,7 +91,7 @@ describe("global app store", () => {
       useAppStore,
     } = await loadFreshStore();
 
-    await initializeAppStoreContext("user-1", "session-1", null);
+    await initializeAppStoreContext("user-1", "session-1");
     registerPluginPartialize("drafting", (state) => ({
       threadId: state.threadId,
     }));
@@ -147,12 +140,10 @@ describe("app store persistence scoping", () => {
       }),
     });
 
-    await initializeAppStoreContext("editor-7", "42", "123");
+    await initializeAppStoreContext("editor-7", "42");
 
     expect(useAppStore.getState()).toMatchObject({
       activePluginId: "drafting",
-      userId: "editor-7",
-      nodeId: "123",
       notifications: [
         {
           id: "n-1",
@@ -189,19 +180,17 @@ describe("app store persistence scoping", () => {
       }),
     );
 
-    await initializeAppStoreContext("editor-7", "42", null);
+    await initializeAppStoreContext("editor-7", "42");
     expect(useAppStore.getState().pluginStates).toEqual({
       drafting: {
         threadId: "thread-123",
       },
     });
 
-    await initializeAppStoreContext("editor-8", "42", null);
+    await initializeAppStoreContext("editor-8", "42");
 
     expect(useAppStore.getState()).toMatchObject({
       activePluginId: null,
-      userId: "editor-8",
-      nodeId: null,
       notifications: [],
       pluginStates: {},
     });
@@ -241,14 +230,14 @@ describe("app store persistence scoping", () => {
       }),
     );
 
-    await initializeAppStoreContext("editor-7", "42", null);
+    await initializeAppStoreContext("editor-7", "42");
     expect(useAppStore.getState().pluginStates).toEqual({
       drafting: {
         threadId: "news-thread",
       },
     });
 
-    await initializeAppStoreContext("editor-7", "43", null);
+    await initializeAppStoreContext("editor-7", "43");
     expect(useAppStore.getState().pluginStates).toEqual({
       drafting: {
         threadId: "landing-page-thread",

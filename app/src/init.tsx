@@ -66,13 +66,9 @@ export async function init(
   // Store config so the rest of the app can read it via getConfig().
   setConfig(config);
 
-  // Write the host-provided context into the store, then rehydrate the
-  // matching persisted scope before any plugin slices read from storage.
-  await initializeAppStoreContext(
-    config.userId,
-    config.sessionId,
-    config.nodeId ?? null,
-  );
+  // Point the store at the host-provided scope, then rehydrate the
+  // matching persisted state before any plugin slices read from storage.
+  await initializeAppStoreContext(config.userId, config.sessionId);
 
   // Hydrate plugin store slices before the first render. Merges each
   // plugin's initialState with any values already persisted in localStorage.
