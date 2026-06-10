@@ -126,9 +126,10 @@ and a configuration object:
 | `userId`         | `string`   | Required | Authenticated user ID from the CMS session.      |
 | `enabledPlugins` | `string[]` | `[]`     | Plugin IDs to activate (empty = all registered). |
 
-`userId` and `sessionId` are required: persisted state (localStorage) is
-scoped per user and editorial session. Sensible defaults are applied for any
-other omitted values.
+`userId` and `sessionId` are required. Persisted state (localStorage) is
+scoped per editorial session only: sessions are collaborative, so every
+user with access to a session shares its state. Sensible defaults are
+applied for any other omitted values.
 
 ### Return Value
 
