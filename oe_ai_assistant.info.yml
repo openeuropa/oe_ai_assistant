@@ -5,10 +5,12 @@ core_version_requirement: ^11
 package: OpenEuropa
 dependencies:
   - ai:ai
+  - ai:ai_observability
   - ai_agents:ai_agents
   - drupal:content_moderation
   - drupal:node
   - drupal:datetime
   - drupal:options
   - drupal:serialization
+  - drupal:extended_logger
   - key:key

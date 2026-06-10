@@ -6,6 +6,10 @@ administer ai editorial sessions:
   title: 'Administer AI editorial sessions'
   description: 'Create, update, and delete AI editorial sessions and their bundles.'
 
+administer ai interaction logs:
+  title: 'Administer AI interaction logs'
+  description: 'View and manage persisted AI interaction logs.'
+
 view_update own sessions:
   title: 'View update own session'
   description: 'Access overview page of AI editorial sessions and view/update your own session.'

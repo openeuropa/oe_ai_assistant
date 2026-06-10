@@ -11,3 +11,10 @@ oe_ai_assistant.dashboard:
   route_name: entity.ai_editorial_session.collection
   parent: oe_ai_assistant.admin_settings
   weight: 20
+
+oe_ai_assistant.ai_interaction_logs:
+  title: 'AI Interaction Logs'
+  description: 'List persisted AI interaction logs.'
+  route_name: entity.ai_interaction_log.collection
+  parent: system.admin_reports
+  weight: 100
