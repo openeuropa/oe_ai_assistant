@@ -48,7 +48,7 @@ class AiEditorialSessionDashboardTest extends AiEditorialSessionBrowserTestBase 
     $this->clickLink('Continue');
     $this->assertSession()->statusCodeEquals(200);
     $this->assertSame($session->toUrl('canonical', ['absolute' => TRUE])->toString(), $this->getUrl());
-    $this->assertSessionAppPage('oe_news');
+    $this->assertSessionAppPage('oe_news', (string) $session->id());
   }
 
   /**
@@ -156,7 +156,7 @@ class AiEditorialSessionDashboardTest extends AiEditorialSessionBrowserTestBase 
     $this->drupalLogin($owner);
     $this->drupalGet($session->toUrl('canonical'));
     $this->assertSession()->statusCodeEquals(200);
-    $this->assertSessionAppPage('oe_news');
+    $this->assertSessionAppPage('oe_news', (string) $session->id());
 
     $this->drupalLogin($other_user);
     $this->drupalGet($session->toUrl('canonical'));
@@ -208,7 +208,7 @@ class AiEditorialSessionDashboardTest extends AiEditorialSessionBrowserTestBase 
     $session = reset($session);
     $this->assertNotFalse($session);
     $this->assertSame($session->toUrl('canonical', ['absolute' => TRUE])->toString(), $this->getUrl());
-    $this->assertSessionAppPage('oe_news');
+    $this->assertSessionAppPage('oe_news', (string) $session->id());
   }
 
   /**
@@ -254,14 +254,17 @@ class AiEditorialSessionDashboardTest extends AiEditorialSessionBrowserTestBase 
    *
    * @param string $bundle
    *   The expected drafting bundle configured for the session.
+   * @param string $sessionId
+   *   The expected AI editorial session entity ID.
    */
-  protected function assertSessionAppPage(string $bundle): void {
+  protected function assertSessionAppPage(string $bundle, string $sessionId): void {
     $this->assertSession()->elementExists('css', '#oe-ai-assistant[data-ai-app]');
     $this->assertSession()->responseContains('oe_ai_assistant/js/init.js');
     $this->assertSession()->responseContains('dist/ai-editorial-assistant.iife.js');
     $this->assertSession()->responseContains('oeAiAssistant');
     $this->assertSession()->responseContains('"apiBaseUrl":"\/api\/ai"');
     $this->assertSession()->responseContains('"userId":"' . $this->loggedInUser->id() . '"');
+    $this->assertSession()->responseContains('"sessionId":"' . $sessionId . '"');
     $this->assertSession()->responseContains('"enabledPlugins":["echo","notes","drafting"]');
     $this->assertSession()->responseContains('"entityTypeId":"node"');
     $this->assertSession()->responseContains('"bundle":"' . $bundle . '"');

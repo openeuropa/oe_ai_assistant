@@ -109,7 +109,7 @@ and a configuration object:
 <script>
   AiEditorialAssistant.init('#ai-assistant', {
     apiBaseUrl: '/api',
-    nodeId: '456',
+    sessionId: '42',
     userId: 'editor-12',
     enabledPlugins: ['echo', 'notes'],
   });
@@ -121,11 +121,14 @@ and a configuration object:
 | Option           | Type       | Default  | Description                                      |
 |------------------|------------|----------|--------------------------------------------------|
 | `apiBaseUrl`     | `string`   | `"/api"` | Base URL for all API requests.                   |
+| `sessionId`      | `string`   | Required | Editorial session ID the app is mounted on.      |
 | `nodeId`         | `string`   | `null`   | CMS content node the editor is working on.       |
 | `userId`         | `string`   | Required | Authenticated user ID from the CMS session.      |
 | `enabledPlugins` | `string[]` | `[]`     | Plugin IDs to activate (empty = all registered). |
 
-`userId` is required. Sensible defaults are applied for any other omitted values.
+`userId` and `sessionId` are required: persisted state (localStorage) is
+scoped per user and editorial session. Sensible defaults are applied for any
+other omitted values.
 
 ### Return Value
 

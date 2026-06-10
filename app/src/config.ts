@@ -14,6 +14,8 @@
 export interface AppConfig {
   /** Base URL for all API requests (e.g. "/api" or "https://cms.example.com/api"). */
   apiBaseUrl: string;
+  /** Editorial session ID the app is mounted on. */
+  sessionId: string;
   /** CMS content node ID the editor is currently working on. */
   nodeId: string | null;
   /** Authenticated user ID from the CMS session. */
@@ -25,9 +27,12 @@ export interface AppConfig {
 }
 
 /** Init-time config accepted from the host application. */
-export interface AppInitConfig extends Omit<Partial<AppConfig>, "userId"> {
+export interface AppInitConfig
+  extends Omit<Partial<AppConfig>, "userId" | "sessionId"> {
   /** Authenticated user ID from the CMS session. Required. */
   userId: string;
+  /** Editorial session ID the app is mounted on. Required. */
+  sessionId: string;
 }
 
 /** Sensible defaults for options that the host may omit. */
@@ -36,7 +41,7 @@ const defaults = {
   nodeId: null,
   enabledPlugins: [],
   pluginConfig: {},
-} satisfies Omit<AppConfig, "userId">;
+} satisfies Omit<AppConfig, "userId" | "sessionId">;
 
 /** Module-level singleton holding the active config after init(). */
 let activeConfig: AppConfig | null = null;
@@ -47,6 +52,7 @@ let activeConfig: AppConfig | null = null;
  */
 export function setConfig(config: AppInitConfig): void {
   const userId = config.userId.trim();
+  const sessionId = config.sessionId.trim();
 
   if (!userId) {
     throw new Error(
@@ -54,7 +60,13 @@ export function setConfig(config: AppInitConfig): void {
     );
   }
 
-  activeConfig = { ...defaults, ...config, userId };
+  if (!sessionId) {
+    throw new Error(
+      "[ai-editorial-assistant] init() requires a non-empty sessionId",
+    );
+  }
+
+  activeConfig = { ...defaults, ...config, userId, sessionId };
 }
 
 /**

@@ -12,7 +12,7 @@
  *   <script>
  *     AiEditorialAssistant.init("#ai-assistant", {
  *       apiBaseUrl: "/api",
- *       nodeId: "123",
+ *       sessionId: "42",
  *       userId: "editor-7",
  *     });
  *   </script>
@@ -68,7 +68,11 @@ export async function init(
 
   // Write the host-provided context into the store, then rehydrate the
   // matching persisted scope before any plugin slices read from storage.
-  await initializeAppStoreContext(config.userId, config.nodeId ?? null);
+  await initializeAppStoreContext(
+    config.userId,
+    config.sessionId,
+    config.nodeId ?? null,
+  );
 
   // Hydrate plugin store slices before the first render. Merges each
   // plugin's initialState with any values already persisted in localStorage.

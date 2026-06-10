@@ -7,8 +7,8 @@
  *
  * Persisted to localStorage via Zustand's `persist` middleware so the
  * editor can close the browser and resume where they left off. Persistence
- * is scoped per user/node context so state cannot bleed between editors or
- * content items in the same browser. Transient UI state (e.g. sidebar
+ * is scoped per user/session context so state cannot bleed between editors
+ * or editorial sessions in the same browser. Transient UI state (e.g. sidebar
  * open/closed) is excluded from persistence via `partialize`. Each plugin
  * can also specify its own partialize function to control which parts of
  * its slice are persisted.
@@ -73,7 +73,6 @@ type PersistedAppState = Pick<
 
 const STORAGE_KEY_PREFIX = "ai-editorial-assistant";
 const PREINIT_STORAGE_KEY = `${STORAGE_KEY_PREFIX}:pending-init`;
-const NULL_NODE_SCOPE = "__create__";
 
 // Prevent writes while switching storage keys. Without this guard, the
 // temporary reset to empty durable state would overwrite the target scope
@@ -98,19 +97,17 @@ function createInitialState() {
 }
 
 /**
- * Build the storage key for the current CMS context.
+ * Build the storage key for the current host context.
  *
- * A missing node ID is treated as a dedicated "create" scope so unsaved
- * flows do not reuse persisted state from an existing content node.
+ * Keyed by user and editorial session: the session is the unit of
+ * editorial work, and the user scope prevents state bleeding between
+ * editors sharing the same browser.
  */
-export function getScopedStorageKey(
-  userId: string,
-  nodeId: string | null,
-): string {
+export function getScopedStorageKey(userId: string, sessionId: string): string {
   const userScope = encodeURIComponent(userId);
-  const nodeScope = encodeURIComponent(nodeId ?? NULL_NODE_SCOPE);
+  const sessionScope = encodeURIComponent(sessionId);
 
-  return `${STORAGE_KEY_PREFIX}:user:${userScope}:node:${nodeScope}`;
+  return `${STORAGE_KEY_PREFIX}:user:${userScope}:session:${sessionScope}`;
 }
 
 const scopedStorage = createJSONStorage<PersistedAppState>(() => {
@@ -228,13 +225,14 @@ export const useAppStore = create<AppState>()(
  */
 export async function initializeAppStoreContext(
   userId: string,
+  sessionId: string,
   nodeId: string | null,
 ): Promise<void> {
   arePersistWritesPaused = true;
 
   try {
     useAppStore.persist.setOptions({
-      name: getScopedStorageKey(userId, nodeId),
+      name: getScopedStorageKey(userId, sessionId),
     });
     useAppStore.getState().setUserContext(userId, nodeId);
     useAppStore.setState(createPersistedState());
