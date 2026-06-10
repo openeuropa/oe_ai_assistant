@@ -122,7 +122,7 @@ export const useAppStore = create<AppState>()(
       nodeId: null,
       notifications: [],
       pluginStates: {},
-      isSidebarOpen: true,
+      isSidebarOpen: false,
 
       setActivePlugin: (id) => set({ activePluginId: id }),
       setUserContext: (userId, nodeId) => set({ userId, nodeId }),
