@@ -2,8 +2,6 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { PluginDefinition } from "@/plugins/types";
 import { loadFreshStore, persistedStoreState } from "./test-utils";
 
-const STORAGE_KEY = "ai-editorial-assistant";
-
 afterEach(() => {
   vi.unstubAllGlobals();
 });
@@ -41,13 +39,24 @@ describe("plugin store infrastructure", () => {
   });
 
   it("merges persisted values over initial state while restoring missing keys", async () => {
-    const { initializePluginSlices, useAppStore } = await loadFreshStore({
-      [STORAGE_KEY]: persistedStoreState({
+    const {
+      getScopedStorageKey,
+      initializeAppStoreContext,
+      initializePluginSlices,
+      storage,
+      useAppStore,
+    } = await loadFreshStore();
+
+    storage.setItem(
+      getScopedStorageKey("editor-1", "session-1"),
+      persistedStoreState({
         pluginStates: {
           alpha: { count: 5 },
         },
       }),
-    });
+    );
+
+    await initializeAppStoreContext("editor-1", "session-1");
 
     initializePluginSlices([
       plugin("alpha", {
@@ -63,8 +72,15 @@ describe("plugin store infrastructure", () => {
   });
 
   it("registers plugin partializers during initialization", async () => {
-    const { initializePluginSlices, storage, useAppStore } =
-      await loadFreshStore();
+    const {
+      getScopedStorageKey,
+      initializeAppStoreContext,
+      initializePluginSlices,
+      storage,
+      useAppStore,
+    } = await loadFreshStore();
+
+    await initializeAppStoreContext("editor-1", "session-1");
 
     initializePluginSlices([
       plugin("alpha", {
@@ -80,7 +96,9 @@ describe("plugin store infrastructure", () => {
       transient: "dropped",
     });
 
-    const persisted = JSON.parse(storage.getItem(STORAGE_KEY) ?? "{}");
+    const persisted = JSON.parse(
+      storage.getItem(getScopedStorageKey("editor-1", "session-1")) ?? "{}",
+    );
 
     expect(persisted.state.pluginStates).toEqual({
       alpha: { durable: "kept" },

@@ -38,16 +38,8 @@ export function initializePluginSlices(plugins: PluginDefinition[]): void {
 
     const { initialState, partialize } = plugin.storeSlice;
 
-    // Merge: persisted values override initial state, but initial state
-    // fills in any keys that were not persisted (e.g. transient state).
-    const persisted = currentStates[plugin.id];
-    const merged = persisted
-      ? { ...initialState, ...persisted }
-      : { ...initialState };
-
-    useAppStore.getState().setPluginState(plugin.id, merged);
-
-    // Register the partialize function for persistence filtering.
+    // Register the partialize function before initializing the slice so
+    // the first persisted write already uses the plugin's scoped filter.
     if (partialize) {
       registerPluginPartialize(
         plugin.id,
@@ -56,6 +48,15 @@ export function initializePluginSlices(plugins: PluginDefinition[]): void {
         ) => Record<string, unknown>,
       );
     }
+
+    // Merge: persisted values override initial state, but initial state
+    // fills in any keys that were not persisted (e.g. transient state).
+    const persisted = currentStates[plugin.id];
+    const merged = persisted
+      ? { ...initialState, ...persisted }
+      : { ...initialState };
+
+    useAppStore.getState().setPluginState(plugin.id, merged);
   }
 }
 
