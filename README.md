@@ -2,7 +2,7 @@
 
 Drupal 11 module that embeds an AI-powered editorial assistant into the CMS back-office. Provides a plugin-based
 architecture for AI features including content drafting, schema extraction, and streaming chat powered by
-Symfony AI.
+Drupal AI.
 
 ## Requirements
 
@@ -10,8 +10,6 @@ Symfony AI.
 - PHP 8.3+
 - [AI module](https://www.drupal.org/project/ai) (^1.3)
 - [AI Agents](https://www.drupal.org/project/ai_agents) (^1.3)
-- [Symfony AI](https://github.com/symfony/ai) components (`symfony/ai-agent`, `symfony/ai-platform`,
-  `symfony/ai-mistral-platform`, `symfony/ai-open-ai-platform`) (^0.6)
 - Content Moderation (core)
 
 ## Installation

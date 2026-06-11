@@ -20,8 +20,6 @@ services:
 
   Drupal\oe_ai_assistant\Service\DraftEntityBuilder: {}
 
-  Drupal\oe_ai_assistant\Service\AgentFactory: {}
-
   Drupal\oe_ai_assistant\Service\UiMessageStream: {}
   Drupal\oe_ai_assistant\Service\UiMessageStreamInterface: '@Drupal\oe_ai_assistant\Service\UiMessageStream'
 
