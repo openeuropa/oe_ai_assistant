@@ -54,7 +54,19 @@ class ToolExecutionLoop implements ToolExecutionLoopInterface {
     UiMessageStreamInterface $stream,
     array $terminalToolNames = [],
     array $tags = [],
+    array $fixedToolContexts = [],
   ): ToolLoopResult {
+
+    // Remove caller-fixed properties from the tool definitions sent
+    // to the LLM: their values are injected at execution time, so
+    // the LLM must not be able to supply (or be tricked into
+    // supplying) them.
+    foreach ($tools as $tool) {
+      $fixed = $fixedToolContexts[$tool->getName()] ?? [];
+      foreach (array_keys($fixed) as $propertyName) {
+        $tool->unsetProperty($propertyName);
+      }
+    }
 
     for ($i = 0; $i < self::MAX_ITERATIONS; $i++) {
       // Build ChatInput with current conversation history.
@@ -95,7 +107,10 @@ class ToolExecutionLoop implements ToolExecutionLoopInterface {
       $history[] = $assistantMsg;
 
       foreach ($toolCalls as $toolCall) {
-        $result = $this->toolExecutor->execute($toolCall);
+        $result = $this->toolExecutor->execute(
+          $toolCall,
+          $fixedToolContexts[$toolCall->getName()] ?? [],
+        );
         $toolResultMsg = new ChatMessage('tool', $result);
         $toolResultMsg->setToolsId($toolCall->getToolId());
         $history[] = $toolResultMsg;

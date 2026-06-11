@@ -8,6 +8,7 @@ use Drupal\ai\OperationType\Chat\ChatOutput;
 use Drupal\ai\OperationType\Chat\StreamedChatMessageIteratorInterface;
 use Drupal\ai\Response\AiStreamedResponse;
 use Drupal\ai\Service\PromptCodeBlockExtractor\PromptCodeBlockExtractorInterface;
+use Psr\Log\LoggerInterface;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Component\HttpFoundation\Response;
 
@@ -41,10 +42,14 @@ class UiMessageStream implements UiMessageStreamInterface {
    *
    * @param \Drupal\ai\Service\PromptCodeBlockExtractor\PromptCodeBlockExtractorInterface $codeBlockExtractor
    *   The code block extractor service.
+   * @param \Psr\Log\LoggerInterface $logger
+   *   The logger channel.
    */
   public function __construct(
     #[Autowire(service: 'ai.prompt_code_block_extractor')]
     protected readonly PromptCodeBlockExtractorInterface $codeBlockExtractor,
+    #[Autowire(service: 'logger.channel.oe_ai_assistant')]
+    protected readonly LoggerInterface $logger,
   ) {}
 
   /**
@@ -59,7 +64,20 @@ class UiMessageStream implements UiMessageStreamInterface {
     $stream = $this;
     $response->setCallback(function () use ($callback, $stream): void {
       set_time_limit(0);
-      $callback($stream);
+      try {
+        $callback($stream);
+      }
+      catch (\Throwable $e) {
+        // Never let an exception escape into the open SSE stream:
+        // Drupal's exception handler would print an HTML error page
+        // mid-stream. Log the details server-side and degrade into a
+        // protocol error event so the client can render it cleanly.
+        $this->logger->error('Streaming callback failed: @message', [
+          '@message' => $e->getMessage(),
+        ]);
+        $stream->error('The assistant request failed. Please try again.');
+        $stream->finish('error');
+      }
     });
 
     return $response;

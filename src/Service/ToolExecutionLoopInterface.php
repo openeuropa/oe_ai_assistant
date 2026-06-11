@@ -34,6 +34,12 @@ interface ToolExecutionLoopInterface {
    *   caller handles these tools (e.g. triggering orchestration).
    * @param string[] $tags
    *   Provider tags for logging and filtering (e.g. ['drafting']).
+   * @param array $fixedToolContexts
+   *   Context values fixed by the caller, keyed by tool name and
+   *   then by context name. Fixed properties are removed from the
+   *   tool definitions advertised to the LLM and forced at
+   *   execution time, so neither the LLM nor a user steering it
+   *   can call the tool outside the caller's allowed scope.
    *
    * @return \Drupal\oe_ai_assistant\Service\ToolLoopResult
    *   Describes how the loop ended.
@@ -47,6 +53,7 @@ interface ToolExecutionLoopInterface {
     UiMessageStreamInterface $stream,
     array $terminalToolNames = [],
     array $tags = [],
+    array $fixedToolContexts = [],
   ): ToolLoopResult;
 
 }
