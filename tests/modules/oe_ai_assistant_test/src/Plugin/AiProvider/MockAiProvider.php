@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Drupal\oe_ai_assistant_agent_test\Plugin\AiProvider;
+namespace Drupal\oe_ai_assistant_test\Plugin\AiProvider;
 
 use Drupal\Core\Config\ImmutableConfig;
 use Drupal\Core\StringTranslation\TranslatableMarkup;
@@ -44,7 +44,7 @@ class MockAiProvider extends AiProviderClientBase implements ChatInterface {
    * Uses Drupal's state API so data persists across the test runner
    * process and the web server process handling HTTP requests.
    *
-   * @param \Drupal\oe_ai_assistant_agent_test\Plugin\AiProvider\MockResponse $response
+   * @param \Drupal\oe_ai_assistant_test\Plugin\AiProvider\MockResponse $response
    *   The mock response.
    */
   public static function enqueue(MockResponse $response): void {
@@ -91,7 +91,7 @@ class MockAiProvider extends AiProviderClientBase implements ChatInterface {
   /**
    * Dequeues the next mock response.
    *
-   * @return \Drupal\oe_ai_assistant_agent_test\Plugin\AiProvider\MockResponse
+   * @return \Drupal\oe_ai_assistant_test\Plugin\AiProvider\MockResponse
    *   The next queued response.
    *
    * @throws \RuntimeException

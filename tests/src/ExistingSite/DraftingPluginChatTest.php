@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace Drupal\Tests\oe_ai_assistant\ExistingSite;
 
 use Drupal\Core\Url;
-use Drupal\oe_ai_assistant_agent_test\Plugin\AiProvider\MockAiProvider;
-use Drupal\oe_ai_assistant_agent_test\Plugin\AiProvider\MockResponse;
+use Drupal\oe_ai_assistant_test\Plugin\AiProvider\MockAiProvider;
+use Drupal\oe_ai_assistant_test\Plugin\AiProvider\MockResponse;
 use Drupal\Tests\oe_ai_assistant\Traits\ExistingSiteConfigBackupTrait;
 use Drupal\user\UserInterface;
 use weitzman\DrupalTestTraits\ExistingSiteBase;
@@ -34,9 +34,9 @@ class DraftingPluginChatTest extends ExistingSiteBase {
   protected function setUp(): void {
     parent::setUp();
 
-    // Ensure the agent test module is enabled (provides MockAiProvider).
+    // Ensure the shared test module is enabled (provides MockAiProvider).
     \Drupal::service('module_installer')
-      ->install(['oe_ai_assistant_agent_test']);
+      ->install(['oe_ai_assistant_test']);
 
     // Backup AI settings and set mock_ai as the default provider.
     $this->backupSimpleConfig('ai.settings');

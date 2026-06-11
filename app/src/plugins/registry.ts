@@ -7,9 +7,8 @@
  * src/plugins/ and append an entry here.
  */
 
-import { Bot, PenLine, Radio, StickyNote } from "lucide-react";
+import { PenLine, Radio, StickyNote } from "lucide-react";
 import { lazy } from "react";
-import { agentTestSliceConfig } from "./agent-test/store";
 import { draftingSliceConfig } from "./drafting/store";
 import { echoSliceConfig } from "./echo/store";
 import { notesSliceConfig } from "./notes/store";
@@ -25,16 +24,6 @@ export const plugins: PluginDefinition[] = [
     requiredEndpoints: ["/api/plugins/drafting/chat"],
     path: "/drafting",
     storeSlice: draftingSliceConfig,
-  },
-  {
-    id: "agent-test",
-    name: "Agent Test",
-    description: "Sub-agent orchestration spike with chat and drafting",
-    icon: Bot,
-    component: lazy(() => import("./agent-test/root")),
-    requiredEndpoints: ["/api/plugins/agent_test/chat"],
-    path: "/agent-test",
-    storeSlice: agentTestSliceConfig,
   },
   {
     id: "echo",

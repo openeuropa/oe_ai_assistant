@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Drupal\oe_ai_assistant_agent_test\Plugin\AiProvider;
+namespace Drupal\oe_ai_assistant_test\Plugin\AiProvider;
 
 use Drupal\ai\OperationType\Chat\StreamedChatMessageIterator;
 use Drupal\ai\OperationType\Chat\Tools\ToolsFunctionOutput;
@@ -25,14 +25,14 @@ class MockChatMessageIterator extends StreamedChatMessageIterator {
   /**
    * The mock response to stream.
    *
-   * @var \Drupal\oe_ai_assistant_agent_test\Plugin\AiProvider\MockResponse
+   * @var \Drupal\oe_ai_assistant_test\Plugin\AiProvider\MockResponse
    */
   protected MockResponse $mockResponse;
 
   /**
    * Creates a MockChatMessageIterator for the given response.
    *
-   * @param \Drupal\oe_ai_assistant_agent_test\Plugin\AiProvider\MockResponse $mockResponse
+   * @param \Drupal\oe_ai_assistant_test\Plugin\AiProvider\MockResponse $mockResponse
    *   The mock response to stream.
    *
    * @return static

@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Drupal\oe_ai_assistant_agent_test\Plugin\AiProvider;
+namespace Drupal\oe_ai_assistant_test\Plugin\AiProvider;
 
 /**
  * Value object representing a queued mock LLM response.
