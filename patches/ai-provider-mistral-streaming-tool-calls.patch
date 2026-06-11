@@ -1,5 +1,5 @@
---- src/MistralChatMessageIterator.php.orig	2026-05-27 10:58:40.877899579 +0200
-+++ src/MistralChatMessageIterator.php	2026-05-27 10:59:04.367563900 +0200
+--- a/src/MistralChatMessageIterator.php
++++ b/src/MistralChatMessageIterator.php
 @@ -3,6 +3,7 @@
  namespace Drupal\ai_provider_mistral;
  
@@ -35,7 +35,7 @@
     * {@inheritdoc}
     */
    public function doIterate(): \Generator {
-@@ -45,12 +59,22 @@
+@@ -45,12 +59,26 @@
        $message = $response->getLastMessage();
        $metadata = $response->getUsage() ?: [];
  
@@ -43,10 +43,14 @@
 +      // createStreamedChatMessage(). The base assembleToolCalls() expects
 +      // OpenAI-style incremental deltas with toArray(); Mistral sends
 +      // complete tool calls that we handle in getTools() instead.
++      // The SDK accumulates state on a single shared Response object, so
++      // every chunk yielded after a tool call arrives exposes the same
++      // collection again: key by tool id to keep collection idempotent.
        $toolCalls = $response->getToolCalls();
 +      if ($toolCalls && !$toolCalls->isEmpty()) {
-+        foreach ($toolCalls->toArray() as $tc) {
-+          $this->collectedToolCalls[] = $tc;
++        foreach ($toolCalls->toArray() as $index => $tc) {
++          $key = !empty($tc['id']) ? (string) $tc['id'] : 'index_' . $index;
++          $this->collectedToolCalls[$key] = $tc;
 +        }
 +      }
 +
@@ -59,7 +63,7 @@
          $this->responseToArray($response),
        );
  
-@@ -80,4 +104,33 @@
+@@ -80,4 +107,33 @@
      }
    }
  

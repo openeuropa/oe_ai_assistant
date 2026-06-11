@@ -76,16 +76,11 @@ class GetContentSchema extends FunctionCallBase implements StructuredExecutableF
    * {@inheritdoc}
    */
   public function execute() {
-    $bundle = '';
-    $entityTypeId = 'node';
-    foreach ($this->getContextValues() as $key => $context) {
-      if ($key === 'bundle') {
-        $bundle = (string) $context->getContextValue();
-      }
-      if ($key === 'entity_type_id') {
-        $entityTypeId = (string) $context->getContextValue();
-      }
-    }
+    // getContextValues() returns raw values (NULL when not set), not
+    // Context objects, so the arguments can be read directly.
+    $values = $this->getContextValues();
+    $bundle = (string) ($values['bundle'] ?? '');
+    $entityTypeId = (string) ($values['entity_type_id'] ?? 'node');
 
     if (empty($bundle)) {
       $this->output = ['error' => 'Bundle is required.'];

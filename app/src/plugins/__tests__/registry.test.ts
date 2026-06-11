@@ -15,6 +15,7 @@ describe("plugin registry", () => {
       plugins.map((plugin) => ({ id: plugin.id, path: plugin.path })),
     ).toEqual([
       { id: "drafting", path: "/drafting" },
+      { id: "agent-test", path: "/agent-test" },
       { id: "echo", path: "/echo" },
       { id: "notes", path: "/notes" },
     ]);
@@ -31,8 +32,7 @@ describe("plugin registry", () => {
   });
 
   it("uses drafting as the first plugin for the default route", () => {
-    const drafting = plugins.find((p) => p.id === "drafting");
-    expect(drafting).toBeDefined();
-    expect(drafting?.path).toBe("/drafting");
+    expect(plugins[0]?.id).toBe("drafting");
+    expect(plugins[0]?.path).toBe("/drafting");
   });
 });

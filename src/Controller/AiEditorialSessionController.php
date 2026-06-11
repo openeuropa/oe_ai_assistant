@@ -89,12 +89,18 @@ class AiEditorialSessionController extends ControllerBase {
    *   The render array to show on the page.
    */
   public function view(AiEditorialSessionInterface $ai_editorial_session): array {
-    return $this->buildRenderArray('node', $ai_editorial_session->get('content_type')->target_id);
+    return $this->buildRenderArray(
+      (string) $ai_editorial_session->id(),
+      'node',
+      $ai_editorial_session->get('content_type')->target_id,
+    );
   }
 
   /**
    * Builds the common render array for the AI Assistant.
    *
+   * @param string $sessionId
+   *   The AI editorial session entity ID.
    * @param string $entityTypeId
    *   The entity type ID (always 'node' for now).
    * @param string $bundle
@@ -103,7 +109,7 @@ class AiEditorialSessionController extends ControllerBase {
    * @return array
    *   A Drupal render array with mount point, library, and settings.
    */
-  private function buildRenderArray(string $entityTypeId, string $bundle): array {
+  private function buildRenderArray(string $sessionId, string $entityTypeId, string $bundle): array {
     // Build the configuration object that bootstraps the React app.
     // This data is serialised into window.drupalSettings.oeAiAssistant
     // and read by the React entry point before the first render.
@@ -113,9 +119,13 @@ class AiEditorialSessionController extends ControllerBase {
       // Drupal is installed at the domain root), guaranteeing correct paths
       // in both root and subdirectory installations.
       'apiBaseUrl' => $this->requestStack->getCurrentRequest()->getBasePath() . '/api/ai',
-      // Current user ID as a string, used by the React app to namespace
-      // per-user state (e.g. conversation history keys in TempStore).
+      // Current user ID as a string, available to the React app for
+      // user-specific behaviour.
       'userId' => (string) $this->currentUser()->id(),
+      // AI editorial session entity ID. It scopes the state the React
+      // app persists in localStorage, so different sessions never share
+      // frontend state while collaborating users on the same session do.
+      'sessionId' => $sessionId,
       // List of plugin IDs that should be available in the UI for this node.
       // The React app only registers plugins whose IDs appear in this list,
       // allowing server-side control over which tools are shown per context.

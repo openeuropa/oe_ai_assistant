@@ -180,8 +180,8 @@ export class MistralDraftingService implements DraftingService {
 
     const messageId = randomUUID();
     const threadId = inputThreadId || randomUUID();
-    const systemPrompt = this.buildSystemPrompt(schema, opts);
     const groups = schema ? splitSchemaIntoGroups(schema) : [];
+    const systemPrompt = this.buildSystemPrompt(groups, opts);
 
     yield { type: "start", messageId };
     yield { type: "data-thread-id", data: { threadId } };
@@ -191,7 +191,7 @@ export class MistralDraftingService implements DraftingService {
       history.push({ role: "user" as const, content: message });
 
       // Run the router LLM with tool loop.
-      const gen = this.runRouterLoop(systemPrompt, history, schema, groups);
+      const gen = this.runRouterLoop(systemPrompt, history, groups);
       let result = await gen.next();
       while (!result.done) {
         yield result.value;
@@ -231,10 +231,7 @@ export class MistralDraftingService implements DraftingService {
 
   // -- Private: system prompt and tools ---------------------------
 
-  private buildSystemPrompt(
-    schema: ContentTypeSchema | null,
-    opts: ChatOptions,
-  ): string {
+  private buildSystemPrompt(groups: SchemaGroup[], opts: ChatOptions): string {
     // Must match config/install/ai_agents.ai_agent.oe_drafting_router.yml
     let prompt = `You are a content drafting assistant for a CMS editorial workflow.
 
@@ -274,6 +271,13 @@ Workflow:
       `\n\nContent type context:\n` +
       `bundle: ${opts.bundle}\n` +
       `entity_type_id: ${opts.entityTypeId}\n`;
+
+    // Append the field groups so the router has the same schema
+    // context as in production (mirrors DraftingPlugin, which
+    // appends splitSchemaIntoGroups() output to the prompt).
+    if (groups.length > 0) {
+      prompt += `\nAvailable field groups:\n${JSON.stringify(groups, null, 2)}\n`;
+    }
 
     return prompt;
   }
@@ -317,7 +321,6 @@ Workflow:
   private async *runRouterLoop(
     systemPrompt: string,
     messages: ChatMessage[],
-    schema: ContentTypeSchema | null,
     groups: SchemaGroup[],
   ): AsyncGenerator<StreamEvent, string> {
     let fullMessage = "";
