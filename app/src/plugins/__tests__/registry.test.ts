@@ -49,9 +49,7 @@ describe("plugin registry", () => {
   });
 
   it("exposes only non-dev plugins by default", () => {
-    expect(getActivePlugins().map((plugin) => plugin.id)).toEqual([
-      "drafting",
-    ]);
+    expect(getActivePlugins().map((plugin) => plugin.id)).toEqual(["drafting"]);
   });
 
   it("keeps dev-only plugins hidden from the host allowlist unless the dev flag is enabled", () => {
@@ -61,9 +59,7 @@ describe("plugin registry", () => {
       enabledPlugins: ["drafting", "echo", "missing"],
     });
 
-    expect(getActivePlugins().map((plugin) => plugin.id)).toEqual([
-      "drafting",
-    ]);
+    expect(getActivePlugins().map((plugin) => plugin.id)).toEqual(["drafting"]);
   });
 
   it("exposes dev-only plugins when explicitly enabled in dev", () => {
