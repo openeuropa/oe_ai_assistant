@@ -15,7 +15,6 @@ describe("plugin registry", () => {
       plugins.map((plugin) => ({ id: plugin.id, path: plugin.path })),
     ).toEqual([
       { id: "drafting", path: "/drafting" },
-      { id: "agent-test", path: "/agent-test" },
       { id: "echo", path: "/echo" },
       { id: "notes", path: "/notes" },
     ]);
