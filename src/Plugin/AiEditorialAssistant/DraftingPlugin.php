@@ -186,7 +186,10 @@ class DraftingPlugin extends AiAssistantPluginBase {
         // Run the tool execution loop. It handles streaming,
         // non-terminal tool execution (e.g. get_content_schema),
         // and stops when draft_content is called or the LLM
-        // responds with text.
+        // responds with text. The schema tool is pinned to the
+        // entity type and bundle of the current editorial context:
+        // the LLM cannot supply them, and any user-injected values
+        // are overridden at execution time.
         $result = $this->toolLoop->run(
           $provider,
           $defaults['model_id'],
@@ -196,6 +199,12 @@ class DraftingPlugin extends AiAssistantPluginBase {
           $stream,
           terminalToolNames: ['draft_content'],
           tags: ['drafting'],
+          fixedToolContexts: [
+            'get_content_schema' => [
+              'entity_type_id' => $context['entityTypeId'],
+              'bundle' => $context['bundle'],
+            ],
+          ],
         );
 
         if ($result->hasTerminalTool()

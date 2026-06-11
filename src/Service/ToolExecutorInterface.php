@@ -18,10 +18,15 @@ interface ToolExecutorInterface {
    *
    * @param \Drupal\ai\OperationType\Chat\Tools\ToolsFunctionOutputInterface $toolCall
    *   The tool call from the LLM response.
+   * @param array $fixedContexts
+   *   Context values fixed by the caller, keyed by context name.
+   *   These are applied after the LLM-supplied arguments and
+   *   therefore override them, constraining the tool to the
+   *   caller's allowed scope.
    *
    * @return string
    *   JSON-encoded tool result for the conversation history.
    */
-  public function execute($toolCall): string;
+  public function execute($toolCall, array $fixedContexts = []): string;
 
 }

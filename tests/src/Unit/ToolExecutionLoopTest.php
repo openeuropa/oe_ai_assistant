@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\oe_ai_assistant\Unit;
 
+use Drupal\ai\OperationType\Chat\Tools\ToolsFunctionInput;
 use Drupal\ai\OperationType\Chat\Tools\ToolsFunctionOutputInterface;
+use Drupal\ai\OperationType\Chat\Tools\ToolsPropertyInput;
 use Drupal\ai\OperationType\Chat\ChatMessage;
 use Drupal\ai\OperationType\Chat\ChatOutput;
 use Drupal\ai\OperationType\Chat\StreamedChatMessageIteratorInterface;
@@ -161,6 +163,53 @@ class ToolExecutionLoopTest extends TestCase {
 
     $this->assertEquals('tool_calls', $result->finishReason);
     $this->assertEquals('my_custom_tool', $result->terminalToolName);
+  }
+
+  /**
+   * Tests that fixed contexts are stripped from tools and forced.
+   */
+  public function testFixedToolContextsStripPropertiesAndOverrideExecution(): void {
+    // Build a real tool definition with two LLM-fillable properties.
+    $tool = new ToolsFunctionInput();
+    $tool->setName('get_content_schema');
+    $tool->setProperty(new ToolsPropertyInput('bundle', ['type' => 'string']));
+    $tool->setProperty(new ToolsPropertyInput('entity_type_id', ['type' => 'string']));
+    $tool->setProperty(new ToolsPropertyInput('other', ['type' => 'string']));
+
+    $fixedContexts = [
+      'bundle' => 'oe_news',
+      'entity_type_id' => 'node',
+    ];
+
+    // First call returns the tool call, second returns text.
+    $toolCall = $this->createMockToolCall('get_content_schema', 'call_1');
+    $this->stream->method('streamChatOutput')
+      ->willReturnOnConsecutiveCalls([$toolCall], []);
+
+    // The executor must receive the caller-fixed context values.
+    $this->toolExecutor->expects($this->once())
+      ->method('execute')
+      ->with($toolCall, $fixedContexts)
+      ->willReturn('{"groups": []}');
+
+    $provider = $this->createMockProvider([
+      $this->createMockChatOutput(''),
+      $this->createMockChatOutput('Done.'),
+    ]);
+
+    $history = [new ChatMessage('user', 'Call the schema tool')];
+
+    $this->loop->run(
+      $provider, 'gpt-4o', 'System prompt.', [$tool],
+      $history, $this->stream,
+      fixedToolContexts: ['get_content_schema' => $fixedContexts],
+    );
+
+    // Fixed properties must no longer be advertised to the LLM,
+    // while unrelated properties are kept.
+    $this->assertNull($tool->getPropertyByName('bundle'));
+    $this->assertNull($tool->getPropertyByName('entity_type_id'));
+    $this->assertNotNull($tool->getPropertyByName('other'));
   }
 
   /**

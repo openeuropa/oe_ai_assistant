@@ -37,10 +37,16 @@ class ToolExecutor implements ToolExecutorInterface {
   /**
    * {@inheritdoc}
    */
-  public function execute($toolCall): string {
+  public function execute($toolCall, array $fixedContexts = []): string {
     try {
       $plugin = $this->functionCallManager
         ->convertToolResponseToObject($toolCall);
+      // Force caller-fixed context values over whatever the LLM (or a
+      // user steering it) supplied, so the tool can only operate
+      // within the scope the calling plugin allows.
+      foreach ($fixedContexts as $name => $value) {
+        $plugin->setContextValue($name, $value);
+      }
       if ($plugin instanceof ExecutableFunctionCallInterface) {
         $plugin->execute();
       }
