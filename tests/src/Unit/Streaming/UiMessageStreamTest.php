@@ -7,6 +7,7 @@ namespace Drupal\Tests\oe_ai_assistant\Unit\Streaming;
 use Drupal\ai\Service\PromptCodeBlockExtractor\PromptCodeBlockExtractor;
 use Drupal\oe_ai_assistant\Service\UiMessageStream;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\NullLogger;
 
 /**
  * Unit tests for UiMessageStream.
@@ -27,7 +28,10 @@ class UiMessageStreamTest extends TestCase {
    */
   protected function setUp(): void {
     parent::setUp();
-    $this->stream = new UiMessageStream(new PromptCodeBlockExtractor());
+    $this->stream = new UiMessageStream(
+      new PromptCodeBlockExtractor(),
+      new NullLogger(),
+    );
   }
 
   /**

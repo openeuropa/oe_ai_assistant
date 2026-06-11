@@ -21,16 +21,18 @@ import type {
 } from "../services/drafting-service";
 
 /**
- * Loads a static content type schema by bundle name.
- * Returns null if no schema file exists for the bundle.
+ * Loads a content type schema fixture by bundle name.
+ *
+ * Uses the EntityJsonSchemaComposer format (JSON Schema with
+ * flat properties map), stored in fixtures/content-schema-{bundle}.json.
  */
 function loadSchema(bundle: string): object | null {
   try {
     const schemaPath = join(
       import.meta.dirname,
       "..",
-      "schemas",
-      `${bundle}.json`,
+      "fixtures",
+      `content-schema-${bundle}.json`,
     );
     const content = readFileSync(schemaPath, "utf-8");
     return JSON.parse(content) as object;

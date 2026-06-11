@@ -4,24 +4,74 @@ declare(strict_types=1);
 
 namespace Drupal\oe_ai_assistant\Plugin;
 
+use Drupal\ai\AiProviderPluginManager;
 use Drupal\Component\Plugin\Exception\PluginException;
-use Symfony\Component\HttpFoundation\EventStreamResponse;
-use Symfony\Component\HttpFoundation\Request;
-use Symfony\Component\HttpFoundation\Response;
 use Drupal\Core\Plugin\ContainerFactoryPluginInterface;
 use Drupal\Core\Plugin\PluginBase;
+use Drupal\oe_ai_assistant\Service\UiMessageStreamInterface;
+use Drupal\oe_ai_assistant\Store\ConversationStoreFactoryInterface;
+use Psr\Log\LoggerInterface;
+use Symfony\Component\DependencyInjection\ContainerInterface;
+use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpFoundation\Response;
 
 /**
  * Base class for AI Assistant plugins.
  *
  * Provides Drupal plugin dispatch (action routing, request
- * validation) and HTTP utilities (JSON body decoding, SSE
- * response creation). No AI or streaming logic.
+ * validation), HTTP utilities (JSON body decoding, user message
+ * extraction), and shared AI infrastructure (provider, stream,
+ * conversation store, logger).
  *
  * @see \Drupal\oe_ai_assistant\Plugin\AiAssistantPluginInterface
  * @see \Drupal\oe_ai_assistant\Plugin\AiAssistantPluginManager
  */
 abstract class AiAssistantPluginBase extends PluginBase implements AiAssistantPluginInterface, ContainerFactoryPluginInterface {
+
+  /**
+   * The AI provider plugin manager.
+   *
+   * @var \Drupal\ai\AiProviderPluginManager
+   */
+  protected AiProviderPluginManager $aiProviderManager;
+
+  /**
+   * The UI message stream service.
+   *
+   * @var \Drupal\oe_ai_assistant\Service\UiMessageStreamInterface
+   */
+  protected UiMessageStreamInterface $uiMessageStream;
+
+  /**
+   * The conversation store factory.
+   *
+   * @var \Drupal\oe_ai_assistant\Store\ConversationStoreFactoryInterface
+   */
+  protected ConversationStoreFactoryInterface $conversationStoreFactory;
+
+  /**
+   * Logger channel for oe_ai_assistant.
+   *
+   * @var \Psr\Log\LoggerInterface
+   */
+  protected LoggerInterface $logger;
+
+  /**
+   * {@inheritdoc}
+   */
+  public static function create(
+    ContainerInterface $container,
+    array $configuration,
+    $plugin_id,
+    $plugin_definition,
+  ): static {
+    $instance = new static($configuration, $plugin_id, $plugin_definition);
+    $instance->aiProviderManager = $container->get('ai.provider');
+    $instance->uiMessageStream = $container->get(UiMessageStreamInterface::class);
+    $instance->conversationStoreFactory = $container->get(ConversationStoreFactoryInterface::class);
+    $instance->logger = $container->get('logger.channel.oe_ai_assistant');
+    return $instance;
+  }
 
   /**
    * {@inheritdoc}
@@ -71,35 +121,38 @@ abstract class AiAssistantPluginBase extends PluginBase implements AiAssistantPl
   }
 
   /**
-   * Creates an SSE EventStreamResponse.
+   * Extracts the user message from the request body.
    *
-   * Uses Symfony's EventStreamResponse which handles SSE headers,
-   * output buffer flushing, and connection management natively.
-   * The callback is wrapped to disable gzip compression.
+   * Handles both the simple `message` field and the Vercel AI SDK
+   * `messages` array format. Any chat plugin can use this to parse
+   * user input regardless of the client format.
    *
-   * @param callable $callback
-   *   The streaming callback. Use the EventStreamResponse's
-   *   sendEvent() method to emit ServerEvent instances.
+   * @param array $body
+   *   The decoded request body.
    *
-   * @return \Symfony\Component\HttpFoundation\EventStreamResponse
-   *   The configured SSE response.
+   * @return string
+   *   The user message text, or empty string.
    */
-  protected function createSseResponse(callable $callback): EventStreamResponse {
-    $wrappedCallback = function (EventStreamResponse $response) use ($callback) {
-      ini_set('zlib.output_compression', '0');
-      ini_set('implicit_flush', '1');
-      if (function_exists('apache_setenv')) {
-        apache_setenv('no-gzip', '1');
-      }
-      $result = ($callback)($response);
-      if (is_iterable($result)) {
-        yield from $result;
-      }
-    };
-
-    return new EventStreamResponse($wrappedCallback, 200, [
-      'x-vercel-ai-ui-message-stream' => 'v1',
-    ]);
+  protected function extractUserMessage(array $body): string {
+    $message = $body['message'] ?? '';
+    if (!empty($message)) {
+      return $message;
+    }
+    if (empty($body['messages'])) {
+      return '';
+    }
+    $userMessages = array_filter(
+      $body['messages'],
+      fn($m) => ($m['role'] ?? '') === 'user',
+    );
+    $last = end($userMessages);
+    if (is_array($last['content'] ?? '')) {
+      return implode('', array_map(
+        fn($p) => $p['text'] ?? '',
+        $last['content'],
+      ));
+    }
+    return $last['content'] ?? '';
   }
 
 }

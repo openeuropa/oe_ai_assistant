@@ -119,12 +119,12 @@ class AiEditorialSessionController extends ControllerBase {
       // Drupal is installed at the domain root), guaranteeing correct paths
       // in both root and subdirectory installations.
       'apiBaseUrl' => $this->requestStack->getCurrentRequest()->getBasePath() . '/api/ai',
-      // Current user ID as a string, used by the React app to namespace
-      // per-user state (e.g. conversation history keys in TempStore).
+      // Current user ID as a string, available to the React app for
+      // user-specific behaviour.
       'userId' => (string) $this->currentUser()->id(),
-      // AI editorial session entity ID. Together with userId it scopes
-      // the state the React app persists in localStorage, so different
-      // sessions never share frontend state.
+      // AI editorial session entity ID. It scopes the state the React
+      // app persists in localStorage, so different sessions never share
+      // frontend state while collaborating users on the same session do.
       'sessionId' => $sessionId,
       // List of plugin IDs that should be available in the UI for this node.
       // The React app only registers plugins whose IDs appear in this list,

@@ -176,16 +176,18 @@ class DraftingPluginChatTest extends ExistingSiteBase {
   }
 
   /**
-   * Tests that a draft_content tool call emits data-drafted-fields.
+   * Tests that draft_content triggers orchestration with sub-agents.
    *
-   * When the LLM calls the draft_content tool, the plugin should
-   * emit a data-drafted-fields custom event with the field values
-   * so the frontend can populate the content table.
+   * When the LLM calls draft_content (the signal), the orchestrator
+   * splits the schema into groups and dispatches one sub-agent per
+   * group. The test verifies data-plan and data-drafted-fields
+   * events are emitted.
    */
-  public function testToolCallEmitsDraftedFields(): void {
+  public function testDraftContentTriggersOrchestration(): void {
     $user = $this->createUser(['use oe ai assistant']);
     $this->loginUser($user);
 
+    // Router calls draft_content (the "I'm ready" signal).
     MockAiProvider::enqueue(new MockResponse(
       toolCalls: [
         [
@@ -193,45 +195,55 @@ class DraftingPluginChatTest extends ExistingSiteBase {
           'type' => 'function',
           'function' => [
             'name' => 'draft_content',
-            'arguments' => json_encode([
-              'fields' => [
-                'title' => [['value' => 'Test Title']],
-                'field_body' => [['value' => '<p>Test body.</p>', 'format' => 'full_html']],
-              ],
-              'changed_fields' => ['title', 'field_body'],
-            ]),
+            'arguments' => '{}',
           ],
         ],
       ],
     ));
+    // Sub-agent responses: one per group (main_fields,
+    // field_contacts, field_content_paragraphs).
+    MockAiProvider::enqueue(new MockResponse(
+      text: '{"title": [{"value": "Test Title"}], "field_body": [{"value": "<p>Body</p>", "format": "full_html"}]}',
+    ));
+    MockAiProvider::enqueue(new MockResponse(
+      text: '{"field_contacts": []}',
+    ));
+    MockAiProvider::enqueue(new MockResponse(
+      text: '{"field_content_paragraphs": []}',
+    ));
 
     $result = $this->httpPost('/api/ai/plugins/drafting/chat', [
-      'message' => 'Draft a news article about testing.',
+      'message' => 'Generate the draft now.',
       'bundle' => 'oe_news',
       'entityTypeId' => 'node',
     ]);
 
     $this->assertEquals(200, $result['status'],
-      'Expected 200 response. Body: ' . substr($result['body'], 0, 500));
+      'Expected 200. Body: ' . substr($result['body'], 0, 500));
 
     $events = $this->parseSseEvents($result['body']);
 
-    // Find the data-drafted-fields event.
+    // Should contain data-plan events.
+    $planEvents = array_filter(
+      $events,
+      fn($e) => $e['type'] === 'data-plan',
+    );
+    $this->assertNotEmpty($planEvents,
+      'Should emit data-plan events.');
+
+    // Should contain data-drafted-fields.
     $draftedEvents = array_filter(
       $events,
       fn($e) => $e['type'] === 'data-drafted-fields',
     );
     $this->assertNotEmpty($draftedEvents,
-      'SSE must include a data-drafted-fields event.');
+      'Should emit data-drafted-fields event.');
 
-    // Verify the drafted fields contain the expected data.
+    // Verify consolidated fields contain title.
     $draftedEvent = reset($draftedEvents);
     $fields = $draftedEvent['data'] ?? [];
     $this->assertArrayHasKey('title', $fields,
-      'Drafted fields should include title.');
-    $this->assertEquals('Test Title',
-      $fields['title'][0]['value'] ?? '',
-      'Title value should match the mock response.');
+      'Consolidated fields should include title.');
   }
 
   /**

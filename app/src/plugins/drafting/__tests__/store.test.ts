@@ -12,25 +12,17 @@ describe("drafting plugin state", () => {
 
     expect(draftingSliceConfig.initialState).toEqual({
       threadId: null,
+      plan: [],
       draftedFields: {},
-      rejectedFields: new Set(),
-      hasPrompted: false,
-      isDrafting: false,
-      streamingFieldName: null,
-      updatedFields: new Set(),
     });
 
     expect(
       draftingSliceConfig.partialize?.({
         threadId: "thread-1",
+        plan: [],
         draftedFields: {
           title: { label: "Title", value: "Draft", type: "string" },
         },
-        rejectedFields: new Set(["title"]),
-        hasPrompted: true,
-        isDrafting: true,
-        streamingFieldName: "title",
-        updatedFields: new Set(["title"]),
       }),
     ).toEqual({ threadId: "thread-1" });
   });
@@ -41,12 +33,8 @@ describe("drafting plugin state", () => {
 
     expect(getDraftingState()).toEqual({
       threadId: null,
+      plan: [],
       draftedFields: {},
-      rejectedFields: new Set(),
-      hasPrompted: false,
-      isDrafting: false,
-      streamingFieldName: null,
-      updatedFields: new Set(),
     });
   });
 
@@ -56,7 +44,6 @@ describe("drafting plugin state", () => {
 
     setDraftingState({
       threadId: "thread-1",
-      hasPrompted: true,
       draftedFields: {
         title: { label: "Title", value: "Draft", type: "string" },
       },
@@ -64,30 +51,24 @@ describe("drafting plugin state", () => {
 
     expect(getDraftingState()).toMatchObject({
       threadId: "thread-1",
-      hasPrompted: true,
       draftedFields: {
         title: { label: "Title", value: "Draft", type: "string" },
       },
     });
   });
 
-  it("toggles rejected fields without mutating the previous set", async () => {
+  it("only persists thread ID via partialize", async () => {
     await loadFreshStore();
-    const { getDraftingState, setDraftingState, toggleFieldRejected } =
-      await import("../store");
+    const { draftingSliceConfig } = await import("../store");
 
-    setDraftingState({ rejectedFields: new Set(["summary"]) });
-    const previousSet = getDraftingState().rejectedFields;
+    const full = {
+      threadId: "thread-1",
+      plan: [{ stepId: "s1", label: "Step 1", status: "done" as const }],
+      draftedFields: { title: [{ value: "Test" }] },
+    };
 
-    toggleFieldRejected("title");
-
-    expect(previousSet).toEqual(new Set(["summary"]));
-    expect(getDraftingState().rejectedFields).toEqual(
-      new Set(["summary", "title"]),
-    );
-
-    toggleFieldRejected("summary");
-
-    expect(getDraftingState().rejectedFields).toEqual(new Set(["title"]));
+    expect(draftingSliceConfig.partialize?.(full)).toEqual({
+      threadId: "thread-1",
+    });
   });
 });

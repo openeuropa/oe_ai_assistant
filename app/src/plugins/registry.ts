@@ -17,16 +17,6 @@ import type { PluginDefinition } from "./types";
 
 export const plugins: PluginDefinition[] = [
   {
-    id: "agent-test",
-    name: "Agent Test",
-    description: "Sub-agent orchestration spike with chat and drafting",
-    icon: Bot,
-    component: lazy(() => import("./agent-test/root")),
-    requiredEndpoints: ["/api/plugins/agent_test/chat"],
-    path: "/agent-test",
-    storeSlice: agentTestSliceConfig,
-  },
-  {
     id: "drafting",
     name: "Drafting",
     description: "AI-powered content drafting assistant",
@@ -35,6 +25,16 @@ export const plugins: PluginDefinition[] = [
     requiredEndpoints: ["/api/plugins/drafting/chat"],
     path: "/drafting",
     storeSlice: draftingSliceConfig,
+  },
+  {
+    id: "agent-test",
+    name: "Agent Test",
+    description: "Sub-agent orchestration spike with chat and drafting",
+    icon: Bot,
+    component: lazy(() => import("./agent-test/root")),
+    requiredEndpoints: ["/api/plugins/agent_test/chat"],
+    path: "/agent-test",
+    storeSlice: agentTestSliceConfig,
   },
   {
     id: "echo",

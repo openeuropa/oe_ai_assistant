@@ -1,12 +1,12 @@
 {
-    "_hash": "26e7db124d4848b44d1a5c226d0827280d847ecb9d6a936d814c8ff91694b6f3",
+    "_hash": "652f4b4469d948041dfacc9c3b83a206e0025dcd0f10f0b46baa2266d71d1d96",
     "patches": {
-        "drupal/ai": [
+        "drupal/ai_provider_mistral": [
             {
-                "package": "drupal/ai",
-                "description": "Fix assembleToolCalls to handle both array and object tool formats",
-                "url": "patches/ai-assemble-tool-calls-array-support.patch",
-                "sha256": "e2e10612eac62385f33d52831518c6acff3c7ff6a52e92a25f36970d4db8dd0c",
+                "package": "drupal/ai_provider_mistral",
+                "description": "Return proper ToolsFunctionOutput objects from streaming tool calls",
+                "url": "patches/ai-provider-mistral-streaming-tool-calls.patch",
+                "sha256": "2b31e5f7ca8e93d9217c28af6a75a72b6a63d97e4c746c8312c5fa04d03d49d1",
                 "depth": 1,
                 "extra": {
                     "provenance": "root"
