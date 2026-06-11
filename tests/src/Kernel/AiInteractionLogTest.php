@@ -4,9 +4,19 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\oe_ai_assistant\Kernel;
 
+use Drupal\ai\Dto\TokenUsageDto;
+use Drupal\ai\Event\PostGenerateResponseEvent;
+use Drupal\ai\Event\PostStreamingResponseEvent;
+use Drupal\ai\OperationType\Chat\ChatInput;
+use Drupal\ai\OperationType\Chat\ChatMessage;
+use Drupal\ai\OperationType\Chat\ChatOutput;
+use Drupal\ai\OperationType\Chat\ReplayedChatMessageIterator;
 use Drupal\KernelTests\KernelTestBase;
 use Drupal\oe_ai_assistant\Entity\AiInteractionLog;
 use PHPUnit\Framework\Attributes\Group;
+use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpFoundation\Session\Session;
+use Symfony\Component\HttpFoundation\Session\Storage\MockArraySessionStorage;
 
 /**
  * Kernel tests for AI interaction logs.
@@ -142,6 +152,170 @@ class AiInteractionLogTest extends KernelTestBase {
     $this->assertFalse($loaded->hasField('session_id'));
     $this->assertFalse($loaded->hasField('node_id'));
     $this->assertFalse($loaded->hasField('revision_id'));
+  }
+
+  /**
+   * Tests that post-generate response events are persisted once.
+   */
+  public function testPostGenerateResponseEventPersistsInteractionLog(): void {
+    $request = Request::create(
+      'https://example.com/node/add/news',
+      'POST',
+      server: [
+        'HTTP_REFERER' => 'https://example.com/admin/content',
+        'REMOTE_ADDR' => '203.0.113.10',
+      ],
+    );
+    $request->setSession(new Session(new MockArraySessionStorage()));
+    $this->container->get('request_stack')->push($request);
+
+    $input = new ChatInput([
+      new ChatMessage('system', 'You draft content.'),
+      new ChatMessage('user', 'Create a news draft.'),
+    ]);
+    $output = new ChatOutput(
+      normalized: new ChatMessage('assistant', 'Draft content.'),
+      rawOutput: ['id' => 'provider-response-1'],
+      metadata: ['finish_reason' => 'stop'],
+      tokenUsage: new TokenUsageDto(
+        input: 100,
+        output: 50,
+        total: 150,
+        reasoning: 7,
+        cached: 10,
+      ),
+    );
+    $event = new PostGenerateResponseEvent(
+      requestThreadId: 'req_456',
+      providerId: 'openai',
+      operationType: 'chat',
+      configuration: ['temperature' => 0.2],
+      input: $input,
+      modelId: 'gpt-4.1-mini',
+      output: $output,
+      tags: ['drafting', 'content_creation'],
+      debugData: ['attempt' => 1],
+      metadata: ['route' => 'oe_ai_assistant.plugin.dispatch'],
+    );
+    $event->setRequestParentId('parent_req_456');
+
+    $dispatcher = $this->container->get('event_dispatcher');
+    $dispatcher->dispatch($event, PostGenerateResponseEvent::EVENT_NAME);
+    $dispatcher->dispatch($event, PostGenerateResponseEvent::EVENT_NAME);
+
+    $ids = $this->container->get('entity_type.manager')
+      ->getStorage('ai_interaction_log')
+      ->getQuery()
+      ->accessCheck(FALSE)
+      ->condition('provider_request_id', 'req_456')
+      ->execute();
+
+    $this->assertCount(1, $ids);
+
+    /** @var \Drupal\oe_ai_assistant\Entity\AiInteractionLogInterface $log */
+    $log = AiInteractionLog::load(reset($ids));
+    $this->assertSame('openai', $log->get('provider')->value);
+    $this->assertSame('gpt-4.1-mini', $log->get('model')->value);
+    $this->assertSame('ai.post_generate_response', $log->get('event_name')->value);
+    $this->assertSame('ai_observability', $log->get('channel')->value);
+    $this->assertSame('chat', $log->get('operation_type')->value);
+    $this->assertSame('req_456', $log->getProviderRequestId());
+    $this->assertSame('parent_req_456', $log->get('provider_parent_request_id')->value);
+    $this->assertSame('100', $log->get('input_tokens')->value);
+    $this->assertSame('50', $log->get('output_tokens')->value);
+    $this->assertSame('150', $log->get('total_tokens')->value);
+    $this->assertSame('10', $log->get('cached_tokens')->value);
+    $this->assertSame('7', $log->get('reasoning_tokens')->value);
+    $this->assertSame('https://example.com/node/add/news', $log->get('request_uri')->value);
+    $this->assertSame('https://example.com/admin/content', $log->get('referer')->value);
+    $this->assertSame('https://example.com', $log->get('base_url')->value);
+    $this->assertSame('203.0.113.10', $log->get('ip')->value);
+
+    $raw_payload = json_decode($log->get('raw_payload')->value, TRUE, 512, JSON_THROW_ON_ERROR);
+    $this->assertSame(['drafting', 'content_creation'], $raw_payload['tags']);
+    $this->assertSame(['temperature' => 0.2], $raw_payload['configuration']);
+    $this->assertSame(['attempt' => 1], $raw_payload['metadata']['debug_data']);
+    $this->assertSame('system' . "\n" . 'You draft content.' . "\n" . 'user' . "\n" . 'Create a news draft.' . "\n", $raw_payload['input']['string']);
+    $this->assertSame('provider-response-1', $raw_payload['output']['data']['rawOutput']['id']);
+  }
+
+  /**
+   * Tests that streamed responses are saved after the stream is complete.
+   */
+  public function testStreamingResponsePersistsCompletedInteractionLog(): void {
+    $input = new ChatInput([
+      new ChatMessage('user', 'Create a news draft.'),
+    ]);
+    $stream_iterator = new ReplayedChatMessageIterator(
+      new class implements \IteratorAggregate {
+
+        /**
+         * {@inheritdoc}
+         */
+        public function getIterator(): \Traversable {
+          return new \EmptyIterator();
+        }
+
+      },
+    );
+    $stream_iterator->setFirstMessage('');
+    $streaming_output = new ChatOutput(
+      normalized: $stream_iterator,
+      rawOutput: [],
+      metadata: [],
+    );
+    $completed_output = new ChatOutput(
+      normalized: new ChatMessage('assistant', 'Completed streamed draft.'),
+      rawOutput: ['id' => 'provider-response-stream'],
+      metadata: ['finish_reason' => 'stop'],
+      tokenUsage: new TokenUsageDto(total: 42),
+    );
+
+    $post_generate_event = new PostGenerateResponseEvent(
+      requestThreadId: 'req_stream',
+      providerId: 'openai',
+      operationType: 'chat',
+      configuration: [],
+      input: $input,
+      modelId: 'gpt-4.1-mini',
+      output: $streaming_output,
+    );
+    $post_streaming_event = new PostStreamingResponseEvent(
+      requestThreadId: 'req_stream',
+      providerId: 'openai',
+      operationType: 'chat',
+      configuration: [],
+      input: $input,
+      modelId: 'gpt-4.1-mini',
+      output: $completed_output,
+    );
+
+    $dispatcher = $this->container->get('event_dispatcher');
+    $dispatcher->dispatch($post_generate_event, PostGenerateResponseEvent::EVENT_NAME);
+
+    $storage = $this->container->get('entity_type.manager')
+      ->getStorage('ai_interaction_log');
+    $ids = $storage->getQuery()
+      ->accessCheck(FALSE)
+      ->condition('provider_request_id', 'req_stream')
+      ->execute();
+    $this->assertCount(0, $ids);
+
+    $dispatcher->dispatch($post_streaming_event, PostStreamingResponseEvent::EVENT_NAME);
+
+    $ids = $storage->getQuery()
+      ->accessCheck(FALSE)
+      ->condition('provider_request_id', 'req_stream')
+      ->execute();
+    $this->assertCount(1, $ids);
+
+    /** @var \Drupal\oe_ai_assistant\Entity\AiInteractionLogInterface $log */
+    $log = AiInteractionLog::load(reset($ids));
+    $this->assertSame('ai.post_streaming_response', $log->get('event_name')->value);
+    $this->assertSame('42', $log->get('total_tokens')->value);
+
+    $raw_payload = json_decode($log->get('raw_payload')->value, TRUE, 512, JSON_THROW_ON_ERROR);
+    $this->assertSame('Completed streamed draft.', $raw_payload['output']['data']['normalized']['text']);
   }
 
 }

@@ -35,5 +35,13 @@ services:
   Drupal\oe_ai_assistant\Service\DraftingOrchestrator: {}
   Drupal\oe_ai_assistant\Service\DraftingOrchestratorInterface: '@Drupal\oe_ai_assistant\Service\DraftingOrchestrator'
 
+  Drupal\oe_ai_assistant\Service\AiInteractionLogMapper: {}
+
+  Drupal\oe_ai_assistant\Service\AiInteractionLogPersister: {}
+
+  Drupal\oe_ai_assistant\EventSubscriber\AiInteractionLogSubscriber:
+    arguments:
+      $logger: '@logger.channel.oe_ai_assistant'
+
   Drupal\oe_ai_assistant\Store\ConversationStoreFactory: {}
   Drupal\oe_ai_assistant\Store\ConversationStoreFactoryInterface: '@Drupal\oe_ai_assistant\Store\ConversationStoreFactory'
