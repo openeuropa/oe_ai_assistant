@@ -25,6 +25,16 @@ use Symfony\Component\HttpFoundation\Session\Storage\MockArraySessionStorage;
 class AiInteractionLogTest extends KernelTestBase {
 
   /**
+   * Mock provider ID used by the logging fixtures.
+   */
+  protected const MOCK_PROVIDER_ID = 'mock_ai';
+
+  /**
+   * Mock model ID used by the logging fixtures.
+   */
+  protected const MOCK_MODEL_ID = 'mock-model';
+
+  /**
    * {@inheritdoc}
    */
   protected static $modules = [
@@ -36,13 +46,9 @@ class AiInteractionLogTest extends KernelTestBase {
     'extended_logger',
     'field',
     'filter',
-    'key',
-    'node',
     'oe_ai_assistant',
-    'options',
     'serialization',
     'system',
-    'text',
     'user',
     'workflows',
   ];
@@ -61,8 +67,8 @@ class AiInteractionLogTest extends KernelTestBase {
    */
   public function testCrudStoresStructuredAndRawPayload(): void {
     $payload = [
-      'provider' => 'openai',
-      'model' => 'gpt-4.1-mini',
+      'provider' => self::MOCK_PROVIDER_ID,
+      'model' => self::MOCK_MODEL_ID,
       'event_name' => 'ai.post_generate_response',
       'operation_type' => 'chat',
       'channel' => 'ai_observability',
@@ -78,7 +84,7 @@ class AiInteractionLogTest extends KernelTestBase {
       'referer' => 'https://example.com/admin/content',
       'base_url' => 'https://example.com',
       'user_id' => 7,
-      'ip' => '203.0.113.10',
+      'ip' => '0.0.0.0',
       'severity' => 'info',
       'timestamp' => 1_718_000_000,
       'tags' => ['drafting', 'content_creation'],
@@ -124,8 +130,8 @@ class AiInteractionLogTest extends KernelTestBase {
     $loaded = AiInteractionLog::load($log->id());
 
     $this->assertNotNull($loaded);
-    $this->assertSame('openai', $loaded->get('provider')->value);
-    $this->assertSame('gpt-4.1-mini', $loaded->get('model')->value);
+    $this->assertSame(self::MOCK_PROVIDER_ID, $loaded->get('provider')->value);
+    $this->assertSame(self::MOCK_MODEL_ID, $loaded->get('model')->value);
     $this->assertSame('ai.post_generate_response', $loaded->get('event_name')->value);
     $this->assertSame('chat', $loaded->get('operation_type')->value);
     $this->assertSame('ai_observability', $loaded->get('channel')->value);
@@ -140,7 +146,7 @@ class AiInteractionLogTest extends KernelTestBase {
     $this->assertSame('https://example.com/admin/content', $loaded->get('referer')->value);
     $this->assertSame('https://example.com', $loaded->get('base_url')->value);
     $this->assertSame('7', $loaded->get('user_id')->value);
-    $this->assertSame('203.0.113.10', $loaded->get('ip')->value);
+    $this->assertSame('0.0.0.0', $loaded->get('ip')->value);
     $this->assertSame('info', $loaded->get('severity')->value);
     $this->assertSame('1718000000', $loaded->get('event_timestamp')->value);
     $this->assertSame(['drafting', 'content_creation'], json_decode($loaded->get('tags')->value, TRUE, 512, JSON_THROW_ON_ERROR));
@@ -163,7 +169,7 @@ class AiInteractionLogTest extends KernelTestBase {
       'POST',
       server: [
         'HTTP_REFERER' => 'https://example.com/admin/content',
-        'REMOTE_ADDR' => '203.0.113.10',
+        'REMOTE_ADDR' => '0.0.0.0',
       ],
     );
     $request->setSession(new Session(new MockArraySessionStorage()));
@@ -187,11 +193,11 @@ class AiInteractionLogTest extends KernelTestBase {
     );
     $event = new PostGenerateResponseEvent(
       requestThreadId: 'req_456',
-      providerId: 'openai',
+      providerId: self::MOCK_PROVIDER_ID,
       operationType: 'chat',
       configuration: ['temperature' => 0.2],
       input: $input,
-      modelId: 'gpt-4.1-mini',
+      modelId: self::MOCK_MODEL_ID,
       output: $output,
       tags: ['drafting', 'content_creation'],
       debugData: ['attempt' => 1],
@@ -214,8 +220,8 @@ class AiInteractionLogTest extends KernelTestBase {
 
     /** @var \Drupal\oe_ai_assistant\Entity\AiInteractionLogInterface $log */
     $log = AiInteractionLog::load(reset($ids));
-    $this->assertSame('openai', $log->get('provider')->value);
-    $this->assertSame('gpt-4.1-mini', $log->get('model')->value);
+    $this->assertSame(self::MOCK_PROVIDER_ID, $log->get('provider')->value);
+    $this->assertSame(self::MOCK_MODEL_ID, $log->get('model')->value);
     $this->assertSame('ai.post_generate_response', $log->get('event_name')->value);
     $this->assertSame('ai_observability', $log->get('channel')->value);
     $this->assertSame('chat', $log->get('operation_type')->value);
@@ -229,7 +235,7 @@ class AiInteractionLogTest extends KernelTestBase {
     $this->assertSame('https://example.com/node/add/news', $log->get('request_uri')->value);
     $this->assertSame('https://example.com/admin/content', $log->get('referer')->value);
     $this->assertSame('https://example.com', $log->get('base_url')->value);
-    $this->assertSame('203.0.113.10', $log->get('ip')->value);
+    $this->assertSame('0.0.0.0', $log->get('ip')->value);
 
     $raw_payload = json_decode($log->get('raw_payload')->value, TRUE, 512, JSON_THROW_ON_ERROR);
     $this->assertSame(['drafting', 'content_creation'], $raw_payload['tags']);
@@ -273,20 +279,20 @@ class AiInteractionLogTest extends KernelTestBase {
 
     $post_generate_event = new PostGenerateResponseEvent(
       requestThreadId: 'req_stream',
-      providerId: 'openai',
+      providerId: self::MOCK_PROVIDER_ID,
       operationType: 'chat',
       configuration: [],
       input: $input,
-      modelId: 'gpt-4.1-mini',
+      modelId: self::MOCK_MODEL_ID,
       output: $streaming_output,
     );
     $post_streaming_event = new PostStreamingResponseEvent(
       requestThreadId: 'req_stream',
-      providerId: 'openai',
+      providerId: self::MOCK_PROVIDER_ID,
       operationType: 'chat',
       configuration: [],
       input: $input,
-      modelId: 'gpt-4.1-mini',
+      modelId: self::MOCK_MODEL_ID,
       output: $completed_output,
     );
 
