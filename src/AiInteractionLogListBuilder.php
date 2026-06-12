@@ -8,6 +8,7 @@ use Drupal\Core\Datetime\DateFormatterInterface;
 use Drupal\Core\Entity\EntityInterface;
 use Drupal\Core\Entity\EntityListBuilder;
 use Drupal\Core\Entity\EntityStorageInterface;
+use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Entity\EntityTypeInterface;
 use Drupal\Core\Entity\Query\QueryInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
@@ -23,15 +24,22 @@ class AiInteractionLogListBuilder extends EntityListBuilder {
   protected DateFormatterInterface $dateFormatter;
 
   /**
+   * The entity type manager.
+   */
+  protected EntityTypeManagerInterface $entityTypeManager;
+
+  /**
    * Constructs a new list builder.
    */
   public function __construct(
     EntityTypeInterface $entity_type,
     EntityStorageInterface $storage,
     DateFormatterInterface $date_formatter,
+    EntityTypeManagerInterface $entity_type_manager,
   ) {
     parent::__construct($entity_type, $storage);
     $this->dateFormatter = $date_formatter;
+    $this->entityTypeManager = $entity_type_manager;
   }
 
   /**
@@ -42,6 +50,7 @@ class AiInteractionLogListBuilder extends EntityListBuilder {
       $entity_type,
       $container->get('entity_type.manager')->getStorage($entity_type->id()),
       $container->get('date.formatter'),
+      $container->get('entity_type.manager'),
     );
   }
 
@@ -66,6 +75,7 @@ class AiInteractionLogListBuilder extends EntityListBuilder {
     $header['event_name'] = $this->t('Event');
     $header['operation_type'] = $this->t('Operation');
     $header['provider_request_id'] = $this->t('Provider request ID');
+    $header['user'] = $this->t('User');
     $header['total_tokens'] = $this->t('Total tokens');
 
     return $header + parent::buildHeader();
@@ -82,9 +92,30 @@ class AiInteractionLogListBuilder extends EntityListBuilder {
     $row['event_name'] = $entity->get('event_name')->value ?? '';
     $row['operation_type'] = $entity->get('operation_type')->value ?? '';
     $row['provider_request_id'] = $entity->getProviderRequestId() ?? '';
+    $row['user'] = $this->buildUserLabel($entity);
     $row['total_tokens'] = $entity->get('total_tokens')->value ?? '';
 
     return $row + parent::buildRow($entity);
+  }
+
+  /**
+   * Builds the displayed user value for a log row.
+   */
+  protected function buildUserLabel(EntityInterface $entity): string {
+    $uid = $entity->get('user_id')->value;
+    if ($uid === NULL || $uid === '') {
+      return '';
+    }
+
+    $account = $this->entityTypeManager
+      ->getStorage('user')
+      ->load((int) $uid);
+
+    if ($account === NULL) {
+      return (string) $uid;
+    }
+
+    return sprintf('%s (%s)', $account->label(), $uid);
   }
 
 }
