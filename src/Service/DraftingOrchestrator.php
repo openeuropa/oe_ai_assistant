@@ -41,6 +41,7 @@ class DraftingOrchestrator implements DraftingOrchestratorInterface {
     array $history,
     string $entityTypeId,
     string $bundle,
+    string $editorialGuidance,
   ): array {
     $groups = $this->schemaComposer->splitSchemaIntoGroups(
       $entityTypeId, $bundle
@@ -78,7 +79,7 @@ class DraftingOrchestrator implements DraftingOrchestratorInterface {
       try {
         $fullText = $this->runSubAgent(
           $stepId, $group['schemaSlice'],
-          $conversationContext, $mainFieldsResult,
+          $editorialGuidance, $conversationContext, $mainFieldsResult,
         );
 
         $parsed = $stream->extractJson($fullText);
@@ -147,6 +148,7 @@ class DraftingOrchestrator implements DraftingOrchestratorInterface {
   private function runSubAgent(
     string $stepId,
     array $schemaSlice,
+    string $editorialGuidance,
     string $conversationContext,
     string $mainFieldsResult,
   ): string {
@@ -161,7 +163,8 @@ class DraftingOrchestrator implements DraftingOrchestratorInterface {
         'schema' => $schemaSlice,
       ]));
 
-    $taskPrompt = "Conversation context:\n$conversationContext\n";
+    $taskPrompt = "Editorial guidance:\n$editorialGuidance\n\n"
+      . "Conversation context:\n$conversationContext\n";
     if ($stepId !== 'main_fields' && $mainFieldsResult !== '') {
       $taskPrompt .= "Main fields already generated:\n"
         . $mainFieldsResult . "\n\n";

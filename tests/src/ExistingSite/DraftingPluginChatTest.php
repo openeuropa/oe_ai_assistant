@@ -5,9 +5,14 @@ declare(strict_types=1);
 namespace Drupal\Tests\oe_ai_assistant\ExistingSite;
 
 use Drupal\Core\Url;
+use Drupal\field\Entity\FieldConfig;
+use Drupal\field\Entity\FieldStorageConfig;
+use Drupal\oe_ai_assistant\Service\AiEditorialContextInterface;
 use Drupal\oe_ai_assistant_test\Plugin\AiProvider\MockAiProvider;
 use Drupal\oe_ai_assistant_test\Plugin\AiProvider\MockResponse;
 use Drupal\Tests\oe_ai_assistant\Traits\ExistingSiteConfigBackupTrait;
+use Drupal\taxonomy\Entity\Term;
+use Drupal\taxonomy\Entity\Vocabulary;
 use Drupal\user\UserInterface;
 use weitzman\DrupalTestTraits\ExistingSiteBase;
 
@@ -37,6 +42,8 @@ class DraftingPluginChatTest extends ExistingSiteBase {
     // Ensure the shared test module is enabled (provides MockAiProvider).
     \Drupal::service('module_installer')
       ->install(['oe_ai_assistant_test']);
+    $this->ensureEditorialTaxonomyConfig();
+    $this->ensureEditorialTerms();
 
     // Backup AI settings and set mock_ai as the default provider.
     $this->backupSimpleConfig('ai.settings');
@@ -74,6 +81,8 @@ class DraftingPluginChatTest extends ExistingSiteBase {
   public function testTextResponseStreamedAsSse(): void {
     $user = $this->createUser(['use oe ai assistant']);
     $this->loginUser($user);
+    $context = $this->draftingContext();
+    $selection = $this->getEditorialSelection();
 
     MockAiProvider::enqueue(new MockResponse(
       text: 'Hello from the drafting assistant.',
@@ -81,6 +90,8 @@ class DraftingPluginChatTest extends ExistingSiteBase {
 
     $result = $this->httpPost('/api/ai/plugins/drafting/chat', [
       'message' => 'Hi there.',
+      ...$context,
+      ...$this->selectionRequestValues($selection),
     ]);
 
     $this->assertEquals(200, $result['status'],
@@ -122,6 +133,12 @@ class DraftingPluginChatTest extends ExistingSiteBase {
       $log[0]['system_prompt'],
       'System prompt should come from the oe_drafting_router config entity.',
     );
+    $this->assertPromptContainsSelection($log[0]['system_prompt'], $selection);
+    $this->assertStringContainsString(
+      'Available field groups:',
+      $log[0]['system_prompt'],
+      'System prompt should keep schema group context.',
+    );
   }
 
   /**
@@ -136,6 +153,8 @@ class DraftingPluginChatTest extends ExistingSiteBase {
     $this->loginUser($user);
 
     $threadId = bin2hex(random_bytes(16));
+    $context = $this->draftingContext($threadId);
+    $selection = $this->getEditorialSelection();
 
     // Turn 1.
     MockAiProvider::enqueue(new MockResponse(
@@ -143,7 +162,8 @@ class DraftingPluginChatTest extends ExistingSiteBase {
     ));
     $this->httpPost('/api/ai/plugins/drafting/chat', [
       'message' => 'I want to write about climate change.',
-      'threadId' => $threadId,
+      ...$context,
+      ...$this->selectionRequestValues($selection),
     ]);
 
     // Turn 2 with the same threadId.
@@ -152,7 +172,8 @@ class DraftingPluginChatTest extends ExistingSiteBase {
     ));
     $this->httpPost('/api/ai/plugins/drafting/chat', [
       'message' => 'Focus on EU policy please.',
-      'threadId' => $threadId,
+      ...$context,
+      ...$this->selectionRequestValues($selection),
     ]);
 
     // Check that turn 2's LLM call includes both messages.
@@ -186,6 +207,8 @@ class DraftingPluginChatTest extends ExistingSiteBase {
   public function testDraftContentTriggersOrchestration(): void {
     $user = $this->createUser(['use oe ai assistant']);
     $this->loginUser($user);
+    $context = $this->draftingContext();
+    $selection = $this->getEditorialSelection();
 
     // Router calls draft_content (the "I'm ready" signal).
     MockAiProvider::enqueue(new MockResponse(
@@ -214,8 +237,8 @@ class DraftingPluginChatTest extends ExistingSiteBase {
 
     $result = $this->httpPost('/api/ai/plugins/drafting/chat', [
       'message' => 'Generate the draft now.',
-      'bundle' => 'oe_news',
-      'entityTypeId' => 'node',
+      ...$context,
+      ...$this->selectionRequestValues($selection),
     ]);
 
     $this->assertEquals(200, $result['status'],
@@ -244,6 +267,159 @@ class DraftingPluginChatTest extends ExistingSiteBase {
     $fields = $draftedEvent['data'] ?? [];
     $this->assertArrayHasKey('title', $fields,
       'Consolidated fields should include title.');
+
+    \Drupal::state()->resetCache();
+    $log = MockAiProvider::getCallLog();
+    $this->assertCount(4, $log, 'Router and three sub-agents should run.');
+    $this->assertPromptContainsSelection($log[0]['system_prompt'], $selection);
+    $this->assertSubAgentTaskContainsSelection($log[1]['messages'], $selection);
+  }
+
+  /**
+   * Tests that changed request selections are used by the next chat request.
+   */
+  public function testChangedSelectionUsedByNextChatRequest(): void {
+    $user = $this->createUser(['use oe ai assistant']);
+    $this->loginUser($user);
+
+    $threadId = bin2hex(random_bytes(16));
+    $context = $this->draftingContext($threadId);
+    $initialSelection = $this->getEditorialSelection('General public', 'Formal');
+
+    MockAiProvider::enqueue(new MockResponse(text: 'First response.'));
+    $this->httpPost('/api/ai/plugins/drafting/chat', [
+      'message' => 'Draft once.',
+      ...$context,
+      ...$this->selectionRequestValues($initialSelection),
+    ]);
+
+    $updatedSelection = $this->getEditorialSelection(
+      'Policy makers',
+      'Technical',
+    );
+
+    MockAiProvider::enqueue(new MockResponse(text: 'Second response.'));
+    $this->httpPost('/api/ai/plugins/drafting/chat', [
+      'message' => 'Draft again.',
+      ...$context,
+      ...$this->selectionRequestValues($updatedSelection),
+    ]);
+
+    \Drupal::state()->resetCache();
+    $log = MockAiProvider::getCallLog();
+    $this->assertCount(2, $log, 'Two LLM calls should have been made.');
+    $this->assertPromptContainsSelection($log[1]['system_prompt'], $updatedSelection);
+    $this->assertStringNotContainsString(
+      'Target audience: General public',
+      $log[1]['system_prompt'],
+      'The second request should not use stale audience guidance.',
+    );
+    $this->assertStringNotContainsString(
+      'Tone: Formal',
+      $log[1]['system_prompt'],
+      'The second request should not use stale tone guidance.',
+    );
+  }
+
+  /**
+   * Tests that missing request selections use the neutral prompt.
+   */
+  public function testMissingSelectionUsesNeutralPrompt(): void {
+    $user = $this->createUser(['use oe ai assistant']);
+    $this->loginUser($user);
+
+    $requestContext = $this->draftingContext(bin2hex(random_bytes(16)));
+
+    MockAiProvider::enqueue(new MockResponse(text: 'Neutral response.'));
+    $result = $this->httpPost('/api/ai/plugins/drafting/chat', [
+      'message' => 'Use neutral guidance.',
+      ...$requestContext,
+    ]);
+
+    $this->assertEquals(200, $result['status'],
+      'Expected 200. Body: ' . substr($result['body'], 0, 500));
+
+    \Drupal::state()->resetCache();
+    $log = MockAiProvider::getCallLog();
+    $this->assertCount(1, $log, 'One LLM call should have been made.');
+    $this->assertStringContainsString(
+      'Before drafting, ask the user to select a target audience and writing tone.',
+      $log[0]['system_prompt'],
+    );
+  }
+
+  /**
+   * Tests that incomplete selections are blocked before provider calls.
+   */
+  public function testIncompleteSelectionBlocksBeforeProviderCall(): void {
+    $user = $this->createUser(['use oe ai assistant']);
+    $this->loginUser($user);
+    $selection = $this->getEditorialSelection();
+
+    $result = $this->httpPost('/api/ai/plugins/drafting/chat', [
+      'message' => 'Generate with one selection.',
+      ...$this->draftingContext(bin2hex(random_bytes(16))),
+      'audienceId' => $selection['audience']['id'],
+    ]);
+
+    $this->assertEquals(400, $result['status']);
+    $this->assertStringContainsString(
+      'missing_editorial_selection',
+      $result['body'],
+    );
+
+    \Drupal::state()->resetCache();
+    $this->assertSame([], MockAiProvider::getCallLog());
+  }
+
+  /**
+   * Tests that an invalid audience ID is rejected before provider calls.
+   */
+  public function testInvalidAudienceIdBlocksBeforeProviderCall(): void {
+    $user = $this->createUser(['use oe ai assistant']);
+    $this->loginUser($user);
+    $selection = $this->getEditorialSelection();
+
+    $result = $this->httpPost('/api/ai/plugins/drafting/chat', [
+      'message' => 'Generate with invalid audience.',
+      ...$this->draftingContext(bin2hex(random_bytes(16))),
+      'audienceId' => $selection['tone']['id'],
+      'toneId' => $selection['tone']['id'],
+    ]);
+
+    $this->assertEquals(400, $result['status']);
+    $this->assertStringContainsString(
+      'invalid_editorial_selection',
+      $result['body'],
+    );
+
+    \Drupal::state()->resetCache();
+    $this->assertSame([], MockAiProvider::getCallLog());
+  }
+
+  /**
+   * Tests that an invalid tone ID is rejected before provider calls.
+   */
+  public function testInvalidToneIdBlocksBeforeProviderCall(): void {
+    $user = $this->createUser(['use oe ai assistant']);
+    $this->loginUser($user);
+    $selection = $this->getEditorialSelection();
+
+    $result = $this->httpPost('/api/ai/plugins/drafting/chat', [
+      'message' => 'Generate with invalid tone.',
+      ...$this->draftingContext(bin2hex(random_bytes(16))),
+      'audienceId' => $selection['audience']['id'],
+      'toneId' => $selection['audience']['id'],
+    ]);
+
+    $this->assertEquals(400, $result['status']);
+    $this->assertStringContainsString(
+      'invalid_editorial_selection',
+      $result['body'],
+    );
+
+    \Drupal::state()->resetCache();
+    $this->assertSame([], MockAiProvider::getCallLog());
   }
 
   /**
@@ -279,6 +455,270 @@ class DraftingPluginChatTest extends ExistingSiteBase {
 
     $this->loggedInUser = $account;
     $this->container->get('current_user')->setAccount($account);
+  }
+
+  /**
+   * Builds a backend drafting context for chat requests.
+   *
+   * @return array{threadId?: string, entityTypeId: string, bundle: string}
+   *   The drafting context.
+   */
+  protected function draftingContext(?string $threadId = NULL): array {
+    $context = [
+      'entityTypeId' => 'node',
+      'bundle' => 'oe_news',
+    ];
+    if ($threadId !== NULL) {
+      $context['threadId'] = $threadId;
+    }
+
+    return $context;
+  }
+
+  /**
+   * Ensures the editorial taxonomy terms used by this test exist.
+   */
+  protected function ensureEditorialTerms(): void {
+    $this->ensureEditorialTerm(
+      'oe_ai_target_audience',
+      'General public',
+      'Content should be easy to understand for non-experts.',
+      'Write in clear, accessible language. Avoid jargon and acronyms.',
+    );
+    $this->ensureEditorialTerm(
+      'oe_ai_target_audience',
+      'Policy makers',
+      'Content tailored for policy experts.',
+      'Use precise language. Reference regulatory frameworks.',
+    );
+    $this->ensureEditorialTerm(
+      'oe_ai_tone',
+      'Formal',
+      'A professional and neutral tone.',
+      'Use professional, institutional language.',
+    );
+    $this->ensureEditorialTerm(
+      'oe_ai_tone',
+      'Technical',
+      'A detailed and structured tone.',
+      'Use domain-specific terminology precisely.',
+    );
+  }
+
+  /**
+   * Ensures the editorial vocabularies and prompt field exist.
+   */
+  protected function ensureEditorialTaxonomyConfig(): void {
+    $this->ensureVocabulary(
+      'oe_ai_target_audience',
+      'AI target audience',
+      'Editorial target audience options for AI-assisted drafting.',
+    );
+    $this->ensureVocabulary(
+      'oe_ai_tone',
+      'AI tone',
+      'Editorial tone options for AI-assisted drafting.',
+    );
+
+    if (!FieldStorageConfig::loadByName('taxonomy_term', 'field_oe_ai_prompt')) {
+      FieldStorageConfig::create([
+        'field_name' => 'field_oe_ai_prompt',
+        'entity_type' => 'taxonomy_term',
+        'type' => 'string_long',
+      ])->save();
+    }
+
+    $this->ensurePromptField('oe_ai_target_audience');
+    $this->ensurePromptField('oe_ai_tone');
+  }
+
+  /**
+   * Ensures one vocabulary exists.
+   */
+  protected function ensureVocabulary(
+    string $vid,
+    string $name,
+    string $description,
+  ): void {
+    if (Vocabulary::load($vid)) {
+      return;
+    }
+
+    Vocabulary::create([
+      'vid' => $vid,
+      'name' => $name,
+      'description' => $description,
+    ])->save();
+  }
+
+  /**
+   * Ensures the AI prompt field exists on a vocabulary.
+   */
+  protected function ensurePromptField(string $bundle): void {
+    if (FieldConfig::loadByName('taxonomy_term', $bundle, 'field_oe_ai_prompt')) {
+      return;
+    }
+
+    FieldConfig::create([
+      'field_name' => 'field_oe_ai_prompt',
+      'entity_type' => 'taxonomy_term',
+      'bundle' => $bundle,
+      'label' => 'AI prompt',
+      'description' => 'LLM-facing guidance injected into the system prompt.',
+    ])->save();
+  }
+
+  /**
+   * Ensures one editorial taxonomy term exists.
+   */
+  protected function ensureEditorialTerm(
+    string $vid,
+    string $name,
+    string $description,
+    string $prompt,
+  ): void {
+    $terms = \Drupal::entityTypeManager()
+      ->getStorage('taxonomy_term')
+      ->loadByProperties([
+        'vid' => $vid,
+        'name' => $name,
+      ]);
+    if ($terms !== []) {
+      /** @var \Drupal\taxonomy\TermInterface $term */
+      $term = reset($terms);
+      $term->setDescription($description);
+      $term->set('field_oe_ai_prompt', $prompt);
+      $term->save();
+      return;
+    }
+
+    $term = Term::create([
+      'vid' => $vid,
+      'name' => $name,
+      'description' => [
+        'value' => $description,
+        'format' => 'plain_text',
+      ],
+      'field_oe_ai_prompt' => $prompt,
+    ]);
+    $term->save();
+  }
+
+  /**
+   * Gets selected audience and tone options for chat request parameters.
+   *
+   * @param string $audienceName
+   *   The audience label.
+   * @param string $toneName
+   *   The tone label.
+   *
+   * @return array{audience: array{id: string, name: string, description: string, oe_ai_prompt: string}, tone: array{id: string, name: string, description: string, oe_ai_prompt: string}}
+   *   The selected audience and tone options.
+   */
+  protected function getEditorialSelection(
+    string $audienceName = 'General public',
+    string $toneName = 'Formal',
+  ): array {
+    /** @var \Drupal\oe_ai_assistant\Service\AiEditorialContextInterface $editorialContext */
+    $editorialContext = \Drupal::service(AiEditorialContextInterface::class);
+    $audience = $this->findEditorialOption(
+      $editorialContext->getAvailableAudiences(),
+      $audienceName,
+    );
+    $tone = $this->findEditorialOption(
+      $editorialContext->getAvailableTones(),
+      $toneName,
+    );
+
+    return [
+      'audience' => $audience,
+      'tone' => $tone,
+    ];
+  }
+
+  /**
+   * Builds chat request values from selected editorial options.
+   *
+   * @param array{audience: array{id: string}, tone: array{id: string}} $selection
+   *   The selected audience and tone options.
+   *
+   * @return array{audienceId: string, toneId: string}
+   *   Chat request parameter values.
+   */
+  protected function selectionRequestValues(array $selection): array {
+    return [
+      'audienceId' => $selection['audience']['id'],
+      'toneId' => $selection['tone']['id'],
+    ];
+  }
+
+  /**
+   * Finds an editorial option by label.
+   *
+   * @param array<int, array{id: string, name: string, description: string, oe_ai_prompt: string}> $options
+   *   The available options.
+   * @param string $name
+   *   The option label.
+   *
+   * @return array{id: string, name: string, description: string, oe_ai_prompt: string}
+   *   The matching option.
+   */
+  protected function findEditorialOption(array $options, string $name): array {
+    foreach ($options as $option) {
+      if ($option['name'] === $name) {
+        return $option;
+      }
+    }
+
+    throw new \RuntimeException(sprintf(
+      'Editorial option "%s" was not found.',
+      $name,
+    ));
+  }
+
+  /**
+   * Asserts a prompt contains selected audience and tone guidance.
+   *
+   * @param array{audience: array{name: string, oe_ai_prompt: string}, tone: array{name: string, oe_ai_prompt: string}} $selection
+   *   The expected selection.
+   */
+  protected function assertPromptContainsSelection(
+    string $prompt,
+    array $selection,
+  ): void {
+    $this->assertStringContainsString(
+      'Target audience: ' . $selection['audience']['name'],
+      $prompt,
+    );
+    $this->assertStringContainsString(
+      $selection['audience']['oe_ai_prompt'],
+      $prompt,
+    );
+    $this->assertStringContainsString(
+      'Tone: ' . $selection['tone']['name'],
+      $prompt,
+    );
+    $this->assertStringContainsString(
+      $selection['tone']['oe_ai_prompt'],
+      $prompt,
+    );
+  }
+
+  /**
+   * Asserts the sub-agent task prompt contains selected guidance.
+   *
+   * @param array<int, array{role: string, text: string}> $messages
+   *   The logged sub-agent messages.
+   * @param array{audience: array{name: string, oe_ai_prompt: string}, tone: array{name: string, oe_ai_prompt: string}} $selection
+   *   The expected selection.
+   */
+  protected function assertSubAgentTaskContainsSelection(
+    array $messages,
+    array $selection,
+  ): void {
+    $taskPrompt = implode("\n", array_column($messages, 'text'));
+    $this->assertStringContainsString('Editorial guidance:', $taskPrompt);
+    $this->assertPromptContainsSelection($taskPrompt, $selection);
   }
 
   /**

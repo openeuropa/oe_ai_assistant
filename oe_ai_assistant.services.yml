@@ -19,9 +19,6 @@ services:
   Drupal\oe_ai_assistant\Service\AiEditorialContext: {}
   Drupal\oe_ai_assistant\Service\AiEditorialContextInterface: '@Drupal\oe_ai_assistant\Service\AiEditorialContext'
 
-  Drupal\oe_ai_assistant\Service\AudienceToneManager: {}
-  Drupal\oe_ai_assistant\Service\AudienceToneManagerInterface: '@Drupal\oe_ai_assistant\Service\AudienceToneManager'
-
   Drupal\oe_ai_assistant\Service\InlineEntityHydrator: {}
 
   Drupal\oe_ai_assistant\Service\DraftEntityBuilder: {}
@@ -43,6 +40,3 @@ services:
 
   Drupal\oe_ai_assistant\Store\ConversationStoreFactory: {}
   Drupal\oe_ai_assistant\Store\ConversationStoreFactoryInterface: '@Drupal\oe_ai_assistant\Store\ConversationStoreFactory'
-
-  Drupal\oe_ai_assistant\Store\DraftingSelectionStore: {}
-  Drupal\oe_ai_assistant\Store\DraftingSelectionStoreInterface: '@Drupal\oe_ai_assistant\Store\DraftingSelectionStore'

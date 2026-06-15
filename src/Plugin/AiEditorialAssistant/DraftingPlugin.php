@@ -10,6 +10,7 @@ use Drupal\ai_agents\PluginManager\AiAgentManager;
 use Drupal\oe_ai_assistant\Annotation\AiEditorialAssistant;
 use Drupal\oe_ai_assistant\Exception\ActionException;
 use Drupal\oe_ai_assistant\Plugin\AiAssistantPluginBase;
+use Drupal\oe_ai_assistant\Service\AiEditorialContextInterface;
 use Drupal\oe_ai_assistant\Service\DraftingOrchestratorInterface;
 use Drupal\oe_ai_assistant\Service\DraftSaverInterface;
 use Drupal\oe_ai_assistant\Service\EntityJsonSchemaComposer;
@@ -70,6 +71,13 @@ class DraftingPlugin extends AiAssistantPluginBase {
   protected DraftingOrchestratorInterface $orchestrator;
 
   /**
+   * The editorial prompt context builder.
+   *
+   * @var \Drupal\oe_ai_assistant\Service\AiEditorialContextInterface
+   */
+  protected AiEditorialContextInterface $editorialContext;
+
+  /**
    * {@inheritdoc}
    */
   public static function create(
@@ -84,6 +92,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
     $instance->draftSaver = $container->get(DraftSaverInterface::class);
     $instance->toolLoop = $container->get(ToolExecutionLoopInterface::class);
     $instance->orchestrator = $container->get(DraftingOrchestratorInterface::class);
+    $instance->editorialContext = $container->get(AiEditorialContextInterface::class);
     return $instance;
   }
 
@@ -148,10 +157,11 @@ class DraftingPlugin extends AiAssistantPluginBase {
     // Load the router agent config entity for system prompt and
     // tools (get_content_schema is registered there).
     $router = $this->aiAgentManager->createInstance('oe_drafting_router');
+    $editorialGuidance = $this->buildEditorialGuidancePrompt($context);
 
     // Build the system prompt with schema groups appended.
     $systemPrompt = $this->buildSystemPrompt(
-      $router->getSystemPrompt(), $context
+      $router->getSystemPrompt(), $context, $editorialGuidance
     );
 
     // Collect tools: get_content_schema from agent config +
@@ -174,7 +184,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
     // tool call flow (call LLM, execute tools, repeat).
     return $this->uiMessageStream->respond(
       function (UiMessageStreamInterface $stream) use (
-        $history, $store, $threadId, $context,
+        $history, $store, $threadId, $context, $editorialGuidance,
         $systemPrompt, $tools, $defaults, $provider,
       ): void {
         $stream->start();
@@ -213,7 +223,8 @@ class DraftingPlugin extends AiAssistantPluginBase {
           // Run the sub-agent orchestration.
           $this->orchestrator->run(
             $stream, $history,
-            $context['entityTypeId'], $context['bundle']
+            $context['entityTypeId'], $context['bundle'],
+            $editorialGuidance,
           );
           $history[] = new ChatMessage('assistant',
             'Draft content generated.');
@@ -292,8 +303,9 @@ class DraftingPlugin extends AiAssistantPluginBase {
    * @param array $body
    *   The decoded request body.
    *
-   * @return array{threadId?: string, entityTypeId: string, bundle: string}
-   *   Context with entity type ID, bundle, and optional thread ID.
+   * @return array{threadId?: string, entityTypeId: string, bundle: string, audienceId?: string, toneId?: string}
+   *   Context with entity type ID, bundle, optional thread ID, and selected
+   *   editorial options.
    */
   private function buildContext(array $body): array {
     $forwardedProps = $body['forwardedProps'] ?? [];
@@ -309,18 +321,73 @@ class DraftingPlugin extends AiAssistantPluginBase {
     if (!empty($body['threadId']) && is_string($body['threadId'])) {
       $context['threadId'] = $body['threadId'];
     }
+    if (!empty($body['audienceId']) && is_string($body['audienceId'])) {
+      $context['audienceId'] = $body['audienceId'];
+    }
+    if (!empty($body['toneId']) && is_string($body['toneId'])) {
+      $context['toneId'] = $body['toneId'];
+    }
 
     return $context;
   }
 
   /**
+   * Builds the selected audience and tone guidance prompt.
+   *
+   * @param array{threadId?: string, entityTypeId: string, bundle: string, audienceId?: string, toneId?: string} $context
+   *   The drafting context.
+   *
+   * @return string
+   *   The selected editorial guidance prompt.
+   *
+   * @throws \Drupal\oe_ai_assistant\Exception\ActionException
+   *   Thrown when the selection is incomplete or invalid.
+   */
+  private function buildEditorialGuidancePrompt(array $context): string {
+    $hasAudience = isset($context['audienceId']);
+    $hasTone = isset($context['toneId']);
+
+    if (!$hasAudience && !$hasTone) {
+      return $this->editorialContext->buildSelectionPrompt();
+    }
+
+    if (!$hasAudience || !$hasTone) {
+      throw new ActionException(
+        'missing_editorial_selection',
+        'Both audienceId and toneId must be provided together.',
+        400,
+      );
+    }
+
+    try {
+      return $this->editorialContext->buildSelectedPrompt(
+        $context['audienceId'],
+        $context['toneId'],
+      );
+    }
+    catch (\InvalidArgumentException $e) {
+      throw new ActionException(
+        'invalid_editorial_selection',
+        $e->getMessage(),
+        400,
+      );
+    }
+  }
+
+  /**
    * Builds the system prompt with content type context and schema.
    */
-  private function buildSystemPrompt(string $basePrompt, array $context): string {
+  private function buildSystemPrompt(
+    string $basePrompt,
+    array $context,
+    string $editorialGuidance,
+  ): string {
     $prompt = $basePrompt
       . "\n\nContent type context:\n"
       . "bundle: " . $context['bundle'] . "\n"
-      . "entity_type_id: " . $context['entityTypeId'] . "\n";
+      . "entity_type_id: " . $context['entityTypeId'] . "\n"
+      . "\nEditorial guidance:\n"
+      . $editorialGuidance . "\n";
 
     if (!empty($context['bundle'])) {
       $groups = $this->schemaComposer->splitSchemaIntoGroups(

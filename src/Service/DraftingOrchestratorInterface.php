@@ -26,6 +26,8 @@ interface DraftingOrchestratorInterface {
    *   The entity type ID (e.g. "node").
    * @param string $bundle
    *   The bundle machine name (e.g. "oe_news").
+   * @param string $editorialGuidance
+   *   The selected audience and tone guidance.
    *
    * @return array
    *   The consolidated fields map, or empty array if no fields
@@ -36,6 +38,7 @@ interface DraftingOrchestratorInterface {
     array $history,
     string $entityTypeId,
     string $bundle,
+    string $editorialGuidance,
   ): array;
 
 }
