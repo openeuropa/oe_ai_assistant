@@ -25,7 +25,6 @@ import {
   SendHorizontal,
   X,
 } from "lucide-react";
-import { setDraftingState } from "../store";
 
 /** Welcome message shown when the chat is empty. */
 function WelcomeMessage() {
@@ -197,9 +196,9 @@ function AssistantMessage() {
   );
 }
 
-/** Mark that the user has prompted when the form submits. */
+/** Called when the composer form submits. */
 function handleComposerSubmit() {
-  setDraftingState({ hasPrompted: true });
+  // No-op: the runtime handles message submission.
 }
 
 /** A pending attachment in the composer, with a remove button. */

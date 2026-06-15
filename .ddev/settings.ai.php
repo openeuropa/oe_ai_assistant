@@ -13,36 +13,42 @@
  * This file is included from settings.php during ddev install.
  */
 
-// Read provider and model from environment variables,
-// falling back to Mistral as the default.
-$ai_provider = getenv('AI_PROVIDER') ?: 'mistral';
-$ai_model = getenv('AI_MODEL') ?: 'mistral-large-latest';
-$ai_embed_model = getenv('AI_EMBED_MODEL') ?: 'mistral-embed';
+// Skip AI provider overrides during automated tests. When
+// OE_AI_SKIP_PROVIDER_OVERRIDE is set, tests control the provider
+// via config API instead.
+// @see .ddev/docker-compose.phpunit.yaml
+if (!getenv('OE_AI_SKIP_PROVIDER_OVERRIDE')) {
+  // Read provider and model from environment variables,
+  // falling back to Mistral as the default.
+  $ai_provider = getenv('AI_PROVIDER') ?: 'mistral';
+  $ai_model = getenv('AI_MODEL') ?: 'mistral-large-latest';
+  $ai_embed_model = getenv('AI_EMBED_MODEL') ?: 'mistral-embed';
 
-// Set the default provider for all AI operation types.
-$config['ai.settings']['default_providers'] = [
-  'chat' => [
-    'provider_id' => $ai_provider,
-    'model_id' => $ai_model,
-  ],
-  'chat_with_complex_json' => [
-    'provider_id' => $ai_provider,
-    'model_id' => $ai_model,
-  ],
-  'chat_with_image_vision' => [
-    'provider_id' => $ai_provider,
-    'model_id' => $ai_model,
-  ],
-  'chat_with_structured_response' => [
-    'provider_id' => $ai_provider,
-    'model_id' => $ai_model,
-  ],
-  'chat_with_tools' => [
-    'provider_id' => $ai_provider,
-    'model_id' => $ai_model,
-  ],
-  'embeddings' => [
-    'provider_id' => $ai_provider,
-    'model_id' => $ai_embed_model,
-  ],
-];
+  // Set the default provider for all AI operation types.
+  $config['ai.settings']['default_providers'] = [
+    'chat' => [
+      'provider_id' => $ai_provider,
+      'model_id' => $ai_model,
+    ],
+    'chat_with_complex_json' => [
+      'provider_id' => $ai_provider,
+      'model_id' => $ai_model,
+    ],
+    'chat_with_image_vision' => [
+      'provider_id' => $ai_provider,
+      'model_id' => $ai_model,
+    ],
+    'chat_with_structured_response' => [
+      'provider_id' => $ai_provider,
+      'model_id' => $ai_model,
+    ],
+    'chat_with_tools' => [
+      'provider_id' => $ai_provider,
+      'model_id' => $ai_model,
+    ],
+    'embeddings' => [
+      'provider_id' => $ai_provider,
+      'model_id' => $ai_embed_model,
+    ],
+  ];
+}

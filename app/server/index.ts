@@ -97,7 +97,6 @@ async function createMistralDraftingService(
   const { MistralDraftingService } = await import(
     "./services/drafting-service"
   );
-
   return new MistralDraftingService(createMistralClient(), store);
 }
 
