@@ -40,3 +40,6 @@ services:
 
   Drupal\oe_ai_assistant\Store\ConversationStoreFactory: {}
   Drupal\oe_ai_assistant\Store\ConversationStoreFactoryInterface: '@Drupal\oe_ai_assistant\Store\ConversationStoreFactory'
+
+  Drupal\oe_ai_assistant\Store\DraftingSelectionStore: {}
+  Drupal\oe_ai_assistant\Store\DraftingSelectionStoreInterface: '@Drupal\oe_ai_assistant\Store\DraftingSelectionStore'
