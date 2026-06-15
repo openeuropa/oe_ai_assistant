@@ -51,7 +51,10 @@ final class LookupMediaTest extends KernelTestBase {
     'ai',
     'options',
     'serialization',
+    'ai_agents',
     'oe_ai_assistant',
+    'oe_ai_assistant_test',
+
   ];
 
   /**

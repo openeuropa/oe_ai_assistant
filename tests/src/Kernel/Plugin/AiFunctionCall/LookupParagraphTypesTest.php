@@ -47,7 +47,9 @@ final class LookupParagraphTypesTest extends KernelTestBase {
     'entity_reference_revisions',
     'paragraphs',
     'serialization',
+    'ai_agents',
     'oe_ai_assistant',
+    'oe_ai_assistant_test',
   ];
 
   /**
