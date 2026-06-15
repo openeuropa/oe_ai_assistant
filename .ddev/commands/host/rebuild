@@ -9,9 +9,10 @@ set -e
 echo "Installing dependencies..."
 ddev poser
 
+echo "Building app..."
+ddev build-app
+
 echo "Symlinking module into Drupal..."
 export PROJECT_FILES=$(ls -A)
 ddev symlink-project
-
 ddev install
-ddev build-app

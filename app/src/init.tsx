@@ -27,7 +27,7 @@ import { createRoot } from "react-dom/client";
 import { App } from "./app";
 import type { AppInitConfig } from "./config";
 import { setConfig } from "./config";
-import { plugins } from "./plugins/registry";
+import { getActivePlugins } from "./plugins/registry";
 import { initializeAppStoreContext } from "./store";
 import { initializePluginSlices } from "./store/plugin-store";
 
@@ -72,9 +72,11 @@ export async function init(
   // every user with access shares the same persisted state.
   await initializeAppStoreContext(config.sessionId);
 
+  const activePlugins = getActivePlugins();
+
   // Hydrate plugin store slices before the first render. Merges each
   // plugin's initialState with any values already persisted in localStorage.
-  initializePluginSlices(plugins);
+  initializePluginSlices(activePlugins);
 
   // Mount the React tree.
   const root: Root = createRoot(container);
