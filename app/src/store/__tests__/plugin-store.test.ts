@@ -48,7 +48,7 @@ describe("plugin store infrastructure", () => {
     } = await loadFreshStore();
 
     storage.setItem(
-      getScopedStorageKey("editor-1", "session-1"),
+      getScopedStorageKey("session-1"),
       persistedStoreState({
         pluginStates: {
           alpha: { count: 5 },
@@ -56,7 +56,7 @@ describe("plugin store infrastructure", () => {
       }),
     );
 
-    await initializeAppStoreContext("editor-1", "session-1");
+    await initializeAppStoreContext("session-1");
 
     initializePluginSlices([
       plugin("alpha", {
@@ -80,7 +80,7 @@ describe("plugin store infrastructure", () => {
       useAppStore,
     } = await loadFreshStore();
 
-    await initializeAppStoreContext("editor-1", "session-1");
+    await initializeAppStoreContext("session-1");
 
     initializePluginSlices([
       plugin("alpha", {
@@ -97,7 +97,7 @@ describe("plugin store infrastructure", () => {
     });
 
     const persisted = JSON.parse(
-      storage.getItem(getScopedStorageKey("editor-1", "session-1")) ?? "{}",
+      storage.getItem(getScopedStorageKey("session-1")) ?? "{}",
     );
 
     expect(persisted.state.pluginStates).toEqual({

@@ -66,9 +66,11 @@ export async function init(
   // Store config so the rest of the app can read it via getConfig().
   setConfig(config);
 
-  // Point the store at the host-provided scope, then rehydrate the
-  // matching persisted state before any plugin slices read from storage.
-  await initializeAppStoreContext(config.userId, config.sessionId);
+  // Point the store at the host-provided session scope, then rehydrate
+  // the matching persisted state before any plugin slices read from
+  // storage. The scope is session-only: sessions are collaborative, so
+  // every user with access shares the same persisted state.
+  await initializeAppStoreContext(config.sessionId);
 
   const activePlugins = getActivePlugins();
 

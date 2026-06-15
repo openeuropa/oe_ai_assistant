@@ -8,8 +8,9 @@
  *
  * Persisted to localStorage via Zustand's `persist` middleware so the
  * editor can close the browser and resume where they left off. Persistence
- * is scoped per user/session context so state cannot bleed between editors
- * or editorial sessions in the same browser. Transient UI state (e.g. sidebar
+ * is scoped per editorial session so state cannot bleed between sessions
+ * in the same browser, while collaborating users on the same session
+ * share it. Transient UI state (e.g. sidebar
  * open/closed) is excluded from persistence via `partialize`. Each plugin
  * can also specify its own partialize function to control which parts of
  * its slice are persisted.
@@ -93,15 +94,13 @@ function createInitialState() {
 /**
  * Build the storage key for the current host context.
  *
- * Keyed by user and editorial session: the session is the unit of
- * editorial work, and the user scope prevents state bleeding between
- * editors sharing the same browser.
+ * Keyed by editorial session only: sessions are collaborative, so any
+ * user with access to a session must pick up the same persisted state.
+ * Access to the session itself is enforced server-side before the app
+ * is ever rendered.
  */
-export function getScopedStorageKey(userId: string, sessionId: string): string {
-  const userScope = encodeURIComponent(userId);
-  const sessionScope = encodeURIComponent(sessionId);
-
-  return `${STORAGE_KEY_PREFIX}:user:${userScope}:session:${sessionScope}`;
+export function getScopedStorageKey(sessionId: string): string {
+  return `${STORAGE_KEY_PREFIX}:session:${encodeURIComponent(sessionId)}`;
 }
 
 const scopedStorage = createJSONStorage<PersistedAppState>(() => {
@@ -217,14 +216,13 @@ export const useAppStore = create<AppState>()(
  * localStorage entry.
  */
 export async function initializeAppStoreContext(
-  userId: string,
   sessionId: string,
 ): Promise<void> {
   arePersistWritesPaused = true;
 
   try {
     useAppStore.persist.setOptions({
-      name: getScopedStorageKey(userId, sessionId),
+      name: getScopedStorageKey(sessionId),
     });
     useAppStore.setState(createPersistedState());
     await useAppStore.persist.rehydrate();

@@ -37,3 +37,4 @@ echo ""
 echo "Site installed successfully!"
 echo "Admin login: admin / admin"
 echo "URL: $(ddev describe -j 2>/dev/null | php -r 'echo json_decode(file_get_contents("php://stdin"))->raw->primary_url;' 2>/dev/null || echo 'Run ddev describe to see the URL')"
+ddev drush uli

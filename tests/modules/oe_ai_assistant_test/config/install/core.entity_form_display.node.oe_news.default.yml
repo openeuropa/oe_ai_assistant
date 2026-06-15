@@ -2,7 +2,7 @@ langcode: en
 status: true
 dependencies:
   config:
-    - field.field.node.oe_news.body
+    - field.field.node.oe_news.field_body
     - field.field.node.oe_news.field_contacts
     - field.field.node.oe_news.field_content_paragraphs
     - field.field.node.oe_news.field_keywords
@@ -43,7 +43,7 @@ content:
       size: 60
       placeholder: ''
     third_party_settings: {  }
-  body:
+  field_body:
     type: text_textarea_with_summary
     weight: 2
     region: content
