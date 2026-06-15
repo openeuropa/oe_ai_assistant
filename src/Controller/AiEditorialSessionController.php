@@ -9,6 +9,7 @@ use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Url;
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionType;
+use Drupal\oe_ai_assistant\Service\AiEditorialContextInterface;
 use Drupal\system\SystemManager;
 use Symfony\Component\HttpFoundation\RedirectResponse;
 use Symfony\Component\HttpFoundation\RequestStack;
@@ -20,6 +21,7 @@ use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 class AiEditorialSessionController extends ControllerBase {
 
   public function __construct(
+    private readonly AiEditorialContextInterface $aiEditorialContext,
     private readonly EntityTypeManagerInterface $sessionEntityTypeManager,
     private readonly SystemManager $systemManager,
     private readonly RequestStack $requestStack,
@@ -140,6 +142,10 @@ class AiEditorialSessionController extends ControllerBase {
         'drafting' => [
           'entityTypeId' => $entityTypeId,
           'bundle' => $bundle,
+          'context' => [
+            'audience' => $this->aiEditorialContext->getAvailableAudiences(),
+            'tone' => $this->aiEditorialContext->getAvailableTones(),
+          ],
         ],
       ],
     ];
