@@ -292,8 +292,8 @@ class DraftingPlugin extends AiAssistantPluginBase {
    * @param array $body
    *   The decoded request body.
    *
-   * @return array
-   *   Context with entityTypeId and bundle.
+   * @return array{threadId?: string, entityTypeId: string, bundle: string}
+   *   Context with entity type ID, bundle, and optional thread ID.
    */
   private function buildContext(array $body): array {
     $forwardedProps = $body['forwardedProps'] ?? [];
@@ -301,10 +301,16 @@ class DraftingPlugin extends AiAssistantPluginBase {
       ?? $body['entityTypeId'] ?? 'node';
     $bundle = $forwardedProps['bundle']
       ?? $body['bundle'] ?? '';
-    return [
+    $context = [
       'entityTypeId' => $entityTypeId,
       'bundle' => $bundle,
     ];
+
+    if (!empty($body['threadId']) && is_string($body['threadId'])) {
+      $context['threadId'] = $body['threadId'];
+    }
+
+    return $context;
   }
 
   /**
