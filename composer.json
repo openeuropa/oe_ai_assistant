@@ -30,6 +30,7 @@
         "drupal/inline_entity_form": "^3.0",
         "drupal/paragraphs": "^1.0",
         "drupal/seven": "^2.0",
+        "drupal/opentelemetry": "^1.0@beta",
         "weitzman/drupal-test-traits": "^2.0",
         "drush/drush": "^13.0",
         "drupal/coder": "^8.3"

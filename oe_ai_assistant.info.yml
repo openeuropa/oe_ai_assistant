@@ -13,4 +13,6 @@ dependencies:
   - drupal:options
   - drupal:serialization
   - drupal:extended_logger
+  - drupal:extended_logger_db
+  - drupal:opentelemetry
   - key:key
