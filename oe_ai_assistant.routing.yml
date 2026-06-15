@@ -27,3 +27,21 @@ oe_ai_assistant.content_schema:
     _permission: 'use oe ai assistant'
     entity_type_id: '[a-z][a-z0-9_]*'
     bundle: '[a-z][a-z0-9_]*'
+
+oe_ai_assistant.editorial_options:
+  path: /api/ai/editorial-options/{option_type}
+  defaults:
+    _controller: \Drupal\oe_ai_assistant\Controller\AudienceToneController::list
+  methods: [GET]
+  requirements:
+    _permission: 'use oe ai assistant'
+    option_type: 'audience|tone'
+
+oe_ai_assistant.editorial_selection:
+  path: /api/ai/editorial-selection/{option_type}
+  defaults:
+    _controller: \Drupal\oe_ai_assistant\Controller\AudienceToneController::saveSelection
+  methods: [POST]
+  requirements:
+    _permission: 'use oe ai assistant'
+    option_type: 'audience|tone'
