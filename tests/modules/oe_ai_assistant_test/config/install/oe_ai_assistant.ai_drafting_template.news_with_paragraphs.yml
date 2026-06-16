@@ -3,6 +3,7 @@ status: true
 dependencies:
   config:
     - workflows.workflow.editorial
+    - node.type.oe_news
   module:
     - oe_ai_assistant
 id: news_with_paragraphs

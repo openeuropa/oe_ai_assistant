@@ -401,4 +401,19 @@ final class AiDraftingTemplate extends ConfigEntityBase implements AiDraftingTem
     return array_values($targetBundles);
   }
 
+  /**
+   * {@inheritdoc}
+   */
+  public function calculateDependencies() {
+    parent::calculateDependencies();
+
+    $storage = $this->entityTypeManager()->getStorage('node_type');
+    $content_type = $storage->load($this->content_type);
+    $name = $content_type->getConfigDependencyName();
+
+    $this->addDependency('config', $name);
+
+    return $this;
+  }
+
 }
