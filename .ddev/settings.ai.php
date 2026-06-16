@@ -7,8 +7,8 @@
  * Overrides the default AI provider and model settings using
  * environment variables. Set these in .ddev/.env:
  *
- *   AI_PROVIDER=openai          (default: mistral)
- *   AI_MODEL=gpt-4o             (default: mistral-large-latest)
+ *   AI_PROVIDER=EC              (default: gpt_at_ec)
+ *   AI_MODEL=gpt-5.1            (default: gpt-5.1)
  *
  * This file is included from settings.php during ddev install.
  */
@@ -20,9 +20,9 @@
 if (!getenv('OE_AI_SKIP_PROVIDER_OVERRIDE')) {
   // Read provider and model from environment variables,
   // falling back to Mistral as the default.
-  $ai_provider = getenv('AI_PROVIDER') ?: 'mistral';
-  $ai_model = getenv('AI_MODEL') ?: 'mistral-large-latest';
-  $ai_embed_model = getenv('AI_EMBED_MODEL') ?: 'mistral-embed';
+  $ai_provider = getenv('AI_PROVIDER') ?: 'gpt_at_ec';
+  $ai_model = getenv('AI_MODEL') ?: 'gpt-5.1';
+  $ai_embed_model = getenv('AI_EMBED_MODEL') ?: 'gpt-5.1';
 
   // Set the default provider for all AI operation types.
   $config['ai.settings']['default_providers'] = [

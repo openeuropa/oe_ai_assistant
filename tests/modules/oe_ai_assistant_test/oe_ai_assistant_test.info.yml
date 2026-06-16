@@ -14,6 +14,7 @@ dependencies:
   - drupal:taxonomy
   - drupal:text
   - drupal:workflows
+  - oe_ai_provider_gpt_at_ec:oe_ai_provider_gpt_at_ec
   - ai:ai_provider_mistral
   - ai:ai_provider_openai
   - key:key

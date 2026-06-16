@@ -12,39 +12,40 @@ use Drupal\taxonomy\Entity\Term;
 /**
  * Implements hook_install().
  *
- * Configures AI defaults and the Mistral provider for the test environment.
+ * Configures AI defaults and the gpt_at_ec provider for the test environment.
  */
 function oe_ai_assistant_test_install(): void {
   $configFactory = \Drupal::configFactory();
 
-  // Set Mistral as the default LLM provider for all operation types.
+  // Set GPT at EC as the default LLM provider for all operation types.
   $configFactory->getEditable('ai.settings')
     ->set('default_providers', [
       'chat' => [
-        'provider_id' => 'mistral',
-        'model_id' => 'mistral-large-latest',
+        'provider_id' => 'gpt_at_ec',
+        'model_id' => 'gpt-5.1',
       ],
       'chat_with_complex_json' => [
-        'provider_id' => 'mistral',
-        'model_id' => 'mistral-large-latest',
+        'provider_id' => 'gpt_at_ec',
+        'model_id' => 'gpt-5.1',
       ],
       'chat_with_image_vision' => [
-        'provider_id' => 'mistral',
-        'model_id' => 'mistral-large-latest',
+        'provider_id' => 'gpt_at_ec',
+        'model_id' => 'gpt-5.1',
       ],
       'chat_with_structured_response' => [
-        'provider_id' => 'mistral',
-        'model_id' => 'mistral-large-latest',
+        'provider_id' => 'gpt_at_ec',
+        'model_id' => 'gpt-5.1',
       ],
       'chat_with_tools' => [
-        'provider_id' => 'mistral',
-        'model_id' => 'mistral-large-latest',
-      ],
-      'embeddings' => [
-        'provider_id' => 'mistral',
-        'model_id' => 'mistral-embed',
-      ],
+        'provider_id' => 'gpt_at_ec',
+        'model_id' => 'gpt-5.1',
+      ]
     ])
+    ->save();
+
+  // Point the gpt_at_ec provider to the Key entity for the API key.
+  $configFactory->getEditable('oe_ai_provider_gpt_at_ec.settings')
+    ->set('api_key', 'gpt_at_ec_key')
     ->save();
 
   // Point the Mistral provider to the Key entity for the API key.
