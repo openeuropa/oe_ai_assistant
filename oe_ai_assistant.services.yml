@@ -16,12 +16,8 @@ services:
 
   Drupal\oe_ai_assistant\Service\EntityJsonSchemaComposer: {}
 
-  Drupal\oe_ai_assistant\Service\AiEditorialContext:
-    arguments:
-      - '@entity_type.manager'
-
-  Drupal\oe_ai_assistant\Service\AiEditorialContextInterface:
-    alias: Drupal\oe_ai_assistant\Service\AiEditorialContext
+  Drupal\oe_ai_assistant\Service\AiEditorialContext: {}
+  Drupal\oe_ai_assistant\Service\AiEditorialContextInterface: '@Drupal\oe_ai_assistant\Service\AiEditorialContext'
 
   Drupal\oe_ai_assistant\Service\InlineEntityHydrator: {}
 

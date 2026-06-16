@@ -6,6 +6,7 @@ namespace Drupal\oe_ai_assistant\Service;
 
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\taxonomy\TermInterface;
+use Symfony\Component\DependencyInjection\Attribute\Autowire;
 
 /**
  * Builds editorial audience and tone context from taxonomy terms.
@@ -23,6 +24,7 @@ class AiEditorialContext implements AiEditorialContextInterface {
   protected const string TONE_VID = 'oe_ai_tone';
 
   public function __construct(
+    #[Autowire(service: 'entity_type.manager')]
     protected readonly EntityTypeManagerInterface $entityTypeManager,
   ) {}
 
