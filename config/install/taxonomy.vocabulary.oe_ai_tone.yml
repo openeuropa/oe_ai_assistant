@@ -1,0 +1,8 @@
+langcode: en
+status: true
+dependencies: {  }
+name: 'AI tone'
+vid: oe_ai_tone
+description: 'Editorial tone options for AI-assisted drafting.'
+weight: 0
+new_revision: false

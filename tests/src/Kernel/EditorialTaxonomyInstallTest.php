@@ -1,95 +1,54 @@
 <?php
 
-/**
- * @file
- * Install hooks for the OE AI Assistant Test module.
- */
-
 declare(strict_types=1);
 
-use Drupal\taxonomy\Entity\Term;
+namespace Drupal\Tests\oe_ai_assistant\Kernel;
+
+use Drupal\field\Entity\FieldConfig;
+use Drupal\field\Entity\FieldStorageConfig;
+use Drupal\KernelTests\KernelTestBase;
+use Drupal\taxonomy\Entity\Vocabulary;
 
 /**
- * Implements hook_install().
- *
- * Configures AI defaults and the Mistral provider for the test environment.
+ * Verifies the editorial taxonomy install state.
  */
-function oe_ai_assistant_test_install(): void {
-  $configFactory = \Drupal::configFactory();
+class EditorialTaxonomyInstallTest extends KernelTestBase {
 
-  // Set Mistral as the default LLM provider for all operation types.
-  $configFactory->getEditable('ai.settings')
-    ->set('default_providers', [
-      'chat' => [
-        'provider_id' => 'mistral',
-        'model_id' => 'mistral-large-latest',
-      ],
-      'chat_with_complex_json' => [
-        'provider_id' => 'mistral',
-        'model_id' => 'mistral-large-latest',
-      ],
-      'chat_with_image_vision' => [
-        'provider_id' => 'mistral',
-        'model_id' => 'mistral-large-latest',
-      ],
-      'chat_with_structured_response' => [
-        'provider_id' => 'mistral',
-        'model_id' => 'mistral-large-latest',
-      ],
-      'chat_with_tools' => [
-        'provider_id' => 'mistral',
-        'model_id' => 'mistral-large-latest',
-      ],
-      'embeddings' => [
-        'provider_id' => 'mistral',
-        'model_id' => 'mistral-embed',
-      ],
-    ])
-    ->save();
+  /**
+   * Modules required to bootstrap the kernel test environment.
+   *
+   * @var string[]
+   */
+  protected static $modules = [
+    'system',
+    'user',
+  ];
 
-  // Point the Mistral provider to the Key entity for the API key.
-  $configFactory->getEditable('ai_provider_mistral.settings')
-    ->set('api_key', 'mistral_api_key')
-    ->save();
+  /**
+   * Tests that the vocabularies, field config, and default terms are installed.
+   */
+  public function testEditorialTaxonomyInstallState(): void {
+    \Drupal::service('module_installer')->install(['oe_ai_assistant_test']);
 
-  // Point the OpenAI provider to the Key entity for the API key.
-  $configFactory->getEditable('ai_provider_openai.settings')
-    ->set('api_key', 'openai_api_key')
-    ->set('moderation', FALSE)
-    ->save();
+    $this->assertTrue(\Drupal::service('module_handler')->moduleExists('oe_ai_assistant'));
+    $this->assertTrue(\Drupal::service('module_handler')->moduleExists('oe_ai_assistant_test'));
 
-  oe_ai_assistant_test_install_editorial_taxonomy_terms();
-}
+    $this->assertNotNull(Vocabulary::load('oe_ai_target_audience'));
+    $this->assertNotNull(Vocabulary::load('oe_ai_tone'));
 
-/**
- * Installs the default editorial taxonomy terms used by tests.
- */
-function oe_ai_assistant_test_install_editorial_taxonomy_terms(): void {
-  foreach (oe_ai_assistant_test_get_editorial_taxonomy_terms() as $vid => $terms) {
-    foreach ($terms as $name => $text) {
-      $term = Term::create([
-        'vid' => $vid,
-        'name' => $name,
-        'description' => [
-          'value' => $text['description'],
-          'format' => 'plain_text',
-        ],
-        'field_oe_ai_prompt' => $text['prompt'],
-      ]);
-      $term->save();
-    }
-  }
-}
+    $fieldStorage = FieldStorageConfig::loadByName('taxonomy_term', 'field_oe_ai_prompt');
+    $this->assertNotNull($fieldStorage);
+    $this->assertSame('string_long', $fieldStorage->getType());
 
-/**
- * Returns the default editorial taxonomy terms keyed by vocabulary.
- *
- * @return array<string, array<string, string>>
- *   The default term labels keyed to their editor and prompt guidance text.
- */
-function oe_ai_assistant_test_get_editorial_taxonomy_terms(): array {
-  return [
-    'oe_ai_target_audience' => [
+    $audienceField = FieldConfig::loadByName('taxonomy_term', 'oe_ai_target_audience', 'field_oe_ai_prompt');
+    $toneField = FieldConfig::loadByName('taxonomy_term', 'oe_ai_tone', 'field_oe_ai_prompt');
+
+    $this->assertNotNull($audienceField);
+    $this->assertNotNull($toneField);
+    $this->assertSame('string_long', $audienceField->getType());
+    $this->assertSame('string_long', $toneField->getType());
+
+    $expectedAudiences = [
       'Business and industry' => [
         'description' => 'Content focused on professional stakeholders, emphasizing practical impact, compliance, and business relevance.',
         'prompt' => 'Use professional language. Emphasize practical implications, compliance requirements, and economic impact. Be specific about timelines and actions.',
@@ -110,8 +69,8 @@ function oe_ai_assistant_test_get_editorial_taxonomy_terms(): array {
         'description' => 'Content aimed at younger readers, with a simple, engaging tone and relatable examples.',
         'prompt' => 'Use an approachable, engaging tone. Explain concepts simply. Avoid bureaucratic language. Use concrete examples.',
       ],
-    ],
-    'oe_ai_tone' => [
+    ];
+    $expectedTones = [
       'Conversational' => [
         'description' => 'A friendly and informal tone that speaks directly to the reader.',
         'prompt' => 'Write in a friendly, approachable style. Use contractions naturally. Address the reader directly. Keep sentences varied in length.',
@@ -128,6 +87,32 @@ function oe_ai_assistant_test_get_editorial_taxonomy_terms(): array {
         'description' => 'A detailed and structured tone using specialized terminology for expert audiences.',
         'prompt' => 'Use domain-specific terminology precisely. Include technical detail and data. Structure content with clear headings and logical flow.',
       ],
-    ],
-  ];
+    ];
+
+    $this->assertSame($expectedAudiences, $this->loadTermsByVocabulary('oe_ai_target_audience'));
+    $this->assertSame($expectedTones, $this->loadTermsByVocabulary('oe_ai_tone'));
+  }
+
+  /**
+   * Loads term names and prompts keyed by term name for a vocabulary.
+   *
+   * @param string $vid
+   *   Vocabulary machine name.
+   *
+   * @return array<string, string>
+   *   The term names keyed to their prompt text.
+   */
+  protected function loadTermsByVocabulary(string $vid): array {
+    /** @var \Drupal\taxonomy\TermInterface[] $terms */
+    $storage = \Drupal::entityTypeManager()->getStorage('taxonomy_term');
+    $terms = $storage->loadByProperties(['vid' => $vid]);
+    $values = [];
+    foreach ($terms as $term) {
+      $values[$term->label()]['description'] = $term->get('description')->value;
+      $values[$term->label()]['prompt'] = $term->get('field_oe_ai_prompt')->value;
+    }
+    ksort($values);
+    return $values;
+  }
+
 }

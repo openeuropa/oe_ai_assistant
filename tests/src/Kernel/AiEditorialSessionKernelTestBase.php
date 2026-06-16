@@ -31,6 +31,7 @@ abstract class AiEditorialSessionKernelTestBase extends KernelTestBase {
     'oe_ai_assistant',
     'options',
     'system',
+    'taxonomy',
     'user',
     'key',
     'workflows',
@@ -51,6 +52,7 @@ abstract class AiEditorialSessionKernelTestBase extends KernelTestBase {
     $this->installSchema('system', ['sequences']);
     $this->installSchema('node', ['node_access']);
 
+    $this->installEntitySchema('taxonomy_term');
     $this->installEntitySchema('user');
     $this->installEntitySchema('node');
     $this->installEntitySchema('ai_editorial_session');

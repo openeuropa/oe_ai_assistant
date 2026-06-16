@@ -15,3 +15,5 @@ test-results
 .phpactor.json
 /docs
 composer.contrib-patches.lock.json
+## DDEV
+/.ddev/web-build

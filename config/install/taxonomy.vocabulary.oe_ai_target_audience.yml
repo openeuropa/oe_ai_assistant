@@ -1,0 +1,8 @@
+langcode: en
+status: true
+dependencies: {  }
+name: 'AI target audience'
+vid: oe_ai_target_audience
+description: 'Editorial target audience options for AI-assisted drafting.'
+weight: 0
+new_revision: false
