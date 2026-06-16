@@ -139,6 +139,76 @@ test.describe("Drafting text streaming", () => {
     // The response should contain actual words (not just
     // whitespace or garbage).
     expect(messageText!.trim().length).toBeGreaterThan(5);
+
+    const feedback = page.locator('[data-testid="assistant-feedback"]');
+    await expect(feedback).toBeVisible();
+    await expect(feedback.getByText("We'd love your")).toBeVisible();
+    await expect(
+      feedback.getByRole("button", {
+        name: "Open feedback form for this response",
+      }),
+    ).toBeVisible();
+
+    await feedback
+      .getByRole("button", { name: "Open feedback form for this response" })
+      .click();
+    const feedbackDialog = page.getByRole("dialog", {
+      name: "Send your feedback",
+    });
+    await expect(feedbackDialog).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(feedbackDialog).toBeHidden();
+
+    await feedback
+      .getByRole("button", { name: "Open feedback form for this response" })
+      .click();
+    await expect(feedbackDialog).toBeVisible();
+    await expect(
+      feedbackDialog.getByRole("radiogroup", { name: "Answer relevance" }),
+    ).toBeVisible();
+    const relevanceGroup = feedbackDialog.getByRole("radiogroup", {
+      name: "Answer relevance",
+    });
+    await relevanceGroup.getByText("Partially").click();
+    await expect(
+      relevanceGroup.getByRole("radio", { name: "Partially" }),
+    ).toBeChecked();
+
+    const sourceMatchGroup = feedbackDialog.getByRole("radiogroup", {
+      name: "Source match",
+    });
+    await sourceMatchGroup.getByText("No").click();
+    await expect(
+      sourceMatchGroup.getByRole("radio", { name: "No" }),
+    ).toBeChecked();
+
+    const sourceSupportGroup = feedbackDialog.getByRole("radiogroup", {
+      name: "Source support",
+    });
+    await sourceSupportGroup.getByText("No").click();
+    await expect(
+      sourceSupportGroup.getByRole("radio", { name: "No" }),
+    ).toBeChecked();
+    await feedbackDialog
+      .getByLabel("What could be improved in the answer?")
+      .fill("The response should be clearer.");
+    await feedbackDialog
+      .getByLabel(/missing sources or information/i)
+      .fill("Include the source publication date.");
+    await page.getByRole("button", { name: "Submit" }).click();
+    const success = page.locator('[data-testid="assistant-feedback-success"]');
+    await expect(success.getByText("Feedback is sent.")).toBeVisible();
+
+    const viewportBox = await page
+      .locator('[data-testid="drafting-thread-viewport"]')
+      .boundingBox();
+    const successBox = await success.boundingBox();
+    expect(successBox?.width).toBeGreaterThan((viewportBox?.width ?? 0) - 48);
+
+    await success
+      .getByRole("button", { name: "Dismiss feedback confirmation" })
+      .click();
+    await expect(success).toBeHidden();
   });
 
   test("SSE stream returns valid text-delta events", async ({ page }) => {
