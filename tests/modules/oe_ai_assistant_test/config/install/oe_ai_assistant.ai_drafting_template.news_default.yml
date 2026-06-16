@@ -14,7 +14,7 @@ fields:
     prompt: 'News headline. Factual, concise, max 80 characters.'
   field_teaser:
     prompt: '2-3 sentence summary. Lead with the key fact.'
-  body:
+  field_body:
     prompt: 'Full article body, 3-5 paragraphs. Inverted pyramid structure.'
 defaults:
   langcode: en
