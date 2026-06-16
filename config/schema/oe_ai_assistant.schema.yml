@@ -12,15 +12,6 @@ oe_ai_assistant.ai_editorial_session_type.*:
     uuid:
       type: uuid
       label: 'UUID'
-    field_whitelist:
-      type: sequence
-      label: 'Per-content-type field whitelist'
-      sequence:
-        type: sequence
-        label: 'Field names'
-        sequence:
-          type: string
-          label: 'Field name'
 
 oe_ai_assistant.ai_drafting_template.*:
   type: config_entity
