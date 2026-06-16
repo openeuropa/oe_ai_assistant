@@ -1,30 +1,39 @@
 services:
+  _defaults:
+    autoconfigure: true
+    autowire: true
+
+  # Logger channel.
+  logger.channel.oe_ai_assistant:
+    parent: logger.channel_base
+    arguments: ['oe_ai_assistant']
+
+  # Plugin manager.
   Drupal\oe_ai_assistant\Plugin\AiAssistantPluginManager:
     parent: default_plugin_manager
 
   Drupal\oe_ai_assistant\Service\RequestValidator: {}
 
-  Drupal\oe_ai_assistant\Service\EntityJsonSchemaComposer:
-    arguments:
-      - '@serializer'
-      - '@entity_type.manager'
-      - '@entity_type.bundle.info'
+  Drupal\oe_ai_assistant\Service\EntityJsonSchemaComposer: {}
 
-  Drupal\oe_ai_assistant\Service\InlineEntityHydrator:
-    arguments:
-      - '@serializer'
-      - '@entity_field.manager'
-      - '@entity_type.manager'
+  Drupal\oe_ai_assistant\Service\InlineEntityHydrator: {}
 
-  Drupal\oe_ai_assistant\Service\DraftEntityBuilder:
-    arguments:
-      - '@serializer'
-      - '@entity_type.manager'
-      - '@Drupal\oe_ai_assistant\Service\InlineEntityHydrator'
+  Drupal\oe_ai_assistant\Service\DraftEntityBuilder: {}
 
-  Drupal\oe_ai_assistant\Service\AgentFactory:
-    arguments:
-      - '@ai.provider'
-      - '@plugin.manager.ai.function_calls'
-      - '@config.factory'
-      - '@key.repository'
+  Drupal\oe_ai_assistant\Service\UiMessageStream: {}
+  Drupal\oe_ai_assistant\Service\UiMessageStreamInterface: '@Drupal\oe_ai_assistant\Service\UiMessageStream'
+
+  Drupal\oe_ai_assistant\Service\DraftSaver: {}
+  Drupal\oe_ai_assistant\Service\DraftSaverInterface: '@Drupal\oe_ai_assistant\Service\DraftSaver'
+
+  Drupal\oe_ai_assistant\Service\ToolExecutor: {}
+  Drupal\oe_ai_assistant\Service\ToolExecutorInterface: '@Drupal\oe_ai_assistant\Service\ToolExecutor'
+
+  Drupal\oe_ai_assistant\Service\ToolExecutionLoop: {}
+  Drupal\oe_ai_assistant\Service\ToolExecutionLoopInterface: '@Drupal\oe_ai_assistant\Service\ToolExecutionLoop'
+
+  Drupal\oe_ai_assistant\Service\DraftingOrchestrator: {}
+  Drupal\oe_ai_assistant\Service\DraftingOrchestratorInterface: '@Drupal\oe_ai_assistant\Service\DraftingOrchestrator'
+
+  Drupal\oe_ai_assistant\Store\ConversationStoreFactory: {}
+  Drupal\oe_ai_assistant\Store\ConversationStoreFactoryInterface: '@Drupal\oe_ai_assistant\Store\ConversationStoreFactory'

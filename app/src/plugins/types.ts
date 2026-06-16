@@ -17,6 +17,8 @@ export interface PluginDefinition {
   name: string;
   /** Short description for tooltips or documentation. */
   description: string;
+  /** When true, the plugin is available only in explicitly enabled dev mode. */
+  devOnly?: boolean;
   /** Icon component displayed next to the name in the sidebar. Accepts an optional `size` prop (Lucide-compatible). */
   icon: ComponentType<{ size?: number }>;
   /** Lazy-loaded root component rendered when this plugin is active. */

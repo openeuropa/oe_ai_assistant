@@ -4,8 +4,8 @@ dependencies:
   module:
     - node
     - text
-id: node.body
-field_name: body
+id: node.field_body
+field_name: field_body
 entity_type: node
 type: text_with_summary
 settings: {}

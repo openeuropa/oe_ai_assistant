@@ -1,0 +1,7 @@
+# Passes OE_AI_SKIP_PROVIDER_OVERRIDE to the web container so that
+# settings.ai.php does not override AI provider config during tests.
+# The value comes from .ddev/.env (default: 1 in .env.dist).
+services:
+  web:
+    environment:
+      - OE_AI_SKIP_PROVIDER_OVERRIDE=${OE_AI_SKIP_PROVIDER_OVERRIDE}

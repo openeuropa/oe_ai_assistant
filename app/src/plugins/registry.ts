@@ -3,18 +3,23 @@
  *
  * Static list of all plugins known at build time. The shell reads this
  * to build the sidebar, set up routes, and lazy-load each plugin's
- * root component. To add a new plugin, create its directory under
- * src/plugins/ and append an entry here.
+ * root component. Availability is resolved at runtime from host config
+ * (`enabledPlugins`) plus the build/dev-server dev-only plugin flag.
+ *
+ * To add a new plugin, create its directory under src/plugins/ and
+ * append an entry here.
  */
 
 import { PenLine, Radio, StickyNote } from "lucide-react";
 import { lazy } from "react";
+import { getConfig } from "@/config";
 import { draftingSliceConfig } from "./drafting/store";
 import { echoSliceConfig } from "./echo/store";
 import { notesSliceConfig } from "./notes/store";
 import type { PluginDefinition } from "./types";
 
-export const plugins: PluginDefinition[] = [
+/** Full plugin catalog known at build time. */
+export const registeredPlugins: PluginDefinition[] = [
   {
     id: "drafting",
     name: "Drafting",
@@ -29,6 +34,7 @@ export const plugins: PluginDefinition[] = [
     id: "echo",
     name: "Echo",
     description: "SSE streaming test plugin",
+    devOnly: true,
     icon: Radio,
     component: lazy(() => import("./echo/root")),
     requiredEndpoints: ["/api/plugins/echo/stream"],
@@ -39,6 +45,7 @@ export const plugins: PluginDefinition[] = [
     id: "notes",
     name: "Notes",
     description: "RPC-style CRUD test plugin for TanStack Query",
+    devOnly: true,
     icon: StickyNote,
     component: lazy(() => import("./notes/root")),
     requiredEndpoints: ["/api/plugins/notes/list", "/api/plugins/notes/create"],
@@ -46,3 +53,28 @@ export const plugins: PluginDefinition[] = [
     storeSlice: notesSliceConfig,
   },
 ];
+
+/**
+ * Runtime plugin availability.
+ *
+ * - Host config (`enabledPlugins`) can allowlist plugins by ID.
+ * - Dev-only plugins are only exposed when the build/dev server enables them.
+ * - Unknown IDs in `enabledPlugins` are ignored safely.
+ */
+export function getActivePlugins(): PluginDefinition[] {
+  const { enabledPlugins } = getConfig();
+  const enabledIds = new Set(enabledPlugins);
+  const devPluginsEnabled = __DEV_PLUGINS__;
+
+  return registeredPlugins.filter((plugin) => {
+    if (plugin.devOnly && !devPluginsEnabled) {
+      return false;
+    }
+
+    if (enabledIds.size === 0) {
+      return true;
+    }
+
+    return enabledIds.has(plugin.id);
+  });
+}

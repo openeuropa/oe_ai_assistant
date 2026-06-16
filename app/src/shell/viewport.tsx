@@ -4,12 +4,12 @@
  * Renders the currently active plugin inside a Suspense boundary.
  * Each plugin is lazy-loaded as a separate JS chunk, so only the
  * active plugin's code is fetched. Also handles empty-state (no
- * plugins registered) and 404 (unknown route).
+ * active plugins) and 404 (unknown route).
  */
 
 import { Suspense } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
-import { plugins } from "@/plugins/registry";
+import { getActivePlugins } from "@/plugins/registry";
 
 /** Shown while a plugin chunk is being loaded. */
 function PluginFallback() {
@@ -30,19 +30,21 @@ function NotFound() {
   );
 }
 
-/** Shown when the plugin registry is empty. */
+/** Shown when no plugins are active in the current environment/config. */
 function NoPlugins() {
   return (
     <div className="flex flex-col items-center justify-center gap-2 p-8 text-gray-500">
-      <p className="text-lg font-medium">No plugins registered</p>
+      <p className="text-lg font-medium">No plugins available</p>
       <p className="text-sm">
-        Register a plugin in the plugin registry to get started.
+        Check the current environment and enabled plugin configuration.
       </p>
     </div>
   );
 }
 
 export function Viewport() {
+  const plugins = getActivePlugins();
+
   if (plugins.length === 0) {
     return <NoPlugins />;
   }

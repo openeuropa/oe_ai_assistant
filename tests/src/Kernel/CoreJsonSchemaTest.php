@@ -68,6 +68,7 @@ class CoreJsonSchemaTest extends KernelTestBase {
     'options',
     'key',
     'ai',
+    'ai_agents',
     'oe_ai_assistant',
     'oe_ai_assistant_test',
   ];
@@ -127,7 +128,7 @@ class CoreJsonSchemaTest extends KernelTestBase {
     // Assert that the node's two most canonical fields (title and body)
     // appear at the top level.
     $this->assertArrayHasKey('title', $schema, 'Schema contains "title" at the top level.');
-    $this->assertArrayHasKey('body', $schema, 'Schema contains "body" at the top level.');
+    $this->assertArrayHasKey('field_body', $schema, 'Schema contains "field_body" at the top level.');
   }
 
   /**
@@ -158,7 +159,7 @@ class CoreJsonSchemaTest extends KernelTestBase {
     // the top level of the schema.
     $expected = [
       'title',
-      'body',
+      'field_body',
       'field_teaser',
       'field_publication_date',
       'field_news_type',
@@ -198,7 +199,7 @@ class CoreJsonSchemaTest extends KernelTestBase {
     $node = Node::create([
       'type' => 'oe_news',
       'title' => 'Probe title',
-      'body' => [
+      'field_body' => [
         'value' => '<p>Probe body</p>',
         'summary' => 'Probe summary',
         'format' => 'plain_text',
@@ -284,14 +285,14 @@ class CoreJsonSchemaTest extends KernelTestBase {
     $serializer = $this->container->get('serializer');
     $node = $this->buildOeNewsNode();
 
-    $list = $serializer->normalize($node->get('body'), 'json_schema');
-    $item = $serializer->normalize($node->get('body')->first(), 'json_schema');
+    $list = $serializer->normalize($node->get('field_body'), 'json_schema');
+    $item = $serializer->normalize($node->get('field_body')->first(), 'json_schema');
     $value = $serializer->normalize(
-      $node->get('body')->first()->get('value'),
+      $node->get('field_body')->first()->get('value'),
       'json_schema'
     );
     $format = $serializer->normalize(
-      $node->get('body')->first()->get('format'),
+      $node->get('field_body')->first()->get('format'),
       'json_schema'
     );
 
@@ -419,7 +420,7 @@ class CoreJsonSchemaTest extends KernelTestBase {
 
     $field_names = [
       'title',
-      'body',
+      'field_body',
       'field_teaser',
       'field_publication_date',
       'field_news_type',
@@ -508,7 +509,7 @@ class CoreJsonSchemaTest extends KernelTestBase {
     $json = json_encode([
       'type' => [['target_id' => 'oe_news']],
       'title' => [['value' => 'Deserialisation round-trip']],
-      'body' => [
+      'field_body' => [
         [
           'value' => '<p>Body text</p>',
           'format' => 'plain_text',
@@ -524,7 +525,7 @@ class CoreJsonSchemaTest extends KernelTestBase {
 
     $this->assertSame('oe_news', $node->bundle());
     $this->assertSame('Deserialisation round-trip', $node->getTitle());
-    $this->assertSame('<p>Body text</p>', $node->get('body')->value);
+    $this->assertSame('<p>Body text</p>', $node->get('field_body')->value);
     $this->assertSame('Teaser', $node->get('field_teaser')->value);
     $this->assertSame('press_release', $node->get('field_news_type')->value);
     $this->assertSame('2026-04-20', $node->get('field_publication_date')->value);

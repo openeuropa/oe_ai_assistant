@@ -1,0 +1,99 @@
+--- a/src/MistralChatMessageIterator.php
++++ b/src/MistralChatMessageIterator.php
+@@ -3,6 +3,7 @@
+ namespace Drupal\ai_provider_mistral;
+ 
+ use Drupal\ai\OperationType\Chat\StreamedChatMessageIterator;
++use Drupal\ai\OperationType\Chat\Tools\ToolsFunctionOutput;
+ use Partitech\PhpMistral\Clients\Response;
+ 
+ /**
+@@ -19,6 +20,12 @@
+  * of the iteration, the underlying iterator is already positioned at the
+  * next unread chunk, preventing duplication on the second pass.
+  *
++ * Tool calls are collected during iteration and returned as proper
++ * ToolsFunctionOutput objects via getTools(), bypassing the base class
++ * assembleToolCalls() which expects the OpenAI incremental delta format.
++ * Mistral delivers complete tool calls at once, so no incremental
++ * assembly is needed.
++ *
+  * @see https://www.drupal.org/project/ai_provider_mistral/issues/3572398
+  */
+ class MistralChatMessageIterator extends StreamedChatMessageIterator {
+@@ -26,6 +33,13 @@
+   use MistralResponseTrait;
+ 
+   /**
++   * Tool calls collected during streaming.
++   *
++   * @var array
++   */
++  protected array $collectedToolCalls = [];
++
++  /**
+    * {@inheritdoc}
+    */
+   public function doIterate(): \Generator {
+@@ -45,12 +59,26 @@
+       $message = $response->getLastMessage();
+       $metadata = $response->getUsage() ?: [];
+ 
++      // Collect tool calls for getTools() but do not pass them to
++      // createStreamedChatMessage(). The base assembleToolCalls() expects
++      // OpenAI-style incremental deltas with toArray(); Mistral sends
++      // complete tool calls that we handle in getTools() instead.
++      // The SDK accumulates state on a single shared Response object, so
++      // every chunk yielded after a tool call arrives exposes the same
++      // collection again: key by tool id to keep collection idempotent.
+       $toolCalls = $response->getToolCalls();
++      if ($toolCalls && !$toolCalls->isEmpty()) {
++        foreach ($toolCalls->toArray() as $index => $tc) {
++          $key = !empty($tc['id']) ? (string) $tc['id'] : 'index_' . $index;
++          $this->collectedToolCalls[$key] = $tc;
++        }
++      }
++
+       $streamedMessage = $this->createStreamedChatMessage(
+         $message->getRole() ?? 'assistant',
+         $response->getChunk() ?? '',
+         $metadata,
+-        $toolCalls && !$toolCalls->isEmpty() ? $toolCalls->toArray() : NULL,
++        NULL,
+         $this->responseToArray($response),
+       );
+ 
+@@ -80,4 +107,33 @@
+     }
+   }
+ 
++  /**
++   * {@inheritdoc}
++   *
++   * Builds ToolsFunctionOutput objects from the collected tool calls
++   * instead of relying on assembleToolCalls().
++   */
++  public function getTools(): array {
++    if (empty($this->collectedToolCalls)) {
++      return [];
++    }
++
++    $tools = [];
++    foreach ($this->collectedToolCalls as $toolCall) {
++      $arguments = $toolCall['function']['arguments'] ?? [];
++      if (is_string($arguments)) {
++        $arguments = json_decode($arguments, TRUE) ?? [];
++      }
++      $output = new ToolsFunctionOutput(
++        NULL,
++        $toolCall['id'] ?? '',
++        $arguments,
++      );
++      $output->setName($toolCall['function']['name'] ?? '');
++      $tools[] = $output;
++    }
++
++    return $tools;
++  }
++
+ }

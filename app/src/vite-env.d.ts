@@ -1,11 +1,7 @@
 /// <reference types="vite/client" />
 
 /**
- * Augment Vite's ImportMetaEnv with our custom env variables.
- * Vite replaces these at build time, enabling tree-shaking of
- * conditional code branches.
+ * Build/dev-server flag injected by vite.config.ts from the server-side
+ * DEV_PLUGINS environment variable.
  */
-interface ImportMetaEnv {
-  /** Set to "true" to register dev-only test plugins (echo, notes). */
-  readonly VITE_DEV_PLUGINS: string;
-}
+declare const __DEV_PLUGINS__: boolean;
