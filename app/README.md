@@ -86,6 +86,13 @@ mount the app into any DOM element.
 npm run build
 ```
 
+To include dev-only plugins (`echo`, `notes`) in a local build that will be
+imported into Drupal, build with:
+
+```bash
+DEV_PLUGINS=true npm run build
+```
+
 This produces:
 
 - `dist/ai-editorial-assistant.iife.js` -- the application bundle
@@ -111,7 +118,7 @@ and a configuration object:
     apiBaseUrl: '/api',
     sessionId: '42',
     userId: 'editor-12',
-    enabledPlugins: ['echo', 'notes'],
+    enabledPlugins: ['drafting'],
   });
 </script>
 ```
@@ -124,7 +131,7 @@ and a configuration object:
 | `sessionId`      | `string`   | Required | Editorial session ID the app is mounted on.      |
 | `nodeId`         | `string`   | `null`   | CMS content node the editor is working on.       |
 | `userId`         | `string`   | Required | Authenticated user ID from the CMS session.      |
-| `enabledPlugins` | `string[]` | `[]`     | Plugin IDs to activate (empty = all registered). |
+| `enabledPlugins` | `string[]` | `[]`     | Plugin IDs to activate (empty = all non-dev plugins; dev-only plugins also require `DEV_PLUGINS=true` at build/dev-server startup). |
 
 `userId` and `sessionId` are required. Persisted state (localStorage) is
 scoped per editorial session only: sessions are collaborative, so every

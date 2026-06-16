@@ -1,10 +1,23 @@
-import { describe, expect, it } from "vitest";
-import { plugins } from "../registry";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { setConfig } from "@/config";
+import { getActivePlugins, registeredPlugins } from "../registry";
 
 describe("plugin registry", () => {
+  beforeEach(() => {
+    vi.stubGlobal("__DEV_PLUGINS__", false);
+    setConfig({
+      userId: "editor-7",
+      sessionId: "session-1",
+    });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
   it("registers plugins with unique ids and paths", () => {
-    const ids = plugins.map((plugin) => plugin.id);
-    const paths = plugins.map((plugin) => plugin.path);
+    const ids = registeredPlugins.map((plugin) => plugin.id);
+    const paths = registeredPlugins.map((plugin) => plugin.path);
 
     expect(new Set(ids).size).toBe(ids.length);
     expect(new Set(paths).size).toBe(paths.length);
@@ -12,7 +25,7 @@ describe("plugin registry", () => {
 
   it("keeps every registered path rooted at its plugin id", () => {
     expect(
-      plugins.map((plugin) => ({ id: plugin.id, path: plugin.path })),
+      registeredPlugins.map((plugin) => ({ id: plugin.id, path: plugin.path })),
     ).toEqual([
       { id: "drafting", path: "/drafting" },
       { id: "echo", path: "/echo" },
@@ -21,7 +34,7 @@ describe("plugin registry", () => {
   });
 
   it("declares required metadata and store slices for shell initialization", () => {
-    for (const plugin of plugins) {
+    for (const plugin of registeredPlugins) {
       expect(plugin.name).not.toEqual("");
       expect(plugin.description).not.toEqual("");
       expect(plugin.requiredEndpoints.length).toBeGreaterThan(0);
@@ -31,7 +44,33 @@ describe("plugin registry", () => {
   });
 
   it("uses drafting as the first plugin for the default route", () => {
-    expect(plugins[0]?.id).toBe("drafting");
-    expect(plugins[0]?.path).toBe("/drafting");
+    expect(registeredPlugins[0]?.id).toBe("drafting");
+    expect(registeredPlugins[0]?.path).toBe("/drafting");
+  });
+
+  it("exposes only non-dev plugins by default", () => {
+    expect(getActivePlugins().map((plugin) => plugin.id)).toEqual(["drafting"]);
+  });
+
+  it("keeps dev-only plugins hidden from the host allowlist unless the dev flag is enabled", () => {
+    setConfig({
+      userId: "editor-7",
+      sessionId: "session-1",
+      enabledPlugins: ["drafting", "echo", "missing"],
+    });
+
+    expect(getActivePlugins().map((plugin) => plugin.id)).toEqual(["drafting"]);
+  });
+
+  it("exposes dev-only plugins when explicitly enabled in dev", () => {
+    vi.stubGlobal("__DEV_PLUGINS__", true);
+
+    setConfig({
+      userId: "editor-7",
+      sessionId: "session-1",
+      enabledPlugins: ["echo"],
+    });
+
+    expect(getActivePlugins().map((plugin) => plugin.id)).toEqual(["echo"]);
   });
 });
