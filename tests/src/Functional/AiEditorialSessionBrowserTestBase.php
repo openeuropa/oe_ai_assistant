@@ -7,6 +7,7 @@ namespace Drupal\Tests\oe_ai_assistant\Functional;
 use Drupal\node\Entity\Node;
 use Drupal\node\Entity\NodeType;
 use Drupal\node\NodeInterface;
+use Drupal\taxonomy\Entity\Term;
 use Drupal\Tests\BrowserTestBase;
 use Drupal\user\UserInterface;
 use Drupal\oe_ai_assistant\Entity\AiEditorialSession;
@@ -41,6 +42,7 @@ abstract class AiEditorialSessionBrowserTestBase extends BrowserTestBase {
 
     $this->createNodeType('oe_contact', 'Contact');
     $this->createNodeType('oe_news', 'News');
+    $this->createEditorialContextTerms();
   }
 
   /**
@@ -50,6 +52,31 @@ abstract class AiEditorialSessionBrowserTestBase extends BrowserTestBase {
     NodeType::create([
       'type' => $type,
       'name' => $label,
+    ])->save();
+  }
+
+  /**
+   * Creates editorial taxonomy terms used by page bootstrap assertions.
+   */
+  protected function createEditorialContextTerms(): void {
+    Term::create([
+      'vid' => 'oe_ai_target_audience',
+      'name' => 'Business and industry',
+      'description' => [
+        'value' => 'Content focused on professional stakeholders, emphasizing practical impact, compliance, and business relevance.',
+        'format' => 'plain_text',
+      ],
+      'field_oe_ai_prompt' => 'Use professional language. Emphasize practical implications, compliance requirements, and economic impact. Be specific about timelines and actions.',
+    ])->save();
+
+    Term::create([
+      'vid' => 'oe_ai_tone',
+      'name' => 'Formal',
+      'description' => [
+        'value' => 'A professional and neutral tone suitable for official or institutional communication.',
+        'format' => 'plain_text',
+      ],
+      'field_oe_ai_prompt' => 'Use professional, institutional language. Maintain a neutral, authoritative voice. Avoid contractions and colloquialisms.',
     ])->save();
   }
 
