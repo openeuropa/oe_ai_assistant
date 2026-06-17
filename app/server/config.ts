@@ -18,8 +18,7 @@ export const FIELD_WORD_DELAY_MS = 20;
 export const FIELD_GAP_DELAY_MS = 80;
 
 /** Mistral model ID. */
-export const GPT_AT_EC_MODEL =
-  process.env.GPT_AT_EC_MODEL ?? "gpt-5.1";
+export const GPT_AT_EC_MODEL = process.env.GPT_AT_EC_MODEL ?? "gpt-5.1";
 
 /** Mistral API key (shared with DDEV env). */
 export const MISTRAL_API_KEY = process.env.MISTRAL_API_KEY ?? "";

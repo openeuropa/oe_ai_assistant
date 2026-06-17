@@ -39,18 +39,13 @@ function oe_ai_assistant_test_install(): void {
       'chat_with_tools' => [
         'provider_id' => 'gpt_at_ec',
         'model_id' => 'gpt-5.1',
-      ]
+      ],
     ])
     ->save();
 
   // Point the gpt_at_ec provider to the Key entity for the API key.
   $configFactory->getEditable('oe_ai_provider_gpt_at_ec.settings')
     ->set('api_key', 'gpt_at_ec_key')
-    ->save();
-
-  // Point the Mistral provider to the Key entity for the API key.
-  $configFactory->getEditable('ai_provider_mistral.settings')
-    ->set('api_key', 'mistral_api_key')
     ->save();
 
   // Point the OpenAI provider to the Key entity for the API key.

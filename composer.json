@@ -27,7 +27,6 @@
         "justinrainbow/json-schema": "^5.0 || ^6.0"
     },
     "require-dev": {
-        "drupal/ai_provider_mistral": "^1.1@RC",
         "openeuropa/oe_ai_provider_gpt_at_ec": "^1.0.0-alpha",
         "composer/installers": "^2.0",
         "drupal/ai_provider_openai": "^1.2",
@@ -54,11 +53,6 @@
     "extra": {
         "composer-exit-on-patch-failure": true,
         "enable-patching": true,
-        "patches": {
-            "drupal/ai_provider_mistral": {
-                "Return proper ToolsFunctionOutput objects from streaming tool calls": "patches/ai-provider-mistral-streaming-tool-calls.patch"
-            }
-        },
         "installer-paths": {
             "web/core": ["type:drupal-core"],
             "web/profiles/contrib/{$name}": ["type:drupal-profile"],
