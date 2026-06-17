@@ -89,7 +89,7 @@ final class AiDraftingTemplateForm extends EntityForm {
       '#rows' => 20,
       '#default_value' => $this->arrayToYaml($template->getFields()),
       '#description' => $this->t(
-        'YAML map of field definitions. Scalar fields require a <code>prompt</code> key. Paragraph/entity-reference fields require <code>type</code> and <code>items</code>.'
+        'YAML map of field definitions. Scalar fields require a <code>prompt</code> key. Entity reference fields require <code>type</code> and <code>items</code>.'
       ),
     ];
 

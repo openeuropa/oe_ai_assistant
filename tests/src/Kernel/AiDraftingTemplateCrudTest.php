@@ -231,14 +231,15 @@ class AiDraftingTemplateCrudTest extends KernelTestBase {
   }
 
   /**
-   * Tests that a template referencing a non-existent paragraph is invalid.
+   * Tests an unknown bundle on an entity_reference_revisions item.
    */
-  public function testNonExistentParagraphTypeIsInvalid(): void {
+  public function testEntityReferenceRevisionsItemNonExistentBundleIsInvalid(): void {
     $template = $this->buildTemplate('oe_news', [
       'field_content_paragraphs' => [
-        'type' => 'paragraphs',
+        'type' => 'entity_reference_revisions',
         'items' => [[
-          'paragraph_type' => 'no_such_type',
+          'entity_type' => 'paragraph',
+          'bundle' => 'no_such_type',
           'prompt' => 'Nope.',
         ],
         ],
@@ -248,20 +249,21 @@ class AiDraftingTemplateCrudTest extends KernelTestBase {
 
     $this->assertFalse($result->isValid());
     $this->assertErrorMatches(
-      "/Paragraph type 'no_such_type' does not exist/",
+      "/bundle 'no_such_type' does not exist on entity type 'paragraph'/",
       $result->getErrors()
     );
   }
 
   /**
-   * Tests that a non-existent sub-field on a paragraph type produces an error.
+   * Tests a missing sub-field on an entity_reference_revisions bundle.
    */
-  public function testNonExistentSubFieldOnParagraphTypeIsInvalid(): void {
+  public function testNonExistentSubFieldOnEntityReferenceRevisionsBundleIsInvalid(): void {
     $template = $this->buildTemplate('oe_news', [
       'field_content_paragraphs' => [
-        'type' => 'paragraphs',
+        'type' => 'entity_reference_revisions',
         'items' => [[
-          'paragraph_type' => 'text_block',
+          'entity_type' => 'paragraph',
+          'bundle' => 'text_block',
           'prompt' => 'Text.',
           'fields' => [
             'field_nonexistent_sub' => ['prompt' => 'Nope.'],
@@ -275,6 +277,100 @@ class AiDraftingTemplateCrudTest extends KernelTestBase {
     $this->assertFalse($result->isValid());
     $this->assertErrorMatches(
       "/Field 'field_nonexistent_sub' does not exist on paragraph 'text_block'/",
+      $result->getErrors()
+    );
+  }
+
+  /**
+   * Tests the wrong entity_type on an entity_reference_revisions item.
+   */
+  public function testEntityReferenceRevisionsItemWrongEntityTypeIsInvalid(): void {
+    $template = $this->buildTemplate('oe_news', [
+      'field_content_paragraphs' => [
+        'type' => 'entity_reference_revisions',
+        'items' => [[
+          'entity_type' => 'node',
+          'bundle' => 'oe_news',
+          'prompt' => 'Nope.',
+        ],
+        ],
+      ],
+    ]);
+    $result = $template->validate();
+
+    $this->assertFalse($result->isValid());
+    $this->assertErrorMatches(
+      "/entity_type 'node' does not match field target type 'paragraph'/",
+      $result->getErrors()
+    );
+  }
+
+  /**
+   * Tests that reference items must declare their target entity type.
+   */
+  public function testEntityReferenceItemMissingEntityTypeIsInvalid(): void {
+    $template = $this->buildTemplate('oe_news', [
+      'field_contacts' => [
+        'type' => 'entity_reference',
+        'items' => [[
+          'bundle' => 'oe_contact',
+          'prompt' => 'Contact.',
+        ],
+        ],
+      ],
+    ]);
+    $result = $template->validate();
+
+    $this->assertFalse($result->isValid());
+    $this->assertErrorMatches(
+      "/Item field_contacts.items\\[0\\]: missing entity_type/",
+      $result->getErrors()
+    );
+  }
+
+  /**
+   * Tests that reference items must declare their target bundle.
+   */
+  public function testEntityReferenceItemMissingBundleIsInvalid(): void {
+    $template = $this->buildTemplate('oe_news', [
+      'field_contacts' => [
+        'type' => 'entity_reference',
+        'items' => [[
+          'entity_type' => 'node',
+          'prompt' => 'Contact.',
+        ],
+        ],
+      ],
+    ]);
+    $result = $template->validate();
+
+    $this->assertFalse($result->isValid());
+    $this->assertErrorMatches(
+      "/Item field_contacts.items\\[0\\]: missing bundle/",
+      $result->getErrors()
+    );
+  }
+
+  /**
+   * Tests that the template reference type must match the Drupal field type.
+   */
+  public function testReferenceFieldTypeMismatchIsInvalid(): void {
+    $template = $this->buildTemplate('oe_news', [
+      'field_content_paragraphs' => [
+        'type' => 'entity_reference',
+        'items' => [[
+          'entity_type' => 'paragraph',
+          'bundle' => 'text_block',
+          'prompt' => 'Paragraph.',
+        ],
+        ],
+      ],
+    ]);
+    $result = $template->validate();
+
+    $this->assertFalse($result->isValid());
+    $this->assertErrorMatches(
+      "/Field 'field_content_paragraphs' is a 'entity_reference_revisions' field, not 'entity_reference'/",
       $result->getErrors()
     );
   }

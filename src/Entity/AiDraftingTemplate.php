@@ -224,66 +224,13 @@ final class AiDraftingTemplate extends ConfigEntityBase implements AiDraftingTem
         continue;
       }
 
-      if ($fieldDef['type'] === 'paragraphs') {
-        $this->validateParagraphsField($definition, $fieldDef, $path, $result, $fieldManager, $bundleInfo);
-      }
-      elseif ($fieldDef['type'] === 'entity_reference') {
-        $this->validateEntityReferenceField($definition, $fieldDef, $path, $result, $fieldManager, $bundleInfo);
-      }
-    }
-  }
-
-  /**
-   * Validates a paragraphs field and its item definitions.
-   *
-   * @param \Drupal\Core\Field\FieldDefinitionInterface $definition
-   *   The field definition.
-   * @param array<string, mixed> $fieldDef
-   *   The template field definition.
-   * @param string $path
-   *   The field path for validation errors.
-   * @param \Drupal\oe_ai_assistant\TemplateValidationResult $result
-   *   The validation result to add errors to.
-   * @param object $fieldManager
-   *   The entity field manager service.
-   * @param object $bundleInfo
-   *   The entity type bundle info service.
-   */
-  private function validateParagraphsField(
-    FieldDefinitionInterface $definition,
-    array $fieldDef,
-    string $path,
-    TemplateValidationResult $result,
-    object $fieldManager,
-    object $bundleInfo,
-  ): void {
-    $storageType = $definition->getFieldStorageDefinition()->getType();
-    $targetType = $definition->getFieldStorageDefinition()->getSetting('target_type');
-
-    if ($storageType !== 'entity_reference_revisions' || $targetType !== 'paragraph') {
-      $result->addError("Field '$path' is not a paragraph reference field (entity_reference_revisions targeting paragraph).");
-      return;
-    }
-
-    $allowedBundles = $this->getAllowedBundles($definition);
-
-    foreach ($fieldDef['items'] ?? [] as $i => $item) {
-      $paragraphType = $item['paragraph_type'] ?? '';
-      $itemPath = "$path.items[$i]";
-
-      if (!isset($bundleInfo->getBundleInfo('paragraph')[$paragraphType])) {
-        $result->addError("Paragraph type '$paragraphType' does not exist (referenced at $itemPath).");
-        continue;
-      }
-
-      if ($allowedBundles !== NULL && !in_array($paragraphType, $allowedBundles, TRUE)) {
-        $allowed = implode(', ', $allowedBundles);
-        $result->addError("Paragraph type '$paragraphType' is not allowed in field '$path' (allowed: $allowed).");
-        continue;
-      }
-
-      if (!empty($item['fields'])) {
-        $this->validateFieldsAgainstEntityType('paragraph', $paragraphType, $item['fields'], "$itemPath > fields", $result, $fieldManager, $bundleInfo);
+      $fieldType = $fieldDef['type'];
+      // Reference fields can validate nested item definitions.
+      if (
+        $fieldType === 'entity_reference' ||
+        $fieldType === 'entity_reference_revisions'
+      ) {
+        $this->validateReferenceField($definition, $fieldDef, $path, $result, $fieldManager, $bundleInfo);
       }
     }
   }
@@ -304,7 +251,7 @@ final class AiDraftingTemplate extends ConfigEntityBase implements AiDraftingTem
    * @param object $bundleInfo
    *   The entity type bundle info service.
    */
-  private function validateEntityReferenceField(
+  private function validateReferenceField(
     FieldDefinitionInterface $definition,
     array $fieldDef,
     string $path,
@@ -313,36 +260,55 @@ final class AiDraftingTemplate extends ConfigEntityBase implements AiDraftingTem
     object $bundleInfo,
   ): void {
     $storageType = $definition->getFieldStorageDefinition()->getType();
+    $expectedStorageType = $fieldDef['type'];
     $targetType = $definition->getFieldStorageDefinition()->getSetting('target_type');
 
-    if ($storageType !== 'entity_reference') {
-      $result->addError("Field '$path' is not an entity_reference field.");
+    // The template type must match the Drupal field storage type.
+    if ($storageType !== $expectedStorageType) {
+      $result->addError("Field '$path' is a '$storageType' field, not '$expectedStorageType'.");
       return;
     }
 
+    // Respect target bundle restrictions from the field instance.
     $allowedBundles = $this->getAllowedBundles($definition);
 
     foreach ($fieldDef['items'] ?? [] as $i => $item) {
+      $itemPath = "$path.items[$i]";
       $itemEntityType = $item['entity_type'] ?? '';
       $itemBundle = $item['bundle'] ?? '';
-      $itemPath = "$path.items[$i]";
 
+      // Each item must declare the entity type it describes.
+      if ($itemEntityType === '') {
+        $result->addError("Item $itemPath: missing entity_type.");
+        continue;
+      }
+
+      // Items must target the same entity type as the field.
       if ($itemEntityType !== $targetType) {
         $result->addError("Item $itemPath: entity_type '$itemEntityType' does not match field target type '$targetType'.");
         continue;
       }
 
+      // Each item must declare the bundle it references.
+      if ($itemBundle === '') {
+        $result->addError("Item $itemPath: missing bundle.");
+        continue;
+      }
+
+      // The referenced bundle must exist.
       if (!isset($bundleInfo->getBundleInfo($itemEntityType)[$itemBundle])) {
         $result->addError("Item $itemPath: bundle '$itemBundle' does not exist on entity type '$itemEntityType'.");
         continue;
       }
 
+      // The field may restrict which bundles are allowed.
       if ($allowedBundles !== NULL && !in_array($itemBundle, $allowedBundles, TRUE)) {
         $allowed = implode(', ', $allowedBundles);
         $result->addError("Item $itemPath: bundle '$itemBundle' is not allowed in field '$path' (allowed: $allowed).");
         continue;
       }
 
+      // Nested fields are validated against the referenced bundle.
       if (!empty($item['fields'])) {
         $this->validateFieldsAgainstEntityType($itemEntityType, $itemBundle, $item['fields'], "$itemPath > fields", $result, $fieldManager, $bundleInfo);
       }
