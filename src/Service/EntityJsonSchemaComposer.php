@@ -458,23 +458,11 @@ class EntityJsonSchemaComposer {
       $targetBundles = array_values($targetBundles);
     }
 
-    // entity_reference_revisions: recurse into each target bundle, emit oneOf
-    // so the LLM picks one bundle per inline item.
-    if ($fieldDef->getType() === 'entity_reference_revisions') {
-      // The bundle key is typically 'type' for paragraphs but we look it up
-      // so this works for any inline-entity reference (e.g. revisionable
-      // custom blocks). composeBundle() strips the bundle key via
-      // SKIP_KEY_ROLES, so we re-inject it here as the discriminator the
-      // denormalizer routes on.
-      $targetEntityType = $this->entityTypeManager->getDefinition($targetType);
-      $bundleKey = $targetEntityType->getKey('bundle');
-      if (!$bundleKey) {
-        throw new \InvalidArgumentException(sprintf(
-          'Reference target "%s" has no bundle key; entity_reference_revisions only targets bundled entity types.',
-          $targetType,
-        ));
-      }
-
+    // entity_reference_revisions emits a oneOf over the target bundles, keyed
+    // by the bundle discriminator. A bundleless target has no discriminator, so
+    // it falls through to a plain target_id reference below.
+    $bundleKey = $this->entityTypeManager->getDefinition($targetType)->getKey('bundle');
+    if ($fieldDef->getType() === 'entity_reference_revisions' && $bundleKey) {
       $variants = [];
       foreach ($targetBundles as $bundle) {
         $bundleSchema = $this->composeBundle($targetType, $bundle, $depth);
