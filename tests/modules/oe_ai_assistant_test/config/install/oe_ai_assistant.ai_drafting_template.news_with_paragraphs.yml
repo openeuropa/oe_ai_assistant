@@ -1,0 +1,43 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - workflows.workflow.editorial
+    - node.type.oe_news
+  module:
+    - oe_ai_assistant
+id: news_with_paragraphs
+label: 'News article with paragraphs'
+description: 'News article using rich-text and quote paragraph types.'
+content_type: oe_news
+fields:
+  title:
+    prompt: 'News headline, max 80 characters.'
+  field_teaser:
+    prompt: 'One-sentence teaser for the article.'
+  field_content_paragraphs:
+    type: entity_reference_revisions
+    items:
+      - entity_type: paragraph
+        bundle: text_block
+        prompt: 'Introductory text, 1-2 paragraphs.'
+        fields:
+          field_text_body:
+            prompt: 'Introduction body text.'
+      - entity_type: paragraph
+        bundle: quote_block
+        prompt: 'A relevant quote from a key stakeholder.'
+        fields:
+          field_quote_text:
+            prompt: 'The quote text.'
+          field_quote_attribution:
+            prompt: 'Full name and title of the person being quoted.'
+      - entity_type: paragraph
+        bundle: text_block
+        prompt: 'Concluding paragraph summarising key takeaways.'
+        fields:
+          field_text_body:
+            prompt: 'Conclusion body text.'
+defaults:
+  langcode: en
+  moderation_state: draft

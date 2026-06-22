@@ -9,3 +9,5 @@ administer ai editorial sessions:
 view_update own sessions:
   title: 'View update own session'
   description: 'Access overview page of AI editorial sessions and view/update your own session.'
+administer ai_drafting_template:
+  title: 'Administer ai drafting template'
