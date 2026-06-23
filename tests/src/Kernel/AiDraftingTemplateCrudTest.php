@@ -90,7 +90,12 @@ class AiDraftingTemplateCrudTest extends KernelTestBase {
       'status' => TRUE,
       'content_type' => 'oe_news',
       'fields' => ['title' => ['prompt' => 'Write a headline.']],
-      'defaults' => ['langcode' => 'en'],
+      'defaults' => [
+        'langcode' => [
+          'type' => 'language',
+          'default_value' => [['value' => 'en']],
+        ],
+      ],
     ]);
     $template->save();
 
@@ -100,7 +105,12 @@ class AiDraftingTemplateCrudTest extends KernelTestBase {
     $this->assertEquals('oe_news', $loaded->getContentType());
     $this->assertEquals('CRUD test template', $loaded->getDescription());
     $this->assertEquals(['title' => ['prompt' => 'Write a headline.']], $loaded->getFields());
-    $this->assertEquals(['langcode' => 'en'], $loaded->getDefaults());
+    $this->assertEquals([
+      'langcode' => [
+        'type' => 'language',
+        'default_value' => [['value' => 'en']],
+      ],
+    ], $loaded->getDefaults());
   }
 
   /**
@@ -428,7 +438,10 @@ class AiDraftingTemplateCrudTest extends KernelTestBase {
    */
   public function testNonExistentDefaultFieldIsInvalid(): void {
     $template = $this->buildTemplate('oe_news', [], [
-      'field_ghost' => 'value',
+      'field_ghost' => [
+        'type' => 'string',
+        'default_value' => [['value' => 'value']],
+      ],
     ]);
     $result = $template->validate();
 
@@ -440,26 +453,131 @@ class AiDraftingTemplateCrudTest extends KernelTestBase {
   }
 
   /**
+   * Tests that default definitions must be mappings.
+   */
+  public function testDefaultDefinitionMustBeMapping(): void {
+    $template = $this->buildTemplate('oe_news', [], [
+      'langcode' => 'en',
+    ]);
+    $result = $template->validate();
+
+    $this->assertFalse($result->isValid());
+    $this->assertErrorMatches(
+      "/Default field 'langcode' must be a mapping with type and default_value keys/",
+      $result->getErrors()
+    );
+  }
+
+  /**
+   * Tests that default definitions must declare a field type.
+   */
+  public function testDefaultTypeIsRequired(): void {
+    $template = $this->buildTemplate('oe_news', [], [
+      'langcode' => [
+        'default_value' => [['value' => 'en']],
+      ],
+    ]);
+    $result = $template->validate();
+
+    $this->assertFalse($result->isValid());
+    $this->assertErrorMatches(
+      "/Default field 'langcode' is missing type/",
+      $result->getErrors()
+    );
+  }
+
+  /**
+   * Tests that default type must match the field storage type.
+   */
+  public function testDefaultTypeMismatchIsInvalid(): void {
+    $template = $this->buildTemplate('oe_news', [], [
+      'langcode' => [
+        'type' => 'string',
+        'default_value' => [['value' => 'en']],
+      ],
+    ]);
+    $result = $template->validate();
+
+    $this->assertFalse($result->isValid());
+    $this->assertErrorMatches(
+      "/Default field 'langcode' is a 'language' field, not 'string'/",
+      $result->getErrors()
+    );
+  }
+
+  /**
+   * Tests that default definitions must declare default values.
+   */
+  public function testDefaultValueIsRequired(): void {
+    $template = $this->buildTemplate('oe_news', [], [
+      'langcode' => [
+        'type' => 'language',
+      ],
+    ]);
+    $result = $template->validate();
+
+    $this->assertFalse($result->isValid());
+    $this->assertErrorMatches(
+      "/Default field 'langcode' is missing default_value/",
+      $result->getErrors()
+    );
+  }
+
+  /**
+   * Tests that default values must use Drupal's field item sequence shape.
+   */
+  public function testDefaultValueMustBeSequence(): void {
+    $template = $this->buildTemplate('oe_news', [], [
+      'langcode' => [
+        'type' => 'language',
+        'default_value' => 'en',
+      ],
+    ]);
+    $result = $template->validate();
+
+    $this->assertFalse($result->isValid());
+    $this->assertErrorMatches(
+      "/Default field 'langcode' default_value must be a sequence/",
+      $result->getErrors()
+    );
+  }
+
+  /**
    * Tests that __NOW__ in defaults is replaced with the current Unix timestamp.
    */
   public function testResolveDefaultsNowTokenIsReplaced(): void {
     $expectedTime = $this->container->get('datetime.time')->getRequestTime();
 
     $template = $this->buildTemplate('oe_news', [], [
-      'created' => '__NOW__',
-      'langcode' => 'en',
+      'created' => [
+        'type' => 'created',
+        'default_value' => [['value' => '__NOW__']],
+      ],
+      'langcode' => [
+        'type' => 'language',
+        'default_value' => [['value' => 'en']],
+      ],
     ]);
     $resolved = $template->resolveDefaults();
 
-    $this->assertSame($expectedTime, $resolved['created']);
-    $this->assertSame('en', $resolved['langcode']);
+    $this->assertSame($expectedTime, $resolved['created']['default_value'][0]['value']);
+    $this->assertSame('en', $resolved['langcode']['default_value'][0]['value']);
   }
 
   /**
    * Tests that defaults without tokens are returned unchanged.
    */
   public function testResolveDefaultsNoTokensIsPassthrough(): void {
-    $defaults = ['langcode' => 'en', 'moderation_state' => 'draft'];
+    $defaults = [
+      'langcode' => [
+        'type' => 'language',
+        'default_value' => [['value' => 'en']],
+      ],
+      'moderation_state' => [
+        'type' => 'string',
+        'default_value' => [['value' => 'draft']],
+      ],
+    ];
     $template = $this->buildTemplate('oe_news', [], $defaults);
     $this->assertSame($defaults, $template->resolveDefaults());
   }

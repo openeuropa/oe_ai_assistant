@@ -22,7 +22,8 @@ interface AiDraftingTemplateInterface extends ConfigEntityInterface {
   /**
    * Returns the defaults map with special tokens resolved.
    *
-   * Supported tokens: __NOW__ → current Unix timestamp.
+   * Supported tokens inside default value structures: __NOW__ → current Unix
+   * timestamp.
    *
    * @return array<string, mixed>
    *   The mapping with tokens resolved.

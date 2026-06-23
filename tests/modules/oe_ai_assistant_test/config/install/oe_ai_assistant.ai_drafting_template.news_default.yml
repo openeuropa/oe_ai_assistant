@@ -18,5 +18,11 @@ fields:
   field_body:
     prompt: 'Full article body, 3-5 paragraphs. Inverted pyramid structure.'
 defaults:
-  langcode: en
-  moderation_state: draft
+  langcode:
+    type: language
+    default_value:
+      - value: en
+  moderation_state:
+    type: string
+    default_value:
+      - value: draft

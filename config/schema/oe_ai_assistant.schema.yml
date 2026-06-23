@@ -36,8 +36,70 @@ oe_ai_assistant.ai_drafting_template.*:
       type: string
       label: 'Content type'
     fields:
-      type: ignore
+      type: sequence
       label: 'Field definitions'
+      sequence:
+        type: oe_ai_assistant.ai_drafting_template.field
+        label: 'Field definition'
     defaults:
-      type: ignore
+      type: sequence
       label: 'Default values'
+      sequence:
+        type: oe_ai_assistant.ai_drafting_template.default
+        label: 'Default value'
+
+oe_ai_assistant.ai_drafting_template.field:
+  type: mapping
+  label: 'Field definition'
+  mapping:
+    prompt:
+      requiredKey: false
+      type: text
+      label: 'Prompt'
+    type:
+      requiredKey: false
+      type: string
+      label: 'Field type'
+    items:
+      requiredKey: false
+      type: sequence
+      label: 'Reference items'
+      sequence:
+        type: oe_ai_assistant.ai_drafting_template.reference_item
+        label: 'Reference item'
+
+oe_ai_assistant.ai_drafting_template.reference_item:
+  type: mapping
+  label: 'Reference item'
+  mapping:
+    entity_type:
+      type: string
+      label: 'Entity type'
+    bundle:
+      type: string
+      label: 'Bundle'
+    prompt:
+      requiredKey: false
+      type: text
+      label: 'Prompt'
+    fields:
+      requiredKey: false
+      type: sequence
+      label: 'Nested field definitions'
+      sequence:
+        type: oe_ai_assistant.ai_drafting_template.field
+        label: 'Field definition'
+
+oe_ai_assistant.ai_drafting_template.default:
+  type: mapping
+  label: 'Default value'
+  mapping:
+    type:
+      type: string
+      label: 'Field type'
+    default_value:
+      type: sequence
+      label: 'Default values'
+      sequence:
+        type: field.value.[%parent.%parent.type]
+        label: 'Default value'

@@ -133,10 +133,7 @@ final class AiDraftingTemplate extends ConfigEntityBase implements AiDraftingTem
     /** @var \Drupal\Component\Datetime\TimeInterface $time */
     $time = \Drupal::service(TimeInterface::class);
     $now = $time->getRequestTime();
-    return array_map(
-      static fn($value) => $value === '__NOW__' ? $now : $value,
-      $this->defaults,
-    );
+    return $this->resolveDefaultTokens($this->defaults, $now);
   }
 
   /**
@@ -342,11 +339,57 @@ final class AiDraftingTemplate extends ConfigEntityBase implements AiDraftingTem
 
     $definitions = $fieldManager->getFieldDefinitions($entityType, $bundle);
 
-    foreach (array_keys($defaults) as $fieldName) {
+    foreach ($defaults as $fieldName => $default) {
       if (!isset($definitions[$fieldName])) {
         $result->addError("Default field '$fieldName' does not exist on content type '$bundle'.", 'defaults');
+        continue;
+      }
+
+      if (!is_array($default)) {
+        $result->addError("Default field '$fieldName' must be a mapping with type and default_value keys.", 'defaults');
+        continue;
+      }
+
+      $expectedType = $definitions[$fieldName]->getFieldStorageDefinition()->getType();
+      $configuredType = $default['type'] ?? NULL;
+      if (!is_string($configuredType) || $configuredType === '') {
+        $result->addError("Default field '$fieldName' is missing type.", 'defaults');
+      }
+      elseif ($configuredType !== $expectedType) {
+        $result->addError("Default field '$fieldName' is a '$expectedType' field, not '$configuredType'.", 'defaults');
+      }
+
+      if (!array_key_exists('default_value', $default)) {
+        $result->addError("Default field '$fieldName' is missing default_value.", 'defaults');
+      }
+      elseif (!is_array($default['default_value'])) {
+        $result->addError("Default field '$fieldName' default_value must be a sequence.", 'defaults');
       }
     }
+  }
+
+  /**
+   * Recursively replaces supported token strings in default values.
+   *
+   * @param mixed $value
+   *   The default value or nested value.
+   * @param int $now
+   *   The Unix timestamp to use for __NOW__.
+   *
+   * @return mixed
+   *   The value with tokens resolved.
+   */
+  private function resolveDefaultTokens(mixed $value, int $now): mixed {
+    if ($value === '__NOW__') {
+      return $now;
+    }
+    if (!is_array($value)) {
+      return $value;
+    }
+    return array_map(
+      fn(mixed $item): mixed => $this->resolveDefaultTokens($item, $now),
+      $value,
+    );
   }
 
   /**

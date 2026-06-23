@@ -39,5 +39,11 @@ fields:
           field_text_body:
             prompt: 'Conclusion body text.'
 defaults:
-  langcode: en
-  moderation_state: draft
+  langcode:
+    type: language
+    default_value:
+      - value: en
+  moderation_state:
+    type: string
+    default_value:
+      - value: draft

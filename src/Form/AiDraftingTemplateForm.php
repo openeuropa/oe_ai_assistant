@@ -99,7 +99,7 @@ final class AiDraftingTemplateForm extends EntityForm {
       '#rows' => 6,
       '#default_value' => $this->arrayToYaml($template->getDefaults()),
       '#description' => $this->t(
-        'YAML map of default field values applied by the orchestrator. Use <code>__NOW__</code> for the current date/time.'
+        'YAML map of default field values applied by the orchestrator. Each field default requires <code>type</code> and <code>default_value</code>. Use <code>__NOW__</code> for the current date/time.'
       ),
     ];
 

@@ -95,7 +95,7 @@ class AiDraftingTemplateFormTest extends ExistingSiteBase {
     $page->checkField('status');
     $page->selectFieldOption('content_type', 'oe_news');
     $page->fillField('fields_yaml', "title:\n  prompt: 'Write a headline.'");
-    $page->fillField('defaults_yaml', 'langcode: en');
+    $page->fillField('defaults_yaml', "langcode:\n  type: language\n  default_value:\n    - value: en");
     $page->pressButton('Save');
 
     $this->assertSession()->pageTextContains('Created AI drafting template Form create test.');
@@ -113,7 +113,12 @@ class AiDraftingTemplateFormTest extends ExistingSiteBase {
       'Parsed fields do not match the YAML entered in the form.'
     );
     $this->assertEquals(
-      ['langcode' => 'en'],
+      [
+        'langcode' => [
+          'type' => 'language',
+          'default_value' => [['value' => 'en']],
+        ],
+      ],
       $loaded->getDefaults(),
       'Parsed defaults do not match the YAML entered in the form.'
     );
@@ -129,7 +134,12 @@ class AiDraftingTemplateFormTest extends ExistingSiteBase {
       'status' => TRUE,
       'content_type' => 'oe_news',
       'fields' => ['title' => ['prompt' => 'Original prompt.']],
-      'defaults' => ['langcode' => 'en'],
+      'defaults' => [
+        'langcode' => [
+          'type' => 'language',
+          'default_value' => [['value' => 'en']],
+        ],
+      ],
     ]);
     $template->save();
     $this->markEntityForCleanup($template);
@@ -160,7 +170,12 @@ class AiDraftingTemplateFormTest extends ExistingSiteBase {
       'Updated fields were not persisted.'
     );
     $this->assertEquals(
-      ['langcode' => 'en'],
+      [
+        'langcode' => [
+          'type' => 'language',
+          'default_value' => [['value' => 'en']],
+        ],
+      ],
       $template->getDefaults(),
       'Defaults changed unexpectedly during edit.'
     );
@@ -253,7 +268,7 @@ class AiDraftingTemplateFormTest extends ExistingSiteBase {
     $page->fillField('id', 'test_form_create');
     $page->selectFieldOption('content_type', 'oe_news');
     $page->fillField('fields_yaml', "title:\n  prompt: 'Headline.'");
-    $page->fillField('defaults_yaml', 'field_does_not_exist: some_value');
+    $page->fillField('defaults_yaml', "field_does_not_exist:\n  type: string\n  default_value:\n    - value: some_value");
     $page->pressButton('Save');
 
     $this->assertSession()->elementExists('css', 'textarea[name="defaults_yaml"].error');
