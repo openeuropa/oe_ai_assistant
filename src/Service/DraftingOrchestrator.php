@@ -22,8 +22,8 @@ class DraftingOrchestrator implements DraftingOrchestratorInterface {
   /**
    * Constructs a DraftingOrchestrator.
    *
-   * @param \Drupal\oe_ai_assistant\Service\EntityJsonSchemaComposer $schemaComposer
-   *   The schema composer for splitting fields into groups.
+   * @param \Drupal\oe_ai_assistant\Service\DraftingSchemaProviderInterface $schemaProvider
+   *   The provider for the (optionally template-pruned) field groups.
    * @param \Drupal\ai_agents\PluginManager\AiAgentManager $aiAgentManager
    *   The agent plugin manager for sub-agent instances.
    * @param \Psr\Log\LoggerInterface $logger
@@ -32,7 +32,7 @@ class DraftingOrchestrator implements DraftingOrchestratorInterface {
    *   The message recorder, used to record sub-agent failures as error turns.
    */
   public function __construct(
-    private readonly EntityJsonSchemaComposer $schemaComposer,
+    private readonly DraftingSchemaProviderInterface $schemaProvider,
     #[Autowire(service: 'plugin.manager.ai_agents')]
     private readonly AiAgentManager $aiAgentManager,
     #[Autowire(service: 'logger.channel.oe_ai_assistant')]
@@ -50,9 +50,10 @@ class DraftingOrchestrator implements DraftingOrchestratorInterface {
     string $bundle,
     EntityInterface $host,
     ?AiConversationMessageInterface $parent = NULL,
+    string $templateId = '',
   ): array {
-    $groups = $this->schemaComposer->splitSchemaIntoGroups(
-      $entityTypeId, $bundle
+    $groups = $this->schemaProvider->groups(
+      $entityTypeId, $bundle, $templateId
     );
 
     if (empty($groups)) {

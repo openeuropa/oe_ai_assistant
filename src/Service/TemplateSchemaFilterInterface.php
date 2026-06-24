@@ -41,18 +41,4 @@ interface TemplateSchemaFilterInterface {
    */
   public function splitIntoGroups(array $schema, AiDraftingTemplateInterface $template): array;
 
-  /**
-   * Returns the field values to apply when saving.
-   *
-   * These are the template's own defaults; no values are derived for other
-   * fields.
-   *
-   * @param \Drupal\oe_ai_assistant\AiDraftingTemplateInterface $template
-   *   The drafting template.
-   *
-   * @return array
-   *   The default values, with tokens such as __NOW__ resolved.
-   */
-  public function defaults(AiDraftingTemplateInterface $template): array;
-
 }

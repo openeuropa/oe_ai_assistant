@@ -12,11 +12,6 @@ use PHPUnit\Framework\Attributes\Group;
 
 /**
  * Tests TemplateSchemaFilter pruning, grouping, and defaults.
- *
- * The oe_ai_assistant_test module provides the oe_news content type, the
- * paragraph types, and the news_default / news_with_paragraphs templates,
- * so real composed schemas can be filtered against real templates without a
- * running site.
  */
 #[Group('oe_ai_assistant')]
 class TemplateSchemaFilterTest extends KernelTestBase {
@@ -174,16 +169,6 @@ class TemplateSchemaFilterTest extends KernelTestBase {
       'field_content_paragraphs',
       $groups[1]['schemaSlice']['properties'],
     );
-  }
-
-  /**
-   * Defaults return the template's resolved default values.
-   */
-  public function testDefaultsReturnResolvedTemplateValues(): void {
-    $defaults = $this->filter()->defaults($this->template('news_default'));
-
-    $this->assertSame('en', $defaults['langcode']);
-    $this->assertSame('draft', $defaults['moderation_state']);
   }
 
   /**

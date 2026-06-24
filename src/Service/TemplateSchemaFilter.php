@@ -92,13 +92,6 @@ class TemplateSchemaFilter implements TemplateSchemaFilterInterface {
   }
 
   /**
-   * {@inheritdoc}
-   */
-  public function defaults(AiDraftingTemplateInterface $template): array {
-    return $template->resolveDefaults();
-  }
-
-  /**
    * Prunes an object schema's properties to a template fields map.
    *
    * @param array $schema
@@ -161,7 +154,7 @@ class TemplateSchemaFilter implements TemplateSchemaFilterInterface {
     }
 
     $bundleKey = $this->entityTypeManager->getDefinition($targetType)->getKey('bundle');
-    // Without a bundle key, variants cannot be matched; leave the field whole
+    // Without a bundle key, variants cannot be matched. Leave the field whole
     // rather than dropping every variant.
     if (!$bundleKey) {
       return $fieldSchema;

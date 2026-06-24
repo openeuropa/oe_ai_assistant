@@ -34,6 +34,9 @@ interface DraftingOrchestratorInterface {
    * @param \Drupal\oe_ai_assistant\Entity\AiConversationMessageInterface|null $parent
    *   The draft_content turn each sub-agent turn nests under, or NULL to run
    *   without recording the sub-agent transcript.
+   * @param string $templateId
+   *   An ai_drafting_template id to restrict generation to, or '' for the full
+   *   schema.
    *
    * @return array
    *   The consolidated fields map, or empty array if no fields
@@ -46,6 +49,7 @@ interface DraftingOrchestratorInterface {
     string $bundle,
     EntityInterface $host,
     ?AiConversationMessageInterface $parent = NULL,
+    string $templateId = '',
   ): array;
 
 }

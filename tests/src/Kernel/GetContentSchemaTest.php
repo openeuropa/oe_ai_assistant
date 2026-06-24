@@ -76,6 +76,58 @@ class GetContentSchemaTest extends KernelTestBase {
   }
 
   /**
+   * Executes the get_content_schema plugin with the given context values.
+   *
+   * @param array $context
+   *   Context values keyed by name (bundle, entity_type_id, template).
+   *
+   * @return array
+   *   The plugin's structured output.
+   */
+  private function runPlugin(array $context): array {
+    $plugin = $this->container->get('plugin.manager.ai.function_calls')
+      ->createInstance('oe_ai_assistant:get_content_schema');
+    foreach ($context as $name => $value) {
+      $plugin->setContextValue($name, $value);
+    }
+    $plugin->execute();
+    return $plugin->getStructuredOutput();
+  }
+
+  /**
+   * With a template context, the tool output is restricted to its fields.
+   */
+  public function testExecuteWithTemplateReturnsFilteredGroups(): void {
+    $groups = $this->runPlugin([
+      'entity_type_id' => 'node',
+      'bundle' => 'oe_news',
+      'template' => 'news_with_paragraphs',
+    ]);
+
+    $byId = array_column($groups, 'fieldNames', 'groupId');
+    // news_with_paragraphs lists only title, field_teaser, and the paragraphs.
+    $this->assertSame(['title', 'field_teaser'], $byId['main_fields']);
+    $this->assertArrayHasKey('field_content_paragraphs', $byId);
+    // A field outside the template is gone from the tool output.
+    $this->assertNotContains('field_body', $byId['main_fields']);
+    $this->assertNotContains('field_news_type', $byId['main_fields']);
+  }
+
+  /**
+   * Without a template context, the tool output is the full grouping.
+   */
+  public function testExecuteWithoutTemplateReturnsFullGroups(): void {
+    $groups = $this->runPlugin([
+      'entity_type_id' => 'node',
+      'bundle' => 'oe_news',
+    ]);
+
+    $mainFields = array_column($groups, 'fieldNames', 'groupId')['main_fields'];
+    $this->assertContains('field_body', $mainFields);
+    $this->assertContains('field_news_type', $mainFields);
+  }
+
+  /**
    * Tests that oe_news schema splits into expected groups.
    */
   public function testSplitsOeNewsIntoGroups(): void {

@@ -10,7 +10,7 @@ use Drupal\ai\Attribute\FunctionCall;
 use Drupal\ai\Base\FunctionCallBase;
 use Drupal\ai\Service\FunctionCalling\FunctionCallInterface;
 use Drupal\ai\Service\FunctionCalling\StructuredExecutableFunctionCallInterface;
-use Drupal\oe_ai_assistant\Service\EntityJsonSchemaComposer;
+use Drupal\oe_ai_assistant\Service\DraftingSchemaProviderInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 
 /**
@@ -38,16 +38,22 @@ use Symfony\Component\DependencyInjection\ContainerInterface;
       description: new TranslatableMarkup("The entity type ID (e.g. node)."),
       required: TRUE,
     ),
+    'template' => new ContextDefinition(
+      data_type: 'string',
+      label: new TranslatableMarkup("Template"),
+      description: new TranslatableMarkup("The drafting template id to restrict the schema to."),
+      required: FALSE,
+    ),
   ],
 )]
 class GetContentSchema extends FunctionCallBase implements StructuredExecutableFunctionCallInterface {
 
   /**
-   * The JSON Schema composer service.
+   * The drafting schema provider.
    *
-   * @var \Drupal\oe_ai_assistant\Service\EntityJsonSchemaComposer
+   * @var \Drupal\oe_ai_assistant\Service\DraftingSchemaProviderInterface
    */
-  protected EntityJsonSchemaComposer $composer;
+  protected DraftingSchemaProviderInterface $schemaProvider;
 
   /**
    * The structured output from execute().
@@ -68,7 +74,7 @@ class GetContentSchema extends FunctionCallBase implements StructuredExecutableF
     $instance = parent::create(
       $container, $configuration, $plugin_id, $plugin_definition
     );
-    $instance->composer = $container->get(EntityJsonSchemaComposer::class);
+    $instance->schemaProvider = $container->get(DraftingSchemaProviderInterface::class);
     return $instance;
   }
 
@@ -81,6 +87,7 @@ class GetContentSchema extends FunctionCallBase implements StructuredExecutableF
     $values = $this->getContextValues();
     $bundle = (string) ($values['bundle'] ?? '');
     $entityTypeId = (string) ($values['entity_type_id'] ?? 'node');
+    $templateId = (string) ($values['template'] ?? '');
 
     if (empty($bundle)) {
       $this->output = ['error' => 'Bundle is required.'];
@@ -88,9 +95,7 @@ class GetContentSchema extends FunctionCallBase implements StructuredExecutableF
     }
 
     try {
-      $this->output = $this->composer->splitSchemaIntoGroups(
-        $entityTypeId, $bundle
-      );
+      $this->output = $this->schemaProvider->groups($entityTypeId, $bundle, $templateId);
     }
     catch (\Exception $e) {
       $this->output = ['error' => $e->getMessage()];

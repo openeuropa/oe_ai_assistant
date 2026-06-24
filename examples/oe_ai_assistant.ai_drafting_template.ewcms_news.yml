@@ -1,0 +1,22 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - node.type.oe_news
+id: ewcms_news
+label: 'News article (AI)'
+description: 'Drafts an EWCMS news article: title, teaser, summary, and body.'
+content_type: oe_news
+fields:
+  title:
+    prompt: 'News headline. Factual and concise, ideally under 80 characters.'
+  oe_teaser:
+    prompt: 'One or two sentence teaser for listings. Lead with the key fact.'
+  oe_summary:
+    prompt: 'Short standfirst, 2-3 sentences, expanding on the teaser.'
+  body:
+    prompt: 'Full article body, 3-5 paragraphs, inverted-pyramid structure. Clean HTML.'
+defaults:
+  langcode: en
+  moderation_state: draft
+  oe_publication_date: __NOW__
