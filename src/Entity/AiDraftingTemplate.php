@@ -147,17 +147,13 @@ final class AiDraftingTemplate extends ConfigEntityBase implements AiDraftingTem
       return $result;
     }
 
-    $bundleInfo = \Drupal::service('entity_type.bundle.info');
-    $fieldManager = \Drupal::service('entity_field.manager');
-
-    $bundles = $bundleInfo->getBundleInfo('node');
-    if (!isset($bundles[$contentType])) {
+    if (!$this->bundleExists('node', $contentType)) {
       $result->addError("Content type '$contentType' does not exist.", 'content_type');
       return $result;
     }
 
-    $this->validateFieldsAgainstEntityType('node', $contentType, $this->fields, '', $result, $fieldManager, $bundleInfo);
-    $this->validateDefaultsAgainstEntityType('node', $contentType, $this->defaults, $result, $fieldManager);
+    $this->validateFieldsAgainstEntityType('node', $contentType, $this->fields, '', $result);
+    $this->validateDefaultsAgainstEntityType('node', $contentType, $this->defaults, $result);
 
     return $result;
   }
@@ -188,10 +184,6 @@ final class AiDraftingTemplate extends ConfigEntityBase implements AiDraftingTem
    *   The path prefix for nested validation errors.
    * @param \Drupal\oe_ai_assistant\TemplateValidationResult $result
    *   The validation result to add errors to.
-   * @param object $fieldManager
-   *   The entity field manager service.
-   * @param object $bundleInfo
-   *   The entity type bundle info service.
    */
   private function validateFieldsAgainstEntityType(
     string $entityType,
@@ -199,10 +191,8 @@ final class AiDraftingTemplate extends ConfigEntityBase implements AiDraftingTem
     array $fields,
     string $pathPrefix,
     TemplateValidationResult $result,
-    object $fieldManager,
-    object $bundleInfo,
   ): void {
-    $definitions = $fieldManager->getFieldDefinitions($entityType, $bundle);
+    $definitions = $this->getFieldDefinitions($entityType, $bundle);
 
     foreach ($fields as $fieldName => $fieldDef) {
       $path = $pathPrefix !== '' ? "$pathPrefix > $fieldName" : $fieldName;
@@ -227,7 +217,7 @@ final class AiDraftingTemplate extends ConfigEntityBase implements AiDraftingTem
         $fieldType === 'entity_reference' ||
         $fieldType === 'entity_reference_revisions'
       ) {
-        $this->validateReferenceField($definition, $fieldDef, $path, $result, $fieldManager, $bundleInfo);
+        $this->validateReferenceField($definition, $fieldDef, $path, $result);
       }
     }
   }
@@ -243,18 +233,12 @@ final class AiDraftingTemplate extends ConfigEntityBase implements AiDraftingTem
    *   The field path for validation errors.
    * @param \Drupal\oe_ai_assistant\TemplateValidationResult $result
    *   The validation result to add errors to.
-   * @param object $fieldManager
-   *   The entity field manager service.
-   * @param object $bundleInfo
-   *   The entity type bundle info service.
    */
   private function validateReferenceField(
     FieldDefinitionInterface $definition,
     array $fieldDef,
     string $path,
     TemplateValidationResult $result,
-    object $fieldManager,
-    object $bundleInfo,
   ): void {
     $storageType = $definition->getFieldStorageDefinition()->getType();
     $expectedStorageType = $fieldDef['type'];
@@ -293,7 +277,7 @@ final class AiDraftingTemplate extends ConfigEntityBase implements AiDraftingTem
       }
 
       // The referenced bundle must exist.
-      if (!isset($bundleInfo->getBundleInfo($itemEntityType)[$itemBundle])) {
+      if (!$this->bundleExists($itemEntityType, $itemBundle)) {
         $result->addError("Item $itemPath: bundle '$itemBundle' does not exist on entity type '$itemEntityType'.");
         continue;
       }
@@ -307,9 +291,38 @@ final class AiDraftingTemplate extends ConfigEntityBase implements AiDraftingTem
 
       // Nested fields are validated against the referenced bundle.
       if (!empty($item['fields'])) {
-        $this->validateFieldsAgainstEntityType($itemEntityType, $itemBundle, $item['fields'], "$itemPath > fields", $result, $fieldManager, $bundleInfo);
+        $this->validateFieldsAgainstEntityType($itemEntityType, $itemBundle, $item['fields'], "$itemPath > fields", $result);
       }
     }
+  }
+
+  /**
+   * Returns whether an entity bundle exists.
+   *
+   * @param string $entityType
+   *   The entity type ID.
+   * @param string $bundle
+   *   The bundle ID.
+   */
+  private function bundleExists(string $entityType, string $bundle): bool {
+    $bundleInfo = \Drupal::service('entity_type.bundle.info');
+    return isset($bundleInfo->getBundleInfo($entityType)[$bundle]);
+  }
+
+  /**
+   * Returns field definitions for an entity type and bundle.
+   *
+   * @param string $entityType
+   *   The entity type ID.
+   * @param string $bundle
+   *   The bundle ID.
+   *
+   * @return array<string, \Drupal\Core\Field\FieldDefinitionInterface>
+   *   The field definitions.
+   */
+  private function getFieldDefinitions(string $entityType, string $bundle): array {
+    $fieldManager = \Drupal::service('entity_field.manager');
+    return $fieldManager->getFieldDefinitions($entityType, $bundle);
   }
 
   /**
@@ -323,21 +336,18 @@ final class AiDraftingTemplate extends ConfigEntityBase implements AiDraftingTem
    *   The default values to validate.
    * @param \Drupal\oe_ai_assistant\TemplateValidationResult $result
    *   The validation result to add errors to.
-   * @param object $fieldManager
-   *   The entity field manager service.
    */
   private function validateDefaultsAgainstEntityType(
     string $entityType,
     string $bundle,
     array $defaults,
     TemplateValidationResult $result,
-    object $fieldManager,
   ): void {
     if (empty($defaults)) {
       return;
     }
 
-    $definitions = $fieldManager->getFieldDefinitions($entityType, $bundle);
+    $definitions = $this->getFieldDefinitions($entityType, $bundle);
 
     foreach ($defaults as $fieldName => $default) {
       if (!isset($definitions[$fieldName])) {
