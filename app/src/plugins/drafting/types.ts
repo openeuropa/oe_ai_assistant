@@ -50,3 +50,31 @@ export interface DraftingPluginConfig {
 export interface DraftingResetResponse {
   threadId: string;
 }
+
+/** Request body for saving session-scoped drafting state. */
+export interface DraftingSaveSessionRequest {
+  context: {
+    audienceId: string;
+    toneId: string;
+  };
+}
+
+/** Response body for saving session-scoped drafting state. */
+export interface DraftingSaveSessionResponse {
+  status: "ok";
+}
+
+export interface DraftingContextOption {
+  id: string;
+  label: string;
+  description: string;
+}
+
+export interface DraftingPluginConfig {
+  entityTypeId?: string;
+  bundle?: string;
+  context?: {
+    audience?: DraftingContextOption[];
+    tone?: DraftingContextOption[];
+  };
+}

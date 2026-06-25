@@ -18,8 +18,30 @@ import { Router } from "express";
 import { sendDone, sendEvent, setupSseResponse } from "../lib/sse";
 import type {
   ChatOptions,
+  DraftingEditorialContext,
+  DraftingSaveSessionPayload,
   DraftingService,
 } from "../services/drafting-service";
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function parseContext(value: unknown): DraftingEditorialContext | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  return {
+    audienceId:
+      typeof value.audienceId === "string" ? value.audienceId : undefined,
+    toneId: typeof value.toneId === "string" ? value.toneId : undefined,
+  };
+}
+
+function readString(value: unknown): string | undefined {
+  return typeof value === "string" ? value : undefined;
+}
 
 /**
  * Loads a content type schema fixture by bundle name.
@@ -86,12 +108,18 @@ export function createDraftingRouter(service: DraftingService): Router {
       return;
     }
 
-    const threadId = body.threadId as string | undefined;
-    const forwardedProps =
-      (body.forwardedProps as Record<string, string>) ?? {};
+    const threadId = readString(body.threadId);
+    const forwardedProps = isRecord(body.forwardedProps)
+      ? body.forwardedProps
+      : {};
     const entityTypeId =
-      forwardedProps.entityTypeId ?? (body.entityTypeId as string) ?? "node";
-    const bundle = forwardedProps.bundle ?? (body.bundle as string) ?? "";
+      readString(forwardedProps.entityTypeId) ??
+      readString(body.entityTypeId) ??
+      "node";
+    const bundle =
+      readString(forwardedProps.bundle) ?? readString(body.bundle) ?? "";
+    const context =
+      parseContext(body.context) ?? parseContext(forwardedProps.context);
 
     // Load the content type schema from a static JSON file.
     const schema = bundle ? loadSchema(bundle) : null;
@@ -114,6 +142,7 @@ export function createDraftingRouter(service: DraftingService): Router {
         entityTypeId,
         bundle,
         schema: schema as ChatOptions["schema"],
+        context,
       })) {
         sendEvent(res, event);
         // Yield to the event loop after each write so the

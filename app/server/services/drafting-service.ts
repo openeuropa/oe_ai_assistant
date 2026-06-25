@@ -55,6 +55,13 @@ export interface ChatOptions {
   entityTypeId: string;
   bundle: string;
   schema: ContentTypeSchema | null;
+  context?: DraftingEditorialContext;
+}
+
+/** Selected editorial context for drafting. */
+export interface DraftingEditorialContext {
+  audienceId?: string;
+  toneId?: string;
 }
 
 /** Request body for the mock save action. */
@@ -70,11 +77,40 @@ export interface DraftSaveResult {
   previewUrl: string;
 }
 
+/** Request body for session-scoped drafting state. */
+export interface DraftingSaveSessionPayload {
+  context?: DraftingEditorialContext;
+}
+
+/** Result returned after accepting session-scoped drafting state. */
+export interface DraftingSaveSessionResult {
+  status: "ok";
+}
+
 /** Common interface implemented by all drafting services. */
 export interface DraftingService {
   chat(opts: ChatOptions): AsyncGenerator<StreamEvent>;
   reset(threadId?: string): { threadId: string };
   save(body: DraftSavePayload): DraftSaveResult;
+  saveSession(body: DraftingSaveSessionPayload): DraftingSaveSessionResult;
+}
+
+/** Validates that selected context is complete when present. */
+export function validateDraftingContext(
+  context: DraftingEditorialContext | undefined,
+): void {
+  if (!context) {
+    throw new Error("context is required");
+  }
+
+  const hasAudience =
+    typeof context.audienceId === "string" && context.audienceId.length > 0;
+  const hasTone =
+    typeof context.toneId === "string" && context.toneId.length > 0;
+
+  if (!hasAudience || !hasTone) {
+    throw new Error("context.audienceId and context.toneId are required");
+  }
 }
 
 /**
@@ -229,6 +265,11 @@ export class MistralDraftingService implements DraftingService {
     return { nodeId, previewUrl: `/node/${nodeId}/latest` };
   }
 
+  saveSession(body: DraftingSaveSessionPayload): DraftingSaveSessionResult {
+    validateDraftingContext(body.context);
+    return { status: "ok" };
+  }
+
   // -- Private: system prompt and tools ---------------------------
 
   private buildSystemPrompt(groups: SchemaGroup[], opts: ChatOptions): string {
@@ -277,6 +318,13 @@ Workflow:
     // appends splitSchemaIntoGroups() output to the prompt).
     if (groups.length > 0) {
       prompt += `\nAvailable field groups:\n${JSON.stringify(groups, null, 2)}\n`;
+    }
+
+    if (opts.context?.audienceId && opts.context?.toneId) {
+      prompt +=
+        `\nEditorial context:\n` +
+        `Selected target audience taxonomy term ID: ${opts.context.audienceId}\n` +
+        `Selected tone taxonomy term ID: ${opts.context.toneId}\n`;
     }
 
     return prompt;

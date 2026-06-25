@@ -13,12 +13,17 @@ import { FIELD_GAP_DELAY_MS, SSE_CHUNK_DELAY_MS } from "../config";
 import type { ConversationStore } from "./conversation-store";
 import type {
   ChatOptions,
+  DraftingSaveSessionPayload,
+  DraftingSaveSessionResult,
   DraftingService,
   DraftSavePayload,
   DraftSaveResult,
   StreamEvent,
 } from "./drafting-service";
-import { extractFieldsToStream } from "./drafting-service";
+import {
+  extractFieldsToStream,
+  validateDraftingContext,
+} from "./drafting-service";
 
 interface DraftFixtureVariant {
   assistantText: string;
@@ -200,6 +205,11 @@ export class MockDraftingService implements DraftingService {
       nodeId,
       previewUrl: `/node/${nodeId}/latest`,
     };
+  }
+
+  saveSession(body: DraftingSaveSessionPayload): DraftingSaveSessionResult {
+    validateDraftingContext(body.context);
+    return { status: "ok" };
   }
 
   private async *createTextStep(text: string): AsyncGenerator<StreamEvent> {
