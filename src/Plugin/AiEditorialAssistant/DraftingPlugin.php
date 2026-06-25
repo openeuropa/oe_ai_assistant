@@ -10,6 +10,7 @@ use Drupal\ai_agents\PluginManager\AiAgentManager;
 use Drupal\oe_ai_assistant\Annotation\AiEditorialAssistant;
 use Drupal\oe_ai_assistant\Exception\ActionException;
 use Drupal\oe_ai_assistant\Plugin\AiAssistantPluginBase;
+use Drupal\oe_ai_assistant\Service\AiEditorialContextInterface;
 use Drupal\oe_ai_assistant\Service\DraftingOrchestratorInterface;
 use Drupal\oe_ai_assistant\Service\DraftSaverInterface;
 use Drupal\oe_ai_assistant\Service\EntityJsonSchemaComposer;
@@ -70,6 +71,13 @@ class DraftingPlugin extends AiAssistantPluginBase {
   protected DraftingOrchestratorInterface $orchestrator;
 
   /**
+   * The editorial audience and tone context service.
+   *
+   * @var \Drupal\oe_ai_assistant\Service\AiEditorialContextInterface
+   */
+  protected AiEditorialContextInterface $aiEditorialContext;
+
+  /**
    * {@inheritdoc}
    */
   public static function create(
@@ -84,6 +92,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
     $instance->draftSaver = $container->get(DraftSaverInterface::class);
     $instance->toolLoop = $container->get(ToolExecutionLoopInterface::class);
     $instance->orchestrator = $container->get(DraftingOrchestratorInterface::class);
+    $instance->aiEditorialContext = $container->get(AiEditorialContextInterface::class);
     return $instance;
   }
 
@@ -95,6 +104,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
       'chat' => $this->chat(...),
       'reset' => $this->reset(...),
       'save' => $this->save(...),
+      'save-session' => $this->saveSession(...),
     ];
   }
 
@@ -105,6 +115,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
     return [
       'reset' => 'DraftingResetRequest',
       'save' => 'DraftingSaveRequest',
+      'save-session' => 'DraftingSaveSessionRequest',
     ];
   }
 
@@ -263,6 +274,50 @@ class DraftingPlugin extends AiAssistantPluginBase {
       $body['bundle'] ?? '',
       $body['fields'] ?? [],
     );
+  }
+
+  /**
+   * Saves drafting session-scoped state.
+   *
+   * Persistent storage is intentionally out of scope for OEL-4851. For now,
+   * this action validates and logs the selected editorial context. The request
+   * shape can carry additional session fields later without adding endpoints.
+   *
+   * @param \Symfony\Component\HttpFoundation\Request $request
+   *   The incoming request.
+   *
+   * @return array<string, string>
+   *   A confirmation response.
+   *
+   * @throws \Drupal\oe_ai_assistant\Exception\ActionException
+   *   When session context values are invalid or not prompt-ready.
+   */
+  public function saveSession(Request $request): array {
+    $body = $this->decodeJsonBody($request);
+    $context = $body['context'] ?? [];
+    $audienceId = (string) ($context['audienceId'] ?? '');
+    $toneId = (string) ($context['toneId'] ?? '');
+
+    try {
+      $this->aiEditorialContext->buildSelectedPrompt($audienceId, $toneId);
+    }
+    catch (\InvalidArgumentException $e) {
+      throw new ActionException(
+        'invalid_context',
+        $e->getMessage(),
+        400,
+      );
+    }
+
+    $this->logger->info(
+      'OEL-4851 drafting context selection accepted: audienceId=@audience_id toneId=@tone_id',
+      [
+        '@audience_id' => $audienceId,
+        '@tone_id' => $toneId,
+      ],
+    );
+
+    return ['status' => 'ok'];
   }
 
   /**
