@@ -9,6 +9,7 @@
  * POST /api/plugins/drafting/chat   - SSE stream (mock or Mistral)
  * POST /api/plugins/drafting/reset  - Clear conversation
  * POST /api/plugins/drafting/save   - Mock save
+ * POST /api/plugins/drafting/save-session - Validate session-scoped state
  */
 
 import { readFileSync } from "node:fs";
@@ -151,6 +152,24 @@ export function createDraftingRouter(service: DraftingService): Router {
     }
 
     res.json(service.save({ entityTypeId, bundle, fields }));
+  });
+
+  /** POST /save-session - Receive drafting session state. */
+  router.post("/save-session", (req, res) => {
+    const { context } = req.body as {
+      context?: { toneId?: string };
+    };
+
+    if (!context?.toneId) {
+      res.status(400).json({
+        code: "bad_request",
+        message: "context.toneId is required",
+      });
+      return;
+    }
+
+    console.info("[drafting] save-session", context);
+    res.json({ status: "ok" });
   });
 
   return router;

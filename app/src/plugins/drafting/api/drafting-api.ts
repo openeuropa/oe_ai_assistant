@@ -7,7 +7,11 @@
  */
 
 import { getConfig } from "@/config";
-import type { DraftingChatRequest } from "../types";
+import type {
+  DraftingChatRequest,
+  DraftingSaveSessionRequest,
+  DraftingSaveSessionResponse,
+} from "../types";
 
 /**
  * Sends a chat message and returns the raw Response for SSE
@@ -47,4 +51,23 @@ export async function resetDraftingThread(threadId: string): Promise<string> {
   }
   const data = (await response.json()) as { threadId: string };
   return data.threadId;
+}
+
+/** Saves session-scoped drafting state such as selected editorial context. */
+export async function saveDraftingSession(
+  request: DraftingSaveSessionRequest,
+): Promise<DraftingSaveSessionResponse> {
+  const response = await fetch(
+    `${getConfig().apiBaseUrl}/plugins/drafting/save-session`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify(request),
+    },
+  );
+  if (!response.ok) {
+    throw new Error(`Drafting save-session error: ${response.status}`);
+  }
+  return (await response.json()) as DraftingSaveSessionResponse;
 }

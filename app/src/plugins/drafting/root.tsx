@@ -12,6 +12,7 @@ import { useCallback } from "react";
 import { ArtifactPlaceholder } from "./components/artifact-placeholder";
 import { ContentTable } from "./components/content-table";
 import { DraftingThread } from "./components/drafting-thread";
+import { GenerationSettingsPanel } from "./components/generation-settings-panel";
 import { PlanSteps } from "./components/plan-steps";
 import {
   DraftContentToolUI,
@@ -19,12 +20,14 @@ import {
   SaveDraftRevisionToolUI,
   SetFieldContentToolUI,
 } from "./components/tool-uis";
+import { useDraftingGenerationSettings } from "./hooks/use-drafting-generation-settings";
 import { useDraftingRuntime } from "./hooks/use-drafting-runtime";
 import { useDraftingSlice } from "./store";
 
 export default function DraftingRoot() {
-  const runtime = useDraftingRuntime();
   const { draftedFields, plan } = useDraftingSlice();
+  const generationSettings = useDraftingGenerationSettings();
+  const runtime = useDraftingRuntime();
   const hasFields = Object.keys(draftedFields).length > 0;
 
   /** Trigger save via the chat so the agent runs the save tool. */
@@ -66,7 +69,25 @@ export default function DraftingRoot() {
       <div className="flex min-h-0 flex-1">
         {/* Left panel: chat (always visible) */}
         <div className="flex w-2/5 min-h-0 flex-col border-r border-gray-200">
-          <DraftingThread />
+          <DraftingThread
+            generationSettingsLabel={
+              generationSettings.selectedLabel
+                ? `Tone: ${generationSettings.selectedLabel}`
+                : "Tone: Not set"
+            }
+            hasUnsavedGenerationSettings={generationSettings.hasChanges}
+            generationSettings={
+              <GenerationSettingsPanel
+                values={generationSettings.values}
+                toneOptions={generationSettings.toneOptions}
+                onChange={generationSettings.updateValues}
+                onSave={generationSettings.submitValues}
+                hasChanges={generationSettings.hasChanges}
+                isSaving={generationSettings.isSaving}
+                error={generationSettings.error}
+              />
+            }
+          />
         </div>
 
         {/* Right panel: placeholder -> plan steps -> content table */}

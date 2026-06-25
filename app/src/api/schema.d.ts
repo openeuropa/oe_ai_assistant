@@ -110,6 +110,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/plugins/drafting/save-session": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Save drafting session state */
+        post: operations["postDraftingSaveSession"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/plugins/echo/stream": {
         parameters: {
             query?: never;
@@ -274,6 +291,11 @@ export interface components {
             bundle: string;
             /** @description The full form schema for the target content type, as returned by GET /content-schema/{entityTypeId}/{bundle}?mode=form. */
             schema: Record<string, never>;
+            /** @description Selected drafting editorial context. */
+            context?: {
+                /** @description Selected tone taxonomy term ID. */
+                toneId?: string;
+            };
         };
         DraftingResetRequest: {
             /** @description The thread ID of the conversation to reset. */
@@ -296,6 +318,17 @@ export interface components {
             nodeId: string;
             /** @description URL to preview the created draft node. */
             previewUrl: string;
+        };
+        DraftingSaveSessionRequest: {
+            /** @description Drafting editorial context to save for the session. */
+            context: {
+                /** @description Selected tone taxonomy term ID. */
+                toneId: string;
+            };
+        };
+        DraftingSaveSessionResponse: {
+            /** @enum {string} */
+            status: "ok";
         };
         /** @description Request body for the echo stream endpoint. */
         EchoRequest: {
@@ -552,6 +585,30 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DraftingSaveResponse"];
+                };
+            };
+        };
+    };
+    postDraftingSaveSession: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DraftingSaveSessionRequest"];
+            };
+        };
+        responses: {
+            /** @description Session state accepted */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DraftingSaveSessionResponse"];
                 };
             };
         };

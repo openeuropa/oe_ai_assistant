@@ -57,3 +57,22 @@ save:
           application/json:
             schema:
               $ref: "../../openapi.yaml#/components/schemas/DraftingSaveResponse"
+
+saveSession:
+  post:
+    operationId: postDraftingSaveSession
+    summary: Save drafting session state
+    tags: [Drafting]
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: "../../openapi.yaml#/components/schemas/DraftingSaveSessionRequest"
+    responses:
+      "200":
+        description: Session state accepted
+        content:
+          application/json:
+            schema:
+              $ref: "../../openapi.yaml#/components/schemas/DraftingSaveSessionResponse"

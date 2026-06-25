@@ -31,6 +31,13 @@ DraftingChatRequest:
       description: >
         The full form schema for the target content type,
         as returned by GET /content-schema/{entityTypeId}/{bundle}?mode=form.
+    context:
+      type: object
+      description: Selected drafting editorial context.
+      properties:
+        toneId:
+          type: string
+          description: Selected tone taxonomy term ID.
 
 DraftingResetRequest:
   type: object
@@ -81,3 +88,27 @@ DraftingSaveResponse:
     previewUrl:
       type: string
       description: URL to preview the created draft node.
+
+DraftingSaveSessionRequest:
+  type: object
+  required:
+    - context
+  properties:
+    context:
+      type: object
+      description: Drafting editorial context to save for the session.
+      required:
+        - toneId
+      properties:
+        toneId:
+          type: string
+          description: Selected tone taxonomy term ID.
+
+DraftingSaveSessionResponse:
+  type: object
+  required:
+    - status
+  properties:
+    status:
+      type: string
+      enum: [ok]

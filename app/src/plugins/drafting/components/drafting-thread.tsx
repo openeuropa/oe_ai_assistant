@@ -23,8 +23,10 @@ import {
   Paperclip,
   PenLine,
   SendHorizontal,
+  UserRound,
   X,
 } from "lucide-react";
+import { type ReactNode, useState } from "react";
 
 /** Welcome message shown when the chat is empty. */
 function WelcomeMessage() {
@@ -196,11 +198,6 @@ function AssistantMessage() {
   );
 }
 
-/** Called when the composer form submits. */
-function handleComposerSubmit() {
-  // No-op: the runtime handles message submission.
-}
-
 /** A pending attachment in the composer, with a remove button. */
 function ComposerAttachment() {
   return (
@@ -219,18 +216,49 @@ function ComposerAttachment() {
 }
 
 /** Chat composer with text input, attachment button, and send. */
-function Composer() {
+function Composer({
+  generationSettingsLabel,
+  hasUnsavedGenerationSettings,
+  onToggleSettings,
+  settingsOpen,
+}: {
+  generationSettingsLabel?: ReactNode;
+  hasUnsavedGenerationSettings?: boolean;
+  onToggleSettings: () => void;
+  settingsOpen: boolean;
+}) {
   return (
-    <ComposerPrimitive.Root
-      className="border-t border-gray-200 p-4"
-      onSubmit={handleComposerSubmit}
-    >
+    <ComposerPrimitive.Root className="border-t border-gray-200 pt-2 p-4">
       {/* Pending attachments row */}
       <div className="mb-1.5 flex flex-wrap gap-1">
         <ComposerPrimitive.Attachments
           components={{ Attachment: ComposerAttachment }}
         />
       </div>
+
+      {generationSettingsLabel && (
+        <div className="mb-2 flex">
+          <button
+            type="button"
+            className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700"
+            aria-label="Tone settings"
+            aria-expanded={settingsOpen}
+            title="Tone settings"
+            onClick={onToggleSettings}
+          >
+            <UserRound size={14} />
+            <span>{generationSettingsLabel}</span>
+            {hasUnsavedGenerationSettings && (
+              <>
+                <span className="text-amber-600" aria-hidden="true">
+                  *
+                </span>
+                <span className="sr-only">unsaved changes</span>
+              </>
+            )}
+          </button>
+        </div>
+      )}
 
       {/* Input row */}
       <div className="flex items-end gap-2">
@@ -253,7 +281,19 @@ function Composer() {
 }
 
 /** Full chat thread with welcome, messages, and composer. */
-export function DraftingThread() {
+export function DraftingThread({
+  defaultSettingsOpen = false,
+  generationSettings,
+  generationSettingsLabel,
+  hasUnsavedGenerationSettings = false,
+}: {
+  defaultSettingsOpen?: boolean;
+  generationSettings?: ReactNode;
+  generationSettingsLabel?: ReactNode;
+  hasUnsavedGenerationSettings?: boolean;
+}) {
+  const [settingsOpen, setSettingsOpen] = useState(defaultSettingsOpen);
+
   return (
     <ThreadPrimitive.Root className="flex min-h-0 flex-1 flex-col">
       <ThreadPrimitive.Viewport className="flex-1 overflow-y-auto p-4">
@@ -265,7 +305,13 @@ export function DraftingThread() {
           }}
         />
       </ThreadPrimitive.Viewport>
-      <Composer />
+      {settingsOpen && generationSettings}
+      <Composer
+        generationSettingsLabel={generationSettingsLabel}
+        hasUnsavedGenerationSettings={hasUnsavedGenerationSettings}
+        settingsOpen={settingsOpen}
+        onToggleSettings={() => setSettingsOpen((open) => !open)}
+      />
     </ThreadPrimitive.Root>
   );
 }

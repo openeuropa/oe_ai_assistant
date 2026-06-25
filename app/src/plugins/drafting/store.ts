@@ -11,6 +11,7 @@ import {
   setPluginState,
   usePluginSlice,
 } from "@/store/plugin-store";
+import type { DraftingGenerationSettings } from "./types";
 
 const PLUGIN_ID = "drafting";
 
@@ -28,6 +29,8 @@ export interface DraftingSliceState {
   plan: PlanStep[];
   /** Raw drafted field values keyed by field machine name. */
   draftedFields: Record<string, unknown>;
+  /** Confirmed tone selected by the editor. */
+  generationSettings: DraftingGenerationSettings | null;
 }
 
 export const draftingSliceConfig: PluginSliceConfig<DraftingSliceState> = {
@@ -35,10 +38,14 @@ export const draftingSliceConfig: PluginSliceConfig<DraftingSliceState> = {
     threadId: null,
     plan: [],
     draftedFields: {},
+    generationSettings: null,
   },
-  /** Only persist thread ID. */
+  /** Persist conversation identity and confirmed editorial guidance. */
   partialize: (state) =>
-    ({ threadId: state.threadId }) as unknown as Partial<DraftingSliceState>,
+    ({
+      threadId: state.threadId,
+      generationSettings: state.generationSettings,
+    }) as unknown as Partial<DraftingSliceState>,
 };
 
 /** Typed read hook for React components. */

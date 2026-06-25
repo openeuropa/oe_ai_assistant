@@ -14,6 +14,7 @@ describe("drafting plugin state", () => {
       threadId: null,
       plan: [],
       draftedFields: {},
+      generationSettings: null,
     });
 
     expect(
@@ -23,8 +24,16 @@ describe("drafting plugin state", () => {
         draftedFields: {
           title: { label: "Title", value: "Draft", type: "string" },
         },
+        generationSettings: {
+          toneId: "clear-professional",
+        },
       }),
-    ).toEqual({ threadId: "thread-1" });
+    ).toEqual({
+      threadId: "thread-1",
+      generationSettings: {
+        toneId: "clear-professional",
+      },
+    });
   });
 
   it("falls back to initial state before the plugin slice is initialized", async () => {
@@ -35,6 +44,7 @@ describe("drafting plugin state", () => {
       threadId: null,
       plan: [],
       draftedFields: {},
+      generationSettings: null,
     });
   });
 
@@ -47,6 +57,9 @@ describe("drafting plugin state", () => {
       draftedFields: {
         title: { label: "Title", value: "Draft", type: "string" },
       },
+      generationSettings: {
+        toneId: "clear-professional",
+      },
     });
 
     expect(getDraftingState()).toMatchObject({
@@ -54,10 +67,13 @@ describe("drafting plugin state", () => {
       draftedFields: {
         title: { label: "Title", value: "Draft", type: "string" },
       },
+      generationSettings: {
+        toneId: "clear-professional",
+      },
     });
   });
 
-  it("only persists thread ID via partialize", async () => {
+  it("only persists thread ID and confirmed settings via partialize", async () => {
     await loadFreshStore();
     const { draftingSliceConfig } = await import("../store");
 
@@ -65,10 +81,16 @@ describe("drafting plugin state", () => {
       threadId: "thread-1",
       plan: [{ stepId: "s1", label: "Step 1", status: "done" as const }],
       draftedFields: { title: [{ value: "Test" }] },
+      generationSettings: {
+        toneId: "clear-professional",
+      },
     };
 
     expect(draftingSliceConfig.partialize?.(full)).toEqual({
       threadId: "thread-1",
+      generationSettings: {
+        toneId: "clear-professional",
+      },
     });
   });
 });
