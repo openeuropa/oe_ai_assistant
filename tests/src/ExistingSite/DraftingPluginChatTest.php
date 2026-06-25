@@ -253,16 +253,19 @@ class DraftingPluginChatTest extends ExistingSiteBase {
     $user = $this->createUser(['use oe ai assistant']);
     $this->loginUser($user);
 
+    $this->httpPost('/api/ai/plugins/drafting/save-session', [
+      'context' => [
+        'audienceId' => $this->getTermIdByName('oe_ai_target_audience', 'Business and industry'),
+        'toneId' => $this->getTermIdByName('oe_ai_tone', 'Formal'),
+      ],
+    ]);
+
     MockAiProvider::enqueue(new MockResponse(
       text: 'Drafting with selected context.',
     ));
 
     $result = $this->httpPost('/api/ai/plugins/drafting/chat', [
       'message' => 'Draft this with context.',
-      'context' => [
-        'audienceId' => $this->getTermIdByName('oe_ai_target_audience', 'Business and industry'),
-        'toneId' => $this->getTermIdByName('oe_ai_tone', 'Formal'),
-      ],
     ]);
 
     $this->assertEquals(200, $result['status'],
@@ -292,24 +295,32 @@ class DraftingPluginChatTest extends ExistingSiteBase {
   }
 
   /**
-   * Tests that partial editorial context is rejected before generation.
+   * Tests that chat request editorial context is ignored.
    */
-  public function testPartialSelectedContextReturns400(): void {
+  public function testChatRequestContextIsIgnored(): void {
     $user = $this->createUser(['use oe ai assistant']);
     $this->loginUser($user);
 
+    MockAiProvider::enqueue(new MockResponse(
+      text: 'Drafting without request context.',
+    ));
+
     $result = $this->httpPost('/api/ai/plugins/drafting/chat', [
-      'message' => 'Draft this with partial context.',
+      'message' => 'Draft this with request context.',
       'context' => [
         'audienceId' => $this->getTermIdByName('oe_ai_target_audience', 'Business and industry'),
       ],
     ]);
 
-    $this->assertEquals(400, $result['status']);
-    $this->assertStringContainsString('invalid_context', $result['body']);
+    $this->assertEquals(200, $result['status']);
 
     \Drupal::state()->resetCache();
-    $this->assertSame([], MockAiProvider::getCallLog());
+    $log = MockAiProvider::getCallLog();
+    $this->assertCount(1, $log, 'Mock provider should have been called once.');
+    $this->assertStringNotContainsString(
+      'The user has selected:',
+      $log[0]['system_prompt'],
+    );
   }
 
   /**

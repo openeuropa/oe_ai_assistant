@@ -55,7 +55,6 @@ export interface ChatOptions {
   entityTypeId: string;
   bundle: string;
   schema: ContentTypeSchema | null;
-  context?: DraftingEditorialContext;
 }
 
 /** Selected editorial context for drafting. */
@@ -206,6 +205,8 @@ type MistralApiMessage =
 export class MistralDraftingService implements DraftingService {
   private static readonly MAX_ITERATIONS = 10;
 
+  private selectedContext: DraftingEditorialContext | undefined;
+
   constructor(
     private readonly mistral: Mistral,
     private readonly store: ConversationStore,
@@ -267,6 +268,7 @@ export class MistralDraftingService implements DraftingService {
 
   saveSession(body: DraftingSaveSessionPayload): DraftingSaveSessionResult {
     validateDraftingContext(body.context);
+    this.selectedContext = body.context;
     return { status: "ok" };
   }
 
@@ -320,11 +322,11 @@ Workflow:
       prompt += `\nAvailable field groups:\n${JSON.stringify(groups, null, 2)}\n`;
     }
 
-    if (opts.context?.audienceId && opts.context?.toneId) {
+    if (this.selectedContext?.audienceId && this.selectedContext?.toneId) {
       prompt +=
         `\nEditorial context:\n` +
-        `Selected target audience taxonomy term ID: ${opts.context.audienceId}\n` +
-        `Selected tone taxonomy term ID: ${opts.context.toneId}\n`;
+        `Selected target audience taxonomy term ID: ${this.selectedContext.audienceId}\n` +
+        `Selected tone taxonomy term ID: ${this.selectedContext.toneId}\n`;
     }
 
     return prompt;

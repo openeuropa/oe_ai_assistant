@@ -118,8 +118,6 @@ export function createDraftingRouter(service: DraftingService): Router {
       "node";
     const bundle =
       readString(forwardedProps.bundle) ?? readString(body.bundle) ?? "";
-    const context =
-      parseContext(body.context) ?? parseContext(forwardedProps.context);
 
     // Load the content type schema from a static JSON file.
     const schema = bundle ? loadSchema(bundle) : null;
@@ -142,7 +140,6 @@ export function createDraftingRouter(service: DraftingService): Router {
         entityTypeId,
         bundle,
         schema: schema as ChatOptions["schema"],
-        context,
       })) {
         sendEvent(res, event);
         // Yield to the event loop after each write so the

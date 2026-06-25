@@ -7,6 +7,7 @@ namespace Drupal\oe_ai_assistant\Plugin\AiEditorialAssistant;
 use Drupal\ai\OperationType\Chat\ChatMessage;
 use Drupal\ai\OperationType\Chat\Tools\ToolsFunctionInput;
 use Drupal\ai_agents\PluginManager\AiAgentManager;
+use Drupal\Core\TempStore\PrivateTempStoreFactory;
 use Drupal\oe_ai_assistant\Annotation\AiEditorialAssistant;
 use Drupal\oe_ai_assistant\Exception\ActionException;
 use Drupal\oe_ai_assistant\Plugin\AiAssistantPluginBase;
@@ -34,6 +35,16 @@ use Symfony\Component\HttpFoundation\Response;
   description: 'AI-powered content drafting with SSE streaming.',
 )]
 class DraftingPlugin extends AiAssistantPluginBase {
+
+  /**
+   * The drafting session tempstore collection.
+   */
+  protected const string SESSION_STORE_COLLECTION = 'oe_ai_drafting_session';
+
+  /**
+   * The drafting editorial context tempstore key.
+   */
+  protected const string SESSION_CONTEXT_KEY = 'context';
 
   /**
    * The AI agent plugin manager.
@@ -78,6 +89,13 @@ class DraftingPlugin extends AiAssistantPluginBase {
   protected AiEditorialContextInterface $aiEditorialContext;
 
   /**
+   * The private tempstore factory.
+   *
+   * @var \Drupal\Core\TempStore\PrivateTempStoreFactory
+   */
+  protected PrivateTempStoreFactory $tempStoreFactory;
+
+  /**
    * {@inheritdoc}
    */
   public static function create(
@@ -93,6 +111,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
     $instance->toolLoop = $container->get(ToolExecutionLoopInterface::class);
     $instance->orchestrator = $container->get(DraftingOrchestratorInterface::class);
     $instance->aiEditorialContext = $container->get(AiEditorialContextInterface::class);
+    $instance->tempStoreFactory = $container->get('tempstore.private');
     return $instance;
   }
 
@@ -279,9 +298,9 @@ class DraftingPlugin extends AiAssistantPluginBase {
   /**
    * Saves drafting session-scoped state.
    *
-   * Persistent storage is intentionally out of scope for OEL-4851. For now,
-   * this action validates and logs the selected editorial context. The request
-   * shape can carry additional session fields later without adding endpoints.
+   * The selected editorial context is persisted in private tempstore so chat
+   * requests can use it without trusting or requiring context values in the
+   * chat request body.
    *
    * @param \Symfony\Component\HttpFoundation\Request $request
    *   The incoming request.
@@ -308,6 +327,13 @@ class DraftingPlugin extends AiAssistantPluginBase {
         400,
       );
     }
+
+    $this->tempStoreFactory
+      ->get(static::SESSION_STORE_COLLECTION)
+      ->set(static::SESSION_CONTEXT_KEY, [
+        'audienceId' => $audienceId,
+        'toneId' => $toneId,
+      ]);
 
     $this->logger->info(
       'OEL-4851 drafting context selection accepted: audienceId=@audience_id toneId=@tone_id',
@@ -357,22 +383,13 @@ class DraftingPlugin extends AiAssistantPluginBase {
       ?? $body['entityTypeId'] ?? 'node';
     $bundle = $forwardedProps['bundle']
       ?? $body['bundle'] ?? '';
-    $audienceId = $this->extractSelectedContextValue($body, 'audienceId');
-    $toneId = $this->extractSelectedContextValue($body, 'toneId');
-
-    if (($audienceId === '') !== ($toneId === '')) {
-      throw new ActionException(
-        'invalid_context',
-        'Both audienceId and toneId are required when passing drafting context.',
-        400,
-      );
-    }
+    $selectedContext = $this->loadSelectedContext();
 
     return [
       'entityTypeId' => $entityTypeId,
       'bundle' => $bundle,
-      'audienceId' => $audienceId,
-      'toneId' => $toneId,
+      'audienceId' => $selectedContext['audienceId'],
+      'toneId' => $selectedContext['toneId'],
     ];
   }
 
@@ -415,23 +432,27 @@ class DraftingPlugin extends AiAssistantPluginBase {
   }
 
   /**
-   * Extracts selected editorial context values from supported request shapes.
+   * Loads the selected editorial context from session-scoped tempstore.
+   *
+   * @return array{audienceId: string, toneId: string}
+   *   The selected context, or empty values when no selection has been saved.
    */
-  private function extractSelectedContextValue(array $body, string $key): string {
-    $forwardedProps = $body['forwardedProps'] ?? [];
-    $forwardedProps = is_array($forwardedProps) ? $forwardedProps : [];
-    $bodyContext = $body['context'] ?? [];
-    $bodyContext = is_array($bodyContext) ? $bodyContext : [];
-    $forwardedContext = $forwardedProps['context'] ?? [];
-    $forwardedContext = is_array($forwardedContext) ? $forwardedContext : [];
+  private function loadSelectedContext(): array {
+    $context = $this->tempStoreFactory
+      ->get(static::SESSION_STORE_COLLECTION)
+      ->get(static::SESSION_CONTEXT_KEY);
 
-    return (string) (
-      $bodyContext[$key]
-      ?? $forwardedContext[$key]
-      ?? $forwardedProps[$key]
-      ?? $body[$key]
-      ?? ''
-    );
+    if (!is_array($context)) {
+      return [
+        'audienceId' => '',
+        'toneId' => '',
+      ];
+    }
+
+    return [
+      'audienceId' => (string) ($context['audienceId'] ?? ''),
+      'toneId' => (string) ($context['toneId'] ?? ''),
+    ];
   }
 
 }
