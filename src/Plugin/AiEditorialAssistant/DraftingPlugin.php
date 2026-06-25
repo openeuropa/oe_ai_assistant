@@ -348,17 +348,31 @@ class DraftingPlugin extends AiAssistantPluginBase {
    *   The decoded request body.
    *
    * @return array
-   *   Context with entityTypeId and bundle.
+   *   Context with entityTypeId, bundle, audienceId, and toneId.
    */
   private function buildContext(array $body): array {
     $forwardedProps = $body['forwardedProps'] ?? [];
+    $forwardedProps = is_array($forwardedProps) ? $forwardedProps : [];
     $entityTypeId = $forwardedProps['entityTypeId']
       ?? $body['entityTypeId'] ?? 'node';
     $bundle = $forwardedProps['bundle']
       ?? $body['bundle'] ?? '';
+    $audienceId = $this->extractSelectedContextValue($body, 'audienceId');
+    $toneId = $this->extractSelectedContextValue($body, 'toneId');
+
+    if (($audienceId === '') !== ($toneId === '')) {
+      throw new ActionException(
+        'invalid_context',
+        'Both audienceId and toneId are required when passing drafting context.',
+        400,
+      );
+    }
+
     return [
       'entityTypeId' => $entityTypeId,
       'bundle' => $bundle,
+      'audienceId' => $audienceId,
+      'toneId' => $toneId,
     ];
   }
 
@@ -379,7 +393,45 @@ class DraftingPlugin extends AiAssistantPluginBase {
         . json_encode($groups, JSON_PRETTY_PRINT) . "\n";
     }
 
+    if ($context['audienceId'] !== '' && $context['toneId'] !== '') {
+      try {
+        $prompt .= "\nEditorial context:\n"
+          . $this->aiEditorialContext->buildSelectedPrompt(
+            $context['audienceId'],
+            $context['toneId'],
+          )
+          . "\n";
+      }
+      catch (\InvalidArgumentException $e) {
+        throw new ActionException(
+          'invalid_context',
+          $e->getMessage(),
+          400,
+        );
+      }
+    }
+
     return $prompt;
+  }
+
+  /**
+   * Extracts selected editorial context values from supported request shapes.
+   */
+  private function extractSelectedContextValue(array $body, string $key): string {
+    $forwardedProps = $body['forwardedProps'] ?? [];
+    $forwardedProps = is_array($forwardedProps) ? $forwardedProps : [];
+    $bodyContext = $body['context'] ?? [];
+    $bodyContext = is_array($bodyContext) ? $bodyContext : [];
+    $forwardedContext = $forwardedProps['context'] ?? [];
+    $forwardedContext = is_array($forwardedContext) ? $forwardedContext : [];
+
+    return (string) (
+      $bodyContext[$key]
+      ?? $forwardedContext[$key]
+      ?? $forwardedProps[$key]
+      ?? $body[$key]
+      ?? ''
+    );
   }
 
 }
