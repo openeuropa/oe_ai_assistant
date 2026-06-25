@@ -219,11 +219,13 @@ function ComposerAttachment() {
 function Composer({
   generationSettingsLabel,
   hasUnsavedGenerationSettings,
+  hasGenerationSettings,
   onToggleSettings,
   settingsOpen,
 }: {
   generationSettingsLabel?: ReactNode;
   hasUnsavedGenerationSettings?: boolean;
+  hasGenerationSettings?: boolean;
   onToggleSettings: () => void;
   settingsOpen: boolean;
 }) {
@@ -236,7 +238,7 @@ function Composer({
         />
       </div>
 
-      {generationSettingsLabel && (
+      {hasGenerationSettings && (
         <div className="mb-2 flex">
           <button
             type="button"
@@ -247,7 +249,7 @@ function Composer({
             onClick={onToggleSettings}
           >
             <UserRound size={14} />
-            <span>{generationSettingsLabel}</span>
+            {generationSettingsLabel && <span>{generationSettingsLabel}</span>}
             {hasUnsavedGenerationSettings && (
               <>
                 <span className="text-amber-600" aria-hidden="true">
@@ -309,6 +311,7 @@ export function DraftingThread({
       <Composer
         generationSettingsLabel={generationSettingsLabel}
         hasUnsavedGenerationSettings={hasUnsavedGenerationSettings}
+        hasGenerationSettings={Boolean(generationSettings)}
         settingsOpen={settingsOpen}
         onToggleSettings={() => setSettingsOpen((open) => !open)}
       />

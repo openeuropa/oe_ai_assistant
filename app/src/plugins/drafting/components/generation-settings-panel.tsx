@@ -66,7 +66,6 @@ export function GenerationSettingsPanel({
           className="grid self-start gap-1.5 text-xs font-medium text-gray-700"
           htmlFor={toneId}
         >
-          Tone
           <select
             id={toneId}
             value={values.toneId}
@@ -74,11 +73,6 @@ export function GenerationSettingsPanel({
             className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-normal text-gray-900 focus:border-blue-500 focus:outline-none"
             disabled={toneOptions.length === 0}
           >
-            <option value="">
-              {toneOptions.length === 0
-                ? "No tones available"
-                : "Select a tone"}
-            </option>
             {toneOptions.map((option) => (
               <option key={option.id} value={option.id}>
                 {option.label}
@@ -92,7 +86,7 @@ export function GenerationSettingsPanel({
           )}
         </label>
 
-        <div className="flex items-center gap-3 sm:pt-[1.35rem]">
+        <div className="flex items-center gap-3">
           {hasChanges && (
             <span className="text-xs font-medium text-amber-700">
               Unsaved changes

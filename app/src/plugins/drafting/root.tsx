@@ -73,7 +73,7 @@ export default function DraftingRoot() {
             generationSettingsLabel={
               generationSettings.selectedLabel
                 ? `Tone: ${generationSettings.selectedLabel}`
-                : "Tone: Not set"
+                : null
             }
             hasUnsavedGenerationSettings={generationSettings.hasChanges}
             generationSettings={

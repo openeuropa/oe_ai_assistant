@@ -19,12 +19,13 @@ const toneOptions = [
     description: "Use an institutional, measured voice.",
   },
 ];
+const defaultToneId = toneOptions[0]?.id ?? "";
 
 const meta = {
   title: "Drafting/Generation settings panel",
   component: GenerationSettingsPanel,
   args: {
-    values: { toneId: "" },
+    values: { toneId: defaultToneId },
     toneOptions,
     onChange: () => {},
     onSave: async () => {},
@@ -44,9 +45,8 @@ function InteractivePanel({
 }: {
   initialValues?: GenerationSettingsDraft;
 }) {
-  const [values, setValues] = useState<GenerationSettingsDraft>(
-    initialValues ?? { toneId: "" },
-  );
+  const savedValues = initialValues ?? { toneId: defaultToneId };
+  const [values, setValues] = useState<GenerationSettingsDraft>(savedValues);
 
   return (
     <div className="max-w-2xl border border-gray-200 bg-white">
@@ -55,7 +55,7 @@ function InteractivePanel({
         toneOptions={toneOptions}
         onChange={setValues}
         onSave={async () => {}}
-        hasChanges={values.toneId !== (initialValues?.toneId ?? "")}
+        hasChanges={values.toneId !== savedValues.toneId}
         isSaving={false}
       />
     </div>
@@ -78,8 +78,9 @@ export const SelectedValues: Story = {
 
 /** Shows the settings panel in the real drafting chat layout. */
 function DraftingChatPreview() {
+  const savedValues: GenerationSettingsDraft = { toneId: defaultToneId };
   const [values, setValues] = useState<GenerationSettingsDraft>({
-    toneId: "",
+    toneId: savedValues.toneId,
   });
   const runtime = useLocalRuntime({
     run: async () => ({
@@ -103,16 +104,16 @@ function DraftingChatPreview() {
                   toneOptions.find((option) => option.id === values.toneId)
                     ?.label ?? values.toneId
                 }`
-              : "Tone: Not set"
+              : null
           }
-          hasUnsavedGenerationSettings={values.toneId !== ""}
+          hasUnsavedGenerationSettings={values.toneId !== savedValues.toneId}
           generationSettings={
             <GenerationSettingsPanel
               values={values}
               toneOptions={toneOptions}
               onChange={setValues}
               onSave={async () => {}}
-              hasChanges={values.toneId !== ""}
+              hasChanges={values.toneId !== savedValues.toneId}
               isSaving={false}
             />
           }

@@ -27,24 +27,23 @@ function getGenerationSettingsOptions(
 
 export function useDraftingGenerationSettings() {
   const { generationSettings } = useDraftingSlice();
-  const [values, setValues] = useState<GenerationSettingsDraft>({
-    toneId: generationSettings?.toneId ?? "",
-  });
   const [error, setError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const draftingConfig = getConfig().pluginConfig.drafting ?? {};
   const context = draftingConfig.context as Record<string, unknown> | undefined;
   const toneOptions = getGenerationSettingsOptions(context?.tone);
+  const defaultToneId = generationSettings?.toneId ?? toneOptions[0]?.id ?? "";
+  const [values, setValues] = useState<GenerationSettingsDraft>({
+    toneId: defaultToneId,
+  });
   const hasChanges = values.toneId !== (generationSettings?.toneId ?? "");
   const selectedTone = toneOptions.find(
     (option) => option.id === values.toneId,
   );
 
   useEffect(() => {
-    if (generationSettings) {
-      setValues({ toneId: generationSettings.toneId });
-    }
-  }, [generationSettings]);
+    setValues({ toneId: defaultToneId });
+  }, [defaultToneId]);
 
   function updateValues(nextValues: GenerationSettingsDraft) {
     setValues(nextValues);
