@@ -83,7 +83,7 @@ class AiEditorialContext implements AiEditorialContextInterface {
    * @param string $vid
    *   The vocabulary machine name.
    *
-   * @return array<int, array{id: string, name: string, description: string, oe_ai_prompt: string}>
+   * @return array<int, array{id: string, label: string, description: string, oe_ai_prompt: string}>
    *   The prompt-ready taxonomy terms.
    */
   protected function loadVocabularyTerms(string $vid): array {
@@ -104,7 +104,7 @@ class AiEditorialContext implements AiEditorialContextInterface {
       if ($ai_prompt != '') {
         $values[] = [
           'id' => (string) $term->id(),
-          'name' => $term->label(),
+          'label' => $term->label(),
           'description' => trim((string) $term->getDescription()),
           'oe_ai_prompt' => $ai_prompt,
         ];
@@ -147,7 +147,7 @@ class AiEditorialContext implements AiEditorialContextInterface {
   /**
    * Formats prompt choices as bullet lines.
    *
-   * @param array<int, array{id: string, name: string, description: string, oe_ai_prompt: string}> $options
+   * @param array<int, array{id: string, label: string, description: string, oe_ai_prompt: string}> $options
    *   The prompt options.
    *
    * @return string[]
@@ -156,7 +156,7 @@ class AiEditorialContext implements AiEditorialContextInterface {
   protected function formatPromptOptions(array $options): array {
     $lines = [];
     foreach ($options as $option) {
-      $lines[] = sprintf('- %s: %s', $option['name'], $option['oe_ai_prompt']);
+      $lines[] = sprintf('- %s: %s', $option['label'], $option['oe_ai_prompt']);
     }
 
     return $lines;

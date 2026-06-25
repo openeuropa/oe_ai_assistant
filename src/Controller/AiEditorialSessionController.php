@@ -112,10 +112,8 @@ class AiEditorialSessionController extends ControllerBase {
    *   A Drupal render array with mount point, library, and settings.
    */
   private function buildRenderArray(string $sessionId, string $entityTypeId, string $bundle): array {
-    $audience = $this->aiEditorialContext->getAvailableAudiences();
-    $tone = $this->aiEditorialContext->getAvailableTones();
-    unset($audience['oe_ai_prompt']);
-    unset($tone['oe_ai_prompt']);
+    $audiences = $this->serializeContextOptions($this->aiEditorialContext->getAvailableAudiences());
+    $tones = $this->serializeContextOptions($this->aiEditorialContext->getAvailableTones());
     // Build the configuration object that bootstraps the React app.
     // This data is serialised into window.drupalSettings.oeAiAssistant
     // and read by the React entry point before the first render.
@@ -147,8 +145,8 @@ class AiEditorialSessionController extends ControllerBase {
           'entityTypeId' => $entityTypeId,
           'bundle' => $bundle,
           'context' => [
-            'audience' => $audience,
-            'tone' => $tone,
+            'audience' => $audiences,
+            'tone' => $tones,
           ],
         ],
       ],
@@ -181,6 +179,26 @@ class AiEditorialSessionController extends ControllerBase {
         ],
       ],
     ];
+  }
+
+  /**
+   * Serializes internal prompt-ready context options for frontend bootstrap.
+   *
+   * @param array<int, array{id: string, label: string, description: string, oe_ai_prompt: string}> $options
+   *   The prompt-ready service options.
+   *
+   * @return array<int, array{id: string, label: string, description: string}>
+   *   Frontend-safe context options.
+   */
+  private function serializeContextOptions(array $options): array {
+    return array_map(
+      static fn (array $option): array => [
+        'id' => $option['id'],
+        'label' => $option['label'],
+        'description' => $option['description'],
+      ],
+      $options,
+    );
   }
 
 }

@@ -270,10 +270,11 @@ class AiEditorialSessionDashboardTest extends AiEditorialSessionBrowserTestBase 
     $this->assertSession()->responseContains('"bundle":"' . $bundle . '"');
     $this->assertSession()->responseContains('"context":{"audience":');
     $this->assertSession()->responseContains('"tone":');
-    $this->assertSession()->responseContains('"name":"Business and industry"');
+    $this->assertSession()->responseContains('"label":"Business and industry"');
     $this->assertSession()->responseContains('"description":"Content focused on professional stakeholders, emphasizing practical impact, compliance, and business relevance."');
-    $this->assertSession()->responseContains('"name":"Formal"');
+    $this->assertSession()->responseContains('"label":"Formal"');
     $this->assertSession()->responseContains('"description":"A professional and neutral tone suitable for official or institutional communication."');
+    $this->assertSession()->responseNotContains('oe_ai_prompt');
   }
 
 }

@@ -12,7 +12,7 @@ interface AiEditorialContextInterface {
   /**
    * Returns the available target audience terms.
    *
-   * @return array<int, array{id: string, name: string, description: string, oe_ai_prompt: string}>
+   * @return array<int, array{id: string, label: string, description: string, oe_ai_prompt: string}>
    *   The available audience terms keyed numerically.
    */
   public function getAvailableAudiences(): array;
@@ -20,7 +20,7 @@ interface AiEditorialContextInterface {
   /**
    * Returns the available tone terms.
    *
-   * @return array<int, array{id: string, name: string, description: string, oe_ai_prompt: string}>
+   * @return array<int, array{id: string, label: string, description: string, oe_ai_prompt: string}>
    *   The available tone terms keyed numerically.
    */
   public function getAvailableTones(): array;
