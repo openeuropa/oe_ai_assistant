@@ -18,7 +18,10 @@ class DraftingPluginSaveSessionTest extends ExistingSiteBase {
    */
   protected function setUp(): void {
     parent::setUp();
-    \Drupal::service('module_installer')->install(['oe_ai_assistant_test']);
+    \Drupal::service('module_installer')->install(['dblog', 'oe_ai_assistant_test']);
+    \Drupal::database()->delete('watchdog')
+      ->condition('type', 'oe_ai_assistant')
+      ->execute();
   }
 
   /**
@@ -37,6 +40,7 @@ class DraftingPluginSaveSessionTest extends ExistingSiteBase {
 
     $this->assertSame(200, $result['status']);
     $this->assertSame(['status' => 'ok'], $result['body']);
+    $this->assertAcceptedSelectionWasLogged();
   }
 
   /**
@@ -166,6 +170,21 @@ class DraftingPluginSaveSessionTest extends ExistingSiteBase {
     }
 
     return (string) $term->id();
+  }
+
+  /**
+   * Asserts the accepted session context selection was logged.
+   */
+  protected function assertAcceptedSelectionWasLogged(): void {
+    $count = \Drupal::database()
+      ->select('watchdog', 'w')
+      ->condition('type', 'oe_ai_assistant')
+      ->condition('message', 'OEL-4851 drafting context selection accepted%', 'LIKE')
+      ->countQuery()
+      ->execute()
+      ->fetchField();
+
+    $this->assertGreaterThan(0, (int) $count);
   }
 
 }
