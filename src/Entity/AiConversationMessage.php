@@ -42,7 +42,7 @@ class AiConversationMessage extends ContentEntityBase implements AiConversationM
   /**
    * Base fields whose values are stored as JSON.
    */
-  private const JSON_FIELDS = ['tool_calls', 'token_usage', 'metadata'];
+  private const JSON_FIELDS = ['tool_calls', 'metadata'];
 
   /**
    * {@inheritdoc}
@@ -83,8 +83,7 @@ class AiConversationMessage extends ContentEntityBase implements AiConversationM
    * {@inheritdoc}
    */
   public function getOwnerEntityId(): ?int {
-    $value = $this->get('owner_entity_id')->value;
-    return $value === NULL ? NULL : (int) $value;
+    return $this->getIntOrNull('owner_entity_id');
   }
 
   /**
@@ -114,14 +113,24 @@ class AiConversationMessage extends ContentEntityBase implements AiConversationM
    * {@inheritdoc}
    */
   public function getTokenUsage(): array {
-    return $this->decodeField('token_usage');
+    return [
+      'input' => $this->getIntOrNull('tokens_input'),
+      'output' => $this->getIntOrNull('tokens_output'),
+      'total' => $this->getIntOrNull('tokens_total'),
+      'reasoning' => $this->getIntOrNull('tokens_reasoning'),
+      'cached' => $this->getIntOrNull('tokens_cached'),
+    ];
   }
 
   /**
    * {@inheritdoc}
    */
   public function setTokenUsage(array $token_usage): static {
-    $this->set('token_usage', self::encodeField($token_usage));
+    $this->set('tokens_input', $token_usage['input'] ?? NULL);
+    $this->set('tokens_output', $token_usage['output'] ?? NULL);
+    $this->set('tokens_total', $token_usage['total'] ?? NULL);
+    $this->set('tokens_reasoning', $token_usage['reasoning'] ?? NULL);
+    $this->set('tokens_cached', $token_usage['cached'] ?? NULL);
     return $this;
   }
 
@@ -167,6 +176,20 @@ class AiConversationMessage extends ContentEntityBase implements AiConversationM
       throw new InvalidJsonFieldException(sprintf("Field '%s' must contain a JSON array or object.", $field));
     }
     return $decoded;
+  }
+
+  /**
+   * Returns an integer field value, or NULL when empty.
+   *
+   * @param string $field
+   *   The field name.
+   *
+   * @return int|null
+   *   The integer value, or NULL.
+   */
+  private function getIntOrNull(string $field): ?int {
+    $value = $this->get($field)->value;
+    return $value === NULL ? NULL : (int) $value;
   }
 
   /**
@@ -252,9 +275,28 @@ class AiConversationMessage extends ContentEntityBase implements AiConversationM
       ->setLabel(t('Tool calls'))
       ->setDescription(t('JSON: tool name, arguments, result, tool_call_id.'));
 
-    $fields['token_usage'] = BaseFieldDefinition::create('string_long')
-      ->setLabel(t('Token usage'))
-      ->setDescription(t('JSON: input / output / total / reasoning / cached tokens.'));
+    // Token usage normalized into columns for SQL aggregation (cost per
+    // session, per model). total is provider-reported; reasoning is a subset
+    // of output and cached a subset of input.
+    $fields['tokens_input'] = BaseFieldDefinition::create('integer')
+      ->setLabel(t('Input tokens'))
+      ->setDescription(t('Prompt tokens for this call.'));
+
+    $fields['tokens_output'] = BaseFieldDefinition::create('integer')
+      ->setLabel(t('Output tokens'))
+      ->setDescription(t('Completion tokens for this call.'));
+
+    $fields['tokens_total'] = BaseFieldDefinition::create('integer')
+      ->setLabel(t('Total tokens'))
+      ->setDescription(t('Provider-reported total tokens for this call.'));
+
+    $fields['tokens_reasoning'] = BaseFieldDefinition::create('integer')
+      ->setLabel(t('Reasoning tokens'))
+      ->setDescription(t('Reasoning tokens, a subset of output when reported.'));
+
+    $fields['tokens_cached'] = BaseFieldDefinition::create('integer')
+      ->setLabel(t('Cached tokens'))
+      ->setDescription(t('Cached prompt tokens, a subset of input when reported.'));
 
     $fields['provider'] = BaseFieldDefinition::create('string')
       ->setLabel(t('Provider'))

@@ -101,11 +101,18 @@ class AiConversationMessageTest extends KernelTestBase {
 
     // The typed getters decode the stored JSON back to arrays.
     $this->assertSame([['name' => 'draft_content']], $loaded->getToolCalls());
-    $this->assertSame(['input' => 10, 'output' => 5, 'total' => 15], $loaded->getTokenUsage());
     $this->assertSame([], $loaded->getMetadata());
 
-    // The field stores JSON, not the array.
-    $this->assertSame('{"input":10,"output":5,"total":15}', $loaded->get('token_usage')->value);
+    // Token usage round-trips through the typed accessor with all five keys.
+    $this->assertSame(
+      ['input' => 10, 'output' => 5, 'total' => 15, 'reasoning' => NULL, 'cached' => NULL],
+      $loaded->getTokenUsage()
+    );
+
+    // Token usage is stored in discrete integer columns, not a JSON blob.
+    $this->assertSame(10, (int) $loaded->get('tokens_input')->value);
+    $this->assertSame(15, (int) $loaded->get('tokens_total')->value);
+    $this->assertNull($loaded->get('tokens_reasoning')->value);
 
     // The send time is stamped on save when the caller did not set it.
     $this->assertNotEmpty($loaded->get('created')->value);
@@ -150,7 +157,7 @@ class AiConversationMessageTest extends KernelTestBase {
   }
 
   /**
-   * Tests that a value that cannot be encoded to JSON is rejected by the setter.
+   * Tests that a value that cannot be encoded to JSON is rejected on set.
    */
   public function testSetterRejectsUnencodableValue(): void {
     $message = AiConversationMessage::create([
