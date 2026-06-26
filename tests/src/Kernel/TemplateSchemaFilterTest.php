@@ -114,12 +114,6 @@ class TemplateSchemaFilterTest extends KernelTestBase {
 
   /**
    * Paragraph variants are pruned to the template's nested fields per bundle.
-   *
-   * The news_with_paragraphs template lists text_block (twice) and quote_block,
-   * each with a subset of its fields. The field allows exactly those two
-   * bundles, so no variant is dropped, but each variant must shrink to its
-   * nested fields plus the bundle discriminator, dropping paragraph base fields
-   * the template omits (status, parent_id, behavior_settings, ...).
    */
   public function testFilterPrunesParagraphVariantsToNestedFields(): void {
     $schema = $this->composer()->compose('node', 'oe_news');
@@ -145,9 +139,6 @@ class TemplateSchemaFilterTest extends KernelTestBase {
 
   /**
    * Grouping runs the composer's heuristic over the filtered schema.
-   *
-   * All-scalar template -> a single main_fields group. A template with a
-   * paragraph field -> main_fields plus one group for that field.
    */
   public function testSplitIntoGroupsRunsHeuristicOnFilteredSchema(): void {
     $schema = $this->composer()->compose('node', 'oe_news');

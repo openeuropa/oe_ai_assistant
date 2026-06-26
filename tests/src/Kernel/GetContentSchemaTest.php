@@ -95,36 +95,37 @@ class GetContentSchemaTest extends KernelTestBase {
   }
 
   /**
-   * With a template context, the tool output is restricted to its fields.
+   * An explicit template context restricts the tool output to its fields.
    */
-  public function testExecuteWithTemplateReturnsFilteredGroups(): void {
+  public function testExecuteWithTemplateUsesThatTemplate(): void {
+    // news_default lists title, field_teaser, field_body (all scalar).
     $groups = $this->runPlugin([
       'entity_type_id' => 'node',
       'bundle' => 'oe_news',
-      'template' => 'news_with_paragraphs',
+      'template' => 'news_default',
     ]);
 
     $byId = array_column($groups, 'fieldNames', 'groupId');
-    // news_with_paragraphs lists only title, field_teaser, and the paragraphs.
-    $this->assertSame(['title', 'field_teaser'], $byId['main_fields']);
-    $this->assertArrayHasKey('field_content_paragraphs', $byId);
-    // A field outside the template is gone from the tool output.
-    $this->assertNotContains('field_body', $byId['main_fields']);
+    $this->assertSame(['title', 'field_teaser', 'field_body'], $byId['main_fields']);
+    $this->assertArrayNotHasKey('field_content_paragraphs', $byId);
     $this->assertNotContains('field_news_type', $byId['main_fields']);
   }
 
   /**
-   * Without a template context, the tool output is the full grouping.
+   * Without a template context, the latest template for the bundle is used.
    */
-  public function testExecuteWithoutTemplateReturnsFullGroups(): void {
+  public function testExecuteWithoutTemplateAutoPicksLatest(): void {
+    // oe_news' latest template is news_with_paragraphs (title, field_teaser,
+    // field_content_paragraphs), not the full schema.
     $groups = $this->runPlugin([
       'entity_type_id' => 'node',
       'bundle' => 'oe_news',
     ]);
 
-    $mainFields = array_column($groups, 'fieldNames', 'groupId')['main_fields'];
-    $this->assertContains('field_body', $mainFields);
-    $this->assertContains('field_news_type', $mainFields);
+    $byId = array_column($groups, 'fieldNames', 'groupId');
+    $this->assertSame(['title', 'field_teaser'], $byId['main_fields']);
+    $this->assertArrayHasKey('field_content_paragraphs', $byId);
+    $this->assertNotContains('field_body', $byId['main_fields']);
   }
 
   /**

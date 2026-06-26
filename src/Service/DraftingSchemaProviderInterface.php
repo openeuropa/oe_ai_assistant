@@ -21,7 +21,8 @@ interface DraftingSchemaProviderInterface {
    * @param string $bundle
    *   The bundle machine name.
    * @param string $templateId
-   *   An ai_drafting_template id, or '' for the full schema.
+   *   An ai_drafting_template id. When '', the latest template for the bundle
+   *   is used, or the full schema if the bundle has no template.
    *
    * @return array
    *   Ordered groups, each with 'groupId', 'label', 'fieldNames', and

@@ -82,13 +82,25 @@ class DraftingSchemaProviderTest extends KernelTestBase {
   }
 
   /**
-   * An empty template id returns the full grouping.
+   * An empty template id auto-selects the latest template for the bundle.
    */
-  public function testEmptyTemplateIdReturnsFullGroups(): void {
-    $main = $this->mainFields($this->provider()->groups('node', 'oe_news', ''));
+  public function testEmptyTemplateIdAutoPicksLatestTemplate(): void {
+    // oe_news has news_default and news_with_paragraphs; latest by id is
+    // news_with_paragraphs (title, field_teaser, field_content_paragraphs).
+    $groups = $this->provider()->groups('node', 'oe_news', '');
 
-    $this->assertContains('field_body', $main);
-    $this->assertContains('field_news_type', $main);
+    $this->assertSame(['title', 'field_teaser'], $this->mainFields($groups));
+    $this->assertContains('field_content_paragraphs', array_column($groups, 'groupId'));
+  }
+
+  /**
+   * A bundle with no template falls back to the full grouping.
+   */
+  public function testBundleWithoutTemplateReturnsFullGroups(): void {
+    // oe_contact has no drafting template, so the full schema is used.
+    $main = $this->mainFields($this->provider()->groups('node', 'oe_contact', ''));
+
+    $this->assertContains('field_contact_name', $main);
   }
 
   /**

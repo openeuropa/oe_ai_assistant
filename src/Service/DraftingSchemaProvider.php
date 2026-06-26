@@ -45,16 +45,23 @@ class DraftingSchemaProvider implements DraftingSchemaProviderInterface {
    *   Returns the template or NULL if none found with the given id.
    */
   private function loadTemplate(string $templateId, string $bundle): ?AiDraftingTemplateInterface {
-    if ($templateId === '') {
+    $storage = $this->entityTypeManager->getStorage('ai_drafting_template');
+
+    if ($templateId !== '') {
+      $template = $storage->load($templateId);
+      return $template instanceof AiDraftingTemplateInterface
+        && $template->getContentType() === $bundle
+          ? $template
+          : NULL;
+    }
+
+    // No id given: use the latest template for the bundle (highest id).
+    $candidates = $storage->loadByProperties(['content_type' => $bundle]);
+    if ($candidates === []) {
       return NULL;
     }
-    $template = $this->entityTypeManager
-      ->getStorage('ai_drafting_template')
-      ->load($templateId);
-    return $template instanceof AiDraftingTemplateInterface
-      && $template->getContentType() === $bundle
-        ? $template
-        : NULL;
+    ksort($candidates);
+    return end($candidates) ?: NULL;
   }
 
 }
