@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace Drupal\oe_ai_assistant\Hook;
 
+use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Database\Query\AlterableInterface;
 use Drupal\Core\Database\Query\SelectInterface;
+use Drupal\Core\Entity\EntityFieldManagerInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Hook\Attribute\Hook;
 use Drupal\Core\Session\AccountProxyInterface;
@@ -18,6 +20,8 @@ final class OeAiAssistantHooks {
   public function __construct(
     private readonly AccountProxyInterface $currentUser,
     private readonly EntityTypeManagerInterface $entityTypeManager,
+    private readonly EntityFieldManagerInterface $entityFieldManager,
+    private readonly ConfigFactoryInterface $configFactory,
   ) {}
 
   /**
@@ -67,6 +71,62 @@ final class OeAiAssistantHooks {
         }
       }
       $options = $valid_options;
+    }
+  }
+
+  /**
+   * Implements hook_config_schema_info_alter().
+   */
+  #[Hook('config_schema_info_alter')]
+  public function configSchemaInfoAlter(array &$definitions): void {
+    if (!isset($definitions['oe_ai_assistant.ai_drafting_template.*'])) {
+      return;
+    }
+
+    $fieldsMapping = [];
+    $defaultsMapping = [];
+
+    foreach ($this->configFactory->listAll('oe_ai_assistant.ai_drafting_template.') as $configName) {
+      $template = $this->configFactory->get($configName)->getRawData();
+      $fields = $template['fields'];
+      $defaults = $template['defaults'];
+      $fieldDefinitions = $this->entityFieldManager->getFieldDefinitions('node', $template['content_type']);
+
+      // Field/default keys are field machine names stored in template config.
+      foreach ($fields as $fieldName => $_field) {
+        $fieldType = $fieldDefinitions[$fieldName]->getType();
+        $fieldsMapping[$fieldName] = $definitions['oe_ai_assistant.ai_drafting_template.field'];
+        // Inject the field item schema without storing the type in config.
+        $fieldValueType = 'field.value.' . $fieldType;
+        if (isset($definitions[$fieldValueType])) {
+          $fieldsMapping[$fieldName]['mapping']['default_value']['sequence']['type'] = $fieldValueType;
+        }
+      }
+
+      foreach ($defaults as $fieldName => $_default) {
+        $fieldType = $fieldDefinitions[$fieldName]->getType();
+        $defaultsMapping[$fieldName] = $definitions['oe_ai_assistant.ai_drafting_template.default'];
+        $fieldValueType = 'field.value.' . $fieldType;
+        if (isset($definitions[$fieldValueType])) {
+          $defaultsMapping[$fieldName]['mapping']['default_value']['sequence']['type'] = $fieldValueType;
+        }
+      }
+    }
+
+    if ($fieldsMapping !== []) {
+      $definitions['oe_ai_assistant.ai_drafting_template.*']['mapping']['fields'] = [
+        'type' => 'mapping',
+        'label' => 'Field definitions',
+        'mapping' => $fieldsMapping,
+      ];
+    }
+
+    if ($defaultsMapping !== []) {
+      $definitions['oe_ai_assistant.ai_drafting_template.*']['mapping']['defaults'] = [
+        'type' => 'mapping',
+        'label' => 'Default values',
+        'mapping' => $defaultsMapping,
+      ];
     }
   }
 

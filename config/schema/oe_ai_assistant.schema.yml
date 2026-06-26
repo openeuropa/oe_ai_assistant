@@ -36,17 +36,11 @@ oe_ai_assistant.ai_drafting_template.*:
       type: string
       label: 'Content type'
     fields:
-      type: sequence
+      type: ignore
       label: 'Field definitions'
-      sequence:
-        type: oe_ai_assistant.ai_drafting_template.field
-        label: 'Field definition'
     defaults:
-      type: sequence
+      type: ignore
       label: 'Default values'
-      sequence:
-        type: oe_ai_assistant.ai_drafting_template.default
-        label: 'Default value'
 
 oe_ai_assistant.ai_drafting_template.field:
   type: mapping
@@ -56,10 +50,13 @@ oe_ai_assistant.ai_drafting_template.field:
       requiredKey: false
       type: text
       label: 'Prompt'
-    type:
+    default_value:
       requiredKey: false
-      type: string
-      label: 'Field type'
+      type: sequence
+      label: 'Default values'
+      sequence:
+        type: ignore
+        label: 'Default value'
     items:
       requiredKey: false
       type: sequence
@@ -94,12 +91,10 @@ oe_ai_assistant.ai_drafting_template.default:
   type: mapping
   label: 'Default value'
   mapping:
-    type:
-      type: string
-      label: 'Field type'
     default_value:
+      requiredKey: false
       type: sequence
       label: 'Default values'
       sequence:
-        type: field.value.[%parent.%parent.type]
+        type: ignore
         label: 'Default value'

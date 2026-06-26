@@ -2,8 +2,15 @@ langcode: en
 status: true
 dependencies:
   config:
-    - workflows.workflow.editorial
+    - field.field.node.oe_news.field_content_paragraphs
+    - field.field.node.oe_news.field_teaser
+    - field.field.paragraph.quote_block.field_quote_attribution
+    - field.field.paragraph.quote_block.field_quote_text
+    - field.field.paragraph.text_block.field_text_body
     - node.type.oe_news
+    - paragraphs.paragraphs_type.quote_block
+    - paragraphs.paragraphs_type.text_block
+    - workflows.workflow.editorial
   module:
     - oe_ai_assistant
 id: news_with_paragraphs
@@ -40,10 +47,5 @@ fields:
             prompt: 'Conclusion body text.'
 defaults:
   langcode:
-    type: language
     default_value:
       - value: en
-  moderation_state:
-    type: string
-    default_value:
-      - value: draft

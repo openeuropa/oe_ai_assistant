@@ -3,6 +3,8 @@ status: true
 dependencies:
   config:
     - workflows.workflow.editorial
+    - field.field.node.oe_news.field_body
+    - field.field.node.oe_news.field_teaser
     - node.type.oe_news
   module:
     - oe_ai_assistant
@@ -19,10 +21,5 @@ fields:
     prompt: 'Full article body, 3-5 paragraphs. Inverted pyramid structure.'
 defaults:
   langcode:
-    type: language
     default_value:
       - value: en
-  moderation_state:
-    type: string
-    default_value:
-      - value: draft

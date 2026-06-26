@@ -60,6 +60,7 @@ class AiDraftingTemplateCrudTest extends KernelTestBase {
     $this->installEntitySchema('user');
     $this->installEntitySchema('node');
     $this->installEntitySchema('paragraph');
+    $this->installEntitySchema('content_moderation_state');
     $this->installEntitySchema('file');
     $this->installEntitySchema('taxonomy_term');
     $this->installConfig(['oe_ai_assistant_test']);
@@ -91,7 +92,6 @@ class AiDraftingTemplateCrudTest extends KernelTestBase {
       'fields' => ['title' => ['prompt' => 'Write a headline.']],
       'defaults' => [
         'langcode' => [
-          'type' => 'language',
           'default_value' => [['value' => 'en']],
         ],
       ],
@@ -106,7 +106,6 @@ class AiDraftingTemplateCrudTest extends KernelTestBase {
     $this->assertEquals(['title' => ['prompt' => 'Write a headline.']], $loaded->getFields());
     $this->assertEquals([
       'langcode' => [
-        'type' => 'language',
         'default_value' => [['value' => 'en']],
       ],
     ], $loaded->getDefaults());
@@ -211,6 +210,46 @@ class AiDraftingTemplateCrudTest extends KernelTestBase {
   }
 
   /**
+   * Tests that default value schemas use real field definition types.
+   */
+  public function testDefaultSchemaUsesFieldDefinitionType(): void {
+    $template = AiDraftingTemplate::create([
+      'id' => 'test_news_crud',
+      'label' => 'Test news CRUD',
+      'status' => TRUE,
+      'content_type' => 'oe_news',
+      'fields' => [
+        'title' => ['prompt' => 'Write a headline.'],
+        'field_body' => [
+          'prompt' => 'Write a body.',
+          'default_value' => [],
+        ],
+      ],
+      'defaults' => [
+        'field_news_image' => [
+          'default_value' => [],
+        ],
+      ],
+    ]);
+    $template->save();
+
+    $typedConfig = $this->container->get('config.typed');
+    $typedConfig->clearCachedDefinitions();
+    $definition = $typedConfig->getDefinition('oe_ai_assistant.ai_drafting_template.test_news_crud');
+
+    $this->assertArrayNotHasKey('type', $template->getFields()['field_body']);
+    $this->assertArrayNotHasKey('type', $template->getDefaults()['field_news_image']);
+    $this->assertSame(
+      'field.value.text_with_summary',
+      $definition['mapping']['fields']['mapping']['field_body']['mapping']['default_value']['sequence']['type']
+    );
+    $this->assertSame(
+      'field.value.image',
+      $definition['mapping']['defaults']['mapping']['field_news_image']['mapping']['default_value']['sequence']['type']
+    );
+  }
+
+  /**
    * Tests that a template referencing a non-existent content type is invalid.
    */
   public function testNonExistentContentTypeIsInvalid(): void {
@@ -261,7 +300,6 @@ class AiDraftingTemplateCrudTest extends KernelTestBase {
   public function testRequiredNodeFieldCanBeSatisfiedByDefault(): void {
     $template = $this->buildTemplate('oe_news', [], [
       'title' => [
-        'type' => 'string',
         'default_value' => [['value' => 'Default title']],
       ],
     ]);
@@ -569,7 +607,7 @@ class AiDraftingTemplateCrudTest extends KernelTestBase {
   }
 
   /**
-   * Tests that default definitions do not need duplicate field type metadata.
+   * Tests that default definitions can omit field type metadata.
    */
   public function testDefaultTypeIsOptional(): void {
     $template = $this->buildTemplate('oe_news', [], [
@@ -585,9 +623,7 @@ class AiDraftingTemplateCrudTest extends KernelTestBase {
    */
   public function testDefaultValueIsRequired(): void {
     $template = $this->buildTemplate('oe_news', [], [
-      'langcode' => [
-        'type' => 'language',
-      ],
+      'langcode' => [],
     ]);
     $result = $template->validate();
 
@@ -604,7 +640,6 @@ class AiDraftingTemplateCrudTest extends KernelTestBase {
   public function testDefaultValueMustBeSequence(): void {
     $template = $this->buildTemplate('oe_news', [], [
       'langcode' => [
-        'type' => 'language',
         'default_value' => 'en',
       ],
     ]);
@@ -623,7 +658,6 @@ class AiDraftingTemplateCrudTest extends KernelTestBase {
   public function testDefaultValueMustSatisfyFieldConstraints(): void {
     $template = $this->buildTemplate('oe_news', [], [
       'title' => [
-        'type' => 'string',
         'default_value' => [['value' => str_repeat('a', 256)]],
       ],
     ]);
@@ -644,11 +678,9 @@ class AiDraftingTemplateCrudTest extends KernelTestBase {
 
     $template = $this->buildTemplate('oe_news', [], [
       'created' => [
-        'type' => 'created',
         'default_value' => [['value' => '__NOW__']],
       ],
       'langcode' => [
-        'type' => 'language',
         'default_value' => [['value' => 'en']],
       ],
     ]);
@@ -664,7 +696,6 @@ class AiDraftingTemplateCrudTest extends KernelTestBase {
   public function testResolveDefaultsNoTokensIsPassthrough(): void {
     $defaults = [
       'langcode' => [
-        'type' => 'language',
         'default_value' => [['value' => 'en']],
       ],
     ];

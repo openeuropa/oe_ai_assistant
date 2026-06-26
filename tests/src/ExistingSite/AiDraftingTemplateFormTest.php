@@ -95,7 +95,7 @@ class AiDraftingTemplateFormTest extends ExistingSiteBase {
     $page->checkField('status');
     $page->selectFieldOption('content_type', 'oe_news');
     $page->fillField('fields_yaml', "title:\n  prompt: 'Write a headline.'");
-    $page->fillField('defaults_yaml', "langcode:\n  type: language\n  default_value:\n    - value: en");
+    $page->fillField('defaults_yaml', "langcode:\n  default_value:\n    - value: en");
     $page->pressButton('Save');
 
     $this->assertSession()->pageTextContains('Created AI drafting template Form create test.');
@@ -115,7 +115,6 @@ class AiDraftingTemplateFormTest extends ExistingSiteBase {
     $this->assertEquals(
       [
         'langcode' => [
-          'type' => 'language',
           'default_value' => [['value' => 'en']],
         ],
       ],
@@ -136,7 +135,6 @@ class AiDraftingTemplateFormTest extends ExistingSiteBase {
       'fields' => ['title' => ['prompt' => 'Original prompt.']],
       'defaults' => [
         'langcode' => [
-          'type' => 'language',
           'default_value' => [['value' => 'en']],
         ],
       ],
@@ -172,7 +170,6 @@ class AiDraftingTemplateFormTest extends ExistingSiteBase {
     $this->assertEquals(
       [
         'langcode' => [
-          'type' => 'language',
           'default_value' => [['value' => 'en']],
         ],
       ],
