@@ -26,6 +26,9 @@ use Drupal\datetime\Plugin\Field\FieldType\DateTimeItemInterface;
  *   label_collection = @Translation("AI conversation messages"),
  *   label_singular = @Translation("AI conversation message"),
  *   label_plural = @Translation("AI conversation messages"),
+ *   handlers = {
+ *     "storage_schema" = "Drupal\oe_ai_assistant\Entity\Storage\AiConversationMessageStorageSchema",
+ *   },
  *   entity_keys = {
  *     "id" = "id",
  *     "uuid" = "uuid",
