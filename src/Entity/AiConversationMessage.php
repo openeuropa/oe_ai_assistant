@@ -29,12 +29,26 @@ use Drupal\oe_ai_assistant\Exception\InvalidJsonFieldException;
  *   label_plural = @Translation("AI conversation messages"),
  *   handlers = {
  *     "storage_schema" = "Drupal\oe_ai_assistant\Entity\Storage\AiConversationMessageStorageSchema",
+ *     "list_builder" = "Drupal\oe_ai_assistant\AiConversationMessageListBuilder",
+ *     "access" = "Drupal\oe_ai_assistant\AiConversationMessageAccessControlHandler",
+ *     "form" = {
+ *       "add" = "Drupal\oe_ai_assistant\Form\AiConversationMessageForm",
+ *       "edit" = "Drupal\oe_ai_assistant\Form\AiConversationMessageForm",
+ *       "delete" = "Drupal\Core\Entity\ContentEntityDeleteForm",
+ *     },
  *   },
  *   entity_keys = {
  *     "id" = "id",
  *     "uuid" = "uuid",
  *   },
  *   base_table = "ai_conversation_message",
+ *   admin_permission = "administer ai conversation messages",
+ *   links = {
+ *     "collection" = "/admin/config/ai-editorial/messages",
+ *     "add-form" = "/admin/config/ai-editorial/messages/add",
+ *     "edit-form" = "/admin/config/ai-editorial/messages/{ai_conversation_message}/edit",
+ *     "delete-form" = "/admin/config/ai-editorial/messages/{ai_conversation_message}/delete",
+ *   },
  * )
  */
 class AiConversationMessage extends ContentEntityBase implements AiConversationMessageInterface {
@@ -63,6 +77,16 @@ class AiConversationMessage extends ContentEntityBase implements AiConversationM
     foreach (self::JSON_FIELDS as $field) {
       $this->decodeField($field);
     }
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function label(): string {
+    if ($this->id() === NULL) {
+      return 'New conversation message';
+    }
+    return sprintf('Message %s (%s)', $this->id(), $this->getRole());
   }
 
   /**

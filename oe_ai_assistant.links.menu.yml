@@ -18,3 +18,10 @@ entity.ai_drafting_template.collection:
   parent: oe_ai_assistant.admin_settings
   route_name: entity.ai_drafting_template.collection
   weight: 30
+
+entity.ai_conversation_message.collection:
+  title: 'AI Conversation Messages'
+  description: 'List AI conversation messages and view token totals.'
+  parent: oe_ai_assistant.admin_settings
+  route_name: entity.ai_conversation_message.collection
+  weight: 40
