@@ -10,6 +10,7 @@ use Drupal\Core\Entity\EntityTypeInterface;
 use Drupal\Core\Field\BaseFieldDefinition;
 use Drupal\datetime\Plugin\Field\FieldType\DateTimeItem;
 use Drupal\datetime\Plugin\Field\FieldType\DateTimeItemInterface;
+use Drupal\oe_ai_assistant\Exception\InvalidJsonFieldException;
 
 /**
  * Defines the AI conversation message entity.
@@ -39,6 +40,11 @@ use Drupal\datetime\Plugin\Field\FieldType\DateTimeItemInterface;
 class AiConversationMessage extends ContentEntityBase implements AiConversationMessageInterface {
 
   /**
+   * Base fields whose values are stored as JSON.
+   */
+  private const JSON_FIELDS = ['tool_calls', 'token_usage', 'metadata'];
+
+  /**
    * {@inheritdoc}
    */
   public function preSave(EntityStorageInterface $storage): void {
@@ -50,6 +56,12 @@ class AiConversationMessage extends ContentEntityBase implements AiConversationM
         DateTimeItemInterface::DATETIME_STORAGE_FORMAT,
         \Drupal::time()->getRequestTime()
       ));
+    }
+
+    // Reject malformed JSON before it reaches storage. The typed setters always
+    // write valid JSON; this guards values written directly via set().
+    foreach (self::JSON_FIELDS as $field) {
+      $this->decodeField($field);
     }
   }
 
@@ -81,6 +93,101 @@ class AiConversationMessage extends ContentEntityBase implements AiConversationM
   public function getParentId(): ?int {
     $value = $this->get('parent')->target_id;
     return $value === NULL ? NULL : (int) $value;
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function getToolCalls(): array {
+    return $this->decodeField('tool_calls');
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function setToolCalls(array $tool_calls): static {
+    $this->set('tool_calls', self::encodeField($tool_calls));
+    return $this;
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function getTokenUsage(): array {
+    return $this->decodeField('token_usage');
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function setTokenUsage(array $token_usage): static {
+    $this->set('token_usage', self::encodeField($token_usage));
+    return $this;
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function getMetadata(): array {
+    return $this->decodeField('metadata');
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function setMetadata(array $metadata): static {
+    $this->set('metadata', self::encodeField($metadata));
+    return $this;
+  }
+
+  /**
+   * Decodes a JSON-backed field to an array.
+   *
+   * @param string $field
+   *   The field name.
+   *
+   * @return array
+   *   The decoded value, or an empty array when the field is empty.
+   *
+   * @throws \Drupal\oe_ai_assistant\Exception\InvalidJsonFieldException
+   *   When the stored value is not valid JSON or does not decode to an array.
+   */
+  private function decodeField(string $field): array {
+    $raw = $this->get($field)->value;
+    if ($raw === NULL || $raw === '') {
+      return [];
+    }
+    try {
+      $decoded = json_decode($raw, TRUE, 512, JSON_THROW_ON_ERROR);
+    }
+    catch (\JsonException $e) {
+      throw new InvalidJsonFieldException(sprintf("Field '%s' contains invalid JSON: %s", $field, $e->getMessage()), 0, $e);
+    }
+    if (!is_array($decoded)) {
+      throw new InvalidJsonFieldException(sprintf("Field '%s' must contain a JSON array or object.", $field));
+    }
+    return $decoded;
+  }
+
+  /**
+   * Encodes an array to a JSON string for storage.
+   *
+   * @param array $value
+   *   The value to encode.
+   *
+   * @return string
+   *   The JSON string.
+   *
+   * @throws \Drupal\oe_ai_assistant\Exception\InvalidJsonFieldException
+   *   When the value cannot be encoded to JSON.
+   */
+  private static function encodeField(array $value): string {
+    try {
+      return json_encode($value, JSON_THROW_ON_ERROR);
+    }
+    catch (\JsonException $e) {
+      throw new InvalidJsonFieldException('Value could not be encoded to JSON: ' . $e->getMessage(), 0, $e);
+    }
   }
 
   /**
