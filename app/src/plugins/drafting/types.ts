@@ -42,7 +42,6 @@ export interface DraftingPluginConfig {
   entityTypeId?: string;
   bundle?: string;
   context?: {
-    audience?: DraftingContextOption[];
     tone?: DraftingContextOption[];
   };
 }

@@ -10,14 +10,6 @@ export const developmentConfig = {
       entityTypeId: "node",
       bundle: "oe_news",
       context: {
-        audience: [
-          {
-            id: "general-public",
-            label: "General public",
-            description:
-              "Use plain language and explain policy terms when needed.",
-          },
-        ],
         tone: [
           {
             id: "clear-professional",
