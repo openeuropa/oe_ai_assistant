@@ -130,10 +130,7 @@ final class AiDraftingTemplate extends ConfigEntityBase implements AiDraftingTem
    * {@inheritdoc}
    */
   public function resolveDefaults(): array {
-    /** @var \Drupal\Component\Datetime\TimeInterface $time */
-    $time = \Drupal::service(TimeInterface::class);
-    $now = $time->getRequestTime();
-    return $this->resolveDefaultTokens($this->defaults, $now);
+    return $this->resolveDefaultTokens($this->defaults, $this->getRequestTime());
   }
 
   /**
@@ -152,8 +149,7 @@ final class AiDraftingTemplate extends ConfigEntityBase implements AiDraftingTem
       return $result;
     }
 
-    $this->validateFieldsAgainstEntityType('node', $contentType, $this->fields, '', $result);
-    $this->validateDefaultsAgainstEntityType('node', $contentType, $this->defaults, $result);
+    $this->validateFields('node', $contentType, $this->fields, '', $result, $this->defaults);
 
     return $result;
   }
@@ -184,15 +180,20 @@ final class AiDraftingTemplate extends ConfigEntityBase implements AiDraftingTem
    *   The path prefix for nested validation errors.
    * @param \Drupal\oe_ai_assistant\TemplateValidationResult $result
    *   The validation result to add errors to.
+   * @param array<string, mixed> $defaults
+   *   Default values that satisfy required fields for this entity type.
    */
-  private function validateFieldsAgainstEntityType(
+  private function validateFields(
     string $entityType,
     string $bundle,
     array $fields,
     string $pathPrefix,
     TemplateValidationResult $result,
+    array $defaults = [],
   ): void {
     $definitions = $this->getFieldDefinitions($entityType, $bundle);
+
+    $this->validateDefaults($entityType, $bundle, $defaults, $pathPrefix, $result, $definitions);
 
     foreach ($fields as $fieldName => $fieldDef) {
       $path = $pathPrefix !== '' ? "$pathPrefix > $fieldName" : $fieldName;
@@ -207,6 +208,14 @@ final class AiDraftingTemplate extends ConfigEntityBase implements AiDraftingTem
 
       $definition = $definitions[$fieldName];
 
+      if (!is_array($fieldDef)) {
+        continue;
+      }
+
+      if (array_key_exists('default_value', $fieldDef)) {
+        $this->validateDefaultValue($entityType, $bundle, $fieldName, $fieldDef, $result, 'fields');
+      }
+
       if (!array_key_exists('type', $fieldDef)) {
         continue;
       }
@@ -220,6 +229,8 @@ final class AiDraftingTemplate extends ConfigEntityBase implements AiDraftingTem
         $this->validateReferenceField($definition, $fieldDef, $path, $result);
       }
     }
+
+    $this->validateRequiredFields($entityType, $bundle, $fields, $defaults, $pathPrefix, $result, $definitions);
   }
 
   /**
@@ -291,8 +302,97 @@ final class AiDraftingTemplate extends ConfigEntityBase implements AiDraftingTem
 
       // Nested fields are validated against the referenced bundle.
       if (!empty($item['fields'])) {
-        $this->validateFieldsAgainstEntityType($itemEntityType, $itemBundle, $item['fields'], "$itemPath > fields", $result);
+        $this->validateFields($itemEntityType, $itemBundle, $item['fields'], "$itemPath > fields", $result);
+        continue;
       }
+
+      $this->validateFields($itemEntityType, $itemBundle, [], "$itemPath > fields", $result);
+    }
+  }
+
+  /**
+   * Validates default values against field definitions and constraints.
+   *
+   * @param string $entityType
+   *   The entity type ID.
+   * @param string $bundle
+   *   The bundle ID.
+   * @param array<string, mixed> $defaults
+   *   The default values to validate.
+   * @param string $pathPrefix
+   *   The path prefix for nested validation errors.
+   * @param \Drupal\oe_ai_assistant\TemplateValidationResult $result
+   *   The validation result to add errors to.
+   * @param array<string, \Drupal\Core\Field\FieldDefinitionInterface> $definitions
+   *   The Drupal field definitions for the entity type and bundle.
+   */
+  private function validateDefaults(
+    string $entityType,
+    string $bundle,
+    array $defaults,
+    string $pathPrefix,
+    TemplateValidationResult $result,
+    array $definitions,
+  ): void {
+    foreach ($defaults as $fieldName => $default) {
+      $fieldPath = $pathPrefix !== '' ? "$pathPrefix > $fieldName" : $fieldName;
+
+      if (!isset($definitions[$fieldName])) {
+        $entityLabel = $entityType === 'node'
+          ? "content type '$bundle'"
+          : "$entityType '$bundle'";
+        $result->addError("Default field '$fieldPath' does not exist on $entityLabel.", 'defaults');
+        continue;
+      }
+
+      $this->validateDefaultValue($entityType, $bundle, $fieldPath, $default, $result, 'defaults');
+    }
+  }
+
+  /**
+   * Validates that required, authorable fields are covered by the template.
+   *
+   * @param string $entityType
+   *   The entity type ID.
+   * @param string $bundle
+   *   The bundle ID.
+   * @param array<string, mixed> $fields
+   *   The field definitions to validate.
+   * @param array<string, mixed> $defaults
+   *   Default values that satisfy required fields for this entity type.
+   * @param string $pathPrefix
+   *   The path prefix for nested validation errors.
+   * @param \Drupal\oe_ai_assistant\TemplateValidationResult $result
+   *   The validation result to add errors to.
+   * @param array<string, \Drupal\Core\Field\FieldDefinitionInterface> $definitions
+   *   The Drupal field definitions for the entity type and bundle.
+   */
+  private function validateRequiredFields(
+    string $entityType,
+    string $bundle,
+    array $fields,
+    array $defaults,
+    string $pathPrefix,
+    TemplateValidationResult $result,
+    array $definitions,
+  ): void {
+    foreach ($definitions as $fieldName => $definition) {
+      if (
+        !$definition->isRequired() ||
+        $definition->isComputed() ||
+        $definition->isReadOnly() ||
+        !$definition->isDisplayConfigurable('form') ||
+        array_key_exists($fieldName, $fields) ||
+        array_key_exists($fieldName, $defaults)
+      ) {
+        continue;
+      }
+
+      $fieldPath = $pathPrefix !== '' ? "$pathPrefix > $fieldName" : $fieldName;
+      $entityLabel = $entityType === 'node'
+        ? "content type '$bundle'"
+        : "$entityType '$bundle'";
+      $result->addError("Required field '$fieldPath' is missing from template fields or defaults on $entityLabel.");
     }
   }
 
@@ -326,55 +426,59 @@ final class AiDraftingTemplate extends ConfigEntityBase implements AiDraftingTem
   }
 
   /**
-   * Validates default field names against an entity type and bundle.
+   * Validates one default field definition with Drupal field constraints.
    *
    * @param string $entityType
    *   The entity type ID.
    * @param string $bundle
    *   The bundle ID.
-   * @param array<string, mixed> $defaults
-   *   The default values to validate.
+   * @param string $fieldName
+   *   The field name.
+   * @param mixed $default
+   *   The default definition.
    * @param \Drupal\oe_ai_assistant\TemplateValidationResult $result
    *   The validation result to add errors to.
+   * @param string $category
+   *   The validation category to assign errors to.
    */
-  private function validateDefaultsAgainstEntityType(
+  private function validateDefaultValue(
     string $entityType,
     string $bundle,
-    array $defaults,
+    string $fieldName,
+    mixed $default,
     TemplateValidationResult $result,
+    string $category,
   ): void {
-    if (empty($defaults)) {
+    if (!is_array($default)) {
+      $result->addError("Default field '$fieldName' must be a mapping with a default_value key.", $category);
+      return;
+    }
+    if (!array_key_exists('default_value', $default)) {
+      $result->addError("Default field '$fieldName' is missing default_value.", $category);
+      return;
+    }
+    if (!is_array($default['default_value']) || !array_is_list($default['default_value'])) {
+      $result->addError("Default field '$fieldName' default_value must be a sequence.", $category);
       return;
     }
 
-    $definitions = $this->getFieldDefinitions($entityType, $bundle);
+    try {
+      $entityTypeManager = \Drupal::service('entity_type.manager');
+      $entityTypeDefinition = $entityTypeManager->getDefinition($entityType);
+      $bundleKey = $entityTypeDefinition->getKey('bundle');
+      $values = $bundleKey ? [$bundleKey => $bundle] : [];
+      /** @var \Drupal\Core\Entity\FieldableEntityInterface $entity */
+      $entity = $entityTypeManager->getStorage($entityType)->create($values);
+      $entity->set($fieldName, $this->resolveDefaultTokens($default['default_value'], $this->getRequestTime()));
+      $field = $entity->get($fieldName);
+    }
+    catch (\Throwable $e) {
+      $result->addError("Default field '$fieldName' default_value could not be applied: {$e->getMessage()}", $category);
+      return;
+    }
 
-    foreach ($defaults as $fieldName => $default) {
-      if (!isset($definitions[$fieldName])) {
-        $result->addError("Default field '$fieldName' does not exist on content type '$bundle'.", 'defaults');
-        continue;
-      }
-
-      if (!is_array($default)) {
-        $result->addError("Default field '$fieldName' must be a mapping with type and default_value keys.", 'defaults');
-        continue;
-      }
-
-      $expectedType = $definitions[$fieldName]->getFieldStorageDefinition()->getType();
-      $configuredType = $default['type'] ?? NULL;
-      if (!is_string($configuredType) || $configuredType === '') {
-        $result->addError("Default field '$fieldName' is missing type.", 'defaults');
-      }
-      elseif ($configuredType !== $expectedType) {
-        $result->addError("Default field '$fieldName' is a '$expectedType' field, not '$configuredType'.", 'defaults');
-      }
-
-      if (!array_key_exists('default_value', $default)) {
-        $result->addError("Default field '$fieldName' is missing default_value.", 'defaults');
-      }
-      elseif (!is_array($default['default_value'])) {
-        $result->addError("Default field '$fieldName' default_value must be a sequence.", 'defaults');
-      }
+    foreach ($field->validate() as $violation) {
+      $result->addError("Default field '$fieldName' default_value is invalid: {$violation->getMessage()}", $category);
     }
   }
 
@@ -400,6 +504,15 @@ final class AiDraftingTemplate extends ConfigEntityBase implements AiDraftingTem
       fn(mixed $item): mixed => $this->resolveDefaultTokens($item, $now),
       $value,
     );
+  }
+
+  /**
+   * Returns the current request time.
+   */
+  private function getRequestTime(): int {
+    /** @var \Drupal\Component\Datetime\TimeInterface $time */
+    $time = \Drupal::service(TimeInterface::class);
+    return $time->getRequestTime();
   }
 
   /**
