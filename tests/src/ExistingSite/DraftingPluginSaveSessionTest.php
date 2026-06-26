@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Drupal\Tests\oe_ai_assistant\ExistingSite;
 
 use Drupal\Core\Url;
+use Drupal\taxonomy\Entity\Term;
 use Drupal\user\UserInterface;
 use weitzman\DrupalTestTraits\ExistingSiteBase;
 
@@ -25,7 +26,7 @@ class DraftingPluginSaveSessionTest extends ExistingSiteBase {
   }
 
   /**
-   * Tests that valid audience and tone selections are accepted.
+   * Tests that valid tone selections are accepted.
    */
   public function testSaveSessionAcceptsValidContext(): void {
     $user = $this->createUser(['use oe ai assistant']);
@@ -33,7 +34,6 @@ class DraftingPluginSaveSessionTest extends ExistingSiteBase {
 
     $result = $this->httpPost('/api/ai/plugins/drafting/save-session', [
       'context' => [
-        'audienceId' => $this->getTermIdByName('oe_ai_target_audience', 'Business and industry'),
         'toneId' => $this->getTermIdByName('oe_ai_tone', 'Formal'),
       ],
     ]);
@@ -52,7 +52,7 @@ class DraftingPluginSaveSessionTest extends ExistingSiteBase {
 
     $result = $this->httpPost('/api/ai/plugins/drafting/save-session', [
       'context' => [
-        'audienceId' => $this->getTermIdByName('oe_ai_target_audience', 'Business and industry'),
+        'unused' => 'value',
       ],
     ]);
 
@@ -70,14 +70,13 @@ class DraftingPluginSaveSessionTest extends ExistingSiteBase {
 
     $result = $this->httpPost('/api/ai/plugins/drafting/save-session', [
       'context' => [
-        'audienceId' => '999999',
-        'toneId' => $this->getTermIdByName('oe_ai_tone', 'Formal'),
+        'toneId' => '999999',
       ],
     ]);
 
     $this->assertSame(400, $result['status']);
     $this->assertSame('invalid_context', $result['body']['code']);
-    $this->assertStringContainsString('oe_ai_target_audience', $result['body']['message']);
+    $this->assertStringContainsString('oe_ai_tone', $result['body']['message']);
   }
 
   /**
@@ -87,17 +86,21 @@ class DraftingPluginSaveSessionTest extends ExistingSiteBase {
     $user = $this->createUser(['use oe ai assistant']);
     $this->loginUser($user);
 
-    $toneId = $this->getTermIdByName('oe_ai_tone', 'Formal');
+    $otherTerm = Term::create([
+      'vid' => 'news_tags',
+      'name' => 'Wrong vocabulary',
+    ]);
+    $otherTerm->save();
+
     $result = $this->httpPost('/api/ai/plugins/drafting/save-session', [
       'context' => [
-        'audienceId' => $toneId,
-        'toneId' => $toneId,
+        'toneId' => (string) $otherTerm->id(),
       ],
     ]);
 
     $this->assertSame(400, $result['status']);
     $this->assertSame('invalid_context', $result['body']['code']);
-    $this->assertStringContainsString('oe_ai_target_audience', $result['body']['message']);
+    $this->assertStringContainsString('oe_ai_tone', $result['body']['message']);
   }
 
   /**

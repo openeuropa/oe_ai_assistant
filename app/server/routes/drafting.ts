@@ -33,8 +33,6 @@ function parseContext(value: unknown): DraftingEditorialContext | undefined {
   }
 
   return {
-    audienceId:
-      typeof value.audienceId === "string" ? value.audienceId : undefined,
     toneId: typeof value.toneId === "string" ? value.toneId : undefined,
   };
 }

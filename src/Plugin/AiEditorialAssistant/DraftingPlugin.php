@@ -82,7 +82,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
   protected DraftingOrchestratorInterface $orchestrator;
 
   /**
-   * The editorial audience and tone context service.
+   * The editorial tone context service.
    *
    * @var \Drupal\oe_ai_assistant\Service\AiEditorialContextInterface
    */
@@ -314,11 +314,10 @@ class DraftingPlugin extends AiAssistantPluginBase {
   public function saveSession(Request $request): array {
     $body = $this->decodeJsonBody($request);
     $context = $body['context'] ?? [];
-    $audienceId = (string) ($context['audienceId'] ?? '');
     $toneId = (string) ($context['toneId'] ?? '');
 
     try {
-      $this->aiEditorialContext->buildSelectedPrompt($audienceId, $toneId);
+      $this->aiEditorialContext->buildSelectedPrompt($toneId);
     }
     catch (\InvalidArgumentException $e) {
       throw new ActionException(
@@ -331,14 +330,12 @@ class DraftingPlugin extends AiAssistantPluginBase {
     $this->tempStoreFactory
       ->get(static::SESSION_STORE_COLLECTION)
       ->set(static::SESSION_CONTEXT_KEY, [
-        'audienceId' => $audienceId,
         'toneId' => $toneId,
       ]);
 
     $this->logger->info(
-      'OEL-4851 drafting context selection accepted: audienceId=@audience_id toneId=@tone_id',
+      'OEL-4851 drafting context selection accepted: toneId=@tone_id',
       [
-        '@audience_id' => $audienceId,
         '@tone_id' => $toneId,
       ],
     );
@@ -374,7 +371,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
    *   The decoded request body.
    *
    * @return array
-   *   Context with entityTypeId, bundle, audienceId, and toneId.
+   *   Context with entityTypeId, bundle, and toneId.
    */
   private function buildContext(array $body): array {
     $forwardedProps = $body['forwardedProps'] ?? [];
@@ -388,7 +385,6 @@ class DraftingPlugin extends AiAssistantPluginBase {
     return [
       'entityTypeId' => $entityTypeId,
       'bundle' => $bundle,
-      'audienceId' => $selectedContext['audienceId'],
       'toneId' => $selectedContext['toneId'],
     ];
   }
@@ -410,13 +406,10 @@ class DraftingPlugin extends AiAssistantPluginBase {
         . json_encode($groups, JSON_PRETTY_PRINT) . "\n";
     }
 
-    if ($context['audienceId'] !== '' && $context['toneId'] !== '') {
+    if ($context['toneId'] !== '') {
       try {
         $prompt .= "\nEditorial context:\n"
-          . $this->aiEditorialContext->buildSelectedPrompt(
-            $context['audienceId'],
-            $context['toneId'],
-          )
+          . $this->aiEditorialContext->buildSelectedPrompt($context['toneId'])
           . "\n";
       }
       catch (\InvalidArgumentException $e) {
@@ -434,7 +427,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
   /**
    * Loads the selected editorial context from session-scoped tempstore.
    *
-   * @return array{audienceId: string, toneId: string}
+   * @return array{toneId: string}
    *   The selected context, or empty values when no selection has been saved.
    */
   private function loadSelectedContext(): array {
@@ -444,13 +437,11 @@ class DraftingPlugin extends AiAssistantPluginBase {
 
     if (!is_array($context)) {
       return [
-        'audienceId' => '',
         'toneId' => '',
       ];
     }
 
     return [
-      'audienceId' => (string) ($context['audienceId'] ?? ''),
       'toneId' => (string) ($context['toneId'] ?? ''),
     ];
   }

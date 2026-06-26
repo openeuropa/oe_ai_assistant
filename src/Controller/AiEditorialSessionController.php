@@ -112,7 +112,6 @@ class AiEditorialSessionController extends ControllerBase {
    *   A Drupal render array with mount point, library, and settings.
    */
   private function buildRenderArray(string $sessionId, string $entityTypeId, string $bundle): array {
-    $audiences = $this->serializeContextOptions($this->aiEditorialContext->getAvailableAudiences());
     $tones = $this->serializeContextOptions($this->aiEditorialContext->getAvailableTones());
     // Build the configuration object that bootstraps the React app.
     // This data is serialised into window.drupalSettings.oeAiAssistant
@@ -145,7 +144,6 @@ class AiEditorialSessionController extends ControllerBase {
           'entityTypeId' => $entityTypeId,
           'bundle' => $bundle,
           'context' => [
-            'audience' => $audiences,
             'tone' => $tones,
           ],
         ],

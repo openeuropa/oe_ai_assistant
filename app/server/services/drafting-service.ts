@@ -59,7 +59,6 @@ export interface ChatOptions {
 
 /** Selected editorial context for drafting. */
 export interface DraftingEditorialContext {
-  audienceId?: string;
   toneId?: string;
 }
 
@@ -102,13 +101,11 @@ export function validateDraftingContext(
     throw new Error("context is required");
   }
 
-  const hasAudience =
-    typeof context.audienceId === "string" && context.audienceId.length > 0;
   const hasTone =
     typeof context.toneId === "string" && context.toneId.length > 0;
 
-  if (!hasAudience || !hasTone) {
-    throw new Error("context.audienceId and context.toneId are required");
+  if (!hasTone) {
+    throw new Error("context.toneId is required");
   }
 }
 
@@ -322,10 +319,9 @@ Workflow:
       prompt += `\nAvailable field groups:\n${JSON.stringify(groups, null, 2)}\n`;
     }
 
-    if (this.selectedContext?.audienceId && this.selectedContext?.toneId) {
+    if (this.selectedContext?.toneId) {
       prompt +=
         `\nEditorial context:\n` +
-        `Selected target audience taxonomy term ID: ${this.selectedContext.audienceId}\n` +
         `Selected tone taxonomy term ID: ${this.selectedContext.toneId}\n`;
     }
 

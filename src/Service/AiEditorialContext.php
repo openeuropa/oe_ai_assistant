@@ -9,14 +9,9 @@ use Drupal\taxonomy\TermInterface;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 
 /**
- * Builds editorial audience and tone context from taxonomy terms.
+ * Builds editorial tone context from taxonomy terms.
  */
 class AiEditorialContext implements AiEditorialContextInterface {
-
-  /**
-   * The vocabulary ID for target audiences.
-   */
-  protected const string AUDIENCE_VID = 'oe_ai_target_audience';
 
   /**
    * The vocabulary ID for tones.
@@ -31,13 +26,6 @@ class AiEditorialContext implements AiEditorialContextInterface {
   /**
    * {@inheritdoc}
    */
-  public function getAvailableAudiences(): array {
-    return $this->loadVocabularyTerms(self::AUDIENCE_VID);
-  }
-
-  /**
-   * {@inheritdoc}
-   */
   public function getAvailableTones(): array {
     return $this->loadVocabularyTerms(self::TONE_VID);
   }
@@ -47,10 +35,7 @@ class AiEditorialContext implements AiEditorialContextInterface {
    */
   public function buildSelectionPrompt(): string {
     return implode("\n", [
-      'Before drafting, ask the user to select a target audience and writing tone.',
-      '',
-      'Available target audiences:',
-      ...$this->formatPromptOptions($this->getAvailableAudiences()),
+      'Before drafting, ask the user to select a writing tone.',
       '',
       'Available tones:',
       ...$this->formatPromptOptions($this->getAvailableTones()),
@@ -62,17 +47,14 @@ class AiEditorialContext implements AiEditorialContextInterface {
   /**
    * {@inheritdoc}
    */
-  public function buildSelectedPrompt(string $audienceId, string $toneId): string {
-    $audience = $this->loadVocabularyTerm($audienceId, self::AUDIENCE_VID);
+  public function buildSelectedPrompt(string $toneId): string {
     $tone = $this->loadVocabularyTerm($toneId, self::TONE_VID);
 
     return implode("\n", [
       'The user has selected:',
-      sprintf('- Target audience: %s', $audience->label()),
       sprintf('- Tone: %s', $tone->label()),
       '',
       'Apply these guidelines when drafting:',
-      sprintf('- %s', $this->getTermPrompt($audience)),
       sprintf('- %s', $this->getTermPrompt($tone)),
     ]);
   }

@@ -48,39 +48,10 @@ class AiEditorialContextTest extends KernelTestBase {
   }
 
   /**
-   * Tests loading available audiences and tones.
+   * Tests loading available tones.
    */
   public function testAvailableOptions(): void {
-    $audiences = $this->editorialContext->getAvailableAudiences();
     $tones = $this->editorialContext->getAvailableTones();
-    $this->assertSame([
-      [
-        'label' => 'Business and industry',
-        'description' => 'Content focused on professional stakeholders, emphasizing practical impact, compliance, and business relevance.',
-        'oe_ai_prompt' => 'Use professional language. Emphasize practical implications, compliance requirements, and economic impact. Be specific about timelines and actions.',
-      ],
-      [
-        'label' => 'General public',
-        'description' => 'Content should be easy to understand for non-experts, using plain language and minimal jargon.',
-        'oe_ai_prompt' => 'Write in clear, accessible language. Avoid jargon and acronyms. Use short sentences. Assume no prior knowledge of EU policy.',
-      ],
-      [
-        'label' => 'Policy makers',
-        'description' => 'Content tailored for experts, using precise terminology and references to policy and legislation.',
-        'oe_ai_prompt' => 'Use precise language. Reference regulatory frameworks and legislative instruments where relevant. Assume domain expertise.',
-      ],
-      [
-        'label' => 'Press and media',
-        'description' => 'Content optimized for news coverage, highlighting key facts, figures, and timely angles.',
-        'oe_ai_prompt' => 'Lead with the newsworthy angle. Use a factual, quotable style. Include key figures and dates. Keep paragraphs short.',
-      ],
-      [
-        'label' => 'Young audience',
-        'description' => 'Content aimed at younger readers, with a simple, engaging tone and relatable examples.',
-        'oe_ai_prompt' => 'Use an approachable, engaging tone. Explain concepts simply. Avoid bureaucratic language. Use concrete examples.',
-      ],
-    ], $this->stripIds($audiences));
-
     $this->assertSame([
       [
         'label' => 'Conversational',
@@ -99,7 +70,7 @@ class AiEditorialContextTest extends KernelTestBase {
       ],
       [
         'label' => 'Technical',
-        'description' => 'A detailed and structured tone using specialized terminology for expert audiences.',
+        'description' => 'A detailed and structured tone using specialized terminology for expert contexts.',
         'oe_ai_prompt' => 'Use domain-specific terminology precisely. Include technical detail and data. Structure content with clear headings and logical flow.',
       ],
     ], $this->stripIds($tones));
@@ -110,14 +81,7 @@ class AiEditorialContextTest extends KernelTestBase {
    */
   public function testBuildSelectionPrompt(): void {
     $this->assertSame(implode("\n", [
-      'Before drafting, ask the user to select a target audience and writing tone.',
-      '',
-      'Available target audiences:',
-      '- Business and industry: Use professional language. Emphasize practical implications, compliance requirements, and economic impact. Be specific about timelines and actions.',
-      '- General public: Write in clear, accessible language. Avoid jargon and acronyms. Use short sentences. Assume no prior knowledge of EU policy.',
-      '- Policy makers: Use precise language. Reference regulatory frameworks and legislative instruments where relevant. Assume domain expertise.',
-      '- Press and media: Lead with the newsworthy angle. Use a factual, quotable style. Include key figures and dates. Keep paragraphs short.',
-      '- Young audience: Use an approachable, engaging tone. Explain concepts simply. Avoid bureaucratic language. Use concrete examples.',
+      'Before drafting, ask the user to select a writing tone.',
       '',
       'Available tones:',
       '- Conversational: Write in a friendly, approachable style. Use contractions naturally. Address the reader directly. Keep sentences varied in length.',
@@ -130,13 +94,9 @@ class AiEditorialContextTest extends KernelTestBase {
   }
 
   /**
-   * Tests building the prompt for a selected audience and tone.
+   * Tests building the prompt for a selected tone.
    */
   public function testBuildSelectedPrompt(): void {
-    $audienceId = $this->getOptionIdByLabel(
-      $this->editorialContext->getAvailableAudiences(),
-      'Policy makers',
-    );
     $toneId = $this->getOptionIdByLabel(
       $this->editorialContext->getAvailableTones(),
       'Formal',
@@ -144,13 +104,11 @@ class AiEditorialContextTest extends KernelTestBase {
 
     $this->assertSame(implode("\n", [
       'The user has selected:',
-      '- Target audience: Policy makers',
       '- Tone: Formal',
       '',
       'Apply these guidelines when drafting:',
-      '- Use precise language. Reference regulatory frameworks and legislative instruments where relevant. Assume domain expertise.',
       '- Use professional, institutional language. Maintain a neutral, authoritative voice. Avoid contractions and colloquialisms.',
-    ]), $this->editorialContext->buildSelectedPrompt($audienceId, $toneId));
+    ]), $this->editorialContext->buildSelectedPrompt($toneId));
   }
 
   /**
@@ -158,11 +116,7 @@ class AiEditorialContextTest extends KernelTestBase {
    */
   public function testBuildSelectedPromptRejectsInvalidTerms(): void {
     $this->expectException(\InvalidArgumentException::class);
-    $toneId = $this->getOptionIdByLabel(
-      $this->editorialContext->getAvailableTones(),
-      'Formal',
-    );
-    $this->editorialContext->buildSelectedPrompt('999', $toneId);
+    $this->editorialContext->buildSelectedPrompt('999');
   }
 
   /**

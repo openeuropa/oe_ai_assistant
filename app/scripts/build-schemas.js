@@ -10,15 +10,31 @@
  * Run via build:   npm run build (chained after vite build)
  */
 
-import { globSync, readFileSync, writeFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { join, relative, resolve } from "node:path";
 import yaml from "js-yaml";
 
 const apiDir = resolve(import.meta.dirname, "../api");
 const outFile = resolve(import.meta.dirname, "../../dist/schemas.json");
 
+function findSchemaFiles(dir) {
+  const entries = readdirSync(dir, { withFileTypes: true });
+  const files = [];
+
+  for (const entry of entries) {
+    const fullPath = join(dir, entry.name);
+    if (entry.isDirectory()) {
+      files.push(...findSchemaFiles(fullPath));
+    } else if (entry.isFile() && entry.name === "schemas.yaml") {
+      files.push(relative(apiDir, fullPath));
+    }
+  }
+
+  return files;
+}
+
 // Find all schemas.yaml files under api/.
-const files = globSync("**/schemas.yaml", { cwd: apiDir });
+const files = findSchemaFiles(apiDir);
 const consolidated = {};
 
 for (const file of files) {

@@ -60,16 +60,6 @@ abstract class AiEditorialSessionBrowserTestBase extends BrowserTestBase {
    */
   protected function createEditorialContextTerms(): void {
     Term::create([
-      'vid' => 'oe_ai_target_audience',
-      'name' => 'Business and industry',
-      'description' => [
-        'value' => 'Content focused on professional stakeholders, emphasizing practical impact, compliance, and business relevance.',
-        'format' => 'plain_text',
-      ],
-      'field_oe_ai_prompt' => 'Use professional language. Emphasize practical implications, compliance requirements, and economic impact. Be specific about timelines and actions.',
-    ])->save();
-
-    Term::create([
       'vid' => 'oe_ai_tone',
       'name' => 'Formal',
       'description' => [

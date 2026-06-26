@@ -179,7 +179,7 @@ class AiEditorialSessionDashboardTest extends AiEditorialSessionBrowserTestBase 
     $this->drupalGet($session->toUrl('canonical'));
 
     $this->assertSession()->statusCodeEquals(200);
-    $this->assertSession()->responseContains('"context":{"audience":[],"tone":[]}');
+    $this->assertSession()->responseContains('"context":{"tone":[]}');
     $this->assertSession()->responseNotContains('oe_ai_prompt');
   }
 
@@ -287,23 +287,15 @@ class AiEditorialSessionDashboardTest extends AiEditorialSessionBrowserTestBase 
     $this->assertSession()->responseContains('"enabledPlugins":["echo","notes","drafting"]');
     $this->assertSession()->responseContains('"entityTypeId":"node"');
     $this->assertSession()->responseContains('"bundle":"' . $bundle . '"');
-    $this->assertSession()->responseContains('"context":{"audience":');
+    $this->assertSession()->responseContains('"context":{"tone":');
     $this->assertSession()->responseContains('"tone":');
-    $this->assertSession()->responseContains(json_encode([
-      'id' => $this->getTermIdByName('oe_ai_target_audience', 'Business and industry'),
-      'label' => 'Business and industry',
-      'description' => 'Content focused on professional stakeholders, emphasizing practical impact, compliance, and business relevance.',
-    ]));
     $this->assertSession()->responseContains(json_encode([
       'id' => $this->getTermIdByName('oe_ai_tone', 'Formal'),
       'label' => 'Formal',
       'description' => 'A professional and neutral tone suitable for official or institutional communication.',
     ]));
-    $this->assertSession()->responseContains('"label":"Business and industry"');
-    $this->assertSession()->responseContains('"description":"Content focused on professional stakeholders, emphasizing practical impact, compliance, and business relevance."');
     $this->assertSession()->responseContains('"label":"Formal"');
     $this->assertSession()->responseContains('"description":"A professional and neutral tone suitable for official or institutional communication."');
-    $this->assertSession()->responseNotContains('"name":"Business and industry"');
     $this->assertSession()->responseNotContains('"name":"Formal"');
     $this->assertSession()->responseNotContains('oe_ai_prompt');
   }
@@ -337,7 +329,7 @@ class AiEditorialSessionDashboardTest extends AiEditorialSessionBrowserTestBase 
       ->getStorage('taxonomy_term');
     $ids = $storage->getQuery()
       ->accessCheck(FALSE)
-      ->condition('vid', ['oe_ai_target_audience', 'oe_ai_tone'], 'IN')
+      ->condition('vid', 'oe_ai_tone')
       ->execute();
 
     if ($ids) {

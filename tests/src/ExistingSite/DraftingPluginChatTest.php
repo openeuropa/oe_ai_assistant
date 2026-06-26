@@ -255,7 +255,6 @@ class DraftingPluginChatTest extends ExistingSiteBase {
 
     $this->httpPost('/api/ai/plugins/drafting/save-session', [
       'context' => [
-        'audienceId' => $this->getTermIdByName('oe_ai_target_audience', 'Business and industry'),
         'toneId' => $this->getTermIdByName('oe_ai_tone', 'Formal'),
       ],
     ]);
@@ -280,11 +279,11 @@ class DraftingPluginChatTest extends ExistingSiteBase {
       $log[0]['system_prompt'],
     );
     $this->assertStringContainsString(
-      'Use professional language. Emphasize practical implications, compliance requirements, and economic impact.',
+      'Use professional, institutional language. Maintain a neutral, authoritative voice.',
       $log[0]['system_prompt'],
     );
-    $this->assertStringContainsString(
-      'Use professional, institutional language. Maintain a neutral, authoritative voice.',
+    $this->assertStringNotContainsString(
+      'Use professional language. Emphasize practical implications, compliance requirements, and economic impact.',
       $log[0]['system_prompt'],
     );
 
@@ -308,7 +307,7 @@ class DraftingPluginChatTest extends ExistingSiteBase {
     $result = $this->httpPost('/api/ai/plugins/drafting/chat', [
       'message' => 'Draft this with request context.',
       'context' => [
-        'audienceId' => $this->getTermIdByName('oe_ai_target_audience', 'Business and industry'),
+        'toneId' => $this->getTermIdByName('oe_ai_tone', 'Formal'),
       ],
     ]);
 

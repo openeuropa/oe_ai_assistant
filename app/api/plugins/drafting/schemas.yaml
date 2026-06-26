@@ -48,12 +48,8 @@ DraftingSaveSessionRequest:
       type: object
       description: Drafting editorial context to save for the session.
       required:
-        - audienceId
         - toneId
       properties:
-        audienceId:
-          type: string
-          description: Selected target audience taxonomy term ID.
         toneId:
           type: string
           description: Selected tone taxonomy term ID.
