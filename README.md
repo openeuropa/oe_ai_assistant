@@ -60,7 +60,7 @@ ddev start
 ddev rebuild
 ```
 
-### GPT at EC API key
+### AI provider API key
 
 Copy the environment template and add your API key:
 
@@ -68,11 +68,14 @@ Copy the environment template and add your API key:
 cp .ddev/.env.dist .ddev/.env
 ```
 
-Edit `.ddev/.env` and set `KEY_AI_GPT_AT_EC` to your GPT at EC API key, then restart:
+Edit `.ddev/.env` and set `KEY_AI_GPT_AT_EC` to your GPT@EC API key, then restart:
 
 ```bash
 ddev restart
 ```
+
+GPT@EC is the default Drupal provider. You can adjust it with
+`AI_PROVIDER`, `AI_MODEL`, and `AI_EMBED_MODEL` in `.ddev/.env`.
 
 This DDEV key is needed for the Drupal-backed integration flow. The standalone
 React app mock workflow does not require provider credentials.
@@ -101,7 +104,7 @@ The `oe_ai_assistant_test` module (in `tests/modules/`) provides test content ty
 - **oe_contact** -- contact content type for inline entity reference testing
 - **text_block** / **quote_block** -- paragraph types for paragraph field testing
 
-It also configures Mistral as the default LLM provider and sets up the API key via the Key module.
+It also configures GPT@EC as the default LLM provider and sets up the API key via the Key module.
 
 ### Running tests
 
@@ -130,7 +133,7 @@ npm run api:generate # Regenerate types from OpenAPI spec
 ```
 
 For `npm run dev:integration`, copy `app/.env.dist` to `app/.env` and set
-`KEY_AI_GPT_AT_EC`. The default `npm run dev` path stays fixture-backed
+`MISTRAL_API_KEY`. The default `npm run dev` path stays fixture-backed
 and deterministic so frontend work does not depend on live provider access.
 
 Or build via DDEV:

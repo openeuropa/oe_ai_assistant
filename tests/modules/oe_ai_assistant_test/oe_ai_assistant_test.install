@@ -12,12 +12,12 @@ use Drupal\taxonomy\Entity\Term;
 /**
  * Implements hook_install().
  *
- * Configures AI defaults and the gpt_at_ec provider for the test environment.
+ * Configures AI defaults and providers for the test environment.
  */
 function oe_ai_assistant_test_install(): void {
   $configFactory = \Drupal::configFactory();
 
-  // Set GPT at EC as the default LLM provider for all operation types.
+  // Set GPT@EC as the default LLM provider for all operation types.
   $configFactory->getEditable('ai.settings')
     ->set('default_providers', [
       'chat' => [
@@ -43,7 +43,7 @@ function oe_ai_assistant_test_install(): void {
     ])
     ->save();
 
-  // Point the gpt_at_ec provider to the Key entity for the API key.
+  // Point the GPT@EC provider to the Key entity for the API key.
   $configFactory->getEditable('oe_ai_provider_gpt_at_ec.settings')
     ->set('api_key', 'gpt_at_ec_key')
     ->save();

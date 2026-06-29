@@ -17,7 +17,7 @@ import type {
   ToolMessage,
   UserMessage,
 } from "@mistralai/mistralai/models/components";
-import { GPT_AT_EC_MODEL } from "../config";
+import { MISTRAL_MODEL } from "../config";
 import type { ChatMessage, ConversationStore } from "./conversation-store";
 
 // -- Types -------------------------------------------------------
@@ -334,7 +334,7 @@ Workflow:
       ] as MistralApiMessage[];
 
       const stream = await this.mistral.chat.stream({
-        model: GPT_AT_EC_MODEL,
+        model: MISTRAL_MODEL,
         messages: apiMessages,
         tools: this.buildRouterTools(),
       });
@@ -532,7 +532,7 @@ Workflow:
 
         // Call Mistral for this group (non-streaming, structured).
         const response = await this.mistral.chat.complete({
-          model: GPT_AT_EC_MODEL,
+          model: MISTRAL_MODEL,
           messages: subAgentMessages,
           responseFormat: { type: "json_object" },
         });
