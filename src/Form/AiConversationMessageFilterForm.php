@@ -33,17 +33,17 @@ class AiConversationMessageFilterForm extends FormBase {
     $form['#method'] = 'get';
     $form['#attributes']['class'][] = 'container-inline';
 
-    $form['owner_entity_type'] = [
+    $form['host_entity_type'] = [
       '#type' => 'textfield',
-      '#title' => $this->t('Owner type'),
+      '#title' => $this->t('Host type'),
       '#size' => 18,
-      '#default_value' => $query->get('owner_entity_type', ''),
+      '#default_value' => $query->get('host_entity_type', ''),
     ];
-    $form['owner_entity_id'] = [
+    $form['host_entity_id'] = [
       '#type' => 'number',
-      '#title' => $this->t('Owner id'),
+      '#title' => $this->t('Host id'),
       '#min' => 0,
-      '#default_value' => $query->get('owner_entity_id', ''),
+      '#default_value' => $query->get('host_entity_id', ''),
     ];
     $form['role'] = [
       '#type' => 'select',

@@ -25,18 +25,18 @@ class AiConversationMessageForm extends ContentEntityForm {
     /** @var \Drupal\oe_ai_assistant\Entity\AiConversationMessageInterface $entity */
     $entity = $this->entity;
 
-    $form['owner_entity_type'] = [
+    $form['host_entity_type'] = [
       '#type' => 'textfield',
-      '#title' => $this->t('Owner entity type'),
+      '#title' => $this->t('Host entity type'),
       '#required' => TRUE,
-      '#default_value' => $entity->getOwnerEntityType(),
+      '#default_value' => $entity->getHostEntityType(),
     ];
-    $form['owner_entity_id'] = [
+    $form['host_entity_id'] = [
       '#type' => 'number',
-      '#title' => $this->t('Owner entity id'),
+      '#title' => $this->t('Host entity id'),
       '#min' => 0,
       '#required' => TRUE,
-      '#default_value' => $entity->getOwnerEntityId(),
+      '#default_value' => $entity->getHostEntityId(),
     ];
     $form['parent'] = [
       '#type' => 'entity_autocomplete',
@@ -167,8 +167,8 @@ class AiConversationMessageForm extends ContentEntityForm {
     /** @var \Drupal\oe_ai_assistant\Entity\AiConversationMessageInterface $entity */
     $entity = $this->entity;
 
-    $entity->set('owner_entity_type', $form_state->getValue('owner_entity_type'));
-    $entity->set('owner_entity_id', (int) $form_state->getValue('owner_entity_id'));
+    $entity->set('host_entity_type', $form_state->getValue('host_entity_type'));
+    $entity->set('host_entity_id', (int) $form_state->getValue('host_entity_id'));
     $entity->set('parent', $form_state->getValue('parent') ?: NULL);
     $entity->set('role', $form_state->getValue('role'));
     $entity->set('uid', $form_state->getValue('uid') ?: NULL);

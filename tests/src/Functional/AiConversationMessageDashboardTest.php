@@ -33,8 +33,8 @@ class AiConversationMessageDashboardTest extends BrowserTestBase {
   /**
    * Creates a saved conversation message.
    *
-   * @param int $owner_id
-   *   The owner entity id.
+   * @param int $host_id
+   *   The host entity id.
    * @param string $role
    *   The message role.
    * @param array $tokens
@@ -43,11 +43,11 @@ class AiConversationMessageDashboardTest extends BrowserTestBase {
    * @return \Drupal\oe_ai_assistant\Entity\AiConversationMessageInterface
    *   The saved message.
    */
-  private function createMessage(int $owner_id, string $role, array $tokens = []): AiConversationMessageInterface {
+  private function createMessage(int $host_id, string $role, array $tokens = []): AiConversationMessageInterface {
     /** @var \Drupal\oe_ai_assistant\Entity\AiConversationMessageInterface $message */
     $message = AiConversationMessage::create([
-      'owner_entity_type' => 'ai_editorial_session',
-      'owner_entity_id' => $owner_id,
+      'host_entity_type' => 'ai_editorial_session',
+      'host_entity_id' => $host_id,
       'role' => $role,
     ]);
     if ($tokens) {
@@ -91,8 +91,8 @@ class AiConversationMessageDashboardTest extends BrowserTestBase {
     $this->assertSession()->pageTextContains('Totals (filtered)');
     $this->assertSession()->pageTextContains('243');
 
-    // Filtered to owner 42: total tokens sum is 43, and 243 is gone.
-    $this->drupalGet(self::COLLECTION, ['query' => ['owner_entity_id' => 42]]);
+    // Filtered to host 42: total tokens sum is 43, and 243 is gone.
+    $this->drupalGet(self::COLLECTION, ['query' => ['host_entity_id' => 42]]);
     $this->assertSession()->pageTextContains('43');
     $this->assertSession()->pageTextNotContains('243');
   }
@@ -117,8 +117,8 @@ class AiConversationMessageDashboardTest extends BrowserTestBase {
     $this->drupalGet('/admin/config/ai-editorial/messages/add');
     $this->assertSession()->statusCodeEquals(200);
     $this->submitForm([
-      'owner_entity_type' => 'ai_editorial_session',
-      'owner_entity_id' => 7,
+      'host_entity_type' => 'ai_editorial_session',
+      'host_entity_id' => 7,
       'role' => 'user',
       'content' => 'Hello from the form.',
     ], 'Save');
@@ -128,7 +128,7 @@ class AiConversationMessageDashboardTest extends BrowserTestBase {
       ->getStorage('ai_conversation_message')
       ->getQuery()
       ->accessCheck(FALSE)
-      ->condition('owner_entity_id', 7)
+      ->condition('host_entity_id', 7)
       ->execute();
     $this->assertCount(1, $ids);
   }
@@ -143,8 +143,8 @@ class AiConversationMessageDashboardTest extends BrowserTestBase {
     ]));
     $this->drupalGet('/admin/config/ai-editorial/messages/add');
     $this->submitForm([
-      'owner_entity_type' => 'ai_editorial_session',
-      'owner_entity_id' => 7,
+      'host_entity_type' => 'ai_editorial_session',
+      'host_entity_id' => 7,
       'role' => 'assistant',
       'tool_calls' => 'not valid json',
     ], 'Save');

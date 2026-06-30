@@ -5,16 +5,17 @@ declare(strict_types=1);
 namespace Drupal\oe_ai_assistant\Entity;
 
 use Drupal\Core\Entity\ContentEntityInterface;
+use Drupal\user\EntityOwnerInterface;
 
 /**
  * Defines the interface for AI conversation messages.
  *
  * A single message in an LLM conversation (a user / assistant / system / tool /
- * error turn). Messages are grouped into a conversation by their owner
- * (owner_entity_type + owner_entity_id) and nested via the parent reference,
+ * error turn). Messages are grouped into a conversation by their host
+ * (host_entity_type + host_entity_id) and nested via the parent reference,
  * which builds the sub-agent tree.
  */
-interface AiConversationMessageInterface extends ContentEntityInterface {
+interface AiConversationMessageInterface extends ContentEntityInterface, EntityOwnerInterface {
 
   /**
    * Role: a system / instruction message (e.g. a sub-agent system prompt).
@@ -47,14 +48,14 @@ interface AiConversationMessageInterface extends ContentEntityInterface {
   public function getRole(): string;
 
   /**
-   * Returns the owning entity type id.
+   * Returns the host entity type id.
    */
-  public function getOwnerEntityType(): string;
+  public function getHostEntityType(): string;
 
   /**
-   * Returns the owning entity id.
+   * Returns the host entity id.
    */
-  public function getOwnerEntityId(): ?int;
+  public function getHostEntityId(): ?int;
 
   /**
    * Returns the parent message id, or NULL for a top-level turn.

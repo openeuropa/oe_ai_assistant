@@ -11,14 +11,15 @@ use Drupal\Core\Field\BaseFieldDefinition;
 use Drupal\datetime\Plugin\Field\FieldType\DateTimeItem;
 use Drupal\datetime\Plugin\Field\FieldType\DateTimeItemInterface;
 use Drupal\oe_ai_assistant\Exception\InvalidJsonFieldException;
+use Drupal\user\EntityOwnerTrait;
 
 /**
  * Defines the AI conversation message entity.
  *
  * Non-bundleable, domain-agnostic store for a single LLM conversation message.
- * It back-references its owning entity generically via owner_entity_type +
- * owner_entity_id, so any module can own a conversation. A conversation is all
- * rows sharing an owner; the sub-agent tree is built from the parent
+ * It back-references its host entity generically via host_entity_type +
+ * host_entity_id, so any module can host a conversation. A conversation is all
+ * rows sharing a host; the sub-agent tree is built from the parent
  * self-reference.
  *
  * @ContentEntityType(
@@ -40,6 +41,7 @@ use Drupal\oe_ai_assistant\Exception\InvalidJsonFieldException;
  *   entity_keys = {
  *     "id" = "id",
  *     "uuid" = "uuid",
+ *     "owner" = "uid",
  *   },
  *   base_table = "ai_conversation_message",
  *   admin_permission = "administer ai conversation messages",
@@ -52,6 +54,8 @@ use Drupal\oe_ai_assistant\Exception\InvalidJsonFieldException;
  * )
  */
 class AiConversationMessage extends ContentEntityBase implements AiConversationMessageInterface {
+
+  use EntityOwnerTrait;
 
   /**
    * Base fields whose values are stored as JSON.
@@ -99,15 +103,15 @@ class AiConversationMessage extends ContentEntityBase implements AiConversationM
   /**
    * {@inheritdoc}
    */
-  public function getOwnerEntityType(): string {
-    return (string) $this->get('owner_entity_type')->value;
+  public function getHostEntityType(): string {
+    return (string) $this->get('host_entity_type')->value;
   }
 
   /**
    * {@inheritdoc}
    */
-  public function getOwnerEntityId(): ?int {
-    return $this->getIntOrNull('owner_entity_id');
+  public function getHostEntityId(): ?int {
+    return $this->getIntOrNull('host_entity_id');
   }
 
   /**
@@ -243,18 +247,19 @@ class AiConversationMessage extends ContentEntityBase implements AiConversationM
   public static function baseFieldDefinitions(EntityTypeInterface $entity_type): array {
     $fields = parent::baseFieldDefinitions($entity_type);
 
-    // Generic owner back-reference, set on every message (root and sub-agent).
-    // The whole conversation loads in one query. Not a Drupal "owner" key (that
-    // is a user); this points at any owning entity.
-    $fields['owner_entity_type'] = BaseFieldDefinition::create('string')
-      ->setLabel(t('Owner entity type'))
-      ->setDescription(t('The entity type id of the entity that owns this conversation.'))
+    // Generic host back-reference, set on every message (root and sub-agent).
+    // The whole conversation loads in one query. This is the entity the
+    // conversation belongs to (any type); it is not the Drupal "owner" key,
+    // which is the user author (uid) below.
+    $fields['host_entity_type'] = BaseFieldDefinition::create('string')
+      ->setLabel(t('Host entity type'))
+      ->setDescription(t('The entity type id of the entity this conversation belongs to.'))
       ->setSetting('max_length', 64)
       ->setRequired(TRUE);
 
-    $fields['owner_entity_id'] = BaseFieldDefinition::create('integer')
-      ->setLabel(t('Owner entity id'))
-      ->setDescription(t('The id of the entity that owns this conversation.'))
+    $fields['host_entity_id'] = BaseFieldDefinition::create('integer')
+      ->setLabel(t('Host entity id'))
+      ->setDescription(t('The id of the entity this conversation belongs to.'))
       ->setRequired(TRUE);
 
     // Self-reference building the sub-agent tree; NULL for a top-level turn.
@@ -278,7 +283,8 @@ class AiConversationMessage extends ContentEntityBase implements AiConversationM
       ]);
 
     // Author of the message, set for user-role messages.
-    // NULL for agent-produced messages (assistant / system / tool).
+    // Defined explicitly rather than via the trait helper so it has
+    // no current-user default: agent-produced messages keep a NULL author.
     $fields['uid'] = BaseFieldDefinition::create('entity_reference')
       ->setLabel(t('Author'))
       ->setDescription(t('The user who sent this message, for user-role messages.'))

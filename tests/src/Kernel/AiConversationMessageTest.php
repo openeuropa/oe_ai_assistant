@@ -13,7 +13,7 @@ use Drupal\oe_ai_assistant\Exception\InvalidJsonFieldException;
 /**
  * Kernel tests for the ai_conversation_message entity.
  *
- * Covers persistence of the base fields, the generic owner back-reference used
+ * Covers persistence of the base fields, the generic host back-reference used
  * to group a conversation, and the parent self-reference used to build the
  * sub-agent tree.
  *
@@ -77,8 +77,8 @@ class AiConversationMessageTest extends KernelTestBase {
    */
   public function testCreateLoadAndAccessors(): void {
     $message = AiConversationMessage::create([
-      'owner_entity_type' => 'ai_editorial_session',
-      'owner_entity_id' => 42,
+      'host_entity_type' => 'ai_editorial_session',
+      'host_entity_id' => 42,
       'role' => AiConversationMessageInterface::ROLE_ASSISTANT,
       'agent_id' => 'orchestrator',
       'content' => 'Here is the plan.',
@@ -92,8 +92,8 @@ class AiConversationMessageTest extends KernelTestBase {
     /** @var \Drupal\oe_ai_assistant\Entity\AiConversationMessageInterface $loaded */
     $loaded = $this->storage->loadUnchanged($message->id());
 
-    $this->assertSame('ai_editorial_session', $loaded->getOwnerEntityType());
-    $this->assertSame(42, $loaded->getOwnerEntityId());
+    $this->assertSame('ai_editorial_session', $loaded->getHostEntityType());
+    $this->assertSame(42, $loaded->getHostEntityId());
     $this->assertSame(AiConversationMessageInterface::ROLE_ASSISTANT, $loaded->getRole());
     $this->assertNull($loaded->getParentId());
     $this->assertSame('orchestrator', $loaded->get('agent_id')->value);
@@ -123,8 +123,8 @@ class AiConversationMessageTest extends KernelTestBase {
    */
   public function testSavingInvalidJsonThrows(): void {
     $message = AiConversationMessage::create([
-      'owner_entity_type' => 'ai_editorial_session',
-      'owner_entity_id' => 42,
+      'host_entity_type' => 'ai_editorial_session',
+      'host_entity_id' => 42,
       'role' => AiConversationMessageInterface::ROLE_ASSISTANT,
     ]);
     // Bypass the typed setter to plant malformed JSON.
@@ -146,8 +146,8 @@ class AiConversationMessageTest extends KernelTestBase {
    */
   public function testGetterOnInvalidJsonThrows(): void {
     $message = AiConversationMessage::create([
-      'owner_entity_type' => 'ai_editorial_session',
-      'owner_entity_id' => 42,
+      'host_entity_type' => 'ai_editorial_session',
+      'host_entity_id' => 42,
       'role' => AiConversationMessageInterface::ROLE_ASSISTANT,
     ]);
     $message->set('metadata', '{broken');
@@ -161,8 +161,8 @@ class AiConversationMessageTest extends KernelTestBase {
    */
   public function testSetterRejectsUnencodableValue(): void {
     $message = AiConversationMessage::create([
-      'owner_entity_type' => 'ai_editorial_session',
-      'owner_entity_id' => 42,
+      'host_entity_type' => 'ai_editorial_session',
+      'host_entity_id' => 42,
       'role' => AiConversationMessageInterface::ROLE_ASSISTANT,
     ]);
 
@@ -172,12 +172,12 @@ class AiConversationMessageTest extends KernelTestBase {
   }
 
   /**
-   * Tests grouping by owner and the parent self-reference tree.
+   * Tests grouping by host and the parent self-reference tree.
    */
-  public function testOwnerGroupingAndParentTree(): void {
+  public function testHostGroupingAndParentTree(): void {
     $parent = AiConversationMessage::create([
-      'owner_entity_type' => 'ai_editorial_session',
-      'owner_entity_id' => 42,
+      'host_entity_type' => 'ai_editorial_session',
+      'host_entity_id' => 42,
       'role' => AiConversationMessageInterface::ROLE_USER,
       'content' => 'Draft a news article about X.',
     ]);
@@ -186,8 +186,8 @@ class AiConversationMessageTest extends KernelTestBase {
 
     foreach (['title-agent', 'body-agent'] as $agent_id) {
       AiConversationMessage::create([
-        'owner_entity_type' => 'ai_editorial_session',
-        'owner_entity_id' => 42,
+        'host_entity_type' => 'ai_editorial_session',
+        'host_entity_id' => 42,
         'parent' => $parent_id,
         'role' => AiConversationMessageInterface::ROLE_ASSISTANT,
         'agent_id' => $agent_id,
@@ -195,28 +195,28 @@ class AiConversationMessageTest extends KernelTestBase {
       ])->save();
     }
 
-    // A message under a different owner must not leak into the conversation.
+    // A message under a different host must not leak into the conversation.
     AiConversationMessage::create([
-      'owner_entity_type' => 'ai_editorial_session',
-      'owner_entity_id' => 99,
+      'host_entity_type' => 'ai_editorial_session',
+      'host_entity_id' => 99,
       'role' => AiConversationMessageInterface::ROLE_USER,
       'content' => 'Unrelated session.',
     ])->save();
 
-    // The whole conversation is the set of rows sharing the owner.
+    // The whole conversation is the set of rows sharing the host.
     $conversation = $this->storage->getQuery()
       ->accessCheck(FALSE)
-      ->condition('owner_entity_type', 'ai_editorial_session')
-      ->condition('owner_entity_id', 42)
+      ->condition('host_entity_type', 'ai_editorial_session')
+      ->condition('host_entity_id', 42)
       ->sort('created')
       ->sort('id')
       ->execute();
     $this->assertCount(3, $conversation);
 
-    // The top-level transcript is the owner rows with no parent.
+    // The top-level transcript is the host rows with no parent.
     $top_level = $this->storage->getQuery()
       ->accessCheck(FALSE)
-      ->condition('owner_entity_id', 42)
+      ->condition('host_entity_id', 42)
       ->condition('parent', NULL, 'IS NULL')
       ->execute();
     $this->assertSame([(string) $parent_id], array_values($top_level));

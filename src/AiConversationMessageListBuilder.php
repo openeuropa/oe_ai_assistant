@@ -95,8 +95,8 @@ class AiConversationMessageListBuilder extends EntityListBuilder {
    */
   public function buildHeader(): array {
     $header['id'] = $this->sortableHeader($this->t('ID'), 'id');
-    $header['owner_entity_type'] = $this->sortableHeader($this->t('Owner type'), 'owner_entity_type');
-    $header['owner_entity_id'] = $this->sortableHeader($this->t('Owner id'), 'owner_entity_id');
+    $header['host_entity_type'] = $this->sortableHeader($this->t('Host type'), 'host_entity_type');
+    $header['host_entity_id'] = $this->sortableHeader($this->t('Host id'), 'host_entity_id');
     $header['role'] = $this->sortableHeader($this->t('Role'), 'role');
     $header['agent_id'] = $this->sortableHeader($this->t('Agent'), 'agent_id');
     $header['provider'] = $this->sortableHeader($this->t('Provider'), 'provider');
@@ -138,8 +138,8 @@ class AiConversationMessageListBuilder extends EntityListBuilder {
   public function buildRow(EntityInterface $entity): array {
     assert($entity instanceof AiConversationMessageInterface);
     $row['id'] = $entity->id();
-    $row['owner_entity_type'] = $entity->getOwnerEntityType();
-    $row['owner_entity_id'] = $entity->getOwnerEntityId();
+    $row['host_entity_type'] = $entity->getHostEntityType();
+    $row['host_entity_id'] = $entity->getHostEntityId();
     $row['role'] = $entity->getRole();
     $row['agent_id'] = $entity->get('agent_id')->value;
     $row['provider'] = $entity->get('provider')->value;
@@ -179,14 +179,14 @@ class AiConversationMessageListBuilder extends EntityListBuilder {
   protected function applyFilters(QueryInterface $query): void {
     $params = $this->requestStack->getCurrentRequest()->query;
 
-    $owner_type = trim((string) $params->get('owner_entity_type', ''));
-    if ($owner_type !== '') {
-      $query->condition('owner_entity_type', $owner_type, 'CONTAINS');
+    $host_type = trim((string) $params->get('host_entity_type', ''));
+    if ($host_type !== '') {
+      $query->condition('host_entity_type', $host_type, 'CONTAINS');
     }
 
-    $owner_id = $params->get('owner_entity_id');
-    if ($owner_id !== NULL && $owner_id !== '') {
-      $query->condition('owner_entity_id', (int) $owner_id);
+    $host_id = $params->get('host_entity_id');
+    if ($host_id !== NULL && $host_id !== '') {
+      $query->condition('host_entity_id', (int) $host_id);
     }
 
     $role = trim((string) $params->get('role', ''));
