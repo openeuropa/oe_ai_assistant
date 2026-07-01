@@ -9,10 +9,27 @@
 /** Request body for the drafting chat endpoint. */
 export interface DraftingChatRequest {
   message: string;
-  threadId?: string;
+  /** The editorial session that hosts the conversation. */
+  sessionId: string;
 }
 
 /** Response body for the drafting reset endpoint. */
 export interface DraftingResetResponse {
-  threadId: string;
+  status: string;
+}
+
+/** A tool call stored on a transcript message (OpenAI render shape). */
+export interface DraftingToolCall {
+  id?: string;
+  type?: string;
+  function?: { name?: string; arguments?: string };
+  /** Structured tool output (e.g. drafted field values). */
+  result?: Record<string, unknown>;
+}
+
+/** A single user-visible transcript entry from get_messages. */
+export interface DraftingMessage {
+  role: string;
+  content: string;
+  toolCalls?: DraftingToolCall[];
 }

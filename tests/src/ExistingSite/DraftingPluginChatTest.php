@@ -313,6 +313,42 @@ class DraftingPluginChatTest extends ExistingSiteBase {
   }
 
   /**
+   * Tests that get_messages surfaces a draft_content tool call and result.
+   *
+   * The drafted fields are stored as the result of the draft_content call so
+   * the transcript can render a clickable trace that repopulates the artifact.
+   */
+  public function testGetMessagesReturnsDraftToolCall(): void {
+    $user = $this->createUser(['use oe ai assistant']);
+    $this->loginUser($user);
+    $session = $this->createSession($user);
+
+    $this->seedMessage($session, 'user', 'Draft a news article.');
+    // An assistant turn that triggered drafting: empty text, draft_content
+    // tool call carrying the consolidated fields as its result.
+    $fields = ['title' => [['value' => 'Test Title']]];
+    $this->seedMessage($session, 'assistant', '', [
+      [
+        'type' => 'function',
+        'function' => ['name' => 'draft_content', 'arguments' => '{}'],
+        'result' => $fields,
+      ],
+    ]);
+
+    $messages = $this->getMessages($session);
+
+    $this->assertCount(2, $messages);
+    $this->assertSame('user', $messages[0]['role']);
+    $this->assertArrayNotHasKey('toolCalls', $messages[0]);
+
+    $this->assertSame('assistant', $messages[1]['role']);
+    $this->assertSame('', $messages[1]['content']);
+    $this->assertArrayHasKey('toolCalls', $messages[1]);
+    $this->assertSame('draft_content', $messages[1]['toolCalls'][0]['function']['name']);
+    $this->assertSame($fields, $messages[1]['toolCalls'][0]['result']);
+  }
+
+  /**
    * Tests that reset clears the whole conversation for the session.
    *
    * Provider-independent: it seeds rows and asserts they are deleted.
@@ -368,15 +404,22 @@ class DraftingPluginChatTest extends ExistingSiteBase {
    *   The message role.
    * @param string $content
    *   The message text.
+   * @param array $toolCalls
+   *   Optional tool calls to store on the message.
    */
-  protected function seedMessage(AiEditorialSessionInterface $session, string $role, string $content): void {
-    \Drupal::entityTypeManager()->getStorage('ai_conversation_message')
+  protected function seedMessage(AiEditorialSessionInterface $session, string $role, string $content, array $toolCalls = []): void {
+    /** @var \Drupal\oe_ai_assistant\Entity\AiConversationMessageInterface $message */
+    $message = \Drupal::entityTypeManager()->getStorage('ai_conversation_message')
       ->create([
         'host_entity_type' => $session->getEntityTypeId(),
         'host_entity_id' => (int) $session->id(),
         'role' => $role,
         'content' => $content,
-      ])->save();
+      ]);
+    if ($toolCalls) {
+      $message->setToolCalls($toolCalls);
+    }
+    $message->save();
   }
 
   /**

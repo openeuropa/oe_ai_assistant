@@ -18,7 +18,8 @@ import type {
   DraftSaveResult,
   StreamEvent,
 } from "./drafting-service";
-import { extractFieldsToStream } from "./drafting-service";
+import { emitDraftToolCall, extractFieldsToStream } from "./drafting-service";
+import type { TranscriptMessage, TranscriptStore } from "./transcript-store";
 
 interface DraftFixtureVariant {
   assistantText: string;
@@ -105,23 +106,26 @@ function isSaveRequest(message: string): boolean {
 
 export class MockDraftingService implements DraftingService {
   private nextNodeId = 42000;
-  private readonly draftFieldsByThread = new Map<
+  private readonly draftFieldsBySession = new Map<
     string,
     Record<string, unknown>
   >();
 
-  constructor(private readonly store: ConversationStore) {}
+  constructor(
+    private readonly store: ConversationStore,
+    private readonly transcript: TranscriptStore,
+  ) {}
 
   async *chat(opts: ChatOptions): AsyncGenerator<StreamEvent> {
-    const { message, threadId: inputThreadId, bundle } = opts;
+    const { message, sessionId, bundle } = opts;
     const messageId = randomUUID();
-    const threadId = inputThreadId || randomUUID();
     const fieldsToStream = extractFieldsToStream(message);
 
     yield { type: "start", messageId };
 
     try {
-      const history = this.store.load(threadId);
+      this.transcript.append(sessionId, { role: "user", content: message });
+      const history = this.store.load(sessionId);
       history.push({
         role: "user" as const,
         content: message,
@@ -138,7 +142,7 @@ export class MockDraftingService implements DraftingService {
         assistantText = `Mock drafting mode does not have a fixture for bundle "${bundle}".`;
         yield* this.createTextStep(assistantText);
       } else if (isSaveRequest(message)) {
-        const fields = this.draftFieldsByThread.get(threadId);
+        const fields = this.draftFieldsBySession.get(sessionId);
 
         if (!fields) {
           assistantText = fixture.conversationReplies.saveWithoutDraft;
@@ -158,9 +162,21 @@ export class MockDraftingService implements DraftingService {
           ? fixture.drafts.regenerated
           : fixture.drafts.initial;
 
-        this.draftFieldsByThread.set(threadId, variant.fields);
+        this.draftFieldsBySession.set(sessionId, variant.fields);
         assistantText = variant.assistantText;
+        const selectedFields = selectDraftedFields(
+          variant.fields,
+          fieldsToStream,
+        );
         yield* this.createDraftStep(variant, fieldsToStream);
+        // Record the draft trace so a reload rehydrates the clickable card.
+        this.transcript.append(sessionId, {
+          role: "assistant",
+          content: "",
+          toolCalls: [
+            { function: { name: "draft_content" }, result: selectedFields },
+          ],
+        });
       } else {
         assistantText = fixture.conversationReplies.default;
         yield* this.createTextStep(assistantText);
@@ -170,7 +186,13 @@ export class MockDraftingService implements DraftingService {
         role: "assistant" as const,
         content: assistantText,
       });
-      this.store.save(threadId, history);
+      if (assistantText) {
+        this.transcript.append(sessionId, {
+          role: "assistant",
+          content: assistantText,
+        });
+      }
+      this.store.save(sessionId, history);
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
       console.error("Error in mock drafting chat:", errorMessage);
@@ -184,13 +206,15 @@ export class MockDraftingService implements DraftingService {
     };
   }
 
-  reset(threadId?: string): { threadId: string } {
-    if (threadId) {
-      this.store.delete(threadId);
-      this.draftFieldsByThread.delete(threadId);
-    }
+  reset(sessionId: string): { status: string } {
+    this.store.delete(sessionId);
+    this.transcript.delete(sessionId);
+    this.draftFieldsBySession.delete(sessionId);
+    return { status: "ok" };
+  }
 
-    return { threadId: randomUUID() };
+  getMessages(sessionId: string): TranscriptMessage[] {
+    return this.transcript.load(sessionId);
   }
 
   save(_body: DraftSavePayload): DraftSaveResult {
@@ -259,6 +283,9 @@ export class MockDraftingService implements DraftingService {
       type: "data-drafted-fields",
       data: selectedFields,
     };
+
+    // Emit the draft_content tool call so the clickable card appears inline.
+    yield* emitDraftToolCall(selectedFields);
 
     // Confirmation text.
     const confirmText =

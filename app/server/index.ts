@@ -16,6 +16,7 @@ import { join } from "node:path";
 import { config } from "dotenv";
 import type { ConversationStore } from "./services/conversation-store";
 import type { DraftingService } from "./services/drafting-service";
+import type { TranscriptStore } from "./services/transcript-store";
 
 // Load .env before any other modules read env vars.
 // The server runs as a standalone Node process via tsx,
@@ -33,16 +34,18 @@ async function start(): Promise<void> {
   const { echoRouter } = await import("./routes/echo");
   const { notesRouter } = await import("./routes/notes");
   const { ConversationStore } = await import("./services/conversation-store");
+  const { TranscriptStore } = await import("./services/transcript-store");
   const draftingMode = resolveDraftingMode();
 
   const app = express();
 
   // Create shared service instances.
   const store = new ConversationStore();
+  const transcript = new TranscriptStore();
   const draftingService: DraftingService =
     draftingMode === "mistral"
-      ? await createMistralDraftingService(store)
-      : await createMockDraftingService(store);
+      ? await createMistralDraftingService(store, transcript)
+      : await createMockDraftingService(store, transcript);
 
   // Parse JSON bodies for all routes.
   app.use(express.json());
@@ -83,21 +86,23 @@ async function start(): Promise<void> {
 
 async function createMockDraftingService(
   store: ConversationStore,
+  transcript: TranscriptStore,
 ): Promise<DraftingService> {
   const { MockDraftingService } = await import(
     "./services/mock-drafting-service"
   );
-  return new MockDraftingService(store);
+  return new MockDraftingService(store, transcript);
 }
 
 async function createMistralDraftingService(
   store: ConversationStore,
+  transcript: TranscriptStore,
 ): Promise<DraftingService> {
   const { createMistralClient } = await import("./lib/mistral");
   const { MistralDraftingService } = await import(
     "./services/drafting-service"
   );
-  return new MistralDraftingService(createMistralClient(), store);
+  return new MistralDraftingService(createMistralClient(), store, transcript);
 }
 
 start().catch((err) => {

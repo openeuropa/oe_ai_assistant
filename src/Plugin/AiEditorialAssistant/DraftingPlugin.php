@@ -9,6 +9,7 @@ use Drupal\ai\OperationType\Chat\ChatOutput;
 use Drupal\ai\OperationType\Chat\Tools\ToolsFunctionInput;
 use Drupal\ai_agents\PluginManager\AiAgentManager;
 use Drupal\oe_ai_assistant\Annotation\AiEditorialAssistant;
+use Drupal\oe_ai_assistant\Entity\AiConversationMessageInterface;
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
 use Drupal\oe_ai_assistant\Exception\ActionException;
 use Drupal\oe_ai_assistant\Plugin\AiAssistantPluginBase;
@@ -180,9 +181,11 @@ class DraftingPlugin extends AiAssistantPluginBase {
     // Persist each provider turn as it happens. The loop invokes this once
     // per response, so the assistant turn (including the terminal
     // draft_content turn) and its tool results are recorded without the loop
-    // knowing about entities.
-    $recordTurn = function (ChatOutput $output, array $toolResults) use ($session, $defaults): void {
-      $this->messageRecorder->recordAssistant(
+    // knowing about entities. Keep the last assistant turn so the drafted
+    // fields can be attached to the triggering draft_content call afterwards.
+    $lastAssistant = NULL;
+    $recordTurn = function (ChatOutput $output, array $toolResults) use ($session, $defaults, &$lastAssistant): void {
+      $lastAssistant = $this->messageRecorder->recordAssistant(
         $session, $output, 'orchestrator', $defaults['provider_id'], $defaults['model_id']
       );
       foreach ($toolResults as $toolMessage) {
@@ -196,7 +199,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
     return $this->uiMessageStream->respond(
       function (UiMessageStreamInterface $stream) use (
         $history, $context, $systemPrompt, $tools,
-        $defaults, $provider, $recordTurn,
+        $defaults, $provider, $recordTurn, &$lastAssistant,
       ): void {
         $stream->start();
 
@@ -228,11 +231,19 @@ class DraftingPlugin extends AiAssistantPluginBase {
         if ($result->hasTerminalTool()
           && $result->terminalToolName === 'draft_content'
         ) {
-          // Run the sub-agent orchestration.
-          $this->orchestrator->run(
+          // Run the sub-agent orchestration and keep the consolidated fields.
+          $drafted = $this->orchestrator->run(
             $stream, $history,
             $context['entityTypeId'], $context['bundle']
           );
+          // Emit the draft_content tool call with its result so the card
+          // appears live, matching what a reload rehydrates.
+          $stream->toolCall('draft_content', [], $drafted);
+          // Record the drafted fields as the result of the draft_content call
+          // so the transcript keeps a trace that can repopulate the artifact.
+          if ($lastAssistant !== NULL) {
+            $this->attachDraftResult($lastAssistant, $drafted);
+          }
         }
 
         $stream->finish($result->finishReason);
@@ -274,6 +285,41 @@ class DraftingPlugin extends AiAssistantPluginBase {
       $body['bundle'] ?? '',
       $body['fields'] ?? [],
     );
+  }
+
+  /**
+   * Attaches the drafted fields as the result of the draft_content call.
+   *
+   * The drafted fields are the output of the draft_content tool, produced by
+   * the orchestrator after the loop returns. Storing them on the tool call
+   * lets the transcript render a clickable trace that repopulates the artifact.
+   *
+   * @param \Drupal\oe_ai_assistant\Entity\AiConversationMessageInterface $message
+   *   The assistant turn that triggered drafting.
+   * @param array $drafted
+   *   The consolidated drafted field values.
+   */
+  private function attachDraftResult(AiConversationMessageInterface $message, array $drafted): void {
+    $toolCalls = $message->getToolCalls();
+    $found = FALSE;
+    foreach ($toolCalls as &$call) {
+      if (($call['function']['name'] ?? '') === 'draft_content') {
+        $call['result'] = $drafted;
+        $found = TRUE;
+      }
+    }
+    unset($call);
+    // Guarantee a draft_content trace even if the stream did not surface the
+    // call in the reconstructed tool list.
+    if (!$found) {
+      $toolCalls[] = [
+        'type' => 'function',
+        'function' => ['name' => 'draft_content', 'arguments' => '{}'],
+        'result' => $drafted,
+      ];
+    }
+    $message->setToolCalls($toolCalls);
+    $message->save();
   }
 
   /**

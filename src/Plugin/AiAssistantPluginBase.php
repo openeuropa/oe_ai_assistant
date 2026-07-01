@@ -135,11 +135,21 @@ abstract class AiAssistantPluginBase extends PluginBase implements AiAssistantPl
     $storage = $this->entityTypeManager->getStorage('ai_conversation_message');
     $messages = [];
     foreach ($storage->loadTranscript($session) as $message) {
-      $content = (string) $message->get('content')->value;
-      // Only user and assistant turns with text are shown to the editor.
-      if (in_array($message->getRole(), ['user', 'assistant'], TRUE) && $content !== '') {
-        $messages[] = ['role' => $message->getRole(), 'content' => $content];
+      // Only user and assistant turns are shown to the editor.
+      if (!in_array($message->getRole(), ['user', 'assistant'], TRUE)) {
+        continue;
       }
+      $content = (string) $message->get('content')->value;
+      $toolCalls = $message->getToolCalls();
+      // Skip empty turns that carry neither text nor a tool call.
+      if ($content === '' && !$toolCalls) {
+        continue;
+      }
+      $item = ['role' => $message->getRole(), 'content' => $content];
+      if ($toolCalls) {
+        $item['toolCalls'] = $toolCalls;
+      }
+      $messages[] = $item;
     }
     return ['messages' => $messages];
   }

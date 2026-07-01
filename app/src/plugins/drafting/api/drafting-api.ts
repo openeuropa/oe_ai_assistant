@@ -2,12 +2,14 @@
  * API helpers for the drafting plugin.
  *
  * Sends requests to our RPC-style wrapper endpoint which
- * delegates to the AG-UI controller internally. The response
- * is an SSE stream of AG-UI protocol events.
+ * delegates to the AG-UI controller internally. The chat response
+ * is an SSE stream of AG-UI protocol events; reset and get_messages
+ * return JSON. Every request is scoped to the current editorial
+ * session, read from the app config.
  */
 
 import { getConfig } from "@/config";
-import type { DraftingChatRequest } from "../types";
+import type { DraftingChatRequest, DraftingMessage } from "../types";
 
 /**
  * Sends a chat message and returns the raw Response for SSE
@@ -31,20 +33,36 @@ export async function postDraftingChat(
   return response;
 }
 
-/** Resets the conversation thread and returns a new thread ID. */
-export async function resetDraftingThread(threadId: string): Promise<string> {
+/** Resets the conversation for the current session. */
+export async function resetDrafting(): Promise<void> {
   const response = await fetch(
     `${getConfig().apiBaseUrl}/plugins/drafting/reset`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       credentials: "include",
-      body: JSON.stringify({ threadId }),
+      body: JSON.stringify({ sessionId: getConfig().sessionId }),
     },
   );
   if (!response.ok) {
     throw new Error(`Drafting reset error: ${response.status}`);
   }
-  const data = (await response.json()) as { threadId: string };
-  return data.threadId;
+}
+
+/** Loads the persisted transcript for the current session. */
+export async function getDraftingMessages(): Promise<DraftingMessage[]> {
+  const response = await fetch(
+    `${getConfig().apiBaseUrl}/plugins/drafting/get_messages`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ sessionId: getConfig().sessionId }),
+    },
+  );
+  if (!response.ok) {
+    throw new Error(`Drafting get_messages error: ${response.status}`);
+  }
+  const data = (await response.json()) as { messages: DraftingMessage[] };
+  return data.messages;
 }

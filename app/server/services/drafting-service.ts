@@ -19,6 +19,7 @@ import type {
 } from "@mistralai/mistralai/models/components";
 import { MISTRAL_MODEL } from "../config";
 import type { ChatMessage, ConversationStore } from "./conversation-store";
+import type { TranscriptMessage, TranscriptStore } from "./transcript-store";
 
 // -- Types -------------------------------------------------------
 
@@ -51,7 +52,7 @@ interface SchemaGroup {
 /** Options for the chat() method. */
 export interface ChatOptions {
   message: string;
-  threadId?: string;
+  sessionId: string;
   entityTypeId: string;
   bundle: string;
   schema: ContentTypeSchema | null;
@@ -73,8 +74,30 @@ export interface DraftSaveResult {
 /** Common interface implemented by all drafting services. */
 export interface DraftingService {
   chat(opts: ChatOptions): AsyncGenerator<StreamEvent>;
-  reset(threadId?: string): { threadId: string };
+  reset(sessionId: string): { status: string };
   save(body: DraftSavePayload): DraftSaveResult;
+  getMessages(sessionId: string): TranscriptMessage[];
+}
+
+/**
+ * Emits a completed draft_content tool call carrying the drafted fields.
+ *
+ * Matches the Drupal UiMessageStream::toolCall() sequence so the drafting
+ * card renders inline with the fields as its clickable result.
+ */
+export async function* emitDraftToolCall(
+  result: Record<string, unknown>,
+): AsyncGenerator<StreamEvent> {
+  const toolCallId = randomUUID();
+  yield {
+    type: "tool-call-start",
+    id: toolCallId,
+    toolCallId,
+    toolName: "draft_content",
+  };
+  yield { type: "tool-call-delta", argsText: "{}" };
+  yield { type: "tool-call-end" };
+  yield { type: "tool-result", toolCallId, result };
 }
 
 /**
@@ -173,25 +196,25 @@ export class MistralDraftingService implements DraftingService {
   constructor(
     private readonly mistral: Mistral,
     private readonly store: ConversationStore,
+    private readonly transcript: TranscriptStore,
   ) {}
 
   async *chat(opts: ChatOptions): AsyncGenerator<StreamEvent> {
-    const { message, threadId: inputThreadId, schema } = opts;
+    const { message, sessionId, schema } = opts;
 
     const messageId = randomUUID();
-    const threadId = inputThreadId || randomUUID();
     const groups = schema ? splitSchemaIntoGroups(schema) : [];
     const systemPrompt = this.buildSystemPrompt(groups, opts);
 
     yield { type: "start", messageId };
-    yield { type: "data-thread-id", data: { threadId } };
 
     try {
-      const history = this.store.load(threadId);
+      this.transcript.append(sessionId, { role: "user", content: message });
+      const history = this.store.load(sessionId);
       history.push({ role: "user" as const, content: message });
 
       // Run the router LLM with tool loop.
-      const gen = this.runRouterLoop(systemPrompt, history, groups);
+      const gen = this.runRouterLoop(systemPrompt, history, groups, sessionId);
       let result = await gen.next();
       while (!result.done) {
         yield result.value;
@@ -204,8 +227,12 @@ export class MistralDraftingService implements DraftingService {
           role: "assistant" as const,
           content: assistantText,
         });
+        this.transcript.append(sessionId, {
+          role: "assistant",
+          content: assistantText,
+        });
       }
-      this.store.save(threadId, history);
+      this.store.save(sessionId, history);
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
       console.error("Error in drafting chat:", errorMessage);
@@ -219,9 +246,14 @@ export class MistralDraftingService implements DraftingService {
     };
   }
 
-  reset(threadId?: string): { threadId: string } {
-    if (threadId) this.store.delete(threadId);
-    return { threadId: randomUUID() };
+  reset(sessionId: string): { status: string } {
+    this.store.delete(sessionId);
+    this.transcript.delete(sessionId);
+    return { status: "ok" };
+  }
+
+  getMessages(sessionId: string): TranscriptMessage[] {
+    return this.transcript.load(sessionId);
   }
 
   save(_body: DraftSavePayload): DraftSaveResult {
@@ -322,6 +354,7 @@ Workflow:
     systemPrompt: string,
     messages: ChatMessage[],
     groups: SchemaGroup[],
+    sessionId: string,
   ): AsyncGenerator<StreamEvent, string> {
     let fullMessage = "";
 
@@ -403,9 +436,10 @@ Workflow:
             isContinued: false,
           };
 
-          // Run sub-agent orchestration.
-          yield* this.orchestrate(groups, messages);
-          fullMessage = "Draft content generated.";
+          // Run sub-agent orchestration. It records the draft trace, so no
+          // separate assistant text turn is kept for the draft path.
+          yield* this.orchestrate(groups, messages, sessionId);
+          fullMessage = "";
           break;
         }
 
@@ -469,6 +503,7 @@ Workflow:
   private async *orchestrate(
     groups: SchemaGroup[],
     history: ChatMessage[],
+    sessionId: string,
   ): AsyncGenerator<StreamEvent> {
     if (groups.length === 0) {
       yield { type: "text-delta", textDelta: "No fields available." };
@@ -586,6 +621,17 @@ Workflow:
 
     // Emit data-drafted-fields.
     yield { type: "data-drafted-fields", data: consolidated };
+
+    // Emit the draft_content tool call with its result so the card appears
+    // live, and record it so a reload rehydrates the same clickable trace.
+    yield* emitDraftToolCall(consolidated);
+    this.transcript.append(sessionId, {
+      role: "assistant",
+      content: "",
+      toolCalls: [
+        { function: { name: "draft_content" }, result: consolidated },
+      ],
+    });
 
     // Confirmation text.
     const fieldCount = Object.keys(consolidated).length;

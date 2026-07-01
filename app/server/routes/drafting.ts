@@ -85,15 +85,21 @@ export function createDraftingRouter(service: DraftingService): Router {
       return;
     }
 
-    const threadId = body.threadId as string | undefined;
-    const forwardedProps =
-      (body.forwardedProps as Record<string, string>) ?? {};
-    const entityTypeId =
-      forwardedProps.entityTypeId ?? (body.entityTypeId as string) ?? "node";
-    const bundle = forwardedProps.bundle ?? (body.bundle as string) ?? "";
+    const sessionId = body.sessionId as string | undefined;
+    if (!sessionId) {
+      res
+        .status(400)
+        .json({ code: "bad_request", message: "sessionId is required" });
+      return;
+    }
+
+    // The real backend derives the bundle from the session; standalone dev
+    // has no session, so it drafts for the one bundle that has a fixture.
+    const entityTypeId = "node";
+    const bundle = "oe_news";
 
     // Load the content type schema from a static JSON file.
-    const schema = bundle ? loadSchema(bundle) : null;
+    const schema = loadSchema(bundle);
     console.log(
       "[drafting] bundle=%s schema=%s",
       bundle,
@@ -109,7 +115,7 @@ export function createDraftingRouter(service: DraftingService): Router {
     try {
       for await (const event of service.chat({
         message,
-        threadId,
+        sessionId,
         entityTypeId,
         bundle,
         schema: schema as ChatOptions["schema"],
@@ -128,10 +134,28 @@ export function createDraftingRouter(service: DraftingService): Router {
     res.end();
   });
 
-  /** POST /reset - Clear conversation thread. */
+  /** POST /reset - Clear the conversation for a session. */
   router.post("/reset", (req, res) => {
-    const threadId = (req.body as { threadId?: string })?.threadId;
-    res.json(service.reset(threadId));
+    const sessionId = (req.body as { sessionId?: string })?.sessionId;
+    if (!sessionId) {
+      res
+        .status(400)
+        .json({ code: "bad_request", message: "sessionId is required" });
+      return;
+    }
+    res.json(service.reset(sessionId));
+  });
+
+  /** POST /get_messages - Return the persisted transcript for a session. */
+  router.post("/get_messages", (req, res) => {
+    const sessionId = (req.body as { sessionId?: string })?.sessionId;
+    if (!sessionId) {
+      res
+        .status(400)
+        .json({ code: "bad_request", message: "sessionId is required" });
+      return;
+    }
+    res.json({ messages: service.getMessages(sessionId) });
   });
 
   /** POST /save - Mock: save draft as node. */
