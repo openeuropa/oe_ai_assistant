@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace Drupal\oe_ai_assistant\Plugin\AiEditorialAssistant;
 
 use Drupal\ai\OperationType\Chat\ChatMessage;
+use Drupal\ai\OperationType\Chat\ChatOutput;
 use Drupal\ai\OperationType\Chat\Tools\ToolsFunctionInput;
 use Drupal\ai_agents\PluginManager\AiAgentManager;
 use Drupal\oe_ai_assistant\Annotation\AiEditorialAssistant;
+use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
 use Drupal\oe_ai_assistant\Exception\ActionException;
 use Drupal\oe_ai_assistant\Plugin\AiAssistantPluginBase;
 use Drupal\oe_ai_assistant\Service\DraftingOrchestratorInterface;
@@ -26,6 +28,11 @@ use Symfony\Component\HttpFoundation\Response;
  * 1. get_content_schema: LLM discovers available fields
  * 2. draft_content: LLM signals readiness, orchestrator dispatches
  *    sub-agents per field group.
+ *
+ * The conversation is scoped by an editorial session: the session hosts the
+ * persisted ai_conversation_message rows, and its target content type drives
+ * the drafting context. Turns are persisted by the message recorder, so any
+ * user with access to the session sees the same conversation.
  */
 #[AiEditorialAssistant(
   id: 'drafting',
@@ -91,7 +98,8 @@ class DraftingPlugin extends AiAssistantPluginBase {
    * {@inheritdoc}
    */
   public function getActionMap(): array {
-    return [
+    // The base provides the shared get_messages action.
+    return parent::getActionMap() + [
       'chat' => $this->chat(...),
       'reset' => $this->reset(...),
       'save' => $this->save(...),
@@ -102,7 +110,8 @@ class DraftingPlugin extends AiAssistantPluginBase {
    * {@inheritdoc}
    */
   public function getRequestSchemas(): array {
-    return [
+    // The base provides the get_messages schema.
+    return parent::getRequestSchemas() + [
       'reset' => 'DraftingResetRequest',
       'save' => 'DraftingSaveRequest',
     ];
@@ -114,7 +123,8 @@ class DraftingPlugin extends AiAssistantPluginBase {
    * Supports a multi-turn tool flow: the LLM can call
    * get_content_schema (executed by ai_agents), chat with the
    * user, then call draft_content to trigger sub-agent
-   * orchestration.
+   * orchestration. History and every turn are scoped to the
+   * editorial session named by the request.
    *
    * @param \Symfony\Component\HttpFoundation\Request $request
    *   The incoming request with a chat message body.
@@ -132,18 +142,16 @@ class DraftingPlugin extends AiAssistantPluginBase {
       );
     }
 
-    $context = $this->buildContext($body);
-    $threadId = $body['threadId'] ?? '';
+    $session = $this->loadSession($body);
+    $context = $this->buildContext($session);
 
-    if (empty($threadId)) {
-      $threadId = bin2hex(random_bytes(16));
-    }
-    $store = $this->conversationStoreFactory
-      ->getStore('oe_ai_drafting', $threadId);
-
-    // Load conversation history and append the user's message.
-    $history = $store->load();
+    // Load the persisted transcript, then append the current user's message
+    // for this turn's LLM call and persist it as a user turn.
+    $history = $this->buildHistory($session);
     $history[] = new ChatMessage('user', $message);
+    $this->messageRecorder->recordUser(
+      $session, $message, (int) $this->currentUser->id()
+    );
 
     // Load the router agent config entity for system prompt and
     // tools (get_content_schema is registered there).
@@ -169,19 +177,28 @@ class DraftingPlugin extends AiAssistantPluginBase {
     $provider = $this->aiProviderManager
       ->createInstance($defaults['provider_id']);
 
+    // Persist each provider turn as it happens. The loop invokes this once
+    // per response, so the assistant turn (including the terminal
+    // draft_content turn) and its tool results are recorded without the loop
+    // knowing about entities.
+    $recordTurn = function (ChatOutput $output, array $toolResults) use ($session, $defaults): void {
+      $this->messageRecorder->recordAssistant(
+        $session, $output, 'orchestrator', $defaults['provider_id'], $defaults['model_id']
+      );
+      foreach ($toolResults as $toolMessage) {
+        $this->messageRecorder->recordTool($session, $toolMessage->getText());
+      }
+    };
+
     // Stream the response using UiMessageStream. The callback
     // delegates to ToolExecutionLoop which handles the multi-turn
     // tool call flow (call LLM, execute tools, repeat).
     return $this->uiMessageStream->respond(
       function (UiMessageStreamInterface $stream) use (
-        $history, $store, $threadId, $context,
-        $systemPrompt, $tools, $defaults, $provider,
+        $history, $context, $systemPrompt, $tools,
+        $defaults, $provider, $recordTurn,
       ): void {
         $stream->start();
-
-        $stream->customEvent('data-thread-id', [
-          'threadId' => $threadId,
-        ]);
 
         // Run the tool execution loop. It handles streaming,
         // non-terminal tool execution (e.g. get_content_schema),
@@ -205,6 +222,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
               'bundle' => $context['bundle'],
             ],
           ],
+          recordTurn: $recordTurn,
         );
 
         if ($result->hasTerminalTool()
@@ -215,18 +233,15 @@ class DraftingPlugin extends AiAssistantPluginBase {
             $stream, $history,
             $context['entityTypeId'], $context['bundle']
           );
-          $history[] = new ChatMessage('assistant',
-            'Draft content generated.');
         }
 
-        $store->save($history);
         $stream->finish($result->finishReason);
       }
     );
   }
 
   /**
-   * Resets the conversation thread.
+   * Resets the conversation for the session.
    *
    * @param \Symfony\Component\HttpFoundation\Request $request
    *   The incoming request.
@@ -235,14 +250,10 @@ class DraftingPlugin extends AiAssistantPluginBase {
    *   A confirmation response.
    */
   public function reset(Request $request): array {
-    $body = $this->decodeJsonBody($request);
-    $threadId = $body['threadId'] ?? '';
-    if (!empty($threadId)) {
-      $this->conversationStoreFactory
-        ->getStore('oe_ai_drafting', $threadId)
-        ->drop();
-    }
-    return ['threadId' => bin2hex(random_bytes(16))];
+    $session = $this->loadSession($this->decodeJsonBody($request));
+    $this->entityTypeManager->getStorage('ai_conversation_message')
+      ->deleteForHost($session);
+    return ['status' => 'ok'];
   }
 
   /**
@@ -287,23 +298,18 @@ class DraftingPlugin extends AiAssistantPluginBase {
   }
 
   /**
-   * Builds drafting context from the request body.
+   * Builds drafting context from the editorial session.
    *
-   * @param array $body
-   *   The decoded request body.
+   * @param \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $session
+   *   The session hosting the conversation.
    *
    * @return array
    *   Context with entityTypeId and bundle.
    */
-  private function buildContext(array $body): array {
-    $forwardedProps = $body['forwardedProps'] ?? [];
-    $entityTypeId = $forwardedProps['entityTypeId']
-      ?? $body['entityTypeId'] ?? 'node';
-    $bundle = $forwardedProps['bundle']
-      ?? $body['bundle'] ?? '';
+  private function buildContext(AiEditorialSessionInterface $session): array {
     return [
-      'entityTypeId' => $entityTypeId,
-      'bundle' => $bundle,
+      'entityTypeId' => 'node',
+      'bundle' => $session->getContentType(),
     ];
   }
 

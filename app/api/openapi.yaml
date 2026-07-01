@@ -52,6 +52,8 @@ paths:
     $ref: "plugins/drafting/paths.yaml#/chat"
   /plugins/drafting/reset:
     $ref: "plugins/drafting/paths.yaml#/reset"
+  /plugins/drafting/get_messages:
+    $ref: "plugins/drafting/paths.yaml#/get_messages"
   /plugins/drafting/save:
     $ref: "plugins/drafting/paths.yaml#/save"
 
@@ -112,6 +114,10 @@ components:
       $ref: "shell/schemas.yaml#/ContentTypeField"
     ContentType:
       $ref: "shell/schemas.yaml#/ContentType"
+    GetMessagesRequest:
+      $ref: "shell/schemas.yaml#/GetMessagesRequest"
+    GetMessagesResponse:
+      $ref: "shell/schemas.yaml#/GetMessagesResponse"
 
     # -- Plugin: drafting --
     DraftingChatRequest:
