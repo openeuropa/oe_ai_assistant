@@ -40,6 +40,13 @@ interface ToolExecutionLoopInterface {
    *   tool definitions advertised to the LLM and forced at
    *   execution time, so neither the LLM nor a user steering it
    *   can call the tool outside the caller's allowed scope.
+   * @param callable|null $recordTurn
+   *   Optional callback invoked once per provider response, so the
+   *   caller can persist each turn without the loop knowing how.
+   *   Signature: fn(\Drupal\ai\OperationType\Chat\ChatOutput
+   *   $output, array $toolResults): void, where $toolResults holds
+   *   the ChatMessage tool results executed in that iteration, and
+   *   is empty when the turn ended with text or a terminal tool.
    *
    * @return \Drupal\oe_ai_assistant\Service\ToolLoopResult
    *   Describes how the loop ended.
@@ -54,6 +61,7 @@ interface ToolExecutionLoopInterface {
     array $terminalToolNames = [],
     array $tags = [],
     array $fixedToolContexts = [],
+    ?callable $recordTurn = NULL,
   ): ToolLoopResult;
 
 }
