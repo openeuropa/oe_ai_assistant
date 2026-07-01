@@ -13,6 +13,7 @@ use Drupal\Core\Entity\Query\QueryInterface;
 use Drupal\Core\Form\FormBuilderInterface;
 use Drupal\Core\Url;
 use Drupal\oe_ai_assistant\Entity\AiConversationMessageInterface;
+use Drupal\oe_ai_assistant\Exception\InvalidJsonFieldException;
 use Drupal\oe_ai_assistant\Form\AiConversationMessageFilterForm;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\RequestStack;
@@ -101,6 +102,8 @@ class AiConversationMessageListBuilder extends EntityListBuilder {
     $header['agent_id'] = $this->sortableHeader($this->t('Agent'), 'agent_id');
     $header['provider'] = $this->sortableHeader($this->t('Provider'), 'provider');
     $header['model'] = $this->sortableHeader($this->t('Model'), 'model');
+    // Not sortable: tool_calls is a JSON blob, not a queryable column.
+    $header['tool_calls'] = $this->t('Tool calls');
     $header['tokens_input'] = $this->sortableHeader($this->t('In'), 'tokens_input');
     $header['tokens_output'] = $this->sortableHeader($this->t('Out'), 'tokens_output');
     $header['tokens_total'] = $this->sortableHeader($this->t('Total'), 'tokens_total');
@@ -144,6 +147,7 @@ class AiConversationMessageListBuilder extends EntityListBuilder {
     $row['agent_id'] = $entity->get('agent_id')->value;
     $row['provider'] = $entity->get('provider')->value;
     $row['model'] = $entity->get('model')->value;
+    $row['tool_calls'] = $this->summarizeToolCalls($entity);
     $row['tokens_input'] = $entity->get('tokens_input')->value;
     $row['tokens_output'] = $entity->get('tokens_output')->value;
     $row['tokens_total'] = $entity->get('tokens_total')->value;
@@ -168,6 +172,31 @@ class AiConversationMessageListBuilder extends EntityListBuilder {
     $build += parent::render();
     $build['table']['#footer'][] = $this->buildTotalsRow();
     return $build;
+  }
+
+  /**
+   * Summarizes a message's tool calls for the list column.
+   *
+   * Lists the tool names only; the full payload is on the edit form.
+   *
+   * @param \Drupal\oe_ai_assistant\Entity\AiConversationMessageInterface $entity
+   *   The message.
+   *
+   * @return string
+   *   A short, comma-separated list of tool names, or an empty string.
+   */
+  protected function summarizeToolCalls(AiConversationMessageInterface $entity): string {
+    try {
+      $tool_calls = $entity->getToolCalls();
+    }
+    catch (InvalidJsonFieldException) {
+      return 'Invalid JSON';
+    }
+    $names = [];
+    foreach ($tool_calls as $call) {
+      $names[] = $call['function']['name'] ?? $call['name'] ?? 'tool';
+    }
+    return implode(', ', $names);
   }
 
   /**
@@ -221,7 +250,7 @@ class AiConversationMessageListBuilder extends EntityListBuilder {
     $sums = $result[0] ?? [];
 
     $row = [
-      ['data' => $this->t('Totals (filtered)'), 'colspan' => 7, 'header' => TRUE],
+      ['data' => $this->t('Totals (filtered)'), 'colspan' => 8, 'header' => TRUE],
     ];
     foreach (self::TOKEN_FIELDS as $field) {
       $row[] = (string) (int) ($sums[$field . '_sum'] ?? 0);
