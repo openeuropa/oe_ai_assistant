@@ -8,6 +8,7 @@
  */
 
 import { AssistantRuntimeProvider } from "@assistant-ui/react";
+import { UserRound } from "lucide-react";
 import { useCallback } from "react";
 import { ArtifactPlaceholder } from "./components/artifact-placeholder";
 import { ContentTable } from "./components/content-table";
@@ -72,23 +73,28 @@ export default function DraftingRoot() {
           <DraftingThread
             // Tone is configured from the composer area because it affects the
             // next prompt, not the current content artifact shown on the right.
-            generationSettingsLabel={
-              generationSettings.selectedLabel
-                ? `Tone: ${generationSettings.selectedLabel}`
-                : null
-            }
-            hasUnsavedGenerationSettings={generationSettings.hasChanges}
-            generationSettings={
-              <GenerationSettingsPanel
-                values={generationSettings.values}
-                toneOptions={generationSettings.toneOptions}
-                onChange={generationSettings.updateValues}
-                onSave={generationSettings.submitValues}
-                hasChanges={generationSettings.hasChanges}
-                isSaving={generationSettings.isSaving}
-                error={generationSettings.error}
-              />
-            }
+            composerPanels={[
+              {
+                id: "tone",
+                ariaLabel: "Tone settings",
+                icon: <UserRound size={14} />,
+                triggerLabel: generationSettings.selectedLabel
+                  ? `Tone: ${generationSettings.selectedLabel}`
+                  : null,
+                hasChanges: generationSettings.hasChanges,
+                content: (
+                  <GenerationSettingsPanel
+                    values={generationSettings.values}
+                    toneOptions={generationSettings.toneOptions}
+                    onChange={generationSettings.updateValues}
+                    onSave={generationSettings.submitValues}
+                    hasChanges={generationSettings.hasChanges}
+                    isSaving={generationSettings.isSaving}
+                    error={generationSettings.error}
+                  />
+                ),
+              },
+            ]}
           />
         </div>
 

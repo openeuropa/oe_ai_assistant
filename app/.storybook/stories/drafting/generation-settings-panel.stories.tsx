@@ -1,11 +1,16 @@
 import { AssistantRuntimeProvider, useLocalRuntime } from "@assistant-ui/react";
 import type { Meta, StoryObj } from "@storybook/react-vite";
+import { FileText, LayoutTemplate, UserRound } from "lucide-react";
 import { useState } from "react";
 import { DraftingThread } from "../../../src/plugins/drafting/components/drafting-thread";
 import {
   type GenerationSettingsDraft,
   GenerationSettingsPanel,
 } from "../../../src/plugins/drafting/components/generation-settings-panel";
+import {
+  DocumentAttachmentPanel,
+  TemplateSelectionPanel,
+} from "./composer-panel-examples";
 
 const toneOptions = [
   {
@@ -97,26 +102,45 @@ function DraftingChatPreview() {
     <AssistantRuntimeProvider runtime={runtime}>
       <div className="flex h-[700px] max-w-2xl flex-col overflow-hidden border border-gray-200 bg-white">
         <DraftingThread
-          defaultSettingsOpen
-          generationSettingsLabel={
-            values.toneId
-              ? `Tone: ${
-                  toneOptions.find((option) => option.id === values.toneId)
-                    ?.label ?? values.toneId
-                }`
-              : null
-          }
-          hasUnsavedGenerationSettings={values.toneId !== savedValues.toneId}
-          generationSettings={
-            <GenerationSettingsPanel
-              values={values}
-              toneOptions={toneOptions}
-              onChange={setValues}
-              onSave={async () => {}}
-              hasChanges={values.toneId !== savedValues.toneId}
-              isSaving={false}
-            />
-          }
+          defaultOpenPanelId="tone"
+          composerPanels={[
+            {
+              id: "tone",
+              ariaLabel: "Tone settings",
+              icon: <UserRound size={14} />,
+              triggerLabel: values.toneId
+                ? `Tone: ${
+                    toneOptions.find((option) => option.id === values.toneId)
+                      ?.label ?? values.toneId
+                  }`
+                : null,
+              hasChanges: values.toneId !== savedValues.toneId,
+              content: (
+                <GenerationSettingsPanel
+                  values={values}
+                  toneOptions={toneOptions}
+                  onChange={setValues}
+                  onSave={async () => {}}
+                  hasChanges={values.toneId !== savedValues.toneId}
+                  isSaving={false}
+                />
+              ),
+            },
+            {
+              id: "documents",
+              ariaLabel: "Briefing documents",
+              icon: <FileText size={14} />,
+              triggerLabel: "2 documents attached",
+              content: <DocumentAttachmentPanel />,
+            },
+            {
+              id: "template",
+              ariaLabel: "Template selection",
+              icon: <LayoutTemplate size={14} />,
+              triggerLabel: "Template: News article",
+              content: <TemplateSelectionPanel />,
+            },
+          ]}
         />
       </div>
     </AssistantRuntimeProvider>

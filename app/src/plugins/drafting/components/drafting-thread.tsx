@@ -23,10 +23,13 @@ import {
   Paperclip,
   PenLine,
   SendHorizontal,
-  UserRound,
   X,
 } from "lucide-react";
-import { type ReactNode, useState } from "react";
+import { useState } from "react";
+import {
+  type ComposerPanelItem,
+  ComposerPanelTriggers,
+} from "./composer-panel";
 
 /** Welcome message shown when the chat is empty. */
 function WelcomeMessage() {
@@ -215,27 +218,16 @@ function ComposerAttachment() {
   );
 }
 
-interface ComposerProps {
-  /** Text shown inside the collapsed tone trigger, e.g. "Tone: Formal". */
-  generationSettingsLabel?: ReactNode;
-  /** Marks the trigger when the local tone differs from the saved tone. */
-  hasUnsavedGenerationSettings?: boolean;
-  /** Whether the tone panel is available for this thread. */
-  hasGenerationSettings?: boolean;
-  /** Opens or closes the tone panel above the composer. */
-  onToggleSettings: () => void;
-  /** Used for the trigger's aria-expanded state. */
-  settingsOpen: boolean;
-}
-
 /** Chat composer with text input, attachment button, and send. */
 function Composer({
-  generationSettingsLabel,
-  hasUnsavedGenerationSettings,
-  hasGenerationSettings,
-  onToggleSettings,
-  settingsOpen,
-}: ComposerProps) {
+  composerPanels,
+  onTogglePanel,
+  openPanelId,
+}: {
+  composerPanels: ComposerPanelItem[];
+  onTogglePanel: (panelId: string) => void;
+  openPanelId: string | null;
+}) {
   return (
     <ComposerPrimitive.Root className="border-t border-gray-200 pt-2 p-4">
       {/* Pending attachments row */}
@@ -245,31 +237,11 @@ function Composer({
         />
       </div>
 
-      {hasGenerationSettings && (
-        <div className="mb-2 flex">
-          {/* Compact trigger keeps tone controls close to the prompt without
-          taking vertical space while the editor is drafting. */}
-          <button
-            type="button"
-            className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700"
-            aria-label="Tone settings"
-            aria-expanded={settingsOpen}
-            title="Tone settings"
-            onClick={onToggleSettings}
-          >
-            <UserRound size={14} />
-            {generationSettingsLabel && <span>{generationSettingsLabel}</span>}
-            {hasUnsavedGenerationSettings && (
-              <>
-                <span className="text-amber-600" aria-hidden="true">
-                  *
-                </span>
-                <span className="sr-only">unsaved changes</span>
-              </>
-            )}
-          </button>
-        </div>
-      )}
+      <ComposerPanelTriggers
+        panels={composerPanels}
+        openPanelId={openPanelId}
+        onTogglePanel={onTogglePanel}
+      />
 
       {/* Input row */}
       <div className="flex items-end gap-2">
@@ -292,24 +264,21 @@ function Composer({
 }
 
 interface DraftingThreadProps {
-  /** Opens the tone panel in Storybook or targeted previews. */
-  defaultSettingsOpen?: boolean;
-  /** Expanded panel rendered directly above the composer. */
-  generationSettings?: ReactNode;
-  /** Collapsed trigger label rendered in the composer area. */
-  generationSettingsLabel?: ReactNode;
-  /** Shows the unsaved marker on the collapsed trigger. */
-  hasUnsavedGenerationSettings?: boolean;
+  /** Panels rendered from compact composer triggers. */
+  composerPanels?: ComposerPanelItem[];
+  /** Opens one panel by default in Storybook or targeted previews. */
+  defaultOpenPanelId?: string | null;
 }
 
 /** Full chat thread with welcome, messages, and composer. */
 export function DraftingThread({
-  defaultSettingsOpen = false,
-  generationSettings,
-  generationSettingsLabel,
-  hasUnsavedGenerationSettings = false,
+  composerPanels = [],
+  defaultOpenPanelId = null,
 }: DraftingThreadProps) {
-  const [settingsOpen, setSettingsOpen] = useState(defaultSettingsOpen);
+  const [openPanelId, setOpenPanelId] = useState<string | null>(
+    defaultOpenPanelId,
+  );
+  const openPanel = composerPanels.find((panel) => panel.id === openPanelId);
 
   return (
     <ThreadPrimitive.Root className="flex min-h-0 flex-1 flex-col">
@@ -322,13 +291,15 @@ export function DraftingThread({
           }}
         />
       </ThreadPrimitive.Viewport>
-      {settingsOpen && generationSettings}
+      {openPanel?.content}
       <Composer
-        generationSettingsLabel={generationSettingsLabel}
-        hasUnsavedGenerationSettings={hasUnsavedGenerationSettings}
-        hasGenerationSettings={Boolean(generationSettings)}
-        settingsOpen={settingsOpen}
-        onToggleSettings={() => setSettingsOpen((open) => !open)}
+        composerPanels={composerPanels}
+        openPanelId={openPanelId}
+        onTogglePanel={(panelId) =>
+          setOpenPanelId((currentPanelId) =>
+            currentPanelId === panelId ? null : panelId,
+          )
+        }
       />
     </ThreadPrimitive.Root>
   );
