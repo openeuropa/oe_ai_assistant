@@ -168,6 +168,25 @@ class MessageRecorderTest extends KernelTestBase {
   }
 
   /**
+   * Tests recording a plain assistant text turn.
+   */
+  public function testRecordAssistantText(): void {
+    $message = $this->recorder->recordAssistantText(
+      $this->host,
+      'Draft generated with 3 fields. Review the content on the right.',
+      'orchestrator'
+    );
+
+    $this->assertSame(AiConversationMessageInterface::ROLE_ASSISTANT, $message->getRole());
+    $this->assertSame(
+      'Draft generated with 3 fields. Review the content on the right.',
+      $message->get('content')->value
+    );
+    $this->assertSame('orchestrator', $message->get('agent_id')->value);
+    $this->assertNull($message->getParentId());
+  }
+
+  /**
    * Tests recording tool and error turns nested under a parent.
    */
   public function testRecordToolAndErrorUnderParent(): void {

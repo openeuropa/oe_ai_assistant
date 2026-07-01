@@ -633,18 +633,20 @@ Workflow:
       ],
     });
 
-    // Confirmation text.
+    // Confirmation text, streamed and recorded so it survives a reload.
     const fieldCount = Object.keys(consolidated).length;
+    const confirmation = `Draft generated with ${fieldCount} fields. Review the content on the right.`;
     yield { type: "start-step" };
-    yield {
-      type: "text-delta",
-      textDelta: `Draft generated with ${fieldCount} fields. Review the content on the right.`,
-    };
+    yield { type: "text-delta", textDelta: confirmation };
     yield {
       type: "finish-step",
       finishReason: "stop",
       usage: { inputTokens: 0, outputTokens: 0 },
       isContinued: false,
     };
+    this.transcript.append(sessionId, {
+      role: "assistant",
+      content: confirmation,
+    });
   }
 }

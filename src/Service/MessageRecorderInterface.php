@@ -57,6 +57,26 @@ interface MessageRecorderInterface {
   public function recordAssistant(EntityInterface $host, ChatOutput $output, string $agentId, string $provider, string $model, ?AiConversationMessageInterface $parent = NULL): AiConversationMessageInterface;
 
   /**
+   * Records a plain assistant text turn.
+   *
+   * For assistant messages the plugin produces itself (e.g. a drafting
+   * confirmation), not sourced from a provider ChatOutput.
+   *
+   * @param \Drupal\Core\Entity\EntityInterface $host
+   *   The entity hosting the conversation.
+   * @param string $text
+   *   The assistant message text.
+   * @param string $agentId
+   *   Which agent produced the turn, if known.
+   * @param \Drupal\oe_ai_assistant\Entity\AiConversationMessageInterface|null $parent
+   *   The parent turn, or NULL for a top-level turn.
+   *
+   * @return \Drupal\oe_ai_assistant\Entity\AiConversationMessageInterface
+   *   The saved message.
+   */
+  public function recordAssistantText(EntityInterface $host, string $text, string $agentId = '', ?AiConversationMessageInterface $parent = NULL): AiConversationMessageInterface;
+
+  /**
    * Records a tool result turn.
    *
    * @param \Drupal\Core\Entity\EntityInterface $host

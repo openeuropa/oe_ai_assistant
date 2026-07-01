@@ -163,13 +163,19 @@ export class MockDraftingService implements DraftingService {
           : fixture.drafts.initial;
 
         this.draftFieldsBySession.set(sessionId, variant.fields);
-        assistantText = variant.assistantText;
         const selectedFields = selectDraftedFields(
           variant.fields,
           fieldsToStream,
         );
         yield* this.createDraftStep(variant, fieldsToStream);
-        // Record the draft trace so a reload rehydrates the clickable card.
+        // Record the intro, the clickable draft trace, and the confirmation
+        // in order so a reload rehydrates the same conversation.
+        if (variant.assistantText) {
+          this.transcript.append(sessionId, {
+            role: "assistant",
+            content: variant.assistantText,
+          });
+        }
         this.transcript.append(sessionId, {
           role: "assistant",
           content: "",
@@ -177,6 +183,12 @@ export class MockDraftingService implements DraftingService {
             { function: { name: "draft_content" }, result: selectedFields },
           ],
         });
+        this.transcript.append(sessionId, {
+          role: "assistant",
+          content: `Draft generated with ${Object.keys(selectedFields).length} fields. Review the content on the right.`,
+        });
+        // Already recorded above; skip the shared end-of-chat append.
+        assistantText = "";
       } else {
         assistantText = fixture.conversationReplies.default;
         yield* this.createTextStep(assistantText);

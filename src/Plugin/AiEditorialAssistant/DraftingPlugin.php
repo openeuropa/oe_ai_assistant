@@ -199,7 +199,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
     return $this->uiMessageStream->respond(
       function (UiMessageStreamInterface $stream) use (
         $history, $context, $systemPrompt, $tools,
-        $defaults, $provider, $recordTurn, &$lastAssistant,
+        $defaults, $provider, $recordTurn, $session, &$lastAssistant,
       ): void {
         $stream->start();
 
@@ -243,6 +243,19 @@ class DraftingPlugin extends AiAssistantPluginBase {
           // so the transcript keeps a trace that can repopulate the artifact.
           if ($lastAssistant !== NULL) {
             $this->attachDraftResult($lastAssistant, $drafted);
+          }
+          // Stream and record a confirmation so it survives a reload.
+          if ($drafted) {
+            $confirmation = sprintf(
+              'Draft generated with %d fields. Review the content on the right.',
+              count($drafted)
+            );
+            $stream->startStep('confirmation');
+            $stream->textDelta($confirmation);
+            $stream->finishStep('confirmation');
+            $this->messageRecorder->recordAssistantText(
+              $session, $confirmation, 'orchestrator'
+            );
           }
         }
 
