@@ -22,13 +22,13 @@ export interface DraftingGenerationSettings {
   toneId: string;
 }
 
-/** Request body for saving session-scoped drafting state. */
-export interface DraftingSaveSessionRequest {
+/** Request body for saving the selected tone. */
+export interface DraftingSaveToneRequest {
   context: DraftingGenerationSettings;
 }
 
-/** Response body for saving session-scoped drafting state. */
-export interface DraftingSaveSessionResponse {
+/** Response body for saving the selected tone. */
+export interface DraftingSaveToneResponse {
   status: "ok";
 }
 

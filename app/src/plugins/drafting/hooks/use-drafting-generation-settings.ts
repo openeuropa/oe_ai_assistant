@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { getConfig } from "@/config";
-import { saveDraftingSession } from "../api/drafting-api";
+import { saveDraftingTone } from "../api/drafting-api";
 import type {
   GenerationSettingsDraft,
   GenerationSettingsOption,
@@ -62,7 +62,7 @@ export function useDraftingGenerationSettings() {
     setError(null);
     setIsSaving(true);
     try {
-      await saveDraftingSession({ context: nextSettings });
+      await saveDraftingTone({ context: nextSettings });
       setDraftingState({ generationSettings: nextSettings });
     } catch (caughtError) {
       const message =

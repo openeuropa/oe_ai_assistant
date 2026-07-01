@@ -9,8 +9,8 @@
 import { getConfig } from "@/config";
 import type {
   DraftingChatRequest,
-  DraftingSaveSessionRequest,
-  DraftingSaveSessionResponse,
+  DraftingSaveToneRequest,
+  DraftingSaveToneResponse,
 } from "../types";
 
 /**
@@ -53,12 +53,12 @@ export async function resetDraftingThread(threadId: string): Promise<string> {
   return data.threadId;
 }
 
-/** Saves session-scoped drafting state such as selected editorial context. */
-export async function saveDraftingSession(
-  request: DraftingSaveSessionRequest,
-): Promise<DraftingSaveSessionResponse> {
+/** Saves the selected tone for drafting. */
+export async function saveDraftingTone(
+  request: DraftingSaveToneRequest,
+): Promise<DraftingSaveToneResponse> {
   const response = await fetch(
-    `${getConfig().apiBaseUrl}/plugins/drafting/save-session`,
+    `${getConfig().apiBaseUrl}/plugins/drafting/save-tone`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -67,7 +67,7 @@ export async function saveDraftingSession(
     },
   );
   if (!response.ok) {
-    throw new Error(`Drafting save-session error: ${response.status}`);
+    throw new Error(`Drafting save-tone error: ${response.status}`);
   }
-  return (await response.json()) as DraftingSaveSessionResponse;
+  return (await response.json()) as DraftingSaveToneResponse;
 }

@@ -110,7 +110,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/plugins/drafting/save-session": {
+    "/plugins/drafting/save-tone": {
         parameters: {
             query?: never;
             header?: never;
@@ -119,8 +119,8 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Save drafting session state */
-        post: operations["postDraftingSaveSession"];
+        /** Save selected drafting tone */
+        post: operations["postDraftingSaveTone"];
         delete?: never;
         options?: never;
         head?: never;
@@ -319,14 +319,14 @@ export interface components {
             /** @description URL to preview the created draft node. */
             previewUrl: string;
         };
-        DraftingSaveSessionRequest: {
-            /** @description Drafting editorial context to save for the session. */
+        DraftingSaveToneRequest: {
+            /** @description Selected drafting tone to save. */
             context: {
                 /** @description Selected tone taxonomy term ID. */
                 toneId: string;
             };
         };
-        DraftingSaveSessionResponse: {
+        DraftingSaveToneResponse: {
             /** @enum {string} */
             status: "ok";
         };
@@ -589,7 +589,7 @@ export interface operations {
             };
         };
     };
-    postDraftingSaveSession: {
+    postDraftingSaveTone: {
         parameters: {
             query?: never;
             header?: never;
@@ -598,17 +598,17 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["DraftingSaveSessionRequest"];
+                "application/json": components["schemas"]["DraftingSaveToneRequest"];
             };
         };
         responses: {
-            /** @description Session state accepted */
+            /** @description Selected tone accepted */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["DraftingSaveSessionResponse"];
+                    "application/json": components["schemas"]["DraftingSaveToneResponse"];
                 };
             };
         };

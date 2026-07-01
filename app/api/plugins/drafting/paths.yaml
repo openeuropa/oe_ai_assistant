@@ -58,21 +58,21 @@ save:
             schema:
               $ref: "../../openapi.yaml#/components/schemas/DraftingSaveResponse"
 
-saveSession:
+saveTone:
   post:
-    operationId: postDraftingSaveSession
-    summary: Save drafting session state
+    operationId: postDraftingSaveTone
+    summary: Save selected drafting tone
     tags: [Drafting]
     requestBody:
       required: true
       content:
         application/json:
           schema:
-            $ref: "../../openapi.yaml#/components/schemas/DraftingSaveSessionRequest"
+            $ref: "../../openapi.yaml#/components/schemas/DraftingSaveToneRequest"
     responses:
       "200":
-        description: Session state accepted
+        description: Selected tone accepted
         content:
           application/json:
             schema:
-              $ref: "../../openapi.yaml#/components/schemas/DraftingSaveSessionResponse"
+              $ref: "../../openapi.yaml#/components/schemas/DraftingSaveToneResponse"
