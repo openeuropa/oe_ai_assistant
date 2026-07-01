@@ -8,6 +8,7 @@ use Drupal\KernelTests\KernelTestBase;
 use Drupal\ai\Dto\TokenUsageDto;
 use Drupal\ai\OperationType\Chat\ChatMessage;
 use Drupal\ai\OperationType\Chat\ChatOutput;
+use Drupal\ai\OperationType\Chat\StreamedChatMessageIteratorInterface;
 use Drupal\oe_ai_assistant\Entity\AiConversationMessageInterface;
 use Drupal\oe_ai_assistant\Service\MessageRecorderInterface;
 use Drupal\user\Entity\User;
@@ -129,6 +130,41 @@ class MessageRecorderTest extends KernelTestBase {
 
     // An assistant turn with no author keeps a NULL owner.
     $this->assertNull($assistant->get('uid')->target_id);
+  }
+
+  /**
+   * Tests that a streamed output records the reconstructed text and tokens.
+   *
+   * For a streamed response the token usage and final text live on the
+   * reconstructed output, not the original one handed to the recorder.
+   */
+  public function testRecordAssistantFromStreamedOutput(): void {
+    // The reconstructed output carries the final text and token usage.
+    $reconstructed = new ChatOutput(
+      new ChatMessage('assistant', 'Streamed answer.'),
+      [],
+      [],
+      new TokenUsageDto(20, 8, 28)
+    );
+    // The streamed iterator reconstructs into that output. The original
+    // output the callback receives has an empty token usage.
+    $iterator = $this->createMock(StreamedChatMessageIteratorInterface::class);
+    $iterator->method('reconstructChatOutput')->willReturn($reconstructed);
+    $streamed = new ChatOutput($iterator, [], []);
+
+    $assistant = $this->recorder->recordAssistant(
+      $this->host,
+      $streamed,
+      'orchestrator',
+      'mistral',
+      'mistral-large-latest'
+    );
+
+    $this->assertSame('Streamed answer.', $assistant->get('content')->value);
+    $this->assertSame(
+      ['input' => 20, 'output' => 8, 'total' => 28, 'reasoning' => NULL, 'cached' => NULL],
+      $assistant->getTokenUsage()
+    );
   }
 
   /**

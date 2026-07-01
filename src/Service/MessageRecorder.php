@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Drupal\oe_ai_assistant\Service;
 
-use Drupal\ai\OperationType\Chat\ChatMessage;
 use Drupal\ai\OperationType\Chat\ChatOutput;
 use Drupal\ai\OperationType\Chat\StreamedChatMessageIteratorInterface;
 use Drupal\Core\Entity\EntityInterface;
@@ -45,7 +44,11 @@ class MessageRecorder implements MessageRecorderInterface {
    * {@inheritdoc}
    */
   public function recordAssistant(EntityInterface $host, ChatOutput $output, string $agentId, string $provider, string $model, ?AiConversationMessageInterface $parent = NULL): AiConversationMessageInterface {
-    $message = $this->normalizedMessage($output);
+    // For a streamed response the final text, tool calls, and token usage
+    // live on the reconstructed output, not on the original one handed to
+    // the callback. Resolve it once and read everything from there.
+    $resolved = $this->resolveOutput($output);
+    $message = $resolved->getNormalized();
     /** @var \Drupal\oe_ai_assistant\Entity\AiConversationMessageInterface $row */
     $row = $this->storage()->create($this->base($host, AiConversationMessageInterface::ROLE_ASSISTANT, $parent) + [
       'agent_id' => $agentId,
@@ -54,7 +57,7 @@ class MessageRecorder implements MessageRecorderInterface {
       'content' => $message->getText(),
       'finish_reason' => $this->finishReason($output),
     ]);
-    $row->setTokenUsage($output->getTokenUsage()->toArray());
+    $row->setTokenUsage($resolved->getTokenUsage()->toArray());
     // Capture the rendered tool calls when the turn requested any.
     $tools = $message->getRenderedTools();
     if ($tools) {
@@ -125,20 +128,24 @@ class MessageRecorder implements MessageRecorderInterface {
   }
 
   /**
-   * Returns the final assistant message, reconstructing a streamed output.
+   * Resolves a streamed output into its reconstructed final output.
+   *
+   * After the stream has been consumed, the reconstructed output carries the
+   * accumulated text, tool calls, and token usage. A non-streamed output is
+   * returned unchanged.
    *
    * @param \Drupal\ai\OperationType\Chat\ChatOutput $output
    *   The provider output.
    *
-   * @return \Drupal\ai\OperationType\Chat\ChatMessage
-   *   The normalized message.
+   * @return \Drupal\ai\OperationType\Chat\ChatOutput
+   *   The resolved output to read the final message and token usage from.
    */
-  protected function normalizedMessage(ChatOutput $output): ChatMessage {
+  protected function resolveOutput(ChatOutput $output): ChatOutput {
     $normalized = $output->getNormalized();
     if ($normalized instanceof StreamedChatMessageIteratorInterface) {
-      $normalized = $normalized->reconstructChatOutput()->getNormalized();
+      return $normalized->reconstructChatOutput();
     }
-    return $normalized;
+    return $output;
   }
 
   /**
