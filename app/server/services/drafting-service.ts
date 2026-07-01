@@ -57,11 +57,6 @@ export interface ChatOptions {
   schema: ContentTypeSchema | null;
 }
 
-/** Selected editorial context for drafting. */
-export interface DraftingEditorialContext {
-  toneId?: string;
-}
-
 /** Request body for the mock save action. */
 export interface DraftSavePayload {
   entityTypeId?: string;
@@ -75,38 +70,11 @@ export interface DraftSaveResult {
   previewUrl: string;
 }
 
-/** Request body for session-scoped drafting state. */
-export interface DraftingSaveSessionPayload {
-  context?: DraftingEditorialContext;
-}
-
-/** Result returned after accepting session-scoped drafting state. */
-export interface DraftingSaveSessionResult {
-  status: "ok";
-}
-
 /** Common interface implemented by all drafting services. */
 export interface DraftingService {
   chat(opts: ChatOptions): AsyncGenerator<StreamEvent>;
   reset(threadId?: string): { threadId: string };
   save(body: DraftSavePayload): DraftSaveResult;
-  saveSession(body: DraftingSaveSessionPayload): DraftingSaveSessionResult;
-}
-
-/** Validates that selected context is complete when present. */
-export function validateDraftingContext(
-  context: DraftingEditorialContext | undefined,
-): void {
-  if (!context) {
-    throw new Error("context is required");
-  }
-
-  const hasTone =
-    typeof context.toneId === "string" && context.toneId.length > 0;
-
-  if (!hasTone) {
-    throw new Error("context.toneId is required");
-  }
 }
 
 /**
@@ -202,8 +170,6 @@ type MistralApiMessage =
 export class MistralDraftingService implements DraftingService {
   private static readonly MAX_ITERATIONS = 10;
 
-  private selectedContext: DraftingEditorialContext | undefined;
-
   constructor(
     private readonly mistral: Mistral,
     private readonly store: ConversationStore,
@@ -263,12 +229,6 @@ export class MistralDraftingService implements DraftingService {
     return { nodeId, previewUrl: `/node/${nodeId}/latest` };
   }
 
-  saveSession(body: DraftingSaveSessionPayload): DraftingSaveSessionResult {
-    validateDraftingContext(body.context);
-    this.selectedContext = body.context;
-    return { status: "ok" };
-  }
-
   // -- Private: system prompt and tools ---------------------------
 
   private buildSystemPrompt(groups: SchemaGroup[], opts: ChatOptions): string {
@@ -317,12 +277,6 @@ Workflow:
     // appends splitSchemaIntoGroups() output to the prompt).
     if (groups.length > 0) {
       prompt += `\nAvailable field groups:\n${JSON.stringify(groups, null, 2)}\n`;
-    }
-
-    if (this.selectedContext?.toneId) {
-      prompt +=
-        `\nEditorial context:\n` +
-        `Selected tone taxonomy term ID: ${this.selectedContext.toneId}\n`;
     }
 
     return prompt;

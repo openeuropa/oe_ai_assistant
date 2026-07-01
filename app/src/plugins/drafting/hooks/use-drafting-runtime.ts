@@ -23,7 +23,6 @@ import {
   setDraftingState,
   useDraftingSlice,
 } from "../store";
-import type { DraftingPluginConfig } from "../types";
 
 /**
  * Returns an assistant-ui runtime backed by the Data Stream Protocol.
@@ -36,11 +35,9 @@ import type { DraftingPluginConfig } from "../types";
  */
 export function useDraftingRuntime() {
   // Read bundle and entity type from the host page's plugin config.
-  const draftingConfig =
-    (getConfig().pluginConfig.drafting as DraftingPluginConfig | undefined) ??
-    {};
-  const bundle = draftingConfig.bundle ?? "";
-  const entityTypeId = draftingConfig.entityTypeId ?? "node";
+  const draftingConfig = getConfig().pluginConfig.drafting ?? {};
+  const bundle = (draftingConfig.bundle as string) ?? "";
+  const entityTypeId = (draftingConfig.entityTypeId as string) ?? "node";
 
   // Accept images and common document types as attachments.
   const attachmentAdapter = useMemo(

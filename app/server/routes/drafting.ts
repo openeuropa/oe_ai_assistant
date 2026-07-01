@@ -18,28 +18,8 @@ import { Router } from "express";
 import { sendDone, sendEvent, setupSseResponse } from "../lib/sse";
 import type {
   ChatOptions,
-  DraftingEditorialContext,
-  DraftingSaveSessionPayload,
   DraftingService,
 } from "../services/drafting-service";
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function parseContext(value: unknown): DraftingEditorialContext | undefined {
-  if (!isRecord(value)) {
-    return undefined;
-  }
-
-  return {
-    toneId: typeof value.toneId === "string" ? value.toneId : undefined,
-  };
-}
-
-function readString(value: unknown): string | undefined {
-  return typeof value === "string" ? value : undefined;
-}
 
 /**
  * Loads a content type schema fixture by bundle name.
@@ -106,16 +86,12 @@ export function createDraftingRouter(service: DraftingService): Router {
       return;
     }
 
-    const threadId = readString(body.threadId);
-    const forwardedProps = isRecord(body.forwardedProps)
-      ? body.forwardedProps
-      : {};
+    const threadId = body.threadId as string | undefined;
+    const forwardedProps =
+      (body.forwardedProps as Record<string, string>) ?? {};
     const entityTypeId =
-      readString(forwardedProps.entityTypeId) ??
-      readString(body.entityTypeId) ??
-      "node";
-    const bundle =
-      readString(forwardedProps.bundle) ?? readString(body.bundle) ?? "";
+      forwardedProps.entityTypeId ?? (body.entityTypeId as string) ?? "node";
+    const bundle = forwardedProps.bundle ?? (body.bundle as string) ?? "";
 
     // Load the content type schema from a static JSON file.
     const schema = bundle ? loadSchema(bundle) : null;

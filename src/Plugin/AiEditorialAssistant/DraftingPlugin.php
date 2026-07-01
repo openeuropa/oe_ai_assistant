@@ -123,7 +123,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
       'chat' => $this->chat(...),
       'reset' => $this->reset(...),
       'save' => $this->save(...),
-      'save-session' => $this->saveSession(...),
+      'save-tone' => $this->saveTone(...),
     ];
   }
 
@@ -134,7 +134,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
     return [
       'reset' => 'DraftingResetRequest',
       'save' => 'DraftingSaveRequest',
-      'save-session' => 'DraftingSaveSessionRequest',
+      'save-tone' => 'DraftingSaveToneRequest',
     ];
   }
 
@@ -296,11 +296,10 @@ class DraftingPlugin extends AiAssistantPluginBase {
   }
 
   /**
-   * Saves drafting session-scoped state.
+   * Saves the selected drafting tone.
    *
-   * The selected editorial context is persisted in private tempstore so chat
-   * requests can use it without trusting or requiring context values in the
-   * chat request body.
+   * The selected tone is persisted in private tempstore so chat requests can
+   * use it without trusting or requiring tone values in the chat request body.
    *
    * @param \Symfony\Component\HttpFoundation\Request $request
    *   The incoming request.
@@ -309,12 +308,11 @@ class DraftingPlugin extends AiAssistantPluginBase {
    *   A confirmation response.
    *
    * @throws \Drupal\oe_ai_assistant\Exception\ActionException
-   *   When session context values are invalid or not prompt-ready.
+   *   When the selected tone is invalid or not prompt-ready.
    */
-  public function saveSession(Request $request): array {
+  public function saveTone(Request $request): array {
     $body = $this->decodeJsonBody($request);
-    $context = $body['context'] ?? [];
-    $toneId = (string) ($context['toneId'] ?? '');
+    $toneId = (string) ($body['toneId'] ?? '');
 
     try {
       $this->aiEditorialContext->buildSelectedPrompt($toneId);
@@ -334,7 +332,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
       ]);
 
     $this->logger->info(
-      'OEL-4851 drafting context selection accepted: toneId=@tone_id',
+      'OEL-4851 drafting tone selection accepted: toneId=@tone_id',
       [
         '@tone_id' => $toneId,
       ],

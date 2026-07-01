@@ -39,30 +39,6 @@ DraftingChatRequest:
           type: string
           description: Selected tone taxonomy term ID.
 
-DraftingSaveSessionRequest:
-  type: object
-  required:
-    - context
-  properties:
-    context:
-      type: object
-      description: Drafting editorial context to save for the session.
-      required:
-        - toneId
-      properties:
-        toneId:
-          type: string
-          description: Selected tone taxonomy term ID.
-
-DraftingSaveSessionResponse:
-  type: object
-  required:
-    - status
-  properties:
-    status:
-      type: string
-      enum: [ok]
-
 DraftingResetRequest:
   type: object
   required:

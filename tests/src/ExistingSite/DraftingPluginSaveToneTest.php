@@ -10,9 +10,9 @@ use Drupal\user\UserInterface;
 use weitzman\DrupalTestTraits\ExistingSiteBase;
 
 /**
- * Integration tests for the DraftingPlugin save-session action.
+ * Integration tests for the DraftingPlugin save-tone action.
  */
-class DraftingPluginSaveSessionTest extends ExistingSiteBase {
+class DraftingPluginSaveToneTest extends ExistingSiteBase {
 
   /**
    * {@inheritdoc}
@@ -28,14 +28,12 @@ class DraftingPluginSaveSessionTest extends ExistingSiteBase {
   /**
    * Tests that valid tone selections are accepted.
    */
-  public function testSaveSessionAcceptsValidContext(): void {
+  public function testSaveToneAcceptsValidTone(): void {
     $user = $this->createUser(['use oe ai assistant']);
     $this->loginUser($user);
 
-    $result = $this->httpPost('/api/ai/plugins/drafting/save-session', [
-      'context' => [
-        'toneId' => $this->getTermIdByName('oe_ai_tone', 'Formal'),
-      ],
+    $result = $this->httpPost('/api/ai/plugins/drafting/save-tone', [
+      'toneId' => $this->getTermIdByName('oe_ai_tone', 'Formal'),
     ]);
 
     $this->assertSame(200, $result['status']);
@@ -44,16 +42,14 @@ class DraftingPluginSaveSessionTest extends ExistingSiteBase {
   }
 
   /**
-   * Tests that missing context values are rejected by request validation.
+   * Tests that a missing tone ID is rejected by request validation.
    */
-  public function testSaveSessionRejectsMissingRequiredContextIds(): void {
+  public function testSaveToneRejectsMissingToneId(): void {
     $user = $this->createUser(['use oe ai assistant']);
     $this->loginUser($user);
 
-    $result = $this->httpPost('/api/ai/plugins/drafting/save-session', [
-      'context' => [
-        'unused' => 'value',
-      ],
+    $result = $this->httpPost('/api/ai/plugins/drafting/save-tone', [
+      'unused' => 'value',
     ]);
 
     $this->assertSame(400, $result['status']);
@@ -64,14 +60,12 @@ class DraftingPluginSaveSessionTest extends ExistingSiteBase {
   /**
    * Tests that unknown term IDs are rejected.
    */
-  public function testSaveSessionRejectsInvalidContextTermId(): void {
+  public function testSaveToneRejectsInvalidTermId(): void {
     $user = $this->createUser(['use oe ai assistant']);
     $this->loginUser($user);
 
-    $result = $this->httpPost('/api/ai/plugins/drafting/save-session', [
-      'context' => [
-        'toneId' => '999999',
-      ],
+    $result = $this->httpPost('/api/ai/plugins/drafting/save-tone', [
+      'toneId' => '999999',
     ]);
 
     $this->assertSame(400, $result['status']);
@@ -80,9 +74,9 @@ class DraftingPluginSaveSessionTest extends ExistingSiteBase {
   }
 
   /**
-   * Tests that context IDs from the wrong vocabulary are rejected.
+   * Tests that tone IDs from the wrong vocabulary are rejected.
    */
-  public function testSaveSessionRejectsWrongContextVocabularyId(): void {
+  public function testSaveToneRejectsWrongVocabularyId(): void {
     $user = $this->createUser(['use oe ai assistant']);
     $this->loginUser($user);
 
@@ -92,10 +86,8 @@ class DraftingPluginSaveSessionTest extends ExistingSiteBase {
     ]);
     $otherTerm->save();
 
-    $result = $this->httpPost('/api/ai/plugins/drafting/save-session', [
-      'context' => [
-        'toneId' => (string) $otherTerm->id(),
-      ],
+    $result = $this->httpPost('/api/ai/plugins/drafting/save-tone', [
+      'toneId' => (string) $otherTerm->id(),
     ]);
 
     $this->assertSame(400, $result['status']);
@@ -176,13 +168,13 @@ class DraftingPluginSaveSessionTest extends ExistingSiteBase {
   }
 
   /**
-   * Asserts the accepted session context selection was logged.
+   * Asserts the accepted tone selection was logged.
    */
   protected function assertAcceptedSelectionWasLogged(): void {
     $count = \Drupal::database()
       ->select('watchdog', 'w')
       ->condition('type', 'oe_ai_assistant')
-      ->condition('message', 'OEL-4851 drafting context selection accepted%', 'LIKE')
+      ->condition('message', 'OEL-4851 drafting tone selection accepted%', 'LIKE')
       ->countQuery()
       ->execute()
       ->fetchField();

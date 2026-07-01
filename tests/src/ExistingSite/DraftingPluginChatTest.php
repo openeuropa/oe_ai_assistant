@@ -253,10 +253,8 @@ class DraftingPluginChatTest extends ExistingSiteBase {
     $user = $this->createUser(['use oe ai assistant']);
     $this->loginUser($user);
 
-    $this->httpPost('/api/ai/plugins/drafting/save-session', [
-      'context' => [
-        'toneId' => $this->getTermIdByName('oe_ai_tone', 'Formal'),
-      ],
+    $this->httpPost('/api/ai/plugins/drafting/save-tone', [
+      'toneId' => $this->getTermIdByName('oe_ai_tone', 'Formal'),
     ]);
 
     MockAiProvider::enqueue(new MockResponse(
