@@ -9,7 +9,6 @@ use Drupal\Component\Plugin\Exception\PluginException;
 use Drupal\Core\Plugin\ContainerFactoryPluginInterface;
 use Drupal\Core\Plugin\PluginBase;
 use Drupal\oe_ai_assistant\Service\UiMessageStreamInterface;
-use Drupal\oe_ai_assistant\Store\ConversationStoreFactoryInterface;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\Request;
@@ -21,7 +20,7 @@ use Symfony\Component\HttpFoundation\Response;
  * Provides Drupal plugin dispatch (action routing, request
  * validation), HTTP utilities (JSON body decoding, user message
  * extraction), and shared AI infrastructure (provider, stream,
- * conversation store, logger).
+ * logger).
  *
  * @see \Drupal\oe_ai_assistant\Plugin\AiAssistantPluginInterface
  * @see \Drupal\oe_ai_assistant\Plugin\AiAssistantPluginManager
@@ -43,13 +42,6 @@ abstract class AiAssistantPluginBase extends PluginBase implements AiAssistantPl
   protected UiMessageStreamInterface $uiMessageStream;
 
   /**
-   * The conversation store factory.
-   *
-   * @var \Drupal\oe_ai_assistant\Store\ConversationStoreFactoryInterface
-   */
-  protected ConversationStoreFactoryInterface $conversationStoreFactory;
-
-  /**
    * Logger channel for oe_ai_assistant.
    *
    * @var \Psr\Log\LoggerInterface
@@ -68,7 +60,6 @@ abstract class AiAssistantPluginBase extends PluginBase implements AiAssistantPl
     $instance = new static($configuration, $plugin_id, $plugin_definition);
     $instance->aiProviderManager = $container->get('ai.provider');
     $instance->uiMessageStream = $container->get(UiMessageStreamInterface::class);
-    $instance->conversationStoreFactory = $container->get(ConversationStoreFactoryInterface::class);
     $instance->logger = $container->get('logger.channel.oe_ai_assistant');
     return $instance;
   }
