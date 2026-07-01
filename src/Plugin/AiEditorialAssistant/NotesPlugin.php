@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Drupal\oe_ai_assistant\Plugin\AiEditorialAssistant;
 
-use Drupal\Core\Session\AccountProxyInterface;
 use Drupal\Core\State\StateInterface;
 use Drupal\oe_ai_assistant\Annotation\AiEditorialAssistant;
 use Drupal\oe_ai_assistant\Exception\ActionException;
@@ -43,15 +42,12 @@ class NotesPlugin extends AiAssistantPluginBase {
    *   The plugin definition as resolved by the plugin manager.
    * @param \Drupal\Core\State\StateInterface $state
    *   The Drupal State API service, used as the persistence backend.
-   * @param \Drupal\Core\Session\AccountProxyInterface $currentUser
-   *   The currently authenticated Drupal user; notes are scoped per user.
    */
   public function __construct(
     array $configuration,
     $plugin_id,
     $plugin_definition,
     private readonly StateInterface $state,
-    private readonly AccountProxyInterface $currentUser,
   ) {
     parent::__construct($configuration, $plugin_id, $plugin_definition);
   }
@@ -79,13 +75,15 @@ class NotesPlugin extends AiAssistantPluginBase {
     $plugin_id,
     $plugin_definition,
   ): static {
-    return new static(
+    $instance = new static(
       $configuration,
       $plugin_id,
       $plugin_definition,
       $container->get('state'),
-      $container->get('current_user'),
     );
+    // The current user is provided by the base plugin.
+    $instance->currentUser = $container->get('current_user');
+    return $instance;
   }
 
   /**
