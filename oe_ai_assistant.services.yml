@@ -40,5 +40,3 @@ services:
 
   Drupal\oe_ai_assistant\Store\ConversationStoreFactory: {}
   Drupal\oe_ai_assistant\Store\ConversationStoreFactoryInterface: '@Drupal\oe_ai_assistant\Store\ConversationStoreFactory'
-
-  Drupal\oe_ai_assistant\Hook\OeAiAssistantHooks: {}

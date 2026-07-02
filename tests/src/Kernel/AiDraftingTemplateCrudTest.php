@@ -7,6 +7,7 @@ namespace Drupal\Tests\oe_ai_assistant\Kernel;
 use Drupal\KernelTests\KernelTestBase;
 use Drupal\oe_ai_assistant\Entity\AiDraftingTemplate;
 use Drupal\oe_ai_assistant\Exception\TemplateValidationException;
+use Symfony\Component\Validator\ConstraintViolationListInterface;
 
 /**
  * Kernel tests for AiDraftingTemplate CRUD and entity-level operations.
@@ -64,6 +65,7 @@ class AiDraftingTemplateCrudTest extends KernelTestBase {
     $this->installEntitySchema('file');
     $this->installEntitySchema('taxonomy_term');
     $this->installConfig(['oe_ai_assistant_test']);
+    $this->container->get('config.typed')->clearCachedDefinitions();
   }
 
   /**
@@ -197,7 +199,7 @@ class AiDraftingTemplateCrudTest extends KernelTestBase {
   public function testInstalledNewsDefaultTemplateIsValid(): void {
     $template = AiDraftingTemplate::load('news_default');
     $result = $template->validate();
-    $this->assertTrue($result->isValid(), implode(', ', $result->getErrors()));
+    $this->assertCount(0, $result, implode(', ', $this->violationMessages($result)));
   }
 
   /**
@@ -206,47 +208,7 @@ class AiDraftingTemplateCrudTest extends KernelTestBase {
   public function testInstalledNewsWithParagraphsTemplateIsValid(): void {
     $template = AiDraftingTemplate::load('news_with_paragraphs');
     $result = $template->validate();
-    $this->assertTrue($result->isValid(), implode(', ', $result->getErrors()));
-  }
-
-  /**
-   * Tests that default value schemas use real field definition types.
-   */
-  public function testDefaultSchemaUsesFieldDefinitionType(): void {
-    $template = AiDraftingTemplate::create([
-      'id' => 'test_news_crud',
-      'label' => 'Test news CRUD',
-      'status' => TRUE,
-      'content_type' => 'oe_news',
-      'fields' => [
-        'title' => ['prompt' => 'Write a headline.'],
-        'field_body' => [
-          'prompt' => 'Write a body.',
-          'default_value' => [],
-        ],
-      ],
-      'defaults' => [
-        'field_news_image' => [
-          'default_value' => [],
-        ],
-      ],
-    ]);
-    $template->save();
-
-    $typedConfig = $this->container->get('config.typed');
-    $typedConfig->clearCachedDefinitions();
-    $definition = $typedConfig->getDefinition('oe_ai_assistant.ai_drafting_template.test_news_crud');
-
-    $this->assertArrayNotHasKey('type', $template->getFields()['field_body']);
-    $this->assertArrayNotHasKey('type', $template->getDefaults()['field_news_image']);
-    $this->assertSame(
-      'field.value.text_with_summary',
-      $definition['mapping']['fields']['mapping']['field_body']['mapping']['default_value']['sequence']['type']
-    );
-    $this->assertSame(
-      'field.value.image',
-      $definition['mapping']['defaults']['mapping']['field_news_image']['mapping']['default_value']['sequence']['type']
-    );
+    $this->assertCount(0, $result, implode(', ', $this->violationMessages($result)));
   }
 
   /**
@@ -258,8 +220,7 @@ class AiDraftingTemplateCrudTest extends KernelTestBase {
     ]);
     $result = $template->validate();
 
-    $this->assertFalse($result->isValid());
-    $this->assertErrorMatches("/Content type 'oe_nonexistent' does not exist/", $result->getErrors());
+    $this->assertErrorMatches("/The 'oe_nonexistent' bundle does not exist on the 'node' entity type./", $this->violationMessages($result));
   }
 
   /**
@@ -267,14 +228,13 @@ class AiDraftingTemplateCrudTest extends KernelTestBase {
    */
   public function testNonExistentFieldIsInvalid(): void {
     $template = $this->buildTemplate('oe_news', [
-      'field_does_not_exist' => ['prompt' => 'Prompt.'],
+      'field_does_not_exist' => [],
     ]);
     $result = $template->validate();
 
-    $this->assertFalse($result->isValid());
     $this->assertErrorMatches(
-      "/Field 'field_does_not_exist' does not exist on content type 'oe_news'/",
-      $result->getErrors()
+      "/The field 'field_does_not_exist' does not exist on the 'oe_news' bundle of 'node' entity type./",
+      $this->violationMessages($result)
     );
   }
 
@@ -287,10 +247,9 @@ class AiDraftingTemplateCrudTest extends KernelTestBase {
     ]);
     $result = $template->validate();
 
-    $this->assertFalse($result->isValid());
     $this->assertErrorMatches(
       "/Required field 'title' is missing from template fields or defaults on content type 'oe_news'/",
-      $result->getErrors()
+      $this->violationMessages($result)
     );
   }
 
@@ -305,30 +264,36 @@ class AiDraftingTemplateCrudTest extends KernelTestBase {
     ]);
     $result = $template->validate();
 
-    $this->assertTrue($result->isValid(), implode(', ', $result->getErrors()));
+    $this->assertCount(0, $result, implode(', ', $this->violationMessages($result)));
   }
 
   /**
    * Tests an unknown bundle on an entity_reference_revisions item.
    */
-  public function testEntityReferenceRevisionsItemNonExistentBundleIsInvalid(): void {
+  public function testEntityReferenceRevisionsNonExistentBundleIsInvalid(): void {
     $template = $this->buildTemplate('oe_news', [
       'field_content_paragraphs' => [
         'type' => 'entity_reference_revisions',
-        'items' => [[
-          'entity_type' => 'paragraph',
-          'bundle' => 'no_such_type',
-          'prompt' => 'Nope.',
-        ],
+        'items' => [
+          [
+            'entity_type' => 'paragraph',
+            'bundle' => 'no_such_type',
+          ],
         ],
       ],
     ]);
+
+    $this->container->get('config.typed')->clearCachedDefinitions();
     $result = $template->validate();
 
-    $this->assertFalse($result->isValid());
+    $this->assertSame(
+      'no_such_type',
+      $template->get('fields')['field_content_paragraphs']['items'][0]['bundle']
+    );
+
     $this->assertErrorMatches(
-      "/bundle 'no_such_type' does not exist on entity type 'paragraph'/",
-      $result->getErrors()
+      "/The 'no_such_type' bundle does not exist on the 'paragraph' entity type./",
+      $this->violationMessages($result)
     );
   }
 
@@ -352,10 +317,9 @@ class AiDraftingTemplateCrudTest extends KernelTestBase {
     ]);
     $result = $template->validate();
 
-    $this->assertFalse($result->isValid());
     $this->assertErrorMatches(
-      "/Field 'field_nonexistent_sub' does not exist on paragraph 'text_block'/",
-      $result->getErrors()
+      "/The field 'field_nonexistent_sub' does not exist on the 'text_block' bundle of 'paragraph' entity type./",
+      $this->violationMessages($result)
     );
   }
 
@@ -373,8 +337,7 @@ class AiDraftingTemplateCrudTest extends KernelTestBase {
           'prompt' => 'Contact.',
           'fields' => [
             'title' => [
-              'type' => 'string',
-              'default_value' => [['value' => 'Contact']],
+              'prompt' => 'Contact title.',
             ],
             'field_contact_role' => ['prompt' => 'Role.'],
           ],
@@ -384,18 +347,16 @@ class AiDraftingTemplateCrudTest extends KernelTestBase {
     ]);
     $result = $template->validate();
 
-    $this->assertFalse($result->isValid());
     $this->assertErrorMatches(
       "/Required field 'field_contacts.items\[0\] > fields > field_contact_name' is missing from template fields or defaults on content type 'oe_contact'/",
-      $result->getErrors()
+      $this->violationMessages($result)
     );
-    $this->assertCount(1, $result->getErrors());
   }
 
   /**
-   * Tests that reference item field defaults satisfy referenced requirements.
+   * Tests that referenced items do not support nested defaults.
    */
-  public function testRequiredReferenceFieldCanBeSatisfiedByItemFieldDefault(): void {
+  public function testNestedDefaultsOnReferenceItemAreInvalid(): void {
     $template = $this->buildTemplate('oe_news', [
       'title' => ['prompt' => 'Headline.'],
       'field_contacts' => [
@@ -405,13 +366,11 @@ class AiDraftingTemplateCrudTest extends KernelTestBase {
           'bundle' => 'oe_contact',
           'prompt' => 'Contact.',
           'fields' => [
+            'field_contact_name' => ['prompt' => 'Name.'],
+          ],
+          'defaults' => [
             'title' => [
-              'type' => 'string',
-              'default_value' => [['value' => 'Contact']],
-            ],
-            'field_contact_name' => [
-              'type' => 'string',
-              'default_value' => [['value' => 'Jane Doe']],
+              'default_value' => [['value' => 'Contact title']],
             ],
           ],
         ],
@@ -420,7 +379,10 @@ class AiDraftingTemplateCrudTest extends KernelTestBase {
     ]);
     $result = $template->validate();
 
-    $this->assertTrue($result->isValid(), implode(', ', $result->getErrors()));
+    $this->assertErrorMatches(
+      "/'defaults' is not a supported key./",
+      $this->violationMessages($result)
+    );
   }
 
   /**
@@ -440,10 +402,36 @@ class AiDraftingTemplateCrudTest extends KernelTestBase {
     ]);
     $result = $template->validate();
 
-    $this->assertFalse($result->isValid());
     $this->assertErrorMatches(
       "/entity_type 'node' does not match field target type 'paragraph'/",
-      $result->getErrors()
+      $this->violationMessages($result)
+    );
+  }
+
+  /**
+   * Tests that reference fields with items must declare their field type.
+   */
+  public function testReferenceFieldWithItemsMissingTypeIsInvalid(): void {
+    $template = $this->buildTemplate('oe_news', [
+      'title' => ['prompt' => 'Headline.'],
+      'field_contacts' => [
+        'items' => [[
+          'entity_type' => 'node',
+          'bundle' => 'oe_contact',
+          'prompt' => 'Contact.',
+          'fields' => [
+            'title' => ['prompt' => 'Contact title.'],
+            'field_contact_name' => ['prompt' => 'Name.'],
+          ],
+        ],
+        ],
+      ],
+    ]);
+    $result = $template->validate();
+
+    $this->assertErrorMatches(
+      "/Reference field 'field_contacts' must declare type 'entity_reference'/",
+      $this->violationMessages($result)
     );
   }
 
@@ -463,10 +451,9 @@ class AiDraftingTemplateCrudTest extends KernelTestBase {
     ]);
     $result = $template->validate();
 
-    $this->assertFalse($result->isValid());
     $this->assertErrorMatches(
-      "/Item field_contacts.items\\[0\\]: missing entity_type/",
-      $result->getErrors()
+      "/'entity_type' is a required key./",
+      $this->violationMessages($result)
     );
   }
 
@@ -486,10 +473,9 @@ class AiDraftingTemplateCrudTest extends KernelTestBase {
     ]);
     $result = $template->validate();
 
-    $this->assertFalse($result->isValid());
     $this->assertErrorMatches(
-      "/Item field_contacts.items\\[0\\]: missing bundle/",
-      $result->getErrors()
+      "/'bundle' is a required key./",
+      $this->violationMessages($result)
     );
   }
 
@@ -510,10 +496,9 @@ class AiDraftingTemplateCrudTest extends KernelTestBase {
     ]);
     $result = $template->validate();
 
-    $this->assertFalse($result->isValid());
     $this->assertErrorMatches(
       "/Field 'field_content_paragraphs' is a 'entity_reference_revisions' field, not 'entity_reference'/",
-      $result->getErrors()
+      $this->violationMessages($result)
     );
   }
 
@@ -522,22 +507,21 @@ class AiDraftingTemplateCrudTest extends KernelTestBase {
    */
   public function testEntityReferenceItemWrongEntityTypeIsInvalid(): void {
     $template = $this->buildTemplate('oe_news', [
-      'field_contacts' => [
+      'field_news_tags' => [
         'type' => 'entity_reference',
         'items' => [[
-          'entity_type' => 'taxonomy_term',
-          'bundle' => 'tags',
-          'prompt' => 'Contact.',
+          'entity_type' => 'node',
+          'bundle' => 'oe_news',
+          'prompt' => 'Tag.',
         ],
         ],
       ],
     ]);
     $result = $template->validate();
 
-    $this->assertFalse($result->isValid());
     $this->assertErrorMatches(
-      "/entity_type 'taxonomy_term' does not match field target type 'node'/",
-      $result->getErrors()
+      "/entity_type 'node' does not match field target type 'taxonomy_term'/",
+      $this->violationMessages($result)
     );
   }
 
@@ -558,10 +542,9 @@ class AiDraftingTemplateCrudTest extends KernelTestBase {
     ]);
     $result = $template->validate();
 
-    $this->assertFalse($result->isValid());
     $this->assertErrorMatches(
       "/bundle 'oe_news' is not allowed in field 'field_contacts'/",
-      $result->getErrors()
+      $this->violationMessages($result)
     );
   }
 
@@ -575,34 +558,14 @@ class AiDraftingTemplateCrudTest extends KernelTestBase {
         'title' => [],
       ],
       [
-        'field_ghost' => [
-          'type' => 'string',
-          'default_value' => [['value' => 'value']],
-        ],
+        'field_ghost' => [],
       ],
     );
     $result = $template->validate();
 
-    $this->assertFalse($result->isValid());
     $this->assertErrorMatches(
-      "/Default field 'field_ghost' does not exist on content type 'oe_news'/",
-      $result->getErrors()
-    );
-  }
-
-  /**
-   * Tests that default definitions must be mappings.
-   */
-  public function testDefaultDefinitionMustBeMapping(): void {
-    $template = $this->buildTemplate('oe_news', [], [
-      'langcode' => 'en',
-    ]);
-    $result = $template->validate();
-
-    $this->assertFalse($result->isValid());
-    $this->assertErrorMatches(
-      "/Default field 'langcode' must be a mapping with a default_value key/",
-      $result->getErrors()
+      "/The field 'field_ghost' does not exist on the 'oe_news' bundle of 'node' entity type/",
+      $this->violationMessages($result)
     );
   }
 
@@ -611,11 +574,15 @@ class AiDraftingTemplateCrudTest extends KernelTestBase {
    */
   public function testDefaultTypeIsOptional(): void {
     $template = $this->buildTemplate('oe_news', [], [
-      'title' => ['default_value' => [['value' => 'Default title']]],
+      'title' => [
+        'default_value' => [
+          ['value' => 'Default title'],
+        ],
+      ],
     ]);
     $result = $template->validate();
 
-    $this->assertTrue($result->isValid(), implode(', ', $result->getErrors()));
+    $this->assertCount(0, $result, implode(', ', $this->violationMessages($result)));
   }
 
   /**
@@ -627,33 +594,14 @@ class AiDraftingTemplateCrudTest extends KernelTestBase {
     ]);
     $result = $template->validate();
 
-    $this->assertFalse($result->isValid());
     $this->assertErrorMatches(
-      "/Default field 'langcode' is missing default_value/",
-      $result->getErrors()
+      "/'default_value' is a required key/",
+      $this->violationMessages($result)
     );
   }
 
   /**
-   * Tests that default values must use Drupal's field item sequence shape.
-   */
-  public function testDefaultValueMustBeSequence(): void {
-    $template = $this->buildTemplate('oe_news', [], [
-      'langcode' => [
-        'default_value' => 'en',
-      ],
-    ]);
-    $result = $template->validate();
-
-    $this->assertFalse($result->isValid());
-    $this->assertErrorMatches(
-      "/Default field 'langcode' default_value must be a sequence/",
-      $result->getErrors()
-    );
-  }
-
-  /**
-   * Tests that default values are validated by Drupal field constraints.
+   * Tests that default values are validated by field constraints.
    */
   public function testDefaultValueMustSatisfyFieldConstraints(): void {
     $template = $this->buildTemplate('oe_news', [], [
@@ -663,10 +611,26 @@ class AiDraftingTemplateCrudTest extends KernelTestBase {
     ]);
     $result = $template->validate();
 
-    $this->assertFalse($result->isValid());
     $this->assertErrorMatches(
-      "/Default field 'title' default_value is invalid/",
-      $result->getErrors()
+      "/Default value for field 'title' is invalid/",
+      $this->violationMessages($result)
+    );
+  }
+
+  /**
+   * Tests that empty default values are invalid.
+   */
+  public function testDefaultValueMustNotBeEmpty(): void {
+    $template = $this->buildTemplate('oe_news', [], [
+      'title' => [
+        'default_value' => [],
+      ],
+    ]);
+    $result = $template->validate();
+
+    $this->assertErrorMatches(
+      "/Field 'title' default_value is empty./",
+      $this->violationMessages($result)
     );
   }
 
@@ -719,8 +683,8 @@ class AiDraftingTemplateCrudTest extends KernelTestBase {
       $this->fail('Expected TemplateValidationException was not thrown.');
     }
     catch (TemplateValidationException $e) {
-      $this->assertFalse($e->getResult()->isValid());
-      $this->assertNotEmpty($e->getResult()->getErrors());
+      $this->assertGreaterThan(0, count($e->getResult()));
+      $this->assertNotEmpty($this->violationMessages($e->getResult()));
       $this->assertEquals('test_news_invalid', $e->getTemplateId());
     }
   }
@@ -766,6 +730,20 @@ class AiDraftingTemplateCrudTest extends KernelTestBase {
     $this->fail(
       "No error matched pattern $pattern. Errors were:\n" . implode("\n", $errors)
     );
+  }
+
+  /**
+   * Returns violation messages as strings.
+   *
+   * @return string[]
+   *   The violation messages.
+   */
+  private function violationMessages(ConstraintViolationListInterface $violations): array {
+    $messages = [];
+    foreach ($violations as $violation) {
+      $messages[] = (string) $violation->getMessage();
+    }
+    return $messages;
   }
 
 }

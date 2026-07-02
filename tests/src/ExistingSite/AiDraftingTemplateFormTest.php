@@ -219,7 +219,7 @@ class AiDraftingTemplateFormTest extends ExistingSiteBase {
     $page->pressButton('Save');
 
     $this->assertSession()->pageTextContains(
-      "Field 'field_does_not_exist' does not exist on content type 'oe_news'"
+      "The field 'field_does_not_exist' does not exist on the 'oe_news' bundle of 'node' entity type."
     );
     $this->assertSession()->elementExists('css', 'textarea[name="fields_yaml"].error');
     $this->assertSession()->elementNotExists('css', 'textarea[name="defaults_yaml"].error');
