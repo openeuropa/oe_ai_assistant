@@ -22,13 +22,13 @@ export interface DraftingGenerationSettings {
   toneId: string;
 }
 
-/** Request body for saving the selected tone. */
-export interface DraftingSaveToneRequest {
+/** Request body for setting the selected tone. */
+export interface DraftingSetToneRequest {
   context: DraftingGenerationSettings;
 }
 
-/** Response body for saving the selected tone. */
-export interface DraftingSaveToneResponse {
+/** Response body for setting the selected tone. */
+export interface DraftingSetToneResponse {
   status: "ok";
 }
 

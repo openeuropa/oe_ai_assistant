@@ -215,6 +215,19 @@ function ComposerAttachment() {
   );
 }
 
+interface ComposerProps {
+  /** Text shown inside the collapsed tone trigger, e.g. "Tone: Formal". */
+  generationSettingsLabel?: ReactNode;
+  /** Marks the trigger when the local tone differs from the saved tone. */
+  hasUnsavedGenerationSettings?: boolean;
+  /** Whether the tone panel is available for this thread. */
+  hasGenerationSettings?: boolean;
+  /** Opens or closes the tone panel above the composer. */
+  onToggleSettings: () => void;
+  /** Used for the trigger's aria-expanded state. */
+  settingsOpen: boolean;
+}
+
 /** Chat composer with text input, attachment button, and send. */
 function Composer({
   generationSettingsLabel,
@@ -222,13 +235,7 @@ function Composer({
   hasGenerationSettings,
   onToggleSettings,
   settingsOpen,
-}: {
-  generationSettingsLabel?: ReactNode;
-  hasUnsavedGenerationSettings?: boolean;
-  hasGenerationSettings?: boolean;
-  onToggleSettings: () => void;
-  settingsOpen: boolean;
-}) {
+}: ComposerProps) {
   return (
     <ComposerPrimitive.Root className="border-t border-gray-200 pt-2 p-4">
       {/* Pending attachments row */}
@@ -240,6 +247,8 @@ function Composer({
 
       {hasGenerationSettings && (
         <div className="mb-2 flex">
+          {/* Compact trigger keeps tone controls close to the prompt without
+          taking vertical space while the editor is drafting. */}
           <button
             type="button"
             className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700"
@@ -282,18 +291,24 @@ function Composer({
   );
 }
 
+interface DraftingThreadProps {
+  /** Opens the tone panel in Storybook or targeted previews. */
+  defaultSettingsOpen?: boolean;
+  /** Expanded panel rendered directly above the composer. */
+  generationSettings?: ReactNode;
+  /** Collapsed trigger label rendered in the composer area. */
+  generationSettingsLabel?: ReactNode;
+  /** Shows the unsaved marker on the collapsed trigger. */
+  hasUnsavedGenerationSettings?: boolean;
+}
+
 /** Full chat thread with welcome, messages, and composer. */
 export function DraftingThread({
   defaultSettingsOpen = false,
   generationSettings,
   generationSettingsLabel,
   hasUnsavedGenerationSettings = false,
-}: {
-  defaultSettingsOpen?: boolean;
-  generationSettings?: ReactNode;
-  generationSettingsLabel?: ReactNode;
-  hasUnsavedGenerationSettings?: boolean;
-}) {
+}: DraftingThreadProps) {
   const [settingsOpen, setSettingsOpen] = useState(defaultSettingsOpen);
 
   return (

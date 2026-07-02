@@ -9,8 +9,8 @@
 import { getConfig } from "@/config";
 import type {
   DraftingChatRequest,
-  DraftingSaveToneRequest,
-  DraftingSaveToneResponse,
+  DraftingSetToneRequest,
+  DraftingSetToneResponse,
 } from "../types";
 
 /**
@@ -53,12 +53,12 @@ export async function resetDraftingThread(threadId: string): Promise<string> {
   return data.threadId;
 }
 
-/** Saves the selected tone for drafting. */
-export async function saveDraftingTone(
-  request: DraftingSaveToneRequest,
-): Promise<DraftingSaveToneResponse> {
+/** Sets the selected tone for drafting. */
+export async function setDraftingTone(
+  request: DraftingSetToneRequest,
+): Promise<DraftingSetToneResponse> {
   const response = await fetch(
-    `${getConfig().apiBaseUrl}/plugins/drafting/save-tone`,
+    `${getConfig().apiBaseUrl}/plugins/drafting/set-tone`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -67,7 +67,7 @@ export async function saveDraftingTone(
     },
   );
   if (!response.ok) {
-    throw new Error(`Drafting save-tone error: ${response.status}`);
+    throw new Error(`Drafting set-tone error: ${response.status}`);
   }
-  return (await response.json()) as DraftingSaveToneResponse;
+  return (await response.json()) as DraftingSetToneResponse;
 }

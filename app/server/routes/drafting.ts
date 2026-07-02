@@ -9,7 +9,7 @@
  * POST /api/plugins/drafting/chat   - SSE stream (mock or Mistral)
  * POST /api/plugins/drafting/reset  - Clear conversation
  * POST /api/plugins/drafting/save   - Mock save
- * POST /api/plugins/drafting/save-tone - Validate selected tone
+ * POST /api/plugins/drafting/set-tone - Validate selected tone
  */
 
 import { readFileSync } from "node:fs";
@@ -154,8 +154,13 @@ export function createDraftingRouter(service: DraftingService): Router {
     res.json(service.save({ entityTypeId, bundle, fields }));
   });
 
-  /** POST /save-tone - Receive selected drafting tone. */
-  router.post("/save-tone", (req, res) => {
+  /**
+   * POST /set-tone - Receive selected drafting tone.
+   *
+   * This standalone mock mirrors the Drupal route so the frontend can be
+   * exercised locally while the backend implementation evolves separately.
+   */
+  router.post("/set-tone", (req, res) => {
     const { context } = req.body as {
       context?: { toneId?: string };
     };
@@ -168,7 +173,7 @@ export function createDraftingRouter(service: DraftingService): Router {
       return;
     }
 
-    console.info("[drafting] save-tone", context);
+    console.info("[drafting] set-tone", context);
     res.json({ status: "ok" });
   });
 

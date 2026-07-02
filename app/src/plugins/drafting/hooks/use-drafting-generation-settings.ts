@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { getConfig } from "@/config";
-import { saveDraftingTone } from "../api/drafting-api";
+import { setDraftingTone } from "../api/drafting-api";
 import type {
   GenerationSettingsDraft,
   GenerationSettingsOption,
@@ -25,6 +25,13 @@ function getGenerationSettingsOptions(
   );
 }
 
+/**
+ * Owns the tone selector state.
+ *
+ * The panel edits local draft values first. The selected tone only becomes
+ * confirmed after the set-tone request succeeds, so the UI can clearly show
+ * whether the next generation will use a saved tone or a pending local change.
+ */
 export function useDraftingGenerationSettings() {
   const { generationSettings } = useDraftingSlice();
   const [error, setError] = useState<string | null>(null);
@@ -32,6 +39,9 @@ export function useDraftingGenerationSettings() {
   const draftingConfig = getConfig().pluginConfig.drafting ?? {};
   const context = draftingConfig.context as Record<string, unknown> | undefined;
   const toneOptions = getGenerationSettingsOptions(context?.tone);
+
+  // With no placeholder option in the select, the first backend-provided tone
+  // is the visible default until the editor saves a different tone.
   const defaultToneId = generationSettings?.toneId ?? toneOptions[0]?.id ?? "";
   const [values, setValues] = useState<GenerationSettingsDraft>({
     toneId: defaultToneId,
@@ -42,6 +52,8 @@ export function useDraftingGenerationSettings() {
   );
 
   useEffect(() => {
+    // Keep the controlled select in sync when saved state is restored from the
+    // scoped store or when the host-provided tone config becomes available.
     setValues({ toneId: defaultToneId });
   }, [defaultToneId]);
 
@@ -62,7 +74,9 @@ export function useDraftingGenerationSettings() {
     setError(null);
     setIsSaving(true);
     try {
-      await saveDraftingTone({ context: nextSettings });
+      // Only persist locally after the backend accepts the selected tone.
+      // Until then, hasChanges remains true and the collapsed trigger is marked.
+      await setDraftingTone({ context: nextSettings });
       setDraftingState({ generationSettings: nextSettings });
     } catch (caughtError) {
       const message =

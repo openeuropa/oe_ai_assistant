@@ -22,6 +22,7 @@ export interface GenerationSettingsPanelProps {
   error?: string | null;
 }
 
+/** Finds the mini-guidance text for the currently selected tone. */
 function guidanceFor(
   options: GenerationSettingsOption[],
   value: string,
@@ -29,6 +30,12 @@ function guidanceFor(
   return options.find((option) => option.id === value)?.description ?? null;
 }
 
+/**
+ * Presentational form for selecting and saving the tone.
+ *
+ * API calls and persistence stay in useDraftingGenerationSettings; this
+ * component only renders the controlled values and reports user actions.
+ */
 export function GenerationSettingsPanel({
   values,
   toneOptions,
@@ -43,6 +50,8 @@ export function GenerationSettingsPanel({
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    // The hook stores the error message; the empty catch avoids an unhandled
+    // promise rejection when the save request fails.
     void onSave().catch(() => {});
   }
 
@@ -95,6 +104,8 @@ export function GenerationSettingsPanel({
           <button
             type="submit"
             className="inline-flex h-9 cursor-pointer items-center gap-2 rounded-lg bg-blue-600 px-3 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+            // Saving is useful only when there is a selected tone that differs
+            // from the already-confirmed value.
             disabled={!values.toneId || !hasChanges || isSaving}
           >
             {isSaving ? (

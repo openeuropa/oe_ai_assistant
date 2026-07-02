@@ -70,6 +70,8 @@ export default function DraftingRoot() {
         {/* Left panel: chat (always visible) */}
         <div className="flex w-2/5 min-h-0 flex-col border-r border-gray-200">
           <DraftingThread
+            // Tone is configured from the composer area because it affects the
+            // next prompt, not the current content artifact shown on the right.
             generationSettingsLabel={
               generationSettings.selectedLabel
                 ? `Tone: ${generationSettings.selectedLabel}`

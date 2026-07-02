@@ -89,14 +89,14 @@ DraftingSaveResponse:
       type: string
       description: URL to preview the created draft node.
 
-DraftingSaveToneRequest:
+DraftingSetToneRequest:
   type: object
   required:
     - context
   properties:
     context:
       type: object
-      description: Selected drafting tone to save.
+      description: Selected drafting tone to set.
       required:
         - toneId
       properties:
@@ -104,7 +104,7 @@ DraftingSaveToneRequest:
           type: string
           description: Selected tone taxonomy term ID.
 
-DraftingSaveToneResponse:
+DraftingSetToneResponse:
   type: object
   required:
     - status
