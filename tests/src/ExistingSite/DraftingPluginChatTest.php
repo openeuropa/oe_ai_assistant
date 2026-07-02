@@ -254,7 +254,9 @@ class DraftingPluginChatTest extends ExistingSiteBase {
     $this->loginUser($user);
 
     $this->httpPost('/api/ai/plugins/drafting/save-tone', [
-      'toneId' => $this->getTermIdByName('oe_ai_tone', 'Formal'),
+      'context' => [
+        'toneId' => $this->getTermIdByName('oe_ai_tone', 'Formal'),
+      ],
     ]);
 
     MockAiProvider::enqueue(new MockResponse(

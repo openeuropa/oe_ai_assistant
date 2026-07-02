@@ -33,7 +33,9 @@ class DraftingPluginSaveToneTest extends ExistingSiteBase {
     $this->loginUser($user);
 
     $result = $this->httpPost('/api/ai/plugins/drafting/save-tone', [
-      'toneId' => $this->getTermIdByName('oe_ai_tone', 'Formal'),
+      'context' => [
+        'toneId' => $this->getTermIdByName('oe_ai_tone', 'Formal'),
+      ],
     ]);
 
     $this->assertSame(200, $result['status']);
@@ -49,7 +51,9 @@ class DraftingPluginSaveToneTest extends ExistingSiteBase {
     $this->loginUser($user);
 
     $result = $this->httpPost('/api/ai/plugins/drafting/save-tone', [
-      'unused' => 'value',
+      'context' => [
+        'unused' => 'value',
+      ],
     ]);
 
     $this->assertSame(400, $result['status']);
@@ -65,7 +69,9 @@ class DraftingPluginSaveToneTest extends ExistingSiteBase {
     $this->loginUser($user);
 
     $result = $this->httpPost('/api/ai/plugins/drafting/save-tone', [
-      'toneId' => '999999',
+      'context' => [
+        'toneId' => '999999',
+      ],
     ]);
 
     $this->assertSame(400, $result['status']);
@@ -87,7 +93,10 @@ class DraftingPluginSaveToneTest extends ExistingSiteBase {
     $otherTerm->save();
 
     $result = $this->httpPost('/api/ai/plugins/drafting/save-tone', [
-      'toneId' => (string) $otherTerm->id(),
+      'context' => [
+        'toneId' => (string) $otherTerm->id(),
+      ],
+
     ]);
 
     $this->assertSame(400, $result['status']);

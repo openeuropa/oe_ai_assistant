@@ -312,7 +312,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
    */
   public function saveTone(Request $request): array {
     $body = $this->decodeJsonBody($request);
-    $toneId = (string) ($body['toneId'] ?? '');
+    $toneId = (string) ($body['context']['toneId'] ?? '');
 
     try {
       $this->aiEditorialContext->buildSelectedPrompt($toneId);
@@ -418,7 +418,6 @@ class DraftingPlugin extends AiAssistantPluginBase {
         );
       }
     }
-
     return $prompt;
   }
 
