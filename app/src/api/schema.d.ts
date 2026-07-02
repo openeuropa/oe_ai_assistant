@@ -93,7 +93,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/plugins/drafting/get_messages": {
+    "/plugins/drafting/get-messages": {
         parameters: {
             query?: never;
             header?: never;
@@ -280,7 +280,7 @@ export interface components {
             /** @description Ordered list of fields the editor can fill. */
             fields: components["schemas"]["ContentTypeField"][];
         };
-        /** @description Load the persisted conversation transcript for an editorial session. Available on every plugin endpoint under /plugins/{pluginId}/get_messages. */
+        /** @description Load the persisted conversation transcript for an editorial session. Available on every plugin endpoint under /plugins/{pluginId}/get-messages. */
         GetMessagesRequest: {
             /** @description The editorial session whose transcript to load. */
             sessionId: string;

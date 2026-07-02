@@ -80,7 +80,7 @@ GetMessagesRequest:
   type: object
   description: >
     Load the persisted conversation transcript for an editorial session.
-    Available on every plugin endpoint under /plugins/{pluginId}/get_messages.
+    Available on every plugin endpoint under /plugins/{pluginId}/get-messages.
   required:
     - sessionId
   properties:

@@ -39,7 +39,7 @@ reset:
             schema:
               $ref: "../../openapi.yaml#/components/schemas/DraftingResetResponse"
 
-get_messages:
+get-messages:
   post:
     operationId: postDraftingGetMessages
     summary: Load the persisted conversation transcript for a session

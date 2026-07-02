@@ -146,8 +146,8 @@ export function createDraftingRouter(service: DraftingService): Router {
     res.json(service.reset(sessionId));
   });
 
-  /** POST /get_messages - Return the persisted transcript for a session. */
-  router.post("/get_messages", (req, res) => {
+  /** POST /get-messages - Return the persisted transcript for a session. */
+  router.post("/get-messages", (req, res) => {
     const sessionId = (req.body as { sessionId?: string })?.sessionId;
     if (!sessionId) {
       res

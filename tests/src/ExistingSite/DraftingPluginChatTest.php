@@ -128,7 +128,7 @@ class DraftingPluginChatTest extends ExistingSiteBase {
       'SSE stream must end with [DONE].');
 
     // The turn is persisted: a user row and an assistant row are hosted by
-    // the session, and get_messages returns them as the transcript.
+    // the session, and get-messages returns them as the transcript.
     $transcript = $this->loadTranscript($session);
     $roles = array_map(fn($m) => $m->getRole(), $transcript);
     $this->assertContains('user', $roles, 'A user turn must be persisted.');
@@ -287,7 +287,7 @@ class DraftingPluginChatTest extends ExistingSiteBase {
   }
 
   /**
-   * Tests that get_messages returns the session's user-visible transcript.
+   * Tests that get-messages returns the session's user-visible transcript.
    *
    * Seeds rows directly so the assertion does not depend on the AI provider.
    */
@@ -313,7 +313,7 @@ class DraftingPluginChatTest extends ExistingSiteBase {
   }
 
   /**
-   * Tests that get_messages surfaces a draft_content tool call and result.
+   * Tests that get-messages surfaces a draft_content tool call and result.
    *
    * The drafted fields are stored as the result of the draft_content call so
    * the transcript can render a clickable trace that repopulates the artifact.
@@ -440,7 +440,7 @@ class DraftingPluginChatTest extends ExistingSiteBase {
   }
 
   /**
-   * Calls the get_messages action and returns its messages list.
+   * Calls the get-messages action and returns its messages list.
    *
    * @param \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $session
    *   The session whose transcript to load.
@@ -449,11 +449,11 @@ class DraftingPluginChatTest extends ExistingSiteBase {
    *   The decoded messages list.
    */
   protected function getMessages(AiEditorialSessionInterface $session): array {
-    $result = $this->httpPost('/api/ai/plugins/drafting/get_messages', [
+    $result = $this->httpPost('/api/ai/plugins/drafting/get-messages', [
       'sessionId' => $session->id(),
     ]);
     $this->assertEquals(200, $result['status'],
-      'get_messages should return 200. Body: ' . substr($result['body'], 0, 500));
+      'get-messages should return 200. Body: ' . substr($result['body'], 0, 500));
     $decoded = json_decode($result['body'], TRUE);
     return $decoded['messages'] ?? [];
   }

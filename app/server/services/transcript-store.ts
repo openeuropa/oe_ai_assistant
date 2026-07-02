@@ -14,7 +14,7 @@ export interface TranscriptToolCall {
   result?: Record<string, unknown>;
 }
 
-/** A user-visible transcript entry, matching get_messages output. */
+/** A user-visible transcript entry, matching get-messages output. */
 export interface TranscriptMessage {
   role: string;
   content: string;

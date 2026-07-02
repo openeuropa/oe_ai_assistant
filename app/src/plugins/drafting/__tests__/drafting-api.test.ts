@@ -12,7 +12,7 @@ describe("drafting api", () => {
     vi.unstubAllGlobals();
   });
 
-  it("posts the sessionId to get_messages and returns the transcript", async () => {
+  it("posts the sessionId to get-messages and returns the transcript", async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({
@@ -27,7 +27,7 @@ describe("drafting api", () => {
     const messages = await getDraftingMessages();
 
     expect(fetchMock).toHaveBeenCalledWith(
-      "/api/plugins/drafting/get_messages",
+      "/api/plugins/drafting/get-messages",
       expect.objectContaining({
         method: "POST",
         body: JSON.stringify({ sessionId: "session-42" }),

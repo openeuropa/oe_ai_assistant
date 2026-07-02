@@ -99,7 +99,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
    * {@inheritdoc}
    */
   public function getActionMap(): array {
-    // The base provides the shared get_messages action.
+    // The base provides the shared get-messages action.
     return parent::getActionMap() + [
       'chat' => $this->chat(...),
       'reset' => $this->reset(...),
@@ -111,7 +111,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
    * {@inheritdoc}
    */
   public function getRequestSchemas(): array {
-    // The base provides the get_messages schema.
+    // The base provides the get-messages schema.
     return parent::getRequestSchemas() + [
       'reset' => 'DraftingResetRequest',
       'save' => 'DraftingSaveRequest',

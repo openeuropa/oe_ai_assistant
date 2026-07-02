@@ -27,7 +27,7 @@ export interface DraftingToolCall {
   result?: Record<string, unknown>;
 }
 
-/** A single user-visible transcript entry from get_messages. */
+/** A single user-visible transcript entry from get-messages. */
 export interface DraftingMessage {
   role: string;
   content: string;

@@ -102,13 +102,13 @@ abstract class AiAssistantPluginBase extends PluginBase implements AiAssistantPl
   /**
    * {@inheritdoc}
    *
-   * Every plugin exposes the shared get_messages action, so any conversation
+   * Every plugin exposes the shared get-messages action, so any conversation
    * hosted by an editorial session can be retrieved. Plugins add their own
    * actions by merging with parent::getActionMap().
    */
   public function getActionMap(): array {
     return [
-      'get_messages' => $this->getMessages(...),
+      'get-messages' => $this->getMessages(...),
     ];
   }
 
@@ -117,7 +117,7 @@ abstract class AiAssistantPluginBase extends PluginBase implements AiAssistantPl
    */
   public function getRequestSchemas(): array {
     return [
-      'get_messages' => 'GetMessagesRequest',
+      'get-messages' => 'GetMessagesRequest',
     ];
   }
 

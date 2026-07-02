@@ -52,8 +52,8 @@ paths:
     $ref: "plugins/drafting/paths.yaml#/chat"
   /plugins/drafting/reset:
     $ref: "plugins/drafting/paths.yaml#/reset"
-  /plugins/drafting/get_messages:
-    $ref: "plugins/drafting/paths.yaml#/get_messages"
+  /plugins/drafting/get-messages:
+    $ref: "plugins/drafting/paths.yaml#/get-messages"
   /plugins/drafting/save:
     $ref: "plugins/drafting/paths.yaml#/save"
 
