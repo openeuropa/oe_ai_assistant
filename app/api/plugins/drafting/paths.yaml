@@ -39,25 +39,6 @@ reset:
             schema:
               $ref: "../../openapi.yaml#/components/schemas/DraftingResetResponse"
 
-get-messages:
-  post:
-    operationId: postDraftingGetMessages
-    summary: Load the persisted conversation transcript for a session
-    tags: [Drafting]
-    requestBody:
-      required: true
-      content:
-        application/json:
-          schema:
-            $ref: "../../openapi.yaml#/components/schemas/GetMessagesRequest"
-    responses:
-      "200":
-        description: The user-visible transcript
-        content:
-          application/json:
-            schema:
-              $ref: "../../openapi.yaml#/components/schemas/GetMessagesResponse"
-
 save:
   post:
     operationId: postDraftingSave

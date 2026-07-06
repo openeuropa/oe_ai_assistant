@@ -47,13 +47,15 @@ paths:
   /content-types/{contentTypeId}:
     $ref: "shell/paths.yaml#/contentType"
 
+  # -- Shared plugin action: session transcript (any plugin) --
+  /plugins/{pluginId}/get-messages:
+    $ref: "shell/paths.yaml#/getMessages"
+
   # -- Plugin: drafting --
   /plugins/drafting/chat:
     $ref: "plugins/drafting/paths.yaml#/chat"
   /plugins/drafting/reset:
     $ref: "plugins/drafting/paths.yaml#/reset"
-  /plugins/drafting/get-messages:
-    $ref: "plugins/drafting/paths.yaml#/get-messages"
   /plugins/drafting/save:
     $ref: "plugins/drafting/paths.yaml#/save"
 
@@ -93,6 +95,14 @@ components:
       in: path
       required: true
       description: Machine name of a content type.
+      schema:
+        type: string
+
+    PluginId:
+      name: pluginId
+      in: path
+      required: true
+      description: Machine name of the plugin dispatching the action.
       schema:
         type: string
 

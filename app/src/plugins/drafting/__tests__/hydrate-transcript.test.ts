@@ -1,13 +1,13 @@
 import { describe, expect, it } from "vitest";
+import type { SessionMessage } from "@/api/session-messages";
 import { toThreadMessages } from "../hydrate-transcript";
-import type { DraftingMessage } from "../types";
 
 // biome-ignore lint/suspicious/noExplicitAny: reading the seeded part union.
 type AnyPart = any;
 
 describe("toThreadMessages", () => {
   it("maps text turns to text parts", () => {
-    const input: DraftingMessage[] = [
+    const input: SessionMessage[] = [
       { role: "user", content: "Draft a news article." },
       { role: "assistant", content: "Here is a draft." },
     ];
@@ -25,7 +25,7 @@ describe("toThreadMessages", () => {
 
   it("maps a draft_content tool call to a clickable tool-call part", () => {
     const fields = { title: [{ value: "Test Title" }] };
-    const input: DraftingMessage[] = [
+    const input: SessionMessage[] = [
       {
         role: "assistant",
         content: "",
@@ -52,7 +52,7 @@ describe("toThreadMessages", () => {
   });
 
   it("ignores non-draft tool calls and drops empty turns", () => {
-    const input: DraftingMessage[] = [
+    const input: SessionMessage[] = [
       {
         role: "assistant",
         content: "",

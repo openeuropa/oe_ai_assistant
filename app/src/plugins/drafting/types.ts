@@ -17,19 +17,3 @@ export interface DraftingChatRequest {
 export interface DraftingResetResponse {
   status: string;
 }
-
-/** A tool call stored on a transcript message (OpenAI render shape). */
-export interface DraftingToolCall {
-  id?: string;
-  type?: string;
-  function?: { name?: string; arguments?: string };
-  /** Structured tool output (e.g. drafted field values). */
-  result?: Record<string, unknown>;
-}
-
-/** A single user-visible transcript entry from get-messages. */
-export interface DraftingMessage {
-  role: string;
-  content: string;
-  toolCalls?: DraftingToolCall[];
-}

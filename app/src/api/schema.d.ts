@@ -59,6 +59,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/plugins/{pluginId}/get-messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Load the persisted conversation transcript for a session */
+        post: operations["postGetMessages"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/plugins/drafting/chat": {
         parameters: {
             query?: never;
@@ -87,23 +104,6 @@ export interface paths {
         put?: never;
         /** Reset the drafting conversation thread */
         post: operations["postDraftingReset"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/plugins/drafting/get-messages": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Load the persisted conversation transcript for a session */
-        post: operations["postDraftingGetMessages"];
         delete?: never;
         options?: never;
         head?: never;
@@ -387,6 +387,8 @@ export interface components {
         NodeId: string;
         /** @description Machine name of a content type. */
         ContentTypeId: string;
+        /** @description Machine name of the plugin dispatching the action. */
+        PluginId: string;
     };
     requestBodies: never;
     headers: never;
@@ -509,6 +511,33 @@ export interface operations {
             };
         };
     };
+    postGetMessages: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Machine name of the plugin dispatching the action. */
+                pluginId: components["parameters"]["PluginId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GetMessagesRequest"];
+            };
+        };
+        responses: {
+            /** @description The user-visible transcript */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GetMessagesResponse"];
+                };
+            };
+        };
+    };
     postDraftingChat: {
         parameters: {
             query?: never;
@@ -553,30 +582,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DraftingResetResponse"];
-                };
-            };
-        };
-    };
-    postDraftingGetMessages: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["GetMessagesRequest"];
-            };
-        };
-        responses: {
-            /** @description The user-visible transcript */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["GetMessagesResponse"];
                 };
             };
         };

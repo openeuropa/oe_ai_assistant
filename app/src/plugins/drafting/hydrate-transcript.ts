@@ -8,7 +8,7 @@
  */
 
 import type { ThreadMessageLike } from "@assistant-ui/react";
-import type { DraftingMessage } from "./types";
+import type { SessionMessage } from "@/api/session-messages";
 
 /**
  * Maps a single transcript entry to an assistant-ui message.
@@ -17,7 +17,7 @@ import type { DraftingMessage } from "./types";
  * draft_content tool call).
  */
 export function toThreadMessage(
-  message: DraftingMessage,
+  message: SessionMessage,
   index: number,
 ): ThreadMessageLike | null {
   const parts: Array<Record<string, unknown>> = [];
@@ -52,7 +52,7 @@ export function toThreadMessage(
  * Maps the whole transcript, dropping entries with nothing to show.
  */
 export function toThreadMessages(
-  messages: DraftingMessage[],
+  messages: SessionMessage[],
 ): ThreadMessageLike[] {
   return messages
     .map((m, i) => toThreadMessage(m, i))

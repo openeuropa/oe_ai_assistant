@@ -3,13 +3,14 @@
  *
  * Sends requests to our RPC-style wrapper endpoint which
  * delegates to the AG-UI controller internally. The chat response
- * is an SSE stream of AG-UI protocol events; reset and get-messages
- * return JSON. Every request is scoped to the current editorial
- * session, read from the app config.
+ * is an SSE stream of AG-UI protocol events; reset returns JSON.
+ * Every request is scoped to the current editorial session, read
+ * from the app config. The session transcript (get-messages) lives
+ * in the shared `@/api/session-messages` module.
  */
 
 import { getConfig } from "@/config";
-import type { DraftingChatRequest, DraftingMessage } from "../types";
+import type { DraftingChatRequest } from "../types";
 
 /**
  * Sends a chat message and returns the raw Response for SSE
@@ -47,22 +48,4 @@ export async function resetDrafting(): Promise<void> {
   if (!response.ok) {
     throw new Error(`Drafting reset error: ${response.status}`);
   }
-}
-
-/** Loads the persisted transcript for the current session. */
-export async function getDraftingMessages(): Promise<DraftingMessage[]> {
-  const response = await fetch(
-    `${getConfig().apiBaseUrl}/plugins/drafting/get-messages`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      credentials: "include",
-      body: JSON.stringify({ sessionId: getConfig().sessionId }),
-    },
-  );
-  if (!response.ok) {
-    throw new Error(`Drafting get-messages error: ${response.status}`);
-  }
-  const data = (await response.json()) as { messages: DraftingMessage[] };
-  return data.messages;
 }

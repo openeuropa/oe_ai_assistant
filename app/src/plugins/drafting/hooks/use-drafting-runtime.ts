@@ -18,8 +18,8 @@ import {
 } from "@assistant-ui/react";
 import { useDataStreamRuntime } from "@assistant-ui/react-data-stream";
 import { useMemo } from "react";
+import { getSessionMessages } from "@/api/session-messages";
 import { getConfig } from "@/config";
-import { getDraftingMessages } from "../api/drafting-api";
 import { toThreadMessages } from "../hydrate-transcript";
 import { getDraftingState, type PlanStep, setDraftingState } from "../store";
 
@@ -48,7 +48,7 @@ export function useDraftingRuntime() {
   const historyAdapter = useMemo(
     () => ({
       async load() {
-        const messages = await getDraftingMessages();
+        const messages = await getSessionMessages();
         return ExportedMessageRepository.fromArray(toThreadMessages(messages));
       },
       async append() {
