@@ -18,8 +18,11 @@ import type {
   UserMessage,
 } from "@mistralai/mistralai/models/components";
 import { MISTRAL_MODEL } from "../config";
-import type { ChatMessage, ConversationStore } from "./conversation-store";
-import type { TranscriptMessage, TranscriptStore } from "./transcript-store";
+import type {
+  ChatMessage,
+  ConversationStore,
+  TranscriptMessage,
+} from "./conversation-store";
 
 // -- Types -------------------------------------------------------
 
@@ -196,7 +199,6 @@ export class MistralDraftingService implements DraftingService {
   constructor(
     private readonly mistral: Mistral,
     private readonly store: ConversationStore,
-    private readonly transcript: TranscriptStore,
   ) {}
 
   async *chat(opts: ChatOptions): AsyncGenerator<StreamEvent> {
@@ -209,12 +211,11 @@ export class MistralDraftingService implements DraftingService {
     yield { type: "start", messageId };
 
     try {
-      this.transcript.append(sessionId, { role: "user", content: message });
       const history = this.store.load(sessionId);
       history.push({ role: "user" as const, content: message });
 
       // Run the router LLM with tool loop.
-      const gen = this.runRouterLoop(systemPrompt, history, groups, sessionId);
+      const gen = this.runRouterLoop(systemPrompt, history, groups);
       let result = await gen.next();
       while (!result.done) {
         yield result.value;
@@ -225,10 +226,6 @@ export class MistralDraftingService implements DraftingService {
       if (assistantText) {
         history.push({
           role: "assistant" as const,
-          content: assistantText,
-        });
-        this.transcript.append(sessionId, {
-          role: "assistant",
           content: assistantText,
         });
       }
@@ -248,12 +245,11 @@ export class MistralDraftingService implements DraftingService {
 
   reset(sessionId: string): { status: string } {
     this.store.delete(sessionId);
-    this.transcript.delete(sessionId);
     return { status: "ok" };
   }
 
   getMessages(sessionId: string): TranscriptMessage[] {
-    return this.transcript.load(sessionId);
+    return this.store.getTranscript(sessionId);
   }
 
   save(_body: DraftSavePayload): DraftSaveResult {
@@ -354,7 +350,6 @@ Workflow:
     systemPrompt: string,
     messages: ChatMessage[],
     groups: SchemaGroup[],
-    sessionId: string,
   ): AsyncGenerator<StreamEvent, string> {
     let fullMessage = "";
 
@@ -436,10 +431,10 @@ Workflow:
             isContinued: false,
           };
 
-          // Run sub-agent orchestration. It records the draft trace, so no
-          // separate assistant text turn is kept for the draft path.
-          yield* this.orchestrate(groups, messages, sessionId);
-          fullMessage = "";
+          // Run sub-agent orchestration, then keep a confirmation as the
+          // assistant turn so the conversation store has a text turn.
+          yield* this.orchestrate(groups, messages);
+          fullMessage = "Draft generated. Review the content on the right.";
           break;
         }
 
@@ -503,7 +498,6 @@ Workflow:
   private async *orchestrate(
     groups: SchemaGroup[],
     history: ChatMessage[],
-    sessionId: string,
   ): AsyncGenerator<StreamEvent> {
     if (groups.length === 0) {
       yield { type: "text-delta", textDelta: "No fields available." };
@@ -623,17 +617,10 @@ Workflow:
     yield { type: "data-drafted-fields", data: consolidated };
 
     // Emit the draft_content tool call with its result so the card appears
-    // live, and record it so a reload rehydrates the same clickable trace.
+    // live in the chat.
     yield* emitDraftToolCall(consolidated);
-    this.transcript.append(sessionId, {
-      role: "assistant",
-      content: "",
-      toolCalls: [
-        { function: { name: "draft_content" }, result: consolidated },
-      ],
-    });
 
-    // Confirmation text, streamed and recorded so it survives a reload.
+    // Streamed confirmation text.
     const fieldCount = Object.keys(consolidated).length;
     const confirmation = `Draft generated with ${fieldCount} fields. Review the content on the right.`;
     yield { type: "start-step" };
@@ -644,9 +631,5 @@ Workflow:
       usage: { inputTokens: 0, outputTokens: 0 },
       isContinued: false,
     };
-    this.transcript.append(sessionId, {
-      role: "assistant",
-      content: confirmation,
-    });
   }
 }

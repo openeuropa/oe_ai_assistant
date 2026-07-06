@@ -10,7 +10,10 @@ import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { FIELD_GAP_DELAY_MS, SSE_CHUNK_DELAY_MS } from "../config";
-import type { ConversationStore } from "./conversation-store";
+import type {
+  ConversationStore,
+  TranscriptMessage,
+} from "./conversation-store";
 import type {
   ChatOptions,
   DraftingService,
@@ -19,7 +22,6 @@ import type {
   StreamEvent,
 } from "./drafting-service";
 import { emitDraftToolCall, extractFieldsToStream } from "./drafting-service";
-import type { TranscriptMessage, TranscriptStore } from "./transcript-store";
 
 interface DraftFixtureVariant {
   assistantText: string;
@@ -111,10 +113,7 @@ export class MockDraftingService implements DraftingService {
     Record<string, unknown>
   >();
 
-  constructor(
-    private readonly store: ConversationStore,
-    private readonly transcript: TranscriptStore,
-  ) {}
+  constructor(private readonly store: ConversationStore) {}
 
   async *chat(opts: ChatOptions): AsyncGenerator<StreamEvent> {
     const { message, sessionId, bundle } = opts;
@@ -124,7 +123,6 @@ export class MockDraftingService implements DraftingService {
     yield { type: "start", messageId };
 
     try {
-      this.transcript.append(sessionId, { role: "user", content: message });
       const history = this.store.load(sessionId);
       history.push({
         role: "user" as const,
@@ -163,32 +161,8 @@ export class MockDraftingService implements DraftingService {
           : fixture.drafts.initial;
 
         this.draftFieldsBySession.set(sessionId, variant.fields);
-        const selectedFields = selectDraftedFields(
-          variant.fields,
-          fieldsToStream,
-        );
+        assistantText = variant.assistantText;
         yield* this.createDraftStep(variant, fieldsToStream);
-        // Record the intro, the clickable draft trace, and the confirmation
-        // in order so a reload rehydrates the same conversation.
-        if (variant.assistantText) {
-          this.transcript.append(sessionId, {
-            role: "assistant",
-            content: variant.assistantText,
-          });
-        }
-        this.transcript.append(sessionId, {
-          role: "assistant",
-          content: "",
-          toolCalls: [
-            { function: { name: "draft_content" }, result: selectedFields },
-          ],
-        });
-        this.transcript.append(sessionId, {
-          role: "assistant",
-          content: `Draft generated with ${Object.keys(selectedFields).length} fields. Review the content on the right.`,
-        });
-        // Already recorded above; skip the shared end-of-chat append.
-        assistantText = "";
       } else {
         assistantText = fixture.conversationReplies.default;
         yield* this.createTextStep(assistantText);
@@ -198,12 +172,6 @@ export class MockDraftingService implements DraftingService {
         role: "assistant" as const,
         content: assistantText,
       });
-      if (assistantText) {
-        this.transcript.append(sessionId, {
-          role: "assistant",
-          content: assistantText,
-        });
-      }
       this.store.save(sessionId, history);
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
@@ -220,13 +188,12 @@ export class MockDraftingService implements DraftingService {
 
   reset(sessionId: string): { status: string } {
     this.store.delete(sessionId);
-    this.transcript.delete(sessionId);
     this.draftFieldsBySession.delete(sessionId);
     return { status: "ok" };
   }
 
   getMessages(sessionId: string): TranscriptMessage[] {
-    return this.transcript.load(sessionId);
+    return this.store.getTranscript(sessionId);
   }
 
   save(_body: DraftSavePayload): DraftSaveResult {
