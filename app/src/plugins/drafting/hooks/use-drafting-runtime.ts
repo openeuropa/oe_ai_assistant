@@ -48,7 +48,7 @@ export function useDraftingRuntime() {
   const historyAdapter = useMemo(
     () => ({
       async load() {
-        const messages = await getSessionMessages();
+        const messages = await getSessionMessages("drafting");
         return ExportedMessageRepository.fromArray(toThreadMessages(messages));
       },
       async append() {

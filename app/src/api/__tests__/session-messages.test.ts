@@ -24,7 +24,7 @@ describe("session messages api", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
 
-    const messages = await getSessionMessages();
+    const messages = await getSessionMessages("drafting");
 
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/plugins/drafting/get-messages",

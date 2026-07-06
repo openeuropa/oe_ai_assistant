@@ -3,8 +3,9 @@
  *
  * `get-messages` is a generic action provided by the base plugin: it returns
  * the persisted transcript for an editorial session, independent of any
- * specific plugin. It is dispatched through the drafting plugin, which hosts
- * the conversation UI, but the data and naming are session-scoped.
+ * specific plugin. It is dispatched through a plugin id (the caller passes the
+ * plugin that hosts the conversation), but the data and naming are
+ * session-scoped.
  */
 
 import { getConfig } from "@/config";
@@ -25,10 +26,17 @@ export interface SessionMessage {
   toolCalls?: SessionToolCall[];
 }
 
-/** Loads the persisted transcript for the current session. */
-export async function getSessionMessages(): Promise<SessionMessage[]> {
+/**
+ * Loads the persisted transcript for the current session.
+ *
+ * @param pluginId The plugin the request is dispatched through (get-messages
+ *   is available on any plugin; the transcript is scoped to the session).
+ */
+export async function getSessionMessages(
+  pluginId: string,
+): Promise<SessionMessage[]> {
   const response = await fetch(
-    `${getConfig().apiBaseUrl}/plugins/drafting/get-messages`,
+    `${getConfig().apiBaseUrl}/plugins/${pluginId}/get-messages`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
