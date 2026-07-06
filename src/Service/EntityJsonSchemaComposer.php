@@ -82,6 +82,19 @@ class EntityJsonSchemaComposer {
   ];
 
   /**
+   * Reference targets that only need a target_id, so they stay in main_fields.
+   *
+   * Public so grouping done elsewhere (TemplateSchemaFilter) uses the same
+   * list.
+   */
+  public const SIMPLE_REFERENCE_TARGETS = [
+    'taxonomy_term',
+    'media',
+    'file',
+    'user',
+  ];
+
+  /**
    * Maximum depth for recursive entity-reference composition.
    *
    * Generous on purpose. Comprehensive schemas are preferred over compact
@@ -716,13 +729,7 @@ class EntityJsonSchemaComposer {
    *   TRUE if this is a simple reference target.
    */
   private function isSimpleReferenceTarget(string $targetType): bool {
-    $simpleTypes = [
-      'taxonomy_term',
-      'media',
-      'file',
-      'user',
-    ];
-    return in_array($targetType, $simpleTypes, TRUE);
+    return in_array($targetType, self::SIMPLE_REFERENCE_TARGETS, TRUE);
   }
 
 }

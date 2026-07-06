@@ -21,8 +21,8 @@ class DraftingSchemaProvider implements DraftingSchemaProviderInterface {
   /**
    * {@inheritdoc}
    */
-  public function groups(string $entityTypeId, string $bundle, string $templateId = ''): array {
-    $template = $this->loadTemplate($templateId, $bundle);
+  public function groups(string $entityTypeId, string $bundle, ?string $templateId = NULL): array {
+    $template = $this->resolveTemplate($entityTypeId, $bundle, $templateId);
     if ($template === NULL) {
       return $this->composer->splitSchemaIntoGroups($entityTypeId, $bundle);
     }
@@ -31,37 +31,47 @@ class DraftingSchemaProvider implements DraftingSchemaProviderInterface {
   }
 
   /**
-   * Loads the template for a bundle, or NULL to fall back to the full schema.
-   *
-   * Returns NULL when no id is given, the template is missing, or it targets a
-   * different content type.
-   *
-   * @param string $templateId
-   *   The id of the template.
-   * @param string $bundle
-   *   The id of the bundle.
-   *
-   * @return \Drupal\oe_ai_assistant\AiDraftingTemplateInterface|null
-   *   Returns the template or NULL if none found with the given id.
+   * {@inheritdoc}
    */
-  private function loadTemplate(string $templateId, string $bundle): ?AiDraftingTemplateInterface {
-    $storage = $this->entityTypeManager->getStorage('ai_drafting_template');
-
-    if ($templateId !== '') {
-      $template = $storage->load($templateId);
-      return $template instanceof AiDraftingTemplateInterface
-        && $template->getContentType() === $bundle
-          ? $template
-          : NULL;
+  public function resolveTemplate(string $entityTypeId, string $bundle, ?string $templateId = NULL): ?AiDraftingTemplateInterface {
+    if ($entityTypeId !== 'node') {
+      if ($templateId !== NULL && $templateId !== '') {
+        throw new \InvalidArgumentException('Drafting templates only apply to node bundles.');
+      }
+      return NULL;
     }
 
-    // No id given: use the latest template for the bundle (highest id).
-    $candidates = $storage->loadByProperties(['content_type' => $bundle]);
+    $storage = $this->entityTypeManager->getStorage('ai_drafting_template');
+
+    if ($templateId !== NULL && $templateId !== '') {
+      $template = $storage->load($templateId);
+      if (!$template instanceof AiDraftingTemplateInterface) {
+        throw new \InvalidArgumentException(sprintf('Drafting template "%s" not found.', $templateId));
+      }
+      if (!$template->status()) {
+        throw new \InvalidArgumentException(sprintf('Drafting template "%s" is disabled.', $templateId));
+      }
+      if ($template->getContentType() !== $bundle) {
+        throw new \InvalidArgumentException(sprintf(
+          'Drafting template "%s" targets content type "%s", not "%s".',
+          $templateId,
+          $template->getContentType(),
+          $bundle,
+        ));
+      }
+      return $template;
+    }
+
+    // No id given: use the latest enabled template for the bundle (highest id).
+    $candidates = $storage->loadByProperties([
+      'content_type' => $bundle,
+      'status' => TRUE,
+    ]);
     if ($candidates === []) {
       return NULL;
     }
     ksort($candidates);
-    return end($candidates) ?: NULL;
+    return end($candidates);
   }
 
 }

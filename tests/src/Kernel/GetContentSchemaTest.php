@@ -112,6 +112,20 @@ class GetContentSchemaTest extends KernelTestBase {
   }
 
   /**
+   * An invalid template id degrades to an error payload, not an exception.
+   */
+  public function testExecuteWithInvalidTemplateReturnsErrorOutput(): void {
+    $output = $this->runPlugin([
+      'entity_type_id' => 'node',
+      'bundle' => 'oe_news',
+      'template' => 'does_not_exist',
+    ]);
+
+    $this->assertArrayHasKey('error', $output);
+    $this->assertStringContainsString('not found', $output['error']);
+  }
+
+  /**
    * Without a template context, the latest template for the bundle is used.
    */
   public function testExecuteWithoutTemplateAutoPicksLatest(): void {

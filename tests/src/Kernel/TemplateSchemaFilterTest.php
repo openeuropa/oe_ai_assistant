@@ -110,6 +110,12 @@ class TemplateSchemaFilterTest extends KernelTestBase {
       count($filtered['properties']),
       'Filtering against a template drops fields.',
     );
+    // The payload sent to the LLM shrinks too, not just the property count.
+    $this->assertLessThan(
+      strlen(json_encode($schema)),
+      strlen(json_encode($filtered)),
+      'Filtering against a template shrinks the encoded schema.',
+    );
   }
 
   /**
@@ -160,6 +166,144 @@ class TemplateSchemaFilterTest extends KernelTestBase {
       'field_content_paragraphs',
       $groups[1]['schemaSlice']['properties'],
     );
+  }
+
+  /**
+   * A variant's required list is recomputed against the kept fields.
+   *
+   * The fixture marks field_quote_text as required. Kept, it stays in the
+   * variant's required list (and the discriminator is never added); dropped,
+   * the required key is removed rather than left as an empty list.
+   */
+  public function testVariantRequiredRecomputedAgainstKeptFields(): void {
+    $schema = $this->composer()->compose('node', 'oe_news');
+
+    // news_with_paragraphs keeps both quote_block fields.
+    $filtered = $this->filter()->filter($schema, $this->template('news_with_paragraphs'));
+    $byBundle = $this->variantsByBundle(
+      $filtered['properties']['field_content_paragraphs']['items']['oneOf'],
+    );
+    $this->assertSame(['field_quote_text'], $byBundle['quote_block']['required']);
+
+    // An unsaved template keeping only the attribution drops the required
+    // field, so the variant must not keep a stale or empty required list.
+    $template = AiDraftingTemplate::create([
+      'id' => 'attribution_only',
+      'label' => 'Attribution only',
+      'content_type' => 'oe_news',
+      'fields' => [
+        'field_content_paragraphs' => [
+          'type' => 'entity_reference_revisions',
+          'items' => [
+            [
+              'entity_type' => 'paragraph',
+              'bundle' => 'quote_block',
+              'prompt' => 'Quote.',
+              'fields' => [
+                'field_quote_attribution' => ['prompt' => 'Who said it.'],
+              ],
+            ],
+          ],
+        ],
+      ],
+    ]);
+    $filtered = $this->filter()->filter($schema, $template);
+    $byBundle = $this->variantsByBundle(
+      $filtered['properties']['field_content_paragraphs']['items']['oneOf'],
+    );
+    $this->assertArrayNotHasKey('required', $byBundle['quote_block']);
+  }
+
+  /**
+   * A bundle listed without nested fields keeps its whole variant.
+   */
+  public function testNoFieldsBundleKeepsWholeVariant(): void {
+    $template = AiDraftingTemplate::create([
+      'id' => 'whole_bundle',
+      'label' => 'Whole bundle',
+      'content_type' => 'oe_news',
+      'fields' => [
+        'field_content_paragraphs' => [
+          'type' => 'entity_reference_revisions',
+          'items' => [
+            [
+              'entity_type' => 'paragraph',
+              'bundle' => 'text_block',
+              'prompt' => 'Text.',
+            ],
+          ],
+        ],
+      ],
+    ]);
+
+    $schema = $this->composer()->compose('node', 'oe_news');
+    $filtered = $this->filter()->filter($schema, $template);
+
+    $oneOf = $filtered['properties']['field_content_paragraphs']['items']['oneOf'];
+    // Only the listed bundle survives, with its full composed property set.
+    $this->assertCount(1, $oneOf);
+    $composed = $this->variantsByBundle(
+      $schema['properties']['field_content_paragraphs']['items']['oneOf'],
+    );
+    $this->assertSame(
+      array_keys($composed['text_block']['properties']),
+      array_keys($oneOf[0]['properties']),
+    );
+  }
+
+  /**
+   * Unknown template fields are skipped; nothing kept means zero groups.
+   */
+  public function testAbsentTemplateFieldIsSkipped(): void {
+    $template = AiDraftingTemplate::create([
+      'id' => 'absent_field',
+      'label' => 'Absent field',
+      'content_type' => 'oe_news',
+      'fields' => ['no_such_field' => ['prompt' => 'Ghost.']],
+    ]);
+
+    $schema = $this->composer()->compose('node', 'oe_news');
+
+    $filtered = $this->filter()->filter($schema, $template);
+    $this->assertSame([], $filtered['properties']);
+    $this->assertArrayNotHasKey('required', $filtered);
+
+    $this->assertSame([], $this->filter()->splitIntoGroups($schema, $template));
+  }
+
+  /**
+   * A reference whose template bundles match no variant keeps the field whole.
+   *
+   * Possible through config drift: the template validated at save time, but
+   * the field's allowed bundles changed afterwards. An empty oneOf would be
+   * unsatisfiable, so the field must stay unpruned instead.
+   */
+  public function testNoMatchingVariantKeepsFieldWhole(): void {
+    // Unsaved template, so save-time validation does not reject the bundle.
+    $template = AiDraftingTemplate::create([
+      'id' => 'drifted',
+      'label' => 'Drifted',
+      'content_type' => 'oe_news',
+      'fields' => [
+        'field_content_paragraphs' => [
+          'type' => 'entity_reference_revisions',
+          'items' => [
+            [
+              'entity_type' => 'paragraph',
+              'bundle' => 'no_such_block',
+              'prompt' => 'Text.',
+            ],
+          ],
+        ],
+      ],
+    ]);
+
+    $schema = $this->composer()->compose('node', 'oe_news');
+    $filtered = $this->filter()->filter($schema, $template);
+
+    $items = $filtered['properties']['field_content_paragraphs']['items'];
+    $this->assertNotSame([], $items['oneOf'], 'oneOf must not be empty.');
+    $this->assertCount(2, $items['oneOf'], 'Both composed variants survive.');
   }
 
   /**

@@ -146,6 +146,12 @@ class DraftingPlugin extends AiAssistantPluginBase {
     $session = $this->loadSession($body);
     $context = $this->buildContext($session);
 
+    // Resolve the template and pin its id for the prompt, tool, orchestrator.
+    $template = $this->schemaProvider->resolveTemplate(
+      $context['entityTypeId'], $context['bundle'], $context['template']
+    );
+    $context['template'] = $template?->id();
+
     // Load the persisted transcript, then append the current user's message
     // for this turn's LLM call and persist it as a user turn.
     $history = $this->buildHistory($session);
@@ -223,6 +229,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
             'get_content_schema' => [
               'entity_type_id' => $context['entityTypeId'],
               'bundle' => $context['bundle'],
+              // The context definition is string-typed; NULL becomes ''.
               'template' => $context['template'] ?? '',
             ],
           ],
@@ -239,7 +246,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
             $stream, $history,
             $context['entityTypeId'], $context['bundle'],
             $session, $lastAssistant,
-            $context['template'] ?? ''
+            $context['template']
           );
           // Emit the draft_content tool call with its result so the card
           // appears live, matching what a reload rehydrates.
@@ -390,7 +397,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
 
     if (!empty($context['bundle'])) {
       $groups = $this->schemaProvider->groups(
-        $context['entityTypeId'], $context['bundle'], $context['template'] ?? ''
+        $context['entityTypeId'], $context['bundle'], $context['template']
       );
       $prompt .= "\nAvailable field groups:\n"
         . json_encode($groups, JSON_PRETTY_PRINT) . "\n";

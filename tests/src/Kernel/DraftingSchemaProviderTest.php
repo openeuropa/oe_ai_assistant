@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Drupal\Tests\oe_ai_assistant\Kernel;
 
 use Drupal\KernelTests\KernelTestBase;
+use Drupal\oe_ai_assistant\Entity\AiDraftingTemplate;
 use Drupal\oe_ai_assistant\Service\DraftingSchemaProviderInterface;
 use PHPUnit\Framework\Attributes\Group;
 
@@ -82,12 +83,20 @@ class DraftingSchemaProviderTest extends KernelTestBase {
   }
 
   /**
-   * An empty template id auto-selects the latest template for the bundle.
+   * With no template id, the latest enabled template for the bundle is used.
    */
-  public function testEmptyTemplateIdAutoPicksLatestTemplate(): void {
-    // oe_news has news_default and news_with_paragraphs; latest by id is
-    // news_with_paragraphs (title, field_teaser, field_content_paragraphs).
-    $groups = $this->provider()->groups('node', 'oe_news', '');
+  public function testMissingTemplateIdAutoPicksLatestEnabledTemplate(): void {
+    // zz_disabled sorts after news_with_paragraphs but is disabled, so the
+    // auto-pick must skip it and select news_with_paragraphs.
+    AiDraftingTemplate::create([
+      'id' => 'zz_disabled',
+      'label' => 'Disabled template',
+      'status' => FALSE,
+      'content_type' => 'oe_news',
+      'fields' => ['title' => ['prompt' => 'Title.']],
+    ])->save();
+
+    $groups = $this->provider()->groups('node', 'oe_news');
 
     $this->assertSame(['title', 'field_teaser'], $this->mainFields($groups));
     $this->assertContains('field_content_paragraphs', array_column($groups, 'groupId'));
@@ -98,28 +107,62 @@ class DraftingSchemaProviderTest extends KernelTestBase {
    */
   public function testBundleWithoutTemplateReturnsFullGroups(): void {
     // oe_contact has no drafting template, so the full schema is used.
-    $main = $this->mainFields($this->provider()->groups('node', 'oe_contact', ''));
+    $main = $this->mainFields($this->provider()->groups('node', 'oe_contact'));
 
     $this->assertContains('field_contact_name', $main);
   }
 
   /**
-   * An unknown template id falls back to the full grouping.
+   * An unknown template id is an error, not a silent full-schema fallback.
    */
-  public function testUnknownTemplateIdFallsBackToFullGroups(): void {
-    $main = $this->mainFields($this->provider()->groups('node', 'oe_news', 'does_not_exist'));
-
-    $this->assertContains('field_body', $main);
+  public function testUnknownTemplateIdThrows(): void {
+    $this->expectException(\InvalidArgumentException::class);
+    $this->expectExceptionMessage('not found');
+    $this->provider()->groups('node', 'oe_news', 'does_not_exist');
   }
 
   /**
-   * A template for a different content type is ignored (full grouping).
+   * An explicitly requested disabled template is an error.
    */
-  public function testContentTypeMismatchFallsBackToFullGroups(): void {
-    // news_default targets oe_news; applied to oe_contact it must not prune.
-    $main = $this->mainFields($this->provider()->groups('node', 'oe_contact', 'news_default'));
+  public function testDisabledTemplateIdThrows(): void {
+    AiDraftingTemplate::create([
+      'id' => 'zz_disabled',
+      'label' => 'Disabled template',
+      'status' => FALSE,
+      'content_type' => 'oe_news',
+      'fields' => ['title' => ['prompt' => 'Title.']],
+    ])->save();
 
-    $this->assertContains('field_contact_name', $main);
+    $this->expectException(\InvalidArgumentException::class);
+    $this->expectExceptionMessage('disabled');
+    $this->provider()->groups('node', 'oe_news', 'zz_disabled');
+  }
+
+  /**
+   * A template for a different content type is an error.
+   */
+  public function testContentTypeMismatchThrows(): void {
+    $this->expectException(\InvalidArgumentException::class);
+    $this->expectExceptionMessage('targets content type');
+    $this->provider()->groups('node', 'oe_contact', 'news_default');
+  }
+
+  /**
+   * Templates only apply to nodes; other entity types use the full schema.
+   */
+  public function testNonNodeEntityTypeSkipsTemplates(): void {
+    $groups = $this->provider()->groups('paragraph', 'text_block');
+
+    $this->assertContains('field_text_body', $this->mainFields($groups));
+  }
+
+  /**
+   * An explicit template id for a non-node entity type is an error.
+   */
+  public function testNonNodeEntityTypeWithTemplateIdThrows(): void {
+    $this->expectException(\InvalidArgumentException::class);
+    $this->expectExceptionMessage('only apply to node bundles');
+    $this->provider()->groups('paragraph', 'text_block', 'news_default');
   }
 
 }

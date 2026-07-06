@@ -11,6 +11,7 @@ use Drupal\ai\Base\FunctionCallBase;
 use Drupal\ai\Service\FunctionCalling\FunctionCallInterface;
 use Drupal\ai\Service\FunctionCalling\StructuredExecutableFunctionCallInterface;
 use Drupal\oe_ai_assistant\Service\DraftingSchemaProviderInterface;
+use Psr\Log\LoggerInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 
 /**
@@ -56,6 +57,13 @@ class GetContentSchema extends FunctionCallBase implements StructuredExecutableF
   protected DraftingSchemaProviderInterface $schemaProvider;
 
   /**
+   * The module logger channel.
+   *
+   * @var \Psr\Log\LoggerInterface
+   */
+  protected LoggerInterface $moduleLogger;
+
+  /**
    * The structured output from execute().
    *
    * @var array
@@ -75,6 +83,7 @@ class GetContentSchema extends FunctionCallBase implements StructuredExecutableF
       $container, $configuration, $plugin_id, $plugin_definition
     );
     $instance->schemaProvider = $container->get(DraftingSchemaProviderInterface::class);
+    $instance->moduleLogger = $container->get('logger.channel.oe_ai_assistant');
     return $instance;
   }
 
@@ -87,7 +96,9 @@ class GetContentSchema extends FunctionCallBase implements StructuredExecutableF
     $values = $this->getContextValues();
     $bundle = (string) ($values['bundle'] ?? '');
     $entityTypeId = (string) ($values['entity_type_id'] ?? 'node');
-    $templateId = (string) ($values['template'] ?? '');
+    // The context is string-typed; treat an unset or empty value as NULL so
+    // the provider auto-selects a template.
+    $templateId = ($values['template'] ?? '') !== '' ? (string) $values['template'] : NULL;
 
     if (empty($bundle)) {
       $this->output = ['error' => 'Bundle is required.'];
@@ -97,7 +108,13 @@ class GetContentSchema extends FunctionCallBase implements StructuredExecutableF
     try {
       $this->output = $this->schemaProvider->groups($entityTypeId, $bundle, $templateId);
     }
+    catch (\InvalidArgumentException $e) {
+      // Invalid input (e.g. a bad template id): report it to the LLM.
+      $this->output = ['error' => $e->getMessage()];
+    }
     catch (\Exception $e) {
+      // Unexpected failure: degrade the tool output but keep a trace.
+      $this->moduleLogger->error('get_content_schema failed: @message', ['@message' => $e->getMessage()]);
       $this->output = ['error' => $e->getMessage()];
     }
   }

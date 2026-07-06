@@ -6,6 +6,7 @@ namespace Drupal\Tests\oe_ai_assistant\Kernel;
 
 use Drupal\KernelTests\KernelTestBase;
 use Drupal\oe_ai_assistant\Drush\Commands\SchemaCommands;
+use Drupal\oe_ai_assistant\Service\DraftingSchemaProviderInterface;
 use Drupal\oe_ai_assistant\Service\EntityJsonSchemaComposer;
 use Drupal\oe_ai_assistant\Service\TemplateSchemaFilterInterface;
 use PHPUnit\Framework\Attributes\Group;
@@ -69,7 +70,7 @@ class SchemaCommandsTest extends KernelTestBase {
     return new SchemaCommands(
       $this->container->get(EntityJsonSchemaComposer::class),
       $this->container->get(TemplateSchemaFilterInterface::class),
-      $this->container->get('entity_type.manager'),
+      $this->container->get(DraftingSchemaProviderInterface::class),
       $this->container->get('entity_type.bundle.info'),
     );
   }
@@ -90,6 +91,7 @@ class SchemaCommandsTest extends KernelTestBase {
    */
   public function testUnknownBundleThrows(): void {
     $this->expectException(\InvalidArgumentException::class);
+    $this->expectExceptionMessage('Unknown node bundle "does_not_exist"');
     $this->runCommand('does_not_exist');
   }
 
@@ -98,6 +100,7 @@ class SchemaCommandsTest extends KernelTestBase {
    */
   public function testUnknownTemplateThrows(): void {
     $this->expectException(\InvalidArgumentException::class);
+    $this->expectExceptionMessage('Drafting template "does_not_exist" not found');
     $this->runCommand('oe_news', ['template' => 'does_not_exist']);
   }
 
@@ -107,6 +110,7 @@ class SchemaCommandsTest extends KernelTestBase {
   public function testContentTypeMismatchThrows(): void {
     // news_default targets oe_news, not oe_contact.
     $this->expectException(\InvalidArgumentException::class);
+    $this->expectExceptionMessage('targets content type "oe_news", not "oe_contact"');
     $this->runCommand('oe_contact', ['template' => 'news_default']);
   }
 

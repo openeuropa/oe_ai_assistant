@@ -50,7 +50,7 @@ class DraftingOrchestrator implements DraftingOrchestratorInterface {
     string $bundle,
     EntityInterface $host,
     ?AiConversationMessageInterface $parent = NULL,
-    string $templateId = '',
+    ?string $templateId = NULL,
   ): array {
     $groups = $this->schemaProvider->groups(
       $entityTypeId, $bundle, $templateId

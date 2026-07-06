@@ -13,21 +13,6 @@ use Drupal\oe_ai_assistant\AiDraftingTemplateInterface;
  */
 class TemplateSchemaFilter implements TemplateSchemaFilterInterface {
 
-  /**
-   * Reference targets that only need a target_id, so they stay in main_fields.
-   *
-   * Mirrors EntityJsonSchemaComposer::isSimpleReferenceTarget().
-   *
-   * @todo If the composer's simple-target list diverges from this copy, the
-   *   grouping will drift.
-   */
-  private const SIMPLE_REFERENCE_TARGETS = [
-    'taxonomy_term',
-    'media',
-    'file',
-    'user',
-  ];
-
   public function __construct(
     private readonly EntityTypeManagerInterface $entityTypeManager,
     private readonly EntityFieldManagerInterface $entityFieldManager,
@@ -57,7 +42,7 @@ class TemplateSchemaFilter implements TemplateSchemaFilterInterface {
     $referenceGroups = [];
     foreach ($properties as $fieldName => $fieldSchema) {
       $targetType = $fieldSchema['items']['x-targetType'] ?? NULL;
-      if ($targetType !== NULL && !in_array($targetType, self::SIMPLE_REFERENCE_TARGETS, TRUE)) {
+      if ($targetType !== NULL && !in_array($targetType, EntityJsonSchemaComposer::SIMPLE_REFERENCE_TARGETS, TRUE)) {
         $referenceGroups[] = [
           'groupId' => $fieldName,
           'label' => $labels[$fieldName] ?? $fieldName,
@@ -154,8 +139,9 @@ class TemplateSchemaFilter implements TemplateSchemaFilterInterface {
     }
 
     $bundleKey = $this->entityTypeManager->getDefinition($targetType)->getKey('bundle');
-    // Without a bundle key, variants cannot be matched. Leave the field whole
-    // rather than dropping every variant.
+    // Defensive, normally unreachable: the composer only emits oneOf for
+    // bundled targets. Should it ever happen, leave the field whole instead of
+    // breaking drafting.
     if (!$bundleKey) {
       return $fieldSchema;
     }
@@ -180,6 +166,11 @@ class TemplateSchemaFilter implements TemplateSchemaFilterInterface {
         continue;
       }
       $variants[] = $this->pruneVariant($variant, $bundleKey, $allowedFields[$bundle]);
+    }
+    // No template bundle matched a variant (config drifted since the template
+    // was saved): an empty oneOf matches nothing, keep the field whole.
+    if ($variants === []) {
+      return $fieldSchema;
     }
     $fieldSchema['items']['oneOf'] = $variants;
 
