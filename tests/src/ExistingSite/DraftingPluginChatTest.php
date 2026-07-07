@@ -191,7 +191,9 @@ class DraftingPluginChatTest extends ExistingSiteBase {
   /**
    * Tests that draft_content triggers orchestration with sub-agents.
    *
-   * The target content type comes from the session, not the request body.
+   * The target content type comes from the session, not the request body. Each
+   * sub-agent's system prompt and answer are recorded as a nested pair under
+   * the draft_content turn.
    */
   public function testDraftContentTriggersOrchestration(): void {
     $user = $this->createUser(['use oe ai assistant']);
@@ -254,6 +256,41 @@ class DraftingPluginChatTest extends ExistingSiteBase {
     $fields = $draftedEvent['data'] ?? [];
     $this->assertArrayHasKey('title', $fields,
       'Consolidated fields should include title.');
+
+    // The sub-agent transcript is recorded: the draft_content turn has system
+    // and assistant sub-agent rows nested under it, one pair per group.
+    $storage = \Drupal::entityTypeManager()
+      ->getStorage('ai_conversation_message');
+    $storage->resetCache();
+    $draftNode = NULL;
+    foreach ($storage->loadTree($session) as $node) {
+      foreach ($node['message']->getToolCalls() as $call) {
+        if (($call['function']['name'] ?? '') === 'draft_content') {
+          $draftNode = $node;
+        }
+      }
+    }
+    $this->assertNotNull($draftNode,
+      'A draft_content turn is recorded as a root turn.');
+
+    $childRoles = array_map(
+      fn($child) => $child['message']->getRole(),
+      $draftNode['children'],
+    );
+    $systemCount = count(array_filter($childRoles, fn($r) => $r === 'system'));
+    $assistantCount = count(
+      array_filter($childRoles, fn($r) => $r === 'assistant'),
+    );
+    $this->assertGreaterThan(0, $systemCount,
+      'Sub-agent system prompts are recorded under the draft turn.');
+    $this->assertSame($systemCount, $assistantCount,
+      'Each sub-agent records both a system and an assistant row.');
+
+    // Each sub-agent row carries the agent id (the schema group id).
+    foreach ($draftNode['children'] as $child) {
+      $this->assertNotEmpty($child['message']->get('agent_id')->value,
+        'Sub-agent rows carry an agent id.');
+    }
   }
 
   /**
