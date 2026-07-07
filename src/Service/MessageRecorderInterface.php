@@ -77,6 +77,25 @@ interface MessageRecorderInterface {
   public function recordAssistantText(EntityInterface $host, string $text, string $agentId = '', ?AiConversationMessageInterface $parent = NULL): AiConversationMessageInterface;
 
   /**
+   * Records a system turn.
+   *
+   * For a sub-agent's resolved system prompt, nested under its parent turn.
+   *
+   * @param \Drupal\Core\Entity\EntityInterface $host
+   *   The entity hosting the conversation.
+   * @param string $text
+   *   The system prompt text.
+   * @param string $agentId
+   *   Which agent the prompt belongs to.
+   * @param \Drupal\oe_ai_assistant\Entity\AiConversationMessageInterface|null $parent
+   *   The parent turn, or NULL for a top-level turn.
+   *
+   * @return \Drupal\oe_ai_assistant\Entity\AiConversationMessageInterface
+   *   The saved message.
+   */
+  public function recordSystem(EntityInterface $host, string $text, string $agentId = '', ?AiConversationMessageInterface $parent = NULL): AiConversationMessageInterface;
+
+  /**
    * Records a tool result turn.
    *
    * @param \Drupal\Core\Entity\EntityInterface $host
