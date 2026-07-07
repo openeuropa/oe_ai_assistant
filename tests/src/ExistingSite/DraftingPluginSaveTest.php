@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\oe_ai_assistant\ExistingSite;
 
-use Drupal\Core\Url;
-use Drupal\user\UserInterface;
 use weitzman\DrupalTestTraits\ExistingSiteBase;
 
 /**
@@ -48,7 +46,7 @@ class DraftingPluginSaveTest extends ExistingSiteBase {
       'use oe ai assistant',
       'create oe_news content',
     ]);
-    $this->loginUser($user);
+    $this->drupalLogin($user);
 
     $result = $this->httpPost('/api/ai/plugins/drafting/save', [
       'entityTypeId' => 'node',
@@ -88,7 +86,7 @@ class DraftingPluginSaveTest extends ExistingSiteBase {
       'use oe ai assistant',
       'create oe_news content',
     ]);
-    $this->loginUser($user);
+    $this->drupalLogin($user);
 
     $result = $this->httpPost('/api/ai/plugins/drafting/save', [
       'entityTypeId' => 'node',
@@ -134,7 +132,7 @@ class DraftingPluginSaveTest extends ExistingSiteBase {
    */
   public function testSaveInvalidBundle(): void {
     $user = $this->createUser([], NULL, TRUE);
-    $this->loginUser($user);
+    $this->drupalLogin($user);
 
     $result = $this->httpPost('/api/ai/plugins/drafting/save', [
       'entityTypeId' => 'node',
@@ -155,7 +153,7 @@ class DraftingPluginSaveTest extends ExistingSiteBase {
     $user = $this->createUser([
       'use oe ai assistant',
     ]);
-    $this->loginUser($user);
+    $this->drupalLogin($user);
 
     $result = $this->httpPost('/api/ai/plugins/drafting/save', [
       'entityTypeId' => 'node',
@@ -167,31 +165,6 @@ class DraftingPluginSaveTest extends ExistingSiteBase {
 
     $this->assertEquals(403, $result['status']);
     $this->assertEquals('forbidden', $result['body']['code']);
-  }
-
-  /**
-   * Logs in a user via the login form.
-   *
-   * Similar to drupalLogin() but skips the drupalUserIsLoggedIn() assertion
-   * which fails due to session name mismatch between the test runner and the
-   * browser hostname.
-   *
-   * @param \Drupal\user\UserInterface $account
-   *   The user account to log in.
-   */
-  protected function loginUser(UserInterface $account): void {
-    if ($this->loggedInUser) {
-      $this->drupalLogout();
-    }
-
-    $this->drupalGet(Url::fromRoute('user.login'));
-    $this->submitForm([
-      'name' => $account->getAccountName(),
-      'pass' => $account->passRaw,
-    ], 'Log in');
-
-    $this->loggedInUser = $account;
-    $this->container->get('current_user')->setAccount($account);
   }
 
   /**

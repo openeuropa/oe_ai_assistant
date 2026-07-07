@@ -4,9 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\oe_ai_assistant\ExistingSite;
 
-use Drupal\Core\Url;
 use Drupal\taxonomy\Entity\Term;
-use Drupal\user\UserInterface;
 use weitzman\DrupalTestTraits\ExistingSiteBase;
 
 /**
@@ -30,7 +28,7 @@ class DraftingPluginSaveToneTest extends ExistingSiteBase {
    */
   public function testSaveToneAcceptsValidTone(): void {
     $user = $this->createUser(['use oe ai assistant']);
-    $this->loginUser($user);
+    $this->drupalLogin($user);
 
     $result = $this->httpPost('/api/ai/plugins/drafting/save-tone', [
       'context' => [
@@ -48,7 +46,7 @@ class DraftingPluginSaveToneTest extends ExistingSiteBase {
    */
   public function testSaveToneRejectsMissingToneId(): void {
     $user = $this->createUser(['use oe ai assistant']);
-    $this->loginUser($user);
+    $this->drupalLogin($user);
 
     $result = $this->httpPost('/api/ai/plugins/drafting/save-tone', [
       'context' => [
@@ -66,7 +64,7 @@ class DraftingPluginSaveToneTest extends ExistingSiteBase {
    */
   public function testSaveToneRejectsInvalidTermId(): void {
     $user = $this->createUser(['use oe ai assistant']);
-    $this->loginUser($user);
+    $this->drupalLogin($user);
 
     $result = $this->httpPost('/api/ai/plugins/drafting/save-tone', [
       'context' => [
@@ -84,7 +82,7 @@ class DraftingPluginSaveToneTest extends ExistingSiteBase {
    */
   public function testSaveToneRejectsWrongVocabularyId(): void {
     $user = $this->createUser(['use oe ai assistant']);
-    $this->loginUser($user);
+    $this->drupalLogin($user);
 
     $otherTerm = Term::create([
       'vid' => 'news_tags',
@@ -102,27 +100,6 @@ class DraftingPluginSaveToneTest extends ExistingSiteBase {
     $this->assertSame(400, $result['status']);
     $this->assertSame('invalid_context', $result['body']['code']);
     $this->assertStringContainsString('oe_ai_tone', $result['body']['message']);
-  }
-
-  /**
-   * Logs in a user via the login form.
-   *
-   * @param \Drupal\user\UserInterface $account
-   *   The user account to log in.
-   */
-  protected function loginUser(UserInterface $account): void {
-    if ($this->loggedInUser) {
-      $this->drupalLogout();
-    }
-
-    $this->drupalGet(Url::fromRoute('user.login'));
-    $this->submitForm([
-      'name' => $account->getAccountName(),
-      'pass' => $account->passRaw,
-    ], 'Log in');
-
-    $this->loggedInUser = $account;
-    $this->container->get('current_user')->setAccount($account);
   }
 
   /**
