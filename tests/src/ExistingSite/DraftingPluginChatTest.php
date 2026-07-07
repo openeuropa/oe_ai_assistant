@@ -251,13 +251,6 @@ class DraftingPluginChatTest extends ExistingSiteBase {
    * Tests that selected editorial context is injected into the system prompt.
    */
   public function testSelectedContextIsInjectedIntoSystemPrompt(): void {
-    $modulePath = \Drupal::service('extension.list.module')->getPath('oe_ai_assistant');
-    $schemaFile = DRUPAL_ROOT . '/' . $modulePath . '/dist/schemas.json';
-    fwrite(STDERR, sprintf(
-      "testSelectedContextIsInjectedIntoSystemPrompt: oe_ai_assistant schemas file: %s\n%s\n",
-      $schemaFile,
-      file_exists($schemaFile) ? file_get_contents($schemaFile) : 'MISSING',
-    ));
     $user = $this->createUser(['use oe ai assistant']);
     $this->drupalLogin($user);
 

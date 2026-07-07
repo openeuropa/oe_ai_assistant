@@ -27,13 +27,6 @@ class DraftingPluginSaveToneTest extends ExistingSiteBase {
    * Tests that valid tone selections are accepted.
    */
   public function testSaveToneAcceptsValidTone(): void {
-    $modulePath = \Drupal::service('extension.list.module')->getPath('oe_ai_assistant');
-    $schemaFile = DRUPAL_ROOT . '/' . $modulePath . '/dist/schemas.json';
-    fwrite(STDERR, sprintf(
-      "testSaveToneAcceptsValidTone: oe_ai_assistant schemas file: %s\n%s\n",
-      $schemaFile,
-      file_exists($schemaFile) ? file_get_contents($schemaFile) : 'MISSING',
-    ));
     $user = $this->createUser(['use oe ai assistant']);
     $this->drupalLogin($user);
 
@@ -52,13 +45,6 @@ class DraftingPluginSaveToneTest extends ExistingSiteBase {
    * Tests that a missing tone ID is rejected by request validation.
    */
   public function testSaveToneRejectsMissingToneId(): void {
-    $modulePath = \Drupal::service('extension.list.module')->getPath('oe_ai_assistant');
-    $schemaFile = DRUPAL_ROOT . '/' . $modulePath . '/dist/schemas.json';
-    fwrite(STDERR, sprintf(
-      "testSaveToneRejectsMissingToneId: oe_ai_assistant schemas file: %s\n%s\n",
-      $schemaFile,
-      file_exists($schemaFile) ? file_get_contents($schemaFile) : 'MISSING',
-    ));
     $user = $this->createUser(['use oe ai assistant']);
     $this->drupalLogin($user);
 
@@ -77,13 +63,6 @@ class DraftingPluginSaveToneTest extends ExistingSiteBase {
    * Tests that unknown term IDs are rejected.
    */
   public function testSaveToneRejectsInvalidTermId(): void {
-    $modulePath = \Drupal::service('extension.list.module')->getPath('oe_ai_assistant');
-    $schemaFile = DRUPAL_ROOT . '/' . $modulePath . '/dist/schemas.json';
-    fwrite(STDERR, sprintf(
-      "testSaveToneRejectsInvalidTermId: oe_ai_assistant schemas file: %s\n%s\n",
-      $schemaFile,
-      file_exists($schemaFile) ? file_get_contents($schemaFile) : 'MISSING',
-    ));
     $user = $this->createUser(['use oe ai assistant']);
     $this->drupalLogin($user);
 
@@ -102,13 +81,6 @@ class DraftingPluginSaveToneTest extends ExistingSiteBase {
    * Tests that tone IDs from the wrong vocabulary are rejected.
    */
   public function testSaveToneRejectsWrongVocabularyId(): void {
-    $modulePath = \Drupal::service('extension.list.module')->getPath('oe_ai_assistant');
-    $schemaFile = DRUPAL_ROOT . '/' . $modulePath . '/dist/schemas.json';
-    fwrite(STDERR, sprintf(
-      "testSaveToneRejectsWrongVocabularyId: oe_ai_assistant schemas file: %s\n%s\n",
-      $schemaFile,
-      file_exists($schemaFile) ? file_get_contents($schemaFile) : 'MISSING',
-    ));
     $user = $this->createUser(['use oe ai assistant']);
     $this->drupalLogin($user);
 
