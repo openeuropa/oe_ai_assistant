@@ -132,16 +132,12 @@ class TemplateSchemaFilter implements TemplateSchemaFilterInterface {
 
     $items = $fieldSchema['items'] ?? [];
     $targetType = $items['x-targetType'] ?? NULL;
-    // Only fields that offer a choice of bundles can be narrowed per bundle;
-    // anything else is left as-is.
-    if ($targetType === NULL || !isset($items['oneOf'])) {
+    if ($targetType === NULL) {
       return $fieldSchema;
     }
 
     $bundleKey = $this->entityTypeManager->getDefinition($targetType)->getKey('bundle');
-    // Defensive, normally unreachable: the composer only emits oneOf for
-    // bundled targets. Should it ever happen, leave the field whole instead of
-    // breaking drafting.
+    // No bundle key: nothing to match variants on, keep the field whole.
     if (!$bundleKey) {
       return $fieldSchema;
     }
@@ -159,20 +155,35 @@ class TemplateSchemaFilter implements TemplateSchemaFilterInterface {
       );
     }
 
-    $variants = [];
-    foreach ($items['oneOf'] as $variant) {
-      $bundle = $variant['properties'][$bundleKey]['items']['properties']['target_id']['const'] ?? NULL;
-      if ($bundle === NULL || !array_key_exists($bundle, $allowedFields)) {
-        continue;
+    // Multiple allowed bundles: prune the oneOf to the template's bundles.
+    if (isset($items['oneOf'])) {
+      $variants = [];
+      foreach ($items['oneOf'] as $variant) {
+        $bundle = $variant['properties'][$bundleKey]['items']['properties']['target_id']['const'] ?? NULL;
+        if ($bundle === NULL || !array_key_exists($bundle, $allowedFields)) {
+          continue;
+        }
+        $variants[] = $this->pruneVariant($variant, $bundleKey, $allowedFields[$bundle]);
       }
-      $variants[] = $this->pruneVariant($variant, $bundleKey, $allowedFields[$bundle]);
-    }
-    // No template bundle matched a variant (config drifted since the template
-    // was saved): an empty oneOf matches nothing, keep the field whole.
-    if ($variants === []) {
+      // No variant matched a template bundle: keep the field whole rather than
+      // emit an empty oneOf.
+      if ($variants === []) {
+        return $fieldSchema;
+      }
+      $fieldSchema['items']['oneOf'] = $variants;
+
       return $fieldSchema;
     }
-    $fieldSchema['items']['oneOf'] = $variants;
+
+    // Single allowed bundle: the composer merges the lone variant into the
+    // items schema itself. Prune it like a variant when the template lists
+    // its bundle; plain target_id references have no discriminator and are
+    // left as-is.
+    $bundle = $items['properties'][$bundleKey]['items']['properties']['target_id']['const'] ?? NULL;
+    if ($bundle === NULL || !array_key_exists($bundle, $allowedFields)) {
+      return $fieldSchema;
+    }
+    $fieldSchema['items'] = $this->pruneVariant($items, $bundleKey, $allowedFields[$bundle]);
 
     return $fieldSchema;
   }

@@ -63,8 +63,8 @@ class SchemaCommands extends DrushCommands {
 
     $schema = $this->composer->compose($entityTypeId, $bundle);
 
-    // Resolve only when a template was asked for: unlike the drafting flow,
-    // this diagnostic must show the full schema when --template is omitted.
+    // Resolve a template only when one is requested; otherwise show the full
+    // schema.
     $template = NULL;
     $templateId = (string) $options['template'];
     if ($templateId !== '') {

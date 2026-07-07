@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\oe_ai_assistant\Unit;
 
+use Drupal\Core\Entity\EntityInterface;
 use Drupal\ai_agents\PluginManager\AiAgentManager;
 use Drupal\oe_ai_assistant\Service\DraftingOrchestrator;
 use Drupal\oe_ai_assistant\Service\DraftingSchemaProviderInterface;
+use Drupal\oe_ai_assistant\Service\MessageRecorderInterface;
 use Drupal\oe_ai_assistant\Service\UiMessageStreamInterface;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
@@ -35,9 +37,13 @@ class DraftingOrchestratorTest extends TestCase {
       $provider,
       $this->createMock(AiAgentManager::class),
       new NullLogger(),
+      $this->createMock(MessageRecorderInterface::class),
     );
 
-    $result = $orchestrator->run($stream, [], 'node', 'oe_news', 'my_template');
+    $host = $this->createMock(EntityInterface::class);
+    $result = $orchestrator->run(
+      $stream, [], 'node', 'oe_news', $host, NULL, 'my_template'
+    );
 
     $this->assertSame([], $result);
   }

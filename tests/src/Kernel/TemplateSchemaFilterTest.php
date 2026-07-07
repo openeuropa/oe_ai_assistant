@@ -272,6 +272,50 @@ class TemplateSchemaFilterTest extends KernelTestBase {
   }
 
   /**
+   * Nested fields of a single-bundle inline reference are pruned too.
+   *
+   * The field_contacts field is an entity_reference (inline_entity_form) whose
+   * only target bundle is oe_contact, so the composer emits the bundle schema
+   * directly on items, without a oneOf wrapper. The template's nested field
+   * restriction applies to that shape as well.
+   */
+  public function testFilterPrunesSingleBundleInlineReferenceNestedFields(): void {
+    $template = AiDraftingTemplate::create([
+      'id' => 'news_with_contact',
+      'label' => 'News with contact',
+      'content_type' => 'oe_news',
+      'fields' => [
+        'title' => ['prompt' => 'Headline.'],
+        'field_contacts' => [
+          'type' => 'entity_reference',
+          'items' => [
+            [
+              'entity_type' => 'node',
+              'bundle' => 'oe_contact',
+              'prompt' => 'The contact person for the article.',
+              'fields' => [
+                'title' => ['prompt' => 'Contact label.'],
+                'field_contact_name' => ['prompt' => 'Contact name.'],
+              ],
+            ],
+          ],
+        ],
+      ],
+    ]);
+    $template->save();
+    $schema = $this->composer()->compose('node', 'oe_news');
+    $items = $this->filter()->filter($schema, $template)['properties']['field_contacts']['items'];
+    // Shape precondition: single target bundle, so no oneOf to prune.
+    $this->assertArrayNotHasKey('oneOf', $items);
+    $this->assertSame('node', $items['x-targetType']);
+    // Only the template's nested fields and the bundle discriminator survive.
+    $this->assertEqualsCanonicalizing(
+      ['title', 'field_contact_name', 'type'],
+      array_keys($items['properties']),
+    );
+  }
+
+  /**
    * A reference whose template bundles match no variant keeps the field whole.
    *
    * Possible through config drift: the template validated at save time, but

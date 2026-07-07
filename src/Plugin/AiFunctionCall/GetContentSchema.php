@@ -113,9 +113,9 @@ class GetContentSchema extends FunctionCallBase implements StructuredExecutableF
       $this->output = ['error' => $e->getMessage()];
     }
     catch (\Exception $e) {
-      // Unexpected failure: degrade the tool output but keep a trace.
+      // Log the detail, return a generic message to the LLM.
       $this->moduleLogger->error('get_content_schema failed: @message', ['@message' => $e->getMessage()]);
-      $this->output = ['error' => $e->getMessage()];
+      $this->output = ['error' => 'The content schema could not be loaded.'];
     }
   }
 
