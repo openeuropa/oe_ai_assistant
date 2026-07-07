@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace Drupal\oe_ai_assistant\EventSubscriber;
 
 use Drupal\ai_agents\Event\AgentResponseEvent;
+use Drupal\Core\Entity\EntityInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
+use Drupal\oe_ai_assistant\Entity\AiConversationMessageInterface;
 use Drupal\oe_ai_assistant\Service\MessageRecorderInterface;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
@@ -32,17 +34,17 @@ class SubAgentMessageSubscriber implements EventSubscriberInterface {
    * The trailing colon is part of the prefix, so the remainder is exactly the
    * value (which itself contains the "type:id" colon).
    */
-  public const TAG_SESSION = 'ai_conversation_message_session:';
+  private const TAG_SESSION = 'ai_conversation_message_session:';
 
   /**
    * Extra-tag prefix carrying the parent conversation message id.
    */
-  public const TAG_PARENT = 'ai_conversation_message_parent:';
+  private const TAG_PARENT = 'ai_conversation_message_parent:';
 
   /**
    * Extra-tag prefix carrying the sub-agent id.
    */
-  public const TAG_AGENT = 'ai_conversation_message_agent:';
+  private const TAG_AGENT = 'ai_conversation_message_agent:';
 
   /**
    * Maps an agent runner id to its recorded assistant row id and host.
@@ -50,7 +52,7 @@ class SubAgentMessageSubscriber implements EventSubscriberInterface {
    * Request scoped and keyed by per-run UUIDs, so entries never collide across
    * runs. It lets a nested sub-agent find the parent row of its caller.
    *
-   * @var array<string, array{message: int, host: \Drupal\Core\Entity\EntityInterface}>
+   * @var array<string, array{message: int, host: EntityInterface}>
    */
   protected array $runnerRows = [];
 
@@ -76,6 +78,32 @@ class SubAgentMessageSubscriber implements EventSubscriberInterface {
    */
   public static function getSubscribedEvents(): array {
     return [AgentResponseEvent::EVENT_NAME => 'onAgentResponse'];
+  }
+
+  /**
+   * Builds the extra tags that correlate a sub-agent to its transcript rows.
+   *
+   * The tag format is owned here, alongside the parsing side, so producers set
+   * tags through this builder without touching the prefix constants. The
+   * session tag carries the host "type:id"; the parent tag carries the message
+   * id the sub-agent turn nests under; the agent tag carries the agent id.
+   *
+   * @param string $agentId
+   *   The sub-agent id (e.g. the schema group id).
+   * @param \Drupal\Core\Entity\EntityInterface $host
+   *   The entity hosting the conversation.
+   * @param \Drupal\oe_ai_assistant\Entity\AiConversationMessageInterface $parent
+   *   The turn the sub-agent's rows nest under.
+   *
+   * @return string[]
+   *   The extra tags to set on the agent before it runs.
+   */
+  public static function correlationTags(string $agentId, EntityInterface $host, AiConversationMessageInterface $parent): array {
+    return [
+      self::TAG_SESSION . $host->getEntityTypeId() . ':' . $host->id(),
+      self::TAG_PARENT . $parent->id(),
+      self::TAG_AGENT . $agentId,
+    ];
   }
 
   /**

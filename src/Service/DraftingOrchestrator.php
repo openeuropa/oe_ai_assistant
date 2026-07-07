@@ -7,6 +7,9 @@ namespace Drupal\oe_ai_assistant\Service;
 use Drupal\ai_agents\PluginInterfaces\AiAgentInterface;
 use Drupal\ai_agents\PluginManager\AiAgentManager;
 use Drupal\ai_agents\Task\Task;
+use Drupal\Core\Entity\EntityInterface;
+use Drupal\oe_ai_assistant\Entity\AiConversationMessageInterface;
+use Drupal\oe_ai_assistant\EventSubscriber\SubAgentMessageSubscriber;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 
@@ -24,6 +27,8 @@ class DraftingOrchestrator implements DraftingOrchestratorInterface {
    *   The agent plugin manager for sub-agent instances.
    * @param \Psr\Log\LoggerInterface $logger
    *   The logger channel.
+   * @param \Drupal\oe_ai_assistant\Service\MessageRecorderInterface $messageRecorder
+   *   The message recorder, used to record sub-agent failures as error turns.
    */
   public function __construct(
     private readonly EntityJsonSchemaComposer $schemaComposer,
@@ -31,6 +36,7 @@ class DraftingOrchestrator implements DraftingOrchestratorInterface {
     private readonly AiAgentManager $aiAgentManager,
     #[Autowire(service: 'logger.channel.oe_ai_assistant')]
     private readonly LoggerInterface $logger,
+    private readonly MessageRecorderInterface $messageRecorder,
   ) {}
 
   /**
@@ -41,6 +47,8 @@ class DraftingOrchestrator implements DraftingOrchestratorInterface {
     array $history,
     string $entityTypeId,
     string $bundle,
+    EntityInterface $host,
+    ?AiConversationMessageInterface $parent = NULL,
   ): array {
     $groups = $this->schemaComposer->splitSchemaIntoGroups(
       $entityTypeId, $bundle
@@ -79,6 +87,7 @@ class DraftingOrchestrator implements DraftingOrchestratorInterface {
         $fullText = $this->runSubAgent(
           $stepId, $group['schemaSlice'],
           $conversationContext, $mainFieldsResult,
+          $host, $parent,
         );
 
         $parsed = $stream->extractJson($fullText);
@@ -97,6 +106,9 @@ class DraftingOrchestrator implements DraftingOrchestratorInterface {
           '@step' => $stepId,
           '@error' => $e->getMessage(),
         ]);
+        // The response event never fires on a failure, so record the error as a
+        // turn under the draft_content parent to keep the transcript complete.
+        $this->messageRecorder->recordError($host, $e->getMessage(), $stepId, $parent);
         $plan[$index]['status'] = 'error';
         $stream->customEvent('data-plan', $plan);
         $stream->error($e->getMessage(), $stepId);
@@ -138,15 +150,27 @@ class DraftingOrchestrator implements DraftingOrchestratorInterface {
 
   /**
    * Runs a single sub-agent for a schema group.
+   *
+   * When a parent turn is given, the agent is tagged so the response subscriber
+   * can record the sub-agent's system prompt and answer nested under it.
    */
   private function runSubAgent(
     string $stepId,
     array $schemaSlice,
     string $conversationContext,
     string $mainFieldsResult,
+    EntityInterface $host,
+    ?AiConversationMessageInterface $parent,
   ): string {
     $agent = $this->aiAgentManager
       ->createInstance('oe_content_drafter');
+
+    // Tag the agent so its response is correlated to the session and parent
+    // turn. Skipped when no parent is available: drafting still runs, the
+    // sub-agent transcript is simply not recorded.
+    if ($parent !== NULL) {
+      $agent->setUserInterface(NULL, SubAgentMessageSubscriber::correlationTags($stepId, $host, $parent));
+    }
 
     $agent->getAiAgentEntity()
       ->set('structured_output_enabled', TRUE);

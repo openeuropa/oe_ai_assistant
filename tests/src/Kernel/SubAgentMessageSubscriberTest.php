@@ -76,11 +76,9 @@ class SubAgentMessageSubscriberTest extends KernelTestBase {
     $parent = $this->container->get(MessageRecorderInterface::class)
       ->recordUser($host, 'Draft a news article.', 1);
 
-    $agent = $this->mockAgent([
-      SubAgentMessageSubscriber::TAG_SESSION . $host->getEntityTypeId() . ':' . $host->id(),
-      SubAgentMessageSubscriber::TAG_PARENT . $parent->id(),
-      SubAgentMessageSubscriber::TAG_AGENT . 'title',
-    ]);
+    $agent = $this->mockAgent(
+      SubAgentMessageSubscriber::correlationTags('title', $host, $parent),
+    );
     $event = $this->responseEvent($agent, 'You are a content generator.', '{"title":[{"value":"X"}]}', 'R1', NULL);
     $this->container->get('event_dispatcher')->dispatch($event, AgentResponseEvent::EVENT_NAME);
 
@@ -116,11 +114,9 @@ class SubAgentMessageSubscriberTest extends KernelTestBase {
 
     // Event 1: the orchestrator's top sub-agent (tagged), runner "R1", no
     // caller.
-    $top = $this->mockAgent([
-      SubAgentMessageSubscriber::TAG_SESSION . $host->getEntityTypeId() . ':' . $host->id(),
-      SubAgentMessageSubscriber::TAG_PARENT . $draftTurn->id(),
-      SubAgentMessageSubscriber::TAG_AGENT . 'title',
-    ]);
+    $top = $this->mockAgent(
+      SubAgentMessageSubscriber::correlationTags('title', $host, $draftTurn),
+    );
     $dispatcher->dispatch(
       $this->responseEvent($top, 'SP top', '{"title":[{"value":"X"}]}', 'R1', NULL),
       AgentResponseEvent::EVENT_NAME,
@@ -181,11 +177,11 @@ class SubAgentMessageSubscriberTest extends KernelTestBase {
     $this->container->get('logger.factory')->addLogger($logger);
 
     // The parent tag points at a message id that does not exist.
-    $agent = $this->mockAgent([
-      SubAgentMessageSubscriber::TAG_SESSION . $host->getEntityTypeId() . ':' . $host->id(),
-      SubAgentMessageSubscriber::TAG_PARENT . '999999',
-      SubAgentMessageSubscriber::TAG_AGENT . 'title',
-    ]);
+    $ghostParent = $this->createMock(AiConversationMessageInterface::class);
+    $ghostParent->method('id')->willReturn('999999');
+    $agent = $this->mockAgent(
+      SubAgentMessageSubscriber::correlationTags('title', $host, $ghostParent),
+    );
     $this->container->get('event_dispatcher')->dispatch(
       $this->responseEvent($agent, 'SP', '{"title":[{"value":"X"}]}', 'R1', NULL),
       AgentResponseEvent::EVENT_NAME,
