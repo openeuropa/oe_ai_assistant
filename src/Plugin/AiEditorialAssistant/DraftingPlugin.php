@@ -134,7 +134,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
     return [
       'reset' => 'DraftingResetRequest',
       'save' => 'DraftingSaveRequest',
-      'set-tone' => 'DraftingSaveToneRequest',
+      'set-tone' => 'DraftingSetToneRequest',
     ];
   }
 

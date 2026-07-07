@@ -10,7 +10,7 @@ use weitzman\DrupalTestTraits\ExistingSiteBase;
 /**
  * Integration tests for the DraftingPlugin set-tone action.
  */
-class DraftingPluginSaveToneTest extends ExistingSiteBase {
+class DraftingPluginSetToneTest extends ExistingSiteBase {
 
   /**
    * {@inheritdoc}
@@ -26,7 +26,7 @@ class DraftingPluginSaveToneTest extends ExistingSiteBase {
   /**
    * Tests that valid tone selections are accepted.
    */
-  public function testSaveToneAcceptsValidTone(): void {
+  public function testSetToneAcceptsValidTone(): void {
     $user = $this->createUser(['use oe ai assistant']);
     $this->drupalLogin($user);
 
@@ -44,7 +44,7 @@ class DraftingPluginSaveToneTest extends ExistingSiteBase {
   /**
    * Tests that a missing tone ID is rejected by request validation.
    */
-  public function testSaveToneRejectsMissingToneId(): void {
+  public function testSetToneRejectsMissingToneId(): void {
     $user = $this->createUser(['use oe ai assistant']);
     $this->drupalLogin($user);
 
@@ -62,7 +62,7 @@ class DraftingPluginSaveToneTest extends ExistingSiteBase {
   /**
    * Tests that unknown term IDs are rejected.
    */
-  public function testSaveToneRejectsInvalidTermId(): void {
+  public function testSetToneRejectsInvalidTermId(): void {
     $user = $this->createUser(['use oe ai assistant']);
     $this->drupalLogin($user);
 
@@ -80,7 +80,7 @@ class DraftingPluginSaveToneTest extends ExistingSiteBase {
   /**
    * Tests that tone IDs from the wrong vocabulary are rejected.
    */
-  public function testSaveToneRejectsWrongVocabularyId(): void {
+  public function testSetToneRejectsWrongVocabularyId(): void {
     $user = $this->createUser(['use oe ai assistant']);
     $this->drupalLogin($user);
 
