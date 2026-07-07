@@ -254,7 +254,7 @@ class DraftingPluginChatTest extends ExistingSiteBase {
     $user = $this->createUser(['use oe ai assistant']);
     $this->drupalLogin($user);
 
-    $this->httpPost('/api/ai/plugins/drafting/save-tone', [
+    $this->httpPost('/api/ai/plugins/drafting/set-tone', [
       'context' => [
         'toneId' => $this->getTermIdByName('oe_ai_tone', 'Formal'),
       ],

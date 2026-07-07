@@ -8,7 +8,7 @@ use Drupal\taxonomy\Entity\Term;
 use weitzman\DrupalTestTraits\ExistingSiteBase;
 
 /**
- * Integration tests for the DraftingPlugin save-tone action.
+ * Integration tests for the DraftingPlugin set-tone action.
  */
 class DraftingPluginSaveToneTest extends ExistingSiteBase {
 
@@ -30,7 +30,7 @@ class DraftingPluginSaveToneTest extends ExistingSiteBase {
     $user = $this->createUser(['use oe ai assistant']);
     $this->drupalLogin($user);
 
-    $result = $this->httpPost('/api/ai/plugins/drafting/save-tone', [
+    $result = $this->httpPost('/api/ai/plugins/drafting/set-tone', [
       'context' => [
         'toneId' => $this->getTermIdByName('oe_ai_tone', 'Formal'),
       ],
@@ -48,7 +48,7 @@ class DraftingPluginSaveToneTest extends ExistingSiteBase {
     $user = $this->createUser(['use oe ai assistant']);
     $this->drupalLogin($user);
 
-    $result = $this->httpPost('/api/ai/plugins/drafting/save-tone', [
+    $result = $this->httpPost('/api/ai/plugins/drafting/set-tone', [
       'context' => [
         'unused' => 'value',
       ],
@@ -66,7 +66,7 @@ class DraftingPluginSaveToneTest extends ExistingSiteBase {
     $user = $this->createUser(['use oe ai assistant']);
     $this->drupalLogin($user);
 
-    $result = $this->httpPost('/api/ai/plugins/drafting/save-tone', [
+    $result = $this->httpPost('/api/ai/plugins/drafting/set-tone', [
       'context' => [
         'toneId' => '999999',
       ],
@@ -90,7 +90,7 @@ class DraftingPluginSaveToneTest extends ExistingSiteBase {
     ]);
     $otherTerm->save();
 
-    $result = $this->httpPost('/api/ai/plugins/drafting/save-tone', [
+    $result = $this->httpPost('/api/ai/plugins/drafting/set-tone', [
       'context' => [
         'toneId' => (string) $otherTerm->id(),
       ],

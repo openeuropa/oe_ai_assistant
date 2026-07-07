@@ -123,7 +123,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
       'chat' => $this->chat(...),
       'reset' => $this->reset(...),
       'save' => $this->save(...),
-      'save-tone' => $this->saveTone(...),
+      'set-tone' => $this->setTone(...),
     ];
   }
 
@@ -134,7 +134,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
     return [
       'reset' => 'DraftingResetRequest',
       'save' => 'DraftingSaveRequest',
-      'save-tone' => 'DraftingSaveToneRequest',
+      'set-tone' => 'DraftingSaveToneRequest',
     ];
   }
 
@@ -310,7 +310,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
    * @throws \Drupal\oe_ai_assistant\Exception\ActionException
    *   When the selected tone is invalid or not prompt-ready.
    */
-  public function saveTone(Request $request): array {
+  public function setTone(Request $request): array {
     $body = $this->decodeJsonBody($request);
     $toneId = (string) ($body['context']['toneId'] ?? '');
 
