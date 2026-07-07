@@ -73,7 +73,7 @@ class DraftingPluginChatTest extends ExistingSiteBase {
    */
   public function testTextResponseStreamedAsSse(): void {
     $user = $this->createUser(['use oe ai assistant']);
-    $this->drupalLogin($user);
+    $this->loginUser($user);
 
     MockAiProvider::enqueue(new MockResponse(
       text: 'Hello from the drafting assistant.',
@@ -133,7 +133,7 @@ class DraftingPluginChatTest extends ExistingSiteBase {
    */
   public function testConversationHistoryPersists(): void {
     $user = $this->createUser(['use oe ai assistant']);
-    $this->drupalLogin($user);
+    $this->loginUser($user);
 
     $threadId = bin2hex(random_bytes(16));
 
@@ -185,8 +185,7 @@ class DraftingPluginChatTest extends ExistingSiteBase {
    */
   public function testDraftContentTriggersOrchestration(): void {
     $user = $this->createUser(['use oe ai assistant']);
-
-    $this->drupalLogin($user);
+    $this->loginUser($user);
 
     // Router calls draft_content (the "I'm ready" signal).
     MockAiProvider::enqueue(new MockResponse(
@@ -252,7 +251,7 @@ class DraftingPluginChatTest extends ExistingSiteBase {
    */
   public function testSelectedContextIsInjectedIntoSystemPrompt(): void {
     $user = $this->createUser(['use oe ai assistant']);
-    $this->drupalLogin($user);
+    $this->loginUser($user);
 
     $this->httpPost('/api/ai/plugins/drafting/save-tone', [
       'context' => [
@@ -299,7 +298,7 @@ class DraftingPluginChatTest extends ExistingSiteBase {
    */
   public function testChatRequestContextIsIgnored(): void {
     $user = $this->createUser(['use oe ai assistant']);
-    $this->drupalLogin($user);
+    $this->loginUser($user);
 
     MockAiProvider::enqueue(new MockResponse(
       text: 'Drafting without request context.',
@@ -328,7 +327,7 @@ class DraftingPluginChatTest extends ExistingSiteBase {
    */
   public function testEmptyMessageReturns400(): void {
     $user = $this->createUser(['use oe ai assistant']);
-    $this->drupalLogin($user);
+    $this->loginUser($user);
 
     $result = $this->httpPost('/api/ai/plugins/drafting/chat', [
       'message' => '',
