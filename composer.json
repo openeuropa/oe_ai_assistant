@@ -48,6 +48,9 @@
         "patches": {
             "drupal/ai_provider_mistral": {
                 "Return proper ToolsFunctionOutput objects from streaming tool calls": "patches/ai-provider-mistral-streaming-tool-calls.patch"
+            },
+            "drupal/ai_agents": {
+                "Keep setUserInterface extra tags on the entity wrapper (getExtraTags)": "patches/ai-agents-agent-wrapper-extra-tags.patch"
             }
         },
         "installer-paths": {

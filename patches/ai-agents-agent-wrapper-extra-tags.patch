@@ -1,0 +1,33 @@
+--- a/src/PluginBase/AiAgentEntityWrapper.php
++++ b/src/PluginBase/AiAgentEntityWrapper.php
+@@ -203,6 +203,13 @@
+   protected $callerAgentRunnerId = NULL;
+ 
+   /**
++   * Extra correlation tags set by the user interface.
++   *
++   * @var string[]
++   */
++  protected array $extraTags = [];
++
++  /**
+    * Images collected from tool results, to be sent on the next LLM turn.
+    *
+    * @var \Drupal\ai\OperationType\GenericType\ImageFile[]
+@@ -430,7 +437,7 @@
+    * {@inheritDoc}
+    */
+   public function getExtraTags() {
+-    return [];
++    return $this->extraTags;
+   }
+ 
+   /**
+@@ -818,6 +825,7 @@
+    * {@inheritDoc}
+    */
+   public function setUserInterface($userInterface, array $extraTags = []) {
++    $this->extraTags = $extraTags;
+   }
+ 
+   /**
