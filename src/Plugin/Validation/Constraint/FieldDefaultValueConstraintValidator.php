@@ -33,25 +33,30 @@ class FieldDefaultValueConstraintValidator extends ConstraintValidator implement
       throw new UnexpectedTypeException($constraint, FieldDefaultValueConstraint::class);
     }
 
-    if (!is_array($value) || !array_key_exists('default_value', $value)) {
-      return;
-    }
-
     $object = $this->context->getObject();
     $field_name = $object->getName();
-    $default_value = $value['default_value'];
 
-    if (!is_array($default_value) || empty($default_value)) {
-      $this->context->addViolation("Field '$field_name' default_value is empty.");
-      return;
-    }
-
-    $entity_type_id = TypeResolver::resolveDynamicTypeName("[$constraint->entityTypeId]", $object);
-    $bundle = TypeResolver::resolveDynamicTypeName("[$constraint->bundle]", $object);
+    $entity_type_id = TypeResolver::resolveDynamicTypeName($constraint->entityTypeId, $object);
+    $bundle = TypeResolver::resolveDynamicTypeName($constraint->bundle, $object);
 
     $field_definition = $this->entityFieldManager->getFieldDefinitions($entity_type_id, $bundle)[$field_name] ?? NULL;
 
     if (!$field_definition) {
+      $this->context->buildViolation($constraint->missingFieldMessage)
+        ->setParameter('@field', (string) $field_name)
+        ->setParameter('@entityTypeId', $entity_type_id)
+        ->setParameter('@bundle', $bundle)
+        ->addViolation();
+      return;
+    }
+
+    if (!is_array($value) || !array_key_exists('default_value', $value)) {
+      return;
+    }
+
+    $default_value = $value['default_value'];
+    if (!is_array($default_value) || empty($default_value)) {
+      $this->context->addViolation("Field '$field_name' default_value is empty.");
       return;
     }
 

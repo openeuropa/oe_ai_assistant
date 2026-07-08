@@ -37,8 +37,8 @@ final class ReferenceTargetTypeConstraintValidator extends ConstraintValidator i
 
     $object = $this->context->getObject();
 
-    $source_entity_type_id = TypeResolver::resolveDynamicTypeName("[$constraint->sourceEntityTypeId]", $object);
-    $source_bundle = TypeResolver::resolveDynamicTypeName("[$constraint->sourceBundle]", $object);
+    $source_entity_type_id = TypeResolver::resolveDynamicTypeName($constraint->sourceEntityTypeId, $object);
+    $source_bundle = TypeResolver::resolveDynamicTypeName($constraint->sourceBundle, $object);
     $source_field_name = $object->getName();
 
     if ($source_entity_type_id === '' || $source_bundle === '' || $source_field_name === '') {

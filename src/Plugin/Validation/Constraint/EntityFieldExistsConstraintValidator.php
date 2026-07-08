@@ -30,16 +30,20 @@ class EntityFieldExistsConstraintValidator extends ConstraintValidator implement
     if (!$constraint instanceof EntityFieldExistsConstraint) {
       throw new UnexpectedTypeException($constraint, EntityFieldExistsConstraint::class);
     }
-    $field_name = NULL;
 
-    $field_name = is_string($value) ? $value : $this->context->getObject()->getName();
+    if (!is_string($constraint->field)) {
+      throw new UnexpectedTypeException($constraint->field, 'string');
+    }
 
-    if ($field_name === NULL || $field_name === '') {
+    $object = $this->context->getObject();
+    $field_name = TypeResolver::resolveDynamicTypeName($constraint->field, $object);
+    if (empty($field_name)) {
+      $this->context->addViolation("Field name is empty.");
       return;
     }
 
-    $entity_type_id = TypeResolver::resolveDynamicTypeName("[$constraint->entityTypeId]", $this->context->getObject());
-    $bundle = TypeResolver::resolveDynamicTypeName("[$constraint->bundle]", $this->context->getObject());
+    $entity_type_id = TypeResolver::resolveDynamicTypeName($constraint->entityTypeId, $object);
+    $bundle = TypeResolver::resolveDynamicTypeName($constraint->bundle, $object);
 
     $definitions = $this->entityFieldManager
       ->getFieldDefinitions($entity_type_id, $bundle);

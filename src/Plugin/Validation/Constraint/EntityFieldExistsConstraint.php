@@ -48,12 +48,24 @@ class EntityFieldExistsConstraint extends SymfonyConstraint {
   public string $entityTypeId;
 
   /**
+   * The field name to validate.
+   *
+   * This can contain variable values (e.g., `%parent`) that will be replaced.
+   *
+   * @var string
+   *
+   * @see \Drupal\Core\Config\Schema\TypeResolver::replaceVariable()
+   */
+  public $field;
+
+  /**
    * {@inheritdoc}
    */
   public function getRequiredOptions(): array {
     return [
       'entityTypeId',
       'bundle',
+      'field',
     ];
   }
 

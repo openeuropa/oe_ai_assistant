@@ -20,20 +20,20 @@ oe_ai_assistant.ai_drafting_template.*:
     FullyValidatable: ~
   mapping:
     id:
-      type: string
+      type: machine_name
       label: ID
     label:
       type: label
       label: Label
     uuid:
-      type: string
+      type: uuid
       label: UUID
     status:
       type: boolean
       label: Status
     description:
       requiredKey: false
-      type: string
+      type: text
       label: Description
     content_type:
       type: string
@@ -62,10 +62,11 @@ oe_ai_assistant.ai_drafting_template_node_field:
     FullyValidatable: ~
     EntityFieldExists:
       entityTypeId: node
-      bundle: '%parent.%parent.content_type'
+      bundle: '[%parent.%parent.content_type]'
+      field: '[%key]'
     ReferenceTargetType:
       sourceEntityTypeId: node
-      sourceBundle: '%parent.%parent.content_type'
+      sourceBundle: '[%parent.%parent.content_type]'
   mapping:
     prompt:
       requiredKey: false
@@ -75,6 +76,9 @@ oe_ai_assistant.ai_drafting_template_node_field:
       requiredKey: false
       type: string
       label: 'Field type'
+      constraints:
+        NotBlank:
+          allowNull: true
     items:
       requiredKey: false
       type: sequence
@@ -92,6 +96,8 @@ oe_ai_assistant.ai_drafting_template_reference_item:
     entity_type:
       type: string
       label: 'Entity type'
+      constraints:
+        NotNull: ~
     bundle:
       type: string
       label: 'Bundle'
@@ -115,11 +121,12 @@ oe_ai_assistant.ai_drafting_template_reference_field:
   constraints:
     FullyValidatable: ~
     EntityFieldExists:
-      entityTypeId: '%parent.%parent.entity_type'
-      bundle: '%parent.%parent.bundle'
+      entityTypeId: '[%parent.%parent.entity_type]'
+      bundle: '[%parent.%parent.bundle]'
+      field: '[%key]'
     ReferenceTargetType:
-      sourceEntityTypeId: '%parent.%parent.entity_type'
-      sourceBundle: '%parent.%parent.bundle'
+      sourceEntityTypeId: '[%parent.%parent.entity_type]'
+      sourceBundle: '[%parent.%parent.bundle]'
   mapping:
     prompt:
       requiredKey: false
@@ -142,12 +149,9 @@ oe_ai_assistant.ai_drafting_template_default:
   label: 'Default value'
   constraints:
     FullyValidatable: ~
-    EntityFieldExists:
-      entityTypeId: node
-      bundle: '%parent.%parent.content_type'
     FieldDefaultValue:
       entityTypeId: node
-      bundle: '%parent.%parent.content_type'
+      bundle: '[%parent.%parent.content_type]'
   mapping:
     default_value:
       type: sequence

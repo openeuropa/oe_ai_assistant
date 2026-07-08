@@ -36,7 +36,7 @@ final class ReferenceTargetTypeConstraint extends SymfonyConstraint {
   /**
    * Template field type does not match the reference field type.
    */
-  public string $invalidFieldTypeMessage = "Field '@field' is a '@actual' field, not 'entity_reference'.";
+  public string $invalidFieldTypeMessage = "Field '@field' is a '@actual' field, not '@expected'.";
 
   /**
    * Reference field definition is missing the field type.

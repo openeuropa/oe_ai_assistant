@@ -48,6 +48,13 @@ class FieldDefaultValueConstraint extends SymfonyConstraint {
   public string $message = "Default value for field '@field_name' is invalid: @reason";
 
   /**
+   * The field does not exist in the bundle.
+   *
+   * @var string
+   */
+  public $missingFieldMessage = "The field '@field' does not exist on the '@bundle' bundle of '@entityTypeId' entity type.";
+
+  /**
    * {@inheritdoc}
    */
   public function getRequiredOptions(): array {
