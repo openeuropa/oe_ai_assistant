@@ -39,6 +39,7 @@ oe_ai_assistant.ai_drafting_template.*:
       type: string
       label: 'Content type'
       constraints:
+        NotBlank: ~
         EntityBundleExists: node
     fields:
       requiredKey: false

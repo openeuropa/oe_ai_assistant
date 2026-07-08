@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\oe_ai_assistant\ExistingSite;
 
+use Drupal\Core\Form\FormState;
 use Drupal\oe_ai_assistant\Entity\AiDraftingTemplate;
 use weitzman\DrupalTestTraits\ExistingSiteBase;
 
@@ -19,6 +20,7 @@ class AiDraftingTemplateFormTest extends ExistingSiteBase {
    */
   protected function setUp(): void {
     parent::setUp();
+    $this->container->get('config.typed')->clearCachedDefinitions();
     $admin = $this->createUser(['administer ai_drafting_template']);
     $this->drupalLogin($admin);
   }
@@ -270,6 +272,39 @@ class AiDraftingTemplateFormTest extends ExistingSiteBase {
 
     $this->assertSession()->elementExists('css', 'textarea[name="defaults_yaml"].error');
     $this->assertSession()->elementNotExists('css', 'textarea[name="fields_yaml"].error');
+    $this->assertNull(AiDraftingTemplate::load('test_form_create'));
+  }
+
+  /**
+   * Tests that entity content type errors are assigned to the selector.
+   *
+   * The admin UI only offers valid node bundles in the select element, so this
+   * uses direct Form API submission to exercise server-side validation error
+   * routing for malformed or stale submitted values.
+   */
+  public function testInvalidContentTypeFormValidationErrorName(): void {
+    /** @var \Drupal\Core\Entity\EntityFormInterface $form_object */
+    $form_object = $this->container->get('entity_type.manager')
+      ->getFormObject('ai_drafting_template', 'add');
+    $form_object->setEntity(AiDraftingTemplate::create([]));
+
+    $values = [
+      'label' => 'Bad content type',
+      'id' => 'test_form_create',
+      'status' => TRUE,
+      'content_type' => 'oe_nonexistent',
+      'fields_yaml' => "title:\n  prompt: 'Headline.'",
+      'defaults_yaml' => '',
+    ];
+    $form_state = (new FormState())
+      ->setValues($values)
+      ->setUserInput($values);
+
+    $this->container->get('form_builder')->submitForm($form_object, $form_state);
+
+    $this->assertArrayHasKey('content_type', $form_state->getErrors());
+    $this->assertArrayNotHasKey('fields_yaml', $form_state->getErrors());
+    $this->assertArrayNotHasKey('defaults_yaml', $form_state->getErrors());
     $this->assertNull(AiDraftingTemplate::load('test_form_create'));
   }
 

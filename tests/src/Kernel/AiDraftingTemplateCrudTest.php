@@ -224,6 +224,21 @@ class AiDraftingTemplateCrudTest extends KernelTestBase {
   }
 
   /**
+   * Tests that content type cannot be blank.
+   */
+  public function testBlankContentTypeIsInvalid(): void {
+    $template = $this->buildTemplate('', [
+      'title' => ['prompt' => 'Headline.'],
+    ]);
+    $result = $template->validate();
+
+    $this->assertErrorMatches(
+      '/This value should not be blank./',
+      $this->violationMessages($result)
+    );
+  }
+
+  /**
    * Tests that a template referencing a non-existent field is invalid.
    */
   public function testNonExistentFieldIsInvalid(): void {
@@ -234,6 +249,21 @@ class AiDraftingTemplateCrudTest extends KernelTestBase {
 
     $this->assertErrorMatches(
       "/The field 'field_does_not_exist' does not exist on the 'oe_news' bundle of 'node' entity type./",
+      $this->violationMessages($result)
+    );
+  }
+
+  /**
+   * Tests that an empty field key is invalid.
+   */
+  public function testEmptyFieldNameIsInvalid(): void {
+    $template = $this->buildTemplate('oe_news', [
+      '' => ['prompt' => 'Headline.'],
+    ]);
+    $result = $template->validate();
+
+    $this->assertErrorMatches(
+      '/Field name is empty./',
       $this->violationMessages($result)
     );
   }
@@ -458,6 +488,29 @@ class AiDraftingTemplateCrudTest extends KernelTestBase {
   }
 
   /**
+   * Tests that reference item entity_type cannot be null.
+   */
+  public function testEntityReferenceItemNullEntityTypeIsInvalid(): void {
+    $template = $this->buildTemplate('oe_news', [
+      'field_contacts' => [
+        'type' => 'entity_reference',
+        'items' => [[
+          'entity_type' => NULL,
+          'bundle' => 'oe_contact',
+          'prompt' => 'Contact.',
+        ],
+        ],
+      ],
+    ]);
+    $result = $template->validate();
+
+    $this->assertErrorMatches(
+      '/This value should not be null./',
+      $this->violationMessages($result)
+    );
+  }
+
+  /**
    * Tests that reference items must declare their target bundle.
    */
   public function testEntityReferenceItemMissingBundleIsInvalid(): void {
@@ -618,6 +671,25 @@ class AiDraftingTemplateCrudTest extends KernelTestBase {
   }
 
   /**
+   * Tests that default values that cannot create typed data are invalid.
+   */
+  public function testDefaultValueCreateExceptionIsInvalid(): void {
+    $template = $this->buildTemplate('oe_news', [], [
+      'title' => [
+        'default_value' => [
+          ['value' => new \stdClass()],
+        ],
+      ],
+    ]);
+    $result = $template->validate();
+
+    $this->assertErrorMatches(
+      "/Default value for field 'title' is invalid/",
+      $this->violationMessages($result)
+    );
+  }
+
+  /**
    * Tests that empty default values are invalid.
    */
   public function testDefaultValueMustNotBeEmpty(): void {
@@ -630,6 +702,24 @@ class AiDraftingTemplateCrudTest extends KernelTestBase {
 
     $this->assertErrorMatches(
       "/Field 'title' default_value is empty./",
+      $this->violationMessages($result)
+    );
+  }
+
+  /**
+   * Tests that field type metadata cannot be an empty string.
+   */
+  public function testNodeFieldTypeCannotBeEmptyString(): void {
+    $template = $this->buildTemplate('oe_news', [
+      'title' => [
+        'type' => '',
+        'prompt' => 'Headline.',
+      ],
+    ]);
+    $result = $template->validate();
+
+    $this->assertErrorMatches(
+      '/This value should not be blank./',
       $this->violationMessages($result)
     );
   }
