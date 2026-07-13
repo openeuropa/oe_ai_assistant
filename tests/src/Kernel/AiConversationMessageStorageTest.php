@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\oe_ai_assistant\Kernel;
 
+use Drupal\Core\Entity\EntityInterface;
 use Drupal\KernelTests\KernelTestBase;
 use Drupal\oe_ai_assistant\Entity\AiConversationMessage;
 use Drupal\oe_ai_assistant\Entity\AiConversationMessageInterface;
@@ -80,18 +81,18 @@ class AiConversationMessageStorageTest extends KernelTestBase {
     $other->save();
 
     // Three top-level, non-error turns in the intended order.
-    $this->seed($host, AiConversationMessageInterface::ROLE_USER, 'Draft a news article.');
-    $assistant = $this->seed($host, AiConversationMessageInterface::ROLE_ASSISTANT, 'Here is the plan.');
-    $this->seed($host, AiConversationMessageInterface::ROLE_TOOL, 'Tool result.');
+    $this->createMessage($host, AiConversationMessageInterface::ROLE_USER, 'Draft a news article.');
+    $assistant = $this->createMessage($host, AiConversationMessageInterface::ROLE_ASSISTANT, 'Here is the plan.');
+    $this->createMessage($host, AiConversationMessageInterface::ROLE_TOOL, 'Tool result.');
 
     // A sub-agent child must not surface in the top-level transcript.
-    $this->seed($host, AiConversationMessageInterface::ROLE_ASSISTANT, 'Sub-agent turn.', (int) $assistant->id());
+    $this->createMessage($host, AiConversationMessageInterface::ROLE_ASSISTANT, 'Sub-agent turn.', (int) $assistant->id());
 
     // A top-level error row must be excluded from the transcript.
-    $error = $this->seed($host, AiConversationMessageInterface::ROLE_ERROR, 'Boom.');
+    $error = $this->createMessage($host, AiConversationMessageInterface::ROLE_ERROR, 'Boom.');
 
     // Another host's turn must not leak into the transcript.
-    $this->seed($other, AiConversationMessageInterface::ROLE_USER, 'Other host turn.');
+    $this->createMessage($other, AiConversationMessageInterface::ROLE_USER, 'Other host turn.');
 
     // The transcript is the host's non-error top-level rows, as entities.
     $transcript = $this->storage->loadTranscript($host);
@@ -116,12 +117,12 @@ class AiConversationMessageStorageTest extends KernelTestBase {
     $host = User::create(['name' => 'session-host']);
     $host->save();
 
-    $root = $this->seed($host, AiConversationMessageInterface::ROLE_USER, 'Root turn.');
-    $this->seed($host, AiConversationMessageInterface::ROLE_ASSISTANT, 'Child A.', (int) $root->id());
-    $childB = $this->seed($host, AiConversationMessageInterface::ROLE_ASSISTANT, 'Child B.', (int) $root->id());
-    $this->seed($host, AiConversationMessageInterface::ROLE_TOOL, 'Grandchild.', (int) $childB->id());
+    $root = $this->createMessage($host, AiConversationMessageInterface::ROLE_USER, 'Root turn.');
+    $this->createMessage($host, AiConversationMessageInterface::ROLE_ASSISTANT, 'Child A.', (int) $root->id());
+    $childB = $this->createMessage($host, AiConversationMessageInterface::ROLE_ASSISTANT, 'Child B.', (int) $root->id());
+    $this->createMessage($host, AiConversationMessageInterface::ROLE_TOOL, 'Grandchild.', (int) $childB->id());
     // A top-level error row is part of the debug tree.
-    $this->seed($host, AiConversationMessageInterface::ROLE_ERROR, 'Boom.');
+    $this->createMessage($host, AiConversationMessageInterface::ROLE_ERROR, 'Boom.');
 
     $tree = $this->storage->loadTree($host);
 
@@ -139,8 +140,20 @@ class AiConversationMessageStorageTest extends KernelTestBase {
 
   /**
    * Creates and saves a conversation message hosted by the given entity.
+   *
+   * @param \Drupal\Core\Entity\EntityInterface $host
+   *   The host entity.
+   * @param string $role
+   *   The message role.
+   * @param string $content
+   *   The message content.
+   * @param int|null $parent
+   *   The message parent ID.
+   *
+   * @return \Drupal\oe_ai_assistant\Entity\AiConversationMessageInterface
+   *   An AI conversation message entity.
    */
-  private function seed(User $host, string $role, string $content, ?int $parent = NULL): AiConversationMessageInterface {
+  private function createMessage(EntityInterface $host, string $role, string $content, ?int $parent = NULL): AiConversationMessageInterface {
     $message = AiConversationMessage::create([
       'host_entity_type' => $host->getEntityTypeId(),
       'host_entity_id' => (int) $host->id(),
