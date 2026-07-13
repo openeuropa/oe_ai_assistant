@@ -32,25 +32,11 @@ use Symfony\Component\HttpFoundation\Request;
 class NotesPlugin extends AiAssistantPluginBase {
 
   /**
-   * Constructs a NotesPlugin.
+   * The state service.
    *
-   * @param array $configuration
-   *   Plugin configuration from the plugin manager.
-   * @param string $plugin_id
-   *   The plugin ID as declared in the AiEditorialAssistant attribute.
-   * @param mixed $plugin_definition
-   *   The plugin definition as resolved by the plugin manager.
-   * @param \Drupal\Core\State\StateInterface $state
-   *   The Drupal State API service, used as the persistence backend.
+   * @var \Drupal\Core\State\StateInterface
    */
-  public function __construct(
-    array $configuration,
-    $plugin_id,
-    $plugin_definition,
-    private readonly StateInterface $state,
-  ) {
-    parent::__construct($configuration, $plugin_id, $plugin_definition);
-  }
+  private readonly StateInterface $state;
 
   /**
    * {@inheritdoc}
@@ -75,14 +61,15 @@ class NotesPlugin extends AiAssistantPluginBase {
     $plugin_id,
     $plugin_definition,
   ): static {
-    $instance = new static(
+    $instance = parent::create(
+      $container,
       $configuration,
       $plugin_id,
       $plugin_definition,
-      $container->get('state'),
     );
-    // The current user is provided by the base plugin.
-    $instance->currentUser = $container->get('current_user');
+
+    $instance->state = $container->get('state');
+
     return $instance;
   }
 
