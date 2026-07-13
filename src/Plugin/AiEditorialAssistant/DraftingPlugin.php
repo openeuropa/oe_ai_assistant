@@ -160,12 +160,30 @@ class DraftingPlugin extends AiAssistantPluginBase {
     }
 
     $session = $this->loadSession($body);
-    $context = $this->buildContext($session);
+    $context = $this->buildContext($session, $body);
+
+    // Evidence that a frontend template selection reached the backend.
+    // Session persistence of the selection is not implemented yet.
+    if ($context['template'] !== '') {
+      $this->logger->info(
+        'Drafting chat received template @template for bundle @bundle.',
+        [
+          '@template' => $context['template'],
+          '@bundle' => $context['bundle'],
+        ],
+      );
+    }
 
     // Resolve the template and pin its id for the prompt, tool, orchestrator.
-    $template = $this->schemaProvider->resolveTemplate(
-      $context['entityTypeId'], $context['bundle'], $context['template']
-    );
+    // The id is user-supplied, so resolution failures are client errors.
+    try {
+      $template = $this->schemaProvider->resolveTemplate(
+        $context['entityTypeId'], $context['bundle'], $context['template']
+      );
+    }
+    catch (\InvalidArgumentException $e) {
+      throw new ActionException('invalid_request', $e->getMessage(), 400);
+    }
     $context['template'] = $template?->id();
 
     // Load the persisted transcript, then append the current user's message
@@ -422,21 +440,26 @@ class DraftingPlugin extends AiAssistantPluginBase {
   }
 
   /**
-   * Builds drafting context from the editorial session.
+   * Builds drafting context from the editorial session and request body.
    *
    * @param \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $session
    *   The session hosting the conversation.
+   * @param array $body
+   *   The decoded request body carrying the template selection.
    *
    * @return array
-   *   Context with entityTypeId, bundle, and toneId.
+   *   Context with entityTypeId, bundle, toneId, and template.
    */
-  private function buildContext(AiEditorialSessionInterface $session): array {
+  private function buildContext(AiEditorialSessionInterface $session, array $body): array {
+    $template = $body['forwardedProps']['template']
+      ?? $body['template'] ?? NULL;
     return [
       'entityTypeId' => 'node',
       'bundle' => $session->getContentType(),
       'toneId' => (string) $session->get(static::TONE_FIELD)->target_id,
-      // No template selector yet; the provider auto-picks one for the bundle.
-      'template' => '',
+      // Guard against non-string request values: the template id is used
+      // in log placeholders and passed to the schema provider.
+      'template' => is_string($template) ? $template : '',
     ];
   }
 

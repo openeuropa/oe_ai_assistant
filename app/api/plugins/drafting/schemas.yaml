@@ -19,6 +19,14 @@ DraftingChatRequest:
         The editorial session that hosts the conversation. The backend
         derives the target content type and access from the session and
         persists every turn against it.
+    template:
+      type: string
+      description: >
+        Optional ai_drafting_template id selected by the user, from
+        AppConfig.pluginConfig['drafting'].availableTemplates. When omitted
+        or empty, the backend auto-selects the latest enabled template for
+        the session's content type, or falls back to the full schema when
+        none exists.
 
 DraftingResetRequest:
   type: object

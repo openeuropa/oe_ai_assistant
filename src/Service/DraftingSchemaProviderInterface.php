@@ -55,4 +55,16 @@ interface DraftingSchemaProviderInterface {
    */
   public function resolveTemplate(string $entityTypeId, string $bundle, ?string $templateId = NULL): ?AiDraftingTemplateInterface;
 
+  /**
+   * Lists the enabled drafting templates for a bundle.
+   *
+   * @param string $bundle
+   *   The bundle machine name.
+   *
+   * @return array
+   *   A list of templates ordered by id, each with 'id', 'label' and
+   *   'description' keys. Empty when the bundle has no enabled template.
+   */
+  public function availableTemplates(string $bundle): array;
+
 }

@@ -165,4 +165,63 @@ class DraftingSchemaProviderTest extends KernelTestBase {
     $this->provider()->groups('paragraph', 'text_block', 'news_default');
   }
 
+  /**
+   * Lists the enabled templates for a bundle with id, label and description.
+   */
+  public function testAvailableTemplatesListsEnabledTemplatesForBundle(): void {
+    $templates = $this->provider()->availableTemplates('oe_news');
+
+    $this->assertSame([
+      [
+        'id' => 'news_default',
+        'label' => 'News article (default)',
+        'description' => 'Standard news article with title, teaser, and body.',
+      ],
+      [
+        'id' => 'news_with_paragraphs',
+        'label' => 'News article with paragraphs',
+        'description' => 'News article using rich-text and quote paragraph types.',
+      ],
+    ], $templates);
+  }
+
+  /**
+   * A bundle without templates yields an empty list.
+   */
+  public function testAvailableTemplatesEmptyForBundleWithoutTemplates(): void {
+    $this->assertSame([], $this->provider()->availableTemplates('oe_contact'));
+  }
+
+  /**
+   * Disabled templates are not listed.
+   */
+  public function testAvailableTemplatesExcludesDisabledTemplates(): void {
+    $storage = $this->container->get('entity_type.manager')
+      ->getStorage('ai_drafting_template');
+    $template = $storage->load('news_with_paragraphs');
+    $template->setStatus(FALSE);
+    $template->save();
+
+    $ids = array_column($this->provider()->availableTemplates('oe_news'), 'id');
+
+    $this->assertSame(['news_default'], $ids);
+  }
+
+  /**
+   * Auto-select skips disabled templates, matching availableTemplates().
+   */
+  public function testAutoSelectSkipsDisabledTemplates(): void {
+    $storage = $this->container->get('entity_type.manager')
+      ->getStorage('ai_drafting_template');
+    $template = $storage->load('news_with_paragraphs');
+    $template->setStatus(FALSE);
+    $template->save();
+
+    // With news_with_paragraphs disabled, auto-select must fall back to
+    // news_default (title, field_teaser, field_body - all simple fields).
+    $main = $this->mainFields($this->provider()->groups('node', 'oe_news', ''));
+
+    $this->assertSame(['title', 'field_teaser', 'field_body'], $main);
+  }
+
 }

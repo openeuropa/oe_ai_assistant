@@ -10,6 +10,7 @@ use Drupal\Core\Url;
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionType;
 use Drupal\oe_ai_assistant\Service\AiEditorialContextInterface;
+use Drupal\oe_ai_assistant\Service\DraftingSchemaProviderInterface;
 use Drupal\system\SystemManager;
 use Symfony\Component\HttpFoundation\RedirectResponse;
 use Symfony\Component\HttpFoundation\RequestStack;
@@ -25,6 +26,7 @@ class AiEditorialSessionController extends ControllerBase {
     private readonly EntityTypeManagerInterface $sessionEntityTypeManager,
     private readonly SystemManager $systemManager,
     private readonly RequestStack $requestStack,
+    private readonly DraftingSchemaProviderInterface $schemaProvider,
   ) {}
 
   /**
@@ -153,15 +155,16 @@ class AiEditorialSessionController extends ControllerBase {
           'bundle' => $bundle,
           // Composer panels. Each is gated by an 'enabled' flag so the host
           // controls which tabs appear. Tone options come from the tone
-          // vocabulary; templates and documents have no backend yet.
+          // vocabulary; template options come from the enabled drafting
+          // templates for the bundle. Documents has no backend yet.
           'tone' => [
             'enabled' => TRUE,
             'options' => $tones,
             'selected' => $selectedTone,
           ],
           'templates' => [
-            'enabled' => FALSE,
-            'options' => [],
+            'enabled' => TRUE,
+            'options' => $this->schemaProvider->availableTemplates($bundle),
           ],
           'documents' => [
             'enabled' => FALSE,
@@ -171,6 +174,15 @@ class AiEditorialSessionController extends ControllerBase {
     ];
 
     return [
+      // The settings embed the drafting template list, so the page must be
+      // invalidated whenever a template is added, edited or deleted. The
+      // list cache tag covers all three operations for config entities.
+      // The user context is needed because the settings also embed the
+      // current user id.
+      '#cache' => [
+        'tags' => ['config:ai_drafting_template_list'],
+        'contexts' => ['user'],
+      ],
       // The React mount point: a plain <div> with a stable ID that the
       // bundled React app locates via getElementById('oe-ai-assistant').
       // The data-ai-app attribute is a hook for automated tests.
