@@ -59,6 +59,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/plugins/{pluginId}/get-messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Load the persisted conversation transcript for a session */
+        post: operations["postGetMessages"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/plugins/drafting/chat": {
         parameters: {
             query?: never;
@@ -263,25 +280,33 @@ export interface components {
             /** @description Ordered list of fields the editor can fill. */
             fields: components["schemas"]["ContentTypeField"][];
         };
+        /** @description Load the persisted conversation transcript for an editorial session. Available on every plugin endpoint under /plugins/{pluginId}/get-messages. */
+        GetMessagesRequest: {
+            /** @description The editorial session whose transcript to load. */
+            sessionId: string;
+        };
+        GetMessagesResponse: {
+            /** @description The user-visible transcript, oldest first. */
+            messages: {
+                /** @description The message role ("user" or "assistant"). */
+                role: string;
+                /** @description The message text. */
+                content: string;
+            }[];
+        };
         DraftingChatRequest: {
             /** @description The user's drafting prompt or instruction. */
             message: string;
-            /** @description Optional thread ID for conversation continuity. Omit to start a new conversation. */
-            threadId?: string;
-            /** @description The entity type ID (e.g. "node"). */
-            entityTypeId: string;
-            /** @description The content type machine name (e.g. "oe_news"). */
-            bundle: string;
-            /** @description The full form schema for the target content type, as returned by GET /content-schema/{entityTypeId}/{bundle}?mode=form. */
-            schema: Record<string, never>;
+            /** @description The editorial session that hosts the conversation. The backend derives the target content type and access from the session and persists every turn against it. */
+            sessionId: string;
         };
         DraftingResetRequest: {
-            /** @description The thread ID of the conversation to reset. */
-            threadId: string;
+            /** @description The editorial session whose conversation to reset. */
+            sessionId: string;
         };
         DraftingResetResponse: {
-            /** @description The new thread ID for the reset conversation. */
-            threadId: string;
+            /** @description Confirmation status (e.g. "ok"). */
+            status: string;
         };
         DraftingSaveRequest: {
             /** @description The entity type ID (e.g. "node"). */
@@ -362,6 +387,8 @@ export interface components {
         NodeId: string;
         /** @description Machine name of a content type. */
         ContentTypeId: string;
+        /** @description Machine name of the plugin dispatching the action. */
+        PluginId: string;
     };
     requestBodies: never;
     headers: never;
@@ -484,6 +511,33 @@ export interface operations {
             };
         };
     };
+    postGetMessages: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Machine name of the plugin dispatching the action. */
+                pluginId: components["parameters"]["PluginId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GetMessagesRequest"];
+            };
+        };
+        responses: {
+            /** @description The user-visible transcript */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GetMessagesResponse"];
+                };
+            };
+        };
+    };
     postDraftingChat: {
         parameters: {
             query?: never;
@@ -521,7 +575,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description New thread ID */
+            /** @description Reset confirmation */
             200: {
                 headers: {
                     [name: string]: unknown;

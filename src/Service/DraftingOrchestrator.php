@@ -103,15 +103,10 @@ class DraftingOrchestrator implements DraftingOrchestratorInterface {
       }
     }
 
-    // Consolidate and emit.
+    // Consolidate and emit. The caller streams and records the confirmation
+    // so it persists in the transcript.
     $consolidated = $this->consolidate($groups, $results);
     $stream->customEvent('data-drafted-fields', $consolidated);
-
-    $fieldCount = count($consolidated);
-    $stream->startStep('confirmation');
-    $stream->textDelta("Draft generated with $fieldCount fields."
-      . ' Review the content on the right.');
-    $stream->finishStep('confirmation');
 
     return $consolidated;
   }

@@ -6,23 +6,22 @@
  * which sends POST requests to /api/plugins/drafting/chat and
  * consumes UI Message Stream SSE events. The onData callback
  * intercepts data-drafted-fields events to store the raw field
- * values in the Zustand drafting store.
+ * values in the Zustand drafting store. The history adapter
+ * rehydrates the thread from the backend on mount.
  */
 
 import {
   CompositeAttachmentAdapter,
+  ExportedMessageRepository,
   SimpleImageAttachmentAdapter,
   SimpleTextAttachmentAdapter,
 } from "@assistant-ui/react";
 import { useDataStreamRuntime } from "@assistant-ui/react-data-stream";
 import { useMemo } from "react";
+import { getSessionMessages } from "@/api/session-messages";
 import { getConfig } from "@/config";
-import {
-  getDraftingState,
-  type PlanStep,
-  setDraftingState,
-  useDraftingSlice,
-} from "../store";
+import { toThreadMessages } from "../hydrate-transcript";
+import { getDraftingState, type PlanStep, setDraftingState } from "../store";
 
 /**
  * Returns an assistant-ui runtime backed by the Data Stream Protocol.
@@ -30,15 +29,10 @@ import {
  * The runtime sends POST requests to /api/plugins/drafting/chat
  * and receives UI Message Stream SSE events. assistant-ui handles
  * all event parsing, message rendering, and streaming state. The
- * onData callback intercepts custom events to update the Zustand
- * drafting store.
+ * conversation is scoped to the current editorial session; history
+ * and every turn are persisted server side against that session.
  */
 export function useDraftingRuntime() {
-  // Read bundle and entity type from the host page's plugin config.
-  const draftingConfig = getConfig().pluginConfig.drafting ?? {};
-  const bundle = (draftingConfig.bundle as string) ?? "";
-  const entityTypeId = (draftingConfig.entityTypeId as string) ?? "node";
-
   // Accept images and common document types as attachments.
   const attachmentAdapter = useMemo(
     () =>
@@ -49,17 +43,29 @@ export function useDraftingRuntime() {
     [],
   );
 
-  // Read the persisted threadId so multi-turn conversations
-  // share server-side history across requests.
-  const { threadId } = useDraftingSlice();
+  // Rehydrate the thread from the persisted transcript on mount. The
+  // backend records turns during chat, so append is a no-op here.
+  const historyAdapter = useMemo(
+    () => ({
+      async load() {
+        const messages = await getSessionMessages("drafting");
+        return ExportedMessageRepository.fromArray(toThreadMessages(messages));
+      },
+      async append() {
+        // Turns are persisted server side by the chat endpoint.
+      },
+    }),
+    [],
+  );
 
   const runtime = useDataStreamRuntime({
     api: `${getConfig().apiBaseUrl}/plugins/drafting/chat`,
     credentials: "include",
-    // Send bundle, entityTypeId, and threadId in the request body.
-    body: { bundle, entityTypeId, threadId },
+    // Scope the conversation to the current editorial session.
+    body: { sessionId: getConfig().sessionId },
     adapters: {
       attachments: attachmentAdapter,
+      history: historyAdapter,
     },
     // Handle custom data-* events from the UI message stream.
     onData: (data) => {
@@ -70,13 +76,6 @@ export function useDraftingRuntime() {
         setDraftingState({
           draftedFields: { ...existing, ...incoming },
         });
-      }
-      // Capture the threadId for conversation continuity.
-      if (data.name === "thread-id") {
-        const incoming = (data.data as { threadId?: string }).threadId;
-        if (incoming) {
-          setDraftingState({ threadId: incoming });
-        }
       }
       // Handle orchestration plan updates.
       if (data.name === "plan") {

@@ -9,10 +9,11 @@
 /** Request body for the drafting chat endpoint. */
 export interface DraftingChatRequest {
   message: string;
-  threadId?: string;
+  /** The editorial session that hosts the conversation. */
+  sessionId: string;
 }
 
 /** Response body for the drafting reset endpoint. */
 export interface DraftingResetResponse {
-  threadId: string;
+  status: string;
 }

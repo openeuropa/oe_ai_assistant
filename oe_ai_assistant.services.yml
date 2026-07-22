@@ -29,6 +29,9 @@ services:
   Drupal\oe_ai_assistant\Service\DraftSaver: {}
   Drupal\oe_ai_assistant\Service\DraftSaverInterface: '@Drupal\oe_ai_assistant\Service\DraftSaver'
 
+  Drupal\oe_ai_assistant\Service\MessageRecorder: {}
+  Drupal\oe_ai_assistant\Service\MessageRecorderInterface: '@Drupal\oe_ai_assistant\Service\MessageRecorder'
+
   Drupal\oe_ai_assistant\Service\ToolExecutor: {}
   Drupal\oe_ai_assistant\Service\ToolExecutorInterface: '@Drupal\oe_ai_assistant\Service\ToolExecutor'
 
@@ -37,6 +40,3 @@ services:
 
   Drupal\oe_ai_assistant\Service\DraftingOrchestrator: {}
   Drupal\oe_ai_assistant\Service\DraftingOrchestratorInterface: '@Drupal\oe_ai_assistant\Service\DraftingOrchestrator'
-
-  Drupal\oe_ai_assistant\Store\ConversationStoreFactory: {}
-  Drupal\oe_ai_assistant\Store\ConversationStoreFactoryInterface: '@Drupal\oe_ai_assistant\Store\ConversationStoreFactory'

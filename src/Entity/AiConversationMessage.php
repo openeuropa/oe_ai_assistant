@@ -29,6 +29,7 @@ use Drupal\user\EntityOwnerTrait;
  *   label_singular = @Translation("AI conversation message"),
  *   label_plural = @Translation("AI conversation messages"),
  *   handlers = {
+ *     "storage" = "Drupal\oe_ai_assistant\Entity\Storage\AiConversationMessageStorage",
  *     "storage_schema" = "Drupal\oe_ai_assistant\Entity\Storage\AiConversationMessageStorageSchema",
  *     "list_builder" = "Drupal\oe_ai_assistant\AiConversationMessageListBuilder",
  *     "access" = "Drupal\oe_ai_assistant\AiConversationMessageAccessControlHandler",
