@@ -139,6 +139,45 @@ class DraftingOrchestratorFailureTest extends TestCase {
   }
 
   /**
+   * Tests that a failure with no parent turn is not recorded as a message.
+   *
+   * With no parent, no sub-agent transcript is recorded at all (the tagging
+   * in runSubAgent() is skipped), so recording the error would create a
+   * dangling root-level row in the conversation tree. The failure must still
+   * be streamed and reflected in the plan.
+   */
+  public function testParentlessFailureIsNotRecorded(): void {
+    $recorder = $this->createMock(MessageRecorderInterface::class);
+    $recorder->expects($this->never())->method('recordError');
+
+    $stream = $this->createMock(UiMessageStreamInterface::class);
+    $stream->expects($this->once())->method('error');
+
+    $plans = [];
+    $stream->method('customEvent')
+      ->willReturnCallback(function (string $name, $data) use (&$plans): void {
+        if ($name === 'data-plan') {
+          $plans[] = $data;
+        }
+      });
+
+    $orchestrator = $this->orchestrator(
+      $recorder,
+      $stream,
+      AiAgentInterface::JOB_NOT_SOLVABLE,
+    );
+    $orchestrator->run(
+      $stream, [], 'node', 'oe_news',
+      $this->createMock(EntityInterface::class),
+      NULL,
+    );
+
+    $final = end($plans);
+    $this->assertSame('error', $final[0]['status'],
+      'The failure is still reported in the plan without a parent.');
+  }
+
+  /**
    * Builds an orchestrator whose single sub-agent behaves as configured.
    *
    * @param \Drupal\oe_ai_assistant\Service\MessageRecorderInterface $recorder

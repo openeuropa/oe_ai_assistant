@@ -114,7 +114,12 @@ class DraftingOrchestrator implements DraftingOrchestratorInterface {
         // No response event fires for a group that produced nothing, so record
         // the error as a turn under the draft_content parent to keep the
         // transcript complete. Every failure mode reaches this one path.
-        $this->messageRecorder->recordError($host, $e->getMessage(), $stepId, $parent);
+        // Without a parent no sub-agent transcript is being recorded (see
+        // runSubAgent()), and an error row recorded anyway would dangle at the
+        // root of the tree; skip it and rely on the log and the stream.
+        if ($parent !== NULL) {
+          $this->messageRecorder->recordError($host, $e->getMessage(), $stepId, $parent);
+        }
         $plan[$index]['status'] = 'error';
         $stream->customEvent('data-plan', $plan);
         $stream->error($e->getMessage(), $stepId);
