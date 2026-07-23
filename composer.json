@@ -5,21 +5,20 @@
     "license": "EUPL-1.2",
     "minimum-stability": "dev",
     "prefer-stable": true,
-    "repositories": {
-        "drupal": {
+    "repositories": [
+        {
             "type": "composer",
             "url": "https://packages.drupal.org/8"
         }
-    },
+    ],
     "require": {
         "cortexphp/json-repair": "^0.4",
-        "cweagans/composer-patches": "^1 || ^2",
         "drupal/ai": "^1.3",
         "drupal/ai_agents": "^1.3@beta",
-        "drupal/ai_provider_mistral": "^1.1@RC",
         "justinrainbow/json-schema": "^5.0 || ^6.0"
     },
     "require-dev": {
+        "openeuropa/oe_ai_provider_gpt_at_ec": "^1.0.0-alpha",
         "composer/installers": "^2.0",
         "drupal/ai_provider_openai": "^1.2",
         "drupal/core-composer-scaffold": "^11",
@@ -43,13 +42,6 @@
         }
     },
     "extra": {
-        "composer-exit-on-patch-failure": true,
-        "enable-patching": true,
-        "patches": {
-            "drupal/ai_provider_mistral": {
-                "Return proper ToolsFunctionOutput objects from streaming tool calls": "patches/ai-provider-mistral-streaming-tool-calls.patch"
-            }
-        },
         "installer-paths": {
             "web/core": ["type:drupal-core"],
             "web/profiles/contrib/{$name}": ["type:drupal-profile"],
@@ -70,8 +62,9 @@
             "dealerdirect/phpcodesniffer-composer-installer": true,
             "drupal/core-composer-scaffold": true,
             "drupal/core-project-message": true,
-            "phpstan/extension-installer": true,
             "php-http/discovery": true,
+            "phpstan/extension-installer": true,
+            "symfony/runtime": true,
             "tbachert/spi": true
         }
     }
