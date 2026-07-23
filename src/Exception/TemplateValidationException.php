@@ -5,14 +5,14 @@ declare(strict_types=1);
 namespace Drupal\oe_ai_assistant\Exception;
 
 use Drupal\Core\Entity\EntityStorageException;
-use Drupal\oe_ai_assistant\TemplateValidationResult;
+use Symfony\Component\Validator\ConstraintViolationListInterface;
 
 /**
  * Thrown by AiDraftingTemplate::preSave() when template validation fails.
  *
  * Extends EntityStorageException so it is caught by any code that already
  * handles storage-layer failures, while also carrying the structured
- * TemplateValidationResult for callers that need the individual error messages.
+ * constraint violation list for callers that need individual errors.
  */
 class TemplateValidationException extends EntityStorageException {
 
@@ -21,15 +21,18 @@ class TemplateValidationException extends EntityStorageException {
    *
    * @param string $templateId
    *   The machine name of the template that failed validation.
-   * @param \Drupal\oe_ai_assistant\TemplateValidationResult $result
-   *   The validation result carrying the individual error messages.
+   * @param \Symfony\Component\Validator\ConstraintViolationListInterface $result
+   *   The validation violations.
    */
   public function __construct(
     private readonly string $templateId,
-    private readonly TemplateValidationResult $result,
+    private readonly ConstraintViolationListInterface $result,
   ) {
-    $errors = implode("\n- ", $result->getErrors());
-    parent::__construct("AI drafting template '$templateId' is invalid:\n- $errors");
+    $errors = [];
+    foreach ($result as $violation) {
+      $errors[] = (string) $violation->getMessage();
+    }
+    parent::__construct("AI drafting template '$templateId' is invalid:\n- " . implode("\n- ", $errors));
   }
 
   /**
@@ -40,9 +43,9 @@ class TemplateValidationException extends EntityStorageException {
   }
 
   /**
-   * Returns the structured validation result with individual error messages.
+   * Returns the structured validation result with individual violations.
    */
-  public function getResult(): TemplateValidationResult {
+  public function getResult(): ConstraintViolationListInterface {
     return $this->result;
   }
 
