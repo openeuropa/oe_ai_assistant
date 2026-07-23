@@ -99,7 +99,7 @@ final class AiDraftingTemplateForm extends EntityForm {
       '#rows' => 6,
       '#default_value' => $this->arrayToYaml($template->getDefaults()),
       '#description' => $this->t(
-        'YAML map of default field values applied by the orchestrator. Use <code>__NOW__</code> for the current date/time.'
+        'YAML map of default field values applied by the orchestrator. Each field default requires <code>default_value</code>. Use <code>__NOW__</code> for the current date/time.'
       ),
     ];
 
@@ -138,14 +138,17 @@ final class AiDraftingTemplateForm extends EntityForm {
 
     // Run structural validation on the fully-built entity.
     $result = $this->entity->validate();
-    foreach ($result->getErrors('content_type') as $error) {
-      $form_state->setErrorByName('content_type', $error);
-    }
-    foreach ($result->getErrors('defaults') as $error) {
-      $form_state->setErrorByName('defaults_yaml', $error);
-    }
-    foreach ($result->getErrors('fields') as $error) {
-      $form_state->setErrorByName('fields_yaml', $error);
+    foreach ($result as $violation) {
+      $propertyPath = $violation->getPropertyPath();
+      $element = match (TRUE) {
+        str_starts_with($propertyPath, 'content_type') => 'content_type',
+        str_starts_with($propertyPath, 'defaults') => 'defaults_yaml',
+        str_starts_with($propertyPath, 'fields') => 'fields_yaml',
+        default => '',
+      };
+      if ($element !== '') {
+        $form_state->setErrorByName($element, $violation->getMessage());
+      }
     }
   }
 

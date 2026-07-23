@@ -1,18 +1,6 @@
 {
-    "_hash": "51d90dba625372b2af33776721bd15261ee62d2258ec10ef1ffe90cc47a1e22d",
+    "_hash": "2ea8c28291b0967ba6ef00f901bb22b0adddd09dd26261e6e6a0eee5f0b4ba10",
     "patches": {
-        "drupal/ai_provider_mistral": [
-            {
-                "package": "drupal/ai_provider_mistral",
-                "description": "Return proper ToolsFunctionOutput objects from streaming tool calls",
-                "url": "patches/ai-provider-mistral-streaming-tool-calls.patch",
-                "sha256": "2b31e5f7ca8e93d9217c28af6a75a72b6a63d97e4c746c8312c5fa04d03d49d1",
-                "depth": 1,
-                "extra": {
-                    "provenance": "root"
-                }
-            }
-        ],
         "drupal/ai_agents": [
             {
                 "package": "drupal/ai_agents",
