@@ -51,6 +51,16 @@ class DraftingOrchestratorFailureTest extends TestCase {
     $stream = $this->createMock(UiMessageStreamInterface::class);
     $stream->expects($this->once())->method('error');
 
+    // The failure must also land in the log, matching what the main tool
+    // loop gets from the respond() catch-all.
+    $logger = $this->createMock(LoggerInterface::class);
+    $logger->expects($this->once())
+      ->method('error')
+      ->with(
+        'Sub-agent @step failed: @error',
+        $this->callback(fn(array $context): bool => $context['@step'] === 'main_fields'),
+      );
+
     $plans = [];
     $stream->method('customEvent')
       ->willReturnCallback(function (string $name, $data) use (&$plans): void {
@@ -63,6 +73,7 @@ class DraftingOrchestratorFailureTest extends TestCase {
       $recorder,
       $stream,
       AiAgentInterface::JOB_NOT_SOLVABLE,
+      logger: $logger,
     );
     $result = $orchestrator->run(
       $stream, [], 'node', 'oe_news', $host, $parent,
@@ -188,6 +199,8 @@ class DraftingOrchestratorFailureTest extends TestCase {
    *   The verdict the stubbed agent returns.
    * @param string $answer
    *   The text the stubbed agent resolves to when solvable.
+   * @param \Psr\Log\LoggerInterface|null $logger
+   *   A logger to assert against, or NULL for a plain mock.
    *
    * @return \Drupal\oe_ai_assistant\Service\DraftingOrchestrator
    *   The orchestrator under test, wired to a single "main_fields" group.
@@ -197,6 +210,7 @@ class DraftingOrchestratorFailureTest extends TestCase {
     UiMessageStreamInterface $stream,
     int $solvability,
     string $answer = '',
+    ?LoggerInterface $logger = NULL,
   ): DraftingOrchestrator {
     $composer = $this->createMock(EntityJsonSchemaComposer::class);
     $composer->method('splitSchemaIntoGroups')->willReturn([
@@ -220,7 +234,7 @@ class DraftingOrchestratorFailureTest extends TestCase {
     return new DraftingOrchestrator(
       $composer,
       $manager,
-      $this->createMock(LoggerInterface::class),
+      $logger ?? $this->createMock(LoggerInterface::class),
       $recorder,
     );
   }
