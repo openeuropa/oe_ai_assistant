@@ -340,11 +340,8 @@ export interface components {
             previewUrl: string;
         };
         DraftingSetToneRequest: {
-            /** @description Selected drafting tone to set. */
-            context: {
-                /** @description Selected tone taxonomy term ID. */
-                toneId: string;
-            };
+            /** @description Selected tone taxonomy term ID. */
+            toneId: string;
         };
         DraftingSetToneResponse: {
             /** @enum {string} */

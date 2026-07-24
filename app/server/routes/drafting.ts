@@ -185,19 +185,19 @@ export function createDraftingRouter(service: DraftingService): Router {
    * exercised locally while the backend implementation evolves separately.
    */
   router.post("/set-tone", (req, res) => {
-    const { context } = req.body as {
-      context?: { toneId?: string };
+    const { toneId } = req.body as {
+      toneId?: string;
     };
 
-    if (!context?.toneId) {
+    if (!toneId) {
       res.status(400).json({
         code: "bad_request",
-        message: "context.toneId is required",
+        message: "toneId is required",
       });
       return;
     }
 
-    console.info("[drafting] set-tone", context);
+    console.info("[drafting] set-tone", { toneId });
     res.json({ status: "ok" });
   });
 

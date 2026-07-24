@@ -73,17 +73,11 @@ DraftingSaveResponse:
 DraftingSetToneRequest:
   type: object
   required:
-    - context
+    - toneId
   properties:
-    context:
-      type: object
-      description: Selected drafting tone to set.
-      required:
-        - toneId
-      properties:
-        toneId:
-          type: string
-          description: Selected tone taxonomy term ID.
+    toneId:
+      type: string
+      description: Selected tone taxonomy term ID.
 
 DraftingSetToneResponse:
   type: object
