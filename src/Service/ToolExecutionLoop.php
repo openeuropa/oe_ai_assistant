@@ -55,6 +55,7 @@ class ToolExecutionLoop implements ToolExecutionLoopInterface {
     array $terminalToolNames = [],
     array $tags = [],
     array $fixedToolContexts = [],
+    ?callable $recordTurn = NULL,
   ): ToolLoopResult {
 
     // Remove caller-fixed properties from the tool definitions sent
@@ -88,12 +89,21 @@ class ToolExecutionLoop implements ToolExecutionLoopInterface {
         if ($responseText !== '') {
           $history[] = new ChatMessage('assistant', $responseText);
         }
+        // A text turn carries no tool results.
+        if ($recordTurn) {
+          $recordTurn($chatOutput, []);
+        }
         return new ToolLoopResult('stop', '', $responseText);
       }
 
       // Check for terminal tools.
       foreach ($toolCalls as $tool) {
         if (in_array($tool->getName(), $terminalToolNames, TRUE)) {
+          // The caller handles the terminal tool; record the turn that
+          // requested it so its telemetry is not lost.
+          if ($recordTurn) {
+            $recordTurn($chatOutput, []);
+          }
           return new ToolLoopResult(
             'tool_calls',
             $tool->getName(),
@@ -106,6 +116,7 @@ class ToolExecutionLoop implements ToolExecutionLoopInterface {
       $assistantMsg->setTools($toolCalls);
       $history[] = $assistantMsg;
 
+      $iterationToolResults = [];
       foreach ($toolCalls as $toolCall) {
         $result = $this->toolExecutor->execute(
           $toolCall,
@@ -114,6 +125,12 @@ class ToolExecutionLoop implements ToolExecutionLoopInterface {
         $toolResultMsg = new ChatMessage('tool', $result);
         $toolResultMsg->setToolsId($toolCall->getToolId());
         $history[] = $toolResultMsg;
+        $iterationToolResults[] = $toolResultMsg;
+      }
+
+      // Record the assistant turn and the tool results it produced.
+      if ($recordTurn) {
+        $recordTurn($chatOutput, $iterationToolResults);
       }
     }
 

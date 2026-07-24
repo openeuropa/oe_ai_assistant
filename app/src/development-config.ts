@@ -9,8 +9,9 @@ export const developmentConfig = {
     drafting: {
       entityTypeId: "node",
       bundle: "oe_news",
-      context: {
-        tone: [
+      tone: {
+        enabled: true,
+        options: [
           {
             id: "clear-professional",
             label: "Clear and professional",
@@ -22,6 +23,32 @@ export const developmentConfig = {
             description: "Use an institutional, measured voice.",
           },
         ],
+      },
+      templates: {
+        enabled: true,
+        options: [
+          {
+            id: "news-article",
+            label: "News article",
+            description:
+              "Structured article with headline, summary, body, and related links.",
+          },
+          {
+            id: "press-release",
+            label: "Press release",
+            description:
+              "Announcement-focused structure with key messages and media angle.",
+          },
+          {
+            id: "policy-brief",
+            label: "Policy brief",
+            description:
+              "Short explanatory format focused on context, impact, and next steps.",
+          },
+        ],
+      },
+      documents: {
+        enabled: true,
       },
     },
   },

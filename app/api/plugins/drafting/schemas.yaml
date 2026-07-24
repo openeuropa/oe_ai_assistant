@@ -8,54 +8,35 @@ DraftingChatRequest:
   type: object
   required:
     - message
-    - entityTypeId
-    - bundle
-    - schema
+    - sessionId
   properties:
     message:
       type: string
       description: The user's drafting prompt or instruction.
-    threadId:
+    sessionId:
       type: string
       description: >
-        Optional thread ID for conversation continuity.
-        Omit to start a new conversation.
-    entityTypeId:
-      type: string
-      description: The entity type ID (e.g. "node").
-    bundle:
-      type: string
-      description: The content type machine name (e.g. "oe_news").
-    schema:
-      type: object
-      description: >
-        The full form schema for the target content type,
-        as returned by GET /content-schema/{entityTypeId}/{bundle}?mode=form.
-    context:
-      type: object
-      description: Selected drafting editorial context.
-      properties:
-        toneId:
-          type: string
-          description: Selected tone taxonomy term ID.
+        The editorial session that hosts the conversation. The backend
+        derives the target content type and access from the session and
+        persists every turn against it.
 
 DraftingResetRequest:
   type: object
   required:
-    - threadId
+    - sessionId
   properties:
-    threadId:
+    sessionId:
       type: string
-      description: The thread ID of the conversation to reset.
+      description: The editorial session whose conversation to reset.
 
 DraftingResetResponse:
   type: object
   required:
-    - threadId
+    - status
   properties:
-    threadId:
+    status:
       type: string
-      description: The new thread ID for the reset conversation.
+      description: Confirmation status (e.g. "ok").
 
 DraftingSaveRequest:
   type: object

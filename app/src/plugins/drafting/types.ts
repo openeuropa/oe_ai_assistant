@@ -7,14 +7,10 @@
  */
 
 /** Request body for the drafting chat endpoint. */
-export interface DraftingEditorialContext {
-  toneId?: string;
-}
-
 export interface DraftingChatRequest {
   message: string;
-  threadId?: string;
-  context?: DraftingEditorialContext;
+  /** The editorial session that hosts the conversation. */
+  sessionId: string;
 }
 
 /** Confirmed editorial guidance saved for the drafting session. */
@@ -32,21 +28,32 @@ export interface DraftingSetToneResponse {
   status: "ok";
 }
 
-export interface DraftingContextOption {
+/** A selectable option (tone, template, ...) provided by the host config. */
+export interface DraftingSelectOption {
   id: string;
   label: string;
   description: string;
 }
 
+/** A composer panel gated by the host, with its selectable options. */
+export interface DraftingSelectPanelConfig {
+  /** Whether the panel's tab is shown. */
+  enabled?: boolean;
+  options?: DraftingSelectOption[];
+}
+
 export interface DraftingPluginConfig {
   entityTypeId?: string;
   bundle?: string;
-  context?: {
-    tone?: DraftingContextOption[];
-  };
+  /** Tone panel: gate + available tones. */
+  tone?: DraftingSelectPanelConfig;
+  /** Template panel: gate + available templates. */
+  templates?: DraftingSelectPanelConfig;
+  /** Documents panel: gate only (upload based). */
+  documents?: { enabled?: boolean };
 }
 
 /** Response body for the drafting reset endpoint. */
 export interface DraftingResetResponse {
-  threadId: string;
+  status: string;
 }

@@ -33,7 +33,7 @@ reset:
             $ref: "../../openapi.yaml#/components/schemas/DraftingResetRequest"
     responses:
       "200":
-        description: New thread ID
+        description: Reset confirmation
         content:
           application/json:
             schema:

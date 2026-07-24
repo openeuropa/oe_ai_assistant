@@ -71,6 +71,21 @@ interface UiMessageStreamInterface {
   public function customEvent(string $type, array $data): void;
 
   /**
+   * Emits a completed tool call with its result.
+   *
+   * Renders as a tool call part in the chat (start, args, end, result), so a
+   * caller-handled tool (e.g. draft_content) leaves a visible trace inline.
+   *
+   * @param string $toolName
+   *   The tool name.
+   * @param array $args
+   *   The tool arguments; serialized to JSON.
+   * @param array $result
+   *   The tool result payload.
+   */
+  public function toolCall(string $toolName, array $args, array $result): void;
+
+  /**
    * Emits an error event.
    *
    * @param string $errorText

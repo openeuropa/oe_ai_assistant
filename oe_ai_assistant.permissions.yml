@@ -11,3 +11,20 @@ view_update own sessions:
   description: 'Access overview page of AI editorial sessions and view/update your own session.'
 administer ai_drafting_template:
   title: 'Administer ai drafting template'
+
+administer ai conversation messages:
+  title: 'Administer AI conversation messages'
+  description: 'View, create, edit, and delete any AI conversation message.'
+
+access ai conversation message overview:
+  title: 'Access the AI conversation message overview'
+  description: 'View the list of AI conversation messages.'
+
+create ai conversation message:
+  title: 'Create AI conversation messages'
+
+edit ai conversation message:
+  title: 'Edit AI conversation messages'
+
+delete ai conversation message:
+  title: 'Delete AI conversation messages'

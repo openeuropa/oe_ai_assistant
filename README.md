@@ -63,7 +63,7 @@ ddev start
 ddev rebuild
 ```
 
-### Mistral API key
+### AI provider API key
 
 Copy the environment template and add your API key:
 
@@ -71,11 +71,14 @@ Copy the environment template and add your API key:
 cp .ddev/.env.dist .ddev/.env
 ```
 
-Edit `.ddev/.env` and set `DRUPAL_MISTRAL_API_KEY` to your Mistral API key, then restart:
+Edit `.ddev/.env` and set `KEY_AI_GPT_AT_EC` to your GPT@EC API key, then restart:
 
 ```bash
 ddev restart
 ```
+
+GPT@EC is the default Drupal provider. You can adjust it with
+`AI_PROVIDER`, `AI_MODEL`, and `AI_EMBED_MODEL` in `.ddev/.env`.
 
 This DDEV key is needed for the Drupal-backed integration flow. The standalone
 React app mock workflow does not require provider credentials.
@@ -104,7 +107,7 @@ The `oe_ai_assistant_test` module (in `tests/modules/`) provides test content ty
 - **oe_contact** -- contact content type for inline entity reference testing
 - **text_block** / **quote_block** -- paragraph types for paragraph field testing
 
-It also configures Mistral as the default LLM provider and sets up the API key via the Key module.
+It also configures GPT@EC as the default LLM provider and sets up the API key via the Key module.
 
 ### Running tests
 

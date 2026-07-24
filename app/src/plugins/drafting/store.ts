@@ -1,8 +1,9 @@
 /**
  * Zustand store slice for the drafting plugin.
  *
- * Tracks the current thread ID, orchestration plan steps,
- * and raw drafted field values from the AI agent.
+ * Tracks the orchestration plan steps and raw drafted field values
+ * from the AI agent. The conversation itself is persisted server
+ * side against the editorial session, so nothing here is persisted.
  */
 
 import type { PluginSliceConfig } from "@/store/plugin-slice-config";
@@ -23,8 +24,6 @@ export interface PlanStep {
 }
 
 export interface DraftingSliceState {
-  /** Thread ID for conversation continuity. */
-  threadId: string | null;
   /** Orchestration plan steps (transient). */
   plan: PlanStep[];
   /** Raw drafted field values keyed by field machine name. */
@@ -35,17 +34,13 @@ export interface DraftingSliceState {
 
 export const draftingSliceConfig: PluginSliceConfig<DraftingSliceState> = {
   initialState: {
-    threadId: null,
     plan: [],
     draftedFields: {},
     generationSettings: null,
   },
-  /** Persist conversation identity and confirmed editorial guidance. */
-  partialize: (state) =>
-    ({
-      threadId: state.threadId,
-      generationSettings: state.generationSettings,
-    }) as unknown as Partial<DraftingSliceState>,
+  // Nothing is persisted client side. The confirmed tone is rehydrated
+  // from the backend on mount, and the conversation lives server side.
+  partialize: () => ({}) as Partial<DraftingSliceState>,
 };
 
 /** Typed read hook for React components. */

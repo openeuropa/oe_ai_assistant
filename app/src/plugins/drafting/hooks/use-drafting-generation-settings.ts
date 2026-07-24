@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { getConfig } from "@/config";
-import { setDraftingTone } from "../api/drafting-api";
+import { fetchDraftingTone, setDraftingTone } from "../api/drafting-api";
 import type {
   GenerationSettingsDraft,
   GenerationSettingsOption,
@@ -37,8 +37,11 @@ export function useDraftingGenerationSettings() {
   const [error, setError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const draftingConfig = getConfig().pluginConfig.drafting ?? {};
-  const context = draftingConfig.context as Record<string, unknown> | undefined;
-  const toneOptions = getGenerationSettingsOptions(context?.tone);
+  const toneConfig = draftingConfig.tone as
+    | { enabled?: boolean; options?: unknown }
+    | undefined;
+  const enabled = toneConfig?.enabled ?? false;
+  const toneOptions = getGenerationSettingsOptions(toneConfig?.options);
 
   // With no placeholder option in the select, the first backend-provided tone
   // is the visible default until the editor saves a different tone.
@@ -52,6 +55,21 @@ export function useDraftingGenerationSettings() {
   );
 
   useEffect(() => {
+    // Rehydrate the confirmed tone from the backend on mount so the selector
+    // reflects the tone currently saved for the session. Nothing is persisted
+    // client side, so the server is the single source of truth.
+    let active = true;
+    fetchDraftingTone().then((settings) => {
+      if (active) {
+        setDraftingState({ generationSettings: settings });
+      }
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
     // Keep the controlled select in sync when saved state is restored from the
     // scoped store or when the host-provided tone config becomes available.
     setValues({ toneId: defaultToneId });
@@ -59,6 +77,13 @@ export function useDraftingGenerationSettings() {
 
   function updateValues(nextValues: GenerationSettingsDraft) {
     setValues(nextValues);
+    setError(null);
+  }
+
+  function discardChanges() {
+    // Restore the controlled selection to the confirmed tone, dropping any
+    // pending local change. Used when the editor cancels the panel.
+    setValues({ toneId: defaultToneId });
     setError(null);
   }
 
@@ -91,6 +116,8 @@ export function useDraftingGenerationSettings() {
   }
 
   return {
+    enabled,
+    discardChanges,
     error,
     hasChanges,
     isSaving,

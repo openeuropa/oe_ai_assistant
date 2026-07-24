@@ -75,3 +75,36 @@ ContentType:
       description: Ordered list of fields the editor can fill.
       items:
         $ref: "#/ContentTypeField"
+
+GetMessagesRequest:
+  type: object
+  description: >
+    Load the persisted conversation transcript for an editorial session.
+    Available on every plugin endpoint under /plugins/{pluginId}/get-messages.
+  required:
+    - sessionId
+  properties:
+    sessionId:
+      type: string
+      description: The editorial session whose transcript to load.
+
+GetMessagesResponse:
+  type: object
+  required:
+    - messages
+  properties:
+    messages:
+      type: array
+      description: The user-visible transcript, oldest first.
+      items:
+        type: object
+        required:
+          - role
+          - content
+        properties:
+          role:
+            type: string
+            description: The message role ("user" or "assistant").
+          content:
+            type: string
+            description: The message text.

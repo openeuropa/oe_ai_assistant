@@ -112,7 +112,7 @@ class AiEditorialSessionController extends ControllerBase {
    *   A Drupal render array with mount point, library, and settings.
    */
   private function buildRenderArray(string $sessionId, string $entityTypeId, string $bundle): array {
-    $tones = $this->serializeContextOptions($this->aiEditorialContext->getAvailableTones());
+    $tones = $this->serializeToneOptions($this->aiEditorialContext->getAvailableTones());
     // Build the configuration object that bootstraps the React app.
     // This data is serialised into window.drupalSettings.oeAiAssistant
     // and read by the React entry point before the first render.
@@ -143,8 +143,19 @@ class AiEditorialSessionController extends ControllerBase {
         'drafting' => [
           'entityTypeId' => $entityTypeId,
           'bundle' => $bundle,
-          'context' => [
-            'tone' => $tones,
+          // Composer panels. Each is gated by an 'enabled' flag so the host
+          // controls which tabs appear. Tone options come from the tone
+          // vocabulary; templates and documents have no backend yet.
+          'tone' => [
+            'enabled' => TRUE,
+            'options' => $tones,
+          ],
+          'templates' => [
+            'enabled' => FALSE,
+            'options' => [],
+          ],
+          'documents' => [
+            'enabled' => FALSE,
           ],
         ],
       ],
@@ -180,15 +191,15 @@ class AiEditorialSessionController extends ControllerBase {
   }
 
   /**
-   * Serializes internal prompt-ready context options for frontend bootstrap.
+   * Serializes internal prompt-ready tone options for frontend bootstrap.
    *
    * @param array<int, array{id: string, label: string, description: string, oe_ai_prompt: string}> $options
    *   The prompt-ready service options.
    *
    * @return array<int, array{id: string, label: string, description: string}>
-   *   Frontend-safe context options.
+   *   Frontend-safe tone options.
    */
-  private function serializeContextOptions(array $options): array {
+  private function serializeToneOptions(array $options): array {
     return array_map(
       static fn (array $option): array => [
         'id' => $option['id'],
