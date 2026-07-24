@@ -6,7 +6,9 @@ namespace Drupal\Tests\oe_ai_assistant\Unit\Streaming;
 
 use Drupal\ai\Service\PromptCodeBlockExtractor\PromptCodeBlockExtractor;
 use Drupal\oe_ai_assistant\Service\UiMessageStream;
+use Drupal\oe_ai_assistant\Service\UiMessageStreamInterface;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 
 /**
@@ -170,6 +172,65 @@ class UiMessageStreamTest extends TestCase {
     $this->assertEquals('main_fields', $events[0]['stepId']);
     $this->assertEquals('finish-step', $events[1]['type']);
     $this->assertEquals('main_fields', $events[1]['stepId']);
+  }
+
+  /**
+   * Tests that a callback failure is logged and degraded into an error event.
+   *
+   * A provider failure in the main tool loop is not caught anywhere below
+   * respond(): it must reach this catch-all, which logs the real cause
+   * server-side and emits only a generic error frame to the open SSE stream.
+   *
+   * Not covered here: that a real provider failure actually propagates up to
+   * respond() uncaught (would need a kernel test with a failing provider),
+   * and the sendContent() buffer clearing, which is bypassed below.
+   *
+   * @covers ::respond
+   */
+  public function testRespondLogsAndDegradesOnCallbackFailure(): void {
+    $logger = $this->createMock(LoggerInterface::class);
+    $logger->expects($this->once())
+      ->method('error')
+      ->with(
+        'Streaming callback failed: @message',
+        ['@message' => 'Provider refused: quota exceeded'],
+      );
+
+    $stream = new UiMessageStream(new PromptCodeBlockExtractor(), $logger);
+    $response = $stream->respond(
+      function (UiMessageStreamInterface $stream): void {
+        throw new \RuntimeException('Provider refused: quota exceeded');
+      }
+    );
+
+    // Invoke the registered callback directly: sendContent() would first
+    // close every output buffer (see AiStreamedResponse::sendContent()),
+    // including the one capturing the SSE output here. The catch-all under
+    // test lives inside the callback respond() registers.
+    ob_start();
+    ($response->getCallback())();
+    $output = ob_get_clean();
+
+    // The internal failure detail must never leak into the stream.
+    $this->assertStringNotContainsString('quota exceeded', $output);
+
+    $frames = array_filter(explode("\n\n", trim($output)));
+    $events = [];
+    foreach ($frames as $frame) {
+      $data = str_replace('data: ', '', trim($frame));
+      if ($data === '[DONE]') {
+        continue;
+      }
+      $events[] = json_decode($data, TRUE);
+    }
+
+    $this->assertEquals('error', $events[0]['type']);
+    $this->assertEquals(
+      'The assistant request failed. Please try again.',
+      $events[0]['errorText'],
+    );
+    $this->assertEquals('finish', $events[1]['type']);
+    $this->assertEquals('error', $events[1]['finishReason']);
   }
 
   /**

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { getConfig } from "@/config";
-import { setDraftingTone } from "../api/drafting-api";
+import { fetchDraftingTone, setDraftingTone } from "../api/drafting-api";
 import type {
   GenerationSettingsDraft,
   GenerationSettingsOption,
@@ -50,6 +50,21 @@ export function useDraftingGenerationSettings() {
   const selectedTone = toneOptions.find(
     (option) => option.id === values.toneId,
   );
+
+  useEffect(() => {
+    // Rehydrate the confirmed tone from the backend on mount so the selector
+    // reflects the tone currently saved for the session. Nothing is persisted
+    // client side, so the server is the single source of truth.
+    let active = true;
+    fetchDraftingTone().then((settings) => {
+      if (active) {
+        setDraftingState({ generationSettings: settings });
+      }
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   useEffect(() => {
     // Keep the controlled select in sync when saved state is restored from the

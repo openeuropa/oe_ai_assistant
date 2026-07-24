@@ -91,3 +91,29 @@ contentType:
               $ref: "../openapi.yaml#/components/schemas/ApiError"
       "403":
         $ref: "../openapi.yaml#/components/responses/Forbidden"
+
+# Load the persisted conversation transcript for an editorial session.
+#
+# get-messages is a generic action provided by the base plugin, so it is
+# available under any plugin id; it is scoped to a session, not to a specific
+# plugin.
+getMessages:
+  post:
+    operationId: postGetMessages
+    summary: Load the persisted conversation transcript for a session
+    tags: [Sessions]
+    parameters:
+      - $ref: "../openapi.yaml#/components/parameters/PluginId"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: "../openapi.yaml#/components/schemas/GetMessagesRequest"
+    responses:
+      "200":
+        description: The user-visible transcript
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/GetMessagesResponse"

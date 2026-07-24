@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Drupal\oe_ai_assistant;
 
 use Drupal\Core\Config\Entity\ConfigEntityInterface;
+use Symfony\Component\Validator\ConstraintViolationListInterface;
 
 /**
  * Provides an interface defining an AI drafting template config entity.
@@ -14,15 +15,16 @@ interface AiDraftingTemplateInterface extends ConfigEntityInterface {
   /**
    * Validates the template against Drupal field definitions.
    *
-   * @return \Drupal\oe_ai_assistant\TemplateValidationResult
-   *   The template validation result.
+   * @return \Symfony\Component\Validator\ConstraintViolationListInterface
+   *   The template constraint violations.
    */
-  public function validate(): TemplateValidationResult;
+  public function validate(): ConstraintViolationListInterface;
 
   /**
    * Returns the defaults map with special tokens resolved.
    *
-   * Supported tokens: __NOW__ → current Unix timestamp.
+   * Supported tokens inside default value structures: __NOW__ → current Unix
+   * timestamp.
    *
    * @return array<string, mixed>
    *   The mapping with tokens resolved.

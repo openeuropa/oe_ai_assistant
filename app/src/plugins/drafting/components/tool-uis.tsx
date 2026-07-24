@@ -10,6 +10,7 @@
 
 import { makeAssistantToolUI } from "@assistant-ui/react";
 import { Check, Loader2, PenLine, RefreshCw, Save, X } from "lucide-react";
+import { setDraftingState } from "../store";
 
 /** Shared wrapper for tool call cards in the chat. */
 function ToolCallCard({
@@ -17,18 +18,27 @@ function ToolCallCard({
   label,
   detail,
   status,
+  onClick,
 }: {
   icon: typeof PenLine;
   label: string;
   detail?: string;
   status: { type: string };
+  /** When set, the card becomes a button that runs this on click. */
+  onClick?: () => void;
 }) {
   const isRunning = status.type === "running";
   const isError = status.type === "incomplete" || status.type === "error";
   const isDone = status.type === "complete";
 
-  return (
-    <div className="my-4 flex items-start gap-3 rounded-lg border border-gray-200 bg-white px-3 py-2.5">
+  const base =
+    "my-4 flex w-full items-start gap-3 rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-left";
+  const interactive = onClick
+    ? " cursor-pointer transition-colors hover:border-gray-300 hover:bg-gray-50"
+    : "";
+
+  const body = (
+    <>
       {/* Status icon */}
       <div className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center">
         {isRunning && (
@@ -46,28 +56,47 @@ function ToolCallCard({
         </div>
         {detail && <p className="mt-0.5 text-xs text-gray-400">{detail}</p>}
       </div>
-    </div>
+    </>
   );
+
+  // A clickable card gets button semantics and a hover affordance.
+  if (onClick) {
+    return (
+      <button type="button" className={base + interactive} onClick={onClick}>
+        {body}
+      </button>
+    );
+  }
+  return <div className={base}>{body}</div>;
 }
 
 /** UI for the draft_content tool call. */
 export const DraftContentToolUI = makeAssistantToolUI<
   { fields: Record<string, unknown> },
-  unknown
+  Record<string, unknown>
 >({
   toolName: "draft_content",
-  render: ({ args, status }) => {
-    const fieldCount = args?.fields ? Object.keys(args.fields).length : 0;
+  render: ({ args, result, status }) => {
+    // The drafted fields are the tool result; on a rehydrated trace they also
+    // sit in args.fields. When present, clicking the card shows them again.
+    const fields = result ?? args?.fields ?? {};
+    const fieldCount = Object.keys(fields).length;
+    const clickable = fieldCount > 0;
     return (
       <ToolCallCard
         icon={PenLine}
         label="Drafting content"
         detail={
           fieldCount > 0
-            ? `${fieldCount} field${fieldCount > 1 ? "s" : ""}`
+            ? `${fieldCount} field${fieldCount > 1 ? "s" : ""} - click to view`
             : undefined
         }
         status={status}
+        onClick={
+          clickable
+            ? () => setDraftingState({ draftedFields: fields })
+            : undefined
+        }
       />
     );
   },

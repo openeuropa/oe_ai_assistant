@@ -7,14 +7,10 @@
  */
 
 /** Request body for the drafting chat endpoint. */
-export interface DraftingEditorialContext {
-  toneId?: string;
-}
-
 export interface DraftingChatRequest {
   message: string;
-  threadId?: string;
-  context?: DraftingEditorialContext;
+  /** The editorial session that hosts the conversation. */
+  sessionId: string;
 }
 
 /** Confirmed editorial guidance saved for the drafting session. */
@@ -48,5 +44,5 @@ export interface DraftingPluginConfig {
 
 /** Response body for the drafting reset endpoint. */
 export interface DraftingResetResponse {
-  threadId: string;
+  status: string;
 }

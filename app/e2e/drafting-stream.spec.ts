@@ -82,6 +82,15 @@ async function mockApiRoutes(page: import("@playwright/test").Page) {
     }),
   );
 
+  // Mock the transcript hydration the runtime calls on mount.
+  await page.route("**/api/plugins/drafting/get-messages", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ messages: [] }),
+    }),
+  );
+
   // Mock drafting chat endpoint with SSE response.
   await page.route("**/api/plugins/drafting/chat", (route) =>
     route.fulfill({
@@ -152,6 +161,15 @@ test.describe("Drafting text streaming", () => {
         status: 200,
         contentType: "application/json",
         body: JSON.stringify(MOCK_CONTENT_SCHEMA),
+      }),
+    );
+
+    // Mock the transcript hydration the runtime calls on mount.
+    await page.route("**/api/plugins/drafting/get-messages", (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ messages: [] }),
       }),
     );
 

@@ -8,14 +8,15 @@ use Drupal\Component\Datetime\TimeInterface;
 use Drupal\Core\Config\Entity\ConfigEntityBase;
 use Drupal\Core\Entity\Attribute\ConfigEntityType;
 use Drupal\Core\Entity\EntityDeleteForm;
+use Drupal\Core\Entity\EntityFieldManagerInterface;
 use Drupal\Core\Entity\EntityStorageInterface;
-use Drupal\Core\Field\FieldDefinitionInterface;
 use Drupal\Core\StringTranslation\TranslatableMarkup;
 use Drupal\oe_ai_assistant\AiDraftingTemplateInterface;
 use Drupal\oe_ai_assistant\AiDraftingTemplateListBuilder;
 use Drupal\oe_ai_assistant\Exception\TemplateValidationException;
 use Drupal\oe_ai_assistant\Form\AiDraftingTemplateForm;
-use Drupal\oe_ai_assistant\TemplateValidationResult;
+use Symfony\Component\Validator\ConstraintViolation;
+use Symfony\Component\Validator\ConstraintViolationListInterface;
 
 /**
  * Defines the AI Drafting Template config entity type.
@@ -130,241 +131,163 @@ final class AiDraftingTemplate extends ConfigEntityBase implements AiDraftingTem
    * {@inheritdoc}
    */
   public function resolveDefaults(): array {
-    /** @var \Drupal\Component\Datetime\TimeInterface $time */
     $time = \Drupal::service(TimeInterface::class);
-    $now = $time->getRequestTime();
-    return array_map(
-      static fn($value) => $value === '__NOW__' ? $now : $value,
-      $this->defaults,
-    );
+
+    return $this->resolveDefaultTokens($this->defaults, $time->getRequestTime());
   }
 
   /**
    * {@inheritdoc}
    */
-  public function validate(): TemplateValidationResult {
-    $result = new TemplateValidationResult();
+  public function validate(): ConstraintViolationListInterface {
+    $violations = $this->getTypedData()->validate();
 
-    $contentType = $this->content_type;
-    if ($contentType === '') {
-      return $result;
+    $this->validateRequiredFields(
+      $violations,
+      'node',
+      $this->content_type,
+      $this->fields,
+      $this->defaults,
+    );
+
+    return $violations;
+  }
+
+  /**
+   * Validates that required fields are covered by fields or defaults.
+   *
+   * @param \Symfony\Component\Validator\ConstraintViolationListInterface $violations
+   *   The validation violation list.
+   * @param string $entity_type_id
+   *   The entity type ID.
+   * @param string $bundle
+   *   The bundle ID.
+   * @param array<string, mixed> $fields
+   *   The template field definitions.
+   * @param array<string, mixed> $defaults
+   *   The template default definitions.
+   * @param string $path_prefix
+   *   The nested property path prefix.
+   */
+  private function validateRequiredFields(
+    ConstraintViolationListInterface $violations,
+    string $entity_type_id,
+    string $bundle,
+    array $fields,
+    array $defaults,
+    string $path_prefix = '',
+  ): void {
+    $entity_field_manager = \Drupal::service(EntityFieldManagerInterface::class);
+
+    $field_definitions = $entity_field_manager
+      ->getFieldDefinitions($entity_type_id, $bundle);
+
+    $defined_field_names = array_unique([
+      ...array_keys($fields),
+      ...array_keys($defaults),
+    ]);
+
+    foreach ($field_definitions as $field_name => $field_definition) {
+      if (
+        !$field_definition->isRequired() ||
+        $field_definition->isComputed() ||
+        $field_definition->isReadOnly() ||
+        !$field_definition->isDisplayConfigurable('form') ||
+        in_array($field_name, $defined_field_names, TRUE)
+      ) {
+        continue;
+      }
+
+      $field_path = $path_prefix === ''
+        ? $field_name
+        : "$path_prefix > fields > $field_name";
+
+      $violations->add(new ConstraintViolation(
+        sprintf(
+          "Required field '%s' is missing from template fields or defaults on content type '%s'",
+          $field_path,
+          $bundle,
+        ),
+        "Required field '@field' is missing from template fields or defaults on content type '@bundle'",
+        [
+          '@field' => $field_path,
+          '@bundle' => $bundle,
+        ],
+        $this,
+        $path_prefix === '' ? "fields.$field_name" : "$path_prefix.fields.$field_name",
+        NULL,
+      ));
     }
 
-    $bundleInfo = \Drupal::service('entity_type.bundle.info');
-    $fieldManager = \Drupal::service('entity_field.manager');
+    foreach ($fields as $field_name => $field_config) {
+      if (
+        empty($field_config['items']) ||
+        !is_array($field_config['items'])
+      ) {
+        continue;
+      }
 
-    $bundles = $bundleInfo->getBundleInfo('node');
-    if (!isset($bundles[$contentType])) {
-      $result->addError("Content type '$contentType' does not exist.", 'content_type');
-      return $result;
+      foreach ($field_config['items'] as $delta => $item) {
+        if (!is_array($item)) {
+          continue;
+        }
+
+        $target_entity_type_id = $item['entity_type'] ?? NULL;
+        $target_bundle = $item['bundle'] ?? NULL;
+
+        if (!$target_entity_type_id || !$target_bundle) {
+          continue;
+        }
+
+        $this->validateRequiredFields(
+          $violations,
+          $target_entity_type_id,
+          $target_bundle,
+          $item['fields'] ?? [],
+          $item['defaults'] ?? [],
+          $path_prefix === ''
+            ? "$field_name.items[$delta]"
+            : "$path_prefix > fields > $field_name.items[$delta]",
+        );
+      }
     }
-
-    $this->validateFieldsAgainstEntityType('node', $contentType, $this->fields, '', $result, $fieldManager, $bundleInfo);
-    $this->validateDefaultsAgainstEntityType('node', $contentType, $this->defaults, $result, $fieldManager);
-
-    return $result;
   }
 
   /**
    * {@inheritdoc}
    */
   public function preSave(EntityStorageInterface $storage): void {
-    parent::preSave($storage);
-
     $result = $this->validate();
 
-    if (!$result->isValid()) {
+    if (count($result) > 0) {
       throw new TemplateValidationException($this->id(), $result);
     }
+
+    parent::preSave($storage);
   }
 
   /**
-   * Validates fields against the definitions of an entity type and bundle.
+   * Recursively replaces supported token strings in default values.
    *
-   * @param string $entityType
-   *   The entity type ID.
-   * @param string $bundle
-   *   The bundle ID.
-   * @param array<string, mixed> $fields
-   *   The field definitions to validate.
-   * @param string $pathPrefix
-   *   The path prefix for nested validation errors.
-   * @param \Drupal\oe_ai_assistant\TemplateValidationResult $result
-   *   The validation result to add errors to.
-   * @param object $fieldManager
-   *   The entity field manager service.
-   * @param object $bundleInfo
-   *   The entity type bundle info service.
+   * @param mixed $value
+   *   The default value or nested value.
+   * @param int $now
+   *   The Unix timestamp to use for __NOW__.
+   *
+   * @return mixed
+   *   The value with tokens resolved.
    */
-  private function validateFieldsAgainstEntityType(
-    string $entityType,
-    string $bundle,
-    array $fields,
-    string $pathPrefix,
-    TemplateValidationResult $result,
-    object $fieldManager,
-    object $bundleInfo,
-  ): void {
-    $definitions = $fieldManager->getFieldDefinitions($entityType, $bundle);
-
-    foreach ($fields as $fieldName => $fieldDef) {
-      $path = $pathPrefix !== '' ? "$pathPrefix > $fieldName" : $fieldName;
-
-      if (!isset($definitions[$fieldName])) {
-        $entityLabel = $entityType === 'node'
-          ? "content type '$bundle'"
-          : "$entityType '$bundle'";
-        $result->addError("Field '$fieldName' does not exist on $entityLabel.");
-        continue;
-      }
-
-      $definition = $definitions[$fieldName];
-
-      if (!array_key_exists('type', $fieldDef)) {
-        continue;
-      }
-
-      $fieldType = $fieldDef['type'];
-      // Reference fields can validate nested item definitions.
-      if (
-        $fieldType === 'entity_reference' ||
-        $fieldType === 'entity_reference_revisions'
-      ) {
-        $this->validateReferenceField($definition, $fieldDef, $path, $result, $fieldManager, $bundleInfo);
-      }
+  private function resolveDefaultTokens(mixed $value, int $now): mixed {
+    if ($value === '__NOW__') {
+      return $now;
     }
-  }
-
-  /**
-   * Validates an entity reference field and its item definitions.
-   *
-   * @param \Drupal\Core\Field\FieldDefinitionInterface $definition
-   *   The field definition.
-   * @param array<string, mixed> $fieldDef
-   *   The template field definition.
-   * @param string $path
-   *   The field path for validation errors.
-   * @param \Drupal\oe_ai_assistant\TemplateValidationResult $result
-   *   The validation result to add errors to.
-   * @param object $fieldManager
-   *   The entity field manager service.
-   * @param object $bundleInfo
-   *   The entity type bundle info service.
-   */
-  private function validateReferenceField(
-    FieldDefinitionInterface $definition,
-    array $fieldDef,
-    string $path,
-    TemplateValidationResult $result,
-    object $fieldManager,
-    object $bundleInfo,
-  ): void {
-    $storageType = $definition->getFieldStorageDefinition()->getType();
-    $expectedStorageType = $fieldDef['type'];
-    $targetType = $definition->getFieldStorageDefinition()->getSetting('target_type');
-
-    // The template type must match the Drupal field storage type.
-    if ($storageType !== $expectedStorageType) {
-      $result->addError("Field '$path' is a '$storageType' field, not '$expectedStorageType'.");
-      return;
+    if (!is_array($value)) {
+      return $value;
     }
-
-    // Respect target bundle restrictions from the field instance.
-    $allowedBundles = $this->getAllowedBundles($definition);
-
-    foreach ($fieldDef['items'] ?? [] as $i => $item) {
-      $itemPath = "$path.items[$i]";
-      $itemEntityType = $item['entity_type'] ?? '';
-      $itemBundle = $item['bundle'] ?? '';
-
-      // Each item must declare the entity type it describes.
-      if ($itemEntityType === '') {
-        $result->addError("Item $itemPath: missing entity_type.");
-        continue;
-      }
-
-      // Items must target the same entity type as the field.
-      if ($itemEntityType !== $targetType) {
-        $result->addError("Item $itemPath: entity_type '$itemEntityType' does not match field target type '$targetType'.");
-        continue;
-      }
-
-      // Each item must declare the bundle it references.
-      if ($itemBundle === '') {
-        $result->addError("Item $itemPath: missing bundle.");
-        continue;
-      }
-
-      // The referenced bundle must exist.
-      if (!isset($bundleInfo->getBundleInfo($itemEntityType)[$itemBundle])) {
-        $result->addError("Item $itemPath: bundle '$itemBundle' does not exist on entity type '$itemEntityType'.");
-        continue;
-      }
-
-      // The field may restrict which bundles are allowed.
-      if ($allowedBundles !== NULL && !in_array($itemBundle, $allowedBundles, TRUE)) {
-        $allowed = implode(', ', $allowedBundles);
-        $result->addError("Item $itemPath: bundle '$itemBundle' is not allowed in field '$path' (allowed: $allowed).");
-        continue;
-      }
-
-      // Nested fields are validated against the referenced bundle.
-      if (!empty($item['fields'])) {
-        $this->validateFieldsAgainstEntityType($itemEntityType, $itemBundle, $item['fields'], "$itemPath > fields", $result, $fieldManager, $bundleInfo);
-      }
-    }
-  }
-
-  /**
-   * Validates default field names against an entity type and bundle.
-   *
-   * @param string $entityType
-   *   The entity type ID.
-   * @param string $bundle
-   *   The bundle ID.
-   * @param array<string, mixed> $defaults
-   *   The default values to validate.
-   * @param \Drupal\oe_ai_assistant\TemplateValidationResult $result
-   *   The validation result to add errors to.
-   * @param object $fieldManager
-   *   The entity field manager service.
-   */
-  private function validateDefaultsAgainstEntityType(
-    string $entityType,
-    string $bundle,
-    array $defaults,
-    TemplateValidationResult $result,
-    object $fieldManager,
-  ): void {
-    if (empty($defaults)) {
-      return;
-    }
-
-    $definitions = $fieldManager->getFieldDefinitions($entityType, $bundle);
-
-    foreach (array_keys($defaults) as $fieldName) {
-      if (!isset($definitions[$fieldName])) {
-        $result->addError("Default field '$fieldName' does not exist on content type '$bundle'.", 'defaults');
-      }
-    }
-  }
-
-  /**
-   * Returns the allowed target bundles for a field, or NULL if unrestricted.
-   *
-   * @param \Drupal\Core\Field\FieldDefinitionInterface $definition
-   *   The field definition.
-   *
-   * @return string[]|null
-   *   The allowed bundle IDs, or NULL when unrestricted.
-   */
-  private function getAllowedBundles(FieldDefinitionInterface $definition): ?array {
-    $handlerSettings = $definition->getSetting('handler_settings') ?? [];
-    $targetBundles = $handlerSettings['target_bundles'] ?? NULL;
-    if ($targetBundles === NULL || $targetBundles === []) {
-      return NULL;
-    }
-    return array_values($targetBundles);
+    return array_map(
+      fn(mixed $item): mixed => $this->resolveDefaultTokens($item, $now),
+      $value,
+    );
   }
 
   /**

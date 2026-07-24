@@ -16,28 +16,150 @@ oe_ai_assistant.ai_editorial_session_type.*:
 oe_ai_assistant.ai_drafting_template.*:
   type: config_entity
   label: 'AI Drafting Template'
+  constraints:
+    FullyValidatable: ~
   mapping:
     id:
-      type: string
+      type: machine_name
       label: ID
     label:
       type: label
       label: Label
     uuid:
-      type: string
+      type: uuid
       label: UUID
     status:
       type: boolean
       label: Status
     description:
-      type: string
+      requiredKey: false
+      type: text
       label: Description
     content_type:
       type: string
       label: 'Content type'
+      constraints:
+        NotBlank: ~
+        EntityBundleExists: node
     fields:
-      type: ignore
+      requiredKey: false
+      type: sequence
       label: 'Field definitions'
+      sequence:
+        type: oe_ai_assistant.ai_drafting_template_node_field
+        label: 'Field definition'
     defaults:
-      type: ignore
+      requiredKey: false
+      type: sequence
       label: 'Default values'
+      sequence:
+        type: oe_ai_assistant.ai_drafting_template_default
+        label: 'Default value'
+
+oe_ai_assistant.ai_drafting_template_node_field:
+  type: mapping
+  label: 'Node field definition'
+  constraints:
+    FullyValidatable: ~
+    EntityFieldExists:
+      entityTypeId: node
+      bundle: '[%parent.%parent.content_type]'
+      field: '[%key]'
+    ReferenceTargetType:
+      sourceEntityTypeId: node
+      sourceBundle: '[%parent.%parent.content_type]'
+  mapping:
+    prompt:
+      requiredKey: false
+      type: text
+      label: 'Prompt'
+    type:
+      requiredKey: false
+      type: string
+      label: 'Field type'
+      constraints:
+        NotBlank:
+          allowNull: true
+    items:
+      requiredKey: false
+      type: sequence
+      label: 'Reference items'
+      sequence:
+        type: oe_ai_assistant.ai_drafting_template_reference_item
+        label: 'Reference item'
+
+oe_ai_assistant.ai_drafting_template_reference_item:
+  type: mapping
+  label: 'Reference item'
+  constraints:
+    FullyValidatable: ~
+  mapping:
+    entity_type:
+      type: string
+      label: 'Entity type'
+      constraints:
+        NotNull: ~
+    bundle:
+      type: string
+      label: 'Bundle'
+      constraints:
+        EntityBundleExists: '%parent.entity_type'
+    prompt:
+      requiredKey: false
+      type: text
+      label: 'Prompt'
+    fields:
+      requiredKey: false
+      type: sequence
+      label: 'Nested field definitions'
+      sequence:
+        type: oe_ai_assistant.ai_drafting_template_reference_field
+        label: 'Field definition'
+
+oe_ai_assistant.ai_drafting_template_reference_field:
+  type: mapping
+  label: 'Reference field definition'
+  constraints:
+    FullyValidatable: ~
+    EntityFieldExists:
+      entityTypeId: '[%parent.%parent.entity_type]'
+      bundle: '[%parent.%parent.bundle]'
+      field: '[%key]'
+    ReferenceTargetType:
+      sourceEntityTypeId: '[%parent.%parent.entity_type]'
+      sourceBundle: '[%parent.%parent.bundle]'
+  mapping:
+    prompt:
+      requiredKey: false
+      type: text
+      label: 'Prompt'
+    type:
+      requiredKey: false
+      type: string
+      label: 'Field type'
+    items:
+      requiredKey: false
+      type: sequence
+      label: 'Reference items'
+      sequence:
+        type: oe_ai_assistant.ai_drafting_template_reference_item
+        label: 'Reference item'
+
+oe_ai_assistant.ai_drafting_template_default:
+  type: mapping
+  label: 'Default value'
+  constraints:
+    FullyValidatable: ~
+    FieldDefaultValue:
+      entityTypeId: node
+      bundle: '[%parent.%parent.content_type]'
+  mapping:
+    default_value:
+      type: sequence
+      label: 'Default values'
+      # Default values use a generic schema because the concrete field.value.* type
+      # cannot be resolved reliably at schema build time. FieldDefaultValue performs
+      # field-specific validation.
+      sequence:
+        type: ignore
+        label: 'Default value'
