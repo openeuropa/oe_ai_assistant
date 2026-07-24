@@ -77,6 +77,13 @@ export function useDraftingGenerationSettings() {
     setError(null);
   }
 
+  function discardChanges() {
+    // Restore the controlled selection to the confirmed tone, dropping any
+    // pending local change. Used when the editor cancels the panel.
+    setValues({ toneId: defaultToneId });
+    setError(null);
+  }
+
   async function submitValues() {
     if (!values.toneId || !hasChanges) {
       return;
@@ -106,6 +113,7 @@ export function useDraftingGenerationSettings() {
   }
 
   return {
+    discardChanges,
     error,
     hasChanges,
     isSaving,

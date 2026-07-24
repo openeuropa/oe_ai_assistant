@@ -8,7 +8,9 @@
  */
 
 import { AssistantRuntimeProvider } from "@assistant-ui/react";
+import { Megaphone } from "lucide-react";
 import { useCallback } from "react";
+import type { PaneTabItem } from "@/components/ui/pane-tabs";
 import { ArtifactPlaceholder } from "./components/artifact-placeholder";
 import { ContentTable } from "./components/content-table";
 import { DraftingThread } from "./components/drafting-thread";
@@ -29,6 +31,35 @@ export default function DraftingRoot() {
   const generationSettings = useDraftingGenerationSettings();
   const runtime = useDraftingRuntime();
   const hasFields = Object.keys(draftedFields).length > 0;
+
+  // Composer tabs. Each opens a pane over the chat. Tone is the first; more
+  // (documents, templates) will be added as they land.
+  const tabs: PaneTabItem[] = [];
+  if (generationSettings.toneOptions.length > 0) {
+    tabs.push({
+      id: "tone",
+      icon: <Megaphone size={16} />,
+      title: "Tone",
+      // The summary reproposes the current selection: the confirmed tone.
+      summary: generationSettings.selectedLabel ?? "Not set",
+      render: (close) => (
+        <GenerationSettingsPanel
+          values={generationSettings.values}
+          toneOptions={generationSettings.toneOptions}
+          onChange={generationSettings.updateValues}
+          onSave={generationSettings.submitValues}
+          onCancel={() => {
+            // Restore the confirmed tone, then close the pane.
+            generationSettings.discardChanges();
+            close();
+          }}
+          hasChanges={generationSettings.hasChanges}
+          isSaving={generationSettings.isSaving}
+          error={generationSettings.error}
+        />
+      ),
+    });
+  }
 
   /** Trigger save via the chat so the agent runs the save tool. */
   const handleSave = useCallback(() => {
@@ -69,27 +100,8 @@ export default function DraftingRoot() {
       <div className="flex min-h-0 flex-1">
         {/* Left panel: chat (always visible) */}
         <div className="flex w-2/5 min-h-0 flex-col border-r border-gray-200">
-          <DraftingThread
-            // Tone is configured from the composer area because it affects the
-            // next prompt, not the current content artifact shown on the right.
-            generationSettingsLabel={
-              generationSettings.selectedLabel
-                ? `Tone: ${generationSettings.selectedLabel}`
-                : null
-            }
-            hasUnsavedGenerationSettings={generationSettings.hasChanges}
-            generationSettings={
-              <GenerationSettingsPanel
-                values={generationSettings.values}
-                toneOptions={generationSettings.toneOptions}
-                onChange={generationSettings.updateValues}
-                onSave={generationSettings.submitValues}
-                hasChanges={generationSettings.hasChanges}
-                isSaving={generationSettings.isSaving}
-                error={generationSettings.error}
-              />
-            }
-          />
+          {/* Tabs sit on top of the prompt; each opens a pane over the chat. */}
+          <DraftingThread tabs={tabs} />
         </div>
 
         {/* Right panel: placeholder -> plan steps -> content table */}

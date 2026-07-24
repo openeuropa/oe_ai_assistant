@@ -20,13 +20,11 @@ import "streamdown/styles.css";
 import {
   AlertCircle,
   FileText,
-  Paperclip,
   PenLine,
   SendHorizontal,
-  UserRound,
   X,
 } from "lucide-react";
-import { type ReactNode, useState } from "react";
+import { type PaneTabItem, PaneTabs } from "@/components/ui/pane-tabs";
 
 /** Welcome message shown when the chat is empty. */
 function WelcomeMessage() {
@@ -215,69 +213,19 @@ function ComposerAttachment() {
   );
 }
 
-interface ComposerProps {
-  /** Text shown inside the collapsed tone trigger, e.g. "Tone: Formal". */
-  generationSettingsLabel?: ReactNode;
-  /** Marks the trigger when the local tone differs from the saved tone. */
-  hasUnsavedGenerationSettings?: boolean;
-  /** Whether the tone panel is available for this thread. */
-  hasGenerationSettings?: boolean;
-  /** Opens or closes the tone panel above the composer. */
-  onToggleSettings: () => void;
-  /** Used for the trigger's aria-expanded state. */
-  settingsOpen: boolean;
-}
-
-/** Chat composer with text input, attachment button, and send. */
-function Composer({
-  generationSettingsLabel,
-  hasUnsavedGenerationSettings,
-  hasGenerationSettings,
-  onToggleSettings,
-  settingsOpen,
-}: ComposerProps) {
+/** Chat composer with text input and send. */
+function Composer() {
   return (
-    <ComposerPrimitive.Root className="border-t border-gray-200 pt-2 p-4">
-      {/* Pending attachments row */}
+    <ComposerPrimitive.Root className="border-t border-gray-200 p-4 pt-3">
+      {/* Pending attachments row (populated by the documents tab). */}
       <div className="mb-1.5 flex flex-wrap gap-1">
         <ComposerPrimitive.Attachments
           components={{ Attachment: ComposerAttachment }}
         />
       </div>
 
-      {hasGenerationSettings && (
-        <div className="mb-2 flex">
-          {/* Compact trigger keeps tone controls close to the prompt without
-          taking vertical space while the editor is drafting. */}
-          <button
-            type="button"
-            className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700"
-            aria-label="Tone settings"
-            aria-expanded={settingsOpen}
-            title="Tone settings"
-            onClick={onToggleSettings}
-          >
-            <UserRound size={14} />
-            {generationSettingsLabel && <span>{generationSettingsLabel}</span>}
-            {hasUnsavedGenerationSettings && (
-              <>
-                <span className="text-amber-600" aria-hidden="true">
-                  *
-                </span>
-                <span className="sr-only">unsaved changes</span>
-              </>
-            )}
-          </button>
-        </div>
-      )}
-
       {/* Input row */}
       <div className="flex items-end gap-2">
-        <ComposerPrimitive.AddAttachment>
-          <span className="flex h-9 w-9 cursor-pointer items-center justify-center rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-600">
-            <Paperclip size={16} />
-          </span>
-        </ComposerPrimitive.AddAttachment>
         <ComposerPrimitive.Input
           placeholder="Describe the content you want to draft..."
           className="flex-1 resize-none rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
@@ -292,25 +240,17 @@ function Composer({
 }
 
 interface DraftingThreadProps {
-  /** Opens the tone panel in Storybook or targeted previews. */
-  defaultSettingsOpen?: boolean;
-  /** Expanded panel rendered directly above the composer. */
-  generationSettings?: ReactNode;
-  /** Collapsed trigger label rendered in the composer area. */
-  generationSettingsLabel?: ReactNode;
-  /** Shows the unsaved marker on the collapsed trigger. */
-  hasUnsavedGenerationSettings?: boolean;
+  /** Tabs shown on top of the composer; each opens a pane over the chat. */
+  tabs?: PaneTabItem[];
+  /** Opens a tab by id on mount (Storybook/previews). */
+  defaultActiveTabId?: string;
 }
 
-/** Full chat thread with welcome, messages, and composer. */
+/** Full chat thread with welcome, messages, tabs, and composer. */
 export function DraftingThread({
-  defaultSettingsOpen = false,
-  generationSettings,
-  generationSettingsLabel,
-  hasUnsavedGenerationSettings = false,
+  tabs = [],
+  defaultActiveTabId,
 }: DraftingThreadProps) {
-  const [settingsOpen, setSettingsOpen] = useState(defaultSettingsOpen);
-
   return (
     <ThreadPrimitive.Root className="flex min-h-0 flex-1 flex-col">
       <ThreadPrimitive.Viewport className="flex-1 overflow-y-auto p-4">
@@ -322,14 +262,10 @@ export function DraftingThread({
           }}
         />
       </ThreadPrimitive.Viewport>
-      {settingsOpen && generationSettings}
-      <Composer
-        generationSettingsLabel={generationSettingsLabel}
-        hasUnsavedGenerationSettings={hasUnsavedGenerationSettings}
-        hasGenerationSettings={Boolean(generationSettings)}
-        settingsOpen={settingsOpen}
-        onToggleSettings={() => setSettingsOpen((open) => !open)}
-      />
+      {tabs.length > 0 && (
+        <PaneTabs tabs={tabs} defaultActiveId={defaultActiveTabId} />
+      )}
+      <Composer />
     </ThreadPrimitive.Root>
   );
 }

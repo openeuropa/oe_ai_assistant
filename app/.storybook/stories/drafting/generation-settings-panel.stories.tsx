@@ -1,6 +1,8 @@
 import { AssistantRuntimeProvider, useLocalRuntime } from "@assistant-ui/react";
 import type { Meta, StoryObj } from "@storybook/react-vite";
+import { FileText, LayoutTemplate, Megaphone, X } from "lucide-react";
 import { useState } from "react";
+import { Pane } from "../../../src/components/ui/pane";
 import { DraftingThread } from "../../../src/plugins/drafting/components/drafting-thread";
 import {
   type GenerationSettingsDraft,
@@ -18,6 +20,21 @@ const toneOptions = [
     label: "Formal",
     description: "Use an institutional, measured voice.",
   },
+  {
+    id: "engaging",
+    label: "Engaging",
+    description: "Warmer and more conversational, still accurate.",
+  },
+  {
+    id: "concise",
+    label: "Concise",
+    description: "Trim every sentence to its essentials.",
+  },
+  {
+    id: "authoritative",
+    label: "Authoritative",
+    description: "Confident and expert, backed by evidence.",
+  },
 ];
 const defaultToneId = toneOptions[0]?.id ?? "";
 
@@ -29,6 +46,7 @@ const meta = {
     toneOptions,
     onChange: () => {},
     onSave: async () => {},
+    onCancel: () => {},
     hasChanges: false,
     isSaving: false,
   },
@@ -55,6 +73,7 @@ function InteractivePanel({
         toneOptions={toneOptions}
         onChange={setValues}
         onSave={async () => {}}
+        onCancel={() => setValues(savedValues)}
         hasChanges={values.toneId !== savedValues.toneId}
         isSaving={false}
       />
@@ -76,6 +95,20 @@ export const SelectedValues: Story = {
   ),
 };
 
+/** Cancel-style action for the placeholder panes in the preview. */
+function CloseAction({ onClose }: { onClose: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClose}
+      className="inline-flex h-9 cursor-pointer items-center gap-2 rounded-lg border border-gray-300 bg-white px-3 text-sm font-medium text-gray-700 hover:bg-gray-100"
+    >
+      <X size={15} />
+      Cancel
+    </button>
+  );
+}
+
 /** Shows the settings panel in the real drafting chat layout. */
 function DraftingChatPreview() {
   const savedValues: GenerationSettingsDraft = { toneId: defaultToneId };
@@ -93,30 +126,73 @@ function DraftingChatPreview() {
     }),
   });
 
+  const selectedLabel =
+    toneOptions.find((option) => option.id === values.toneId)?.label ??
+    "Not set";
+
   return (
     <AssistantRuntimeProvider runtime={runtime}>
       <div className="flex h-[700px] max-w-2xl flex-col overflow-hidden border border-gray-200 bg-white">
         <DraftingThread
-          defaultSettingsOpen
-          generationSettingsLabel={
-            values.toneId
-              ? `Tone: ${
-                  toneOptions.find((option) => option.id === values.toneId)
-                    ?.label ?? values.toneId
-                }`
-              : null
-          }
-          hasUnsavedGenerationSettings={values.toneId !== savedValues.toneId}
-          generationSettings={
-            <GenerationSettingsPanel
-              values={values}
-              toneOptions={toneOptions}
-              onChange={setValues}
-              onSave={async () => {}}
-              hasChanges={values.toneId !== savedValues.toneId}
-              isSaving={false}
-            />
-          }
+          defaultActiveTabId="tone"
+          tabs={[
+            {
+              id: "tone",
+              icon: <Megaphone size={16} />,
+              title: "Tone",
+              summary: selectedLabel,
+              render: (close) => (
+                <GenerationSettingsPanel
+                  values={values}
+                  toneOptions={toneOptions}
+                  onChange={setValues}
+                  onSave={async () => {}}
+                  onCancel={() => {
+                    setValues(savedValues);
+                    close();
+                  }}
+                  hasChanges={values.toneId !== savedValues.toneId}
+                  isSaving={false}
+                />
+              ),
+            },
+            {
+              id: "documents",
+              icon: <FileText size={16} />,
+              title: "Documents",
+              summary: "3 documents",
+              render: (close) => (
+                <Pane
+                  icon={<FileText size={18} />}
+                  title="Documents"
+                  description="Reference documents used to ground the draft."
+                  actions={<CloseAction onClose={close} />}
+                >
+                  <p className="text-sm text-gray-600">
+                    Document list goes here.
+                  </p>
+                </Pane>
+              ),
+            },
+            {
+              id: "templates",
+              icon: <LayoutTemplate size={16} />,
+              title: "Templates",
+              summary: "Not set",
+              render: (close) => (
+                <Pane
+                  icon={<LayoutTemplate size={18} />}
+                  title="Templates"
+                  description="Pick a starting template for the draft."
+                  actions={<CloseAction onClose={close} />}
+                >
+                  <p className="text-sm text-gray-600">
+                    Template picker goes here.
+                  </p>
+                </Pane>
+              ),
+            },
+          ]}
         />
       </div>
     </AssistantRuntimeProvider>
