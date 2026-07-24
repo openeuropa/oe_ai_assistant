@@ -127,6 +127,28 @@ class UiMessageStream implements UiMessageStreamInterface {
   /**
    * {@inheritdoc}
    */
+  public function toolCall(string $toolName, array $args, array $result): void {
+    $toolCallId = bin2hex(random_bytes(8));
+    $this->emit('tool-call-start', [
+      'id' => $toolCallId,
+      'toolCallId' => $toolCallId,
+      'toolName' => $toolName,
+    ]);
+    // Encode empty args as a JSON object, not an array, so the client parses
+    // the arguments as an object.
+    $this->emit('tool-call-delta', [
+      'argsText' => json_encode($args ?: new \stdClass()),
+    ]);
+    $this->emit('tool-call-end', []);
+    $this->emit('tool-result', [
+      'toolCallId' => $toolCallId,
+      'result' => $result,
+    ]);
+  }
+
+  /**
+   * {@inheritdoc}
+   */
   public function error(string $errorText, string $step = ''): void {
     $data = ['errorText' => $errorText];
     if ($step !== '') {

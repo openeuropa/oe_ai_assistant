@@ -213,6 +213,77 @@ class ToolExecutionLoopTest extends TestCase {
   }
 
   /**
+   * Tests that the record callback fires once per provider response.
+   */
+  public function testRecordTurnCallbackInvokedPerResponse(): void {
+    // First response calls a non-terminal tool, second returns text.
+    $toolCall = $this->createMockToolCall('get_content_schema', 'call_1');
+    $this->stream->method('streamChatOutput')
+      ->willReturnOnConsecutiveCalls([$toolCall], []);
+    $this->toolExecutor->method('execute')->willReturn('{"groups": []}');
+
+    $first = $this->createMockChatOutput('');
+    $second = $this->createMockChatOutput('All done.');
+    $provider = $this->createMockProvider([$first, $second]);
+
+    $history = [new ChatMessage('user', 'Draft news')];
+
+    // Spy that records every callback invocation.
+    $calls = [];
+    $recordTurn = function (ChatOutput $output, array $toolResults) use (&$calls): void {
+      $calls[] = ['output' => $output, 'toolResults' => $toolResults];
+    };
+
+    $this->loop->run(
+      $provider, 'gpt-4o', 'System prompt.', [],
+      $history, $this->stream,
+      recordTurn: $recordTurn,
+    );
+
+    // Invoked once per provider response.
+    $this->assertCount(2, $calls);
+
+    // The tool iteration passes its executed tool result messages.
+    $this->assertSame($first, $calls[0]['output']);
+    $this->assertCount(1, $calls[0]['toolResults']);
+    $this->assertInstanceOf(ChatMessage::class, $calls[0]['toolResults'][0]);
+    $this->assertEquals('tool', $calls[0]['toolResults'][0]->getRole());
+
+    // The final text turn carries no tool results.
+    $this->assertSame($second, $calls[1]['output']);
+    $this->assertSame([], $calls[1]['toolResults']);
+  }
+
+  /**
+   * Tests that the record callback fires for a terminal tool turn.
+   */
+  public function testRecordTurnCallbackFiresForTerminalTool(): void {
+    $toolCall = $this->createMockToolCall('draft_content', 'call_1');
+    $this->stream->method('streamChatOutput')->willReturn([$toolCall]);
+
+    $output = $this->createMockChatOutput('');
+    $provider = $this->createMockProvider([$output]);
+    $history = [new ChatMessage('user', 'Draft it')];
+
+    $calls = [];
+    $recordTurn = function (ChatOutput $chatOutput, array $toolResults) use (&$calls): void {
+      $calls[] = ['output' => $chatOutput, 'toolResults' => $toolResults];
+    };
+
+    $this->loop->run(
+      $provider, 'gpt-4o', 'System prompt.', [],
+      $history, $this->stream,
+      terminalToolNames: ['draft_content'],
+      recordTurn: $recordTurn,
+    );
+
+    // The terminal turn is recorded once, with no tool results.
+    $this->assertCount(1, $calls);
+    $this->assertSame($output, $calls[0]['output']);
+    $this->assertSame([], $calls[0]['toolResults']);
+  }
+
+  /**
    * Tests ToolLoopResult value object.
    */
   public function testToolLoopResultValueObject(): void {

@@ -60,3 +60,36 @@ entity.ai_drafting_template.delete_form:
     _title: 'Delete an ai drafting template'
   requirements:
     _permission: 'administer ai_drafting_template'
+
+# AI conversation messages
+entity.ai_conversation_message.collection:
+  path: '/admin/config/ai-editorial/messages'
+  defaults:
+    _entity_list: 'ai_conversation_message'
+    _title: 'AI conversation messages'
+  requirements:
+    _permission: 'access ai conversation message overview+administer ai conversation messages'
+
+entity.ai_conversation_message.add_form:
+  path: '/admin/config/ai-editorial/messages/add'
+  defaults:
+    _entity_form: 'ai_conversation_message.add'
+    _title: 'Add conversation message'
+  requirements:
+    _entity_create_access: 'ai_conversation_message'
+
+entity.ai_conversation_message.edit_form:
+  path: '/admin/config/ai-editorial/messages/{ai_conversation_message}/edit'
+  defaults:
+    _entity_form: 'ai_conversation_message.edit'
+    _title: 'Edit conversation message'
+  requirements:
+    _entity_access: 'ai_conversation_message.update'
+
+entity.ai_conversation_message.delete_form:
+  path: '/admin/config/ai-editorial/messages/{ai_conversation_message}/delete'
+  defaults:
+    _entity_form: 'ai_conversation_message.delete'
+    _title: 'Delete conversation message'
+  requirements:
+    _entity_access: 'ai_conversation_message.delete'

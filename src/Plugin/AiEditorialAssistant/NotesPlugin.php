@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Drupal\oe_ai_assistant\Plugin\AiEditorialAssistant;
 
-use Drupal\Core\Session\AccountProxyInterface;
 use Drupal\Core\State\StateInterface;
 use Drupal\oe_ai_assistant\Annotation\AiEditorialAssistant;
 use Drupal\oe_ai_assistant\Exception\ActionException;
@@ -33,28 +32,11 @@ use Symfony\Component\HttpFoundation\Request;
 class NotesPlugin extends AiAssistantPluginBase {
 
   /**
-   * Constructs a NotesPlugin.
+   * The state service.
    *
-   * @param array $configuration
-   *   Plugin configuration from the plugin manager.
-   * @param string $plugin_id
-   *   The plugin ID as declared in the AiEditorialAssistant attribute.
-   * @param mixed $plugin_definition
-   *   The plugin definition as resolved by the plugin manager.
-   * @param \Drupal\Core\State\StateInterface $state
-   *   The Drupal State API service, used as the persistence backend.
-   * @param \Drupal\Core\Session\AccountProxyInterface $currentUser
-   *   The currently authenticated Drupal user; notes are scoped per user.
+   * @var \Drupal\Core\State\StateInterface
    */
-  public function __construct(
-    array $configuration,
-    $plugin_id,
-    $plugin_definition,
-    private readonly StateInterface $state,
-    private readonly AccountProxyInterface $currentUser,
-  ) {
-    parent::__construct($configuration, $plugin_id, $plugin_definition);
-  }
+  private readonly StateInterface $state;
 
   /**
    * {@inheritdoc}
@@ -79,13 +61,16 @@ class NotesPlugin extends AiAssistantPluginBase {
     $plugin_id,
     $plugin_definition,
   ): static {
-    return new static(
+    $instance = parent::create(
+      $container,
       $configuration,
       $plugin_id,
       $plugin_definition,
-      $container->get('state'),
-      $container->get('current_user'),
     );
+
+    $instance->state = $container->get('state');
+
+    return $instance;
   }
 
   /**

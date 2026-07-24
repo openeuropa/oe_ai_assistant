@@ -2,8 +2,11 @@
  * API helpers for the drafting plugin.
  *
  * Sends requests to our RPC-style wrapper endpoint which
- * delegates to the AG-UI controller internally. The response
- * is an SSE stream of AG-UI protocol events.
+ * delegates to the AG-UI controller internally. The chat response
+ * is an SSE stream of AG-UI protocol events; reset returns JSON.
+ * Every request is scoped to the current editorial session, read
+ * from the app config. The session transcript (get-messages) lives
+ * in the shared `@/api/session-messages` module.
  */
 
 import { getConfig } from "@/config";
@@ -31,20 +34,18 @@ export async function postDraftingChat(
   return response;
 }
 
-/** Resets the conversation thread and returns a new thread ID. */
-export async function resetDraftingThread(threadId: string): Promise<string> {
+/** Resets the conversation for the current session. */
+export async function resetDrafting(): Promise<void> {
   const response = await fetch(
     `${getConfig().apiBaseUrl}/plugins/drafting/reset`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       credentials: "include",
-      body: JSON.stringify({ threadId }),
+      body: JSON.stringify({ sessionId: getConfig().sessionId }),
     },
   );
   if (!response.ok) {
     throw new Error(`Drafting reset error: ${response.status}`);
   }
-  const data = (await response.json()) as { threadId: string };
-  return data.threadId;
 }

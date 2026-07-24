@@ -47,6 +47,10 @@ paths:
   /content-types/{contentTypeId}:
     $ref: "shell/paths.yaml#/contentType"
 
+  # -- Shared plugin action: session transcript (any plugin) --
+  /plugins/{pluginId}/get-messages:
+    $ref: "shell/paths.yaml#/getMessages"
+
   # -- Plugin: drafting --
   /plugins/drafting/chat:
     $ref: "plugins/drafting/paths.yaml#/chat"
@@ -94,6 +98,14 @@ components:
       schema:
         type: string
 
+    PluginId:
+      name: pluginId
+      in: path
+      required: true
+      description: Machine name of the plugin dispatching the action.
+      schema:
+        type: string
+
   responses:
     Forbidden:
       description: Authentication required or insufficient permissions.
@@ -112,6 +124,10 @@ components:
       $ref: "shell/schemas.yaml#/ContentTypeField"
     ContentType:
       $ref: "shell/schemas.yaml#/ContentType"
+    GetMessagesRequest:
+      $ref: "shell/schemas.yaml#/GetMessagesRequest"
+    GetMessagesResponse:
+      $ref: "shell/schemas.yaml#/GetMessagesResponse"
 
     # -- Plugin: drafting --
     DraftingChatRequest:

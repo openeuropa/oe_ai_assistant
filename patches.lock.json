@@ -1,0 +1,17 @@
+{
+    "_hash": "2ea8c28291b0967ba6ef00f901bb22b0adddd09dd26261e6e6a0eee5f0b4ba10",
+    "patches": {
+        "drupal/ai_agents": [
+            {
+                "package": "drupal/ai_agents",
+                "description": "Keep setUserInterface extra tags on the entity wrapper (getExtraTags)",
+                "url": "patches/ai-agents-agent-wrapper-extra-tags.patch",
+                "sha256": "b63aef2114a66fb5b8580d34ae8a2ea355977a8c5557b1d093ac4cddc06fcef3",
+                "depth": 1,
+                "extra": {
+                    "provenance": "root"
+                }
+            }
+        ]
+    }
+}
