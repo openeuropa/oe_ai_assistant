@@ -342,11 +342,8 @@ export interface components {
         DraftingSetToneRequest: {
             /** @description The editorial session on which the selected tone is saved. */
             sessionId: string;
-            /** @description Selected drafting tone to set. */
-            context: {
-                /** @description Selected tone taxonomy term ID. */
-                toneId: string;
-            };
+            /** @description Selected tone taxonomy term ID. */
+            toneId: string;
         };
         DraftingSetToneResponse: {
             /** @enum {string} */

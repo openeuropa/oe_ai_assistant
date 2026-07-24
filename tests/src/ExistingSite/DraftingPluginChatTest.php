@@ -303,9 +303,7 @@ class DraftingPluginChatTest extends ExistingSiteBase {
 
     $this->httpPost('/api/ai/plugins/drafting/set-tone', [
       'sessionId' => $session->id(),
-      'context' => [
-        'toneId' => $this->getTermIdByName('oe_ai_tone', 'Formal'),
-      ],
+      'toneId' => $this->getTermIdByName('oe_ai_tone', 'Formal'),
     ]);
 
     MockAiProvider::enqueue(new MockResponse(
@@ -358,9 +356,7 @@ class DraftingPluginChatTest extends ExistingSiteBase {
     $result = $this->httpPost('/api/ai/plugins/drafting/chat', [
       'message' => 'Draft this with request context.',
       'sessionId' => $session->id(),
-      'context' => [
-        'toneId' => $this->getTermIdByName('oe_ai_tone', 'Formal'),
-      ],
+      'toneId' => $this->getTermIdByName('oe_ai_tone', 'Formal'),
     ]);
 
     $this->assertEquals(200, $result['status']);

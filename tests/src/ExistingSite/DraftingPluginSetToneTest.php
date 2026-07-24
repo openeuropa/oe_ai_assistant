@@ -33,9 +33,7 @@ class DraftingPluginSetToneTest extends ExistingSiteBase {
 
     $result = $this->httpPost('/api/ai/plugins/drafting/set-tone', [
       'sessionId' => $session->id(),
-      'context' => [
-        'toneId' => $toneId,
-      ],
+      'toneId' => $toneId,
     ]);
 
     $this->assertSame(200, $result['status']);
@@ -57,9 +55,6 @@ class DraftingPluginSetToneTest extends ExistingSiteBase {
 
     $result = $this->httpPost('/api/ai/plugins/drafting/set-tone', [
       'sessionId' => '1',
-      'context' => [
-        'unused' => 'value',
-      ],
     ]);
 
     $this->assertSame(400, $result['status']);
@@ -76,9 +71,7 @@ class DraftingPluginSetToneTest extends ExistingSiteBase {
 
     $result = $this->httpPost('/api/ai/plugins/drafting/set-tone', [
       'sessionId' => '1',
-      'context' => [
-        'toneId' => '999999',
-      ],
+      'toneId' => '999999',
     ]);
 
     $this->assertSame(400, $result['status']);
@@ -101,9 +94,7 @@ class DraftingPluginSetToneTest extends ExistingSiteBase {
 
     $result = $this->httpPost('/api/ai/plugins/drafting/set-tone', [
       'sessionId' => '1',
-      'context' => [
-        'toneId' => (string) $otherTerm->id(),
-      ],
+      'toneId' => (string) $otherTerm->id(),
     ]);
 
     $this->assertSame(400, $result['status']);

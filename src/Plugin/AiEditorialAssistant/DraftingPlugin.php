@@ -336,7 +336,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
    */
   public function setTone(Request $request): array {
     $body = $this->decodeJsonBody($request);
-    $toneId = (string) ($body['context']['toneId'] ?? '');
+    $toneId = (string) ($body['toneId'] ?? '');
 
     try {
       $this->aiEditorialContext->buildSelectedPrompt($toneId);

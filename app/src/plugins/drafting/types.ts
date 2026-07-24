@@ -20,7 +20,7 @@ export interface DraftingGenerationSettings {
 
 /** Request body for setting the selected tone. */
 export interface DraftingSetToneRequest {
-  context: DraftingGenerationSettings;
+  toneId: string;
 }
 
 /** Response body for setting the selected tone. */

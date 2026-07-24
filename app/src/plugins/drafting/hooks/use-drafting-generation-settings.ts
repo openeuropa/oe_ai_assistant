@@ -96,7 +96,7 @@ export function useDraftingGenerationSettings() {
     try {
       // Only persist locally after the backend accepts the selected tone.
       // Until then, hasChanges remains true and the collapsed trigger is marked.
-      await setDraftingTone({ context: nextSettings });
+      await setDraftingTone(nextSettings);
       setDraftingState({ generationSettings: nextSettings });
     } catch (caughtError) {
       const message =
