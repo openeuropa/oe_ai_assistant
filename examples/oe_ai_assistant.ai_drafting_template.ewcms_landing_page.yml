@@ -1,0 +1,54 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - node.type.landing_page
+id: ewcms_landing_page
+label: 'Landing page (AI)'
+description: 'Drafts an EWCMS landing page: title, teaser, summary, and a body built from rich-text, feature-media, and quote paragraphs.'
+content_type: landing_page
+fields:
+  title:
+    prompt: 'Page title. Clear and engaging, reflecting the page topic.'
+  oe_teaser:
+    prompt: 'One-sentence teaser used in listings.'
+  oe_summary:
+    prompt: 'Short introduction, 2-3 sentences, setting up the page.'
+  paragraphs:
+    type: entity_reference_revisions
+    items:
+      - entity_type: paragraph
+        bundle: oe_rich_text
+        prompt: 'Introduction section, 1-2 short paragraphs.'
+        fields:
+          field_oe_title:
+            prompt: 'Optional section heading.'
+          field_oe_text_long:
+            prompt: 'Introductory body text.'
+      - entity_type: paragraph
+        bundle: oe_text_feature_media
+        prompt: 'A highlighted feature section describing a key point.'
+        fields:
+          field_oe_title:
+            prompt: 'Feature heading.'
+          field_oe_text_long:
+            prompt: 'Feature description, 2-3 sentences.'
+      - entity_type: paragraph
+        bundle: oe_quote
+        prompt: 'A supporting quote from a relevant stakeholder.'
+        fields:
+          field_oe_text:
+            prompt: 'The quote text.'
+          field_oe_plain_text_long:
+            prompt: 'Attribution: full name and role of the person quoted.'
+      - entity_type: paragraph
+        bundle: oe_rich_text
+        prompt: 'Closing section summarising key takeaways, 1-2 paragraphs.'
+        fields:
+          field_oe_title:
+            prompt: 'Optional closing heading.'
+          field_oe_text_long:
+            prompt: 'Closing body text.'
+defaults:
+  langcode: en
+  moderation_state: draft
