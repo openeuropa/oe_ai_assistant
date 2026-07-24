@@ -1,13 +1,16 @@
 import { AssistantRuntimeProvider, useLocalRuntime } from "@assistant-ui/react";
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { FileText, LayoutTemplate, Megaphone, X } from "lucide-react";
+import { FileText, LayoutTemplate, Megaphone } from "lucide-react";
 import { useState } from "react";
-import { Pane } from "../../../src/components/ui/pane";
+import { DocumentsPanel } from "../../../src/plugins/drafting/components/documents-panel";
 import { DraftingThread } from "../../../src/plugins/drafting/components/drafting-thread";
 import {
   type GenerationSettingsDraft,
   GenerationSettingsPanel,
 } from "../../../src/plugins/drafting/components/generation-settings-panel";
+import { TemplatePanel } from "../../../src/plugins/drafting/components/template-panel";
+import { useDraftingDocuments } from "../../../src/plugins/drafting/hooks/use-drafting-documents";
+import { useDraftingTemplate } from "../../../src/plugins/drafting/hooks/use-drafting-template";
 
 const toneOptions = [
   {
@@ -95,26 +98,14 @@ export const SelectedValues: Story = {
   ),
 };
 
-/** Cancel-style action for the placeholder panes in the preview. */
-function CloseAction({ onClose }: { onClose: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={onClose}
-      className="inline-flex h-9 cursor-pointer items-center gap-2 rounded-lg border border-gray-300 bg-white px-3 text-sm font-medium text-gray-700 hover:bg-gray-100"
-    >
-      <X size={15} />
-      Cancel
-    </button>
-  );
-}
-
 /** Shows the settings panel in the real drafting chat layout. */
 function DraftingChatPreview() {
   const savedValues: GenerationSettingsDraft = { toneId: defaultToneId };
   const [values, setValues] = useState<GenerationSettingsDraft>({
     toneId: savedValues.toneId,
   });
+  const documents = useDraftingDocuments();
+  const template = useDraftingTemplate();
   const runtime = useLocalRuntime({
     run: async () => ({
       content: [
@@ -146,7 +137,7 @@ function DraftingChatPreview() {
                   values={values}
                   toneOptions={toneOptions}
                   onChange={setValues}
-                  onSave={async () => {}}
+                  onSave={async () => close()}
                   onCancel={() => {
                     setValues(savedValues);
                     close();
@@ -160,36 +151,37 @@ function DraftingChatPreview() {
               id: "documents",
               icon: <FileText size={16} />,
               title: "Documents",
-              summary: "3 documents",
+              summary: `${documents.count} documents`,
               render: (close) => (
-                <Pane
-                  icon={<FileText size={18} />}
-                  title="Documents"
-                  description="Reference documents used to ground the draft."
-                  actions={<CloseAction onClose={close} />}
-                >
-                  <p className="text-sm text-gray-600">
-                    Document list goes here.
-                  </p>
-                </Pane>
+                <DocumentsPanel
+                  selected={documents.selected}
+                  onRemove={documents.removeDocument}
+                  onUpload={documents.uploadFiles}
+                  onSave={async () => close()}
+                  onCancel={close}
+                />
               ),
             },
             {
               id: "templates",
               icon: <LayoutTemplate size={16} />,
               title: "Templates",
-              summary: "Not set",
+              summary: template.selectedLabel ?? "Not set",
               render: (close) => (
-                <Pane
-                  icon={<LayoutTemplate size={18} />}
-                  title="Templates"
-                  description="Pick a starting template for the draft."
-                  actions={<CloseAction onClose={close} />}
-                >
-                  <p className="text-sm text-gray-600">
-                    Template picker goes here.
-                  </p>
-                </Pane>
+                <TemplatePanel
+                  options={template.options}
+                  value={template.value}
+                  onChange={template.updateValue}
+                  onSave={async () => {
+                    await template.submitValues();
+                    close();
+                  }}
+                  onCancel={() => {
+                    template.discardChanges();
+                    close();
+                  }}
+                  hasChanges={template.hasChanges}
+                />
               ),
             },
           ]}

@@ -8,46 +8,55 @@
  */
 
 import { AssistantRuntimeProvider } from "@assistant-ui/react";
-import { Megaphone } from "lucide-react";
+import { FileText, LayoutTemplate, Megaphone } from "lucide-react";
 import { useCallback } from "react";
 import type { PaneTabItem } from "@/components/ui/pane-tabs";
 import { ArtifactPlaceholder } from "./components/artifact-placeholder";
 import { ContentTable } from "./components/content-table";
+import { DocumentsPanel } from "./components/documents-panel";
 import { DraftingThread } from "./components/drafting-thread";
 import { GenerationSettingsPanel } from "./components/generation-settings-panel";
 import { PlanSteps } from "./components/plan-steps";
+import { TemplatePanel } from "./components/template-panel";
 import {
   DraftContentToolUI,
   RegenerateFieldsToolUI,
   SaveDraftRevisionToolUI,
   SetFieldContentToolUI,
 } from "./components/tool-uis";
+import { useDraftingDocuments } from "./hooks/use-drafting-documents";
 import { useDraftingGenerationSettings } from "./hooks/use-drafting-generation-settings";
 import { useDraftingRuntime } from "./hooks/use-drafting-runtime";
+import { useDraftingTemplate } from "./hooks/use-drafting-template";
 import { useDraftingSlice } from "./store";
 
 export default function DraftingRoot() {
   const { draftedFields, plan } = useDraftingSlice();
   const generationSettings = useDraftingGenerationSettings();
+  const documents = useDraftingDocuments();
+  const template = useDraftingTemplate();
   const runtime = useDraftingRuntime();
   const hasFields = Object.keys(draftedFields).length > 0;
 
-  // Composer tabs. Each opens a pane over the chat. Tone is the first; more
-  // (documents, templates) will be added as they land.
+  // Composer tabs. Each opens a pane over the chat, and its summary
+  // reproposes the current selection.
   const tabs: PaneTabItem[] = [];
   if (generationSettings.toneOptions.length > 0) {
     tabs.push({
       id: "tone",
       icon: <Megaphone size={16} />,
       title: "Tone",
-      // The summary reproposes the current selection: the confirmed tone.
       summary: generationSettings.selectedLabel ?? "Not set",
       render: (close) => (
         <GenerationSettingsPanel
           values={generationSettings.values}
           toneOptions={generationSettings.toneOptions}
           onChange={generationSettings.updateValues}
-          onSave={generationSettings.submitValues}
+          onSave={async () => {
+            // Persist, then close the pane on success.
+            await generationSettings.submitValues();
+            close();
+          }}
           onCancel={() => {
             // Restore the confirmed tone, then close the pane.
             generationSettings.discardChanges();
@@ -60,6 +69,48 @@ export default function DraftingRoot() {
       ),
     });
   }
+  tabs.push({
+    id: "documents",
+    icon: <FileText size={16} />,
+    title: "Documents",
+    summary: `${documents.count} documents`,
+    render: (close) => (
+      <DocumentsPanel
+        selected={documents.selected}
+        onRemove={documents.removeDocument}
+        onUpload={documents.uploadFiles}
+        onSave={async () => {
+          // No backend yet; just close the pane.
+          close();
+        }}
+        onCancel={close}
+      />
+    ),
+  });
+  tabs.push({
+    id: "templates",
+    icon: <LayoutTemplate size={16} />,
+    title: "Templates",
+    summary: template.selectedLabel ?? "Not set",
+    render: (close) => (
+      <TemplatePanel
+        options={template.options}
+        value={template.value}
+        onChange={template.updateValue}
+        onSave={async () => {
+          // Persist, then close the pane on success.
+          await template.submitValues();
+          close();
+        }}
+        onCancel={() => {
+          // Restore the confirmed template, then close the pane.
+          template.discardChanges();
+          close();
+        }}
+        hasChanges={template.hasChanges}
+      />
+    ),
+  });
 
   /** Trigger save via the chat so the agent runs the save tool. */
   const handleSave = useCallback(() => {
