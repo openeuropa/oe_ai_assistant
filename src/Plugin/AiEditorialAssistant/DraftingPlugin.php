@@ -232,9 +232,12 @@ class DraftingPlugin extends AiAssistantPluginBase {
           && $result->terminalToolName === 'draft_content'
         ) {
           // Run the sub-agent orchestration and keep the consolidated fields.
+          // The draft_content turn is the parent each sub-agent turn nests
+          // under in the recorded transcript.
           $drafted = $this->orchestrator->run(
             $stream, $history,
-            $context['entityTypeId'], $context['bundle']
+            $context['entityTypeId'], $context['bundle'],
+            $session, $lastAssistant,
           );
           // Emit the draft_content tool call with its result so the card
           // appears live, matching what a reload rehydrates.

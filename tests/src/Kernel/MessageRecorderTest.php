@@ -187,6 +187,19 @@ class MessageRecorderTest extends KernelTestBase {
   }
 
   /**
+   * Tests recording a sub-agent system prompt row under a parent.
+   */
+  public function testRecordSystem(): void {
+    $parent = $this->recorder->recordUser($this->host, 'Draft a news article.', 1);
+    $system = $this->recorder->recordSystem($this->host, 'You are a content generator.', 'title-agent', $parent);
+
+    $this->assertSame(AiConversationMessageInterface::ROLE_SYSTEM, $system->getRole());
+    $this->assertSame('You are a content generator.', $system->get('content')->value);
+    $this->assertSame('title-agent', $system->get('agent_id')->value);
+    $this->assertSame((int) $parent->id(), $system->getParentId());
+  }
+
+  /**
    * Tests recording tool and error turns nested under a parent.
    */
   public function testRecordToolAndErrorUnderParent(): void {

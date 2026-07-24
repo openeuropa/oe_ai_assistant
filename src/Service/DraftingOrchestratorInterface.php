@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Drupal\oe_ai_assistant\Service;
 
+use Drupal\Core\Entity\EntityInterface;
+use Drupal\oe_ai_assistant\Entity\AiConversationMessageInterface;
+
 /**
  * Interface for the sub-agent orchestration service.
  *
@@ -26,6 +29,11 @@ interface DraftingOrchestratorInterface {
    *   The entity type ID (e.g. "node").
    * @param string $bundle
    *   The bundle machine name (e.g. "oe_news").
+   * @param \Drupal\Core\Entity\EntityInterface $host
+   *   The entity hosting the conversation (the editorial session).
+   * @param \Drupal\oe_ai_assistant\Entity\AiConversationMessageInterface|null $parent
+   *   The draft_content turn each sub-agent turn nests under, or NULL to run
+   *   without recording the sub-agent transcript.
    *
    * @return array
    *   The consolidated fields map, or empty array if no fields
@@ -36,6 +44,8 @@ interface DraftingOrchestratorInterface {
     array $history,
     string $entityTypeId,
     string $bundle,
+    EntityInterface $host,
+    ?AiConversationMessageInterface $parent = NULL,
   ): array;
 
 }

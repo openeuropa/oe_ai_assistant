@@ -32,6 +32,10 @@ services:
   Drupal\oe_ai_assistant\Service\MessageRecorder: {}
   Drupal\oe_ai_assistant\Service\MessageRecorderInterface: '@Drupal\oe_ai_assistant\Service\MessageRecorder'
 
+  # Records drafting sub-agent turns from the ai_agents response event. Tagged
+  # as an event subscriber automatically via autoconfigure.
+  Drupal\oe_ai_assistant\EventSubscriber\SubAgentMessageSubscriber: {}
+
   Drupal\oe_ai_assistant\Service\ToolExecutor: {}
   Drupal\oe_ai_assistant\Service\ToolExecutorInterface: '@Drupal\oe_ai_assistant\Service\ToolExecutor'
 
