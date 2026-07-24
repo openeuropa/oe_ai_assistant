@@ -179,7 +179,7 @@ class AiEditorialSessionDashboardTest extends AiEditorialSessionBrowserTestBase 
     $this->drupalGet($session->toUrl('canonical'));
 
     $this->assertSession()->statusCodeEquals(200);
-    $this->assertSession()->responseContains('"context":{"tone":[]}');
+    $this->assertSession()->responseContains('"tone":{"enabled":true,"options":[]');
     $this->assertSession()->responseNotContains('oe_ai_prompt');
   }
 
@@ -218,6 +218,7 @@ class AiEditorialSessionDashboardTest extends AiEditorialSessionBrowserTestBase 
     $this->submitForm([
       'content_type' => 'oe_news',
       'label' => 'my session',
+      'tone' => $this->getTermIdByName('oe_ai_tone', 'Formal'),
     ], 'Save');
 
     $this->assertSession()->statusCodeEquals(200);
@@ -287,8 +288,7 @@ class AiEditorialSessionDashboardTest extends AiEditorialSessionBrowserTestBase 
     $this->assertSession()->responseContains('"enabledPlugins":["echo","notes","drafting"]');
     $this->assertSession()->responseContains('"entityTypeId":"node"');
     $this->assertSession()->responseContains('"bundle":"' . $bundle . '"');
-    $this->assertSession()->responseContains('"context":{"tone":');
-    $this->assertSession()->responseContains('"tone":');
+    $this->assertSession()->responseContains('"tone":{"enabled":true');
     $this->assertSession()->responseContains(json_encode([
       'id' => $this->getTermIdByName('oe_ai_tone', 'Formal'),
       'label' => 'Formal',
