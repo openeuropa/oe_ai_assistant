@@ -28,18 +28,29 @@ export interface DraftingSetToneResponse {
   status: "ok";
 }
 
-export interface DraftingContextOption {
+/** A selectable option (tone, template, ...) provided by the host config. */
+export interface DraftingSelectOption {
   id: string;
   label: string;
   description: string;
 }
 
+/** A composer panel gated by the host, with its selectable options. */
+export interface DraftingSelectPanelConfig {
+  /** Whether the panel's tab is shown. */
+  enabled?: boolean;
+  options?: DraftingSelectOption[];
+}
+
 export interface DraftingPluginConfig {
   entityTypeId?: string;
   bundle?: string;
-  context?: {
-    tone?: DraftingContextOption[];
-  };
+  /** Tone panel: gate + available tones. */
+  tone?: DraftingSelectPanelConfig;
+  /** Template panel: gate + available templates. */
+  templates?: DraftingSelectPanelConfig;
+  /** Documents panel: gate only (upload based). */
+  documents?: { enabled?: boolean };
 }
 
 /** Response body for the drafting reset endpoint. */

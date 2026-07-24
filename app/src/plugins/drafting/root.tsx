@@ -41,7 +41,7 @@ export default function DraftingRoot() {
   // Composer tabs. Each opens a pane over the chat, and its summary
   // reproposes the current selection.
   const tabs: PaneTabItem[] = [];
-  if (generationSettings.toneOptions.length > 0) {
+  if (generationSettings.enabled) {
     tabs.push({
       id: "tone",
       icon: <Megaphone size={16} />,
@@ -69,48 +69,52 @@ export default function DraftingRoot() {
       ),
     });
   }
-  tabs.push({
-    id: "documents",
-    icon: <FileText size={16} />,
-    title: "Documents",
-    summary: `${documents.count} documents`,
-    render: (close) => (
-      <DocumentsPanel
-        selected={documents.selected}
-        onRemove={documents.removeDocument}
-        onUpload={documents.uploadFiles}
-        onSave={async () => {
-          // No backend yet; just close the pane.
-          close();
-        }}
-        onCancel={close}
-      />
-    ),
-  });
-  tabs.push({
-    id: "templates",
-    icon: <LayoutTemplate size={16} />,
-    title: "Templates",
-    summary: template.selectedLabel ?? "Not set",
-    render: (close) => (
-      <TemplatePanel
-        options={template.options}
-        value={template.value}
-        onChange={template.updateValue}
-        onSave={async () => {
-          // Persist, then close the pane on success.
-          await template.submitValues();
-          close();
-        }}
-        onCancel={() => {
-          // Restore the confirmed template, then close the pane.
-          template.discardChanges();
-          close();
-        }}
-        hasChanges={template.hasChanges}
-      />
-    ),
-  });
+  if (documents.enabled) {
+    tabs.push({
+      id: "documents",
+      icon: <FileText size={16} />,
+      title: "Documents",
+      summary: `${documents.count} documents`,
+      render: (close) => (
+        <DocumentsPanel
+          selected={documents.selected}
+          onRemove={documents.removeDocument}
+          onUpload={documents.uploadFiles}
+          onSave={async () => {
+            // No backend yet; just close the pane.
+            close();
+          }}
+          onCancel={close}
+        />
+      ),
+    });
+  }
+  if (template.enabled) {
+    tabs.push({
+      id: "templates",
+      icon: <LayoutTemplate size={16} />,
+      title: "Templates",
+      summary: template.selectedLabel ?? "Not set",
+      render: (close) => (
+        <TemplatePanel
+          options={template.options}
+          value={template.value}
+          onChange={template.updateValue}
+          onSave={async () => {
+            // Persist, then close the pane on success.
+            await template.submitValues();
+            close();
+          }}
+          onCancel={() => {
+            // Restore the confirmed template, then close the pane.
+            template.discardChanges();
+            close();
+          }}
+          hasChanges={template.hasChanges}
+        />
+      ),
+    });
+  }
 
   /** Trigger save via the chat so the agent runs the save tool. */
   const handleSave = useCallback(() => {

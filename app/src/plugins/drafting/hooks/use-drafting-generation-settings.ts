@@ -37,8 +37,11 @@ export function useDraftingGenerationSettings() {
   const [error, setError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const draftingConfig = getConfig().pluginConfig.drafting ?? {};
-  const context = draftingConfig.context as Record<string, unknown> | undefined;
-  const toneOptions = getGenerationSettingsOptions(context?.tone);
+  const toneConfig = draftingConfig.tone as
+    | { enabled?: boolean; options?: unknown }
+    | undefined;
+  const enabled = toneConfig?.enabled ?? false;
+  const toneOptions = getGenerationSettingsOptions(toneConfig?.options);
 
   // With no placeholder option in the select, the first backend-provided tone
   // is the visible default until the editor saves a different tone.
@@ -113,6 +116,7 @@ export function useDraftingGenerationSettings() {
   }
 
   return {
+    enabled,
     discardChanges,
     error,
     hasChanges,

@@ -1,37 +1,49 @@
 import { useState } from "react";
 import type { RadioCardOption } from "@/components/ui/radio-card-group";
+import { getConfig } from "@/config";
 
-// Mock template options until a backend template service exists.
-const TEMPLATE_OPTIONS: RadioCardOption[] = [
-  {
-    value: "news-article",
-    label: "News article",
-    description:
-      "Structured article with headline, summary, body, and related links.",
-  },
-  {
-    value: "press-release",
-    label: "Press release",
-    description:
-      "Announcement-focused structure with key messages and media angle.",
-  },
-  {
-    value: "policy-brief",
-    label: "Policy brief",
-    description:
-      "Short explanatory format focused on context, impact, and next steps.",
-  },
-];
+/**
+ * Reads the host-provided template options from the app init config.
+ *
+ * Host options use { id, label, description }; they are mapped to the card
+ * shape ({ value, ... }) the panel expects.
+ */
+function getTemplateOptions(value: unknown): RadioCardOption[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .filter(
+      (option): option is { id: string; label: string; description: string } =>
+        Boolean(option) &&
+        typeof option === "object" &&
+        typeof (option as Record<string, unknown>).id === "string" &&
+        typeof (option as Record<string, unknown>).label === "string" &&
+        typeof (option as Record<string, unknown>).description === "string",
+    )
+    .map((option) => ({
+      value: option.id,
+      label: option.label,
+      description: option.description,
+    }));
+}
 
 /**
  * Owns the template selector state.
  *
- * TODO: Replace the mock options and no-op save with a backend template
- * service once template selection is persisted server side. The shape
- * mirrors useDraftingGenerationSettings so the panel wiring is identical.
+ * Options come from the app init config (pluginConfig.drafting.templates).
+ * TODO: Replace the no-op save with a backend template service once template
+ * selection is persisted server side. The shape mirrors
+ * useDraftingGenerationSettings so the panel wiring is identical.
  */
 export function useDraftingTemplate() {
-  const options = TEMPLATE_OPTIONS;
+  const draftingConfig = getConfig().pluginConfig.drafting ?? {};
+  const templatesConfig = draftingConfig.templates as
+    | { enabled?: boolean; options?: unknown }
+    | undefined;
+  const enabled = templatesConfig?.enabled ?? false;
+  const options = getTemplateOptions(templatesConfig?.options);
   const [confirmedId, setConfirmedId] = useState(options[0]?.value ?? "");
   const [value, setValue] = useState(confirmedId);
 
@@ -57,6 +69,7 @@ export function useDraftingTemplate() {
   }
 
   return {
+    enabled,
     options,
     value,
     updateValue,

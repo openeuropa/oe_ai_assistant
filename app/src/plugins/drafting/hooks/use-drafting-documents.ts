@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { getConfig } from "@/config";
 
 /** A reference document that can ground the next draft. */
 export interface DraftingDocument {
@@ -40,6 +41,11 @@ function formatFileSize(size: number): string {
  * document service once documents are uploaded and persisted server side.
  */
 export function useDraftingDocuments() {
+  const draftingConfig = getConfig().pluginConfig.drafting ?? {};
+  const documentsConfig = draftingConfig.documents as
+    | { enabled?: boolean }
+    | undefined;
+  const enabled = documentsConfig?.enabled ?? false;
   const [selected, setSelected] =
     useState<DraftingDocument[]>(INITIAL_SELECTED);
 
@@ -62,6 +68,7 @@ export function useDraftingDocuments() {
   }
 
   return {
+    enabled,
     selected,
     count: selected.length,
     removeDocument,
