@@ -113,6 +113,14 @@ class AiEditorialSessionController extends ControllerBase {
    */
   private function buildRenderArray(string $sessionId, string $entityTypeId, string $bundle): array {
     $tones = $this->serializeToneOptions($this->aiEditorialContext->getAvailableTones());
+    // Read the tone already saved on the session so the app can rehydrate the
+    // selector on load.
+    $session = $this->sessionEntityTypeManager
+      ->getStorage('ai_editorial_session')
+      ->load($sessionId);
+    $selectedTone = $session instanceof AiEditorialSessionInterface
+      ? (string) $session->get('tone')->target_id
+      : '';
     // Build the configuration object that bootstraps the React app.
     // This data is serialised into window.drupalSettings.oeAiAssistant
     // and read by the React entry point before the first render.
@@ -149,6 +157,7 @@ class AiEditorialSessionController extends ControllerBase {
           'tone' => [
             'enabled' => TRUE,
             'options' => $tones,
+            'selected' => $selectedTone,
           ],
           'templates' => [
             'enabled' => FALSE,

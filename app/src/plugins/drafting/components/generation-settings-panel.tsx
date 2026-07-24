@@ -63,8 +63,10 @@ export function GenerationSettingsPanel({
           <>
             <button
               type="button"
-              className="inline-flex h-9 cursor-pointer items-center gap-2 rounded-lg border border-gray-300 bg-white px-3 text-sm font-medium text-gray-700 hover:bg-gray-100"
+              className="inline-flex h-9 cursor-pointer items-center gap-2 rounded-lg border border-gray-300 bg-white px-3 text-sm font-medium text-gray-700 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50"
               onClick={onCancel}
+              // Prevent dismissing the panel while a save is in flight.
+              disabled={isSaving}
             >
               <X size={15} />
               Cancel

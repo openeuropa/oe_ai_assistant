@@ -1,0 +1,26 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - field.storage.ai_editorial_session.tone
+    - oe_ai_assistant.ai_editorial_session_type.content_creation
+    - taxonomy.vocabulary.oe_ai_tone
+  module:
+    - taxonomy
+id: ai_editorial_session.content_creation.tone
+field_name: tone
+entity_type: ai_editorial_session
+bundle: content_creation
+label: Tone
+description: 'The selected editorial tone for drafting.'
+required: true
+translatable: false
+default_value: {  }
+default_value_callback: ''
+settings:
+  handler: 'default:taxonomy_term'
+  handler_settings:
+    target_bundles:
+      oe_ai_tone: oe_ai_tone
+    auto_create: false
+field_type: entity_reference

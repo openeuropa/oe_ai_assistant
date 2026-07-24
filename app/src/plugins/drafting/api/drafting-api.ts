@@ -12,7 +12,6 @@
 import { getConfig } from "@/config";
 import type {
   DraftingChatRequest,
-  DraftingGenerationSettings,
   DraftingSetToneRequest,
   DraftingSetToneResponse,
 } from "../types";
@@ -55,20 +54,7 @@ export async function resetDrafting(): Promise<void> {
   }
 }
 
-/**
- * Loads the tone currently saved for the session.
- *
- * TODO: Replace the hardcoded value with a real request once the
- * backend persists and exposes the selected tone (a get-tone action
- * or the tone injected into the initial plugin config). For now the
- * value is stubbed so the client rehydration path is complete end to
- * end and only the backend read remains.
- */
-export async function fetchDraftingTone(): Promise<DraftingGenerationSettings> {
-  return { toneId: "clear-professional" };
-}
-
-/** Sets the selected tone for drafting. */
+/** Sets the selected tone for drafting on the current session. */
 export async function setDraftingTone(
   request: DraftingSetToneRequest,
 ): Promise<DraftingSetToneResponse> {
@@ -78,7 +64,8 @@ export async function setDraftingTone(
       method: "POST",
       headers: { "Content-Type": "application/json" },
       credentials: "include",
-      body: JSON.stringify(request),
+      // Scope the tone to the current editorial session.
+      body: JSON.stringify({ ...request, sessionId: getConfig().sessionId }),
     },
   );
   if (!response.ok) {

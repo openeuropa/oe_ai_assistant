@@ -302,6 +302,7 @@ class DraftingPluginChatTest extends ExistingSiteBase {
     $session = $this->createSession($user);
 
     $this->httpPost('/api/ai/plugins/drafting/set-tone', [
+      'sessionId' => $session->id(),
       'context' => [
         'toneId' => $this->getTermIdByName('oe_ai_tone', 'Formal'),
       ],

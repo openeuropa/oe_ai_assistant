@@ -40,6 +40,8 @@ export interface DraftingSelectPanelConfig {
   /** Whether the panel's tab is shown. */
   enabled?: boolean;
   options?: DraftingSelectOption[];
+  /** The option id currently saved on the server (for rehydration). */
+  selected?: string;
 }
 
 export interface DraftingPluginConfig {

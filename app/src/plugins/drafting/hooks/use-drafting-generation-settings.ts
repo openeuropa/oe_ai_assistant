@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { getConfig } from "@/config";
-import { fetchDraftingTone, setDraftingTone } from "../api/drafting-api";
+import { setDraftingTone } from "../api/drafting-api";
 import type {
   GenerationSettingsDraft,
   GenerationSettingsOption,
@@ -38,10 +38,11 @@ export function useDraftingGenerationSettings() {
   const [isSaving, setIsSaving] = useState(false);
   const draftingConfig = getConfig().pluginConfig.drafting ?? {};
   const toneConfig = draftingConfig.tone as
-    | { enabled?: boolean; options?: unknown }
+    | { enabled?: boolean; options?: unknown; selected?: string }
     | undefined;
   const enabled = toneConfig?.enabled ?? false;
   const toneOptions = getGenerationSettingsOptions(toneConfig?.options);
+  const selectedToneId = toneConfig?.selected ?? "";
 
   // With no placeholder option in the select, the first backend-provided tone
   // is the visible default until the editor saves a different tone.
@@ -55,19 +56,13 @@ export function useDraftingGenerationSettings() {
   );
 
   useEffect(() => {
-    // Rehydrate the confirmed tone from the backend on mount so the selector
-    // reflects the tone currently saved for the session. Nothing is persisted
-    // client side, so the server is the single source of truth.
-    let active = true;
-    fetchDraftingTone().then((settings) => {
-      if (active) {
-        setDraftingState({ generationSettings: settings });
-      }
-    });
-    return () => {
-      active = false;
-    };
-  }, []);
+    // Rehydrate the confirmed tone from the server-provided init config so the
+    // selector reflects the tone currently saved on the session. Nothing is
+    // persisted client side, so the server is the single source of truth.
+    if (selectedToneId) {
+      setDraftingState({ generationSettings: { toneId: selectedToneId } });
+    }
+  }, [selectedToneId]);
 
   useEffect(() => {
     // Keep the controlled select in sync when saved state is restored from the

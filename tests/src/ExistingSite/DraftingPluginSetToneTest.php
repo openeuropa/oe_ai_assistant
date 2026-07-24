@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\oe_ai_assistant\ExistingSite;
 
+use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
 use Drupal\taxonomy\Entity\Term;
+use Drupal\user\UserInterface;
 use weitzman\DrupalTestTraits\ExistingSiteBase;
 
 /**
@@ -17,28 +19,33 @@ class DraftingPluginSetToneTest extends ExistingSiteBase {
    */
   protected function setUp(): void {
     parent::setUp();
-    \Drupal::service('module_installer')->install(['dblog', 'oe_ai_assistant_test']);
-    \Drupal::database()->delete('watchdog')
-      ->condition('type', 'oe_ai_assistant')
-      ->execute();
+    \Drupal::service('module_installer')->install(['oe_ai_assistant_test']);
   }
 
   /**
-   * Tests that valid tone selections are accepted.
+   * Tests that a valid tone selection is saved on the session.
    */
   public function testSetToneAcceptsValidTone(): void {
     $user = $this->createUser(['use oe ai assistant']);
     $this->drupalLogin($user);
+    $session = $this->createSession($user);
+    $toneId = $this->getTermIdByName('oe_ai_tone', 'Formal');
 
     $result = $this->httpPost('/api/ai/plugins/drafting/set-tone', [
+      'sessionId' => $session->id(),
       'context' => [
-        'toneId' => $this->getTermIdByName('oe_ai_tone', 'Formal'),
+        'toneId' => $toneId,
       ],
     ]);
 
     $this->assertSame(200, $result['status']);
     $this->assertSame(['status' => 'ok'], $result['body']);
-    $this->assertAcceptedSelectionWasLogged();
+
+    // The selected tone is stored on the session entity.
+    $storage = \Drupal::entityTypeManager()->getStorage('ai_editorial_session');
+    $storage->resetCache([$session->id()]);
+    $saved = $storage->load($session->id());
+    $this->assertSame($toneId, (string) $saved->get('tone')->target_id);
   }
 
   /**
@@ -49,6 +56,7 @@ class DraftingPluginSetToneTest extends ExistingSiteBase {
     $this->drupalLogin($user);
 
     $result = $this->httpPost('/api/ai/plugins/drafting/set-tone', [
+      'sessionId' => '1',
       'context' => [
         'unused' => 'value',
       ],
@@ -67,6 +75,7 @@ class DraftingPluginSetToneTest extends ExistingSiteBase {
     $this->drupalLogin($user);
 
     $result = $this->httpPost('/api/ai/plugins/drafting/set-tone', [
+      'sessionId' => '1',
       'context' => [
         'toneId' => '999999',
       ],
@@ -91,10 +100,10 @@ class DraftingPluginSetToneTest extends ExistingSiteBase {
     $otherTerm->save();
 
     $result = $this->httpPost('/api/ai/plugins/drafting/set-tone', [
+      'sessionId' => '1',
       'context' => [
         'toneId' => (string) $otherTerm->id(),
       ],
-
     ]);
 
     $this->assertSame(400, $result['status']);
@@ -154,18 +163,26 @@ class DraftingPluginSetToneTest extends ExistingSiteBase {
   }
 
   /**
-   * Asserts the accepted tone selection was logged.
+   * Creates a content creation session owned by the given user.
+   *
+   * @param \Drupal\user\UserInterface $owner
+   *   The session owner.
+   *
+   * @return \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface
+   *   The saved session.
    */
-  protected function assertAcceptedSelectionWasLogged(): void {
-    $count = \Drupal::database()
-      ->select('watchdog', 'w')
-      ->condition('type', 'oe_ai_assistant')
-      ->condition('message', 'OEL-4851 drafting tone selection accepted%', 'LIKE')
-      ->countQuery()
-      ->execute()
-      ->fetchField();
-
-    $this->assertGreaterThan(0, (int) $count);
+  protected function createSession(UserInterface $owner): AiEditorialSessionInterface {
+    /** @var \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $session */
+    $session = \Drupal::entityTypeManager()
+      ->getStorage('ai_editorial_session')
+      ->create([
+        'type' => 'content_creation',
+        'uid' => $owner->id(),
+        'content_type' => 'oe_news',
+      ]);
+    $session->save();
+    $this->markEntityForCleanup($session);
+    return $session;
   }
 
 }

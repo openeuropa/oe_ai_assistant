@@ -8,7 +8,6 @@ use Drupal\ai\OperationType\Chat\ChatMessage;
 use Drupal\ai\OperationType\Chat\ChatOutput;
 use Drupal\ai\OperationType\Chat\Tools\ToolsFunctionInput;
 use Drupal\ai_agents\PluginManager\AiAgentManager;
-use Drupal\Core\TempStore\PrivateTempStoreFactory;
 use Drupal\oe_ai_assistant\Annotation\AiEditorialAssistant;
 use Drupal\oe_ai_assistant\Entity\AiConversationMessageInterface;
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
@@ -45,14 +44,9 @@ use Symfony\Component\HttpFoundation\Response;
 class DraftingPlugin extends AiAssistantPluginBase {
 
   /**
-   * The drafting session tempstore collection.
+   * The session field that stores the selected editorial tone.
    */
-  protected const string SESSION_STORE_COLLECTION = 'oe_ai_drafting_session';
-
-  /**
-   * The drafting editorial context tempstore key.
-   */
-  protected const string SESSION_CONTEXT_KEY = 'context';
+  protected const string TONE_FIELD = 'tone';
 
   /**
    * The AI agent plugin manager.
@@ -97,13 +91,6 @@ class DraftingPlugin extends AiAssistantPluginBase {
   protected AiEditorialContextInterface $aiEditorialContext;
 
   /**
-   * The private tempstore factory.
-   *
-   * @var \Drupal\Core\TempStore\PrivateTempStoreFactory
-   */
-  protected PrivateTempStoreFactory $tempStoreFactory;
-
-  /**
    * {@inheritdoc}
    */
   public static function create(
@@ -119,7 +106,6 @@ class DraftingPlugin extends AiAssistantPluginBase {
     $instance->toolLoop = $container->get(ToolExecutionLoopInterface::class);
     $instance->orchestrator = $container->get(DraftingOrchestratorInterface::class);
     $instance->aiEditorialContext = $container->get(AiEditorialContextInterface::class);
-    $instance->tempStoreFactory = $container->get('tempstore.private');
     return $instance;
   }
 
@@ -334,10 +320,10 @@ class DraftingPlugin extends AiAssistantPluginBase {
   }
 
   /**
-   * Saves the selected drafting tone.
+   * Saves the selected drafting tone on the editorial session.
    *
-   * The selected tone is persisted in private tempstore so chat requests can
-   * use it without trusting or requiring tone values in the chat request body.
+   * The selected tone is stored on the session entity's tone field so chat
+   * requests can use it without trusting tone values in the chat request body.
    *
    * @param \Symfony\Component\HttpFoundation\Request $request
    *   The incoming request.
@@ -363,11 +349,9 @@ class DraftingPlugin extends AiAssistantPluginBase {
       );
     }
 
-    $this->tempStoreFactory
-      ->get(static::SESSION_STORE_COLLECTION)
-      ->set(static::SESSION_CONTEXT_KEY, [
-        'toneId' => $toneId,
-      ]);
+    $session = $this->loadSession($body);
+    $session->set(static::TONE_FIELD, $toneId);
+    $session->save();
 
     return ['status' => 'ok'];
   }
@@ -438,12 +422,10 @@ class DraftingPlugin extends AiAssistantPluginBase {
    *   Context with entityTypeId, bundle, and toneId.
    */
   private function buildContext(AiEditorialSessionInterface $session): array {
-    $selectedContext = $this->loadSelectedContext();
-
     return [
       'entityTypeId' => 'node',
       'bundle' => $session->getContentType(),
-      'toneId' => $selectedContext['toneId'],
+      'toneId' => (string) $session->get(static::TONE_FIELD)->target_id,
     ];
   }
 
@@ -479,28 +461,6 @@ class DraftingPlugin extends AiAssistantPluginBase {
       }
     }
     return $prompt;
-  }
-
-  /**
-   * Loads the selected editorial context from session-scoped tempstore.
-   *
-   * @return array{toneId: string}
-   *   The selected context, or empty values when no selection has been saved.
-   */
-  private function loadSelectedContext(): array {
-    $context = $this->tempStoreFactory
-      ->get(static::SESSION_STORE_COLLECTION)
-      ->get(static::SESSION_CONTEXT_KEY);
-
-    if (!is_array($context)) {
-      return [
-        'toneId' => '',
-      ];
-    }
-
-    return [
-      'toneId' => (string) ($context['toneId'] ?? ''),
-    ];
   }
 
 }

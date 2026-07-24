@@ -73,8 +73,13 @@ DraftingSaveResponse:
 DraftingSetToneRequest:
   type: object
   required:
+    - sessionId
     - context
   properties:
+    sessionId:
+      type: string
+      description: >
+        The editorial session on which the selected tone is saved.
     context:
       type: object
       description: Selected drafting tone to set.
