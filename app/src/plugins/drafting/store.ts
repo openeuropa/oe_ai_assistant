@@ -12,7 +12,6 @@ import {
   setPluginState,
   usePluginSlice,
 } from "@/store/plugin-store";
-import type { DraftingGenerationSettings } from "./types";
 
 const PLUGIN_ID = "drafting";
 
@@ -28,17 +27,17 @@ export interface DraftingSliceState {
   plan: PlanStep[];
   /** Raw drafted field values keyed by field machine name. */
   draftedFields: Record<string, unknown>;
-  /** Confirmed tone selected by the editor. */
-  generationSettings: DraftingGenerationSettings | null;
+  /** Confirmed selection per composer panel, keyed by panel id. */
+  selections: Record<string, string>;
 }
 
 export const draftingSliceConfig: PluginSliceConfig<DraftingSliceState> = {
   initialState: {
     plan: [],
     draftedFields: {},
-    generationSettings: null,
+    selections: {},
   },
-  // Nothing is persisted client side. The confirmed tone is rehydrated
+  // Nothing is persisted client side. Confirmed selections are rehydrated
   // from the backend on mount, and the conversation lives server side.
   partialize: () => ({}) as Partial<DraftingSliceState>,
 };
@@ -60,4 +59,15 @@ export function getDraftingState(): DraftingSliceState {
 /** Typed setter for mutations. */
 export function setDraftingState(partial: Partial<DraftingSliceState>): void {
   setPluginState(PLUGIN_ID, partial as Record<string, unknown>);
+}
+
+/** Reads the confirmed selection for a composer panel. */
+export function useDraftingSelection(panelId: string): string {
+  return useDraftingSlice().selections[panelId] ?? "";
+}
+
+/** Writes the confirmed selection for a composer panel. */
+export function setDraftingSelection(panelId: string, value: string): void {
+  const current = getDraftingState().selections;
+  setDraftingState({ selections: { ...current, [panelId]: value } });
 }

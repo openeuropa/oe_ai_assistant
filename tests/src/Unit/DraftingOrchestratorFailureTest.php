@@ -11,7 +11,7 @@ use Drupal\ai_agents\PluginManager\AiAgentManager;
 use Drupal\Core\Entity\EntityInterface;
 use Drupal\oe_ai_assistant\Entity\AiConversationMessageInterface;
 use Drupal\oe_ai_assistant\Service\DraftingOrchestrator;
-use Drupal\oe_ai_assistant\Service\EntityJsonSchemaComposer;
+use Drupal\oe_ai_assistant\Service\DraftingSchemaProviderInterface;
 use Drupal\oe_ai_assistant\Service\MessageRecorderInterface;
 use Drupal\oe_ai_assistant\Service\UiMessageStreamInterface;
 use PHPUnit\Framework\Attributes\Group;
@@ -212,8 +212,8 @@ class DraftingOrchestratorFailureTest extends TestCase {
     string $answer = '',
     ?LoggerInterface $logger = NULL,
   ): DraftingOrchestrator {
-    $composer = $this->createMock(EntityJsonSchemaComposer::class);
-    $composer->method('splitSchemaIntoGroups')->willReturn([
+    $provider = $this->createMock(DraftingSchemaProviderInterface::class);
+    $provider->method('groups')->willReturn([
       [
         'groupId' => 'main_fields',
         'label' => 'Main fields',
@@ -232,7 +232,7 @@ class DraftingOrchestratorFailureTest extends TestCase {
     $manager->method('createInstance')->willReturn($agent);
 
     return new DraftingOrchestrator(
-      $composer,
+      $provider,
       $manager,
       $logger ?? $this->createMock(LoggerInterface::class),
       $recorder,

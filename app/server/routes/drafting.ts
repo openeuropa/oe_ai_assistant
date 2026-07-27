@@ -198,7 +198,11 @@ export function createDraftingRouter(service: DraftingService): Router {
     }
 
     console.info("[drafting] set-tone", { toneId });
-    res.json({ status: "ok" });
+    // Delay the response so the Save spinner is visible during local
+    // development. The real backend responds as soon as it persists.
+    setTimeout(() => {
+      res.json({ status: "ok" });
+    }, 1000);
   });
 
   return router;

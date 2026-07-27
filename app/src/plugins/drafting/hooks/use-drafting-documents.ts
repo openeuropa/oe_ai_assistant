@@ -1,27 +1,9 @@
 import { useState } from "react";
 import { getConfig } from "@/config";
+import { readConfigOptions } from "../config-options";
+import type { DraftingDocument } from "../types";
 
-/** A reference document that can ground the next draft. */
-export interface DraftingDocument {
-  id: string;
-  title: string;
-  /** Short descriptor, e.g. "PDF - 240 KB". */
-  meta: string;
-}
-
-// Mock document list until a backend document service exists.
-const INITIAL_SELECTED: DraftingDocument[] = [
-  {
-    id: "eu-ai-act-brief",
-    title: "EU AI Act briefing note.pdf",
-    meta: "PDF - 240 KB",
-  },
-  {
-    id: "stakeholder-comments",
-    title: "Stakeholder comments.docx",
-    meta: "DOCX - 96 KB",
-  },
-];
+export type { DraftingDocument } from "../types";
 
 /** Formats a byte size into a short human-readable string. */
 function formatFileSize(size: number): string {
@@ -37,17 +19,22 @@ function formatFileSize(size: number): string {
 /**
  * Owns the reference documents state for drafting.
  *
- * TODO: Replace the mock lists and client-only mutations with a backend
- * document service once documents are uploaded and persisted server side.
+ * The initial list comes from the host config, so it works as soon as the
+ * backend sends documents. Uploads and removals, however, only mutate local
+ * state.
+ *
+ * TODO: Persist uploads and removals via a backend document service; until
+ * then those changes are lost on reload.
  */
 export function useDraftingDocuments() {
   const draftingConfig = getConfig().pluginConfig.drafting ?? {};
   const documentsConfig = draftingConfig.documents as
-    | { enabled?: boolean }
+    | { enabled?: boolean; options?: unknown }
     | undefined;
   const enabled = documentsConfig?.enabled ?? false;
-  const [selected, setSelected] =
-    useState<DraftingDocument[]>(INITIAL_SELECTED);
+  const [selected, setSelected] = useState<DraftingDocument[]>(() =>
+    readConfigOptions<DraftingDocument>(documentsConfig?.options),
+  );
 
   /** Removes a document from the list. */
   function removeDocument(id: string) {

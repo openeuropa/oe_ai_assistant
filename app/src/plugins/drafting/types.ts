@@ -44,6 +44,14 @@ export interface DraftingSelectPanelConfig {
   selected?: string;
 }
 
+/** A reference document that can ground the next draft. */
+export interface DraftingDocument {
+  id: string;
+  title: string;
+  /** Short descriptor, e.g. "PDF - 240 KB". */
+  meta: string;
+}
+
 export interface DraftingPluginConfig {
   entityTypeId?: string;
   bundle?: string;
@@ -51,8 +59,8 @@ export interface DraftingPluginConfig {
   tone?: DraftingSelectPanelConfig;
   /** Template panel: gate + available templates. */
   templates?: DraftingSelectPanelConfig;
-  /** Documents panel: gate only (upload based). */
-  documents?: { enabled?: boolean };
+  /** Documents panel: gate + documents attached from the server. */
+  documents?: { enabled?: boolean; options?: DraftingDocument[] };
 }
 
 /** Response body for the drafting reset endpoint. */

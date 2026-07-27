@@ -10,7 +10,8 @@ use Drupal\ai\Attribute\FunctionCall;
 use Drupal\ai\Base\FunctionCallBase;
 use Drupal\ai\Service\FunctionCalling\FunctionCallInterface;
 use Drupal\ai\Service\FunctionCalling\StructuredExecutableFunctionCallInterface;
-use Drupal\oe_ai_assistant\Service\EntityJsonSchemaComposer;
+use Drupal\oe_ai_assistant\Service\DraftingSchemaProviderInterface;
+use Psr\Log\LoggerInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 
 /**
@@ -38,16 +39,29 @@ use Symfony\Component\DependencyInjection\ContainerInterface;
       description: new TranslatableMarkup("The entity type ID (e.g. node)."),
       required: TRUE,
     ),
+    'template' => new ContextDefinition(
+      data_type: 'string',
+      label: new TranslatableMarkup("Template"),
+      description: new TranslatableMarkup("The drafting template id to restrict the schema to."),
+      required: FALSE,
+    ),
   ],
 )]
 class GetContentSchema extends FunctionCallBase implements StructuredExecutableFunctionCallInterface {
 
   /**
-   * The JSON Schema composer service.
+   * The drafting schema provider.
    *
-   * @var \Drupal\oe_ai_assistant\Service\EntityJsonSchemaComposer
+   * @var \Drupal\oe_ai_assistant\Service\DraftingSchemaProviderInterface
    */
-  protected EntityJsonSchemaComposer $composer;
+  protected DraftingSchemaProviderInterface $schemaProvider;
+
+  /**
+   * The module logger channel.
+   *
+   * @var \Psr\Log\LoggerInterface
+   */
+  protected LoggerInterface $moduleLogger;
 
   /**
    * The structured output from execute().
@@ -68,7 +82,8 @@ class GetContentSchema extends FunctionCallBase implements StructuredExecutableF
     $instance = parent::create(
       $container, $configuration, $plugin_id, $plugin_definition
     );
-    $instance->composer = $container->get(EntityJsonSchemaComposer::class);
+    $instance->schemaProvider = $container->get(DraftingSchemaProviderInterface::class);
+    $instance->moduleLogger = $container->get('logger.channel.oe_ai_assistant');
     return $instance;
   }
 
@@ -81,6 +96,9 @@ class GetContentSchema extends FunctionCallBase implements StructuredExecutableF
     $values = $this->getContextValues();
     $bundle = (string) ($values['bundle'] ?? '');
     $entityTypeId = (string) ($values['entity_type_id'] ?? 'node');
+    // The context is string-typed; treat an unset or empty value as NULL so
+    // the provider auto-selects a template.
+    $templateId = ($values['template'] ?? '') !== '' ? (string) $values['template'] : NULL;
 
     if (empty($bundle)) {
       $this->output = ['error' => 'Bundle is required.'];
@@ -88,12 +106,16 @@ class GetContentSchema extends FunctionCallBase implements StructuredExecutableF
     }
 
     try {
-      $this->output = $this->composer->splitSchemaIntoGroups(
-        $entityTypeId, $bundle
-      );
+      $this->output = $this->schemaProvider->groups($entityTypeId, $bundle, $templateId);
+    }
+    catch (\InvalidArgumentException $e) {
+      // Invalid input (e.g. a bad template id): report it to the LLM.
+      $this->output = ['error' => $e->getMessage()];
     }
     catch (\Exception $e) {
-      $this->output = ['error' => $e->getMessage()];
+      // Log the detail, return a generic message to the LLM.
+      $this->moduleLogger->error('get_content_schema failed: @message', ['@message' => $e->getMessage()]);
+      $this->output = ['error' => 'The content schema could not be loaded.'];
     }
   }
 

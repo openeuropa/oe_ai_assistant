@@ -1,33 +1,11 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { FileText, LayoutTemplate, Megaphone, X } from "lucide-react";
+import { FileText, LayoutTemplate, Megaphone } from "lucide-react";
 import { Pane } from "../../../src/components/ui/pane";
 import {
   type PaneTabItem,
   PaneTabs,
 } from "../../../src/components/ui/pane-tabs";
 import { RadioCardGroup } from "../../../src/components/ui/radio-card-group";
-
-/** Simple actions row reused by the example panes. */
-function ExampleActions({ onCancel }: { onCancel: () => void }) {
-  return (
-    <>
-      <button
-        type="button"
-        onClick={onCancel}
-        className="inline-flex h-9 cursor-pointer items-center gap-2 rounded-lg border border-gray-300 bg-white px-3 text-sm font-medium text-gray-700 hover:bg-gray-100"
-      >
-        <X size={15} />
-        Cancel
-      </button>
-      <button
-        type="button"
-        className="inline-flex h-9 cursor-pointer items-center rounded-lg bg-blue-600 px-3 text-sm font-medium text-white hover:bg-blue-700"
-      >
-        Save
-      </button>
-    </>
-  );
-}
 
 const tabs: PaneTabItem[] = [
   {
@@ -40,7 +18,8 @@ const tabs: PaneTabItem[] = [
         icon={<Megaphone size={18} />}
         title="Tone"
         description="Save the selected tone before drafting to apply it."
-        actions={<ExampleActions onCancel={close} />}
+        onSave={() => {}}
+        onCancel={close}
       >
         <RadioCardGroup
           name="story-tone"
@@ -72,7 +51,8 @@ const tabs: PaneTabItem[] = [
         icon={<FileText size={18} />}
         title="Documents"
         description="Reference documents used to ground the draft."
-        actions={<ExampleActions onCancel={close} />}
+        onSave={() => {}}
+        onCancel={close}
       >
         <p className="text-sm text-gray-600">Document list goes here.</p>
       </Pane>
@@ -88,7 +68,8 @@ const tabs: PaneTabItem[] = [
         icon={<LayoutTemplate size={18} />}
         title="Templates"
         description="Pick a starting template for the draft."
-        actions={<ExampleActions onCancel={close} />}
+        onSave={() => {}}
+        onCancel={close}
       >
         <p className="text-sm text-gray-600">Template picker goes here.</p>
       </Pane>

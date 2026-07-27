@@ -16,7 +16,7 @@ use Drupal\oe_ai_assistant\Plugin\AiAssistantPluginBase;
 use Drupal\oe_ai_assistant\Service\AiEditorialContextInterface;
 use Drupal\oe_ai_assistant\Service\DraftingOrchestratorInterface;
 use Drupal\oe_ai_assistant\Service\DraftSaverInterface;
-use Drupal\oe_ai_assistant\Service\EntityJsonSchemaComposer;
+use Drupal\oe_ai_assistant\Service\DraftingSchemaProviderInterface;
 use Drupal\oe_ai_assistant\Service\ToolExecutionLoopInterface;
 use Drupal\oe_ai_assistant\Service\UiMessageStreamInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
@@ -56,11 +56,11 @@ class DraftingPlugin extends AiAssistantPluginBase {
   protected AiAgentManager $aiAgentManager;
 
   /**
-   * The JSON Schema composer service.
+   * The drafting schema provider.
    *
-   * @var \Drupal\oe_ai_assistant\Service\EntityJsonSchemaComposer
+   * @var \Drupal\oe_ai_assistant\Service\DraftingSchemaProviderInterface
    */
-  protected EntityJsonSchemaComposer $schemaComposer;
+  protected DraftingSchemaProviderInterface $schemaProvider;
 
   /**
    * The draft saver service.
@@ -101,7 +101,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
   ): static {
     $instance = parent::create($container, $configuration, $plugin_id, $plugin_definition);
     $instance->aiAgentManager = $container->get('plugin.manager.ai_agents');
-    $instance->schemaComposer = $container->get(EntityJsonSchemaComposer::class);
+    $instance->schemaProvider = $container->get(DraftingSchemaProviderInterface::class);
     $instance->draftSaver = $container->get(DraftSaverInterface::class);
     $instance->toolLoop = $container->get(ToolExecutionLoopInterface::class);
     $instance->orchestrator = $container->get(DraftingOrchestratorInterface::class);
@@ -161,6 +161,12 @@ class DraftingPlugin extends AiAssistantPluginBase {
 
     $session = $this->loadSession($body);
     $context = $this->buildContext($session);
+
+    // Resolve the template and pin its id for the prompt, tool, orchestrator.
+    $template = $this->schemaProvider->resolveTemplate(
+      $context['entityTypeId'], $context['bundle'], $context['template']
+    );
+    $context['template'] = $template?->id();
 
     // Load the persisted transcript, then append the current user's message
     // for this turn's LLM call and persist it as a user turn.
@@ -239,6 +245,8 @@ class DraftingPlugin extends AiAssistantPluginBase {
             'get_content_schema' => [
               'entity_type_id' => $context['entityTypeId'],
               'bundle' => $context['bundle'],
+              // The context definition is string-typed; NULL becomes ''.
+              'template' => $context['template'] ?? '',
             ],
           ],
           recordTurn: $recordTurn,
@@ -254,6 +262,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
             $stream, $history,
             $context['entityTypeId'], $context['bundle'],
             $session, $lastAssistant,
+            $context['template']
           );
           // Emit the draft_content tool call with its result so the card
           // appears live, matching what a reload rehydrates.
@@ -426,6 +435,8 @@ class DraftingPlugin extends AiAssistantPluginBase {
       'entityTypeId' => 'node',
       'bundle' => $session->getContentType(),
       'toneId' => (string) $session->get(static::TONE_FIELD)->target_id,
+      // No template selector yet; the provider auto-picks one for the bundle.
+      'template' => '',
     ];
   }
 
@@ -439,8 +450,8 @@ class DraftingPlugin extends AiAssistantPluginBase {
       . "entity_type_id: " . $context['entityTypeId'] . "\n";
 
     if (!empty($context['bundle'])) {
-      $groups = $this->schemaComposer->splitSchemaIntoGroups(
-        $context['entityTypeId'], $context['bundle']
+      $groups = $this->schemaProvider->groups(
+        $context['entityTypeId'], $context['bundle'], $context['template']
       );
       $prompt .= "\nAvailable field groups:\n"
         . json_encode($groups, JSON_PRETTY_PRINT) . "\n";

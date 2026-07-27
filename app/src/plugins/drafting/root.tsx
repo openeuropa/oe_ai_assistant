@@ -10,14 +10,13 @@
 import { AssistantRuntimeProvider } from "@assistant-ui/react";
 import { FileText, LayoutTemplate, Megaphone } from "lucide-react";
 import { useCallback } from "react";
+import { CardSelectPane } from "@/components/ui/card-select-pane";
 import type { PaneTabItem } from "@/components/ui/pane-tabs";
 import { ArtifactPlaceholder } from "./components/artifact-placeholder";
 import { ContentTable } from "./components/content-table";
 import { DocumentsPanel } from "./components/documents-panel";
 import { DraftingThread } from "./components/drafting-thread";
-import { GenerationSettingsPanel } from "./components/generation-settings-panel";
 import { PlanSteps } from "./components/plan-steps";
-import { TemplatePanel } from "./components/template-panel";
 import {
   DraftContentToolUI,
   RegenerateFieldsToolUI,
@@ -25,14 +24,14 @@ import {
   SetFieldContentToolUI,
 } from "./components/tool-uis";
 import { useDraftingDocuments } from "./hooks/use-drafting-documents";
-import { useDraftingGenerationSettings } from "./hooks/use-drafting-generation-settings";
 import { useDraftingRuntime } from "./hooks/use-drafting-runtime";
 import { useDraftingTemplate } from "./hooks/use-drafting-template";
+import { useDraftingTone } from "./hooks/use-drafting-tone";
 import { useDraftingSlice } from "./store";
 
 export default function DraftingRoot() {
   const { draftedFields, plan } = useDraftingSlice();
-  const generationSettings = useDraftingGenerationSettings();
+  const tone = useDraftingTone();
   const documents = useDraftingDocuments();
   const template = useDraftingTemplate();
   const runtime = useDraftingRuntime();
@@ -41,30 +40,33 @@ export default function DraftingRoot() {
   // Composer tabs. Each opens a pane over the chat, and its summary
   // reproposes the current selection.
   const tabs: PaneTabItem[] = [];
-  if (generationSettings.enabled) {
+  if (tone.enabled) {
     tabs.push({
       id: "tone",
       icon: <Megaphone size={16} />,
       title: "Tone",
-      summary: generationSettings.selectedLabel ?? "Not set",
+      summary: tone.selectedLabel ?? "Not set",
       render: (close) => (
-        <GenerationSettingsPanel
-          values={generationSettings.values}
-          toneOptions={generationSettings.toneOptions}
-          onChange={generationSettings.updateValues}
+        <CardSelectPane
+          icon={<Megaphone size={18} />}
+          title="Tone"
+          description="Save the selected tone before drafting to apply it."
+          options={tone.options}
+          value={tone.value}
+          onChange={tone.updateValue}
           onSave={async () => {
             // Persist, then close the pane on success.
-            await generationSettings.submitValues();
+            await tone.submitValues();
             close();
           }}
           onCancel={() => {
             // Restore the confirmed tone, then close the pane.
-            generationSettings.discardChanges();
+            tone.discardChanges();
             close();
           }}
-          hasChanges={generationSettings.hasChanges}
-          isSaving={generationSettings.isSaving}
-          error={generationSettings.error}
+          hasChanges={tone.hasChanges}
+          isSaving={tone.isSaving}
+          error={tone.error}
         />
       ),
     });
@@ -96,7 +98,10 @@ export default function DraftingRoot() {
       title: "Templates",
       summary: template.selectedLabel ?? "Not set",
       render: (close) => (
-        <TemplatePanel
+        <CardSelectPane
+          icon={<LayoutTemplate size={18} />}
+          title="Template"
+          description="Select the structure the generated draft should follow."
           options={template.options}
           value={template.value}
           onChange={template.updateValue}
