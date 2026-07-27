@@ -1,12 +1,20 @@
 import { useEffect, useState } from "react";
 import { getConfig } from "@/config";
 import { fetchDraftingTone, setDraftingTone } from "../api/drafting-api";
-import type {
-  GenerationSettingsDraft,
-  GenerationSettingsOption,
-} from "../components/generation-settings-panel";
 import { setDraftingState, useDraftingSlice } from "../store";
 import type { DraftingGenerationSettings } from "../types";
+
+/** A host-provided tone option. */
+export interface GenerationSettingsOption {
+  id: string;
+  label: string;
+  description: string;
+}
+
+/** The controlled tone draft edited by the panel. */
+export interface GenerationSettingsDraft {
+  toneId: string;
+}
 
 function getGenerationSettingsOptions(
   value: unknown,

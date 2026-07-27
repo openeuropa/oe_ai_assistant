@@ -10,14 +10,13 @@
 import { AssistantRuntimeProvider } from "@assistant-ui/react";
 import { FileText, LayoutTemplate, Megaphone } from "lucide-react";
 import { useCallback } from "react";
+import { CardSelectPane } from "@/components/ui/card-select-pane";
 import type { PaneTabItem } from "@/components/ui/pane-tabs";
 import { ArtifactPlaceholder } from "./components/artifact-placeholder";
 import { ContentTable } from "./components/content-table";
 import { DocumentsPanel } from "./components/documents-panel";
 import { DraftingThread } from "./components/drafting-thread";
-import { GenerationSettingsPanel } from "./components/generation-settings-panel";
 import { PlanSteps } from "./components/plan-steps";
-import { TemplatePanel } from "./components/template-panel";
 import {
   DraftContentToolUI,
   RegenerateFieldsToolUI,
@@ -48,10 +47,17 @@ export default function DraftingRoot() {
       title: "Tone",
       summary: generationSettings.selectedLabel ?? "Not set",
       render: (close) => (
-        <GenerationSettingsPanel
-          values={generationSettings.values}
-          toneOptions={generationSettings.toneOptions}
-          onChange={generationSettings.updateValues}
+        <CardSelectPane
+          icon={<Megaphone size={18} />}
+          title="Tone"
+          description="Save the selected tone before drafting to apply it."
+          options={generationSettings.toneOptions.map((option) => ({
+            value: option.id,
+            label: option.label,
+            description: option.description,
+          }))}
+          value={generationSettings.values.toneId}
+          onChange={(toneId) => generationSettings.updateValues({ toneId })}
           onSave={async () => {
             // Persist, then close the pane on success.
             await generationSettings.submitValues();
@@ -96,7 +102,10 @@ export default function DraftingRoot() {
       title: "Templates",
       summary: template.selectedLabel ?? "Not set",
       render: (close) => (
-        <TemplatePanel
+        <CardSelectPane
+          icon={<LayoutTemplate size={18} />}
+          title="Template"
+          description="Select the structure the generated draft should follow."
           options={template.options}
           value={template.value}
           onChange={template.updateValue}

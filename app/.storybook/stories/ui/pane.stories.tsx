@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { Megaphone, Sparkles, X } from "lucide-react";
+import { Megaphone, Sparkles } from "lucide-react";
 import { Pane } from "../../../src/components/ui/pane";
 import { RadioCardGroup } from "../../../src/components/ui/radio-card-group";
 
@@ -26,27 +26,6 @@ const toneOptions = [
   },
 ];
 
-/** Placeholder buttons so the actions slot is visible in the stories. */
-function ExampleActions() {
-  return (
-    <>
-      <button
-        type="button"
-        className="inline-flex h-9 cursor-pointer items-center gap-2 rounded-lg border border-gray-300 bg-white px-3 text-sm font-medium text-gray-700 hover:bg-gray-100"
-      >
-        <X size={15} />
-        Cancel
-      </button>
-      <button
-        type="button"
-        className="inline-flex h-9 cursor-pointer items-center rounded-lg bg-blue-600 px-3 text-sm font-medium text-white hover:bg-blue-700"
-      >
-        Save
-      </button>
-    </>
-  );
-}
-
 const meta = {
   title: "UI/Pane",
   component: Pane,
@@ -66,7 +45,8 @@ export const WithCardSelection: Story = {
         icon={<Megaphone size={18} />}
         title="Tone"
         description="Save the selected tone before drafting to apply it."
-        actions={<ExampleActions />}
+        onSave={() => {}}
+        onCancel={() => {}}
       >
         <RadioCardGroup
           name="pane-tone"
@@ -98,7 +78,8 @@ export const DifferentPane: Story = {
         icon={<Sparkles size={18} />}
         title="Audience"
         description="Choose who the draft is written for."
-        actions={<ExampleActions />}
+        onSave={() => {}}
+        onCancel={() => {}}
       >
         <RadioCardGroup
           name="pane-audience"
