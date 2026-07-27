@@ -76,6 +76,73 @@ class GetContentSchemaTest extends KernelTestBase {
   }
 
   /**
+   * Executes the get_content_schema plugin with the given context values.
+   *
+   * @param array $context
+   *   Context values keyed by name (bundle, entity_type_id, template).
+   *
+   * @return array
+   *   The plugin's structured output.
+   */
+  private function runPlugin(array $context): array {
+    $plugin = $this->container->get('plugin.manager.ai.function_calls')
+      ->createInstance('oe_ai_assistant:get_content_schema');
+    foreach ($context as $name => $value) {
+      $plugin->setContextValue($name, $value);
+    }
+    $plugin->execute();
+    return $plugin->getStructuredOutput();
+  }
+
+  /**
+   * An explicit template context restricts the tool output to its fields.
+   */
+  public function testExecuteWithTemplateUsesThatTemplate(): void {
+    // news_default lists title, field_teaser, field_body (all scalar).
+    $groups = $this->runPlugin([
+      'entity_type_id' => 'node',
+      'bundle' => 'oe_news',
+      'template' => 'news_default',
+    ]);
+
+    $byId = array_column($groups, 'fieldNames', 'groupId');
+    $this->assertSame(['title', 'field_teaser', 'field_body'], $byId['main_fields']);
+    $this->assertArrayNotHasKey('field_content_paragraphs', $byId);
+    $this->assertNotContains('field_news_type', $byId['main_fields']);
+  }
+
+  /**
+   * An invalid template id degrades to an error payload, not an exception.
+   */
+  public function testExecuteWithInvalidTemplateReturnsErrorOutput(): void {
+    $output = $this->runPlugin([
+      'entity_type_id' => 'node',
+      'bundle' => 'oe_news',
+      'template' => 'does_not_exist',
+    ]);
+
+    $this->assertArrayHasKey('error', $output);
+    $this->assertStringContainsString('not found', $output['error']);
+  }
+
+  /**
+   * Without a template context, the latest template for the bundle is used.
+   */
+  public function testExecuteWithoutTemplateAutoPicksLatest(): void {
+    // oe_news' latest template is news_with_paragraphs (title, field_teaser,
+    // field_content_paragraphs), not the full schema.
+    $groups = $this->runPlugin([
+      'entity_type_id' => 'node',
+      'bundle' => 'oe_news',
+    ]);
+
+    $byId = array_column($groups, 'fieldNames', 'groupId');
+    $this->assertSame(['title', 'field_teaser'], $byId['main_fields']);
+    $this->assertArrayHasKey('field_content_paragraphs', $byId);
+    $this->assertNotContains('field_body', $byId['main_fields']);
+  }
+
+  /**
    * Tests that oe_news schema splits into expected groups.
    */
   public function testSplitsOeNewsIntoGroups(): void {
