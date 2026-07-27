@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { getConfig } from "@/config";
 import { fetchDraftingTone, setDraftingTone } from "../api/drafting-api";
+import { readConfigOptions } from "../config-options";
 import { setDraftingState, useDraftingSlice } from "../store";
 import type { DraftingGenerationSettings } from "../types";
 
@@ -14,23 +15,6 @@ export interface GenerationSettingsOption {
 /** The controlled tone draft edited by the panel. */
 export interface GenerationSettingsDraft {
   toneId: string;
-}
-
-function getGenerationSettingsOptions(
-  value: unknown,
-): GenerationSettingsOption[] {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-
-  return value.filter(
-    (option): option is GenerationSettingsOption =>
-      Boolean(option) &&
-      typeof option === "object" &&
-      typeof (option as Record<string, unknown>).id === "string" &&
-      typeof (option as Record<string, unknown>).label === "string" &&
-      typeof (option as Record<string, unknown>).description === "string",
-  );
 }
 
 /**
@@ -49,7 +33,9 @@ export function useDraftingGenerationSettings() {
     | { enabled?: boolean; options?: unknown }
     | undefined;
   const enabled = toneConfig?.enabled ?? false;
-  const toneOptions = getGenerationSettingsOptions(toneConfig?.options);
+  const toneOptions = readConfigOptions<GenerationSettingsOption>(
+    toneConfig?.options,
+  );
 
   // With no placeholder option in the select, the first backend-provided tone
   // is the visible default until the editor saves a different tone.

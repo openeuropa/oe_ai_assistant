@@ -1,33 +1,7 @@
 import { useState } from "react";
-import type { RadioCardOption } from "@/components/ui/radio-card-group";
 import { getConfig } from "@/config";
-
-/**
- * Reads the host-provided template options from the app init config.
- *
- * Host options use { id, label, description }; they are mapped to the card
- * shape ({ value, ... }) the panel expects.
- */
-function getTemplateOptions(value: unknown): RadioCardOption[] {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-
-  return value
-    .filter(
-      (option): option is { id: string; label: string; description: string } =>
-        Boolean(option) &&
-        typeof option === "object" &&
-        typeof (option as Record<string, unknown>).id === "string" &&
-        typeof (option as Record<string, unknown>).label === "string" &&
-        typeof (option as Record<string, unknown>).description === "string",
-    )
-    .map((option) => ({
-      value: option.id,
-      label: option.label,
-      description: option.description,
-    }));
-}
+import { readConfigOptions } from "../config-options";
+import type { DraftingSelectOption } from "../types";
 
 /**
  * Owns the template selector state.
@@ -43,7 +17,14 @@ export function useDraftingTemplate() {
     | { enabled?: boolean; options?: unknown }
     | undefined;
   const enabled = templatesConfig?.enabled ?? false;
-  const options = getTemplateOptions(templatesConfig?.options);
+  // Host options use { id, label, description }; map to the card shape.
+  const options = readConfigOptions<DraftingSelectOption>(
+    templatesConfig?.options,
+  ).map((option) => ({
+    value: option.id,
+    label: option.label,
+    description: option.description,
+  }));
   const [confirmedId, setConfirmedId] = useState(options[0]?.value ?? "");
   const [value, setValue] = useState(confirmedId);
 
