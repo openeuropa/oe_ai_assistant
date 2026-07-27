@@ -24,14 +24,14 @@ import {
   SetFieldContentToolUI,
 } from "./components/tool-uis";
 import { useDraftingDocuments } from "./hooks/use-drafting-documents";
-import { useDraftingGenerationSettings } from "./hooks/use-drafting-generation-settings";
 import { useDraftingRuntime } from "./hooks/use-drafting-runtime";
 import { useDraftingTemplate } from "./hooks/use-drafting-template";
+import { useDraftingTone } from "./hooks/use-drafting-tone";
 import { useDraftingSlice } from "./store";
 
 export default function DraftingRoot() {
   const { draftedFields, plan } = useDraftingSlice();
-  const generationSettings = useDraftingGenerationSettings();
+  const tone = useDraftingTone();
   const documents = useDraftingDocuments();
   const template = useDraftingTemplate();
   const runtime = useDraftingRuntime();
@@ -40,37 +40,33 @@ export default function DraftingRoot() {
   // Composer tabs. Each opens a pane over the chat, and its summary
   // reproposes the current selection.
   const tabs: PaneTabItem[] = [];
-  if (generationSettings.enabled) {
+  if (tone.enabled) {
     tabs.push({
       id: "tone",
       icon: <Megaphone size={16} />,
       title: "Tone",
-      summary: generationSettings.selectedLabel ?? "Not set",
+      summary: tone.selectedLabel ?? "Not set",
       render: (close) => (
         <CardSelectPane
           icon={<Megaphone size={18} />}
           title="Tone"
           description="Save the selected tone before drafting to apply it."
-          options={generationSettings.toneOptions.map((option) => ({
-            value: option.id,
-            label: option.label,
-            description: option.description,
-          }))}
-          value={generationSettings.values.toneId}
-          onChange={(toneId) => generationSettings.updateValues({ toneId })}
+          options={tone.options}
+          value={tone.value}
+          onChange={tone.updateValue}
           onSave={async () => {
             // Persist, then close the pane on success.
-            await generationSettings.submitValues();
+            await tone.submitValues();
             close();
           }}
           onCancel={() => {
             // Restore the confirmed tone, then close the pane.
-            generationSettings.discardChanges();
+            tone.discardChanges();
             close();
           }}
-          hasChanges={generationSettings.hasChanges}
-          isSaving={generationSettings.isSaving}
-          error={generationSettings.error}
+          hasChanges={tone.hasChanges}
+          isSaving={tone.isSaving}
+          error={tone.error}
         />
       ),
     });
