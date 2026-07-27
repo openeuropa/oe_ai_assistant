@@ -19,8 +19,12 @@ function formatFileSize(size: number): string {
 /**
  * Owns the reference documents state for drafting.
  *
- * TODO: Replace the mock lists and client-only mutations with a backend
- * document service once documents are uploaded and persisted server side.
+ * The initial list comes from the host config, so it works as soon as the
+ * backend sends documents. Uploads and removals, however, only mutate local
+ * state.
+ *
+ * TODO: Persist uploads and removals via a backend document service; until
+ * then those changes are lost on reload.
  */
 export function useDraftingDocuments() {
   const draftingConfig = getConfig().pluginConfig.drafting ?? {};
