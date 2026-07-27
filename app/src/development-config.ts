@@ -49,6 +49,18 @@ export const developmentConfig = {
       },
       documents: {
         enabled: true,
+        options: [
+          {
+            id: "eu-ai-act-brief",
+            title: "EU AI Act briefing note.pdf",
+            meta: "PDF - 240 KB",
+          },
+          {
+            id: "stakeholder-comments",
+            title: "Stakeholder comments.docx",
+            meta: "DOCX - 96 KB",
+          },
+        ],
       },
     },
   },
