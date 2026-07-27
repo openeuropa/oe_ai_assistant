@@ -56,18 +56,18 @@ export function DocumentsPanel({
           <p className="mt-1 text-xs text-gray-500">
             PDF, DOCX, TXT, or Markdown files
           </p>
-          <input
-            ref={fileInputRef}
-            type="file"
-            multiple
-            className="sr-only"
-            accept=".pdf,.doc,.docx,.txt,.md,text/plain,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-            onChange={(event) => {
-              onUpload(event.target.files);
-              event.target.value = "";
-            }}
-          />
         </button>
+        <input
+          ref={fileInputRef}
+          type="file"
+          multiple
+          className="sr-only"
+          accept=".pdf,.doc,.docx,.txt,.md,text/plain,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+          onChange={(event) => {
+            onUpload(event.target.files);
+            event.target.value = "";
+          }}
+        />
 
         {/* Attached documents, two per row to save space. */}
         <div className="grid gap-2 md:grid-cols-2">

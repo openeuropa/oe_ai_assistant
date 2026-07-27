@@ -46,8 +46,11 @@ export function useDraftingDocuments() {
     if (!fileList) {
       return;
     }
+    // Documents are identified by a server-assigned UUID. Until the upload
+    // backend exists, mint one client side so ids stay unique even when the
+    // same file is uploaded twice.
     const uploaded = Array.from(fileList).map((file) => ({
-      id: `${file.name}-${file.lastModified}`,
+      id: crypto.randomUUID(),
       title: file.name,
       meta: `${file.type || "File"} - ${formatFileSize(file.size)}`,
     }));

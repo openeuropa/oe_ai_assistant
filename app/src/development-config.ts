@@ -49,14 +49,15 @@ export const developmentConfig = {
       },
       documents: {
         enabled: true,
+        // Ids are the server-assigned document UUIDs.
         options: [
           {
-            id: "eu-ai-act-brief",
+            id: "3f2504e0-4f89-41d3-9a0c-0305e82c3301",
             title: "EU AI Act briefing note.pdf",
             meta: "PDF - 240 KB",
           },
           {
-            id: "stakeholder-comments",
+            id: "c9bf9e57-1685-4c89-bafb-ff5af830be8a",
             title: "Stakeholder comments.docx",
             meta: "DOCX - 96 KB",
           },
