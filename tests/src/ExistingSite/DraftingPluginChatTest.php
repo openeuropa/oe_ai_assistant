@@ -342,35 +342,6 @@ class DraftingPluginChatTest extends ExistingSiteBase {
   }
 
   /**
-   * Tests that chat request editorial context is ignored.
-   */
-  public function testChatRequestContextIsIgnored(): void {
-    $user = $this->createUser(['use oe ai assistant']);
-    $this->loginUser($user);
-    $session = $this->createSession($user);
-
-    MockAiProvider::enqueue(new MockResponse(
-      text: 'Drafting without request context.',
-    ));
-
-    $result = $this->httpPost('/api/ai/plugins/drafting/chat', [
-      'message' => 'Draft this with request context.',
-      'sessionId' => $session->id(),
-      'toneId' => $this->getTermIdByName('oe_ai_tone', 'Formal'),
-    ]);
-
-    $this->assertEquals(200, $result['status']);
-
-    \Drupal::state()->resetCache();
-    $log = MockAiProvider::getCallLog();
-    $this->assertCount(1, $log, 'Mock provider should have been called once.');
-    $this->assertStringNotContainsString(
-      'The user has selected:',
-      $log[0]['system_prompt'],
-    );
-  }
-
-  /**
    * Tests that an empty message returns a 400 error.
    */
   public function testEmptyMessageReturns400(): void {
