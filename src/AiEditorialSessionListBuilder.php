@@ -143,6 +143,18 @@ class AiEditorialSessionListBuilder extends EntityListBuilder {
       ];
     }
 
+    // Link to the conversation history tree, for users who may see messages.
+    if ($entity->hasLinkTemplate('history')) {
+      $history_url = $entity->toUrl('history');
+      if ($history_url->access()) {
+        $operations['history'] = [
+          'title' => $this->t('History'),
+          'weight' => 5,
+          'url' => $history_url,
+        ];
+      }
+    }
+
     return $operations;
   }
 
