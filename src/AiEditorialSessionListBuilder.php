@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Drupal\oe_ai_assistant;
 
-use Drupal\Core\Cache\CacheableMetadata;
 use Drupal\Core\Datetime\DateFormatterInterface;
 use Drupal\Core\Entity\EntityInterface;
 use Drupal\Core\Entity\EntityListBuilder;
@@ -133,15 +132,10 @@ class AiEditorialSessionListBuilder extends EntityListBuilder {
    * {@inheritdoc}
    */
   protected function getDefaultOperations(EntityInterface $entity): array {
-    $args = func_get_args();
-    $cacheability = $args[1] ?? new CacheableMetadata();
-
-    $operations = parent::getDefaultOperations($entity, $cacheability);
+    $operations = parent::getDefaultOperations($entity);
     unset($operations['view']);
 
-    $view_access = $entity->access('view', return_as_object: TRUE);
-    $cacheability->addCacheableDependency($view_access);
-    if ($view_access->isAllowed() && $entity->hasLinkTemplate('canonical')) {
+    if ($entity->access('view') && $entity->hasLinkTemplate('canonical')) {
       $operations['continue'] = [
         'title' => $this->t('Continue'),
         'weight' => 0,
