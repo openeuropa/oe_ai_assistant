@@ -57,3 +57,28 @@ save:
           application/json:
             schema:
               $ref: "../../openapi.yaml#/components/schemas/DraftingSaveResponse"
+
+setTone:
+  post:
+    operationId: postDraftingSetTone
+    summary: Set selected drafting tone
+    tags: [Drafting]
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: "../../openapi.yaml#/components/schemas/DraftingSetToneRequest"
+    responses:
+      "200":
+        description: Selected tone accepted
+        content:
+          application/json:
+            schema:
+              $ref: "../../openapi.yaml#/components/schemas/DraftingSetToneResponse"
+      "400":
+        description: Validation error.
+        content:
+          application/json:
+            schema:
+              $ref: "../../openapi.yaml#/components/schemas/ApiError"

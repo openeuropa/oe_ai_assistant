@@ -10,7 +10,11 @@
  */
 
 import { getConfig } from "@/config";
-import type { DraftingChatRequest } from "../types";
+import type {
+  DraftingChatRequest,
+  DraftingSetToneRequest,
+  DraftingSetToneResponse,
+} from "../types";
 
 /**
  * Sends a chat message and returns the raw Response for SSE
@@ -48,4 +52,24 @@ export async function resetDrafting(): Promise<void> {
   if (!response.ok) {
     throw new Error(`Drafting reset error: ${response.status}`);
   }
+}
+
+/** Sets the selected tone for drafting on the current session. */
+export async function setDraftingTone(
+  request: DraftingSetToneRequest,
+): Promise<DraftingSetToneResponse> {
+  const response = await fetch(
+    `${getConfig().apiBaseUrl}/plugins/drafting/set-tone`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      // Scope the tone to the current editorial session.
+      body: JSON.stringify({ ...request, sessionId: getConfig().sessionId }),
+    },
+  );
+  if (!response.ok) {
+    throw new Error(`Drafting set-tone error: ${response.status}`);
+  }
+  return (await response.json()) as DraftingSetToneResponse;
 }

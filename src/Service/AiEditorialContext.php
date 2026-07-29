@@ -9,14 +9,9 @@ use Drupal\taxonomy\TermInterface;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 
 /**
- * Builds editorial audience and tone context from taxonomy terms.
+ * Builds editorial tone context from taxonomy terms.
  */
 class AiEditorialContext implements AiEditorialContextInterface {
-
-  /**
-   * The vocabulary ID for target audiences.
-   */
-  protected const string AUDIENCE_VID = 'oe_ai_target_audience';
 
   /**
    * The vocabulary ID for tones.
@@ -31,13 +26,6 @@ class AiEditorialContext implements AiEditorialContextInterface {
   /**
    * {@inheritdoc}
    */
-  public function getAvailableAudiences(): array {
-    return $this->loadVocabularyTerms(self::AUDIENCE_VID);
-  }
-
-  /**
-   * {@inheritdoc}
-   */
   public function getAvailableTones(): array {
     return $this->loadVocabularyTerms(self::TONE_VID);
   }
@@ -47,10 +35,7 @@ class AiEditorialContext implements AiEditorialContextInterface {
    */
   public function buildSelectionPrompt(): string {
     return implode("\n", [
-      'Before drafting, ask the user to select a target audience and writing tone.',
-      '',
-      'Available target audiences:',
-      ...$this->formatPromptOptions($this->getAvailableAudiences()),
+      'Before drafting, ask the user to select a writing tone.',
       '',
       'Available tones:',
       ...$this->formatPromptOptions($this->getAvailableTones()),
@@ -62,17 +47,14 @@ class AiEditorialContext implements AiEditorialContextInterface {
   /**
    * {@inheritdoc}
    */
-  public function buildSelectedPrompt(string $audienceId, string $toneId): string {
-    $audience = $this->loadVocabularyTerm($audienceId, self::AUDIENCE_VID);
+  public function buildSelectedPrompt(string $toneId): string {
     $tone = $this->loadVocabularyTerm($toneId, self::TONE_VID);
 
     return implode("\n", [
       'The user has selected:',
-      sprintf('- Target audience: %s', $audience->label()),
       sprintf('- Tone: %s', $tone->label()),
       '',
       'Apply these guidelines when drafting:',
-      sprintf('- %s', $this->getTermPrompt($audience)),
       sprintf('- %s', $this->getTermPrompt($tone)),
     ]);
   }
@@ -83,7 +65,7 @@ class AiEditorialContext implements AiEditorialContextInterface {
    * @param string $vid
    *   The vocabulary machine name.
    *
-   * @return array<int, array{id: string, name: string, oe_ai_prompt: string}>
+   * @return array<int, array{id: string, label: string, description: string, oe_ai_prompt: string}>
    *   The prompt-ready taxonomy terms.
    */
   protected function loadVocabularyTerms(string $vid): array {
@@ -104,7 +86,8 @@ class AiEditorialContext implements AiEditorialContextInterface {
       if ($ai_prompt != '') {
         $values[] = [
           'id' => (string) $term->id(),
-          'name' => $term->label(),
+          'label' => $term->label(),
+          'description' => trim((string) $term->getDescription()),
           'oe_ai_prompt' => $ai_prompt,
         ];
       }
@@ -146,7 +129,7 @@ class AiEditorialContext implements AiEditorialContextInterface {
   /**
    * Formats prompt choices as bullet lines.
    *
-   * @param array<int, array{id: string, name: string, oe_ai_prompt: string}> $options
+   * @param array<int, array{id: string, label: string, description: string, oe_ai_prompt: string}> $options
    *   The prompt options.
    *
    * @return string[]
@@ -155,7 +138,7 @@ class AiEditorialContext implements AiEditorialContextInterface {
   protected function formatPromptOptions(array $options): array {
     $lines = [];
     foreach ($options as $option) {
-      $lines[] = sprintf('- %s: %s', $option['name'], $option['oe_ai_prompt']);
+      $lines[] = sprintf('- %s: %s', $option['label'], $option['oe_ai_prompt']);
     }
 
     return $lines;

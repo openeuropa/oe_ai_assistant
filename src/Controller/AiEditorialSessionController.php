@@ -9,6 +9,7 @@ use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Url;
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionType;
+use Drupal\oe_ai_assistant\Service\AiEditorialContextInterface;
 use Drupal\system\SystemManager;
 use Symfony\Component\HttpFoundation\RedirectResponse;
 use Symfony\Component\HttpFoundation\RequestStack;
@@ -20,6 +21,7 @@ use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 class AiEditorialSessionController extends ControllerBase {
 
   public function __construct(
+    private readonly AiEditorialContextInterface $aiEditorialContext,
     private readonly EntityTypeManagerInterface $sessionEntityTypeManager,
     private readonly SystemManager $systemManager,
     private readonly RequestStack $requestStack,
@@ -110,6 +112,15 @@ class AiEditorialSessionController extends ControllerBase {
    *   A Drupal render array with mount point, library, and settings.
    */
   private function buildRenderArray(string $sessionId, string $entityTypeId, string $bundle): array {
+    $tones = $this->serializeToneOptions($this->aiEditorialContext->getAvailableTones());
+    // Read the tone already saved on the session so the app can rehydrate the
+    // selector on load.
+    $session = $this->sessionEntityTypeManager
+      ->getStorage('ai_editorial_session')
+      ->load($sessionId);
+    $selectedTone = $session instanceof AiEditorialSessionInterface
+      ? (string) $session->get('tone')->target_id
+      : '';
     // Build the configuration object that bootstraps the React app.
     // This data is serialised into window.drupalSettings.oeAiAssistant
     // and read by the React entry point before the first render.
@@ -140,6 +151,21 @@ class AiEditorialSessionController extends ControllerBase {
         'drafting' => [
           'entityTypeId' => $entityTypeId,
           'bundle' => $bundle,
+          // Composer panels. Each is gated by an 'enabled' flag so the host
+          // controls which tabs appear. Tone options come from the tone
+          // vocabulary; templates and documents have no backend yet.
+          'tone' => [
+            'enabled' => TRUE,
+            'options' => $tones,
+            'selected' => $selectedTone,
+          ],
+          'templates' => [
+            'enabled' => FALSE,
+            'options' => [],
+          ],
+          'documents' => [
+            'enabled' => FALSE,
+          ],
         ],
       ],
     ];
@@ -171,6 +197,26 @@ class AiEditorialSessionController extends ControllerBase {
         ],
       ],
     ];
+  }
+
+  /**
+   * Serializes internal prompt-ready tone options for frontend bootstrap.
+   *
+   * @param array<int, array{id: string, label: string, description: string, oe_ai_prompt: string}> $options
+   *   The prompt-ready service options.
+   *
+   * @return array<int, array{id: string, label: string, description: string}>
+   *   Frontend-safe tone options.
+   */
+  private function serializeToneOptions(array $options): array {
+    return array_map(
+      static fn (array $option): array => [
+        'id' => $option['id'],
+        'label' => $option['label'],
+        'description' => $option['description'],
+      ],
+      $options,
+    );
   }
 
 }

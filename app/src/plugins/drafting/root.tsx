@@ -8,9 +8,13 @@
  */
 
 import { AssistantRuntimeProvider } from "@assistant-ui/react";
+import { FileText, LayoutTemplate, Megaphone } from "lucide-react";
 import { useCallback } from "react";
+import { CardSelectPane } from "@/components/ui/card-select-pane";
+import type { PaneTabItem } from "@/components/ui/pane-tabs";
 import { ArtifactPlaceholder } from "./components/artifact-placeholder";
 import { ContentTable } from "./components/content-table";
+import { DocumentsPanel } from "./components/documents-panel";
 import { DraftingThread } from "./components/drafting-thread";
 import { PlanSteps } from "./components/plan-steps";
 import {
@@ -19,13 +23,103 @@ import {
   SaveDraftRevisionToolUI,
   SetFieldContentToolUI,
 } from "./components/tool-uis";
+import { useDraftingDocuments } from "./hooks/use-drafting-documents";
 import { useDraftingRuntime } from "./hooks/use-drafting-runtime";
+import { useDraftingTemplate } from "./hooks/use-drafting-template";
+import { useDraftingTone } from "./hooks/use-drafting-tone";
 import { useDraftingSlice } from "./store";
 
 export default function DraftingRoot() {
-  const runtime = useDraftingRuntime();
   const { draftedFields, plan } = useDraftingSlice();
+  const tone = useDraftingTone();
+  const documents = useDraftingDocuments();
+  const template = useDraftingTemplate();
+  const runtime = useDraftingRuntime();
   const hasFields = Object.keys(draftedFields).length > 0;
+
+  // Composer tabs. Each opens a pane over the chat, and its summary
+  // reproposes the current selection.
+  const tabs: PaneTabItem[] = [];
+  if (tone.enabled) {
+    tabs.push({
+      id: "tone",
+      icon: <Megaphone size={16} />,
+      title: "Tone",
+      summary: tone.selectedLabel ?? "Not set",
+      render: (close) => (
+        <CardSelectPane
+          icon={<Megaphone size={18} />}
+          title="Tone"
+          description="Save the selected tone before drafting to apply it."
+          options={tone.options}
+          value={tone.value}
+          onChange={tone.updateValue}
+          onSave={async () => {
+            // Persist, then close the pane on success.
+            await tone.submitValues();
+            close();
+          }}
+          onCancel={() => {
+            // Restore the confirmed tone, then close the pane.
+            tone.discardChanges();
+            close();
+          }}
+          hasChanges={tone.hasChanges}
+          isSaving={tone.isSaving}
+          error={tone.error}
+        />
+      ),
+    });
+  }
+  if (documents.enabled) {
+    tabs.push({
+      id: "documents",
+      icon: <FileText size={16} />,
+      title: "Documents",
+      summary: `${documents.count} documents`,
+      render: (close) => (
+        <DocumentsPanel
+          selected={documents.selected}
+          onRemove={documents.removeDocument}
+          onUpload={documents.uploadFiles}
+          onSave={async () => {
+            // No backend yet; just close the pane.
+            close();
+          }}
+          onCancel={close}
+        />
+      ),
+    });
+  }
+  if (template.enabled) {
+    tabs.push({
+      id: "templates",
+      icon: <LayoutTemplate size={16} />,
+      title: "Templates",
+      summary: template.selectedLabel ?? "Not set",
+      render: (close) => (
+        <CardSelectPane
+          icon={<LayoutTemplate size={18} />}
+          title="Template"
+          description="Select the structure the generated draft should follow."
+          options={template.options}
+          value={template.value}
+          onChange={template.updateValue}
+          onSave={async () => {
+            // Persist, then close the pane on success.
+            await template.submitValues();
+            close();
+          }}
+          onCancel={() => {
+            // Restore the confirmed template, then close the pane.
+            template.discardChanges();
+            close();
+          }}
+          hasChanges={template.hasChanges}
+        />
+      ),
+    });
+  }
 
   /** Trigger save via the chat so the agent runs the save tool. */
   const handleSave = useCallback(() => {
@@ -66,7 +160,8 @@ export default function DraftingRoot() {
       <div className="flex min-h-0 flex-1">
         {/* Left panel: chat (always visible) */}
         <div className="flex w-2/5 min-h-0 flex-col border-r border-gray-200">
-          <DraftingThread />
+          {/* Tabs sit on top of the prompt; each opens a pane over the chat. */}
+          <DraftingThread tabs={tabs} />
         </div>
 
         {/* Right panel: placeholder -> plan steps -> content table */}
