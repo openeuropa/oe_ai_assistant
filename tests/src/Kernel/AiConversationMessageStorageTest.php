@@ -4,10 +4,9 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\oe_ai_assistant\Kernel;
 
-use Drupal\Core\Entity\EntityInterface;
 use Drupal\KernelTests\KernelTestBase;
-use Drupal\oe_ai_assistant\Entity\AiConversationMessage;
 use Drupal\oe_ai_assistant\Entity\AiConversationMessageInterface;
+use Drupal\Tests\oe_ai_assistant\Traits\AiConversationMessageTrait;
 use Drupal\user\Entity\User;
 
 /**
@@ -19,6 +18,8 @@ use Drupal\user\Entity\User;
  * @group oe_ai_assistant
  */
 class AiConversationMessageStorageTest extends KernelTestBase {
+
+  use AiConversationMessageTrait;
 
   /**
    * {@inheritdoc}
@@ -136,33 +137,6 @@ class AiConversationMessageStorageTest extends KernelTestBase {
     $this->assertSame('Child B.', $tree[0]['children'][1]['message']->get('content')->value);
     $this->assertCount(1, $tree[0]['children'][1]['children']);
     $this->assertSame('Grandchild.', $tree[0]['children'][1]['children'][0]['message']->get('content')->value);
-  }
-
-  /**
-   * Creates and saves a conversation message hosted by the given entity.
-   *
-   * @param \Drupal\Core\Entity\EntityInterface $host
-   *   The host entity.
-   * @param string $role
-   *   The message role.
-   * @param string $content
-   *   The message content.
-   * @param int|null $parent
-   *   The message parent ID.
-   *
-   * @return \Drupal\oe_ai_assistant\Entity\AiConversationMessageInterface
-   *   An AI conversation message entity.
-   */
-  private function createMessage(EntityInterface $host, string $role, string $content, ?int $parent = NULL): AiConversationMessageInterface {
-    $message = AiConversationMessage::create([
-      'host_entity_type' => $host->getEntityTypeId(),
-      'host_entity_id' => (int) $host->id(),
-      'parent' => $parent,
-      'role' => $role,
-      'content' => $content,
-    ]);
-    $message->save();
-    return $message;
   }
 
 }
