@@ -13,6 +13,7 @@ use Drupal\oe_ai_assistant\Entity\AiConversationMessageInterface;
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
 use Drupal\oe_ai_assistant\Exception\ActionException;
 use Drupal\oe_ai_assistant\Plugin\AiAssistantPluginBase;
+use Drupal\oe_ai_assistant\Service\AiEditorialContextInterface;
 use Drupal\oe_ai_assistant\Service\DraftingOrchestratorInterface;
 use Drupal\oe_ai_assistant\Service\DraftSaverInterface;
 use Drupal\oe_ai_assistant\Service\DraftingSchemaProviderInterface;
@@ -41,6 +42,11 @@ use Symfony\Component\HttpFoundation\Response;
   description: 'AI-powered content drafting with SSE streaming.',
 )]
 class DraftingPlugin extends AiAssistantPluginBase {
+
+  /**
+   * The session field that stores the selected editorial tone.
+   */
+  protected const string TONE_FIELD = 'tone';
 
   /**
    * The AI agent plugin manager.
@@ -78,6 +84,13 @@ class DraftingPlugin extends AiAssistantPluginBase {
   protected DraftingOrchestratorInterface $orchestrator;
 
   /**
+   * The editorial tone context service.
+   *
+   * @var \Drupal\oe_ai_assistant\Service\AiEditorialContextInterface
+   */
+  protected AiEditorialContextInterface $aiEditorialContext;
+
+  /**
    * {@inheritdoc}
    */
   public static function create(
@@ -92,6 +105,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
     $instance->draftSaver = $container->get(DraftSaverInterface::class);
     $instance->toolLoop = $container->get(ToolExecutionLoopInterface::class);
     $instance->orchestrator = $container->get(DraftingOrchestratorInterface::class);
+    $instance->aiEditorialContext = $container->get(AiEditorialContextInterface::class);
     return $instance;
   }
 
@@ -104,6 +118,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
       'chat' => $this->chat(...),
       'reset' => $this->reset(...),
       'save' => $this->save(...),
+      'set-tone' => $this->setTone(...),
     ];
   }
 
@@ -115,6 +130,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
     return parent::getRequestSchemas() + [
       'reset' => 'DraftingResetRequest',
       'save' => 'DraftingSaveRequest',
+      'set-tone' => 'DraftingSetToneRequest',
     ];
   }
 
@@ -313,6 +329,43 @@ class DraftingPlugin extends AiAssistantPluginBase {
   }
 
   /**
+   * Saves the selected drafting tone on the editorial session.
+   *
+   * The selected tone is stored on the session entity's tone field so chat
+   * requests can use it without trusting tone values in the chat request body.
+   *
+   * @param \Symfony\Component\HttpFoundation\Request $request
+   *   The incoming request.
+   *
+   * @return array<string, string>
+   *   A confirmation response.
+   *
+   * @throws \Drupal\oe_ai_assistant\Exception\ActionException
+   *   When the selected tone is invalid or not prompt-ready.
+   */
+  public function setTone(Request $request): array {
+    $body = $this->decodeJsonBody($request);
+    $toneId = (string) ($body['toneId'] ?? '');
+
+    try {
+      $this->aiEditorialContext->buildSelectedPrompt($toneId);
+    }
+    catch (\InvalidArgumentException $e) {
+      throw new ActionException(
+        'invalid_context',
+        $e->getMessage(),
+        400,
+      );
+    }
+
+    $session = $this->loadSession($body);
+    $session->set(static::TONE_FIELD, $toneId);
+    $session->save();
+
+    return ['status' => 'ok'];
+  }
+
+  /**
    * Attaches the drafted fields as the result of the draft_content call.
    *
    * The drafted fields are the output of the draft_content tool, produced by
@@ -375,12 +428,13 @@ class DraftingPlugin extends AiAssistantPluginBase {
    *   The session hosting the conversation.
    *
    * @return array
-   *   Context with entityTypeId and bundle.
+   *   Context with entityTypeId, bundle, and toneId.
    */
   private function buildContext(AiEditorialSessionInterface $session): array {
     return [
       'entityTypeId' => 'node',
       'bundle' => $session->getContentType(),
+      'toneId' => (string) $session->get(static::TONE_FIELD)->target_id,
       // No template selector yet; the provider auto-picks one for the bundle.
       'template' => '',
     ];
@@ -403,6 +457,20 @@ class DraftingPlugin extends AiAssistantPluginBase {
         . json_encode($groups, JSON_PRETTY_PRINT) . "\n";
     }
 
+    if ($context['toneId'] !== '') {
+      try {
+        $prompt .= "\nEditorial context:\n"
+          . $this->aiEditorialContext->buildSelectedPrompt($context['toneId'])
+          . "\n";
+      }
+      catch (\InvalidArgumentException $e) {
+        throw new ActionException(
+          'invalid_context',
+          $e->getMessage(),
+          400,
+        );
+      }
+    }
     return $prompt;
   }
 

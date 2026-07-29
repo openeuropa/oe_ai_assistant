@@ -294,6 +294,54 @@ class DraftingPluginChatTest extends ExistingSiteBase {
   }
 
   /**
+   * Tests that selected editorial context is injected into the system prompt.
+   */
+  public function testSelectedContextIsInjectedIntoSystemPrompt(): void {
+    $user = $this->createUser(['use oe ai assistant']);
+    $this->loginUser($user);
+    $session = $this->createSession($user);
+
+    $this->httpPost('/api/ai/plugins/drafting/set-tone', [
+      'sessionId' => $session->id(),
+      'toneId' => $this->getTermIdByName('oe_ai_tone', 'Formal'),
+    ]);
+
+    MockAiProvider::enqueue(new MockResponse(
+      text: 'Drafting with selected context.',
+    ));
+
+    $result = $this->httpPost('/api/ai/plugins/drafting/chat', [
+      'message' => 'Draft this with context.',
+      'sessionId' => $session->id(),
+    ]);
+
+    $this->assertEquals(200, $result['status'],
+      'Expected 200 response. Body: ' . substr($result['body'], 0, 500));
+
+    \Drupal::state()->resetCache();
+    $log = MockAiProvider::getCallLog();
+    $this->assertCount(1, $log, 'Mock provider should have been called once.');
+
+    $this->assertStringContainsString(
+      'The user has selected:',
+      $log[0]['system_prompt'],
+    );
+    $this->assertStringContainsString(
+      'Use professional, institutional language. Maintain a neutral, authoritative voice.',
+      $log[0]['system_prompt'],
+    );
+    $this->assertStringNotContainsString(
+      'Use professional language. Emphasize practical implications, compliance requirements, and economic impact.',
+      $log[0]['system_prompt'],
+    );
+
+    $toolNames = $this->extractToolNames($log[0]['tools']);
+    $this->assertContains('draft_content', $toolNames);
+    $this->assertNotContains('select_context', $toolNames);
+    $this->assertNotContains('save_session', $toolNames);
+  }
+
+  /**
    * Tests that an empty message returns a 400 error.
    */
   public function testEmptyMessageReturns400(): void {
@@ -590,6 +638,37 @@ class DraftingPluginChatTest extends ExistingSiteBase {
     }
 
     return $events;
+  }
+
+  /**
+   * Returns the taxonomy term ID for a fixture term.
+   */
+  protected function getTermIdByName(string $vid, string $name): string {
+    $terms = \Drupal::entityTypeManager()
+      ->getStorage('taxonomy_term')
+      ->loadByProperties([
+        'vid' => $vid,
+        'name' => $name,
+      ]);
+
+    $term = reset($terms);
+    if (!$term) {
+      $this->fail(sprintf('Term "%s" was not found in "%s".', $name, $vid));
+    }
+
+    return (string) $term->id();
+  }
+
+  /**
+   * Extracts tool names from the mock provider log.
+   */
+  protected function extractToolNames(array $tools): array {
+    $names = [];
+    foreach ($tools as $tool) {
+      $names[] = $tool['function']['name'] ?? $tool['name'] ?? '';
+    }
+
+    return array_values(array_filter($names));
   }
 
 }

@@ -48,49 +48,29 @@ class AiEditorialContextTest extends KernelTestBase {
   }
 
   /**
-   * Tests loading available audiences and tones.
+   * Tests loading available tones.
    */
   public function testAvailableOptions(): void {
-    $audiences = $this->editorialContext->getAvailableAudiences();
     $tones = $this->editorialContext->getAvailableTones();
     $this->assertSame([
       [
-        'name' => 'Business and industry',
-        'oe_ai_prompt' => 'Use professional language. Emphasize practical implications, compliance requirements, and economic impact. Be specific about timelines and actions.',
-      ],
-      [
-        'name' => 'General public',
-        'oe_ai_prompt' => 'Write in clear, accessible language. Avoid jargon and acronyms. Use short sentences. Assume no prior knowledge of EU policy.',
-      ],
-      [
-        'name' => 'Policy makers',
-        'oe_ai_prompt' => 'Use precise language. Reference regulatory frameworks and legislative instruments where relevant. Assume domain expertise.',
-      ],
-      [
-        'name' => 'Press and media',
-        'oe_ai_prompt' => 'Lead with the newsworthy angle. Use a factual, quotable style. Include key figures and dates. Keep paragraphs short.',
-      ],
-      [
-        'name' => 'Young audience',
-        'oe_ai_prompt' => 'Use an approachable, engaging tone. Explain concepts simply. Avoid bureaucratic language. Use concrete examples.',
-      ],
-    ], $this->stripIds($audiences));
-
-    $this->assertSame([
-      [
-        'name' => 'Conversational',
+        'label' => 'Conversational',
+        'description' => 'A friendly and informal tone that speaks directly to the reader.',
         'oe_ai_prompt' => 'Write in a friendly, approachable style. Use contractions naturally. Address the reader directly. Keep sentences varied in length.',
       ],
       [
-        'name' => 'Formal',
+        'label' => 'Formal',
+        'description' => 'A professional and neutral tone suitable for official or institutional communication.',
         'oe_ai_prompt' => 'Use professional, institutional language. Maintain a neutral, authoritative voice. Avoid contractions and colloquialisms.',
       ],
       [
-        'name' => 'Inspirational',
+        'label' => 'Inspirational',
+        'description' => 'A motivating and forward-looking tone that emphasizes positive outcomes and shared goals.',
         'oe_ai_prompt' => 'Use forward-looking, motivational language. Emphasize positive outcomes and shared goals. Appeal to values and aspirations.',
       ],
       [
-        'name' => 'Technical',
+        'label' => 'Technical',
+        'description' => 'A detailed and structured tone using specialized terminology for expert contexts.',
         'oe_ai_prompt' => 'Use domain-specific terminology precisely. Include technical detail and data. Structure content with clear headings and logical flow.',
       ],
     ], $this->stripIds($tones));
@@ -101,14 +81,7 @@ class AiEditorialContextTest extends KernelTestBase {
    */
   public function testBuildSelectionPrompt(): void {
     $this->assertSame(implode("\n", [
-      'Before drafting, ask the user to select a target audience and writing tone.',
-      '',
-      'Available target audiences:',
-      '- Business and industry: Use professional language. Emphasize practical implications, compliance requirements, and economic impact. Be specific about timelines and actions.',
-      '- General public: Write in clear, accessible language. Avoid jargon and acronyms. Use short sentences. Assume no prior knowledge of EU policy.',
-      '- Policy makers: Use precise language. Reference regulatory frameworks and legislative instruments where relevant. Assume domain expertise.',
-      '- Press and media: Lead with the newsworthy angle. Use a factual, quotable style. Include key figures and dates. Keep paragraphs short.',
-      '- Young audience: Use an approachable, engaging tone. Explain concepts simply. Avoid bureaucratic language. Use concrete examples.',
+      'Before drafting, ask the user to select a writing tone.',
       '',
       'Available tones:',
       '- Conversational: Write in a friendly, approachable style. Use contractions naturally. Address the reader directly. Keep sentences varied in length.',
@@ -121,27 +94,21 @@ class AiEditorialContextTest extends KernelTestBase {
   }
 
   /**
-   * Tests building the prompt for a selected audience and tone.
+   * Tests building the prompt for a selected tone.
    */
   public function testBuildSelectedPrompt(): void {
-    $audienceId = $this->getOptionIdByName(
-      $this->editorialContext->getAvailableAudiences(),
-      'Policy makers',
-    );
-    $toneId = $this->getOptionIdByName(
+    $toneId = $this->getOptionIdByLabel(
       $this->editorialContext->getAvailableTones(),
       'Formal',
     );
 
     $this->assertSame(implode("\n", [
       'The user has selected:',
-      '- Target audience: Policy makers',
       '- Tone: Formal',
       '',
       'Apply these guidelines when drafting:',
-      '- Use precise language. Reference regulatory frameworks and legislative instruments where relevant. Assume domain expertise.',
       '- Use professional, institutional language. Maintain a neutral, authoritative voice. Avoid contractions and colloquialisms.',
-    ]), $this->editorialContext->buildSelectedPrompt($audienceId, $toneId));
+    ]), $this->editorialContext->buildSelectedPrompt($toneId));
   }
 
   /**
@@ -149,26 +116,23 @@ class AiEditorialContextTest extends KernelTestBase {
    */
   public function testBuildSelectedPromptRejectsInvalidTerms(): void {
     $this->expectException(\InvalidArgumentException::class);
-    $toneId = $this->getOptionIdByName(
-      $this->editorialContext->getAvailableTones(),
-      'Formal',
-    );
-    $this->editorialContext->buildSelectedPrompt('999', $toneId);
+    $this->editorialContext->buildSelectedPrompt('999');
   }
 
   /**
    * Removes IDs from the service output for stable assertions.
    *
-   * @param array<int, array{id: string, name: string, oe_ai_prompt: string}> $options
+   * @param array<int, array{id: string, label: string, description: string, oe_ai_prompt: string}> $options
    *   The service output.
    *
-   * @return array<int, array{name: string, oe_ai_prompt: string}>
+   * @return array<int, array{label: string, description: string, oe_ai_prompt: string}>
    *   The options without IDs.
    */
   protected function stripIds(array $options): array {
     return array_map(
       static fn (array $option): array => [
-        'name' => $option['name'],
+        'label' => $option['label'],
+        'description' => $option['description'],
         'oe_ai_prompt' => $option['oe_ai_prompt'],
       ],
       $options,
@@ -178,22 +142,22 @@ class AiEditorialContextTest extends KernelTestBase {
   /**
    * Returns the generated ID for an option label.
    *
-   * @param array<int, array{id: string, name: string, oe_ai_prompt: string}> $options
+   * @param array<int, array{id: string, label: string, description: string, oe_ai_prompt: string}> $options
    *   The service output.
-   * @param string $name
+   * @param string $label
    *   The option label to find.
    *
    * @return string
    *   The matching option ID.
    */
-  protected function getOptionIdByName(array $options, string $name): string {
+  protected function getOptionIdByLabel(array $options, string $label): string {
     foreach ($options as $option) {
-      if ($option['name'] === $name) {
+      if ($option['label'] === $label) {
         return $option['id'];
       }
     }
 
-    $this->fail(sprintf('Option "%s" was not found.', $name));
+    $this->fail(sprintf('Option "%s" was not found.', $label));
     throw new \LogicException('Unreachable.');
   }
 

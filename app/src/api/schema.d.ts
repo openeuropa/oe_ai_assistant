@@ -340,6 +340,8 @@ export interface components {
             previewUrl: string;
         };
         DraftingSetToneRequest: {
+            /** @description The editorial session on which the selected tone is saved. */
+            sessionId: string;
             /** @description Selected tone taxonomy term ID. */
             toneId: string;
         };

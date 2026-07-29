@@ -73,8 +73,13 @@ DraftingSaveResponse:
 DraftingSetToneRequest:
   type: object
   required:
+    - sessionId
     - toneId
   properties:
+    sessionId:
+      type: string
+      description: >
+        The editorial session on which the selected tone is saved.
     toneId:
       type: string
       description: Selected tone taxonomy term ID.
