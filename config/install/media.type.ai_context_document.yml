@@ -1,0 +1,13 @@
+langcode: en
+status: true
+dependencies: {  }
+id: ai_context_document
+label: 'AI context document'
+description: 'Temporary private document used as context for AI-assisted drafting.'
+source: file
+queue_thumbnail_downloads: false
+new_revision: true
+source_configuration:
+  source_field: field_media_context_document
+field_map:
+  name: name

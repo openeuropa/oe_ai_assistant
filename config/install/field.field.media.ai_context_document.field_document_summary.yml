@@ -1,0 +1,21 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - field.storage.media.field_document_summary
+    - media.type.ai_context_document
+  module:
+    - text
+id: media.ai_context_document.field_document_summary
+field_name: field_document_summary
+entity_type: media
+bundle: ai_context_document
+label: 'Document summary'
+description: 'Extracted summary used as AI drafting context.'
+required: false
+translatable: true
+default_value: {  }
+default_value_callback: ''
+settings:
+  allowed_formats: {  }
+field_type: text_long
