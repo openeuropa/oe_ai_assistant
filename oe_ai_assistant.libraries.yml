@@ -12,3 +12,13 @@ app:
     - oe_ai_assistant/react-app
     - core/drupalSettings
     - core/drupal
+
+session_history:
+  js:
+    js/session-history.js: {}
+  css:
+    component:
+      css/session-history.css: {}
+  dependencies:
+    - core/drupal
+    - core/once
