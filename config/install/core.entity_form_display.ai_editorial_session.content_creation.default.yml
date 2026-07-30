@@ -3,6 +3,7 @@ status: true
 dependencies:
   config:
     - field.field.ai_editorial_session.content_creation.content_type
+    - field.field.ai_editorial_session.content_creation.template
     - field.field.ai_editorial_session.content_creation.tone
     - oe_ai_assistant.ai_editorial_session_type.content_creation
   module:
@@ -21,6 +22,12 @@ content:
   tone:
     type: options_select
     weight: 1
+    region: content
+    settings: {  }
+    third_party_settings: {  }
+  template:
+    type: options_select
+    weight: 2
     region: content
     settings: {  }
     third_party_settings: {  }

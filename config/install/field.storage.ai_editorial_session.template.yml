@@ -1,0 +1,18 @@
+langcode: en
+status: true
+dependencies:
+  module:
+    - oe_ai_assistant
+id: ai_editorial_session.template
+field_name: template
+entity_type: ai_editorial_session
+type: entity_reference
+settings:
+  target_type: ai_drafting_template
+module: core
+locked: false
+cardinality: 1
+translatable: false
+indexes: {  }
+persist_with_no_fields: false
+custom_storage: false

@@ -49,6 +49,11 @@ class DraftingPlugin extends AiAssistantPluginBase {
   protected const string TONE_FIELD = 'tone';
 
   /**
+   * The session field that stores the selected drafting template.
+   */
+  private const string TEMPLATE_FIELD = 'template';
+
+  /**
    * The AI agent plugin manager.
    *
    * @var \Drupal\ai_agents\PluginManager\AiAgentManager
@@ -119,6 +124,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
       'reset' => $this->reset(...),
       'save' => $this->save(...),
       'set-tone' => $this->setTone(...),
+      'set-template' => $this->setTemplate(...),
     ];
   }
 
@@ -131,6 +137,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
       'reset' => 'DraftingResetRequest',
       'save' => 'DraftingSaveRequest',
       'set-tone' => 'DraftingSetToneRequest',
+      'set-template' => 'DraftingSetTemplateRequest',
     ];
   }
 
@@ -160,22 +167,10 @@ class DraftingPlugin extends AiAssistantPluginBase {
     }
 
     $session = $this->loadSession($body);
-    $context = $this->buildContext($session, $body);
+    $context = $this->buildContext($session);
 
-    // Evidence that a frontend template selection reached the backend.
-    // Session persistence of the selection is not implemented yet.
-    if ($context['template'] !== '') {
-      $this->logger->info(
-        'Drafting chat received template @template for bundle @bundle.',
-        [
-          '@template' => $context['template'],
-          '@bundle' => $context['bundle'],
-        ],
-      );
-    }
-
-    // Resolve the template and pin its id for the prompt, tool, orchestrator.
-    // The id is user-supplied, so resolution failures are client errors.
+    // Resolve the session's template and pin its id for the prompt, tool, and
+    // orchestrator. An invalid stored template is a 400.
     try {
       $template = $this->schemaProvider->resolveTemplate(
         $context['entityTypeId'], $context['bundle'], $context['template']
@@ -384,6 +379,41 @@ class DraftingPlugin extends AiAssistantPluginBase {
   }
 
   /**
+   * Saves the selected drafting template on the editorial session.
+   *
+   * The field's reference constraint rejects a disabled template, a template
+   * for another bundle, or a missing one; an empty value clears the selection.
+   *
+   * @param \Symfony\Component\HttpFoundation\Request $request
+   *   The incoming request.
+   *
+   * @return array<string, string>
+   *   A confirmation response.
+   *
+   * @throws \Drupal\oe_ai_assistant\Exception\ActionException
+   *   When the selected template is not valid for the session.
+   */
+  public function setTemplate(Request $request): array {
+    $body = $this->decodeJsonBody($request);
+    $templateId = (string) ($body['template'] ?? '');
+
+    $session = $this->loadSession($body);
+    $session->set(static::TEMPLATE_FIELD, $templateId !== '' ? $templateId : NULL);
+
+    $violations = $session->get(static::TEMPLATE_FIELD)->validate();
+    if ($violations->count() > 0) {
+      throw new ActionException(
+        'invalid_request',
+        (string) $violations[0]->getMessage(),
+        400,
+      );
+    }
+
+    $session->save();
+    return ['status' => 'ok'];
+  }
+
+  /**
    * Attaches the drafted fields as the result of the draft_content call.
    *
    * The drafted fields are the output of the draft_content tool, produced by
@@ -440,26 +470,20 @@ class DraftingPlugin extends AiAssistantPluginBase {
   }
 
   /**
-   * Builds drafting context from the editorial session and request body.
+   * Builds drafting context from the editorial session.
    *
    * @param \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $session
    *   The session hosting the conversation.
-   * @param array $body
-   *   The decoded request body carrying the template selection.
    *
    * @return array
    *   Context with entityTypeId, bundle, toneId, and template.
    */
-  private function buildContext(AiEditorialSessionInterface $session, array $body): array {
-    $template = $body['forwardedProps']['template']
-      ?? $body['template'] ?? NULL;
+  private function buildContext(AiEditorialSessionInterface $session): array {
     return [
       'entityTypeId' => 'node',
       'bundle' => $session->getContentType(),
       'toneId' => (string) $session->get(static::TONE_FIELD)->target_id,
-      // Guard against non-string request values: the template id is used
-      // in log placeholders and passed to the schema provider.
-      'template' => is_string($template) ? $template : '',
+      'template' => (string) $session->get(static::TEMPLATE_FIELD)->target_id,
     ];
   }
 

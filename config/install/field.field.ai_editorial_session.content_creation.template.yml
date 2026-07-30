@@ -1,0 +1,22 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - field.storage.ai_editorial_session.template
+    - oe_ai_assistant.ai_editorial_session_type.content_creation
+  module:
+    - oe_ai_assistant
+id: ai_editorial_session.content_creation.template
+field_name: template
+entity_type: ai_editorial_session
+bundle: content_creation
+label: Template
+description: 'The selected drafting template.'
+required: false
+translatable: false
+default_value: {  }
+default_value_callback: ''
+settings:
+  handler: 'ai_drafting_template_selection'
+  handler_settings: {  }
+field_type: entity_reference

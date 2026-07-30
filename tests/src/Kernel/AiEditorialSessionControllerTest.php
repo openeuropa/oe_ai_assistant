@@ -64,13 +64,14 @@ class AiEditorialSessionControllerTest extends AiEditorialSessionKernelTestBase 
 
     $this->assertSame('node', $drafting['entityTypeId']);
     $this->assertSame('oe_news', $drafting['bundle']);
+    $this->assertTrue($drafting['templates']['enabled']);
     $this->assertSame([
       [
         'id' => 'news_minimal',
         'label' => 'News (minimal)',
         'description' => 'Title only.',
       ],
-    ], $drafting['availableTemplates']);
+    ], $drafting['templates']['options']);
   }
 
   /**
@@ -81,7 +82,7 @@ class AiEditorialSessionControllerTest extends AiEditorialSessionKernelTestBase 
 
     $drafting = $this->draftingConfig($this->controller()->view($session));
 
-    $this->assertSame([], $drafting['availableTemplates']);
+    $this->assertSame([], $drafting['templates']['options']);
   }
 
   /**
@@ -96,6 +97,40 @@ class AiEditorialSessionControllerTest extends AiEditorialSessionKernelTestBase 
     // The list cache tag is invalidated on every template save, update and
     // delete, so it alone keeps availableTemplates fresh.
     $this->assertContains('config:ai_drafting_template_list', $tags);
+  }
+
+  /**
+   * The saved template id is exposed for rehydration.
+   */
+  public function testViewExposesSelectedTemplate(): void {
+    $session = $this->createSession($this->createUser());
+    $session->set('template', 'news_minimal')->save();
+
+    $drafting = $this->draftingConfig($this->controller()->view($session));
+
+    $this->assertSame('news_minimal', $drafting['templates']['selected']);
+  }
+
+  /**
+   * With no selection the exposed template is an empty string.
+   */
+  public function testViewWithoutSelectionExposesEmptyTemplate(): void {
+    $session = $this->createSession($this->createUser());
+
+    $drafting = $this->draftingConfig($this->controller()->view($session));
+
+    $this->assertSame('', $drafting['templates']['selected']);
+  }
+
+  /**
+   * The render array is invalidated when the session (its template) changes.
+   */
+  public function testViewCarriesSessionCacheTag(): void {
+    $session = $this->createSession($this->createUser());
+
+    $build = $this->controller()->view($session);
+
+    $this->assertContains('ai_editorial_session:' . $session->id(), $build['#cache']['tags'] ?? []);
   }
 
   /**

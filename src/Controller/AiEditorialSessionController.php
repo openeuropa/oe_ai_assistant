@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\oe_ai_assistant\Controller;
 
+use Drupal\Core\Cache\CacheableMetadata;
 use Drupal\Core\Controller\ControllerBase;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Url;
@@ -94,7 +95,7 @@ class AiEditorialSessionController extends ControllerBase {
    */
   public function view(AiEditorialSessionInterface $ai_editorial_session): array {
     return $this->buildRenderArray(
-      (string) $ai_editorial_session->id(),
+      $ai_editorial_session,
       'node',
       $ai_editorial_session->get('content_type')->target_id,
     );
@@ -103,8 +104,8 @@ class AiEditorialSessionController extends ControllerBase {
   /**
    * Builds the common render array for the AI Assistant.
    *
-   * @param string $sessionId
-   *   The AI editorial session entity ID.
+   * @param \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $session
+   *   The AI editorial session the page is built for.
    * @param string $entityTypeId
    *   The entity type ID (always 'node' for now).
    * @param string $bundle
@@ -113,16 +114,12 @@ class AiEditorialSessionController extends ControllerBase {
    * @return array
    *   A Drupal render array with mount point, library, and settings.
    */
-  private function buildRenderArray(string $sessionId, string $entityTypeId, string $bundle): array {
+  private function buildRenderArray(AiEditorialSessionInterface $session, string $entityTypeId, string $bundle): array {
+    $sessionId = (string) $session->id();
     $tones = $this->serializeToneOptions($this->aiEditorialContext->getAvailableTones());
     // Read the tone already saved on the session so the app can rehydrate the
     // selector on load.
-    $session = $this->sessionEntityTypeManager
-      ->getStorage('ai_editorial_session')
-      ->load($sessionId);
-    $selectedTone = $session instanceof AiEditorialSessionInterface
-      ? (string) $session->get('tone')->target_id
-      : '';
+    $selectedTone = (string) $session->get('tone')->target_id;
     // Build the configuration object that bootstraps the React app.
     // This data is serialised into window.drupalSettings.oeAiAssistant
     // and read by the React entry point before the first render.
@@ -165,6 +162,7 @@ class AiEditorialSessionController extends ControllerBase {
           'templates' => [
             'enabled' => TRUE,
             'options' => $this->schemaProvider->availableTemplates($bundle),
+            'selected' => (string) $session->get('template')->target_id,
           ],
           'documents' => [
             'enabled' => FALSE,
@@ -173,7 +171,7 @@ class AiEditorialSessionController extends ControllerBase {
       ],
     ];
 
-    return [
+    $build = [
       // The settings embed the drafting template list, so the page must be
       // invalidated whenever a template is added, edited or deleted. The
       // list cache tag covers all three operations for config entities.
@@ -209,6 +207,13 @@ class AiEditorialSessionController extends ControllerBase {
         ],
       ],
     ];
+
+    // Invalidate the page when the session's selected template changes.
+    CacheableMetadata::createFromRenderArray($build)
+      ->addCacheableDependency($session)
+      ->applyTo($build);
+
+    return $build;
   }
 
   /**
