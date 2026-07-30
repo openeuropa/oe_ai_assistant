@@ -127,6 +127,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/plugins/drafting/set-tone": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Set selected drafting tone */
+        post: operations["postDraftingSetTone"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/plugins/echo/stream": {
         parameters: {
             query?: never;
@@ -321,6 +338,16 @@ export interface components {
             nodeId: string;
             /** @description URL to preview the created draft node. */
             previewUrl: string;
+        };
+        DraftingSetToneRequest: {
+            /** @description The editorial session on which the selected tone is saved. */
+            sessionId: string;
+            /** @description Selected tone taxonomy term ID. */
+            toneId: string;
+        };
+        DraftingSetToneResponse: {
+            /** @enum {string} */
+            status: "ok";
         };
         /** @description Request body for the echo stream endpoint. */
         EchoRequest: {
@@ -606,6 +633,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DraftingSaveResponse"];
+                };
+            };
+        };
+    };
+    postDraftingSetTone: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DraftingSetToneRequest"];
+            };
+        };
+        responses: {
+            /** @description Selected tone accepted */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DraftingSetToneResponse"];
+                };
+            };
+            /** @description Validation error. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
                 };
             };
         };

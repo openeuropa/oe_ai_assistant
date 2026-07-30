@@ -69,3 +69,26 @@ DraftingSaveResponse:
     previewUrl:
       type: string
       description: URL to preview the created draft node.
+
+DraftingSetToneRequest:
+  type: object
+  required:
+    - sessionId
+    - toneId
+  properties:
+    sessionId:
+      type: string
+      description: >
+        The editorial session on which the selected tone is saved.
+    toneId:
+      type: string
+      description: Selected tone taxonomy term ID.
+
+DraftingSetToneResponse:
+  type: object
+  required:
+    - status
+  properties:
+    status:
+      type: string
+      enum: [ok]

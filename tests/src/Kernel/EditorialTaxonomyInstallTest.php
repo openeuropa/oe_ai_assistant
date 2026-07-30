@@ -33,43 +33,17 @@ class EditorialTaxonomyInstallTest extends KernelTestBase {
     $this->assertTrue(\Drupal::service('module_handler')->moduleExists('oe_ai_assistant'));
     $this->assertTrue(\Drupal::service('module_handler')->moduleExists('oe_ai_assistant_test'));
 
-    $this->assertNotNull(Vocabulary::load('oe_ai_target_audience'));
     $this->assertNotNull(Vocabulary::load('oe_ai_tone'));
 
     $fieldStorage = FieldStorageConfig::loadByName('taxonomy_term', 'field_oe_ai_prompt');
     $this->assertNotNull($fieldStorage);
     $this->assertSame('string_long', $fieldStorage->getType());
 
-    $audienceField = FieldConfig::loadByName('taxonomy_term', 'oe_ai_target_audience', 'field_oe_ai_prompt');
     $toneField = FieldConfig::loadByName('taxonomy_term', 'oe_ai_tone', 'field_oe_ai_prompt');
 
-    $this->assertNotNull($audienceField);
     $this->assertNotNull($toneField);
-    $this->assertSame('string_long', $audienceField->getType());
     $this->assertSame('string_long', $toneField->getType());
 
-    $expectedAudiences = [
-      'Business and industry' => [
-        'description' => 'Content focused on professional stakeholders, emphasizing practical impact, compliance, and business relevance.',
-        'prompt' => 'Use professional language. Emphasize practical implications, compliance requirements, and economic impact. Be specific about timelines and actions.',
-      ],
-      'General public' => [
-        'description' => 'Content should be easy to understand for non-experts, using plain language and minimal jargon.',
-        'prompt' => 'Write in clear, accessible language. Avoid jargon and acronyms. Use short sentences. Assume no prior knowledge of EU policy.',
-      ],
-      'Policy makers' => [
-        'description' => 'Content tailored for experts, using precise terminology and references to policy and legislation.',
-        'prompt' => 'Use precise language. Reference regulatory frameworks and legislative instruments where relevant. Assume domain expertise.',
-      ],
-      'Press and media' => [
-        'description' => 'Content optimized for news coverage, highlighting key facts, figures, and timely angles.',
-        'prompt' => 'Lead with the newsworthy angle. Use a factual, quotable style. Include key figures and dates. Keep paragraphs short.',
-      ],
-      'Young audience' => [
-        'description' => 'Content aimed at younger readers, with a simple, engaging tone and relatable examples.',
-        'prompt' => 'Use an approachable, engaging tone. Explain concepts simply. Avoid bureaucratic language. Use concrete examples.',
-      ],
-    ];
     $expectedTones = [
       'Conversational' => [
         'description' => 'A friendly and informal tone that speaks directly to the reader.',
@@ -84,12 +58,11 @@ class EditorialTaxonomyInstallTest extends KernelTestBase {
         'prompt' => 'Use forward-looking, motivational language. Emphasize positive outcomes and shared goals. Appeal to values and aspirations.',
       ],
       'Technical' => [
-        'description' => 'A detailed and structured tone using specialized terminology for expert audiences.',
+        'description' => 'A detailed and structured tone using specialized terminology for expert contexts.',
         'prompt' => 'Use domain-specific terminology precisely. Include technical detail and data. Structure content with clear headings and logical flow.',
       ],
     ];
 
-    $this->assertSame($expectedAudiences, $this->loadTermsByVocabulary('oe_ai_target_audience'));
     $this->assertSame($expectedTones, $this->loadTermsByVocabulary('oe_ai_tone'));
   }
 

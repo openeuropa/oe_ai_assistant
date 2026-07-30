@@ -165,6 +165,25 @@ class AiEditorialSessionDashboardTest extends AiEditorialSessionBrowserTestBase 
   }
 
   /**
+   * Tests that empty editorial context vocabularies bootstrap as empty lists.
+   */
+  public function testSessionPageRendersEmptyEditorialContextOptions(): void {
+    $this->deleteEditorialContextTerms();
+    $owner = $this->drupalCreateUser([
+      'view_update own sessions',
+      'access content',
+    ]);
+    $session = $this->createSession($owner);
+
+    $this->drupalLogin($owner);
+    $this->drupalGet($session->toUrl('canonical'));
+
+    $this->assertSession()->statusCodeEquals(200);
+    $this->assertSession()->responseContains('"tone":{"enabled":true,"options":[]');
+    $this->assertSession()->responseNotContains('oe_ai_prompt');
+  }
+
+  /**
    * Tests the session route delegates access to the session entity handler.
    */
   public function testSessionRouteUsesEntityAccessRequirement(): void {
@@ -199,6 +218,7 @@ class AiEditorialSessionDashboardTest extends AiEditorialSessionBrowserTestBase 
     $this->submitForm([
       'content_type' => 'oe_news',
       'label' => 'my session',
+      'tone' => $this->getTermIdByName('oe_ai_tone', 'Formal'),
     ], 'Save');
 
     $this->assertSession()->statusCodeEquals(200);
@@ -268,6 +288,53 @@ class AiEditorialSessionDashboardTest extends AiEditorialSessionBrowserTestBase 
     $this->assertSession()->responseContains('"enabledPlugins":["echo","notes","drafting"]');
     $this->assertSession()->responseContains('"entityTypeId":"node"');
     $this->assertSession()->responseContains('"bundle":"' . $bundle . '"');
+    $this->assertSession()->responseContains('"tone":{"enabled":true');
+    $this->assertSession()->responseContains(json_encode([
+      'id' => $this->getTermIdByName('oe_ai_tone', 'Formal'),
+      'label' => 'Formal',
+      'description' => 'A professional and neutral tone suitable for official or institutional communication.',
+    ]));
+    $this->assertSession()->responseContains('"label":"Formal"');
+    $this->assertSession()->responseContains('"description":"A professional and neutral tone suitable for official or institutional communication."');
+    $this->assertSession()->responseNotContains('"name":"Formal"');
+    $this->assertSession()->responseNotContains('oe_ai_prompt');
+  }
+
+  /**
+   * Returns the taxonomy term ID for a fixture term.
+   */
+  protected function getTermIdByName(string $vid, string $name): string {
+    $terms = $this->container
+      ->get('entity_type.manager')
+      ->getStorage('taxonomy_term')
+      ->loadByProperties([
+        'vid' => $vid,
+        'name' => $name,
+      ]);
+
+    $term = reset($terms);
+    if (!$term) {
+      $this->fail(sprintf('Term "%s" was not found in "%s".', $name, $vid));
+    }
+
+    return (string) $term->id();
+  }
+
+  /**
+   * Deletes all editorial context terms from the test site.
+   */
+  protected function deleteEditorialContextTerms(): void {
+    $storage = $this->container
+      ->get('entity_type.manager')
+      ->getStorage('taxonomy_term');
+    $ids = $storage->getQuery()
+      ->accessCheck(FALSE)
+      ->condition('vid', 'oe_ai_tone')
+      ->execute();
+
+    if ($ids) {
+      $storage->delete($storage->loadMultiple($ids));
+    }
   }
 
 }

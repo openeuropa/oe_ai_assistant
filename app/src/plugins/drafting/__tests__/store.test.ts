@@ -13,6 +13,7 @@ describe("drafting plugin state", () => {
     expect(draftingSliceConfig.initialState).toEqual({
       plan: [],
       draftedFields: {},
+      selections: {},
     });
 
     // The conversation lives on the backend; nothing is persisted locally.
@@ -22,6 +23,7 @@ describe("drafting plugin state", () => {
         draftedFields: {
           title: { label: "Title", value: "Draft", type: "string" },
         },
+        selections: { tone: "clear-professional" },
       }),
     ).toEqual({});
   });
@@ -33,6 +35,7 @@ describe("drafting plugin state", () => {
     expect(getDraftingState()).toEqual({
       plan: [],
       draftedFields: {},
+      selections: {},
     });
   });
 
@@ -45,6 +48,7 @@ describe("drafting plugin state", () => {
       draftedFields: {
         title: { label: "Title", value: "Draft", type: "string" },
       },
+      selections: { tone: "clear-professional" },
     });
 
     expect(getDraftingState()).toMatchObject({
@@ -52,6 +56,7 @@ describe("drafting plugin state", () => {
       draftedFields: {
         title: { label: "Title", value: "Draft", type: "string" },
       },
+      selections: { tone: "clear-professional" },
     });
   });
 });
