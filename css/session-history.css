@@ -1,0 +1,130 @@
+/**
+ * Styling for the session conversation history table.
+ */
+
+/* Box-drawing tree glyphs drawn in the role cells. Monospace with preserved
+   whitespace so the continuation lines align across rows; muted so the
+   glyphs read as scaffolding, not data. */
+.ai-history-tree {
+  font-family: monospace;
+  white-space: pre;
+  opacity: 0.55;
+}
+
+/* Detail rows indent with their message's depth so an expanded tree keeps
+   its visual hierarchy; the depth rides in a custom property on the row. */
+.ai-history-table tr.ai-history-detail > td {
+  padding-inline-start: calc(1rem + var(--ai-history-depth, 0) * 1.75rem);
+}
+
+/* The caret is a bare icon button drawn in CSS, nested in the role cell
+   between the tree glyphs and the role label. */
+.ai-history-toggle-children {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.25rem;
+  cursor: pointer;
+  vertical-align: middle;
+  border: 0;
+  background: transparent;
+  color: inherit;
+}
+
+/* Alignment spacer standing in for the caret on childless rows, matching
+   the caret button's total width. */
+.ai-history-caret-spacer {
+  display: inline-block;
+  width: 0.9375rem;
+}
+
+/* The whole message row toggles its detail, so it reads as clickable. */
+.ai-history-table tr.ai-history-message {
+  cursor: pointer;
+}
+
+/* Chevron pointing right when collapsed, down when expanded. The bulk
+   expand button in the toolbar reuses the same icon. */
+.ai-history-toggle-children::before,
+.ai-history-expand-all::before {
+  display: block;
+  width: 0.4375rem;
+  height: 0.4375rem;
+  content: "";
+  transition: transform 0.1s ease-in;
+  transform: rotate(-45deg);
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+}
+
+.ai-history-toggle-children[aria-expanded="true"]::before,
+.ai-history-expand-all[aria-expanded="true"]::before {
+  transform: rotate(45deg);
+}
+
+/* Circled letter i on the bulk details toolbar button. */
+.ai-history-details-all::before {
+  display: block;
+  width: 1rem;
+  height: 1rem;
+  content: "i";
+  font-size: 0.75rem;
+  line-height: 1rem;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+}
+
+/* The bulk toolbar sits right above the table; its buttons pair the row
+   toggle icons with a text label. The display rule is gated on the hidden
+   attribute: an unconditional display value would defeat the server
+   rendered hidden state, showing dead buttons on a page without JS. */
+.ai-history-toolbar:not([hidden]) {
+  display: flex;
+  gap: 0.5rem;
+  margin-block-end: 0.5rem;
+}
+
+/* The doubled class selector outweighs the admin theme's own button
+   display rules, keeping the icon and label on one line. */
+.ai-history-toolbar button,
+.ai-history-toolbar button.button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  cursor: pointer;
+}
+
+/* Pretty-printed JSON and message content blocks in detail rows. */
+.ai-history-detail pre {
+  max-height: 20rem;
+  padding: 0.5rem;
+  overflow: auto;
+  border: 1px solid #d4d4d8;
+  background-color: #fafafa;
+}
+
+/* Progressively tinted backgrounds give expanded sub-agent levels a subtle
+   visual hierarchy. The :not() exemption keeps the theme's row feedback,
+   which pairs :hover and :focus-within identically. */
+.ai-history-table tr.ai-history-depth-1:not(:hover, :focus-within) {
+  background-color: rgba(0, 0, 0, 0.03);
+}
+
+.ai-history-table tr.ai-history-depth-2:not(:hover, :focus-within) {
+  background-color: rgba(0, 0, 0, 0.06);
+}
+
+.ai-history-table tr.ai-history-depth-3:not(:hover, :focus-within) {
+  background-color: rgba(0, 0, 0, 0.09);
+}
+
+/* A light blue tint marks the row whose detail is open, and its detail row,
+   so the inspected pair stands out from the gray depth levels. */
+.ai-history-table tr.ai-history-inspected:not(:hover, :focus-within) {
+  background-color: rgba(0, 100, 200, 0.07);
+}
+
+/* Error rows keep an error tint at any depth; the selector outweighs the
+   depth and inspected tints above. */
+.ai-history-table tr.ai-history-message.color-error:not(:hover, :focus-within) {
+  background-color: rgba(165, 27, 0, 0.08);
+}
