@@ -45,6 +45,7 @@ use Drupal\user\EntityOwnerTrait;
  *   bundle_entity_type = "ai_editorial_session_type",
  *   links = {
  *     "canonical" = "/admin/content/ai/{ai_editorial_session}",
+ *     "history" = "/admin/content/ai/{ai_editorial_session}/history",
  *     "add-page" = "/admin/content/ai/add",
  *     "add-form" = "/admin/content/ai/add/{ai_editorial_session_type}",
  *     "delete-form" = "/admin/content/ai/{ai_editorial_session}/delete",

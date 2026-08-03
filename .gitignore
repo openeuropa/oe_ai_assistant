@@ -17,3 +17,5 @@ test-results
 composer.contrib-patches.lock.json
 ## DDEV
 /.ddev/web-build
+/phpstan-baseline.neon
+/phpstan.neon
