@@ -4,7 +4,10 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\oe_ai_assistant\Functional;
 
+use Drupal\Core\File\FileExists;
+use Drupal\Core\File\FileSystemInterface;
 use Drupal\Core\Url;
+use Drupal\media\Entity\Media;
 
 /**
  * Functional tests for the AI editorial session admin UI.
@@ -184,7 +187,53 @@ class AiEditorialSessionDashboardTest extends AiEditorialSessionBrowserTestBase 
 
     $this->assertSession()->statusCodeEquals(200);
     $this->assertSession()->responseContains('"tone":{"enabled":true,"options":[]');
+    $this->assertSession()->responseContains('"documents":{"enabled":true,"options":[]}');
     $this->assertSession()->responseNotContains('oe_ai_prompt');
+  }
+
+  /**
+   * Tests the session page bootstraps referenced context documents.
+   */
+  public function testSessionPageRehydratesContextDocuments(): void {
+    $owner = $this->drupalCreateUser([
+      'view_update own sessions',
+      'access content',
+    ]);
+    $session = $this->createSession($owner);
+    $directory = 'private://ai-context-documents';
+    $this->container->get('file_system')->prepareDirectory(
+      $directory,
+      FileSystemInterface::CREATE_DIRECTORY | FileSystemInterface::MODIFY_PERMISSIONS,
+    );
+    $file = $this->container->get('file.repository')->writeData(
+      'Existing context document',
+      $directory . '/context_text.md',
+      FileExists::Rename,
+    );
+    $file->setPermanent();
+    $file->save();
+    $media = Media::create([
+      'bundle' => 'ai_context_document',
+      'name' => 'Policy brief',
+      'status' => 0,
+      'field_media_context_document' => [
+        'target_id' => $file->id(),
+      ],
+    ]);
+    $media->save();
+    $session->get('context_documents')->appendItem([
+      'target_id' => $media->id(),
+    ]);
+    $session->save();
+
+    $this->drupalLogin($owner);
+    $this->drupalGet($session->toUrl('canonical'));
+
+    $this->assertSession()->statusCodeEquals(200);
+    $this->assertSession()->responseContains('"documents":{"enabled":true,"options":[{');
+    $this->assertSession()->responseContains('"id":"' . $media->id() . '"');
+    $this->assertSession()->responseContains('"title":"Policy brief"');
+    $this->assertSession()->responseContains('"meta":{"type":"md","size":"');
   }
 
   /**
@@ -316,6 +365,7 @@ class AiEditorialSessionDashboardTest extends AiEditorialSessionBrowserTestBase 
     ]));
     $this->assertSession()->responseContains('"label":"Formal"');
     $this->assertSession()->responseContains('"description":"A professional and neutral tone suitable for official or institutional communication."');
+    $this->assertSession()->responseContains('"documents":{"enabled":true,"options":[]}');
     $this->assertSession()->responseNotContains('"name":"Formal"');
     $this->assertSession()->responseNotContains('oe_ai_prompt');
   }

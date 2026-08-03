@@ -10,11 +10,11 @@ use Drupal\ai\OperationType\Chat\Tools\ToolsFunctionInput;
 use Drupal\ai_agents\PluginManager\AiAgentManager;
 use Drupal\Core\File\FileExists;
 use Drupal\Core\File\FileSystemInterface;
-use Drupal\Core\StringTranslation\ByteSizeMarkup;
 use Drupal\file\FileInterface;
 use Drupal\file\FileRepositoryInterface;
 use Drupal\media\MediaInterface;
 use Drupal\oe_ai_assistant\Annotation\AiEditorialAssistant;
+use Drupal\oe_ai_assistant\Document\ContextDocumentStorage;
 use Drupal\oe_ai_assistant\Entity\AiConversationMessageInterface;
 use Drupal\oe_ai_assistant\AiDraftingTemplateInterface;
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
@@ -23,6 +23,7 @@ use Drupal\oe_ai_assistant\Service\Drafting\DraftHistoryInterface;
 use Drupal\oe_ai_assistant\Service\Drafting\EditorialContext;
 use Drupal\oe_ai_assistant\Plugin\AiAssistantPluginBase;
 use Drupal\oe_ai_assistant\Service\AiEditorialContextInterface;
+use Drupal\oe_ai_assistant\Service\DocumentSerializerInterface;
 use Drupal\oe_ai_assistant\Service\DraftingOrchestratorInterface;
 use Drupal\oe_ai_assistant\Service\DraftSaverInterface;
 use Drupal\oe_ai_assistant\Service\DraftingSchemaProviderInterface;
@@ -62,31 +63,6 @@ class DraftingPlugin extends AiAssistantPluginBase {
    * The session field that stores the selected drafting template.
    */
   private const string TEMPLATE_FIELD = 'template';
-
-  /**
-   * The document category used for private drafting context files.
-   */
-  protected const string CONTEXT_DOCUMENT_CATEGORY = 'context';
-
-  /**
-   * The session field that references private context documents.
-   */
-  protected const string CONTEXT_DOCUMENT_SESSION_FIELD = 'context_documents';
-
-  /**
-   * The media bundle used for private context documents.
-   */
-  protected const string CONTEXT_DOCUMENT_MEDIA_BUNDLE = 'ai_context_document';
-
-  /**
-   * The media source field that stores the uploaded context file.
-   */
-  protected const string CONTEXT_DOCUMENT_SOURCE_FIELD = 'field_media_context_document';
-
-  /**
-   * The private directory used for uploaded context documents.
-   */
-  protected const string CONTEXT_DOCUMENT_UPLOAD_DIRECTORY = 'private://ai-context-documents';
 
   /**
    * The AI agent plugin manager.
@@ -152,6 +128,13 @@ class DraftingPlugin extends AiAssistantPluginBase {
   protected FileSystemInterface $fileSystem;
 
   /**
+   * The document serializer.
+   *
+   * @var \Drupal\oe_ai_assistant\Service\DocumentSerializerInterface
+   */
+  protected DocumentSerializerInterface $documentSerializer;
+
+  /**
    * {@inheritdoc}
    */
   public static function create(
@@ -170,6 +153,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
     $instance->draftHistory = $container->get(DraftHistoryInterface::class);
     $instance->fileRepository = $container->get('file.repository');
     $instance->fileSystem = $container->get('file_system');
+    $instance->documentSerializer = $container->get(DocumentSerializerInterface::class);
     return $instance;
   }
 
@@ -613,7 +597,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
       throw $e;
     }
 
-    return ['document' => $this->serializeDocument($media)];
+    return ['document' => $this->documentSerializer->serialize($media, ContextDocumentStorage::SOURCE_FIELD)];
   }
 
   /**
@@ -633,7 +617,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
     $documents = [];
     foreach ($session->get($category['sessionField'])->referencedEntities() as $media) {
       if ($media instanceof MediaInterface) {
-        $documents[] = $this->serializeDocument($media);
+        $documents[] = $this->documentSerializer->serialize($media, ContextDocumentStorage::SOURCE_FIELD);
       }
     }
 
@@ -737,12 +721,12 @@ class DraftingPlugin extends AiAssistantPluginBase {
    *   The resolved storage details.
    */
   private function resolveDocumentCategory(string $category): array {
-    if ($category === static::CONTEXT_DOCUMENT_CATEGORY) {
+    if ($category === ContextDocumentStorage::CATEGORY) {
       return [
-        'category' => static::CONTEXT_DOCUMENT_CATEGORY,
-        'sessionField' => static::CONTEXT_DOCUMENT_SESSION_FIELD,
-        'mediaBundle' => static::CONTEXT_DOCUMENT_MEDIA_BUNDLE,
-        'sourceField' => static::CONTEXT_DOCUMENT_SOURCE_FIELD,
+        'category' => ContextDocumentStorage::CATEGORY,
+        'sessionField' => ContextDocumentStorage::SESSION_FIELD,
+        'mediaBundle' => ContextDocumentStorage::MEDIA_BUNDLE,
+        'sourceField' => ContextDocumentStorage::SOURCE_FIELD,
       ];
     }
 
@@ -763,7 +747,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
    *   The managed file entity.
    */
   private function saveUploadedDocument(UploadedFile $upload): FileInterface {
-    $directory = static::CONTEXT_DOCUMENT_UPLOAD_DIRECTORY;
+    $directory = ContextDocumentStorage::UPLOAD_DIRECTORY;
     if (!$this->fileSystem->prepareDirectory(
       $directory,
       FileSystemInterface::CREATE_DIRECTORY | FileSystemInterface::MODIFY_PERMISSIONS,
@@ -841,30 +825,6 @@ class DraftingPlugin extends AiAssistantPluginBase {
   }
 
   /**
-   * Serializes a document media entity for API responses.
-   *
-   * @param \Drupal\media\MediaInterface $media
-   *   The document media entity.
-   *
-   * @return array{id: string, title: string, meta: array{type: string, size: string}}
-   *   The serialized document.
-   */
-  private function serializeDocument(MediaInterface $media): array {
-    $file = $this->getDocumentFile($media);
-    $filename = $file?->getFilename() ?: $media->label();
-    $extension = pathinfo($filename, PATHINFO_EXTENSION);
-
-    return [
-      'id' => (string) $media->id(),
-      'title' => (string) ($media->label() ?: $filename),
-      'meta' => [
-        'type' => $extension !== '' ? strtolower($extension) : 'file',
-        'size' => $file instanceof FileInterface ? (string) ByteSizeMarkup::create((int) $file->getSize()) : '',
-      ],
-    ];
-  }
-
-  /**
    * Gets the file referenced by a document media entity.
    *
    * @param \Drupal\media\MediaInterface $media
@@ -874,7 +834,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
    *   The referenced file, if available.
    */
   private function getDocumentFile(MediaInterface $media): ?FileInterface {
-    $file = $media->get(static::CONTEXT_DOCUMENT_SOURCE_FIELD)->entity;
+    $file = $media->get(ContextDocumentStorage::SOURCE_FIELD)->entity;
     return $file instanceof FileInterface ? $file : NULL;
   }
 
