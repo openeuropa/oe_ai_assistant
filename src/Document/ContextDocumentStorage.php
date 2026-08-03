@@ -1,0 +1,42 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Drupal\oe_ai_assistant\Document;
+
+/**
+ * Defines storage details for private drafting context documents.
+ */
+final class ContextDocumentStorage {
+
+  /**
+   * The document category used for private drafting context files.
+   */
+  public const string CATEGORY = 'context';
+
+  /**
+   * The session field that references private context documents.
+   */
+  public const string SESSION_FIELD = 'context_documents';
+
+  /**
+   * The media bundle used for private context documents.
+   */
+  public const string MEDIA_BUNDLE = 'ai_context_document';
+
+  /**
+   * The media source field that stores the uploaded context file.
+   */
+  public const string SOURCE_FIELD = 'field_media_context_document';
+
+  /**
+   * The private directory used for uploaded context documents.
+   */
+  public const string UPLOAD_DIRECTORY = 'private://ai-context-documents';
+
+  /**
+   * This class only carries shared storage constants.
+   */
+  private function __construct() {}
+
+}
