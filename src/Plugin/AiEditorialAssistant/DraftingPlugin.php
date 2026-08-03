@@ -8,6 +8,12 @@ use Drupal\ai\OperationType\Chat\ChatMessage;
 use Drupal\ai\OperationType\Chat\ChatOutput;
 use Drupal\ai\OperationType\Chat\Tools\ToolsFunctionInput;
 use Drupal\ai_agents\PluginManager\AiAgentManager;
+use Drupal\Core\File\FileExists;
+use Drupal\Core\File\FileSystemInterface;
+use Drupal\Core\StringTranslation\ByteSizeMarkup;
+use Drupal\file\FileInterface;
+use Drupal\file\FileRepositoryInterface;
+use Drupal\media\MediaInterface;
 use Drupal\oe_ai_assistant\Annotation\AiEditorialAssistant;
 use Drupal\oe_ai_assistant\Entity\AiConversationMessageInterface;
 use Drupal\oe_ai_assistant\AiDraftingTemplateInterface;
@@ -23,6 +29,7 @@ use Drupal\oe_ai_assistant\Service\DraftingSchemaProviderInterface;
 use Drupal\oe_ai_assistant\Service\ToolExecutionLoopInterface;
 use Drupal\oe_ai_assistant\Service\UiMessageStreamInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
+use Symfony\Component\HttpFoundation\File\UploadedFile;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 
@@ -55,6 +62,31 @@ class DraftingPlugin extends AiAssistantPluginBase {
    * The session field that stores the selected drafting template.
    */
   private const string TEMPLATE_FIELD = 'template';
+
+  /**
+   * The document category used for private drafting context files.
+   */
+  protected const string CONTEXT_DOCUMENT_CATEGORY = 'context';
+
+  /**
+   * The session field that references private context documents.
+   */
+  protected const string CONTEXT_DOCUMENT_SESSION_FIELD = 'context_documents';
+
+  /**
+   * The media bundle used for private context documents.
+   */
+  protected const string CONTEXT_DOCUMENT_MEDIA_BUNDLE = 'ai_context_document';
+
+  /**
+   * The media source field that stores the uploaded context file.
+   */
+  protected const string CONTEXT_DOCUMENT_SOURCE_FIELD = 'field_media_context_document';
+
+  /**
+   * The private directory used for uploaded context documents.
+   */
+  protected const string CONTEXT_DOCUMENT_UPLOAD_DIRECTORY = 'private://ai-context-documents';
 
   /**
    * The AI agent plugin manager.
@@ -106,6 +138,20 @@ class DraftingPlugin extends AiAssistantPluginBase {
   protected DraftHistoryInterface $draftHistory;
 
   /**
+   * The file repository service.
+   *
+   * @var \Drupal\file\FileRepositoryInterface
+   */
+  protected FileRepositoryInterface $fileRepository;
+
+  /**
+   * The file system service.
+   *
+   * @var \Drupal\Core\File\FileSystemInterface
+   */
+  protected FileSystemInterface $fileSystem;
+
+  /**
    * {@inheritdoc}
    */
   public static function create(
@@ -122,6 +168,8 @@ class DraftingPlugin extends AiAssistantPluginBase {
     $instance->orchestrator = $container->get(DraftingOrchestratorInterface::class);
     $instance->aiEditorialContext = $container->get(AiEditorialContextInterface::class);
     $instance->draftHistory = $container->get(DraftHistoryInterface::class);
+    $instance->fileRepository = $container->get('file.repository');
+    $instance->fileSystem = $container->get('file_system');
     return $instance;
   }
 
@@ -136,6 +184,9 @@ class DraftingPlugin extends AiAssistantPluginBase {
       'save' => $this->save(...),
       'set-tone' => $this->setTone(...),
       'set-template' => $this->setTemplate(...),
+      'add-document' => $this->addDocument(...),
+      'list-documents' => $this->listDocuments(...),
+      'remove-document' => $this->removeDocument(...),
     ];
   }
 
@@ -149,6 +200,9 @@ class DraftingPlugin extends AiAssistantPluginBase {
       'save' => 'DraftingSaveRequest',
       'set-tone' => 'DraftingSetToneRequest',
       'set-template' => 'DraftingSetTemplateRequest',
+      'add-document' => 'DraftingAddDocumentRequest',
+      'list-documents' => 'DraftingListDocumentsRequest',
+      'remove-document' => 'DraftingRemoveDocumentRequest',
     ];
   }
 
@@ -517,6 +571,129 @@ class DraftingPlugin extends AiAssistantPluginBase {
 
   /**
    * Attaches the versioned draft result to the draft_content tool call.
+   * Adds an uploaded document to the session document references.
+   *
+   * @param \Symfony\Component\HttpFoundation\Request $request
+   *   The incoming multipart request.
+   *
+   * @return array<string, array<string, string|array<string, string>>>
+   *   The serialized document item.
+   */
+  public function addDocument(Request $request): array {
+    $body = $request->request->all();
+    $category = $this->resolveDocumentCategory((string) ($body['category'] ?? ''));
+    $session = $this->loadSession($body);
+
+    $upload = $request->files->get('file');
+    if (!$upload instanceof UploadedFile || !$upload->isValid()) {
+      throw new ActionException(
+        'invalid_request',
+        'An uploaded file is required.',
+        400,
+      );
+    }
+
+    $managedFile = $this->saveUploadedDocument($upload);
+    $managedFile->setPermanent();
+    $managedFile->save();
+
+    $media = NULL;
+    try {
+      $media = $this->createDocumentMedia($managedFile, $upload, $category);
+      $session->get($category['sessionField'])->appendItem([
+        'target_id' => $media->id(),
+      ]);
+      $session->save();
+    }
+    catch (\Throwable $e) {
+      if ($media instanceof MediaInterface) {
+        $media->delete();
+      }
+      $managedFile->delete();
+      throw $e;
+    }
+
+    return ['document' => $this->serializeDocument($media)];
+  }
+
+  /**
+   * Lists documents referenced by the session.
+   *
+   * @param \Symfony\Component\HttpFoundation\Request $request
+   *   The incoming JSON request.
+   *
+   * @return array<string, array<int, array<string, string|array<string, string>>>>
+   *   The serialized document items.
+   */
+  public function listDocuments(Request $request): array {
+    $body = $this->decodeJsonBody($request);
+    $category = $this->resolveDocumentCategory((string) ($body['category'] ?? ''));
+    $session = $this->loadSession($body);
+
+    $documents = [];
+    foreach ($session->get($category['sessionField'])->referencedEntities() as $media) {
+      if ($media instanceof MediaInterface) {
+        $documents[] = $this->serializeDocument($media);
+      }
+    }
+
+    return ['documents' => $documents];
+  }
+
+  /**
+   * Removes a referenced document from the session and deletes its entities.
+   *
+   * @param \Symfony\Component\HttpFoundation\Request $request
+   *   The incoming JSON request.
+   *
+   * @return array<string, string>
+   *   A confirmation response.
+   */
+  public function removeDocument(Request $request): array {
+    $body = $this->decodeJsonBody($request);
+    $category = $this->resolveDocumentCategory((string) ($body['category'] ?? ''));
+    $session = $this->loadSession($body);
+    $documentId = (string) ($body['documentId'] ?? '');
+
+    if ($documentId === '') {
+      throw new ActionException(
+        'invalid_request',
+        'A documentId is required.',
+        400,
+      );
+    }
+
+    $field = $session->get($category['sessionField']);
+    $referenced = FALSE;
+    foreach ($field as $delta => $item) {
+      if ((string) $item->target_id === $documentId) {
+        $field->removeItem($delta);
+        $referenced = TRUE;
+        break;
+      }
+    }
+
+    if (!$referenced) {
+      throw new ActionException(
+        'invalid_request',
+        'The document is not referenced by this editorial session.',
+        404,
+      );
+    }
+
+    $media = $this->entityTypeManager->getStorage('media')->load($documentId);
+    $session->save();
+    if ($media instanceof MediaInterface) {
+      $file = $this->getDocumentFile($media);
+      $media->delete();
+      $file?->delete();
+    }
+
+    return ['status' => 'ok'];
+  }
+
+  /**
+   * Attaches the drafted fields as the result of the draft_content call.
    *
    * The result is the output of the draft_content tool, produced by the
    * orchestrator after the loop returns. Storing it on the tool call lets the
@@ -548,6 +725,157 @@ class DraftingPlugin extends AiAssistantPluginBase {
     }
     $message->setToolCalls($toolCalls);
     $message->save();
+  }
+
+  /**
+   * Resolves a document category into server-owned storage details.
+   *
+   * @param string $category
+   *   The request category.
+   *
+   * @return array{category: string, sessionField: string, mediaBundle: string, sourceField: string}
+   *   The resolved storage details.
+   */
+  private function resolveDocumentCategory(string $category): array {
+    if ($category === static::CONTEXT_DOCUMENT_CATEGORY) {
+      return [
+        'category' => static::CONTEXT_DOCUMENT_CATEGORY,
+        'sessionField' => static::CONTEXT_DOCUMENT_SESSION_FIELD,
+        'mediaBundle' => static::CONTEXT_DOCUMENT_MEDIA_BUNDLE,
+        'sourceField' => static::CONTEXT_DOCUMENT_SOURCE_FIELD,
+      ];
+    }
+
+    throw new ActionException(
+      'invalid_request',
+      sprintf('Unsupported document category "%s".', $category),
+      400,
+    );
+  }
+
+  /**
+   * Saves an uploaded document as a managed private file.
+   *
+   * @param \Symfony\Component\HttpFoundation\File\UploadedFile $upload
+   *   The uploaded file.
+   *
+   * @return \Drupal\file\FileInterface
+   *   The managed file entity.
+   */
+  private function saveUploadedDocument(UploadedFile $upload): FileInterface {
+    $directory = static::CONTEXT_DOCUMENT_UPLOAD_DIRECTORY;
+    if (!$this->fileSystem->prepareDirectory(
+      $directory,
+      FileSystemInterface::CREATE_DIRECTORY | FileSystemInterface::MODIFY_PERMISSIONS,
+    )) {
+      throw new ActionException(
+        'upload_failed',
+        'The private document directory could not be prepared.',
+        500,
+      );
+    }
+
+    $filename = $this->fileSystem->basename($upload->getClientOriginalName());
+    $destination = $directory . '/' . $filename;
+    $data = file_get_contents($upload->getPathname());
+    if ($data === FALSE) {
+      throw new ActionException(
+        'upload_failed',
+        'The uploaded document could not be read.',
+        500,
+      );
+    }
+
+    try {
+      return $this->fileRepository->writeData(
+        $data,
+        $destination,
+        FileExists::Rename,
+      );
+    }
+    catch (\Throwable $e) {
+      $this->logger->error('Context document upload failed: @message', [
+        '@message' => $e->getMessage(),
+      ]);
+      throw new ActionException(
+        'upload_failed',
+        'The uploaded document could not be saved.',
+        500,
+      );
+    }
+  }
+
+  /**
+   * Creates the document media entity for a managed file.
+   *
+   * @param \Drupal\file\FileInterface $file
+   *   The managed file entity.
+   * @param \Symfony\Component\HttpFoundation\File\UploadedFile $upload
+   *   The source upload.
+   * @param array $category
+   *   The resolved category storage details.
+   *
+   * @return \Drupal\media\MediaInterface
+   *   The saved media entity.
+   */
+  private function createDocumentMedia(FileInterface $file, UploadedFile $upload, array $category): MediaInterface {
+    $media = $this->entityTypeManager->getStorage('media')->create([
+      'bundle' => $category['mediaBundle'],
+      'name' => $upload->getClientOriginalName(),
+      'status' => 0,
+      $category['sourceField'] => [
+        'target_id' => $file->id(),
+      ],
+    ]);
+    $media->save();
+
+    if (!$media instanceof MediaInterface) {
+      throw new ActionException(
+        'upload_failed',
+        'The uploaded document could not be saved.',
+        500,
+      );
+    }
+
+    return $media;
+  }
+
+  /**
+   * Serializes a document media entity for API responses.
+   *
+   * @param \Drupal\media\MediaInterface $media
+   *   The document media entity.
+   *
+   * @return array{id: string, title: string, meta: array{type: string, size: string}}
+   *   The serialized document.
+   */
+  private function serializeDocument(MediaInterface $media): array {
+    $file = $this->getDocumentFile($media);
+    $filename = $file?->getFilename() ?: $media->label();
+    $extension = pathinfo($filename, PATHINFO_EXTENSION);
+
+    return [
+      'id' => (string) $media->id(),
+      'title' => (string) ($media->label() ?: $filename),
+      'meta' => [
+        'type' => $extension !== '' ? strtolower($extension) : 'file',
+        'size' => $file instanceof FileInterface ? (string) ByteSizeMarkup::create((int) $file->getSize()) : '',
+      ],
+    ];
+  }
+
+  /**
+   * Gets the file referenced by a document media entity.
+   *
+   * @param \Drupal\media\MediaInterface $media
+   *   The document media entity.
+   *
+   * @return \Drupal\file\FileInterface|null
+   *   The referenced file, if available.
+   */
+  private function getDocumentFile(MediaInterface $media): ?FileInterface {
+    $file = $media->get(static::CONTEXT_DOCUMENT_SOURCE_FIELD)->entity;
+    return $file instanceof FileInterface ? $file : NULL;
   }
 
   /**
