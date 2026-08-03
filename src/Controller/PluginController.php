@@ -108,7 +108,11 @@ class PluginController extends ControllerBase {
       // validateRaw() parses the raw body string and checks it against the
       // JSON Schema object. It returns an array of human-readable error
       // strings, or an empty array when the body is valid.
-      $errors = $this->requestValidator->validateRaw($request->getContent(), $schemas[$action]);
+      $rawBody = $request->getContent();
+      if (str_starts_with((string) $request->headers->get('Content-Type'), 'multipart/form-data')) {
+        $rawBody = json_encode($request->request->all(), JSON_THROW_ON_ERROR);
+      }
+      $errors = $this->requestValidator->validateRaw($rawBody, $schemas[$action]);
       if (!empty($errors)) {
         // Flatten all validation error messages into a single semicolon-
         // separated string so the response remains a flat JSON object
