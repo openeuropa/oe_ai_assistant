@@ -68,31 +68,6 @@ class DraftingPlugin extends AiAssistantPluginBase {
   private const string TEMPLATE_FIELD = 'template';
 
   /**
-   * The document category used for private drafting context files.
-   */
-  protected const string CONTEXT_DOCUMENT_CATEGORY = 'context';
-
-  /**
-   * The session field that references private context documents.
-   */
-  protected const string CONTEXT_DOCUMENT_SESSION_FIELD = 'context_documents';
-
-  /**
-   * The media bundle used for private context documents.
-   */
-  protected const string CONTEXT_DOCUMENT_MEDIA_BUNDLE = 'ai_context_document';
-
-  /**
-   * The media source field that stores the uploaded context file.
-   */
-  protected const string CONTEXT_DOCUMENT_SOURCE_FIELD = 'field_media_context_document';
-
-  /**
-   * The private directory used for uploaded context documents.
-   */
-  protected const string CONTEXT_DOCUMENT_UPLOAD_DIRECTORY = 'private://ai-context-documents';
-
-  /**
    * The AI agent plugin manager.
    *
    * @var \Drupal\ai_agents\PluginManager\AiAgentManager
