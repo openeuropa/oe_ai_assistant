@@ -26,6 +26,7 @@ class AiAgentExtraTagsPatchTest extends KernelTestBase {
     'field',
     'file',
     'filter',
+    'media',
     'node',
     'options',
     'system',
