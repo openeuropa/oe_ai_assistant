@@ -12,7 +12,7 @@ entity_type: ai_editorial_session
 bundle: content_creation
 label: Template
 description: 'The selected drafting template.'
-required: false
+required: true
 translatable: false
 default_value: {  }
 default_value_callback: ''

@@ -381,8 +381,8 @@ class DraftingPlugin extends AiAssistantPluginBase {
   /**
    * Saves the selected drafting template on the editorial session.
    *
-   * The field's reference constraint rejects a disabled template, a template
-   * for another bundle, or a missing one; an empty value clears the selection.
+   * The template is mandatory; the field constraints reject an empty value, a
+   * disabled template, a template for another bundle, or a missing one.
    *
    * @param \Symfony\Component\HttpFoundation\Request $request
    *   The incoming request.

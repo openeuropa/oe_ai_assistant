@@ -36,6 +36,20 @@ class AiEditorialSessionAddForm extends ContentEntityForm {
    * {@inheritdoc}
    */
   public function form(array $form, FormStateInterface $form_state): array {
+    // On a rebuild, reflect the chosen content type on the entity before the
+    // widgets build, so the template options are scoped to that bundle. The
+    // submitted value is read from the raw input because processed form values
+    // are not populated yet when form() runs.
+    $input = $form_state->getUserInput();
+    $chosenType = $input['content_type'] ?? NULL;
+    if (is_array($chosenType)) {
+      $chosenType = $chosenType[0]['target_id'] ?? ($chosenType['target_id'] ?? NULL);
+    }
+    if (is_string($chosenType) && $chosenType !== '') {
+      $this->entity->set('content_type', $chosenType);
+      $this->entity->set('template', NULL);
+    }
+
     $form = parent::form($form, $form_state);
     $form['label'] = [
       '#type' => 'textfield',
@@ -45,7 +59,31 @@ class AiEditorialSessionAddForm extends ContentEntityForm {
       '#description' => $this->t('Label for the session.'),
     ];
 
+    // Regenerate the template options whenever the content type changes.
+    $form['content_type']['widget']['#ajax'] = [
+      'callback' => '::updateTemplateElement',
+      'wrapper' => 'ai-editorial-session-template',
+      'event' => 'change',
+    ];
+    $form['template']['#prefix'] = '<div id="ai-editorial-session-template">';
+    $form['template']['#suffix'] = '</div>';
+
     return $form;
+  }
+
+  /**
+   * AJAX callback returning the rebuilt template element.
+   *
+   * @param array $form
+   *   The rebuilt form.
+   * @param \Drupal\Core\Form\FormStateInterface $form_state
+   *   The form state.
+   *
+   * @return array
+   *   The template form element, scoped to the chosen content type.
+   */
+  public function updateTemplateElement(array $form, FormStateInterface $form_state): array {
+    return $form['template'];
   }
 
   /**

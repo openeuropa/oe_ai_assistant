@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Drupal\Tests\oe_ai_assistant\Kernel;
 
 use Drupal\KernelTests\KernelTestBase;
+use Drupal\node\Entity\NodeType;
 use Drupal\oe_ai_assistant\Entity\AiDraftingTemplate;
 use Drupal\oe_ai_assistant\Service\DraftingSchemaProviderInterface;
 use PHPUnit\Framework\Attributes\Group;
@@ -106,10 +107,11 @@ class DraftingSchemaProviderTest extends KernelTestBase {
    * A bundle with no template falls back to the full grouping.
    */
   public function testBundleWithoutTemplateReturnsFullGroups(): void {
-    // oe_contact has no drafting template, so the full schema is used.
-    $main = $this->mainFields($this->provider()->groups('node', 'oe_contact'));
+    // A bundle with no drafting template uses the full schema.
+    NodeType::create(['type' => 'oe_empty', 'name' => 'Empty'])->save();
+    $main = $this->mainFields($this->provider()->groups('node', 'oe_empty'));
 
-    $this->assertContains('field_contact_name', $main);
+    $this->assertContains('title', $main);
   }
 
   /**
@@ -189,7 +191,8 @@ class DraftingSchemaProviderTest extends KernelTestBase {
    * A bundle without templates yields an empty list.
    */
   public function testAvailableTemplatesEmptyForBundleWithoutTemplates(): void {
-    $this->assertSame([], $this->provider()->availableTemplates('oe_contact'));
+    NodeType::create(['type' => 'oe_empty', 'name' => 'Empty'])->save();
+    $this->assertSame([], $this->provider()->availableTemplates('oe_empty'));
   }
 
   /**

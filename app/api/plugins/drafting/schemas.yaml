@@ -97,6 +97,7 @@ DraftingSetTemplateRequest:
   type: object
   required:
     - sessionId
+    - template
   properties:
     sessionId:
       type: string
@@ -106,8 +107,8 @@ DraftingSetTemplateRequest:
       type: string
       description: >
         The ai_drafting_template id to select, from
-        pluginConfig.drafting.templates.options. An empty value clears the
-        selection so the backend auto-selects the latest enabled template.
+        pluginConfig.drafting.templates.options. The template field is
+        mandatory, so an empty value is rejected.
 
 DraftingSetTemplateResponse:
   type: object

@@ -369,8 +369,8 @@ export interface components {
         DraftingSetTemplateRequest: {
             /** @description The editorial session on which the selected template is saved. */
             sessionId: string;
-            /** @description The ai_drafting_template id to select, from pluginConfig.drafting.templates.options. An empty value clears the selection so the backend auto-selects the latest enabled template. */
-            template?: string;
+            /** @description The ai_drafting_template id to select, from pluginConfig.drafting.templates.options. The template field is mandatory, so an empty value is rejected. */
+            template: string;
         };
         DraftingSetTemplateResponse: {
             /** @description Confirmation status (e.g. "ok"). */

@@ -114,15 +114,12 @@ class DraftingPluginSetTemplateTest extends AiEditorialSessionKernelTestBase {
   }
 
   /**
-   * An empty template clears the selection.
+   * An empty template is rejected because the field is mandatory.
    */
-  public function testEmptyTemplateClearsSelection(): void {
+  public function testEmptyTemplateIsRejected(): void {
     $sessionId = $this->ownedSession();
-    $this->setTemplate($sessionId, 'news_a');
-
+    $this->expectException(ActionException::class);
     $this->setTemplate($sessionId, '');
-
-    $this->assertNull($this->storedTemplate($sessionId));
   }
 
   /**
