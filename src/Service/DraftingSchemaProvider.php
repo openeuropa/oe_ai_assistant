@@ -33,6 +33,24 @@ class DraftingSchemaProvider implements DraftingSchemaProviderInterface {
   /**
    * {@inheritdoc}
    */
+  public function availableTemplates(string $bundle): array {
+    $templates = $this->entityTypeManager
+      ->getStorage('ai_drafting_template')
+      ->loadByProperties(['content_type' => $bundle, 'status' => TRUE]);
+    ksort($templates);
+    return array_values(array_map(
+      static fn (AiDraftingTemplateInterface $template): array => [
+        'id' => (string) $template->id(),
+        'label' => (string) $template->label(),
+        'description' => $template->getDescription(),
+      ],
+      $templates,
+    ));
+  }
+
+  /**
+   * {@inheritdoc}
+   */
   public function resolveTemplate(string $entityTypeId, string $bundle, ?string $templateId = NULL): ?AiDraftingTemplateInterface {
     if ($entityTypeId !== 'node') {
       if ($templateId !== NULL && $templateId !== '') {

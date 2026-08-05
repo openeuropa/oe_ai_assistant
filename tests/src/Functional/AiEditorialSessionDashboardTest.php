@@ -215,10 +215,17 @@ class AiEditorialSessionDashboardTest extends AiEditorialSessionBrowserTestBase 
     $this->assertSession()->fieldExists('content_type');
     $this->assertSession()->fieldExists('label');
 
+    // Choosing the content type scopes the mandatory template select. The first
+    // submit leaves it empty, so the form redisplays with the scoped options.
     $this->submitForm([
       'content_type' => 'oe_news',
       'label' => 'my session',
       'tone' => $this->getTermIdByName('oe_ai_tone', 'Formal'),
+    ], 'Save');
+
+    // The template options now include news_default; select it and save.
+    $this->submitForm([
+      'template' => 'news_default',
     ], 'Save');
 
     $this->assertSession()->statusCodeEquals(200);
@@ -227,6 +234,7 @@ class AiEditorialSessionDashboardTest extends AiEditorialSessionBrowserTestBase 
       ->loadByProperties(['label' => 'my session']);
     $session = reset($session);
     $this->assertNotFalse($session);
+    $this->assertSame('news_default', $session->get('template')->target_id);
     $this->assertSame($session->toUrl('canonical', ['absolute' => TRUE])->toString(), $this->getUrl());
     $this->assertSessionAppPage('oe_news', (string) $session->id());
   }

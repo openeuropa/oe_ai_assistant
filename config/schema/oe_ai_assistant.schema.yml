@@ -163,3 +163,8 @@ oe_ai_assistant.ai_drafting_template_default:
       sequence:
         type: ignore
         label: 'Default value'
+
+# Settings for the drafting-template entity-reference selection handler.
+entity_reference_selection.ai_drafting_template_selection:
+  type: entity_reference_selection.default
+  label: 'AI drafting template selection handler settings'

@@ -28,6 +28,16 @@ export interface DraftingSetToneResponse {
   status: "ok";
 }
 
+/** Request body for setting the selected template. */
+export interface DraftingSetTemplateRequest {
+  template: string;
+}
+
+/** Response body for setting the selected template. */
+export interface DraftingSetTemplateResponse {
+  status: "ok";
+}
+
 /** A selectable option (tone, template, ...) provided by the host config. */
 export interface DraftingSelectOption {
   id: string;

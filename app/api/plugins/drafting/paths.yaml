@@ -82,3 +82,28 @@ setTone:
           application/json:
             schema:
               $ref: "../../openapi.yaml#/components/schemas/ApiError"
+
+setTemplate:
+  post:
+    operationId: postDraftingSetTemplate
+    summary: Set the selected drafting template on the session
+    tags: [Drafting]
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: "../../openapi.yaml#/components/schemas/DraftingSetTemplateRequest"
+    responses:
+      "200":
+        description: Set-template confirmation
+        content:
+          application/json:
+            schema:
+              $ref: "../../openapi.yaml#/components/schemas/DraftingSetTemplateResponse"
+      "400":
+        description: Validation error.
+        content:
+          application/json:
+            schema:
+              $ref: "../../openapi.yaml#/components/schemas/ApiError"

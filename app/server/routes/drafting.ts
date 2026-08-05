@@ -10,6 +10,7 @@
  * POST /api/plugins/drafting/reset  - Clear conversation
  * POST /api/plugins/drafting/save   - Mock save
  * POST /api/plugins/drafting/set-tone - Validate selected tone
+ * POST /api/plugins/drafting/set-template - Validate selected template
  */
 
 import { readFileSync } from "node:fs";
@@ -198,6 +199,33 @@ export function createDraftingRouter(service: DraftingService): Router {
     }
 
     console.info("[drafting] set-tone", { toneId });
+    // Delay the response so the Save spinner is visible during local
+    // development. The real backend responds as soon as it persists.
+    setTimeout(() => {
+      res.json({ status: "ok" });
+    }, 1000);
+  });
+
+  /**
+   * POST /set-template - Receive selected drafting template.
+   *
+   * This standalone mock mirrors the Drupal route so the frontend can be
+   * exercised locally while the backend implementation evolves separately.
+   */
+  router.post("/set-template", (req, res) => {
+    const { template } = req.body as {
+      template?: string;
+    };
+
+    if (!template) {
+      res.status(400).json({
+        code: "bad_request",
+        message: "template is required",
+      });
+      return;
+    }
+
+    console.info("[drafting] set-template", { template });
     // Delay the response so the Save spinner is visible during local
     // development. The real backend responds as soon as it persists.
     setTimeout(() => {

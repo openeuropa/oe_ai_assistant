@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Drupal\Tests\oe_ai_assistant\Kernel;
 
 use Drupal\KernelTests\KernelTestBase;
+use Drupal\node\Entity\NodeType;
 use Drupal\oe_ai_assistant\Entity\AiDraftingTemplate;
 use Drupal\oe_ai_assistant\Service\DraftingSchemaProviderInterface;
 use PHPUnit\Framework\Attributes\Group;
@@ -106,10 +107,11 @@ class DraftingSchemaProviderTest extends KernelTestBase {
    * A bundle with no template falls back to the full grouping.
    */
   public function testBundleWithoutTemplateReturnsFullGroups(): void {
-    // oe_contact has no drafting template, so the full schema is used.
-    $main = $this->mainFields($this->provider()->groups('node', 'oe_contact'));
+    // A bundle with no drafting template uses the full schema.
+    NodeType::create(['type' => 'oe_empty', 'name' => 'Empty'])->save();
+    $main = $this->mainFields($this->provider()->groups('node', 'oe_empty'));
 
-    $this->assertContains('field_contact_name', $main);
+    $this->assertContains('title', $main);
   }
 
   /**
@@ -163,6 +165,66 @@ class DraftingSchemaProviderTest extends KernelTestBase {
     $this->expectException(\InvalidArgumentException::class);
     $this->expectExceptionMessage('only apply to node bundles');
     $this->provider()->groups('paragraph', 'text_block', 'news_default');
+  }
+
+  /**
+   * Lists the enabled templates for a bundle with id, label and description.
+   */
+  public function testAvailableTemplatesListsEnabledTemplatesForBundle(): void {
+    $templates = $this->provider()->availableTemplates('oe_news');
+
+    $this->assertSame([
+      [
+        'id' => 'news_default',
+        'label' => 'News article (default)',
+        'description' => 'Standard news article with title, teaser, and body.',
+      ],
+      [
+        'id' => 'news_with_paragraphs',
+        'label' => 'News article with paragraphs',
+        'description' => 'News article using rich-text and quote paragraph types.',
+      ],
+    ], $templates);
+  }
+
+  /**
+   * A bundle without templates yields an empty list.
+   */
+  public function testAvailableTemplatesEmptyForBundleWithoutTemplates(): void {
+    NodeType::create(['type' => 'oe_empty', 'name' => 'Empty'])->save();
+    $this->assertSame([], $this->provider()->availableTemplates('oe_empty'));
+  }
+
+  /**
+   * Disabled templates are not listed.
+   */
+  public function testAvailableTemplatesExcludesDisabledTemplates(): void {
+    $storage = $this->container->get('entity_type.manager')
+      ->getStorage('ai_drafting_template');
+    $template = $storage->load('news_with_paragraphs');
+    $template->setStatus(FALSE);
+    $template->save();
+
+    $ids = array_column($this->provider()->availableTemplates('oe_news'), 'id');
+
+    $this->assertSame(['news_default'], $ids);
+  }
+
+  /**
+   * Auto-select skips disabled templates, matching availableTemplates().
+   */
+  public function testAutoSelectSkipsDisabledTemplates(): void {
+    $storage = $this->container->get('entity_type.manager')
+      ->getStorage('ai_drafting_template');
+    $template = $storage->load('news_with_paragraphs');
+    $template->setStatus(FALSE);
+    $template->save();
+
+    // With news_with_paragraphs disabled, auto-select must fall back to
+    // news_default (title, field_teaser, field_body - all simple fields).
+    $main = $this->mainFields($this->provider()->groups('node', 'oe_news', ''));
+
+    $this->assertSame(['title', 'field_teaser', 'field_body'], $main);
   }
 
 }

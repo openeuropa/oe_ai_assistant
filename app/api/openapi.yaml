@@ -60,6 +60,8 @@ paths:
     $ref: "plugins/drafting/paths.yaml#/save"
   /plugins/drafting/set-tone:
     $ref: "plugins/drafting/paths.yaml#/setTone"
+  /plugins/drafting/set-template:
+    $ref: "plugins/drafting/paths.yaml#/setTemplate"
 
   # -- Plugin: echo (dev-only) --
   /plugins/echo/stream:
@@ -146,6 +148,10 @@ components:
       $ref: "plugins/drafting/schemas.yaml#/DraftingSetToneRequest"
     DraftingSetToneResponse:
       $ref: "plugins/drafting/schemas.yaml#/DraftingSetToneResponse"
+    DraftingSetTemplateRequest:
+      $ref: "plugins/drafting/schemas.yaml#/DraftingSetTemplateRequest"
+    DraftingSetTemplateResponse:
+      $ref: "plugins/drafting/schemas.yaml#/DraftingSetTemplateResponse"
 
     # -- Plugin: echo --
     EchoRequest:

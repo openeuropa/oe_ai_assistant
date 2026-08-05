@@ -1,0 +1,19 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - node.type.oe_contact
+id: contact_default
+label: 'Contact (default)'
+description: 'Standard contact with name, role, and email.'
+content_type: oe_contact
+fields:
+  title:
+    prompt: 'Short display name for the contact.'
+  field_contact_name:
+    prompt: 'Full name of the contact person.'
+  field_contact_role:
+    prompt: 'Job title or role of the contact person.'
+  field_contact_email:
+    prompt: 'Public contact email address.'
+defaults: {  }

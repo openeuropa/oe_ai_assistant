@@ -92,3 +92,29 @@ DraftingSetToneResponse:
     status:
       type: string
       enum: [ok]
+
+DraftingSetTemplateRequest:
+  type: object
+  required:
+    - sessionId
+    - template
+  properties:
+    sessionId:
+      type: string
+      description: >
+        The editorial session on which the selected template is saved.
+    template:
+      type: string
+      description: >
+        The ai_drafting_template id to select, from
+        pluginConfig.drafting.templates.options. The template field is
+        mandatory, so an empty value is rejected.
+
+DraftingSetTemplateResponse:
+  type: object
+  required:
+    - status
+  properties:
+    status:
+      type: string
+      description: Confirmation status (e.g. "ok").

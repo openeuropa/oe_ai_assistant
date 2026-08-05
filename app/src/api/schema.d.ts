@@ -144,6 +144,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/plugins/drafting/set-template": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Set the selected drafting template on the session */
+        post: operations["postDraftingSetTemplate"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/plugins/echo/stream": {
         parameters: {
             query?: never;
@@ -348,6 +365,16 @@ export interface components {
         DraftingSetToneResponse: {
             /** @enum {string} */
             status: "ok";
+        };
+        DraftingSetTemplateRequest: {
+            /** @description The editorial session on which the selected template is saved. */
+            sessionId: string;
+            /** @description The ai_drafting_template id to select, from pluginConfig.drafting.templates.options. The template field is mandatory, so an empty value is rejected. */
+            template: string;
+        };
+        DraftingSetTemplateResponse: {
+            /** @description Confirmation status (e.g. "ok"). */
+            status: string;
         };
         /** @description Request body for the echo stream endpoint. */
         EchoRequest: {
@@ -657,6 +684,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DraftingSetToneResponse"];
+                };
+            };
+            /** @description Validation error. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    postDraftingSetTemplate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DraftingSetTemplateRequest"];
+            };
+        };
+        responses: {
+            /** @description Set-template confirmation */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DraftingSetTemplateResponse"];
                 };
             };
             /** @description Validation error. */

@@ -12,6 +12,8 @@
 import { getConfig } from "@/config";
 import type {
   DraftingChatRequest,
+  DraftingSetTemplateRequest,
+  DraftingSetTemplateResponse,
   DraftingSetToneRequest,
   DraftingSetToneResponse,
 } from "../types";
@@ -72,4 +74,24 @@ export async function setDraftingTone(
     throw new Error(`Drafting set-tone error: ${response.status}`);
   }
   return (await response.json()) as DraftingSetToneResponse;
+}
+
+/** Sets the selected drafting template on the current session. */
+export async function setDraftingTemplate(
+  request: DraftingSetTemplateRequest,
+): Promise<DraftingSetTemplateResponse> {
+  const response = await fetch(
+    `${getConfig().apiBaseUrl}/plugins/drafting/set-template`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      // Scope the template to the current editorial session.
+      body: JSON.stringify({ ...request, sessionId: getConfig().sessionId }),
+    },
+  );
+  if (!response.ok) {
+    throw new Error(`Drafting set-template error: ${response.status}`);
+  }
+  return (await response.json()) as DraftingSetTemplateResponse;
 }

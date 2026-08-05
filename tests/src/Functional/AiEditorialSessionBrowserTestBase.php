@@ -43,6 +43,21 @@ abstract class AiEditorialSessionBrowserTestBase extends BrowserTestBase {
     $this->createNodeType('oe_contact', 'Contact');
     $this->createNodeType('oe_news', 'News');
     $this->createEditorialContextTerms();
+    $this->createDefaultTemplate();
+  }
+
+  /**
+   * Creates the default drafting template for the oe_news content type.
+   */
+  protected function createDefaultTemplate(): void {
+    $this->container->get('entity_type.manager')
+      ->getStorage('ai_drafting_template')
+      ->create([
+        'id' => 'news_default',
+        'label' => 'News (default)',
+        'content_type' => 'oe_news',
+        'fields' => ['title' => ['prompt' => 'Headline.']],
+      ])->save();
   }
 
   /**
