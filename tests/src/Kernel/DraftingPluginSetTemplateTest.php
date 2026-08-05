@@ -92,6 +92,7 @@ class DraftingPluginSetTemplateTest extends AiEditorialSessionKernelTestBase {
   public function testDisabledTemplateIsRejected(): void {
     $sessionId = $this->ownedSession();
     $this->expectException(ActionException::class);
+    $this->expectExceptionMessage('This entity (<em class="placeholder">ai_drafting_template</em>: <em class="placeholder">news_disabled</em>) cannot be referenced.');
     $this->setTemplate($sessionId, 'news_disabled');
   }
 
@@ -101,6 +102,7 @@ class DraftingPluginSetTemplateTest extends AiEditorialSessionKernelTestBase {
   public function testWrongBundleTemplateIsRejected(): void {
     $sessionId = $this->ownedSession();
     $this->expectException(ActionException::class);
+    $this->expectExceptionMessage('This entity (<em class="placeholder">ai_drafting_template</em>: <em class="placeholder">contact_a</em>) cannot be referenced.');
     $this->setTemplate($sessionId, 'contact_a');
   }
 
@@ -110,6 +112,7 @@ class DraftingPluginSetTemplateTest extends AiEditorialSessionKernelTestBase {
   public function testMissingTemplateIsRejected(): void {
     $sessionId = $this->ownedSession();
     $this->expectException(ActionException::class);
+    $this->expectExceptionMessage('The referenced entity (<em class="placeholder">ai_drafting_template</em>: <em class="placeholder">does_not_exist</em>) does not exist.');
     $this->setTemplate($sessionId, 'does_not_exist');
   }
 
@@ -119,6 +122,7 @@ class DraftingPluginSetTemplateTest extends AiEditorialSessionKernelTestBase {
   public function testEmptyTemplateIsRejected(): void {
     $sessionId = $this->ownedSession();
     $this->expectException(ActionException::class);
+    $this->expectExceptionMessage('This value should not be null.');
     $this->setTemplate($sessionId, '');
   }
 
@@ -140,6 +144,7 @@ class DraftingPluginSetTemplateTest extends AiEditorialSessionKernelTestBase {
     ]));
 
     $this->expectException(ActionException::class);
+    $this->expectExceptionMessage('Drafting template "news_a" not found.');
     $plugin->executeAction('chat', $request);
   }
 
