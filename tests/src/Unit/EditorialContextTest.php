@@ -70,4 +70,41 @@ class EditorialContextTest extends UnitTestCase {
     $this->assertSame([], $snapshot['documents']);
   }
 
+  /**
+   * Tests that the prompt block is built from tone label and guidelines.
+   */
+  public function testToPromptWithFullContext(): void {
+    $context = new EditorialContext(
+      toneId: '3',
+      toneLabel: 'Formal',
+      tonePrompt: 'Use professional, institutional language.',
+      templateId: 'news_default',
+      templateLabel: 'News default',
+    );
+
+    $prompt = $context->toPrompt();
+
+    $this->assertStringContainsString(
+      'Editorial context selected by the editor for this draft:',
+      $prompt,
+    );
+    $this->assertStringContainsString('- Tone: Formal', $prompt);
+    $this->assertStringContainsString(
+      '- Tone guidelines: Use professional, institutional language.',
+      $prompt,
+    );
+    $this->assertStringContainsString(
+      'Follow the tone guidelines',
+      $prompt,
+    );
+  }
+
+  /**
+   * Tests that toPrompt returns an empty string when no tone is set.
+   */
+  public function testToPromptWithEmptyContext(): void {
+    $context = new EditorialContext(NULL, NULL, NULL, NULL, NULL);
+    $this->assertSame('', $context->toPrompt());
+  }
+
 }

@@ -10,8 +10,10 @@ use Drupal\ai\OperationType\Chat\Tools\ToolsFunctionInput;
 use Drupal\ai_agents\PluginManager\AiAgentManager;
 use Drupal\oe_ai_assistant\Annotation\AiEditorialAssistant;
 use Drupal\oe_ai_assistant\Entity\AiConversationMessageInterface;
+use Drupal\oe_ai_assistant\AiDraftingTemplateInterface;
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
 use Drupal\oe_ai_assistant\Exception\ActionException;
+use Drupal\oe_ai_assistant\Service\Drafting\EditorialContext;
 use Drupal\oe_ai_assistant\Plugin\AiAssistantPluginBase;
 use Drupal\oe_ai_assistant\Service\AiEditorialContextInterface;
 use Drupal\oe_ai_assistant\Service\DraftingOrchestratorInterface;
@@ -181,6 +183,12 @@ class DraftingPlugin extends AiAssistantPluginBase {
     }
     $context['template'] = $template?->id();
 
+    // Resolve the full editorial context once: tone (id, label, prompt),
+    // template (id, label) and documents (empty until the documents
+    // backend lands). Sub-agents receive it for prompt injection and it
+    // becomes the provenance snapshot of the produced draft.
+    $editorialContext = $this->buildEditorialContext($session, $template);
+
     // Load the persisted transcript, then append the current user's message
     // for this turn's LLM call and persist it as a user turn.
     $history = $this->buildHistory($session);
@@ -235,6 +243,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
       function (UiMessageStreamInterface $stream) use (
         $history, $context, $systemPrompt, $tools,
         $defaults, $provider, $recordTurn, $session, &$lastAssistant,
+        $editorialContext,
       ): void {
         $stream->start();
 
@@ -275,7 +284,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
             $stream, $history,
             $context['entityTypeId'], $context['bundle'],
             $session, $lastAssistant,
-            $context['template']
+            $editorialContext
           );
           // Emit the draft_content tool call with its result so the card
           // appears live, matching what a reload rehydrates.
@@ -476,15 +485,55 @@ class DraftingPlugin extends AiAssistantPluginBase {
    *   The session hosting the conversation.
    *
    * @return array
-   *   Context with entityTypeId, bundle, toneId, and template.
+   *   Context with entityTypeId, bundle, and template.
    */
   private function buildContext(AiEditorialSessionInterface $session): array {
     return [
       'entityTypeId' => 'node',
       'bundle' => $session->getContentType(),
-      'toneId' => (string) $session->get(static::TONE_FIELD)->target_id,
       'template' => (string) $session->get(static::TEMPLATE_FIELD)->target_id,
     ];
+  }
+
+  /**
+   * Resolves the editorial context for one drafting request.
+   *
+   * The tone is resolved through AiEditorialContext, which stays the single
+   * source of tone wording; an invalid stored tone is a 400 exactly as the
+   * former router prompt injection made it. Labels are captured at request
+   * time so the provenance snapshot survives later renames. Documents stay
+   * empty until their backend lands.
+   *
+   * @param \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $session
+   *   The session hosting the conversation.
+   * @param \Drupal\oe_ai_assistant\AiDraftingTemplateInterface|null $template
+   *   The resolved drafting template, or NULL without one.
+   *
+   * @return \Drupal\oe_ai_assistant\Service\Drafting\EditorialContext
+   *   The immutable per-request editorial context.
+   *
+   * @throws \Drupal\oe_ai_assistant\Exception\ActionException
+   *   When the stored tone is invalid or not prompt-ready.
+   */
+  private function buildEditorialContext(AiEditorialSessionInterface $session, ?AiDraftingTemplateInterface $template): EditorialContext {
+    $toneId = (string) $session->get(static::TONE_FIELD)->target_id;
+    $tone = NULL;
+    if ($toneId !== '') {
+      try {
+        $tone = $this->aiEditorialContext->getTone($toneId);
+      }
+      catch (\InvalidArgumentException $e) {
+        throw new ActionException('invalid_context', $e->getMessage(), 400);
+      }
+    }
+    return new EditorialContext(
+      toneId: $tone['id'] ?? NULL,
+      toneLabel: $tone['label'] ?? NULL,
+      tonePrompt: $tone['prompt'] ?? NULL,
+      templateId: $template?->id(),
+      templateLabel: $template?->label(),
+      documents: [],
+    );
   }
 
   /**
@@ -504,20 +553,6 @@ class DraftingPlugin extends AiAssistantPluginBase {
         . json_encode($groups, JSON_PRETTY_PRINT) . "\n";
     }
 
-    if ($context['toneId'] !== '') {
-      try {
-        $prompt .= "\nEditorial context:\n"
-          . $this->aiEditorialContext->buildSelectedPrompt($context['toneId'])
-          . "\n";
-      }
-      catch (\InvalidArgumentException $e) {
-        throw new ActionException(
-          'invalid_context',
-          $e->getMessage(),
-          400,
-        );
-      }
-    }
     return $prompt;
   }
 

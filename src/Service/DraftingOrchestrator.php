@@ -11,6 +11,7 @@ use Drupal\Core\Entity\EntityInterface;
 use Drupal\oe_ai_assistant\Entity\AiConversationMessageInterface;
 use Drupal\oe_ai_assistant\EventSubscriber\SubAgentMessageSubscriber;
 use Drupal\oe_ai_assistant\Exception\SubAgentException;
+use Drupal\oe_ai_assistant\Service\Drafting\EditorialContext;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 
@@ -50,10 +51,10 @@ class DraftingOrchestrator implements DraftingOrchestratorInterface {
     string $bundle,
     EntityInterface $host,
     ?AiConversationMessageInterface $parent = NULL,
-    ?string $templateId = NULL,
+    ?EditorialContext $context = NULL,
   ): array {
     $groups = $this->schemaProvider->groups(
-      $entityTypeId, $bundle, $templateId
+      $entityTypeId, $bundle, $context?->templateId
     );
 
     if (empty($groups)) {
@@ -89,7 +90,7 @@ class DraftingOrchestrator implements DraftingOrchestratorInterface {
         $fullText = $this->runSubAgent(
           $stepId, $group['schemaSlice'],
           $conversationContext, $mainFieldsResult,
-          $host, $parent,
+          $host, $parent, $context,
         );
 
         $parsed = $stream->extractJson($fullText);
@@ -176,6 +177,7 @@ class DraftingOrchestrator implements DraftingOrchestratorInterface {
     string $mainFieldsResult,
     EntityInterface $host,
     ?AiConversationMessageInterface $parent,
+    ?EditorialContext $context = NULL,
   ): string {
     $agent = $this->aiAgentManager
       ->createInstance('oe_content_drafter');
@@ -185,6 +187,18 @@ class DraftingOrchestrator implements DraftingOrchestratorInterface {
     // sub-agent transcript is simply not recorded.
     if ($parent !== NULL) {
       $agent->setUserInterface(NULL, SubAgentMessageSubscriber::correlationTags($stepId, $host, $parent));
+    }
+
+    // Inject the shared editorial context prompt into the sub-agent system
+    // prompt so the agents that produce the field values honour it. The
+    // template is not injected: it already acts through the pruned schema.
+    $contextPrompt = $context?->toPrompt() ?? '';
+    if ($contextPrompt !== '') {
+      $agentEntity = $agent->getAiAgentEntity();
+      $agentEntity->set(
+        'system_prompt',
+        $agentEntity->get('system_prompt') . "\n\n" . $contextPrompt . "\n",
+      );
     }
 
     $agent->getAiAgentEntity()

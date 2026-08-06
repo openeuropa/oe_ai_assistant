@@ -60,6 +60,18 @@ class AiEditorialContext implements AiEditorialContextInterface {
   }
 
   /**
+   * {@inheritdoc}
+   */
+  public function getTone(string $toneId): array {
+    $tone = $this->loadVocabularyTerm($toneId, self::TONE_VID);
+    return [
+      'id' => (string) $tone->id(),
+      'label' => (string) $tone->label(),
+      'prompt' => $this->getTermPrompt($tone),
+    ];
+  }
+
+  /**
    * Loads the prompt-ready terms from a vocabulary.
    *
    * @param string $vid

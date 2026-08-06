@@ -294,9 +294,13 @@ class DraftingPluginChatTest extends ExistingSiteBase {
   }
 
   /**
-   * Tests that selected editorial context is injected into the system prompt.
+   * Tests that the router system prompt is stable and tone-free.
+   *
+   * The router prompt carries role and capabilities only; the tone reaches
+   * the sub-agents instead, and tone changes must not alter the router
+   * prompt between turns.
    */
-  public function testSelectedContextIsInjectedIntoSystemPrompt(): void {
+  public function testRouterSystemPromptIsStableAndToneFree(): void {
     $user = $this->createUser(['use oe ai assistant']);
     $this->loginUser($user);
     $session = $this->createSession($user);
@@ -306,39 +310,114 @@ class DraftingPluginChatTest extends ExistingSiteBase {
       'toneId' => $this->getTermIdByName('oe_ai_tone', 'Formal'),
     ]);
 
-    MockAiProvider::enqueue(new MockResponse(
-      text: 'Drafting with selected context.',
-    ));
-
-    $result = $this->httpPost('/api/ai/plugins/drafting/chat', [
+    MockAiProvider::enqueue(new MockResponse(text: 'First reply.'));
+    $this->httpPost('/api/ai/plugins/drafting/chat', [
       'message' => 'Draft this with context.',
       'sessionId' => $session->id(),
     ]);
 
-    $this->assertEquals(200, $result['status'],
-      'Expected 200 response. Body: ' . substr($result['body'], 0, 500));
+    // Change the tone and chat again: the router prompt must not change.
+    $this->httpPost('/api/ai/plugins/drafting/set-tone', [
+      'sessionId' => $session->id(),
+      'toneId' => $this->getTermIdByName('oe_ai_tone', 'Technical'),
+    ]);
+    MockAiProvider::enqueue(new MockResponse(text: 'Second reply.'));
+    $this->httpPost('/api/ai/plugins/drafting/chat', [
+      'message' => 'And again.',
+      'sessionId' => $session->id(),
+    ]);
 
     \Drupal::state()->resetCache();
     $log = MockAiProvider::getCallLog();
-    $this->assertCount(1, $log, 'Mock provider should have been called once.');
+    $this->assertCount(2, $log, 'Two router calls should have been made.');
 
-    $this->assertStringContainsString(
-      'The user has selected:',
-      $log[0]['system_prompt'],
-    );
-    $this->assertStringContainsString(
-      'Use professional, institutional language. Maintain a neutral, authoritative voice.',
-      $log[0]['system_prompt'],
-    );
     $this->assertStringNotContainsString(
-      'Use professional language. Emphasize practical implications, compliance requirements, and economic impact.',
+      'Use professional, institutional language.',
       $log[0]['system_prompt'],
+      'The tone prompt must not be injected into the router prompt.',
+    );
+    $this->assertSame(
+      $log[0]['system_prompt'],
+      $log[1]['system_prompt'],
+      'The router prompt must be identical across tone changes.',
     );
 
     $toolNames = $this->extractToolNames($log[0]['tools']);
     $this->assertContains('draft_content', $toolNames);
-    $this->assertNotContains('select_context', $toolNames);
-    $this->assertNotContains('save_session', $toolNames);
+  }
+
+  /**
+   * Tests that the resolved tone prompt reaches every sub-agent.
+   *
+   * The recorded sub-agent system rows nested under the draft_content turn
+   * must contain the tone prompt text, proving the orchestrator injected the
+   * editorial context into the agents that produce the field values.
+   */
+  public function testTonePromptReachesSubAgents(): void {
+    $user = $this->createUser(['use oe ai assistant']);
+    $this->loginUser($user);
+    $session = $this->createSession($user);
+
+    $this->httpPost('/api/ai/plugins/drafting/set-tone', [
+      'sessionId' => $session->id(),
+      'toneId' => $this->getTermIdByName('oe_ai_tone', 'Formal'),
+    ]);
+
+    // Router signals draft_content, then one response per schema group.
+    MockAiProvider::enqueue(new MockResponse(
+      toolCalls: [
+        [
+          'id' => 'call_1',
+          'type' => 'function',
+          'function' => ['name' => 'draft_content', 'arguments' => '{}'],
+        ],
+      ],
+    ));
+    MockAiProvider::enqueue(new MockResponse(
+      text: '{"title": [{"value": "Test Title"}], "field_body": [{"value": "<p>Body</p>", "format": "full_html"}]}',
+    ));
+    MockAiProvider::enqueue(new MockResponse(text: '{"field_contacts": []}'));
+    MockAiProvider::enqueue(new MockResponse(text: '{"field_content_paragraphs": []}'));
+
+    $result = $this->httpPost('/api/ai/plugins/drafting/chat', [
+      'message' => 'Generate the draft now.',
+      'sessionId' => $session->id(),
+    ]);
+    $this->assertEquals(200, $result['status'],
+      'Expected 200. Body: ' . substr($result['body'], 0, 500));
+
+    // Find the draft_content turn and inspect its nested system rows.
+    $storage = \Drupal::entityTypeManager()
+      ->getStorage('ai_conversation_message');
+    $storage->resetCache();
+    $draftNode = NULL;
+    foreach ($storage->loadTree($session) as $node) {
+      foreach ($node['message']->getToolCalls() as $call) {
+        if (($call['function']['name'] ?? '') === 'draft_content') {
+          $draftNode = $node;
+        }
+      }
+    }
+    $this->assertNotNull($draftNode, 'A draft_content turn is recorded.');
+
+    $systemRows = array_filter(
+      $draftNode['children'],
+      fn($child) => $child['message']->getRole() === 'system',
+    );
+    $this->assertNotEmpty($systemRows, 'Sub-agent system rows are recorded.');
+    foreach ($systemRows as $row) {
+      $content = (string) $row['message']->get('content')->value;
+      $this->assertStringContainsString(
+        'Use professional, institutional language.',
+        $content,
+        'Every sub-agent system prompt must contain the tone prompt.',
+      );
+      $this->assertStringContainsString(
+        'Tone: Formal',
+        $content,
+        'Every sub-agent system prompt must contain the tone label.',
+      );
+    }
   }
 
   /**

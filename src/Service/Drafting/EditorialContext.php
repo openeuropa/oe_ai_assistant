@@ -25,7 +25,7 @@ final class EditorialContext {
    * @param string|null $toneLabel
    *   The tone label at resolution time.
    * @param string|null $tonePrompt
-   *   The resolved tone prompt text injected into every sub-agent.
+   *   The raw tone guideline text injected into content-producing agents.
    * @param string|null $templateId
    *   The resolved drafting template id, or NULL without a template.
    * @param string|null $templateLabel
@@ -61,6 +61,34 @@ final class EditorialContext {
         : NULL,
       'documents' => $this->documents,
     ];
+  }
+
+  /**
+   * Builds the prompt text injected into content-producing agents.
+   *
+   * One crafted block gathers every piece of editorial context that must
+   * steer generation, so all injection sites share the same wording. Only
+   * the tone contributes today; document summaries join it when the
+   * documents backend lands.
+   *
+   * @return string
+   *   The prompt block, or an empty string when there is no context.
+   */
+  public function toPrompt(): string {
+    $lines = [];
+    if ($this->tonePrompt !== NULL && $this->tonePrompt !== '') {
+      $lines[] = sprintf('- Tone: %s', (string) $this->toneLabel);
+      $lines[] = sprintf('- Tone guidelines: %s', $this->tonePrompt);
+    }
+    if ($lines === []) {
+      return '';
+    }
+    return implode("\n", [
+      'Editorial context selected by the editor for this draft:',
+      ...$lines,
+      '',
+      'Follow the tone guidelines in every piece of text you generate.',
+    ]);
   }
 
 }
