@@ -739,6 +739,73 @@ class DraftingPluginChatTest extends ExistingSiteBase {
   }
 
   /**
+   * Tests draft versioning and the immutable provenance snapshot.
+   *
+   * Two drafts with different tones must yield versions 1 and 2, each
+   * carrying the tone that was active when it was generated; changing the
+   * tone must not alter an already stored snapshot.
+   */
+  public function testDraftResultCarriesVersionAndSnapshot(): void {
+    $user = $this->createUser(['use oe ai assistant']);
+    $this->loginUser($user);
+    $session = $this->createSession($user);
+
+    $this->httpPost('/api/ai/plugins/drafting/set-tone', [
+      'sessionId' => $session->id(),
+      'toneId' => $this->getTermIdByName('oe_ai_tone', 'Formal'),
+    ]);
+    $this->enqueueDraftFlow();
+    $this->httpPost('/api/ai/plugins/drafting/chat', [
+      'message' => 'Generate the draft now.',
+      'sessionId' => $session->id(),
+    ]);
+
+    $drafts = $this->loadDraftResults($session);
+    $this->assertCount(1, $drafts);
+    $this->assertSame(1, $drafts[0]['version']);
+    $this->assertSame('Formal', $drafts[0]['context']['tone']['label']);
+    $this->assertSame(
+      'Use professional, institutional language. Maintain a neutral, authoritative voice. Avoid contractions and colloquialisms.',
+      $drafts[0]['context']['tone']['prompt'],
+      'The snapshot must store the raw tone guidelines.',
+    );
+    $this->assertSame('news_with_paragraphs', $drafts[0]['context']['template']['id']);
+    $this->assertSame([], $drafts[0]['context']['documents']);
+    $this->assertArrayHasKey('title', $drafts[0]['fields']);
+
+    // The version reaches the model through the recorded confirmation.
+    $transcript = $this->loadTranscript($session);
+    $texts = array_map(
+      fn($m) => (string) $m->get('content')->value, $transcript,
+    );
+    $this->assertNotEmpty(array_filter(
+      $texts,
+      fn($t) => str_contains($t, 'Draft 1 generated with'),
+    ), 'The confirmation must name the draft version.');
+
+    // Second draft with a different tone.
+    $this->httpPost('/api/ai/plugins/drafting/set-tone', [
+      'sessionId' => $session->id(),
+      'toneId' => $this->getTermIdByName('oe_ai_tone', 'Technical'),
+    ]);
+    $this->enqueueDraftFlow();
+    $this->httpPost('/api/ai/plugins/drafting/chat', [
+      'message' => 'Generate another draft.',
+      'sessionId' => $session->id(),
+    ]);
+
+    $drafts = $this->loadDraftResults($session);
+    $this->assertCount(2, $drafts);
+    $this->assertSame(1, $drafts[0]['version']);
+    $this->assertSame('Formal', $drafts[0]['context']['tone']['label'],
+      'The first snapshot must not change when the tone changes.');
+    $this->assertSame(2, $drafts[1]['version']);
+    $this->assertSame('Technical', $drafts[1]['context']['tone']['label']);
+    $this->assertNotEmpty($drafts[1]['context']['tone']['prompt'],
+      'The second snapshot must carry its own tone guidelines.');
+  }
+
+  /**
    * Extracts tool names from the mock provider log.
    */
   protected function extractToolNames(array $tools): array {
@@ -748,6 +815,49 @@ class DraftingPluginChatTest extends ExistingSiteBase {
     }
 
     return array_values(array_filter($names));
+  }
+
+  /**
+   * Enqueues a full mock draft flow: router signal plus three sub-agents.
+   */
+  protected function enqueueDraftFlow(): void {
+    MockAiProvider::enqueue(new MockResponse(
+      toolCalls: [
+        [
+          'id' => 'call_1',
+          'type' => 'function',
+          'function' => ['name' => 'draft_content', 'arguments' => '{}'],
+        ],
+      ],
+    ));
+    MockAiProvider::enqueue(new MockResponse(
+      text: '{"title": [{"value": "Test Title"}], "field_body": [{"value": "<p>Body</p>", "format": "full_html"}]}',
+    ));
+    MockAiProvider::enqueue(new MockResponse(text: '{"field_contacts": []}'));
+    MockAiProvider::enqueue(new MockResponse(text: '{"field_content_paragraphs": []}'));
+  }
+
+  /**
+   * Loads every stored draft_content result for a session, in order.
+   *
+   * @param \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $session
+   *   The session hosting the conversation.
+   *
+   * @return array
+   *   The result arrays stored on draft_content tool calls.
+   */
+  protected function loadDraftResults(AiEditorialSessionInterface $session): array {
+    $results = [];
+    foreach ($this->loadTranscript($session) as $message) {
+      foreach ($message->getToolCalls() as $call) {
+        if (($call['function']['name'] ?? '') === 'draft_content'
+          && isset($call['result'])
+        ) {
+          $results[] = $call['result'];
+        }
+      }
+    }
+    return $results;
   }
 
 }

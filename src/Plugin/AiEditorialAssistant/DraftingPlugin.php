@@ -13,6 +13,7 @@ use Drupal\oe_ai_assistant\Entity\AiConversationMessageInterface;
 use Drupal\oe_ai_assistant\AiDraftingTemplateInterface;
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
 use Drupal\oe_ai_assistant\Exception\ActionException;
+use Drupal\oe_ai_assistant\Service\Drafting\DraftHistoryInterface;
 use Drupal\oe_ai_assistant\Service\Drafting\EditorialContext;
 use Drupal\oe_ai_assistant\Plugin\AiAssistantPluginBase;
 use Drupal\oe_ai_assistant\Service\AiEditorialContextInterface;
@@ -98,6 +99,13 @@ class DraftingPlugin extends AiAssistantPluginBase {
   protected AiEditorialContextInterface $aiEditorialContext;
 
   /**
+   * The draft history reader.
+   *
+   * @var \Drupal\oe_ai_assistant\Service\Drafting\DraftHistoryInterface
+   */
+  protected DraftHistoryInterface $draftHistory;
+
+  /**
    * {@inheritdoc}
    */
   public static function create(
@@ -113,6 +121,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
     $instance->toolLoop = $container->get(ToolExecutionLoopInterface::class);
     $instance->orchestrator = $container->get(DraftingOrchestratorInterface::class);
     $instance->aiEditorialContext = $container->get(AiEditorialContextInterface::class);
+    $instance->draftHistory = $container->get(DraftHistoryInterface::class);
     return $instance;
   }
 
@@ -286,18 +295,31 @@ class DraftingPlugin extends AiAssistantPluginBase {
             $session, $lastAssistant,
             $editorialContext
           );
+          // Version the draft and snapshot the context that produced it.
+          // Prior drafts already carry a result; the current draft_content
+          // call does not yet, so the count is the number of earlier drafts.
+          $version = $this->draftHistory->countDrafts($session) + 1;
+          $draftResult = [
+            'version' => $version,
+            'context' => $editorialContext->toSnapshot(),
+            'fields' => $drafted,
+          ];
           // Emit the draft_content tool call with its result so the card
           // appears live, matching what a reload rehydrates.
-          $stream->toolCall('draft_content', [], $drafted);
-          // Record the drafted fields as the result of the draft_content call
-          // so the transcript keeps a trace that can repopulate the artifact.
+          $stream->toolCall('draft_content', [], $draftResult);
+          // Record the versioned result on the draft_content call so the
+          // transcript keeps a provenance trace that can repopulate the
+          // artifact.
           if ($lastAssistant !== NULL) {
-            $this->attachDraftResult($lastAssistant, $drafted);
+            $this->attachDraftResult($lastAssistant, $draftResult);
           }
-          // Stream and record a confirmation so it survives a reload.
+          // Stream and record a confirmation so it survives a reload. The
+          // draft name in the text is how the version reaches the model on
+          // later turns (the reconstructed history carries text rows only).
           if ($drafted) {
             $confirmation = sprintf(
-              'Draft generated with %d fields. Review the content on the right.',
+              'Draft %d generated with %d fields. Review the content on the right.',
+              $version,
               count($drafted)
             );
             $stream->startStep('confirmation');
@@ -423,23 +445,23 @@ class DraftingPlugin extends AiAssistantPluginBase {
   }
 
   /**
-   * Attaches the drafted fields as the result of the draft_content call.
+   * Attaches the versioned draft result to the draft_content tool call.
    *
-   * The drafted fields are the output of the draft_content tool, produced by
-   * the orchestrator after the loop returns. Storing them on the tool call
-   * lets the transcript render a clickable trace that repopulates the artifact.
+   * The result is the output of the draft_content tool, produced by the
+   * orchestrator after the loop returns. Storing it on the tool call lets the
+   * transcript render a clickable trace that repopulates the artifact.
    *
    * @param \Drupal\oe_ai_assistant\Entity\AiConversationMessageInterface $message
    *   The assistant turn that triggered drafting.
-   * @param array $drafted
-   *   The consolidated drafted field values.
+   * @param array $result
+   *   The versioned draft result: {version, context, fields}.
    */
-  private function attachDraftResult(AiConversationMessageInterface $message, array $drafted): void {
+  private function attachDraftResult(AiConversationMessageInterface $message, array $result): void {
     $toolCalls = $message->getToolCalls();
     $found = FALSE;
     foreach ($toolCalls as &$call) {
       if (($call['function']['name'] ?? '') === 'draft_content') {
-        $call['result'] = $drafted;
+        $call['result'] = $result;
         $found = TRUE;
       }
     }
@@ -450,7 +472,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
       $toolCalls[] = [
         'type' => 'function',
         'function' => ['name' => 'draft_content', 'arguments' => '{}'],
-        'result' => $drafted,
+        'result' => $result,
       ];
     }
     $message->setToolCalls($toolCalls);
