@@ -161,6 +161,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/plugins/drafting/add-document": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Upload a drafting context document */
+        post: operations["postDraftingAddDocument"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/plugins/drafting/list-documents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** List drafting context documents */
+        post: operations["postDraftingListDocuments"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/plugins/drafting/remove-document": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Remove a drafting context document */
+        post: operations["postDraftingRemoveDocument"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/plugins/echo/stream": {
         parameters: {
             query?: never;
@@ -373,8 +424,57 @@ export interface components {
             template: string;
         };
         DraftingSetTemplateResponse: {
-            /** @description Confirmation status (e.g. "ok"). */
-            status: string;
+            /** @enum {string} */
+            status: "ok";
+        };
+        /**
+         * @description Document category. The backend derives the session field, media bundle, and storage details from this category.
+         * @enum {string}
+         */
+        DraftingDocumentCategory: "context";
+        DraftingDocument: {
+            /** @description Server-assigned media entity ID. */
+            id: string;
+            /** @description Document title or original filename. */
+            title: string;
+            meta: {
+                /** @description Lowercase file extension or generic file type. */
+                type: string;
+                /** @description Human-readable file size. */
+                size: string;
+            };
+        };
+        DraftingAddDocumentRequest: {
+            /** @description The editorial session receiving the uploaded document. */
+            sessionId: string;
+            category: components["schemas"]["DraftingDocumentCategory"];
+            /**
+             * Format: binary
+             * @description Uploaded document file.
+             */
+            file: string;
+        };
+        DraftingAddDocumentResponse: {
+            document: components["schemas"]["DraftingDocument"];
+        };
+        DraftingListDocumentsRequest: {
+            /** @description The editorial session whose documents should be listed. */
+            sessionId: string;
+            category: components["schemas"]["DraftingDocumentCategory"];
+        };
+        DraftingListDocumentsResponse: {
+            documents: components["schemas"]["DraftingDocument"][];
+        };
+        DraftingRemoveDocumentRequest: {
+            /** @description The editorial session that references the document. */
+            sessionId: string;
+            category: components["schemas"]["DraftingDocumentCategory"];
+            /** @description Server-assigned document ID to remove. */
+            documentId: string;
+        };
+        DraftingRemoveDocumentResponse: {
+            /** @enum {string} */
+            status: "ok";
         };
         /** @description Request body for the echo stream endpoint. */
         EchoRequest: {
@@ -728,6 +828,108 @@ export interface operations {
                     "application/json": components["schemas"]["ApiError"];
                 };
             };
+        };
+    };
+    postDraftingAddDocument: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["DraftingAddDocumentRequest"];
+            };
+        };
+        responses: {
+            /** @description Uploaded document details */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DraftingAddDocumentResponse"];
+                };
+            };
+            /** @description Validation error. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    postDraftingListDocuments: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DraftingListDocumentsRequest"];
+            };
+        };
+        responses: {
+            /** @description Referenced documents for the current session */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DraftingListDocumentsResponse"];
+                };
+            };
+            /** @description Validation error. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    postDraftingRemoveDocument: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DraftingRemoveDocumentRequest"];
+            };
+        };
+        responses: {
+            /** @description Removal confirmation */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DraftingRemoveDocumentResponse"];
+                };
+            };
+            /** @description Validation error. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            403: components["responses"]["Forbidden"];
         };
     };
     postEchoStream: {

@@ -52,7 +52,10 @@ export function useDraftingDocuments() {
     const uploaded = Array.from(fileList).map((file) => ({
       id: crypto.randomUUID(),
       title: file.name,
-      meta: `${file.type || "File"} - ${formatFileSize(file.size)}`,
+      meta: {
+        type: file.name.split(".").pop()?.toLowerCase() || file.type || "file",
+        size: formatFileSize(file.size),
+      },
     }));
     setSelected((current) => [...current, ...uploaded]);
   }

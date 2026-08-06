@@ -80,7 +80,9 @@ export function DocumentsPanel({
                 <p className="truncate text-xs font-medium text-gray-900">
                   {document.title}
                 </p>
-                <p className="text-xs text-gray-500">{document.meta}</p>
+                <p className="text-xs text-gray-500">
+                  {document.meta.type.toUpperCase()} - {document.meta.size}
+                </p>
               </div>
               <button
                 type="button"

@@ -9,6 +9,7 @@
  * in the shared `@/api/session-messages` module.
  */
 
+import type { components } from "@/api/schema";
 import { getConfig } from "@/config";
 import type {
   DraftingChatRequest,
@@ -17,6 +18,15 @@ import type {
   DraftingSetToneRequest,
   DraftingSetToneResponse,
 } from "../types";
+
+type DraftingCategory = components["schemas"]["DraftingDocumentCategory"];
+type DraftingDocument = components["schemas"]["DraftingDocument"];
+type DraftingAddDocumentResponse =
+  components["schemas"]["DraftingAddDocumentResponse"];
+type DraftingListDocumentsResponse =
+  components["schemas"]["DraftingListDocumentsResponse"];
+type DraftingRemoveDocumentResponse =
+  components["schemas"]["DraftingRemoveDocumentResponse"];
 
 /**
  * Sends a chat message and returns the raw Response for SSE
@@ -94,4 +104,73 @@ export async function setDraftingTemplate(
     throw new Error(`Drafting set-template error: ${response.status}`);
   }
   return (await response.json()) as DraftingSetTemplateResponse;
+}
+
+/** Uploads a document to the current drafting session. */
+export async function addDraftingDocument(
+  file: File,
+  category: DraftingCategory = "context",
+): Promise<DraftingDocument> {
+  const formData = new FormData();
+  formData.append("sessionId", getConfig().sessionId);
+  formData.append("category", category);
+  formData.append("file", file);
+
+  const response = await fetch(
+    `${getConfig().apiBaseUrl}/plugins/drafting/add-document`,
+    {
+      method: "POST",
+      credentials: "include",
+      body: formData,
+    },
+  );
+  if (!response.ok) {
+    throw new Error(`Drafting add-document error: ${response.status}`);
+  }
+  const body = (await response.json()) as DraftingAddDocumentResponse;
+  return body.document;
+}
+
+/** Lists documents referenced by the current drafting session. */
+export async function listDraftingDocuments(
+  category: DraftingCategory = "context",
+): Promise<DraftingDocument[]> {
+  const response = await fetch(
+    `${getConfig().apiBaseUrl}/plugins/drafting/list-documents`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ sessionId: getConfig().sessionId, category }),
+    },
+  );
+  if (!response.ok) {
+    throw new Error(`Drafting list-documents error: ${response.status}`);
+  }
+  const body = (await response.json()) as DraftingListDocumentsResponse;
+  return body.documents;
+}
+
+/** Removes a document from the current drafting session. */
+export async function removeDraftingDocument(
+  documentId: string,
+  category: DraftingCategory = "context",
+): Promise<DraftingRemoveDocumentResponse> {
+  const response = await fetch(
+    `${getConfig().apiBaseUrl}/plugins/drafting/remove-document`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({
+        sessionId: getConfig().sessionId,
+        category,
+        documentId,
+      }),
+    },
+  );
+  if (!response.ok) {
+    throw new Error(`Drafting remove-document error: ${response.status}`);
+  }
+  return (await response.json()) as DraftingRemoveDocumentResponse;
 }

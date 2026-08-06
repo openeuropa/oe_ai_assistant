@@ -62,6 +62,12 @@ paths:
     $ref: "plugins/drafting/paths.yaml#/setTone"
   /plugins/drafting/set-template:
     $ref: "plugins/drafting/paths.yaml#/setTemplate"
+  /plugins/drafting/add-document:
+    $ref: "plugins/drafting/paths.yaml#/addDocument"
+  /plugins/drafting/list-documents:
+    $ref: "plugins/drafting/paths.yaml#/listDocuments"
+  /plugins/drafting/remove-document:
+    $ref: "plugins/drafting/paths.yaml#/removeDocument"
 
   # -- Plugin: echo (dev-only) --
   /plugins/echo/stream:
@@ -152,6 +158,22 @@ components:
       $ref: "plugins/drafting/schemas.yaml#/DraftingSetTemplateRequest"
     DraftingSetTemplateResponse:
       $ref: "plugins/drafting/schemas.yaml#/DraftingSetTemplateResponse"
+    DraftingDocumentCategory:
+      $ref: "plugins/drafting/schemas.yaml#/DraftingDocumentCategory"
+    DraftingDocument:
+      $ref: "plugins/drafting/schemas.yaml#/DraftingDocument"
+    DraftingAddDocumentRequest:
+      $ref: "plugins/drafting/schemas.yaml#/DraftingAddDocumentRequest"
+    DraftingAddDocumentResponse:
+      $ref: "plugins/drafting/schemas.yaml#/DraftingAddDocumentResponse"
+    DraftingListDocumentsRequest:
+      $ref: "plugins/drafting/schemas.yaml#/DraftingListDocumentsRequest"
+    DraftingListDocumentsResponse:
+      $ref: "plugins/drafting/schemas.yaml#/DraftingListDocumentsResponse"
+    DraftingRemoveDocumentRequest:
+      $ref: "plugins/drafting/schemas.yaml#/DraftingRemoveDocumentRequest"
+    DraftingRemoveDocumentResponse:
+      $ref: "plugins/drafting/schemas.yaml#/DraftingRemoveDocumentResponse"
 
     # -- Plugin: echo --
     EchoRequest:
