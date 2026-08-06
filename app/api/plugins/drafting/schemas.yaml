@@ -120,4 +120,109 @@ DraftingSetTemplateResponse:
   properties:
     status:
       type: string
-      description: Confirmation status (e.g. "ok").
+      enum: [ok]
+
+DraftingDocumentCategory:
+  type: string
+  enum: [context]
+  description: >
+    Document category. The backend derives the session field, media bundle,
+    and storage details from this category.
+
+DraftingDocument:
+  type: object
+  required:
+    - id
+    - title
+    - meta
+  properties:
+    id:
+      type: string
+      description: Server-assigned media entity ID.
+    title:
+      type: string
+      description: Document title or original filename.
+    meta:
+      type: object
+      required:
+        - type
+        - size
+      properties:
+        type:
+          type: string
+          description: Lowercase file extension or generic file type.
+        size:
+          type: string
+          description: Human-readable file size.
+
+DraftingAddDocumentRequest:
+  type: object
+  required:
+    - sessionId
+    - category
+    - file
+  properties:
+    sessionId:
+      type: string
+      description: The editorial session receiving the uploaded document.
+    category:
+      $ref: "../../openapi.yaml#/components/schemas/DraftingDocumentCategory"
+    file:
+      type: string
+      format: binary
+      description: Uploaded document file.
+
+DraftingAddDocumentResponse:
+  type: object
+  required:
+    - document
+  properties:
+    document:
+      $ref: "../../openapi.yaml#/components/schemas/DraftingDocument"
+
+DraftingListDocumentsRequest:
+  type: object
+  required:
+    - sessionId
+    - category
+  properties:
+    sessionId:
+      type: string
+      description: The editorial session whose documents should be listed.
+    category:
+      $ref: "../../openapi.yaml#/components/schemas/DraftingDocumentCategory"
+
+DraftingListDocumentsResponse:
+  type: object
+  required:
+    - documents
+  properties:
+    documents:
+      type: array
+      items:
+        $ref: "../../openapi.yaml#/components/schemas/DraftingDocument"
+
+DraftingRemoveDocumentRequest:
+  type: object
+  required:
+    - sessionId
+    - category
+    - documentId
+  properties:
+    sessionId:
+      type: string
+      description: The editorial session that references the document.
+    category:
+      $ref: "../../openapi.yaml#/components/schemas/DraftingDocumentCategory"
+    documentId:
+      type: string
+      description: Server-assigned document ID to remove.
+
+DraftingRemoveDocumentResponse:
+  type: object
+  required:
+    - status
+  properties:
+    status:
+      type: string
+      enum: [ok]
