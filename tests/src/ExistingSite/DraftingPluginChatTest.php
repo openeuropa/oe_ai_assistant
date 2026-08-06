@@ -806,6 +806,110 @@ class DraftingPluginChatTest extends ExistingSiteBase {
   }
 
   /**
+   * Tests that get_draft_history returns the drafts of the pinned session.
+   *
+   * The history is seeded directly, including a populated documents fixture
+   * of both categories, so the test does not depend on the drafting flow.
+   * The mock router calls the tool with a bogus session id to prove the
+   * fixed tool context pins the real one.
+   */
+  public function testGetDraftHistoryToolReturnsPinnedSessionDrafts(): void {
+    $user = $this->createUser(['use oe ai assistant']);
+    $this->loginUser($user);
+    $session = $this->createSession($user);
+
+    // Seed two drafted turns with provenance snapshots.
+    $documents = [
+      [
+        'id' => '12',
+        'title' => 'Climate briefing note',
+        'category' => 'context',
+        'summary' => 'Key figures on EU emissions.',
+        'meta' => ['mime' => 'application/pdf'],
+      ],
+      [
+        'id' => '15',
+        'title' => 'Hero image',
+        'category' => 'publishable',
+        'summary' => 'Wind turbines at sunset.',
+        'meta' => ['mime' => 'image/png'],
+      ],
+    ];
+    $this->seedMessage($session, 'assistant', '', [
+      [
+        'type' => 'function',
+        'function' => ['name' => 'draft_content', 'arguments' => '{}'],
+        'result' => [
+          'version' => 1,
+          'context' => [
+            'tone' => ['id' => '1', 'label' => 'Formal', 'prompt' => 'Use professional, institutional language.'],
+            'template' => ['id' => 'news_default', 'label' => 'News default'],
+            'documents' => $documents,
+          ],
+          'fields' => ['title' => [['value' => 'First']]],
+        ],
+      ],
+    ]);
+    $this->seedMessage($session, 'assistant', '', [
+      [
+        'type' => 'function',
+        'function' => ['name' => 'draft_content', 'arguments' => '{}'],
+        'result' => [
+          'version' => 2,
+          'context' => [
+            'tone' => ['id' => '2', 'label' => 'Technical', 'prompt' => 'Use domain-specific terminology precisely.'],
+            'template' => ['id' => 'news_default', 'label' => 'News default'],
+            'documents' => [],
+          ],
+          'fields' => ['title' => [['value' => 'Second']]],
+        ],
+      ],
+    ]);
+
+    // The router calls the tool with a bogus session id, then answers.
+    MockAiProvider::enqueue(new MockResponse(
+      toolCalls: [
+        [
+          'id' => 'call_1',
+          'type' => 'function',
+          'function' => [
+            'name' => 'get_draft_history',
+            'arguments' => '{"session_id": "999999"}',
+          ],
+        ],
+      ],
+    ));
+    MockAiProvider::enqueue(new MockResponse(
+      text: 'Draft 2 used the Technical tone.',
+    ));
+
+    $result = $this->httpPost('/api/ai/plugins/drafting/chat', [
+      'message' => 'Which tone produced draft 2?',
+      'sessionId' => $session->id(),
+    ]);
+    $this->assertEquals(200, $result['status'],
+      'Expected 200. Body: ' . substr($result['body'], 0, 500));
+
+    // The tool result was recorded as a tool row scoped to OUR session.
+    $toolRows = array_values(array_filter(
+      array_map(
+        fn($n) => $n['message'],
+        \Drupal::entityTypeManager()
+          ->getStorage('ai_conversation_message')->loadTree($session),
+      ),
+      fn($m) => $m->getRole() === 'tool',
+    ));
+    $this->assertNotEmpty($toolRows, 'The tool result must be recorded.');
+    $payload = (string) $toolRows[0]->get('content')->value;
+    $this->assertStringContainsString('Draft 1', $payload);
+    $this->assertStringContainsString('Draft 2', $payload);
+    $this->assertStringContainsString('Formal', $payload);
+    $this->assertStringContainsString('Technical', $payload);
+    $this->assertStringContainsString('Climate briefing note', $payload,
+      'Populated document descriptors must flow through the tool output.');
+  }
+
+  /**
    * Extracts tool names from the mock provider log.
    */
   protected function extractToolNames(array $tools): array {

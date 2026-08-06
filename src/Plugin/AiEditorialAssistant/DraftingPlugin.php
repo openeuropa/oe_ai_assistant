@@ -279,6 +279,11 @@ class DraftingPlugin extends AiAssistantPluginBase {
               // The context definition is string-typed; NULL becomes ''.
               'template' => $context['template'] ?? '',
             ],
+            // Pin the session so the model cannot read another session's
+            // draft history.
+            'get_draft_history' => [
+              'session_id' => (string) $session->id(),
+            ],
           ],
           recordTurn: $recordTurn,
         );
