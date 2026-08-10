@@ -287,6 +287,40 @@ class EditorialEventsTest extends ExistingSiteBase {
   }
 
   /**
+   * Tests that get-messages returns event rows in transcript order.
+   */
+  public function testGetMessagesReturnsEvents(): void {
+    $user = $this->createUser(['use oe ai assistant']);
+    $this->loginUser($user);
+    $session = $this->createSession($user);
+
+    $this->httpPost('/api/ai/plugins/drafting/set-tone', [
+      'sessionId' => $session->id(),
+      'toneId' => $this->getTermIdByName('oe_ai_tone', 'Formal'),
+    ]);
+
+    $result = $this->httpPost('/api/ai/plugins/drafting/get-messages', [
+      'sessionId' => $session->id(),
+    ]);
+    $this->assertEquals(200, $result['status']);
+    $messages = json_decode($result['body'], TRUE)['messages'] ?? [];
+
+    $this->assertCount(2, $messages,
+      'The initial-state event and the tone change are returned.');
+
+    $this->assertSame('event', $messages[0]['role']);
+    $this->assertSame('session_start', $messages[0]['type']);
+    $this->assertStringContainsString('Session started', $messages[0]['summary']);
+    $this->assertNotEmpty($messages[0]['at']);
+
+    $this->assertSame('event', $messages[1]['role']);
+    $this->assertSame('tone', $messages[1]['type']);
+    $this->assertSame('Tone changed to Formal', $messages[1]['summary']);
+    $this->assertArrayNotHasKey('content', $messages[1],
+      'Event items use summary, not content.');
+  }
+
+  /**
    * Returns the taxonomy term ID for a fixture term.
    */
   protected function getTermIdByName(string $vid, string $name): string {

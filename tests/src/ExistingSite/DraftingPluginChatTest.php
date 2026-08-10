@@ -134,7 +134,11 @@ class DraftingPluginChatTest extends ExistingSiteBase {
     $this->assertContains('user', $roles, 'A user turn must be persisted.');
     $this->assertContains('assistant', $roles, 'An assistant turn must be persisted.');
 
-    $messages = $this->getMessages($session);
+    // Events are exercised in EditorialEventsTest; filter here.
+    $messages = array_values(array_filter(
+      $this->getMessages($session),
+      fn($m) => $m['role'] !== 'event',
+    ));
     $this->assertSame('user', $messages[0]['role']);
     $this->assertSame('Hi there.', $messages[0]['content']);
     $this->assertSame('assistant', $messages[1]['role']);
@@ -465,7 +469,11 @@ class DraftingPluginChatTest extends ExistingSiteBase {
     // A tool row is not user-visible and must be filtered out.
     $this->seedMessage($session, 'tool', 'Tool payload.');
 
-    $messages = $this->getMessages($session);
+    // Events are exercised in EditorialEventsTest; filter here.
+    $messages = array_values(array_filter(
+      $this->getMessages($session),
+      fn($m) => $m['role'] !== 'event',
+    ));
 
     $this->assertSame(
       [
@@ -499,7 +507,11 @@ class DraftingPluginChatTest extends ExistingSiteBase {
       ],
     ]);
 
-    $messages = $this->getMessages($session);
+    // Events are exercised in EditorialEventsTest; filter here.
+    $messages = array_values(array_filter(
+      $this->getMessages($session),
+      fn($m) => $m['role'] !== 'event',
+    ));
 
     $this->assertCount(2, $messages);
     $this->assertSame('user', $messages[0]['role']);

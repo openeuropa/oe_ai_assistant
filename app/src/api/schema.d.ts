@@ -322,10 +322,16 @@ export interface components {
         GetMessagesResponse: {
             /** @description The user-visible transcript, oldest first. */
             messages: {
-                /** @description The message role ("user" or "assistant"). */
+                /** @description The message role ("user", "assistant" or "event"). */
                 role: string;
-                /** @description The message text. */
-                content: string;
+                /** @description The message text (user and assistant items). */
+                content?: string;
+                /** @description The event type, e.g. "session_start", "tone", "template" (event items). */
+                type?: string;
+                /** @description The human-readable event summary (event items). */
+                summary?: string;
+                /** @description RFC 3339 timestamp of the event (event items). */
+                at?: string;
             }[];
         };
         DraftingChatRequest: {

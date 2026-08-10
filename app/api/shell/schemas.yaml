@@ -100,11 +100,19 @@ GetMessagesResponse:
         type: object
         required:
           - role
-          - content
         properties:
           role:
             type: string
-            description: The message role ("user" or "assistant").
+            description: The message role ("user", "assistant" or "event").
           content:
             type: string
-            description: The message text.
+            description: The message text (user and assistant items).
+          type:
+            type: string
+            description: The event type, e.g. "session_start", "tone", "template" (event items).
+          summary:
+            type: string
+            description: The human-readable event summary (event items).
+          at:
+            type: string
+            description: RFC 3339 timestamp of the event (event items).

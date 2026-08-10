@@ -135,8 +135,19 @@ abstract class AiAssistantPluginBase extends PluginBase implements AiAssistantPl
     $storage = $this->entityTypeManager->getStorage('ai_conversation_message');
     $messages = [];
     foreach ($storage->loadTranscript($session) as $message) {
+      $role = $message->getRole();
+      // Event rows surface as compact timeline entries.
+      if ($role === 'event') {
+        $messages[] = [
+          'role' => 'event',
+          'type' => (string) ($message->getMetadata()['type'] ?? ''),
+          'summary' => (string) $message->get('content')->value,
+          'at' => date('c', (int) $message->get('created')->value),
+        ];
+        continue;
+      }
       // Only user and assistant turns are shown to the editor.
-      if (!in_array($message->getRole(), ['user', 'assistant'], TRUE)) {
+      if (!in_array($role, ['user', 'assistant'], TRUE)) {
         continue;
       }
       $content = (string) $message->get('content')->value;
@@ -145,7 +156,7 @@ abstract class AiAssistantPluginBase extends PluginBase implements AiAssistantPl
       if ($content === '' && !$toolCalls) {
         continue;
       }
-      $item = ['role' => $message->getRole(), 'content' => $content];
+      $item = ['role' => $role, 'content' => $content];
       if ($toolCalls) {
         $item['toolCalls'] = $toolCalls;
       }
