@@ -55,11 +55,14 @@ export const developmentConfig = {
             id: "3f2504e0-4f89-41d3-9a0c-0305e82c3301",
             title: "EU AI Act briefing note.pdf",
             meta: { type: "pdf", size: "240 KB" },
+            summary:
+              "Summarises the main obligations, implementation timeline, and editorial framing for the AI Act announcement.",
           },
           {
             id: "c9bf9e57-1685-4c89-bafb-ff5af830be8a",
             title: "Stakeholder comments.docx",
             meta: { type: "docx", size: "96 KB" },
+            extractionStatus: "processing",
           },
         ],
       },
