@@ -193,17 +193,20 @@ function DraftingChat() {
       id: "documents",
       icon: <FileText size={20} />,
       title: "Documents",
-      summary: `${documents.count} documents`,
+      summary:
+        documents.count === 1 ? "1 document" : `${documents.count} documents`,
       render: (close) => (
         <DocumentsPanel
           selected={documents.selected}
           onRemove={documents.removeDocument}
           onUpload={documents.uploadFiles}
           onSave={async () => {
-            // No backend yet; just close the pane.
+            // Uploads and removals are persisted immediately.
             close();
           }}
           onCancel={close}
+          isSaving={documents.isSaving}
+          error={documents.error}
         />
       ),
     });
