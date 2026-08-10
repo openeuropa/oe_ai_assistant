@@ -83,7 +83,7 @@ export function DocumentsPanel({
         {/* Upload control. */}
         <button
           type="button"
-          className="block w-full cursor-pointer rounded-lg border border-dashed border-gray-300 bg-white p-4 text-center hover:border-blue-300 hover:bg-blue-50"
+          className="block w-full cursor-pointer rounded-lg border border-dashed border-gray-300 bg-white p-4 text-center hover:border-blue-300 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-50"
           onClick={() => fileInputRef.current?.click()}
           disabled={isSaving}
         >
@@ -133,7 +133,7 @@ export function DocumentsPanel({
                 </div>
                 <button
                   type="button"
-                  className="cursor-pointer rounded-md p-1 text-gray-400 hover:bg-white hover:text-gray-600"
+                  className="cursor-pointer rounded-md p-1 text-gray-400 hover:bg-white hover:text-gray-600 disabled:cursor-not-allowed disabled:opacity-50"
                   aria-label={`Remove ${document.title}`}
                   onClick={() => {
                     void Promise.resolve(onRemove(document.id)).catch(() => {});
