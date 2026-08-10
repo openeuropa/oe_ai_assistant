@@ -219,6 +219,9 @@ class AiEditorialSessionDashboardTest extends AiEditorialSessionBrowserTestBase 
       'field_media_context_document' => [
         'target_id' => $file->id(),
       ],
+      'field_document_summary' => [
+        'value' => 'Extracted context summary.',
+      ],
     ]);
     $media->save();
     $session->get('context_documents')->appendItem([
@@ -234,6 +237,7 @@ class AiEditorialSessionDashboardTest extends AiEditorialSessionBrowserTestBase 
     $this->assertSession()->responseContains('"id":"' . $media->id() . '"');
     $this->assertSession()->responseContains('"title":"Policy brief"');
     $this->assertSession()->responseContains('"meta":{"type":"md","size":');
+    $this->assertSession()->responseContains('"summary":"Extracted context summary."');
   }
 
   /**

@@ -27,7 +27,7 @@ class DocumentSerializer implements DocumentSerializerInterface {
         'type' => $extension !== '' ? strtolower($extension) : 'file',
         'size' => $file instanceof FileInterface ? (int) $file->getSize() : 0,
       ],
-    ];
+    ] + $this->serializeSummary($media);
   }
 
   /**
@@ -62,6 +62,24 @@ class DocumentSerializer implements DocumentSerializerInterface {
 
     $file = $media->get($sourceField)->entity;
     return $file instanceof FileInterface ? $file : NULL;
+  }
+
+  /**
+   * Serializes the extracted document summary when one is available.
+   *
+   * @param \Drupal\media\MediaInterface $media
+   *   The document media entity.
+   *
+   * @return array{summary?: string}
+   *   The optional summary payload.
+   */
+  private function serializeSummary(MediaInterface $media): array {
+    if (!$media->hasField('field_document_summary') || $media->get('field_document_summary')->isEmpty()) {
+      return [];
+    }
+
+    $summary = trim((string) $media->get('field_document_summary')->value);
+    return $summary !== '' ? ['summary' => $summary] : [];
   }
 
 }
