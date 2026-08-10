@@ -281,7 +281,17 @@ abstract class AiAssistantPluginBase extends PluginBase implements AiAssistantPl
     $storage = $this->entityTypeManager->getStorage('ai_conversation_message');
     $entities = array_slice($storage->loadTranscript($session), -static::MAX_HISTORY);
     return array_map(
-      fn ($m) => new ChatMessage($m->getRole(), (string) $m->get('content')->value),
+      function ($m) {
+        $content = (string) $m->get('content')->value;
+        // Editorial events enter the history as compact notes.
+        // The user role is used because mid-history system messages are
+        // provider-dependent, and the bracket prefix marks the note as
+        // non-conversational.
+        if ($m->getRole() === 'event') {
+          return new ChatMessage('user', '[Editorial change] ' . $content);
+        }
+        return new ChatMessage($m->getRole(), $content);
+      },
       $entities,
     );
   }

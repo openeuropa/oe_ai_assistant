@@ -7,6 +7,9 @@ namespace Drupal\Tests\oe_ai_assistant\ExistingSite;
 use Drupal\Core\Url;
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
 use Drupal\oe_ai_assistant\Service\MessageRecorderInterface;
+use Drupal\oe_ai_assistant_test\Plugin\AiProvider\MockAiProvider;
+use Drupal\oe_ai_assistant_test\Plugin\AiProvider\MockResponse;
+use Drupal\Tests\oe_ai_assistant\Traits\ExistingSiteConfigBackupTrait;
 use Drupal\user\UserInterface;
 use weitzman\DrupalTestTraits\ExistingSiteBase;
 
@@ -20,6 +23,8 @@ use weitzman\DrupalTestTraits\ExistingSiteBase;
  */
 class EditorialEventsTest extends ExistingSiteBase {
 
+  use ExistingSiteConfigBackupTrait;
+
   /**
    * Sessions created by the test, cleared of messages on teardown.
    *
@@ -30,12 +35,42 @@ class EditorialEventsTest extends ExistingSiteBase {
   /**
    * {@inheritdoc}
    */
+  protected function setUp(): void {
+    parent::setUp();
+
+    // Ensure the shared test module is enabled (provides MockAiProvider).
+    \Drupal::service('module_installer')->install(['oe_ai_assistant_test']);
+
+    // Backup AI settings and set mock_ai as the default provider.
+    $this->backupSimpleConfig('ai.settings');
+    \Drupal::configFactory()->getEditable('ai.settings')
+      ->set('default_providers', [
+        'chat' => [
+          'provider_id' => 'mock_ai',
+          'model_id' => 'mock-model',
+        ],
+        'chat_with_tools' => [
+          'provider_id' => 'mock_ai',
+          'model_id' => 'mock-model',
+        ],
+      ])
+      ->save();
+
+    MockAiProvider::reset();
+  }
+
+  /**
+   * {@inheritdoc}
+   */
   protected function tearDown(): void {
     $storage = \Drupal::entityTypeManager()
       ->getStorage('ai_conversation_message');
     foreach ($this->sessions as $session) {
       $storage->deleteForHost($session);
     }
+
+    MockAiProvider::reset();
+    $this->restoreConfiguration();
     parent::tearDown();
   }
 
@@ -177,6 +212,40 @@ class EditorialEventsTest extends ExistingSiteBase {
       (int) $event->get('uid')->target_id,
       'The acting user is recorded on the event row.',
     );
+  }
+
+  /**
+   * Tests that event rows reach the model as compact history notes.
+   */
+  public function testEventsAppearInModelHistoryAsNotes(): void {
+    $user = $this->createUser(['use oe ai assistant']);
+    $this->loginUser($user);
+    $session = $this->createSession($user);
+
+    $this->httpPost('/api/ai/plugins/drafting/set-tone', [
+      'sessionId' => $session->id(),
+      'toneId' => $this->getTermIdByName('oe_ai_tone', 'Formal'),
+    ]);
+
+    MockAiProvider::enqueue(new MockResponse(text: 'Understood.'));
+    $this->httpPost('/api/ai/plugins/drafting/chat', [
+      'message' => 'Hello.',
+      'sessionId' => $session->id(),
+    ]);
+
+    \Drupal::state()->resetCache();
+    $log = MockAiProvider::getCallLog();
+    $this->assertCount(1, $log);
+    $texts = array_column($log[0]['messages'], 'text');
+
+    $this->assertNotEmpty(array_filter(
+      $texts,
+      fn($t) => str_contains($t, '[Editorial change] Tone changed to Formal'),
+    ), 'The tone change note is in the model history.');
+    $this->assertNotEmpty(array_filter(
+      $texts,
+      fn($t) => str_contains($t, '[Editorial change] Session started'),
+    ), 'The initial-state note is in the model history.');
   }
 
   /**
