@@ -922,6 +922,48 @@ class DraftingPluginChatTest extends ExistingSiteBase {
   }
 
   /**
+   * Tests that persisted tool result rows are not replayed to the provider.
+   *
+   * A stored tool row cannot be re-linked to the assistant call that
+   * produced it, and providers reject unpaired tool messages, so the
+   * reconstructed history must skip tool rows entirely.
+   */
+  public function testHistoryReconstructionSkipsToolRows(): void {
+    $user = $this->createUser(['use oe ai assistant']);
+    $this->loginUser($user);
+    $session = $this->createSession($user);
+
+    // Seed a turn that used a tool: the assistant row carries the call,
+    // the tool row carries the result, and a follow-up summarizes it.
+    $this->seedMessage($session, 'user', 'Which tone produced draft 1?');
+    $this->seedMessage($session, 'assistant', '', [
+      [
+        'type' => 'function',
+        'function' => ['name' => 'get_draft_history', 'arguments' => '{}'],
+      ],
+    ]);
+    $this->seedMessage($session, 'tool', '{"drafts":[]}');
+    $this->seedMessage($session, 'assistant', 'No drafts exist yet.');
+
+    MockAiProvider::enqueue(new MockResponse(text: 'Noted.'));
+    $result = $this->httpPost('/api/ai/plugins/drafting/chat', [
+      'message' => 'Thanks.',
+      'sessionId' => $session->id(),
+    ]);
+    $this->assertEquals(200, $result['status']);
+
+    \Drupal::state()->resetCache();
+    $log = MockAiProvider::getCallLog();
+    $this->assertCount(1, $log);
+    $roles = array_column($log[0]['messages'], 'role');
+    $this->assertNotContains('tool', $roles,
+      'Persisted tool rows must not be replayed to the provider.');
+    $this->assertContains('No drafts exist yet.',
+      array_column($log[0]['messages'], 'text'),
+      'The assistant summary of the tool outcome stays in the history.');
+  }
+
+  /**
    * Extracts tool names from the mock provider log.
    */
   protected function extractToolNames(array $tools): array {

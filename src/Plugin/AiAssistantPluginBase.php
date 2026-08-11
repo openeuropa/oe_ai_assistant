@@ -279,7 +279,16 @@ abstract class AiAssistantPluginBase extends PluginBase implements AiAssistantPl
    */
   protected function buildHistory(AiEditorialSessionInterface $session): array {
     $storage = $this->entityTypeManager->getStorage('ai_conversation_message');
-    $entities = array_slice($storage->loadTranscript($session), -static::MAX_HISTORY);
+    // Skip persisted tool results: a bare chat message cannot re-link
+    // them to the assistant call that produced them, and providers
+    // reject unpaired tool messages. The assistant's follow-up text
+    // already carries the outcome.
+    $entities = array_filter(
+      $storage->loadTranscript($session),
+      fn($m) => $m->getRole() !== 'tool',
+    );
+    // Slice AFTER filtering so tool rows do not consume history slots.
+    $entities = array_slice($entities, -static::MAX_HISTORY);
     return array_map(
       function ($m) {
         $content = (string) $m->get('content')->value;
