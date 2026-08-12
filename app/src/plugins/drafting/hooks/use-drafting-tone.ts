@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import { getConfig } from "@/config";
 import { setDraftingTone } from "../api/drafting-api";
 import { readConfigOptions } from "../config-options";
-import { setDraftingSelection } from "../store";
+import { bumpTimelineVersion, setDraftingSelection } from "../store";
 import type { DraftingSelectOption } from "../types";
 import { useCardSelection } from "./use-card-selection";
 
@@ -43,6 +43,9 @@ export function useDraftingTone() {
     options,
     onSave: async (toneId) => {
       await setDraftingTone({ toneId });
+      // Remounting the chat subtree reloads the persisted timeline so the
+      // new event chip appears immediately at its chronological position.
+      bumpTimelineVersion();
     },
   });
 
