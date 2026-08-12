@@ -25,6 +25,7 @@ import {
   X,
 } from "lucide-react";
 import { type PaneTabItem, PaneTabs } from "@/components/ui/pane-tabs";
+import { ToolFallbackCard } from "./tool-uis";
 
 /** Welcome message shown when the chat is empty. */
 function WelcomeMessage() {
@@ -167,9 +168,24 @@ function TypingIndicator() {
  * start streaming). This ensures the empty chat bubble is never
  * visible -- the user sees pulsating dots until real content
  * arrives.
+ *
+ * When every content part is an editorial_event tool-call, the
+ * message renders without the gray bubble wrapper so event chips
+ * appear at full width, centered by their own styles.
  */
 function AssistantMessage() {
-  const hasContent = useAuiState((s) => (s.message?.content?.length ?? 0) > 0);
+  const content = useAuiState((s) => s.message?.content ?? []);
+  const hasContent = content.length > 0;
+
+  // Detect event-only messages: all parts are editorial_event tool-calls.
+  // These are injected by the history adapter and carry no text parts.
+  const isEventOnly =
+    hasContent &&
+    content.every(
+      (part) =>
+        part.type === "tool-call" &&
+        (part as { toolName?: string }).toolName === "editorial_event",
+    );
 
   // Show pulsating dots while waiting for the first content
   // part (text or tool call) to arrive from the backend.
@@ -181,6 +197,21 @@ function AssistantMessage() {
     );
   }
 
+  // Event-only messages render chips without the bubble wrapper so they
+  // stay centered and visually distinct from conversational turns.
+  if (isEventOnly) {
+    return (
+      <MessagePrimitive.Root className="mb-2">
+        <MessagePrimitive.Content
+          components={{
+            Text: AssistantText,
+            tools: { Fallback: ToolFallbackCard },
+          }}
+        />
+      </MessagePrimitive.Root>
+    );
+  }
+
   return (
     <MessagePrimitive.Root
       className="mb-4 flex justify-start"
@@ -188,7 +219,12 @@ function AssistantMessage() {
     >
       <div className="max-w-[80%]">
         <div className="rounded-lg bg-gray-100 px-4 py-2 text-gray-900">
-          <MessagePrimitive.Content components={{ Text: AssistantText }} />
+          <MessagePrimitive.Content
+            components={{
+              Text: AssistantText,
+              tools: { Fallback: ToolFallbackCard },
+            }}
+          />
         </div>
         <MessageError />
       </div>

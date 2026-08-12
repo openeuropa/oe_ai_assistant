@@ -5,6 +5,15 @@
  * the right. The right panel shows: a placeholder before
  * prompting, plan steps during orchestration, and the content
  * table once fields arrive.
+ *
+ * DraftingRoot reads timelineVersion from the store and renders
+ * DraftingChat with that value as the React key. Incrementing
+ * timelineVersion (after a tone or template save) unmounts and
+ * remounts DraftingChat, which causes the runtime to refetch the
+ * persisted transcript and display any new event chips immediately.
+ * Tradeoff: text typed in the composer before a pane save is
+ * discarded by the remount. This is rare because panes overlay
+ * the composer.
  */
 
 import { AssistantRuntimeProvider } from "@assistant-ui/react";
@@ -19,9 +28,8 @@ import { DraftingThread } from "./components/drafting-thread";
 import { PlanSteps } from "./components/plan-steps";
 import {
   DraftContentToolUI,
-  RegenerateFieldsToolUI,
+  EditorialEventToolUI,
   SaveDraftRevisionToolUI,
-  SetFieldContentToolUI,
 } from "./components/tool-uis";
 import { useDraftingDocuments } from "./hooks/use-drafting-documents";
 import { useDraftingRuntime } from "./hooks/use-drafting-runtime";
@@ -29,13 +37,77 @@ import { useDraftingTemplate } from "./hooks/use-drafting-template";
 import { useDraftingTone } from "./hooks/use-drafting-tone";
 import { useDraftingSlice } from "./store";
 
-export default function DraftingRoot() {
+/**
+ * Inner component that owns the assistant-ui runtime and all runtime-dependent
+ * state. Rendered with key={timelineVersion} so that a version bump unmounts
+ * and remounts this subtree, causing the history adapter to refetch the
+ * persisted transcript.
+ */
+function DraftingChat({
+  tabs,
+}: {
+  /** Composer tabs passed in from DraftingRoot (computed outside the key). */
+  tabs: PaneTabItem[];
+}) {
   const { draftedFields, plan } = useDraftingSlice();
+  const runtime = useDraftingRuntime();
+  const hasFields = Object.keys(draftedFields).length > 0;
+
+  /** Trigger save via the chat so the agent runs the save tool. */
+  const handleSave = useCallback(() => {
+    runtime.thread.append({
+      role: "user",
+      content: [
+        {
+          type: "text",
+          text: "Save the draft as a new unpublished revision.",
+        },
+      ],
+    });
+  }, [runtime]);
+
+  /** Determine what the right panel shows. */
+  function renderArtifact() {
+    if (hasFields) {
+      return <ContentTable onSave={handleSave} />;
+    }
+    if (plan.length > 0) {
+      return (
+        <div className="flex min-h-0 flex-1 flex-col p-4">
+          <PlanSteps steps={plan} />
+        </div>
+      );
+    }
+    return <ArtifactPlaceholder />;
+  }
+
+  return (
+    <AssistantRuntimeProvider runtime={runtime}>
+      {/* Register tool call renderers so they appear inline in chat. */}
+      <DraftContentToolUI />
+      <EditorialEventToolUI />
+      <SaveDraftRevisionToolUI />
+
+      <div className="flex min-h-0 flex-1">
+        {/* Left panel: chat (always visible) */}
+        <div className="flex w-2/5 min-h-0 flex-col border-r border-gray-200">
+          {/* Tabs sit on top of the prompt; each opens a pane over the chat. */}
+          <DraftingThread tabs={tabs} />
+        </div>
+
+        {/* Right panel: placeholder -> plan steps -> content table */}
+        <div className="flex w-3/5 min-h-0 flex-col">{renderArtifact()}</div>
+      </div>
+    </AssistantRuntimeProvider>
+  );
+}
+
+/** Drafting plugin root: computes tabs and keyed timeline version. */
+export default function DraftingRoot() {
+  const { timelineVersion } = useDraftingSlice();
   const tone = useDraftingTone();
   const documents = useDraftingDocuments();
   const template = useDraftingTemplate();
-  const runtime = useDraftingRuntime();
-  const hasFields = Object.keys(draftedFields).length > 0;
 
   // Composer tabs. Each opens a pane over the chat, and its summary
   // reproposes the current selection.
@@ -121,52 +193,7 @@ export default function DraftingRoot() {
     });
   }
 
-  /** Trigger save via the chat so the agent runs the save tool. */
-  const handleSave = useCallback(() => {
-    runtime.thread.append({
-      role: "user",
-      content: [
-        {
-          type: "text",
-          text: "Save the draft as a new unpublished revision.",
-        },
-      ],
-    });
-  }, [runtime]);
-
-  /** Determine what the right panel shows. */
-  function renderArtifact() {
-    if (hasFields) {
-      return <ContentTable onSave={handleSave} />;
-    }
-    if (plan.length > 0) {
-      return (
-        <div className="flex min-h-0 flex-1 flex-col p-4">
-          <PlanSteps steps={plan} />
-        </div>
-      );
-    }
-    return <ArtifactPlaceholder />;
-  }
-
-  return (
-    <AssistantRuntimeProvider runtime={runtime}>
-      {/* Register tool call renderers so they appear inline in chat. */}
-      <DraftContentToolUI />
-      <SetFieldContentToolUI />
-      <RegenerateFieldsToolUI />
-      <SaveDraftRevisionToolUI />
-
-      <div className="flex min-h-0 flex-1">
-        {/* Left panel: chat (always visible) */}
-        <div className="flex w-2/5 min-h-0 flex-col border-r border-gray-200">
-          {/* Tabs sit on top of the prompt; each opens a pane over the chat. */}
-          <DraftingThread tabs={tabs} />
-        </div>
-
-        {/* Right panel: placeholder -> plan steps -> content table */}
-        <div className="flex w-3/5 min-h-0 flex-col">{renderArtifact()}</div>
-      </div>
-    </AssistantRuntimeProvider>
-  );
+  // Key by timelineVersion so a bump remounts DraftingChat, causing the
+  // history adapter to refetch the persisted transcript and surface new chips.
+  return <DraftingChat key={timelineVersion} tabs={tabs} />;
 }
