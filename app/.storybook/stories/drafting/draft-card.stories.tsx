@@ -20,7 +20,7 @@ const sampleFields = {
   summary: "A concise overview of the circular economy package.",
 };
 
-/** Full editorial context: tone, template, and two documents of both categories. */
+/** Full editorial context: tone, template, and several documents per category. */
 const fullContext: DraftContext = {
   tone: { id: "formal", label: "Formal" },
   template: { id: "press-release", label: "Press Release" },
@@ -35,11 +35,39 @@ const fullContext: DraftContext = {
     },
     {
       id: "doc-2",
+      title: "Impact assessment 2025",
+      category: "context",
+      summary: "Quantified effects of the proposed recycling targets.",
+      meta: { pages: "112", language: "EN" },
+    },
+    {
+      id: "doc-3",
+      title: "Stakeholder consultation notes",
+      category: "context",
+      summary: "Summary of industry and NGO feedback rounds.",
+      meta: "Internal working document",
+    },
+    {
+      id: "doc-4",
       title: "Commission press release draft",
       category: "publishable",
       summary:
         "An early draft of the official press release for editorial review.",
       meta: "Internal working document",
+    },
+    {
+      id: "doc-5",
+      title: "Hero image: recycling facility",
+      category: "publishable",
+      summary: "Approved photo for the article header.",
+      meta: { mime: "image/jpeg" },
+    },
+    {
+      id: "doc-6",
+      title: "Explainer clip",
+      category: "publishable",
+      summary: "Thirty second social media explainer video.",
+      meta: { mime: "video/mp4" },
     },
   ],
 };
@@ -69,20 +97,6 @@ export const ToneOnly: Story = {
           template: null,
           documents: [],
         }}
-        fields={sampleFields}
-        onOpen={() => {}}
-      />
-    </div>
-  ),
-};
-
-/** Legacy draft with no version and no context (pre-provenance tracking). */
-export const Legacy: Story = {
-  render: () => (
-    <div className="max-w-md">
-      <DraftCard
-        version={null}
-        context={null}
         fields={sampleFields}
         onOpen={() => {}}
       />
