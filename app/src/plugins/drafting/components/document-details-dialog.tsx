@@ -1,13 +1,16 @@
 /**
  * DocumentDetailsDialog component.
  *
- * Shows the full detail of a DraftDocumentSnapshot in a controlled dialog.
- * Controlled by the parent: the dialog is visible when `document` is non-null
- * and hides when `onClose` is called.
+ * Shows the full detail of a DraftDocumentSnapshot in a controlled dialog:
+ * the document kind in the header, then the title and the extracted summary,
+ * and a download control opening the file in a new tab when the descriptor
+ * carries one. Controlled by the parent: the dialog is visible when
+ * `document` is non-null and hides when `onClose` is called.
  */
 
+import { Download } from "lucide-react";
 import { Dialog } from "@/components/ui/dialog";
-import type { DraftDocumentSnapshot } from "../draft-result";
+import type { DraftDocumentFile, DraftDocumentSnapshot } from "../draft-result";
 
 /** Props for DocumentDetailsDialog. */
 export interface DocumentDetailsDialogProps {
@@ -21,46 +24,81 @@ export interface DocumentDetailsDialogProps {
 }
 
 /**
- * Returns a human-readable badge label for a document category.
+ * Returns the dialog header label for a document category.
  *
- * "context" maps to "Briefing", "publishable" maps to "Publishable", and
- * any other value is returned as-is.
+ * "context" documents are briefing material, "publishable" documents are
+ * assets placed into the content; any other value is shown as-is.
  */
-export function categoryBadgeLabel(category: string): string {
-  if (category === "context") return "Briefing";
-  if (category === "publishable") return "Publishable";
+function categoryHeaderLabel(category: string): string {
+  if (category === "context") return "Briefing document";
+  if (category === "publishable") return "Publishable asset";
   return category;
 }
 
 /**
- * Renders document meta as a string or as "key: value" lines when it is
- * an object. Returns null when meta is absent or of an unexpected type.
+ * Returns a short uppercase type label for a file.
+ *
+ * Prefers the file name extension ("report.docx" gives "DOCX") because mime
+ * subtypes of office formats are unreadably long; falls back to the mime
+ * subtype when it is short, or an empty string when nothing usable exists.
  */
-function MetaBlock({ meta }: { meta: unknown }) {
-  if (meta === null || meta === undefined) {
-    return null;
+function fileTypeLabel(file: DraftDocumentFile): string {
+  const extension = file.name.includes(".")
+    ? file.name.split(".").pop()
+    : undefined;
+  if (extension) {
+    return extension.toUpperCase();
   }
-
-  if (typeof meta === "string") {
-    return <p className="mt-3 text-xs text-gray-400">{meta}</p>;
+  const subtype = file.mime?.split("/")[1];
+  if (subtype && subtype.length <= 5) {
+    return subtype.toUpperCase();
   }
+  return "";
+}
 
-  if (typeof meta === "object" && !Array.isArray(meta)) {
-    const entries = Object.entries(meta as Record<string, unknown>);
-    if (entries.length === 0) return null;
-
-    return (
-      <dl className="mt-3 space-y-0.5 text-xs text-gray-400">
-        {entries.map(([key, value]) => (
-          <div key={key}>
-            <span className="font-medium">{key}:</span> {String(value)}
-          </div>
-        ))}
-      </dl>
-    );
+/**
+ * Formats a byte count as a compact human-readable size.
+ */
+function formatFileSize(bytes: number): string {
+  if (bytes >= 1024 * 1024) {
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   }
+  if (bytes >= 1024) {
+    return `${Math.round(bytes / 1024)} KB`;
+  }
+  return `${bytes} B`;
+}
 
-  return null;
+/**
+ * Download control for the document's file, opening it in a new tab.
+ *
+ * Shows the file name with its type and size so the editor knows what the
+ * download is before clicking.
+ */
+function DownloadLink({ file }: { file: DraftDocumentFile }) {
+  const details = [
+    fileTypeLabel(file),
+    file.size !== undefined ? formatFileSize(file.size) : "",
+  ]
+    .filter((part) => part !== "")
+    .join(" - ");
+
+  return (
+    <a
+      href={file.url}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="mt-4 inline-flex cursor-pointer items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 transition-colors hover:border-gray-300 hover:bg-gray-50"
+    >
+      <Download size={15} className="shrink-0 text-gray-400" />
+      <span className="min-w-0">
+        <span className="block truncate font-medium">{file.name}</span>
+        {details && (
+          <span className="block text-xs text-gray-400">{details}</span>
+        )}
+      </span>
+    </a>
+  );
 }
 
 /**
@@ -77,22 +115,22 @@ export function DocumentDetailsDialog({
     <Dialog
       open={document !== null}
       onClose={onClose}
-      title={document?.title ?? "Document details"}
+      title={document ? categoryHeaderLabel(document.category) : "Document"}
     >
       {document && (
         <div>
-          {/* Category badge. */}
-          <span className="inline-block rounded-full border border-gray-200 bg-gray-50 px-2.5 py-0.5 text-xs text-gray-500">
-            {categoryBadgeLabel(document.category)}
-          </span>
+          {/* Document title below the kind header. */}
+          <h3 className="text-sm font-semibold text-gray-900">
+            {document.title}
+          </h3>
 
           {/* Summary paragraph with fallback. */}
-          <p className="mt-3 text-sm text-gray-700">
+          <p className="mt-2 text-sm text-gray-700">
             {document.summary ?? "No summary captured."}
           </p>
 
-          {/* Optional meta block. */}
-          <MetaBlock meta={document.meta} />
+          {/* Download control, once the descriptor carries a file. */}
+          {document.file && <DownloadLink file={document.file} />}
         </div>
       )}
     </Dialog>

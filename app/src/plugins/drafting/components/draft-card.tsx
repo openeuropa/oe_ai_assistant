@@ -54,9 +54,10 @@ function draftTitle(version: number | null): string {
 function documentKindIcon(doc: DraftDocumentSnapshot): typeof FileText {
   const meta = doc.meta;
   const mime =
-    typeof meta === "object" && meta !== null && "mime" in meta
+    doc.file?.mime ??
+    (typeof meta === "object" && meta !== null && "mime" in meta
       ? String((meta as Record<string, unknown>).mime)
-      : "";
+      : "");
   if (mime.startsWith("image/")) {
     return Image;
   }
