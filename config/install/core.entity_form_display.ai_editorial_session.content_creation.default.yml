@@ -32,5 +32,4 @@ content:
     region: content
     settings: {  }
     third_party_settings: {  }
-hidden:
-  context_documents: true
+hidden: { }
