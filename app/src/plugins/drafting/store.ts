@@ -29,13 +29,6 @@ export interface DraftingSliceState {
   draftedFields: Record<string, unknown>;
   /** Confirmed selection per composer panel, keyed by panel id. */
   selections: Record<string, string>;
-  /**
-   * Monotonically increasing counter used to remount the runtime subtree.
-   * Incrementing causes the history adapter to refetch get-messages, which
-   * makes newly recorded event chips appear at their chronological position
-   * without a full page reload. Excluded from partialize (transient).
-   */
-  timelineVersion: number;
 }
 
 export const draftingSliceConfig: PluginSliceConfig<DraftingSliceState> = {
@@ -43,11 +36,9 @@ export const draftingSliceConfig: PluginSliceConfig<DraftingSliceState> = {
     plan: [],
     draftedFields: {},
     selections: {},
-    timelineVersion: 0,
   },
   // Nothing is persisted client side. Confirmed selections are rehydrated
   // from the backend on mount, and the conversation lives server side.
-  // timelineVersion is also excluded: it resets to 0 on every page load.
   partialize: () => ({}) as Partial<DraftingSliceState>,
 };
 
@@ -79,15 +70,4 @@ export function useDraftingSelection(panelId: string): string {
 export function setDraftingSelection(panelId: string, value: string): void {
   const current = getDraftingState().selections;
   setDraftingState({ selections: { ...current, [panelId]: value } });
-}
-
-/**
- * Increments timelineVersion by one, triggering a remount of the runtime
- * subtree keyed by this value. The remount causes the history adapter to
- * refetch the persisted transcript so newly recorded event chips appear
- * immediately at their chronological position.
- */
-export function bumpTimelineVersion(): void {
-  const current = getDraftingState().timelineVersion;
-  setDraftingState({ timelineVersion: current + 1 });
 }

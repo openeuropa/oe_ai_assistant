@@ -89,8 +89,11 @@ export function Pane({
                 type="button"
                 className="inline-flex h-9 cursor-pointer items-center gap-2 rounded-lg bg-blue-600 px-3 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
                 onClick={() => {
-                  // Swallow rejections; the caller surfaces its own error.
-                  void Promise.resolve(onSave()).catch(() => {});
+                  // The caller surfaces its own error state; log the failure
+                  // anyway so unexpected handler crashes are never silent.
+                  void Promise.resolve(onSave()).catch((error) => {
+                    console.error("[pane] onSave failed:", error);
+                  });
                 }}
                 disabled={saveDisabled || isSaving}
               >

@@ -46,3 +46,11 @@ export const Unknown: Story = {
     summary: "An unrecognised editorial event occurred",
   },
 };
+
+/** Failed operation chip with red styling and AlertCircle icon. */
+export const ErrorChip: Story = {
+  args: {
+    eventType: "error",
+    summary: "Tone change failed",
+  },
+};

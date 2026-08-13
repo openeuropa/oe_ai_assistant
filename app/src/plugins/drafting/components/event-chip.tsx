@@ -6,7 +6,13 @@
  * small, muted, and not interactive.
  */
 
-import { Info, LayoutTemplate, Megaphone, Sparkles } from "lucide-react";
+import {
+  AlertCircle,
+  Info,
+  LayoutTemplate,
+  Megaphone,
+  Sparkles,
+} from "lucide-react";
 import type * as React from "react";
 
 /** Props for EventChip. */
@@ -26,7 +32,8 @@ export interface EventChipProps {
  * Returns the Lucide icon component that matches the given event type.
  *
  * Megaphone for tone changes, LayoutTemplate for template changes,
- * Sparkles for session start, and Info for everything else.
+ * Sparkles for session start, AlertCircle for errors, and Info for
+ * everything else.
  */
 function iconForEventType(eventType: string): React.ElementType {
   switch (eventType) {
@@ -36,9 +43,24 @@ function iconForEventType(eventType: string): React.ElementType {
       return LayoutTemplate;
     case "session_start":
       return Sparkles;
+    case "error":
+      return AlertCircle;
     default:
       return Info;
   }
+}
+
+/**
+ * Returns the Tailwind class string for the chip based on event type.
+ *
+ * Error chips use red styling to signal a failed operation; all other
+ * chips use the default muted grey styling.
+ */
+function classesForEventType(eventType: string): string {
+  if (eventType === "error") {
+    return "inline-flex items-center gap-1.5 rounded-full border border-red-200 bg-red-50 px-3 py-1 text-xs text-red-600";
+  }
+  return "inline-flex items-center gap-1.5 rounded-full border border-gray-200 bg-gray-50 px-3 py-1 text-xs text-gray-500";
 }
 
 /**
@@ -49,13 +71,11 @@ function iconForEventType(eventType: string): React.ElementType {
  */
 export function EventChip({ eventType, summary, at }: EventChipProps) {
   const Icon = iconForEventType(eventType);
+  const classes = classesForEventType(eventType);
 
   return (
     <div className="flex justify-start">
-      <span
-        className="inline-flex items-center gap-1.5 rounded-full border border-gray-200 bg-gray-50 px-3 py-1 text-xs text-gray-500"
-        title={at}
-      >
+      <span className={classes} title={at}>
         <Icon size={12} className="shrink-0" aria-hidden="true" />
         {summary}
       </span>

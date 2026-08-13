@@ -1,19 +1,13 @@
 /**
  * Drafting plugin root component.
  *
- * Split-panel layout: chat on the left, content artifact on
- * the right. The right panel shows: a placeholder before
- * prompting, plan steps during orchestration, and the content
- * table once fields arrive.
+ * Split-panel layout: chat on the left, content artifact on the right.
+ * DraftingChat owns the assistant-ui runtime, the tone/template/documents
+ * hooks, and the tab construction. After a successful save it splices a
+ * local event chip into the thread state via appendEventToThread so the
+ * chip appears instantly without any remount or refetch.
  *
- * DraftingRoot reads timelineVersion from the store and renders
- * DraftingChat with that value as the React key. Incrementing
- * timelineVersion (after a tone or template save) unmounts and
- * remounts DraftingChat, which causes the runtime to refetch the
- * persisted transcript and display any new event chips immediately.
- * Tradeoff: text typed in the composer before a pane save is
- * discarded by the remount. This is rare because panes overlay
- * the composer.
+ * DraftingRoot is a thin shell that renders DraftingChat.
  */
 
 import { AssistantRuntimeProvider } from "@assistant-ui/react";
@@ -36,22 +30,35 @@ import { useDraftingRuntime } from "./hooks/use-drafting-runtime";
 import { useDraftingTemplate } from "./hooks/use-drafting-template";
 import { useDraftingTone } from "./hooks/use-drafting-tone";
 import { useDraftingSlice } from "./store";
+import { appendEventToThread } from "./thread-events";
 
 /**
  * Inner component that owns the assistant-ui runtime and all runtime-dependent
- * state. Rendered with key={timelineVersion} so that a version bump unmounts
- * and remounts this subtree, causing the history adapter to refetch the
- * persisted transcript.
+ * state, including tone/template/documents hooks and composer tab construction.
+ *
+ * Save handlers capture labels before calling submitValues() and splice a
+ * local event chip (or error chip on failure) directly into the thread via
+ * export/import. This avoids any remount or network refetch after a save.
  */
-function DraftingChat({
-  tabs,
-}: {
-  /** Composer tabs passed in from DraftingRoot (computed outside the key). */
-  tabs: PaneTabItem[];
-}) {
+function DraftingChat() {
   const { draftedFields, plan } = useDraftingSlice();
   const runtime = useDraftingRuntime();
+  const tone = useDraftingTone();
+  const documents = useDraftingDocuments();
+  const template = useDraftingTemplate();
   const hasFields = Object.keys(draftedFields).length > 0;
+
+  /**
+   * Splices a local event chip (or error chip) into the thread.
+   *
+   * Memoised on runtime so the identity is stable across re-renders that do
+   * not change the runtime reference.
+   */
+  const appendEvent = useCallback(
+    (eventType: string, summary: string) =>
+      appendEventToThread(runtime.thread, { eventType, summary }),
+    [runtime],
+  );
 
   /** Trigger save via the chat so the agent runs the save tool. */
   const handleSave = useCallback(() => {
@@ -81,6 +88,119 @@ function DraftingChat({
     return <ArtifactPlaceholder />;
   }
 
+  // Composer tabs. Each opens a pane over the chat; the save handler appends
+  // a local event chip to the thread on success or an error chip on failure.
+  const tabs: PaneTabItem[] = [];
+
+  if (tone.enabled) {
+    tabs.push({
+      id: "tone",
+      icon: <Megaphone size={16} />,
+      title: "Tone",
+      summary: tone.selectedLabel ?? "Not set",
+      render: (close) => (
+        <CardSelectPane
+          icon={<Megaphone size={18} />}
+          title="Tone"
+          description="Save the selected tone before drafting to apply it."
+          options={tone.options}
+          value={tone.value}
+          onChange={tone.updateValue}
+          onSave={async () => {
+            // Capture labels before saving so the summary matches the backend's.
+            const previous = tone.selectedLabel;
+            const next =
+              tone.options.find((option) => option.value === tone.value)
+                ?.label ?? tone.value;
+            try {
+              await tone.submitValues();
+            } catch (error) {
+              // The pane keeps its inline error; the chat records the failure.
+              appendEvent("error", "Tone change failed");
+              throw error;
+            }
+            appendEvent(
+              "tone",
+              previous
+                ? `Tone changed from ${previous} to ${next}`
+                : `Tone changed to ${next}`,
+            );
+            close();
+          }}
+          onCancel={() => {
+            // Restore the confirmed tone, then close the pane.
+            tone.discardChanges();
+            close();
+          }}
+          hasChanges={tone.hasChanges}
+          isSaving={tone.isSaving}
+          error={tone.error}
+        />
+      ),
+    });
+  }
+
+  if (documents.enabled) {
+    tabs.push({
+      id: "documents",
+      icon: <FileText size={16} />,
+      title: "Documents",
+      summary: `${documents.count} documents`,
+      render: (close) => (
+        <DocumentsPanel
+          selected={documents.selected}
+          onRemove={documents.removeDocument}
+          onUpload={documents.uploadFiles}
+          onSave={async () => {
+            // No backend yet; just close the pane.
+            close();
+          }}
+          onCancel={close}
+        />
+      ),
+    });
+  }
+
+  if (template.enabled) {
+    tabs.push({
+      id: "templates",
+      icon: <LayoutTemplate size={16} />,
+      title: "Templates",
+      summary: template.selectedLabel ?? "Not set",
+      render: (close) => (
+        <CardSelectPane
+          icon={<LayoutTemplate size={18} />}
+          title="Template"
+          description="Select the structure the generated draft should follow."
+          options={template.options}
+          value={template.value}
+          onChange={template.updateValue}
+          onSave={async () => {
+            // Capture label before saving so the summary matches the backend's.
+            const next =
+              template.options.find((option) => option.value === template.value)
+                ?.label ?? template.value;
+            try {
+              await template.submitValues();
+            } catch (error) {
+              // The pane keeps its inline error; the chat records the failure.
+              appendEvent("error", "Template change failed");
+              throw error;
+            }
+            appendEvent("template", `Template changed to ${next}`);
+            close();
+          }}
+          onCancel={() => {
+            // Restore the confirmed template, then close the pane.
+            template.discardChanges();
+            close();
+          }}
+          hasChanges={template.hasChanges}
+        />
+      ),
+    });
+  }
+
   return (
     <AssistantRuntimeProvider runtime={runtime}>
       {/* Register tool call renderers so they appear inline in chat. */}
@@ -102,98 +222,7 @@ function DraftingChat({
   );
 }
 
-/** Drafting plugin root: computes tabs and keyed timeline version. */
+/** Drafting plugin root: thin shell that renders DraftingChat. */
 export default function DraftingRoot() {
-  const { timelineVersion } = useDraftingSlice();
-  const tone = useDraftingTone();
-  const documents = useDraftingDocuments();
-  const template = useDraftingTemplate();
-
-  // Composer tabs. Each opens a pane over the chat, and its summary
-  // reproposes the current selection.
-  const tabs: PaneTabItem[] = [];
-  if (tone.enabled) {
-    tabs.push({
-      id: "tone",
-      icon: <Megaphone size={16} />,
-      title: "Tone",
-      summary: tone.selectedLabel ?? "Not set",
-      render: (close) => (
-        <CardSelectPane
-          icon={<Megaphone size={18} />}
-          title="Tone"
-          description="Save the selected tone before drafting to apply it."
-          options={tone.options}
-          value={tone.value}
-          onChange={tone.updateValue}
-          onSave={async () => {
-            // Persist, then close the pane on success.
-            await tone.submitValues();
-            close();
-          }}
-          onCancel={() => {
-            // Restore the confirmed tone, then close the pane.
-            tone.discardChanges();
-            close();
-          }}
-          hasChanges={tone.hasChanges}
-          isSaving={tone.isSaving}
-          error={tone.error}
-        />
-      ),
-    });
-  }
-  if (documents.enabled) {
-    tabs.push({
-      id: "documents",
-      icon: <FileText size={16} />,
-      title: "Documents",
-      summary: `${documents.count} documents`,
-      render: (close) => (
-        <DocumentsPanel
-          selected={documents.selected}
-          onRemove={documents.removeDocument}
-          onUpload={documents.uploadFiles}
-          onSave={async () => {
-            // No backend yet; just close the pane.
-            close();
-          }}
-          onCancel={close}
-        />
-      ),
-    });
-  }
-  if (template.enabled) {
-    tabs.push({
-      id: "templates",
-      icon: <LayoutTemplate size={16} />,
-      title: "Templates",
-      summary: template.selectedLabel ?? "Not set",
-      render: (close) => (
-        <CardSelectPane
-          icon={<LayoutTemplate size={18} />}
-          title="Template"
-          description="Select the structure the generated draft should follow."
-          options={template.options}
-          value={template.value}
-          onChange={template.updateValue}
-          onSave={async () => {
-            // Persist, then close the pane on success.
-            await template.submitValues();
-            close();
-          }}
-          onCancel={() => {
-            // Restore the confirmed template, then close the pane.
-            template.discardChanges();
-            close();
-          }}
-          hasChanges={template.hasChanges}
-        />
-      ),
-    });
-  }
-
-  // Key by timelineVersion so a bump remounts DraftingChat, causing the
-  // history adapter to refetch the persisted transcript and surface new chips.
-  return <DraftingChat key={timelineVersion} tabs={tabs} />;
+  return <DraftingChat />;
 }

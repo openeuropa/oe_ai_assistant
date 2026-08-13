@@ -14,11 +14,9 @@ describe("drafting plugin state", () => {
       plan: [],
       draftedFields: {},
       selections: {},
-      timelineVersion: 0,
     });
 
     // The conversation lives on the backend; nothing is persisted locally.
-    // timelineVersion is also excluded: it resets to 0 on every page load.
     expect(
       draftingSliceConfig.partialize?.({
         plan: [],
@@ -26,7 +24,6 @@ describe("drafting plugin state", () => {
           title: { label: "Title", value: "Draft", type: "string" },
         },
         selections: { tone: "clear-professional" },
-        timelineVersion: 3,
       }),
     ).toEqual({});
   });
@@ -39,7 +36,6 @@ describe("drafting plugin state", () => {
       plan: [],
       draftedFields: {},
       selections: {},
-      timelineVersion: 0,
     });
   });
 
@@ -55,7 +51,7 @@ describe("drafting plugin state", () => {
       selections: { tone: "clear-professional" },
     });
 
-    expect(getDraftingState()).toMatchObject({
+    expect(getDraftingState()).toEqual({
       plan: [{ stepId: "s1", label: "Step 1", status: "done" }],
       draftedFields: {
         title: { label: "Title", value: "Draft", type: "string" },
