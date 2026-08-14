@@ -18,6 +18,7 @@
         "drupal/ai_agents": "^1.3@beta",
         "drupal/document_loader": "^2.0",
         "drupal/state_machine": "^1.14",
+        "drupal/key": "^1.22",
         "justinrainbow/json-schema": "^5.0 || ^6.0"
     },
     "require-dev": {
