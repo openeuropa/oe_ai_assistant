@@ -923,7 +923,7 @@ class AiDraftingTemplateCrudTest extends KernelTestBase {
   }
 
   /**
-   * Tests that a required field with a default value callback needs no coverage.
+   * Tests that a required field with a default callback needs no coverage.
    */
   public function testRequiredFieldWithDefaultValueCallbackNeedsNoCoverage(): void {
     $field = FieldConfig::loadByName('node', 'oe_news', 'field_teaser');
