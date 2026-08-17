@@ -6,11 +6,14 @@ namespace Drupal\Tests\oe_ai_assistant\Kernel;
 
 use Drupal\file\FileInterface;
 use Drupal\media\MediaInterface;
+use Drupal\oe_ai_assistant\Controller\PluginController;
 use Drupal\oe_ai_assistant\Exception\ActionException;
 use Drupal\oe_ai_assistant\Plugin\AiAssistantPluginManager;
+use Drupal\oe_ai_assistant\Service\RequestValidator;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
+use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\File\UploadedFile;
 use Symfony\Component\HttpFoundation\Request;
 
@@ -123,6 +126,74 @@ class DraftingPluginDocumentsTest extends AiEditorialSessionKernelTestBase {
   }
 
   /**
+   * Tests document actions through the plugin controller.
+   */
+  public function testDocumentActionsThroughController(): void {
+    $owner = $this->createUser();
+    $this->container->get('current_user')->setAccount($owner);
+    $session = $this->createSession($owner);
+    $controller = $this->createPluginController();
+
+    $source = $this->container->getParameter('site.path') . '/controller-document-source.txt';
+    file_put_contents($source, 'Context document contents.');
+
+    $addRequest = Request::create('', 'POST', [
+      'sessionId' => $session->id(),
+      'category' => 'context',
+    ], [], [
+      'file' => new UploadedFile(
+        $source,
+        'controller-brief.txt',
+        'text/plain',
+        UPLOAD_ERR_OK,
+        TRUE,
+      ),
+    ], [
+      'CONTENT_TYPE' => 'multipart/form-data; boundary=kernel-test',
+    ]);
+
+    $addResponse = $controller->dispatch('drafting', 'add-document', $addRequest);
+    $this->assertInstanceOf(JsonResponse::class, $addResponse);
+    $this->assertSame(200, $addResponse->getStatusCode());
+    $addPayload = json_decode($addResponse->getContent(), TRUE, 512, JSON_THROW_ON_ERROR);
+
+    $this->assertSame('controller-brief.txt', $addPayload['document']['title']);
+    $this->assertSame('txt', $addPayload['document']['meta']['type']);
+    $documentId = $addPayload['document']['id'];
+
+    $listRequest = Request::create('', 'POST', [], [], [], [], json_encode([
+      'sessionId' => $session->id(),
+      'category' => 'context',
+    ], JSON_THROW_ON_ERROR));
+    $listResponse = $controller->dispatch('drafting', 'list-documents', $listRequest);
+    $this->assertInstanceOf(JsonResponse::class, $listResponse);
+    $this->assertSame(200, $listResponse->getStatusCode());
+    $listPayload = json_decode($listResponse->getContent(), TRUE, 512, JSON_THROW_ON_ERROR);
+
+    $this->assertSame([$addPayload['document']], $listPayload['documents']);
+
+    $removeRequest = Request::create('', 'POST', [], [], [], [], json_encode([
+      'sessionId' => $session->id(),
+      'category' => 'context',
+      'documentId' => $documentId,
+    ], JSON_THROW_ON_ERROR));
+    $removeResponse = $controller->dispatch('drafting', 'remove-document', $removeRequest);
+    $this->assertInstanceOf(JsonResponse::class, $removeResponse);
+    $this->assertSame(200, $removeResponse->getStatusCode());
+    $removePayload = json_decode($removeResponse->getContent(), TRUE, 512, JSON_THROW_ON_ERROR);
+
+    $this->assertSame(['status' => 'ok'], $removePayload);
+    $this->container->get('entity_type.manager')
+      ->getStorage('ai_editorial_session')
+      ->resetCache([$session->id()]);
+    $reloadedSession = $this->container->get('entity_type.manager')
+      ->getStorage('ai_editorial_session')
+      ->load($session->id());
+    $this->assertTrue($reloadedSession->get('context_documents')->isEmpty());
+    $this->assertNull($this->container->get('entity_type.manager')->getStorage('media')->load($documentId));
+  }
+
+  /**
    * Tests document actions deny users without session access.
    */
   #[DataProvider('documentActionAccessProvider')]
@@ -211,6 +282,16 @@ class DraftingPluginDocumentsTest extends AiEditorialSessionKernelTestBase {
     }
 
     return Request::create('', 'POST', [], [], [], [], json_encode($body, JSON_THROW_ON_ERROR));
+  }
+
+  /**
+   * Creates the plugin controller with real services.
+   */
+  private function createPluginController(): PluginController {
+    return new PluginController(
+      $this->container->get(AiAssistantPluginManager::class),
+      $this->container->get(RequestValidator::class),
+    );
   }
 
 }

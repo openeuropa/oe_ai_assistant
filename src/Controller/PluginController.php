@@ -9,6 +9,7 @@ use Drupal\oe_ai_assistant\Exception\ActionException;
 use Drupal\oe_ai_assistant\Plugin\AiAssistantPluginManager;
 use Drupal\oe_ai_assistant\Service\RequestValidator;
 use Symfony\Component\HttpFoundation\JsonResponse;
+use Symfony\Component\HttpFoundation\File\UploadedFile;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 
@@ -110,7 +111,11 @@ class PluginController extends ControllerBase {
       // strings, or an empty array when the body is valid.
       $rawBody = $request->getContent();
       if (str_starts_with((string) $request->headers->get('Content-Type'), 'multipart/form-data')) {
-        $rawBody = json_encode($request->request->all(), JSON_THROW_ON_ERROR);
+        $rawBody = json_encode(
+          $request->request->all() + $this->normalizeUploadedFiles($request->files->all()),
+          JSON_THROW_ON_ERROR,
+        );
+
       }
       $errors = $this->requestValidator->validateRaw($rawBody, $schemas[$action]);
       if (!empty($errors)) {
@@ -154,6 +159,34 @@ class PluginController extends ControllerBase {
     // that produce a JSON payload), wrap the array in a JsonResponse with
     // the default 200 status code.
     return new JsonResponse($result);
+  }
+
+  /**
+   * Converts uploaded files into scalar values for request validation.
+   *
+   * Symfony stores uploaded files outside the regular request parameter bag,
+   * but multipart schemas still declare those fields as part of the request
+   * shape. The plugin receives the original UploadedFile instances from the
+   * request; this normalized copy is only used by JSON Schema validation.
+   *
+   * @param array<string, mixed> $files
+   *   Uploaded files from the request file bag.
+   *
+   * @return array<string, mixed>
+   *   File fields represented by their client filenames.
+   */
+  private function normalizeUploadedFiles(array $files): array {
+    $normalized = [];
+    foreach ($files as $key => $file) {
+      if ($file instanceof UploadedFile) {
+        $normalized[$key] = $file->getClientOriginalName();
+      }
+      elseif (is_array($file)) {
+        $normalized[$key] = $this->normalizeUploadedFiles($file);
+      }
+    }
+
+    return $normalized;
   }
 
 }
