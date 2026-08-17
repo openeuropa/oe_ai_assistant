@@ -212,6 +212,57 @@ class AiDraftingTemplateCrudTest extends KernelTestBase {
   }
 
   /**
+   * Tests that calculateDependencies() derives field and bundle dependencies.
+   *
+   * Field-level and referenced-bundle config dependencies are derived from
+   * `fields`/`defaults` rather than hand-maintained, so a template's
+   * `dependencies.config` is always complete (see
+   * AiDraftingTemplate::calculateDependencies()). This directly exercises
+   * that derivation, independent of any shipped fixture.
+   */
+  public function testCalculateDependenciesDerivesFieldAndBundleDependencies(): void {
+    $template = $this->buildTemplate('oe_news', [
+      'title' => ['prompt' => 'Headline.'],
+      'field_teaser' => ['prompt' => 'Teaser.'],
+      'field_content_paragraphs' => [
+        'type' => 'entity_reference_revisions',
+        'items' => [
+          [
+            'entity_type' => 'paragraph',
+            'bundle' => 'text_block',
+            'prompt' => 'Text.',
+            'fields' => [
+              'field_text_body' => ['prompt' => 'Body.'],
+            ],
+          ],
+          [
+            'entity_type' => 'paragraph',
+            'bundle' => 'quote_block',
+            'prompt' => 'Quote.',
+            'fields' => [
+              'field_quote_text' => ['prompt' => 'Quote text.'],
+            ],
+          ],
+        ],
+      ],
+    ]);
+
+    $template->calculateDependencies();
+    $dependencies = $template->getDependencies()['config'] ?? [];
+    sort($dependencies);
+
+    $this->assertSame([
+      'field.field.node.oe_news.field_content_paragraphs',
+      'field.field.node.oe_news.field_teaser',
+      'field.field.paragraph.quote_block.field_quote_text',
+      'field.field.paragraph.text_block.field_text_body',
+      'node.type.oe_news',
+      'paragraphs.paragraphs_type.quote_block',
+      'paragraphs.paragraphs_type.text_block',
+    ], $dependencies);
+  }
+
+  /**
    * Tests that a template referencing a non-existent content type is invalid.
    */
   public function testNonExistentContentTypeIsInvalid(): void {
