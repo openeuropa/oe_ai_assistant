@@ -10,7 +10,6 @@ dependencies:
     - node.type.oe_news
     - paragraphs.paragraphs_type.quote_block
     - paragraphs.paragraphs_type.text_block
-    - workflows.workflow.editorial
   module:
     - oe_ai_assistant
 id: news_with_paragraphs
@@ -25,13 +24,15 @@ fields:
   field_content_paragraphs:
     type: entity_reference_revisions
     items:
-      - entity_type: paragraph
+      -
+        entity_type: paragraph
         bundle: text_block
         prompt: 'Introductory text, 1-2 paragraphs.'
         fields:
           field_text_body:
             prompt: 'Introduction body text.'
-      - entity_type: paragraph
+      -
+        entity_type: paragraph
         bundle: quote_block
         prompt: 'A relevant quote from a key stakeholder.'
         fields:
@@ -39,7 +40,8 @@ fields:
             prompt: 'The quote text.'
           field_quote_attribution:
             prompt: 'Full name and title of the person being quoted.'
-      - entity_type: paragraph
+      -
+        entity_type: paragraph
         bundle: text_block
         prompt: 'Concluding paragraph summarising key takeaways.'
         fields:
@@ -48,4 +50,5 @@ fields:
 defaults:
   langcode:
     default_value:
-      - value: en
+      -
+        value: en
