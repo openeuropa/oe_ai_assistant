@@ -11,6 +11,7 @@ use Drupal\Core\Entity\EntityDeleteForm;
 use Drupal\Core\Entity\EntityFieldManagerInterface;
 use Drupal\Core\Entity\EntityStorageInterface;
 use Drupal\Core\StringTranslation\TranslatableMarkup;
+use Drupal\field\FieldConfigInterface;
 use Drupal\oe_ai_assistant\AiDraftingTemplateInterface;
 use Drupal\oe_ai_assistant\AiDraftingTemplateListBuilder;
 use Drupal\oe_ai_assistant\Exception\TemplateValidationException;
@@ -302,7 +303,82 @@ final class AiDraftingTemplate extends ConfigEntityBase implements AiDraftingTem
 
     $this->addDependency('config', $name);
 
+    $this->addFieldDependencies('node', $this->content_type, $this->fields, $this->defaults);
+
     return $this;
+  }
+
+  /**
+   * Recursively adds config dependencies for referenced fields and bundles.
+   *
+   * @param string $entity_type_id
+   *   The entity type ID.
+   * @param string $bundle
+   *   The bundle ID.
+   * @param array<string, mixed> $fields
+   *   The template field definitions.
+   * @param array<string, mixed> $defaults
+   *   The template default definitions.
+   */
+  private function addFieldDependencies(
+    string $entity_type_id,
+    string $bundle,
+    array $fields,
+    array $defaults,
+  ): void {
+    $entity_field_manager = \Drupal::service(EntityFieldManagerInterface::class);
+    $field_definitions = $entity_field_manager->getFieldDefinitions($entity_type_id, $bundle);
+
+    $defined_field_names = array_unique([
+      ...array_keys($fields),
+      ...array_keys($defaults),
+    ]);
+
+    foreach ($defined_field_names as $field_name) {
+      $field_definition = $field_definitions[$field_name] ?? NULL;
+      if ($field_definition instanceof FieldConfigInterface) {
+        $this->addDependency('config', $field_definition->getConfigDependencyName());
+      }
+    }
+
+    foreach ($fields as $field_config) {
+      if (empty($field_config['items']) || !is_array($field_config['items'])) {
+        continue;
+      }
+
+      foreach ($field_config['items'] as $item) {
+        if (!is_array($item)) {
+          continue;
+        }
+
+        $target_entity_type_id = $item['entity_type'] ?? NULL;
+        $target_bundle = $item['bundle'] ?? NULL;
+
+        if (!$target_entity_type_id || !$target_bundle) {
+          continue;
+        }
+
+        $bundle_entity_type_id = $this->entityTypeManager()
+          ->getDefinition($target_entity_type_id)
+          ->getBundleEntityType();
+
+        if ($bundle_entity_type_id) {
+          $bundle_entity = $this->entityTypeManager()
+            ->getStorage($bundle_entity_type_id)
+            ->load($target_bundle);
+          if ($bundle_entity) {
+            $this->addDependency('config', $bundle_entity->getConfigDependencyName());
+          }
+        }
+
+        $this->addFieldDependencies(
+          $target_entity_type_id,
+          $target_bundle,
+          $item['fields'] ?? [],
+          $item['defaults'] ?? [],
+        );
+      }
+    }
   }
 
 }
