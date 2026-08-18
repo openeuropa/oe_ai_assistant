@@ -776,7 +776,7 @@ class AiConversationHistoryTest extends AiEditorialSessionBrowserTestBase {
   private function nonEventRows(): array {
     return array_values(array_filter(
       $this->messageRows(),
-      fn($row) => !$row->hasClass('ai-history-role-event'),
+      fn(NodeElement $row) => !$row->hasClass('ai-history-role-event'),
     ));
   }
 
