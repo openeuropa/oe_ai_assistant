@@ -154,7 +154,26 @@ describe("drafting api", () => {
     );
   });
 
-  it("throws when document requests fail", async () => {
+  it.each([
+    {
+      label: "add-document",
+      request: () =>
+        addDraftingDocument(
+          new File(["content"], "brief.pdf", { type: "application/pdf" }),
+        ),
+      message: "Drafting add-document error: 500",
+    },
+    {
+      label: "list-documents",
+      request: () => listDraftingDocuments(),
+      message: "Drafting list-documents error: 500",
+    },
+    {
+      label: "remove-document",
+      request: () => removeDraftingDocument("12"),
+      message: "Drafting remove-document error: 500",
+    },
+  ])("throws when $label fails", async ({ request, message }) => {
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue({
@@ -163,8 +182,6 @@ describe("drafting api", () => {
       }),
     );
 
-    await expect(listDraftingDocuments()).rejects.toThrow(
-      "Drafting list-documents error: 500",
-    );
+    await expect(request()).rejects.toThrow(message);
   });
 });
