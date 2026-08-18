@@ -11,6 +11,9 @@
  * POST /api/plugins/drafting/save   - Mock save
  * POST /api/plugins/drafting/set-tone - Validate selected tone
  * POST /api/plugins/drafting/set-template - Validate selected template
+ * POST /api/plugins/drafting/add-document - Mock document upload
+ * POST /api/plugins/drafting/list-documents - List mock documents
+ * POST /api/plugins/drafting/remove-document - Remove a mock document
  */
 
 import { readFileSync } from "node:fs";
@@ -21,6 +24,94 @@ import type {
   ChatOptions,
   DraftingService,
 } from "../services/drafting-service";
+
+interface MockDocument {
+  id: string;
+  title: string;
+  meta: {
+    type: string;
+    size: string;
+  };
+  extractionStatus: "pending" | "processing" | "completed" | "failed";
+}
+
+interface MultipartFileInfo {
+  filename: string;
+  size: number;
+}
+
+const initialMockDocuments: MockDocument[] = [
+  {
+    id: "3f2504e0-4f89-41d3-9a0c-0305e82c3301",
+    title: "EU AI Act briefing note.pdf",
+    meta: { type: "pdf", size: "240 KB" },
+    extractionStatus: "completed",
+  },
+  {
+    id: "c9bf9e57-1685-4c89-bafb-ff5af830be8a",
+    title: "Stakeholder comments.docx",
+    meta: { type: "docx", size: "96 KB" },
+    extractionStatus: "processing",
+  },
+];
+
+function extensionFromFilename(filename: string): string {
+  const extension = filename.split(".").pop();
+  return extension && extension !== filename ? extension.toLowerCase() : "file";
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) {
+    return `${bytes} B`;
+  }
+  return `${Math.ceil(bytes / 1024)} KB`;
+}
+
+async function readRequestBody(req: NodeJS.ReadableStream): Promise<Buffer> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of req) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  }
+  return Buffer.concat(chunks);
+}
+
+function parseMultipartUpload(
+  body: Buffer,
+  contentType: string,
+): { sessionId: string; category: string; file: MultipartFileInfo | null } {
+  const boundary = contentType.match(/boundary=([^;]+)/)?.[1];
+  if (!boundary) {
+    return { sessionId: "", category: "", file: null };
+  }
+
+  const parts = body.toString("latin1").split(`--${boundary}`);
+  let sessionId = "";
+  let category = "";
+  let file: MultipartFileInfo | null = null;
+
+  for (const part of parts) {
+    const [rawHeaders, ...rawBodyParts] = part.split("\r\n\r\n");
+    if (!rawHeaders || rawBodyParts.length === 0) {
+      continue;
+    }
+    const content = rawBodyParts.join("\r\n\r\n").replace(/\r\n$/, "");
+    const name = rawHeaders.match(/name="([^"]+)"/)?.[1] ?? "";
+    const filename = rawHeaders.match(/filename="([^"]*)"/)?.[1];
+
+    if (filename !== undefined && name === "file") {
+      file = {
+        filename: filename || "document",
+        size: Buffer.byteLength(content, "latin1"),
+      };
+    } else if (name === "sessionId") {
+      sessionId = content;
+    } else if (name === "category") {
+      category = content;
+    }
+  }
+
+  return { sessionId, category, file };
+}
 
 /**
  * Loads a content type schema fixture by bundle name.
@@ -49,6 +140,9 @@ function loadSchema(bundle: string): object | null {
  */
 export function createDraftingRouter(service: DraftingService): Router {
   const router = Router();
+  const documentsBySession = new Map<string, MockDocument[]>([
+    ["dev-session", initialMockDocuments],
+  ]);
 
   /**
    * POST /chat - Stream AI chat responses via SSE.
@@ -231,6 +325,86 @@ export function createDraftingRouter(service: DraftingService): Router {
     setTimeout(() => {
       res.json({ status: "ok" });
     }, 1000);
+  });
+
+  /** POST /add-document - Store a mock document for the current session. */
+  router.post("/add-document", async (req, res) => {
+    const { sessionId, category, file } = parseMultipartUpload(
+      await readRequestBody(req),
+      req.headers["content-type"] ?? "",
+    );
+
+    if (!sessionId || category !== "context" || file === null) {
+      res.status(400).json({
+        code: "bad_request",
+        message: "sessionId, category, and file are required",
+      });
+      return;
+    }
+
+    const document: MockDocument = {
+      id: `mock-document-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      title: file.filename,
+      meta: {
+        type: extensionFromFilename(file.filename),
+        size: formatBytes(file.size),
+      },
+      extractionStatus: "completed",
+    };
+    const documents = documentsBySession.get(sessionId) ?? [];
+    documentsBySession.set(sessionId, [...documents, document]);
+
+    res.json({ document });
+  });
+
+  /** POST /list-documents - Return mock documents for a session. */
+  router.post("/list-documents", (req, res) => {
+    const { sessionId, category } = req.body as {
+      sessionId?: string;
+      category?: string;
+    };
+
+    if (!sessionId || category !== "context") {
+      res.status(400).json({
+        code: "bad_request",
+        message: "sessionId and category are required",
+      });
+      return;
+    }
+
+    res.json({ documents: documentsBySession.get(sessionId) ?? [] });
+  });
+
+  /** POST /remove-document - Remove a mock document for a session. */
+  router.post("/remove-document", (req, res) => {
+    const { sessionId, category, documentId } = req.body as {
+      sessionId?: string;
+      category?: string;
+      documentId?: string;
+    };
+
+    if (!sessionId || category !== "context" || !documentId) {
+      res.status(400).json({
+        code: "bad_request",
+        message: "sessionId, category, and documentId are required",
+      });
+      return;
+    }
+
+    const documents = documentsBySession.get(sessionId) ?? [];
+    if (!documents.some((document) => document.id === documentId)) {
+      res.status(404).json({
+        code: "not_found",
+        message: "document was not found for this session",
+      });
+      return;
+    }
+
+    documentsBySession.set(
+      sessionId,
+      documents.filter((document) => document.id !== documentId),
+    );
+    res.json({ status: "ok" });
   });
 
   return router;
