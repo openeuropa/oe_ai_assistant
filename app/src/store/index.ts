@@ -51,6 +51,8 @@ interface AppState {
 
   /** Whether the sidebar navigation is expanded. */
   isSidebarOpen: boolean;
+  /** Pending-work flags reported by plugins, keyed by reporting source. */
+  pendingWork: Record<string, boolean>;
 
   // -- Actions --
 
@@ -59,6 +61,8 @@ interface AppState {
   removeNotification: (id: string) => void;
   clearNotifications: () => void;
   setSidebarOpen: (open: boolean) => void;
+  /** Report whether a source (usually a plugin) has work in flight. */
+  setPendingWork: (source: string, pending: boolean) => void;
   /** Shallow-merge partial state into a plugin's slice. */
   setPluginState: (pluginId: string, partial: Record<string, unknown>) => void;
 }
@@ -88,6 +92,7 @@ function createInitialState() {
   return {
     ...createPersistedState(),
     isSidebarOpen: true,
+    pendingWork: {},
   };
 }
 
@@ -185,6 +190,10 @@ export const useAppStore = create<AppState>()(
         })),
       clearNotifications: () => set({ notifications: [] }),
       setSidebarOpen: (open) => set({ isSidebarOpen: open }),
+      setPendingWork: (source, pending) =>
+        set((state) => ({
+          pendingWork: { ...state.pendingWork, [source]: pending },
+        })),
       setPluginState: (pluginId, partial) =>
         set((state) => ({
           pluginStates: {
@@ -207,6 +216,16 @@ export const useAppStore = create<AppState>()(
     },
   ),
 );
+
+/**
+ * True when any source reports in-flight or unsent work. Used by the
+ * shell exit guard to block navigation until the session is idle.
+ */
+export function useHasPendingWork(): boolean {
+  return useAppStore((s) =>
+    Object.values(s.pendingWork).some((pending) => pending),
+  );
+}
 
 /**
  * Prepare the store for a specific host context before rendering.
