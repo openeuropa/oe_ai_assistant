@@ -17,7 +17,7 @@ import { CardSelectPane } from "../../../src/components/ui/card-select-pane";
 import { ArtifactPane } from "../../../src/plugins/drafting/components/artifact-pane";
 import { ContentTable } from "../../../src/plugins/drafting/components/content-table";
 import { DocumentsPanel } from "../../../src/plugins/drafting/components/documents-panel";
-import { DraftingHeader } from "../../../src/plugins/drafting/components/drafting-header";
+import { DraftRail } from "../../../src/plugins/drafting/components/draft-rail";
 import { DraftingThread } from "../../../src/plugins/drafting/components/drafting-thread";
 import {
   DraftContentToolUI,
@@ -176,6 +176,8 @@ export function seedDraftingPreviewState(): void {
   setDraftingState({
     ...draftingSliceConfig.initialState,
     draftedFields: draftFields,
+    // The seeded fields belong to the latest draft in the transcript.
+    activeDraftVersion: 2,
   });
 }
 
@@ -220,83 +222,80 @@ export function FullDraftingPreview() {
       <EditorialEventToolUI />
       <SaveDraftRevisionToolUI />
 
-      <div className="flex min-h-0 flex-1 flex-col bg-white">
-        {/* Toolbar spanning the plugin area, as in the root. */}
-        <DraftingHeader
-          showPaneToggle={hasArtifact}
-          tabs={[
-            {
-              id: "tone",
-              icon: <Megaphone size={20} />,
-              title: "Tone",
-              summary: toneLabel,
-              render: (close) => (
-                <CardSelectPane
-                  icon={<Megaphone size={18} />}
-                  title="Tone"
-                  description="Save the selected tone before drafting to apply it."
-                  options={toneOptions}
-                  value={toneId}
-                  onChange={setToneId}
-                  onSave={async () => close()}
-                  onCancel={close}
-                  hasChanges={toneId !== defaultToneId}
-                />
-              ),
-            },
-            {
-              id: "documents",
-              icon: <FileText size={20} />,
-              title: "Documents",
-              summary: `${documents.count} documents`,
-              render: (close) => (
-                <DocumentsPanel
-                  selected={documents.selected}
-                  onRemove={documents.removeDocument}
-                  onUpload={documents.uploadFiles}
-                  onSave={async () => close()}
-                  onCancel={close}
-                />
-              ),
-            },
-            {
-              id: "templates",
-              icon: <LayoutTemplate size={20} />,
-              title: "Templates",
-              summary: template.selectedLabel ?? "Not set",
-              render: (close) => (
-                <CardSelectPane
-                  icon={<LayoutTemplate size={18} />}
-                  title="Template"
-                  description="Select the structure the generated draft should follow."
-                  options={template.options}
-                  value={template.value}
-                  onChange={template.updateValue}
-                  onSave={async () => close()}
-                  onCancel={() => {
-                    template.discardChanges();
-                    close();
-                  }}
-                  hasChanges={template.hasChanges}
-                />
-              ),
-            },
-          ]}
-        />
-
-        <div className="flex min-h-0 flex-1">
-          {/* Left panel: chat, flexing into the width the pane leaves free. */}
-          <div className="flex min-h-0 flex-1 flex-col">
-            <DraftingThread />
-          </div>
-
-          {/* Right panel: artifact pane with the latest draft. */}
-          {hasArtifact && (
-            <ArtifactPane>
-              <ContentTable onSave={() => {}} />
-            </ArtifactPane>
-          )}
+      <div className="flex min-h-0 flex-1 bg-white">
+        {/* Left panel: chat with the context buttons under the composer. */}
+        <div className="flex min-h-0 flex-1 flex-col">
+          <DraftingThread
+            tabs={[
+              {
+                id: "tone",
+                icon: <Megaphone size={20} />,
+                title: "Tone",
+                summary: toneLabel,
+                render: (close) => (
+                  <CardSelectPane
+                    icon={<Megaphone size={18} />}
+                    title="Tone"
+                    description="Save the selected tone before drafting to apply it."
+                    options={toneOptions}
+                    value={toneId}
+                    onChange={setToneId}
+                    onSave={async () => close()}
+                    onCancel={close}
+                    hasChanges={toneId !== defaultToneId}
+                  />
+                ),
+              },
+              {
+                id: "documents",
+                icon: <FileText size={20} />,
+                title: "Documents",
+                summary: `${documents.count} documents`,
+                render: (close) => (
+                  <DocumentsPanel
+                    selected={documents.selected}
+                    onRemove={documents.removeDocument}
+                    onUpload={documents.uploadFiles}
+                    onSave={async () => close()}
+                    onCancel={close}
+                  />
+                ),
+              },
+              {
+                id: "templates",
+                icon: <LayoutTemplate size={20} />,
+                title: "Templates",
+                summary: template.selectedLabel ?? "Not set",
+                render: (close) => (
+                  <CardSelectPane
+                    icon={<LayoutTemplate size={18} />}
+                    title="Template"
+                    description="Select the structure the generated draft should follow."
+                    options={template.options}
+                    value={template.value}
+                    onChange={template.updateValue}
+                    onSave={async () => close()}
+                    onCancel={() => {
+                      template.discardChanges();
+                      close();
+                    }}
+                    hasChanges={template.hasChanges}
+                  />
+                ),
+              },
+            ]}
+          />
         </div>
+
+        {/* Middle panel: artifact pane with the open draft. */}
+        {hasArtifact && (
+          <ArtifactPane>
+            <ContentTable onSave={() => {}} />
+          </ArtifactPane>
+        )}
+
+        {/* Right edge: the always-present draft rail. */}
+        <DraftRail />
       </div>
     </AssistantRuntimeProvider>
   );

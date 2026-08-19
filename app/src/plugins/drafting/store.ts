@@ -31,6 +31,8 @@ export interface DraftingSliceState {
   selections: Record<string, string>;
   /** Whether the artifact pane is collapsed to a slim rail (transient). */
   isArtifactCollapsed: boolean;
+  /** Version of the draft currently shown in the pane; null for none/legacy. */
+  activeDraftVersion: number | null;
 }
 
 export const draftingSliceConfig: PluginSliceConfig<DraftingSliceState> = {
@@ -39,6 +41,7 @@ export const draftingSliceConfig: PluginSliceConfig<DraftingSliceState> = {
     draftedFields: {},
     selections: {},
     isArtifactCollapsed: false,
+    activeDraftVersion: null,
   },
   // Nothing is persisted client side. Confirmed selections are rehydrated
   // from the backend on mount, and the conversation lives server side.

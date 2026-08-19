@@ -245,7 +245,7 @@ function SaveConfirmDialog({
 
 /** The content table showing drafted field values. */
 export function ContentTable({ onSave }: ContentTableProps) {
-  const { draftedFields } = useDraftingSlice();
+  const { draftedFields, activeDraftVersion } = useDraftingSlice();
   const entries = Object.entries(draftedFields);
   const [showConfirm, setShowConfirm] = useState(false);
 
@@ -253,10 +253,12 @@ export function ContentTable({ onSave }: ContentTableProps) {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      {/* Header: fixed height matching the toolbar. */}
+      {/* Header naming the open draft version when known. */}
       <div className="flex h-12 shrink-0 items-center justify-between border-b border-gray-200 px-4">
         <h2 className="text-base font-semibold text-gray-900">
-          Drafted Content
+          {activeDraftVersion !== null
+            ? `Draft ${activeDraftVersion}`
+            : "Drafted Content"}
         </h2>
         <button
           type="button"

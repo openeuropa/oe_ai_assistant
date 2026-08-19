@@ -18,7 +18,7 @@ import type { PaneTabItem } from "@/components/ui/pane-tabs";
 import { ArtifactPane } from "./components/artifact-pane";
 import { ContentTable } from "./components/content-table";
 import { DocumentsPanel } from "./components/documents-panel";
-import { DraftingHeader } from "./components/drafting-header";
+import { DraftRail } from "./components/draft-rail";
 import { DraftingThread } from "./components/drafting-thread";
 import { PlanSteps } from "./components/plan-steps";
 import {
@@ -96,7 +96,7 @@ function DraftingChat() {
     );
   }
 
-  // Editorial context panels, shown as buttons in the drafting header.
+  // Editorial context panels, shown as pill buttons under the composer.
   // Each opens a centered modal; the save handler appends a local event
   // chip to the thread on success or an error chip on failure.
   const tabs: PaneTabItem[] = [];
@@ -220,22 +220,19 @@ function DraftingChat() {
       {/* Feed the shell exit guard with this plugin's pending state. */}
       <PendingWorkReporter />
 
-      <div className="flex min-h-0 flex-1 flex-col">
-        {/* Toolbar spanning the whole plugin area: context controls on
-            the left, artifact pane toggle on the right. */}
-        <DraftingHeader tabs={tabs} showPaneToggle={hasArtifact} />
-
-        <div className="flex min-h-0 flex-1">
-          {/* Left panel: chat, always flexing into the width the pane
-              leaves free; the thread centers its own content. */}
-          <div className="flex min-h-0 flex-1 flex-col">
-            <DraftingThread />
-          </div>
-
-          {/* Right panel appears once a plan or draft exists: plan steps
-              while generating, then the content table. */}
-          {hasArtifact && <ArtifactPane>{renderArtifact()}</ArtifactPane>}
+      <div className="flex min-h-0 flex-1">
+        {/* Left panel: chat, always flexing into the width the pane
+            leaves free; the thread centers its own content. */}
+        <div className="flex min-h-0 flex-1 flex-col">
+          <DraftingThread tabs={tabs} />
         </div>
+
+        {/* Middle panel appears once a plan or draft exists: plan steps
+            while generating, then the content table. */}
+        {hasArtifact && <ArtifactPane>{renderArtifact()}</ArtifactPane>}
+
+        {/* Right edge: the always-present draft rail driving the pane. */}
+        <DraftRail />
       </div>
     </AssistantRuntimeProvider>
   );

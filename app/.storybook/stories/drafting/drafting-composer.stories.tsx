@@ -4,7 +4,6 @@ import { FileText, LayoutTemplate, Megaphone } from "lucide-react";
 import { useState } from "react";
 import { CardSelectPane } from "../../../src/components/ui/card-select-pane";
 import { DocumentsPanel } from "../../../src/plugins/drafting/components/documents-panel";
-import { DraftingHeader } from "../../../src/plugins/drafting/components/drafting-header";
 import { DraftingThread } from "../../../src/plugins/drafting/components/drafting-thread";
 import { useDraftingDocuments } from "../../../src/plugins/drafting/hooks/use-drafting-documents";
 import { useDraftingTemplate } from "../../../src/plugins/drafting/hooks/use-drafting-template";
@@ -60,7 +59,7 @@ function DraftingChatPreview() {
   return (
     <AssistantRuntimeProvider runtime={runtime}>
       <div className="flex h-[700px] max-w-2xl flex-col overflow-hidden border border-gray-200 bg-white">
-        <DraftingHeader
+        <DraftingThread
           defaultActiveTabId="tone"
           tabs={[
             {
@@ -124,7 +123,6 @@ function DraftingChatPreview() {
             },
           ]}
         />
-        <DraftingThread />
       </div>
     </AssistantRuntimeProvider>
   );

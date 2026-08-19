@@ -110,7 +110,14 @@ export const DraftContentToolUI = makeAssistantToolUI<
         version={parsed.version}
         context={parsed.context}
         fields={fields}
-        onOpen={() => setDraftingState({ draftedFields: fields })}
+        onOpen={() =>
+          // Show this draft in the pane, expanding it if collapsed.
+          setDraftingState({
+            draftedFields: fields,
+            activeDraftVersion: parsed.version,
+            isArtifactCollapsed: false,
+          })
+        }
       />
     );
   },

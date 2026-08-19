@@ -24,6 +24,8 @@ import {
   SendHorizontal,
   X,
 } from "lucide-react";
+import type { PaneTabItem } from "@/components/ui/pane-tabs";
+import { ContextButtons } from "./context-buttons";
 import { ToolFallbackCard } from "./tool-uis";
 
 /** Welcome message shown when the chat is empty. */
@@ -249,11 +251,17 @@ function ComposerAttachment() {
 }
 
 /**
- * Chat composer arranged like the Claude web interface: the text input
- * sits on top inside a rounded box with the send button on the bottom
- * right. The editorial context controls live in the drafting header.
+ * Chat composer arranged like the Claude web interface: a rounded box
+ * with the text input on top and a bottom row holding the editorial
+ * context pill buttons on the left and the send button on the right.
  */
-function Composer() {
+function Composer({
+  tabs,
+  defaultActiveTabId,
+}: {
+  tabs: PaneTabItem[];
+  defaultActiveTabId?: string;
+}) {
   return (
     <ComposerPrimitive.Root className="p-4 pt-2">
       <div className="rounded-xl border border-gray-300 bg-white shadow-sm focus-within:border-blue-500">
@@ -271,9 +279,10 @@ function Composer() {
           autoFocus
         />
 
-        {/* Bottom row: send on the right. */}
-        <div className="flex items-center justify-end px-2 pb-2">
-          <ComposerPrimitive.Send className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50">
+        {/* Bottom row: context pills left, send right. */}
+        <div className="flex items-end justify-between gap-2 p-2 pl-3">
+          <ContextButtons tabs={tabs} defaultActiveTabId={defaultActiveTabId} />
+          <ComposerPrimitive.Send className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50">
             <SendHorizontal size={16} />
           </ComposerPrimitive.Send>
         </div>
@@ -282,13 +291,23 @@ function Composer() {
   );
 }
 
+interface DraftingThreadProps {
+  /** Context panels shown as pill buttons inside the composer. */
+  tabs?: PaneTabItem[];
+  /** Opens a panel modal by id on mount (Storybook/previews). */
+  defaultActiveTabId?: string;
+}
+
 /**
  * Full chat thread with welcome, messages, and composer. The scroll
  * container spans the whole chat area so the scrollbar sits at its
  * outer edge, while the messages and the composer are centered with a
  * comfortable reading width.
  */
-export function DraftingThread() {
+export function DraftingThread({
+  tabs = [],
+  defaultActiveTabId,
+}: DraftingThreadProps) {
   return (
     <ThreadPrimitive.Root className="flex min-h-0 flex-1 flex-col">
       <ThreadPrimitive.Viewport className="flex-1 overflow-y-auto">
@@ -303,7 +322,7 @@ export function DraftingThread() {
         </div>
       </ThreadPrimitive.Viewport>
       <div className="mx-auto w-full max-w-3xl">
-        <Composer />
+        <Composer tabs={tabs} defaultActiveTabId={defaultActiveTabId} />
       </div>
     </ThreadPrimitive.Root>
   );
