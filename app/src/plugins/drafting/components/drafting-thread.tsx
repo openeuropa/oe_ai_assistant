@@ -139,22 +139,20 @@ function AssistantText({
 }
 
 /**
- * Typing indicator with three pulsating dots, shown in place of
- * the assistant message while the assistant is processing but has
- * not yet started streaming content. Once the first content part
- * arrives, the indicator is replaced by the message text.
- *
- * Uses the animate-typing-pulse Tailwind utility registered
- * via @theme in index.css.
+ * Typing indicator with three bouncing dots, shown in place of the
+ * assistant message while the assistant is processing but has not
+ * yet started streaming content. Once the first content part
+ * arrives, the indicator is replaced by the message text. The wave
+ * motion comes from the typing-dot class in index.css, which staggers
+ * each dot by its position. Exported for Storybook.
  */
-function TypingIndicator() {
+export function TypingIndicator() {
   return (
     <div className="flex items-center gap-1.5 py-2">
       {[0, 1, 2].map((i) => (
         <span
           key={i}
-          className="inline-block h-2 w-2 animate-typing-pulse rounded-full bg-gray-400"
-          style={{ animationDelay: `${i * 0.2}s` }}
+          className="typing-dot inline-block h-2 w-2 rounded-full bg-gray-400"
         />
       ))}
     </div>

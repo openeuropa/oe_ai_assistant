@@ -136,8 +136,9 @@ class AiEditorialSessionController extends ControllerBase {
       // app persists in localStorage, so different sessions never share
       // frontend state while collaborating users on the same session do.
       'sessionId' => $sessionId,
-      // Session title shown by the app shell header.
-      'sessionTitle' => (string) $session->label(),
+      // Session title shown by the app shell header, prefixed with the
+      // human readable bundle, e.g. "Content creation: March newsletter".
+      'sessionTitle' => $this->sessionBundleLabel($session) . ': ' . $session->label(),
       // Where the exit control returns the editor to: the AI editorial
       // sessions dashboard.
       'exitUrl' => Url::fromRoute('entity.ai_editorial_session.collection')->toString(),
@@ -214,12 +215,31 @@ class AiEditorialSessionController extends ControllerBase {
       ],
     ];
 
-    // Invalidate the page when the session's selected template changes.
+    // Invalidate the page when the session or its bundle changes; the
+    // settings embed the session label and the bundle label.
     CacheableMetadata::createFromRenderArray($build)
       ->addCacheableDependency($session)
+      ->addCacheableDependency($this->sessionEntityTypeManager->getStorage('ai_editorial_session_type')->load($session->bundle()))
       ->applyTo($build);
 
     return $build;
+  }
+
+  /**
+   * Returns the human readable label of the session's bundle.
+   *
+   * @param \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $session
+   *   The AI editorial session.
+   *
+   * @return string
+   *   The session type label, falling back to the bundle machine name.
+   */
+  private function sessionBundleLabel(AiEditorialSessionInterface $session): string {
+    $bundle = $this->sessionEntityTypeManager
+      ->getStorage('ai_editorial_session_type')
+      ->load($session->bundle());
+
+    return (string) ($bundle?->label() ?? $session->bundle());
   }
 
   /**

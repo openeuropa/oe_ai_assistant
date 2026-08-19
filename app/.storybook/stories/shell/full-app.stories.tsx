@@ -50,7 +50,7 @@ export const FullApp: Story = {
       // drafting slice so the artifact pane has content.
       setConfig({
         ...developmentConfig,
-        sessionTitle: "EU AI Act news article",
+        sessionTitle: "Content creation: EU AI Act news article",
         exitUrl: "/",
       });
       seedDraftingPreviewState();
