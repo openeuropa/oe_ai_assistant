@@ -61,7 +61,8 @@ class DraftingPluginDocumentsTest extends AiEditorialSessionKernelTestBase {
       ->createInstance('drafting');
 
     $source = $this->container->getParameter('site.path') . '/document-source.txt';
-    file_put_contents($source, 'Context document contents.');
+    $contents = 'Context document contents.';
+    file_put_contents($source, $contents);
 
     $addRequest = Request::create('', 'POST', [
       'sessionId' => $session->id(),
@@ -94,6 +95,7 @@ class DraftingPluginDocumentsTest extends AiEditorialSessionKernelTestBase {
     $file = $media->get('field_media_context_document')->entity;
     $this->assertInstanceOf(FileInterface::class, $file);
     $this->assertStringStartsWith('private://ai-context-documents/', $file->getFileUri());
+    $this->assertSame(strlen($contents), (int) $file->getSize());
 
     $sessionStorage = $this->container->get('entity_type.manager')
       ->getStorage('ai_editorial_session');
@@ -191,6 +193,51 @@ class DraftingPluginDocumentsTest extends AiEditorialSessionKernelTestBase {
       ->load($session->id());
     $this->assertTrue($reloadedSession->get('context_documents')->isEmpty());
     $this->assertNull($this->container->get('entity_type.manager')->getStorage('media')->load($documentId));
+  }
+
+  /**
+   * Tests document uploads reject unsupported MIME types.
+   */
+  public function testDocumentUploadRejectsUnsupportedMimeType(): void {
+    $owner = $this->createUser();
+    $this->container->get('current_user')->setAccount($owner);
+    $session = $this->createSession($owner);
+    $plugin = $this->container->get(AiAssistantPluginManager::class)
+      ->createInstance('drafting');
+
+    $source = $this->container->getParameter('site.path') . '/unsupported-mime-source';
+    file_put_contents($source, random_bytes(128));
+
+    $request = Request::create('', 'POST', [
+      'sessionId' => $session->id(),
+      'category' => 'context',
+    ], [], [
+      'file' => new UploadedFile(
+        $source,
+        'unsupported-mime.txt',
+        'application/octet-stream',
+        UPLOAD_ERR_OK,
+        TRUE,
+      ),
+    ]);
+
+    try {
+      $plugin->executeAction('add-document', $request);
+      $this->fail('The add-document action did not reject an unsupported MIME type.');
+    }
+    catch (ActionException $e) {
+      $this->assertSame('invalid_request', $e->errorCode);
+      $this->assertSame(400, $e->statusCode);
+      $this->assertSame('The uploaded document MIME type "application/octet-stream" is not allowed.', $e->getMessage());
+    }
+
+    $this->container->get('entity_type.manager')
+      ->getStorage('ai_editorial_session')
+      ->resetCache([$session->id()]);
+    $reloadedSession = $this->container->get('entity_type.manager')
+      ->getStorage('ai_editorial_session')
+      ->load($session->id());
+    $this->assertTrue($reloadedSession->get('context_documents')->isEmpty());
   }
 
   /**
