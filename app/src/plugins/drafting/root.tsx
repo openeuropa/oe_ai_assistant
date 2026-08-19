@@ -211,6 +211,12 @@ function DraftingChat() {
       <div className="flex min-h-0 flex-1">
         {/* Left panel: chat (always visible) */}
         <div className="flex w-2/5 min-h-0 flex-col border-r border-gray-200">
+          {/* Plugin heading confined to the chat column so the artifact
+              pane keeps the full workspace height. Fixed height matching
+              the artifact pane header so the two align side by side. */}
+          <header className="flex h-12 shrink-0 items-center border-b border-gray-200 px-4">
+            <h1 className="text-base font-semibold text-gray-900">Drafting</h1>
+          </header>
           {/* Tabs sit on top of the prompt; each opens a pane over the chat. */}
           <DraftingThread tabs={tabs} />
         </div>

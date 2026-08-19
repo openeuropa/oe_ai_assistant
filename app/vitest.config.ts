@@ -2,6 +2,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { storybookTest } from "@storybook/addon-vitest/vitest-plugin";
+import react from "@vitejs/plugin-react-swc";
 import { playwright } from "@vitest/browser-playwright";
 import { defineConfig } from "vitest/config";
 
@@ -29,8 +30,16 @@ export default defineConfig({
       {
         extends: true,
         plugins: [
+          // The React plugin supplies the automatic JSX runtime for story
+          // files; without it stories fail with "React is not defined".
+          react(),
           storybookTest({ configDir: path.join(dirname, ".storybook") }),
         ],
+        // Build-time flag normally supplied by vite.config.ts; stories that
+        // touch the plugin registry reference it at runtime.
+        define: {
+          __DEV_PLUGINS__: JSON.stringify(false),
+        },
         test: {
           name: "storybook",
           browser: {
