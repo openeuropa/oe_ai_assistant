@@ -44,6 +44,8 @@ class AiEditorialSessionDashboardTest extends AiEditorialSessionBrowserTestBase 
     $this->assertSession()->linkExists('Continue');
     $this->assertSession()->linkByHrefExists($session->toUrl('canonical')->toString());
     $this->assertSession()->linkExists('Delete');
+    // The region-less session template only applies on the session route.
+    $this->assertSession()->responseNotContains('oe-ai-session-page');
 
     $this->clickLink('Continue');
     $this->assertSession()->statusCodeEquals(200);
@@ -289,7 +291,8 @@ class AiEditorialSessionDashboardTest extends AiEditorialSessionBrowserTestBase 
     $session = $this->container->get('entity_type.manager')
       ->getStorage('ai_editorial_session')
       ->load($sessionId);
-    $this->assertSession()->elementExists('css', '#oe-ai-assistant[data-ai-app]');
+    // The module-provided region-less page template wraps the mount.
+    $this->assertSession()->elementExists('css', '.oe-ai-session-page #oe-ai-assistant[data-ai-app]');
     $this->assertSession()->responseContains('oe_ai_assistant/js/init.js');
     $this->assertSession()->responseContains('dist/ai-editorial-assistant.iife.js');
     $this->assertSession()->responseContains('oeAiAssistant');

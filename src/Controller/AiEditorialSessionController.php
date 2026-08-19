@@ -189,15 +189,16 @@ class AiEditorialSessionController extends ControllerBase {
       // The React mount point: a plain <div> with a stable ID that the
       // bundled React app locates via getElementById('oe-ai-assistant').
       // The data-ai-app attribute is a hook for automated tests.
-      // The inline height style reserves viewport space for the assistant
-      // panel below Drupal's toolbar and node action buttons (~250px).
+      // The region-less session page template leaves the whole viewport
+      // to the mount; the displacement variable subtracts whatever the
+      // Drupal toolbar currently occupies at the top.
       'container' => [
         '#type' => 'html_tag',
         '#tag' => 'div',
         '#attributes' => [
           'id' => 'oe-ai-assistant',
           'data-ai-app' => TRUE,
-          'style' => 'height: calc(100vh - 250px) !important;',
+          'style' => 'height: calc(100vh - var(--drupal-displace-offset-top, 0px)) !important;',
         ],
       ],
       '#attached' => [
