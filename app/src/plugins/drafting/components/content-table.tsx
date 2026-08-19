@@ -253,7 +253,7 @@ export function ContentTable({ onSave }: ContentTableProps) {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      {/* Header: fixed height matching the chat column heading. */}
+      {/* Header: fixed height matching the toolbar. */}
       <div className="flex h-12 shrink-0 items-center justify-between border-b border-gray-200 px-4">
         <h2 className="text-base font-semibold text-gray-900">
           Drafted Content

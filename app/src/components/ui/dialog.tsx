@@ -7,7 +7,7 @@
  */
 
 import { X } from "lucide-react";
-import { Dialog as DialogPrimitive } from "radix-ui";
+import { Dialog as DialogPrimitive, VisuallyHidden } from "radix-ui";
 import type * as React from "react";
 
 import { cn } from "@/lib/utils";
@@ -24,6 +24,12 @@ export interface DialogProps {
   children: React.ReactNode;
   /** Optional extra class names for the panel element. */
   className?: string;
+  /**
+   * Hides the header row and body padding for content that brings its
+   * own chrome (title, description, close action). The title is still
+   * rendered visually hidden for accessibility.
+   */
+  hideHeader?: boolean;
 }
 
 /**
@@ -38,6 +44,7 @@ export function Dialog({
   title,
   children,
   className,
+  hideHeader = false,
 }: DialogProps) {
   return (
     <DialogPrimitive.Root
@@ -54,30 +61,38 @@ export function Dialog({
         <DialogPrimitive.Content
           className={cn(
             "fixed left-1/2 top-1/2 z-50 w-full max-w-lg -translate-x-1/2 -translate-y-1/2",
-            "rounded-lg border border-gray-200 bg-white shadow-lg",
+            "overflow-hidden rounded-lg border border-gray-200 bg-white shadow-lg",
             "data-[state=open]:animate-in data-[state=closed]:animate-out",
             "data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
             "data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95",
             className,
           )}
         >
-          {/* Header row: title on the left, close button on the right. */}
-          <div className="flex items-center justify-between border-b border-gray-200 px-5 py-4">
-            <DialogPrimitive.Title className="text-sm font-semibold text-gray-800">
-              {title}
-            </DialogPrimitive.Title>
+          {hideHeader ? (
+            // The content brings its own chrome; keep the title for
+            // screen readers only.
+            <VisuallyHidden.Root>
+              <DialogPrimitive.Title>{title}</DialogPrimitive.Title>
+            </VisuallyHidden.Root>
+          ) : (
+            // Header row: title on the left, close button on the right.
+            <div className="flex items-center justify-between border-b border-gray-200 px-5 py-4">
+              <DialogPrimitive.Title className="text-sm font-semibold text-gray-800">
+                {title}
+              </DialogPrimitive.Title>
 
-            {/* Close button: Radix Close triggers onOpenChange(false). */}
-            <DialogPrimitive.Close
-              className="cursor-pointer rounded-md p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-300"
-              aria-label="Close dialog"
-            >
-              <X size={16} />
-            </DialogPrimitive.Close>
-          </div>
+              {/* Close button: Radix Close triggers onOpenChange(false). */}
+              <DialogPrimitive.Close
+                className="cursor-pointer rounded-md p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-300"
+                aria-label="Close dialog"
+              >
+                <X size={16} />
+              </DialogPrimitive.Close>
+            </div>
+          )}
 
-          {/* Panel body. */}
-          <div className="px-5 py-4">{children}</div>
+          {/* Panel body; headerless content manages its own padding. */}
+          <div className={hideHeader ? undefined : "px-5 py-4"}>{children}</div>
         </DialogPrimitive.Content>
       </DialogPrimitive.Portal>
     </DialogPrimitive.Root>

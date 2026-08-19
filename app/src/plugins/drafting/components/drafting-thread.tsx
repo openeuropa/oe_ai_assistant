@@ -24,7 +24,6 @@ import {
   SendHorizontal,
   X,
 } from "lucide-react";
-import { type PaneTabItem, PaneTabs } from "@/components/ui/pane-tabs";
 import { ToolFallbackCard } from "./tool-uis";
 
 /** Welcome message shown when the chat is empty. */
@@ -249,59 +248,63 @@ function ComposerAttachment() {
   );
 }
 
-/** Chat composer with text input and send. */
+/**
+ * Chat composer arranged like the Claude web interface: the text input
+ * sits on top inside a rounded box with the send button on the bottom
+ * right. The editorial context controls live in the drafting header.
+ */
 function Composer() {
   return (
-    <ComposerPrimitive.Root className="border-t border-gray-200 p-4 pt-3">
-      {/* Pending attachments row (populated by the documents tab). */}
-      <div className="mb-1.5 flex flex-wrap gap-1">
-        <ComposerPrimitive.Attachments
-          components={{ Attachment: ComposerAttachment }}
-        />
-      </div>
+    <ComposerPrimitive.Root className="p-4 pt-2">
+      <div className="rounded-xl border border-gray-300 bg-white shadow-sm focus-within:border-blue-500">
+        {/* Pending attachments row (populated by the documents panel). */}
+        <div className="flex flex-wrap gap-1 empty:hidden [&:not(:empty)]:px-3 [&:not(:empty)]:pt-3">
+          <ComposerPrimitive.Attachments
+            components={{ Attachment: ComposerAttachment }}
+          />
+        </div>
 
-      {/* Input row */}
-      <div className="flex items-end gap-2">
+        {/* Text input on top. */}
         <ComposerPrimitive.Input
           placeholder="Describe the content you want to draft..."
-          className="flex-1 resize-none rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+          className="w-full resize-none border-0 bg-transparent px-3 pt-3 text-sm focus:outline-none"
           autoFocus
         />
-        <ComposerPrimitive.Send className="flex h-9 w-9 cursor-pointer items-center justify-center rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50">
-          <SendHorizontal size={16} />
-        </ComposerPrimitive.Send>
+
+        {/* Bottom row: send on the right. */}
+        <div className="flex items-center justify-end px-2 pb-2">
+          <ComposerPrimitive.Send className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50">
+            <SendHorizontal size={16} />
+          </ComposerPrimitive.Send>
+        </div>
       </div>
     </ComposerPrimitive.Root>
   );
 }
 
-interface DraftingThreadProps {
-  /** Tabs shown on top of the composer; each opens a pane over the chat. */
-  tabs?: PaneTabItem[];
-  /** Opens a tab by id on mount (Storybook/previews). */
-  defaultActiveTabId?: string;
-}
-
-/** Full chat thread with welcome, messages, tabs, and composer. */
-export function DraftingThread({
-  tabs = [],
-  defaultActiveTabId,
-}: DraftingThreadProps) {
+/**
+ * Full chat thread with welcome, messages, and composer. The scroll
+ * container spans the whole chat area so the scrollbar sits at its
+ * outer edge, while the messages and the composer are centered with a
+ * comfortable reading width.
+ */
+export function DraftingThread() {
   return (
     <ThreadPrimitive.Root className="flex min-h-0 flex-1 flex-col">
-      <ThreadPrimitive.Viewport className="flex-1 overflow-y-auto p-4">
-        <WelcomeMessage />
-        <ThreadPrimitive.Messages
-          components={{
-            UserMessage,
-            AssistantMessage,
-          }}
-        />
+      <ThreadPrimitive.Viewport className="flex-1 overflow-y-auto">
+        <div className="mx-auto w-full max-w-3xl p-4">
+          <WelcomeMessage />
+          <ThreadPrimitive.Messages
+            components={{
+              UserMessage,
+              AssistantMessage,
+            }}
+          />
+        </div>
       </ThreadPrimitive.Viewport>
-      {tabs.length > 0 && (
-        <PaneTabs tabs={tabs} defaultActiveId={defaultActiveTabId} />
-      )}
-      <Composer />
+      <div className="mx-auto w-full max-w-3xl">
+        <Composer />
+      </div>
     </ThreadPrimitive.Root>
   );
 }

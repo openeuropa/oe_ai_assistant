@@ -15,9 +15,10 @@ import { FileText, LayoutTemplate, Megaphone } from "lucide-react";
 import { useCallback } from "react";
 import { CardSelectPane } from "@/components/ui/card-select-pane";
 import type { PaneTabItem } from "@/components/ui/pane-tabs";
-import { ArtifactPlaceholder } from "./components/artifact-placeholder";
+import { ArtifactPane } from "./components/artifact-pane";
 import { ContentTable } from "./components/content-table";
 import { DocumentsPanel } from "./components/documents-panel";
+import { DraftingHeader } from "./components/drafting-header";
 import { DraftingThread } from "./components/drafting-thread";
 import { PlanSteps } from "./components/plan-steps";
 import {
@@ -54,6 +55,9 @@ function DraftingChat() {
   const documents = useDraftingDocuments();
   const template = useDraftingTemplate();
   const hasFields = Object.keys(draftedFields).length > 0;
+  // The pane only exists once there is an artifact to show; before that
+  // the chat takes the full workspace width.
+  const hasArtifact = hasFields || plan.length > 0;
 
   /**
    * Splices a local event chip (or error chip) into the thread.
@@ -80,29 +84,27 @@ function DraftingChat() {
     });
   }, [runtime]);
 
-  /** Determine what the right panel shows. */
+  /** Determine what the artifact pane shows. */
   function renderArtifact() {
     if (hasFields) {
       return <ContentTable onSave={handleSave} />;
     }
-    if (plan.length > 0) {
-      return (
-        <div className="flex min-h-0 flex-1 flex-col p-4">
-          <PlanSteps steps={plan} />
-        </div>
-      );
-    }
-    return <ArtifactPlaceholder />;
+    return (
+      <div className="flex min-h-0 flex-1 flex-col p-4">
+        <PlanSteps steps={plan} />
+      </div>
+    );
   }
 
-  // Composer tabs. Each opens a pane over the chat; the save handler appends
-  // a local event chip to the thread on success or an error chip on failure.
+  // Editorial context panels, shown as buttons in the drafting header.
+  // Each opens a centered modal; the save handler appends a local event
+  // chip to the thread on success or an error chip on failure.
   const tabs: PaneTabItem[] = [];
 
   if (tone.enabled) {
     tabs.push({
       id: "tone",
-      icon: <Megaphone size={16} />,
+      icon: <Megaphone size={20} />,
       title: "Tone",
       summary: tone.selectedLabel ?? "Not set",
       render: (close) => (
@@ -150,7 +152,7 @@ function DraftingChat() {
   if (documents.enabled) {
     tabs.push({
       id: "documents",
-      icon: <FileText size={16} />,
+      icon: <FileText size={20} />,
       title: "Documents",
       summary: `${documents.count} documents`,
       render: (close) => (
@@ -171,7 +173,7 @@ function DraftingChat() {
   if (template.enabled) {
     tabs.push({
       id: "templates",
-      icon: <LayoutTemplate size={16} />,
+      icon: <LayoutTemplate size={20} />,
       title: "Templates",
       summary: template.selectedLabel ?? "Not set",
       render: (close) => (
@@ -218,21 +220,22 @@ function DraftingChat() {
       {/* Feed the shell exit guard with this plugin's pending state. */}
       <PendingWorkReporter />
 
-      <div className="flex min-h-0 flex-1">
-        {/* Left panel: chat (always visible) */}
-        <div className="flex w-2/5 min-h-0 flex-col border-r border-gray-200">
-          {/* Plugin heading confined to the chat column so the artifact
-              pane keeps the full workspace height. Fixed height matching
-              the artifact pane header so the two align side by side. */}
-          <header className="flex h-12 shrink-0 items-center border-b border-gray-200 px-4">
-            <h1 className="text-base font-semibold text-gray-900">Drafting</h1>
-          </header>
-          {/* Tabs sit on top of the prompt; each opens a pane over the chat. */}
-          <DraftingThread tabs={tabs} />
-        </div>
+      <div className="flex min-h-0 flex-1 flex-col">
+        {/* Toolbar spanning the whole plugin area: context controls on
+            the left, artifact pane toggle on the right. */}
+        <DraftingHeader tabs={tabs} showPaneToggle={hasArtifact} />
 
-        {/* Right panel: placeholder -> plan steps -> content table */}
-        <div className="flex w-3/5 min-h-0 flex-col">{renderArtifact()}</div>
+        <div className="flex min-h-0 flex-1">
+          {/* Left panel: chat, always flexing into the width the pane
+              leaves free; the thread centers its own content. */}
+          <div className="flex min-h-0 flex-1 flex-col">
+            <DraftingThread />
+          </div>
+
+          {/* Right panel appears once a plan or draft exists: plan steps
+              while generating, then the content table. */}
+          {hasArtifact && <ArtifactPane>{renderArtifact()}</ArtifactPane>}
+        </div>
       </div>
     </AssistantRuntimeProvider>
   );

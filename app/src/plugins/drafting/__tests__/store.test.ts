@@ -14,6 +14,7 @@ describe("drafting plugin state", () => {
       plan: [],
       draftedFields: {},
       selections: {},
+      isArtifactCollapsed: false,
     });
 
     // The conversation lives on the backend; nothing is persisted locally.
@@ -24,6 +25,7 @@ describe("drafting plugin state", () => {
           title: { label: "Title", value: "Draft", type: "string" },
         },
         selections: { tone: "clear-professional" },
+        isArtifactCollapsed: true,
       }),
     ).toEqual({});
   });
@@ -36,6 +38,7 @@ describe("drafting plugin state", () => {
       plan: [],
       draftedFields: {},
       selections: {},
+      isArtifactCollapsed: false,
     });
   });
 

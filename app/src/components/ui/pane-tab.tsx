@@ -35,8 +35,10 @@ export function PaneTab({
       aria-expanded={active}
       className={cn(
         // A single right border per tab avoids doubling between tabs; the
-        // last tab keeps it too, closing the grid on the right.
-        "flex min-w-0 flex-1 cursor-pointer items-center gap-2 border-r border-gray-200 border-b-2 px-3 py-2 text-left transition-colors",
+        // last tab keeps it too, closing the grid on the right. Tabs size
+        // to their content above a shared floor so they stay grouped on
+        // the left with consistent widths.
+        "flex min-w-[250px] cursor-pointer items-start gap-2 border-r border-gray-200 border-b-2 px-3 py-2 text-left transition-colors",
         // A bottom accent underlines the active tab; its pane opens above.
         // Hover mirrors the open (active) styling.
         active
@@ -44,7 +46,8 @@ export function PaneTab({
           : "border-b-transparent bg-white text-gray-700 hover:border-b-blue-600 hover:bg-gray-50 hover:text-blue-700",
       )}
     >
-      <span className="shrink-0">{icon}</span>
+      {/* Icon aligned with the title line at the top of the tab. */}
+      <span className="mt-px shrink-0">{icon}</span>
       <span className="flex min-w-0 flex-col leading-tight">
         <span className="truncate text-xs font-medium">{title}</span>
         {summary != null && summary !== "" && (
