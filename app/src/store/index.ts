@@ -91,7 +91,9 @@ function createPersistedState(): PersistedAppState {
 function createInitialState() {
   return {
     ...createPersistedState(),
-    isSidebarOpen: true,
+    // Collapsed by default: the sidebar must earn its space, and since the
+    // flag is transient every session load starts collapsed again.
+    isSidebarOpen: false,
     pendingWork: {},
   };
 }
