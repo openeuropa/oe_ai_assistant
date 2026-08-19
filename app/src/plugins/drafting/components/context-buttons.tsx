@@ -50,7 +50,7 @@ export function ContextButtons({
               {tab.title}
             </span>
             {tab.summary != null && tab.summary !== "" && (
-              <span className="max-w-40 truncate text-[11px] text-gray-500">
+              <span className="max-w-40 truncate text-xs text-gray-500">
                 {tab.summary}
               </span>
             )}

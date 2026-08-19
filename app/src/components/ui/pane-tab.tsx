@@ -51,7 +51,7 @@ export function PaneTab({
       <span className="flex min-w-0 flex-col leading-tight">
         <span className="truncate text-xs font-medium">{title}</span>
         {summary != null && summary !== "" && (
-          <span className="truncate text-[11px] text-gray-500">{summary}</span>
+          <span className="truncate text-xs text-gray-500">{summary}</span>
         )}
       </span>
     </button>
