@@ -222,8 +222,9 @@ function DraftingChat() {
 
       <div className="flex min-h-0 flex-1">
         {/* Left panel: chat, always flexing into the width the pane
-            leaves free; the thread centers its own content. */}
-        <div className="flex min-h-0 flex-1 flex-col">
+            leaves free; the thread centers its own content. The faint
+            gray well makes the white composer and cards stand out. */}
+        <div className="flex min-h-0 flex-1 flex-col bg-gray-50">
           <DraftingThread tabs={tabs} />
         </div>
 

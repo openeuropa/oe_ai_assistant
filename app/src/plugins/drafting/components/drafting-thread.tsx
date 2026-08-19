@@ -129,7 +129,7 @@ function AssistantText({
   status: { type: string };
 }) {
   return (
-    <div className="text-sm prose prose-sm max-w-none">
+    <div className="chat-markdown text-sm prose prose-sm max-w-none">
       <Streamdown isAnimating={status.type === "running"}>{text}</Streamdown>
     </div>
   );
@@ -137,28 +137,23 @@ function AssistantText({
 
 /**
  * Typing indicator with three pulsating dots, shown in place of
- * the assistant message bubble while the assistant is processing
- * but has not yet started streaming content. Once the first
- * content part arrives, the indicator is replaced by the normal
- * message bubble.
+ * the assistant message while the assistant is processing but has
+ * not yet started streaming content. Once the first content part
+ * arrives, the indicator is replaced by the message text.
  *
  * Uses the animate-typing-pulse Tailwind utility registered
  * via @theme in index.css.
  */
 function TypingIndicator() {
   return (
-    <div className="flex justify-start">
-      <div className="rounded-lg bg-gray-100 px-4 py-3">
-        <div className="flex items-center gap-1.5">
-          {[0, 1, 2].map((i) => (
-            <span
-              key={i}
-              className="inline-block h-2 w-2 animate-typing-pulse rounded-full bg-gray-400"
-              style={{ animationDelay: `${i * 0.2}s` }}
-            />
-          ))}
-        </div>
-      </div>
+    <div className="flex items-center gap-1.5 py-2">
+      {[0, 1, 2].map((i) => (
+        <span
+          key={i}
+          className="inline-block h-2 w-2 animate-typing-pulse rounded-full bg-gray-400"
+          style={{ animationDelay: `${i * 0.2}s` }}
+        />
+      ))}
     </div>
   );
 }
@@ -166,13 +161,13 @@ function TypingIndicator() {
 /**
  * Renders a single assistant message, or the typing indicator
  * when the message has no content yet (waiting for the LLM to
- * start streaming). This ensures the empty chat bubble is never
- * visible -- the user sees pulsating dots until real content
- * arrives.
+ * start streaming), so the user sees pulsating dots until real
+ * content arrives.
  *
- * When every content part is an editorial_event tool-call, the
- * message renders without the gray bubble wrapper so event chips
- * appear at full width, centered by their own styles.
+ * Assistant responses sit directly on the chat surface with no
+ * bubble; only user messages keep one. Event-only messages (all
+ * parts are editorial_event tool-calls) render with a tighter
+ * bottom margin so consecutive chips stay grouped.
  */
 function AssistantMessage() {
   const content = useAuiState((s) => s.message?.content ?? []);
@@ -214,21 +209,18 @@ function AssistantMessage() {
   }
 
   return (
-    <MessagePrimitive.Root
-      className="mb-4 flex justify-start"
-      data-testid="assistant-message"
-    >
-      <div className="max-w-[80%]">
-        <div className="rounded-lg bg-gray-100 px-4 py-2 text-gray-900">
-          <MessagePrimitive.Content
-            components={{
-              Text: AssistantText,
-              tools: { Fallback: ToolFallbackCard },
-            }}
-          />
-        </div>
-        <MessageError />
+    <MessagePrimitive.Root className="mb-4" data-testid="assistant-message">
+      {/* Assistant responses render directly on the chat surface with no
+          bubble; only user messages keep one. */}
+      <div className="text-gray-900">
+        <MessagePrimitive.Content
+          components={{
+            Text: AssistantText,
+            tools: { Fallback: ToolFallbackCard },
+          }}
+        />
       </div>
+      <MessageError />
     </MessagePrimitive.Root>
   );
 }

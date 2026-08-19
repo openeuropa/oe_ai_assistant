@@ -7,7 +7,7 @@
  */
 
 import { X } from "lucide-react";
-import { Dialog as DialogPrimitive, VisuallyHidden } from "radix-ui";
+import { Dialog as DialogPrimitive } from "radix-ui";
 import type * as React from "react";
 
 import { cn } from "@/lib/utils";
@@ -77,10 +77,13 @@ export function Dialog({
         >
           {hideHeader ? (
             // The content brings its own chrome; keep the title for
-            // screen readers only.
-            <VisuallyHidden.Root>
-              <DialogPrimitive.Title>{title}</DialogPrimitive.Title>
-            </VisuallyHidden.Root>
+            // screen readers only. Uses the sr-only utility rather than
+            // Radix VisuallyHidden: the scoped reset reverts inline
+            // styles inside the portal, which would make the visually
+            // hidden title show up.
+            <DialogPrimitive.Title className="sr-only">
+              {title}
+            </DialogPrimitive.Title>
           ) : (
             // Header row: title on the left, close button on the right.
             <div className="flex items-center justify-between border-b border-gray-200 px-5 py-4">

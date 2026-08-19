@@ -341,6 +341,39 @@
   }
 }
 
+/*
+ * Markdown rendered inside chat messages (.chat-markdown). The scoped
+ * reset zeroes padding and margin on every element, which flattens the
+ * list indentation of streamed markdown. These rules live in the
+ * components layer, whose !important declarations outrank the reset
+ * layer, restoring markers, indentation, and paragraph rhythm.
+ */
+@layer components {
+  /* Unscoped on purpose: the same rules must apply in Storybook, where
+     no data-ai-app ancestor exists; the components layer still outranks
+     both the reset and the Tailwind preflight. */
+  .chat-markdown :is(ul, ol) {
+    padding-left: 1.5rem !important;
+    margin-block: 0.5rem !important;
+  }
+
+  .chat-markdown ul {
+    list-style: disc !important;
+  }
+
+  .chat-markdown ol {
+    list-style: decimal !important;
+  }
+
+  .chat-markdown li {
+    margin-block: 0.25rem !important;
+  }
+
+  .chat-markdown p + p {
+    margin-top: 0.75rem !important;
+  }
+}
+
 /* Blink animation for the streaming cursor indicator. */
 @keyframes blink {
   50% {

@@ -19,7 +19,7 @@ export function ArtifactPane({ children }: { children: ReactNode }) {
   return (
     <div
       className={`flex min-h-0 flex-col overflow-hidden transition-[width] duration-300 ease-in-out ${
-        isArtifactCollapsed ? "w-0" : "w-1/2 border-l border-gray-200"
+        isArtifactCollapsed ? "w-0" : "w-1/2 border-l border-gray-200 bg-white"
       }`}
     >
       {children}

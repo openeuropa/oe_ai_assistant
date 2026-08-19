@@ -52,7 +52,7 @@ export function DraftRail() {
   const newestFirst = [...drafts].reverse();
 
   return (
-    <div className="flex w-12 shrink-0 flex-col items-center gap-1.5 overflow-y-auto border-l border-gray-200 bg-gray-50 py-2">
+    <div className="flex w-12 shrink-0 flex-col items-center gap-1.5 overflow-y-auto border-l border-gray-200 bg-white py-2">
       {newestFirst.map((draft, index) => {
         const isActive =
           hasFields &&
@@ -79,7 +79,7 @@ export function DraftRail() {
                 className={`flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-full border text-xs font-medium transition-colors ${
                   isActive
                     ? "border-blue-600 bg-blue-600 text-white hover:bg-blue-700"
-                    : "border-gray-300 bg-white text-gray-600 hover:border-gray-400 hover:bg-gray-100"
+                    : "border-gray-300 bg-gray-100 text-gray-600 hover:bg-gray-200"
                 }`}
               >
                 {isActive ? (

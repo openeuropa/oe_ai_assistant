@@ -91,7 +91,27 @@ const transcript: SessionMessage[] = [
   },
   {
     role: "assistant",
-    content: "Here is a first draft based on the news article structure.",
+    content:
+      "Here is a first draft based on the news article structure. I went " +
+      "through the briefing points you provided and organised the piece " +
+      "around the entry into force date, the risk-based approach, and the " +
+      "obligations that apply to providers of high-risk systems.\n\n" +
+      "A few editorial notes on the choices I made:\n\n" +
+      "- The headline leads with the date because that is the news hook; " +
+      "the regulation itself has been covered extensively since the " +
+      "political agreement, so the novelty is the legal effect starting " +
+      "today.\n" +
+      "- The summary paragraph deliberately avoids the phrase 'world " +
+      "first' since the claim is contested for narrow-scope laws in other " +
+      "jurisdictions; 'first comprehensive rules' is the safer wording " +
+      "used by the institutions.\n" +
+      "- The body keeps the timeline concrete: twelve months for " +
+      "national authorities, twenty-four months for most obligations, " +
+      "thirty-six for high-risk systems embedded in regulated products.\n\n" +
+      "If you want a stronger political angle, I can rework the middle " +
+      "section around the member state positions instead of the " +
+      "implementation timeline. Review the draft on the right and tell me " +
+      "what to adjust.",
     toolCalls: [
       {
         function: { name: "draft_content" },
@@ -141,7 +161,14 @@ const transcript: SessionMessage[] = [
   },
   {
     role: "assistant",
-    content: "The draft has been saved as an unpublished revision.",
+    content:
+      "The draft has been saved as an unpublished revision. Nothing has " +
+      "been published: the revision sits in the moderation queue and the " +
+      "live page is untouched until an editor with publishing rights " +
+      "approves it. You can keep iterating here in the meantime; every " +
+      "save creates a separate revision, so earlier versions remain " +
+      "recoverable from the content history if you ever need to roll " +
+      "back to a previous state of the article.",
     toolCalls: [{ function: { name: "save_draft_revision" }, result: {} }],
   },
   {
@@ -257,8 +284,8 @@ export function FullDraftingPreview() {
       <SaveDraftRevisionToolUI />
 
       <div className="flex min-h-0 flex-1 bg-white">
-        {/* Left panel: chat with the context buttons under the composer. */}
-        <div className="flex min-h-0 flex-1 flex-col">
+        {/* Left panel: chat in the faint gray well, as in the root. */}
+        <div className="flex min-h-0 flex-1 flex-col bg-gray-50">
           <DraftingThread
             tabs={[
               {
