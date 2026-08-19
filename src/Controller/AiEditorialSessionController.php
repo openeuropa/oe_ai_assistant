@@ -136,6 +136,11 @@ class AiEditorialSessionController extends ControllerBase {
       // app persists in localStorage, so different sessions never share
       // frontend state while collaborating users on the same session do.
       'sessionId' => $sessionId,
+      // Session title shown by the app shell header.
+      'sessionTitle' => (string) $session->label(),
+      // Where the exit control returns the editor to: the AI editorial
+      // sessions dashboard.
+      'exitUrl' => Url::fromRoute('entity.ai_editorial_session.collection')->toString(),
       // List of plugin IDs that should be available in the UI for this node.
       // The React app only registers plugins whose IDs appear in this list,
       // allowing server-side control over which tools are shown per context.

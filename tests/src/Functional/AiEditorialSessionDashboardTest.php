@@ -286,6 +286,9 @@ class AiEditorialSessionDashboardTest extends AiEditorialSessionBrowserTestBase 
    *   The expected AI editorial session entity ID.
    */
   protected function assertSessionAppPage(string $bundle, string $sessionId): void {
+    $session = $this->container->get('entity_type.manager')
+      ->getStorage('ai_editorial_session')
+      ->load($sessionId);
     $this->assertSession()->elementExists('css', '#oe-ai-assistant[data-ai-app]');
     $this->assertSession()->responseContains('oe_ai_assistant/js/init.js');
     $this->assertSession()->responseContains('dist/ai-editorial-assistant.iife.js');
@@ -293,6 +296,8 @@ class AiEditorialSessionDashboardTest extends AiEditorialSessionBrowserTestBase 
     $this->assertSession()->responseContains('"apiBaseUrl":"\/api\/ai"');
     $this->assertSession()->responseContains('"userId":"' . $this->loggedInUser->id() . '"');
     $this->assertSession()->responseContains('"sessionId":"' . $sessionId . '"');
+    $this->assertSession()->responseContains('"sessionTitle":' . json_encode($session->label()));
+    $this->assertSession()->responseContains('"exitUrl":"\/admin\/content\/ai"');
     $this->assertSession()->responseContains('"enabledPlugins":["echo","notes","drafting"]');
     $this->assertSession()->responseContains('"entityTypeId":"node"');
     $this->assertSession()->responseContains('"bundle":"' . $bundle . '"');
