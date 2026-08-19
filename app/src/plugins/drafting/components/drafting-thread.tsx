@@ -8,6 +8,7 @@
  */
 
 import {
+  ActionBarPrimitive,
   AttachmentPrimitive,
   ComposerPrimitive,
   MessagePrimitive,
@@ -19,6 +20,8 @@ import { Streamdown } from "streamdown";
 import "streamdown/styles.css";
 import {
   AlertCircle,
+  Check,
+  Copy,
   FileText,
   PenLine,
   SendHorizontal,
@@ -159,6 +162,44 @@ function TypingIndicator() {
 }
 
 /**
+ * Formats a message timestamp as a compact local date with 24h time.
+ */
+function formatMessageTime(createdAt: Date): string {
+  return createdAt.toLocaleString(undefined, {
+    day: "numeric",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+}
+
+/**
+ * Action row under an assistant message: the copy-to-clipboard control
+ * (provided by assistant-ui's action bar) and the message timestamp.
+ * Hidden while the message is still streaming.
+ */
+function AssistantMessageFooter() {
+  const isCopied = useAuiState((s) => s.message.isCopied);
+  const createdAt = useAuiState((s) => s.message.createdAt);
+
+  return (
+    <ActionBarPrimitive.Root
+      hideWhenRunning
+      className="mt-1 flex items-center gap-2 text-xs text-gray-400"
+    >
+      <ActionBarPrimitive.Copy
+        aria-label="Copy message"
+        className="flex cursor-pointer items-center rounded-md p-1 hover:bg-gray-200 hover:text-gray-600"
+      >
+        {isCopied ? <Check size={14} /> : <Copy size={14} />}
+      </ActionBarPrimitive.Copy>
+      <span>{formatMessageTime(createdAt)}</span>
+    </ActionBarPrimitive.Root>
+  );
+}
+
+/**
  * Renders a single assistant message, or the typing indicator
  * when the message has no content yet (waiting for the LLM to
  * start streaming), so the user sees pulsating dots until real
@@ -182,6 +223,14 @@ function AssistantMessage() {
         part.type === "tool-call" &&
         (part as { toolName?: string }).toolName === "editorial_event",
     );
+
+  // The copy/timestamp footer only makes sense under textual replies;
+  // tool-call-only messages (draft cards, saves) render without it.
+  const hasText = content.some(
+    (part) =>
+      part.type === "text" &&
+      ((part as { text?: string }).text ?? "").trim().length > 0,
+  );
 
   // Show pulsating dots while waiting for the first content
   // part (text or tool call) to arrive from the backend.
@@ -221,6 +270,7 @@ function AssistantMessage() {
         />
       </div>
       <MessageError />
+      {hasText && <AssistantMessageFooter />}
     </MessagePrimitive.Root>
   );
 }
@@ -264,10 +314,10 @@ function Composer({
           />
         </div>
 
-        {/* Text input on top. */}
+        {/* Text input on top, sized like the conversation messages. */}
         <ComposerPrimitive.Input
           placeholder="Describe the content you want to draft..."
-          className="w-full resize-none border-0 bg-transparent px-3 pt-3 text-sm focus:outline-none"
+          className="w-full resize-none border-0 bg-transparent px-3 pt-3 text-base focus:outline-none"
           autoFocus
         />
 
