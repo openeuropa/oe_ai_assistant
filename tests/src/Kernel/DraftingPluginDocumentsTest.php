@@ -196,16 +196,48 @@ class DraftingPluginDocumentsTest extends AiEditorialSessionKernelTestBase {
   }
 
   /**
-   * Tests document uploads reject unsupported MIME types.
+   * Tests document uploads allow configured extensions with generic MIME types.
    */
-  public function testDocumentUploadRejectsUnsupportedMimeType(): void {
+  public function testDocumentUploadAllowsGenericMimeTypeForConfiguredExtension(): void {
     $owner = $this->createUser();
     $this->container->get('current_user')->setAccount($owner);
     $session = $this->createSession($owner);
     $plugin = $this->container->get(AiAssistantPluginManager::class)
       ->createInstance('drafting');
 
-    $source = $this->container->getParameter('site.path') . '/unsupported-mime-source';
+    $source = $this->container->getParameter('site.path') . '/generic-mime-source.txt';
+    file_put_contents($source, 'Context document contents.');
+
+    $request = Request::create('', 'POST', [
+      'sessionId' => $session->id(),
+      'category' => 'context',
+    ], [], [
+      'file' => new UploadedFile(
+        $source,
+        'generic-mime.txt',
+        'application/octet-stream',
+        UPLOAD_ERR_OK,
+        TRUE,
+      ),
+    ]);
+
+    $response = $plugin->executeAction('add-document', $request);
+
+    $this->assertSame('generic-mime.txt', $response['document']['title']);
+    $this->assertSame('txt', $response['document']['meta']['type']);
+  }
+
+  /**
+   * Tests document uploads reject unsupported extensions.
+   */
+  public function testDocumentUploadRejectsUnsupportedExtension(): void {
+    $owner = $this->createUser();
+    $this->container->get('current_user')->setAccount($owner);
+    $session = $this->createSession($owner);
+    $plugin = $this->container->get(AiAssistantPluginManager::class)
+      ->createInstance('drafting');
+
+    $source = $this->container->getParameter('site.path') . '/unsupported-extension-source';
     file_put_contents($source, random_bytes(128));
 
     $request = Request::create('', 'POST', [
@@ -214,7 +246,7 @@ class DraftingPluginDocumentsTest extends AiEditorialSessionKernelTestBase {
     ], [], [
       'file' => new UploadedFile(
         $source,
-        'unsupported-mime.txt',
+        'unsupported-extension.exe',
         'application/octet-stream',
         UPLOAD_ERR_OK,
         TRUE,
@@ -223,12 +255,12 @@ class DraftingPluginDocumentsTest extends AiEditorialSessionKernelTestBase {
 
     try {
       $plugin->executeAction('add-document', $request);
-      $this->fail('The add-document action did not reject an unsupported MIME type.');
+      $this->fail('The add-document action did not reject an unsupported extension.');
     }
     catch (ActionException $e) {
       $this->assertSame('invalid_request', $e->errorCode);
       $this->assertSame(400, $e->statusCode);
-      $this->assertSame('The uploaded document MIME type "application/octet-stream" is not allowed.', $e->getMessage());
+      $this->assertSame('The uploaded document extension "exe" is not allowed.', $e->getMessage());
     }
 
     $this->container->get('entity_type.manager')
