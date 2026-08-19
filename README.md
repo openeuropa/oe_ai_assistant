@@ -151,3 +151,36 @@ ddev build-app
 ddev phpcs
 ddev phpcbf    # Auto-fix violations
 ```
+
+## Patches
+
+This module ships a patch for `drupal/ai_agents` under `patches/`, declared in `composer.json` via
+`cweagans/composer-patches`. The patch path is relative, so it resolves correctly for this repository's own
+`composer install`.
+
+If your project relies on `cweagans/composer-patches` v2's automatic "patches from dependencies" discovery, the
+relative path will **not** resolve for you: it is applied against your project's root, not this package's install
+path inside `vendor/`. To apply the patch in that case:
+
+1. Copy `vendor/openeuropa/oe_ai_assistant/patches/ai-agents-agent-wrapper-extra-tags.patch` into your own project.
+2. Declare it yourself in your project's `composer.json`:
+   ```json
+   "extra": {
+       "patches": {
+           "drupal/ai_agents": {
+               "Keep setUserInterface extra tags on the entity wrapper (getExtraTags)": "patches/ai-agents-agent-wrapper-extra-tags.patch"
+           }
+       }
+   }
+   ```
+3. Disable automatic dependency-patch discovery so composer-patches doesn't also try (and fail) to resolve the
+   original relative path from this module:
+   ```json
+   "extra": {
+       "composer-patches": {
+           "ignore-dependency-patches": true
+       }
+   }
+   ```
+   Note this disables auto-discovered patches from *all* dependencies, not just this one — if you rely on other
+   dependency-declared patches, you'll need to re-declare those the same way.
