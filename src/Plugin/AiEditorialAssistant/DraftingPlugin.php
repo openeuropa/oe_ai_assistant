@@ -10,7 +10,6 @@ use Drupal\ai\OperationType\Chat\Tools\ToolsFunctionInput;
 use Drupal\ai_agents\PluginManager\AiAgentManager;
 use Drupal\Core\File\FileExists;
 use Drupal\Core\File\FileSystemInterface;
-use Drupal\Core\File\MimeType\MimeTypeMapInterface;
 use Drupal\file\FileInterface;
 use Drupal\file\FileRepositoryInterface;
 use Drupal\media\MediaInterface;
@@ -31,7 +30,6 @@ use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\File\UploadedFile;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
-use Symfony\Component\Mime\MimeTypes;
 
 /**
  * Drafting plugin: AI-powered content drafting with SSE streaming.
@@ -127,13 +125,6 @@ class DraftingPlugin extends AiAssistantPluginBase {
   protected DocumentSerializerInterface $documentSerializer;
 
   /**
-   * The MIME type map.
-   *
-   * @var \Drupal\Core\File\MimeType\MimeTypeMapInterface
-   */
-  protected MimeTypeMapInterface $mimeTypeMap;
-
-  /**
    * {@inheritdoc}
    */
   public static function create(
@@ -152,7 +143,6 @@ class DraftingPlugin extends AiAssistantPluginBase {
     $instance->fileRepository = $container->get('file.repository');
     $instance->fileSystem = $container->get('file_system');
     $instance->documentSerializer = $container->get(DocumentSerializerInterface::class);
-    $instance->mimeTypeMap = $container->get(MimeTypeMapInterface::class);
     return $instance;
   }
 
@@ -483,7 +473,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
         400,
       );
     }
-    $this->validateUploadedDocumentMimeType($upload, $category);
+    $this->validateUploadedDocumentExtension($upload, $category);
 
     $managedFile = $this->saveUploadedDocument($upload);
     $managedFile->setPermanent();
@@ -646,14 +636,14 @@ class DraftingPlugin extends AiAssistantPluginBase {
   }
 
   /**
-   * Validates the uploaded document MIME type against the media field config.
+   * Validates the uploaded document extension against the media field config.
    *
    * @param \Symfony\Component\HttpFoundation\File\UploadedFile $upload
    *   The uploaded file.
    * @param array $category
    *   The resolved category storage details.
    */
-  private function validateUploadedDocumentMimeType(UploadedFile $upload, array $category): void {
+  private function validateUploadedDocumentExtension(UploadedFile $upload, array $category): void {
     $fieldConfig = $this->entityTypeManager->getStorage('field_config')
       ->load('media.' . $category['mediaBundle'] . '.' . $category['sourceField']);
     $extensions = preg_split(
@@ -662,20 +652,12 @@ class DraftingPlugin extends AiAssistantPluginBase {
       -1,
       PREG_SPLIT_NO_EMPTY,
     ) ?: [];
-    $allowedMimeTypes = [];
-    foreach ($extensions as $extension) {
-      $mimeType = $this->mimeTypeMap->getMimeTypeForExtension($extension);
-      if ($mimeType !== NULL) {
-        $allowedMimeTypes[] = $mimeType;
-      }
-    }
+    $extension = strtolower($upload->getClientOriginalExtension());
 
-    $mimeType = MimeTypes::getDefault()->guessMimeType($upload->getPathname()) ?? 'application/octet-stream';
-
-    if (!in_array($mimeType, array_unique($allowedMimeTypes), TRUE)) {
+    if (!in_array($extension, $extensions, TRUE)) {
       throw new ActionException(
         'invalid_request',
-        sprintf('The uploaded document MIME type "%s" is not allowed.', $mimeType),
+        sprintf('The uploaded document extension "%s" is not allowed.', $extension),
         400,
       );
     }
