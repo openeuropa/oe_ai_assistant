@@ -54,17 +54,24 @@ export function Dialog({
       }}
     >
       <DialogPrimitive.Portal>
-        {/* Dimmed overlay behind the panel. */}
-        <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-black/40 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0" />
+        {/* Dimmed overlay behind the panel. The data-ai-app attribute
+            re-applies the scoped CSS reset inside the portal, which
+            renders outside the app mount into the host page body. */}
+        <DialogPrimitive.Overlay
+          data-ai-app=""
+          className="fixed inset-0 z-50 bg-black/40 data-[state=open]:animate-in data-[state=open]:fade-in-0"
+        />
 
-        {/* Centered content panel. */}
+        {/* Centered content panel; closes without an exit animation. The
+            explicit h-auto overrides the 100vh container baseline that
+            the data-ai-app reset scope would otherwise apply. */}
         <DialogPrimitive.Content
+          data-ai-app=""
           className={cn(
-            "fixed left-1/2 top-1/2 z-50 w-full max-w-lg -translate-x-1/2 -translate-y-1/2",
+            "fixed left-1/2 top-1/2 z-50 h-auto w-full max-w-lg -translate-x-1/2 -translate-y-1/2",
             "overflow-hidden rounded-lg border border-gray-200 bg-white shadow-lg",
-            "data-[state=open]:animate-in data-[state=closed]:animate-out",
-            "data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
-            "data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95",
+            "data-[state=open]:animate-in",
+            "data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95",
             className,
           )}
         >

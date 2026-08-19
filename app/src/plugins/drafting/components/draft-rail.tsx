@@ -10,7 +10,7 @@
  */
 
 import { X } from "lucide-react";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { openSessionDraft, useSessionDrafts } from "../session-drafts";
 import { setDraftingState, useDraftingSlice } from "../store";
 
@@ -21,13 +21,28 @@ export function DraftRail() {
   const hasFields = Object.keys(draftedFields).length > 0;
   const latest = drafts[drafts.length - 1];
 
-  // Auto-open the latest draft when a session loads with drafts but the
-  // pane has nothing to show yet (e.g. after a reload).
+  // Tracks the newest version already handled so switching between old
+  // drafts never re-triggers the activation below.
+  const lastSeenVersion = useRef<number | null>(null);
+
+  // React to a new latest draft: on session load with an empty pane,
+  // open it; when it was just generated live (the streamed fields are
+  // already showing), mark its rail button active and keep the pane
+  // expanded so the button reads as the closing X.
   useEffect(() => {
-    if (!hasFields && latest) {
-      openSessionDraft(latest);
+    if (!latest || latest.version === lastSeenVersion.current) {
+      return;
     }
-  }, [hasFields, latest]);
+    lastSeenVersion.current = latest.version;
+    if (!hasFields) {
+      openSessionDraft(latest);
+      return;
+    }
+    setDraftingState({
+      activeDraftVersion: latest.version,
+      isArtifactCollapsed: false,
+    });
+  }, [latest, hasFields]);
 
   // Newest on top: the index is version-ascending, so display reversed.
   const newestFirst = [...drafts].reverse();
