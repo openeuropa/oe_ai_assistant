@@ -5,6 +5,8 @@ import type { AppInitConfig } from "./config";
 export const developmentConfig = {
   userId: "dev-editor",
   sessionId: "dev-session",
+  sessionTitle: "Dev editorial session",
+  exitUrl: "/",
   pluginConfig: {
     drafting: {
       entityTypeId: "node",
