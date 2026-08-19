@@ -29,8 +29,15 @@ import { useDraftingDocuments } from "./hooks/use-drafting-documents";
 import { useDraftingRuntime } from "./hooks/use-drafting-runtime";
 import { useDraftingTemplate } from "./hooks/use-drafting-template";
 import { useDraftingTone } from "./hooks/use-drafting-tone";
+import { useReportPendingWork } from "./hooks/use-report-pending-work";
 import { useDraftingSlice } from "./store";
 import { appendEventToThread } from "./thread-events";
+
+/** Bridges the runtime's pending state into the shell store. */
+function PendingWorkReporter() {
+  useReportPendingWork();
+  return null;
+}
 
 /**
  * Inner component that owns the assistant-ui runtime and all runtime-dependent
@@ -207,6 +214,9 @@ function DraftingChat() {
       <DraftContentToolUI />
       <EditorialEventToolUI />
       <SaveDraftRevisionToolUI />
+
+      {/* Feed the shell exit guard with this plugin's pending state. */}
+      <PendingWorkReporter />
 
       <div className="flex min-h-0 flex-1">
         {/* Left panel: chat (always visible) */}

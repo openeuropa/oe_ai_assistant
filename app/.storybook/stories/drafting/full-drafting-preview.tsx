@@ -24,6 +24,7 @@ import {
 } from "../../../src/plugins/drafting/components/tool-uis";
 import { useDraftingDocuments } from "../../../src/plugins/drafting/hooks/use-drafting-documents";
 import { useDraftingTemplate } from "../../../src/plugins/drafting/hooks/use-drafting-template";
+import { useReportPendingWork } from "../../../src/plugins/drafting/hooks/use-report-pending-work";
 import { toThreadMessages } from "../../../src/plugins/drafting/hydrate-transcript";
 import {
   draftingSliceConfig,
@@ -175,6 +176,12 @@ export function seedDraftingPreviewState(): void {
   });
 }
 
+/** Bridges the mock runtime's pending state into the shell store. */
+function PendingWorkReporter() {
+  useReportPendingWork();
+  return null;
+}
+
 /** Full drafting plugin UI preview; fills its parent flex container. */
 export function FullDraftingPreview() {
   const [toneId, setToneId] = useState(defaultToneId);
@@ -200,6 +207,8 @@ export function FullDraftingPreview() {
 
   return (
     <AssistantRuntimeProvider runtime={runtime}>
+      {/* Feed the shell exit guard with the mock runtime's pending state. */}
+      <PendingWorkReporter />
       {/* Register tool call renderers so they appear inline in chat. */}
       <DraftContentToolUI />
       <EditorialEventToolUI />
