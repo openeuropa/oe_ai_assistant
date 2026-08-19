@@ -152,6 +152,40 @@ const transcript: SessionMessage[] = [
   },
 ];
 
+// Additional revisions (versions 3 to 10) so the previews show how the
+// draft rail feels in a long session with many versions.
+for (let version = 3; version <= 10; version++) {
+  transcript.push(
+    {
+      role: "user",
+      content: `Revise the article again, revision round ${version}.`,
+    },
+    {
+      role: "assistant",
+      content: `I refined the draft once more; this is draft ${version}.`,
+      toolCalls: [
+        {
+          function: { name: "draft_content" },
+          result: {
+            version,
+            context: {
+              tone: { id: "formal", label: "Formal" },
+              template: { id: "news-article", label: "News article" },
+              documents: [],
+            },
+            fields: {
+              ...draftFields,
+              title: [
+                { value: `EU AI Act enters into force (revision ${version})` },
+              ],
+            },
+          },
+        },
+      ],
+    },
+  );
+}
+
 /** Tone options mirroring the standalone development config. */
 const toneOptions = [
   {
@@ -177,7 +211,7 @@ export function seedDraftingPreviewState(): void {
     ...draftingSliceConfig.initialState,
     draftedFields: draftFields,
     // The seeded fields belong to the latest draft in the transcript.
-    activeDraftVersion: 2,
+    activeDraftVersion: 10,
   });
 }
 
