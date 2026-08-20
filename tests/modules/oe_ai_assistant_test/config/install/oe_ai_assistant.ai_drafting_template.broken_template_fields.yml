@@ -1,0 +1,16 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - field.field.node.oe_news.field_teaser
+    - node.type.oe_news
+  module:
+    - oe_ai_assistant
+id: broken_template_fields
+label: 'Broken template (missing required title)'
+description: 'Intentionally omits the required title field, to test config install safety.'
+content_type: oe_news
+fields:
+  field_teaser:
+    prompt: 'Teaser text.'
+defaults: {  }

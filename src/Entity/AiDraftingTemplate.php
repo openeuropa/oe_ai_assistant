@@ -67,6 +67,23 @@ use Symfony\Component\Validator\ConstraintViolationListInterface;
 final class AiDraftingTemplate extends ConfigEntityBase implements AiDraftingTemplateInterface {
 
   /**
+   * Violation code used for "required field missing" violations.
+   *
+   * Lets preSave() and isInstallable() distinguish these from structural
+   * violations, which are never tolerated.
+   */
+  private const REQUIRED_FIELD_MISSING_CODE = 'oe_ai_assistant.required_field_missing';
+
+  /**
+   * Whether isInstallable() pre-cleared a save with missing required fields.
+   *
+   * Runtime-only, not part of config_export: config install saves entities
+   * with isSyncing() FALSE, so preSave() needs another way to know this
+   * particular save was already vetted by isInstallable().
+   */
+  private bool $allowMissingRequiredFieldsOnSave = FALSE;
+
+  /**
    * The ID.
    */
   protected string $id = '';
@@ -217,6 +234,8 @@ final class AiDraftingTemplate extends ConfigEntityBase implements AiDraftingTem
         $this,
         $path_prefix === '' ? "fields.$field_name" : "$path_prefix.fields.$field_name",
         NULL,
+        NULL,
+        self::REQUIRED_FIELD_MISSING_CODE,
       ));
     }
 
@@ -261,10 +280,79 @@ final class AiDraftingTemplate extends ConfigEntityBase implements AiDraftingTem
     $result = $this->validate();
 
     if (count($result) > 0) {
-      throw new TemplateValidationException($this->id(), $result);
+      $tolerated = ($this->isSyncing() || $this->allowMissingRequiredFieldsOnSave)
+        && $this->hasOnlyRequiredFieldViolations($result);
+      if ($tolerated) {
+        $this->logValidationFailure($result, 'saved with missing required fields');
+      }
+      else {
+        throw new TemplateValidationException($this->id(), $result);
+      }
     }
 
     parent::preSave($storage);
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function isInstallable(): bool {
+    $result = $this->validate();
+
+    if (count($result) === 0) {
+      return TRUE;
+    }
+
+    if ($this->hasOnlyRequiredFieldViolations($result)) {
+      $this->logValidationFailure($result, 'installed with missing required fields');
+      $this->allowMissingRequiredFieldsOnSave = TRUE;
+      return TRUE;
+    }
+
+    $this->logValidationFailure($result, 'skipped during config install');
+    return FALSE;
+  }
+
+  /**
+   * Checks whether a violation list contains only required-field violations.
+   *
+   * @param \Symfony\Component\Validator\ConstraintViolationListInterface $violations
+   *   The validation violations.
+   *
+   * @return bool
+   *   TRUE if every violation is a missing-required-field violation.
+   */
+  private function hasOnlyRequiredFieldViolations(ConstraintViolationListInterface $violations): bool {
+    foreach ($violations as $violation) {
+      if ($violation->getCode() !== self::REQUIRED_FIELD_MISSING_CODE) {
+        return FALSE;
+      }
+    }
+
+    return TRUE;
+  }
+
+  /**
+   * Logs template validation violations without aborting the caller.
+   *
+   * @param \Symfony\Component\Validator\ConstraintViolationListInterface $result
+   *   The validation violations.
+   * @param string $outcome
+   *   Short description of what happened to the entity, for the log message.
+   */
+  private function logValidationFailure(ConstraintViolationListInterface $result, string $outcome): void {
+    $errors = [];
+    foreach ($result as $violation) {
+      $errors[] = (string) $violation->getMessage();
+    }
+    \Drupal::logger('oe_ai_assistant')->error(
+      "AI drafting template '%id' %outcome:\n- %errors",
+      [
+        '%id' => $this->id(),
+        '%outcome' => $outcome,
+        '%errors' => implode("\n- ", $errors),
+      ],
+    );
   }
 
   /**

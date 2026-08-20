@@ -175,6 +175,11 @@ class DraftingSchemaProviderTest extends KernelTestBase {
 
     $this->assertSame([
       [
+        'id' => 'broken_template_fields',
+        'label' => 'Broken template (missing required title)',
+        'description' => 'Intentionally omits the required title field, to test config install safety.',
+      ],
+      [
         'id' => 'news_default',
         'label' => 'News article (default)',
         'description' => 'Standard news article with title, teaser, and body.',
@@ -207,7 +212,7 @@ class DraftingSchemaProviderTest extends KernelTestBase {
 
     $ids = array_column($this->provider()->availableTemplates('oe_news'), 'id');
 
-    $this->assertSame(['news_default'], $ids);
+    $this->assertSame(['broken_template_fields', 'news_default'], $ids);
   }
 
   /**
