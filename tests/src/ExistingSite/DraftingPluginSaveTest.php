@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\oe_ai_assistant\ExistingSite;
 
+use Drupal\user\UserInterface;
 use weitzman\DrupalTestTraits\ExistingSiteBase;
 
 /**
@@ -26,16 +27,20 @@ class DraftingPluginSaveTest extends ExistingSiteBase {
    */
   protected function setUp(): void {
     parent::setUp();
+    if (!\Drupal::moduleHandler()->moduleExists('entity_version')) {
+      \Drupal::service('module_installer')->install(['entity_version']);
+    }
+    \Drupal::service('entity_version.entity_version_installer')
+      ->install('node', ['oe_news'], [
+        'major' => 0,
+        'minor' => 1,
+        'patch' => 0,
+      ]);
     $this->trackEntityType('node');
     $this->trackEntityType('paragraph');
-  }
-
-  /**
-   * {@inheritdoc}
-   */
-  public function tearDown(): void {
-    $this->deleteTestEntities();
-    parent::tearDown();
+    $this->trackEntityType('ai_content_provenance');
+    $this->trackEntityType('ai_editorial_session');
+    $this->trackEntityType('ai_conversation_message');
   }
 
   /**
@@ -48,9 +53,12 @@ class DraftingPluginSaveTest extends ExistingSiteBase {
     ]);
     $this->drupalLogin($user);
 
+    $context = $this->prepareDraftContext($user);
+
     $result = $this->httpPost('/api/ai/plugins/drafting/save', [
       'entityTypeId' => 'node',
       'bundle' => 'oe_news',
+      'sessionId' => $context['session']->id(),
       'fields' => [
         'title' => [['value' => 'Test Save']],
       ],
@@ -70,6 +78,171 @@ class DraftingPluginSaveTest extends ExistingSiteBase {
     // Owner must be the current user, set explicitly post-deserialize.
     $this->assertEquals((int) $user->id(), (int) $node->getOwnerId(),
       'Saved node owner must be the current user.');
+
+    $provenance = \Drupal::entityTypeManager()->getStorage('ai_content_provenance')->loadByProperties([
+      'entity_type' => 'node',
+      'entity_id' => $nodeId,
+      'revision_id' => $node->getRevisionId(),
+    ]);
+    $this->assertNotEmpty($provenance, 'A provenance record should be created.');
+    $provenance = reset($provenance);
+    $this->assertSame((int) $context['session']->id(), (int) $provenance->get('session')->target_id);
+    $this->assertSame((int) $context['assistant']->id(), (int) $provenance->get('message')->target_id);
+    $this->assertSame((int) $context['template']->id(), (int) $provenance->get('template')->target_id);
+    $this->assertSame(2, (int) $provenance->get('tokens_input')->value);
+    $this->assertSame(3, (int) $provenance->get('tokens_output')->value);
+    $this->assertSame(5, (int) $provenance->get('tokens_total')->value);
+  }
+
+  /**
+   * Tests that save can target a specific draft turn by version.
+   */
+  public function testSaveUsesRequestedDraftVersion(): void {
+    $user = $this->createUser([
+      'use oe ai assistant',
+      'create oe_news content',
+    ]);
+    $this->drupalLogin($user);
+
+    $context = $this->prepareDraftContext($user);
+    $message_storage = \Drupal::entityTypeManager()->getStorage('ai_conversation_message');
+
+    $second_assistant = $message_storage->create([
+      'host_entity_type' => 'ai_editorial_session',
+      'host_entity_id' => (int) $context['session']->id(),
+      'role' => 'assistant',
+      'agent_id' => 'orchestrator',
+      'content' => 'Draft ready again.',
+      'provider' => 'mock',
+      'model' => 'mock-model',
+    ]);
+    $second_assistant->setToolCalls([
+      [
+        'type' => 'function',
+        'function' => ['name' => 'draft_content', 'arguments' => '{}'],
+      ],
+    ]);
+    $second_assistant->save();
+
+    $second_child = $message_storage->create([
+      'host_entity_type' => 'ai_editorial_session',
+      'host_entity_id' => (int) $context['session']->id(),
+      'parent' => (int) $second_assistant->id(),
+      'role' => 'assistant',
+      'agent_id' => 'second-title-agent',
+      'content' => 'Second title slice.',
+      'provider' => 'mock',
+      'model' => 'mock-model',
+    ]);
+    $second_child->setTokenUsage(['input' => 8, 'output' => 9, 'total' => 17]);
+    $second_child->save();
+
+    $first_result = $this->httpPost('/api/ai/plugins/drafting/save', [
+      'entityTypeId' => 'node',
+      'bundle' => 'oe_news',
+      'sessionId' => $context['session']->id(),
+      'draftVersion' => 1,
+      'fields' => [
+        'title' => [['value' => 'Version one']],
+      ],
+    ]);
+    $this->assertEquals(200, $first_result['status'], 'Expected 200 response. Body: ' . json_encode($first_result['body']));
+    $first_node = \Drupal::entityTypeManager()->getStorage('node')->load($first_result['body']['nodeId']);
+    $first_provenance = \Drupal::entityTypeManager()->getStorage('ai_content_provenance')->loadByProperties([
+      'entity_type' => 'node',
+      'entity_id' => $first_result['body']['nodeId'],
+      'revision_id' => $first_node->getRevisionId(),
+    ]);
+    $this->assertNotEmpty($first_provenance);
+    $first_provenance = reset($first_provenance);
+    $this->assertSame((int) $context['assistant']->id(), (int) $first_provenance->get('message')->target_id);
+
+    $second_result = $this->httpPost('/api/ai/plugins/drafting/save', [
+      'entityTypeId' => 'node',
+      'bundle' => 'oe_news',
+      'sessionId' => $context['session']->id(),
+      'draftVersion' => 2,
+      'fields' => [
+        'title' => [['value' => 'Version two']],
+      ],
+    ]);
+    $this->assertEquals(200, $second_result['status'], 'Expected 200 response. Body: ' . json_encode($second_result['body']));
+    $second_node = \Drupal::entityTypeManager()->getStorage('node')->load($second_result['body']['nodeId']);
+    $second_provenance = \Drupal::entityTypeManager()->getStorage('ai_content_provenance')->loadByProperties([
+      'entity_type' => 'node',
+      'entity_id' => $second_result['body']['nodeId'],
+      'revision_id' => $second_node->getRevisionId(),
+    ]);
+    $this->assertNotEmpty($second_provenance);
+    $second_provenance = reset($second_provenance);
+    $this->assertSame((int) $second_assistant->id(), (int) $second_provenance->get('message')->target_id);
+
+    $latest_result = $this->httpPost('/api/ai/plugins/drafting/save', [
+      'entityTypeId' => 'node',
+      'bundle' => 'oe_news',
+      'sessionId' => $context['session']->id(),
+      'fields' => [
+        'title' => [['value' => 'Latest version']],
+      ],
+    ]);
+    $this->assertEquals(200, $latest_result['status'], 'Expected 200 response. Body: ' . json_encode($latest_result['body']));
+    $latest_node = \Drupal::entityTypeManager()->getStorage('node')->load($latest_result['body']['nodeId']);
+    $latest_provenance = \Drupal::entityTypeManager()->getStorage('ai_content_provenance')->loadByProperties([
+      'entity_type' => 'node',
+      'entity_id' => $latest_result['body']['nodeId'],
+      'revision_id' => $latest_node->getRevisionId(),
+    ]);
+    $this->assertNotEmpty($latest_provenance);
+    $latest_provenance = reset($latest_provenance);
+    $this->assertSame((int) $second_assistant->id(), (int) $latest_provenance->get('message')->target_id);
+  }
+
+  /**
+   * Tests that nested child token usage is included in provenance totals.
+   */
+  public function testSaveAggregatesNestedTokenUsage(): void {
+    $user = $this->createUser([
+      'use oe ai assistant',
+      'create oe_news content',
+    ]);
+    $this->drupalLogin($user);
+
+    $context = $this->prepareDraftContext($user);
+    $message_storage = \Drupal::entityTypeManager()->getStorage('ai_conversation_message');
+    $grandchild = $message_storage->create([
+      'host_entity_type' => 'ai_editorial_session',
+      'host_entity_id' => (int) $context['session']->id(),
+      'parent' => (int) $context['child']->id(),
+      'role' => 'assistant',
+      'agent_id' => 'grandchild-agent',
+      'content' => 'Grandchild slice.',
+      'provider' => 'mock',
+      'model' => 'mock-model',
+    ]);
+    $grandchild->setTokenUsage(['input' => 4, 'output' => 6, 'total' => 10]);
+    $grandchild->save();
+
+    $result = $this->httpPost('/api/ai/plugins/drafting/save', [
+      'entityTypeId' => 'node',
+      'bundle' => 'oe_news',
+      'sessionId' => $context['session']->id(),
+      'fields' => [
+        'title' => [['value' => 'Nested totals']],
+      ],
+    ]);
+
+    $this->assertEquals(200, $result['status'], 'Expected 200 response. Body: ' . json_encode($result['body']));
+    $node = \Drupal::entityTypeManager()->getStorage('node')->load($result['body']['nodeId']);
+    $provenance = \Drupal::entityTypeManager()->getStorage('ai_content_provenance')->loadByProperties([
+      'entity_type' => 'node',
+      'entity_id' => $result['body']['nodeId'],
+      'revision_id' => $node->getRevisionId(),
+    ]);
+    $this->assertNotEmpty($provenance);
+    $provenance = reset($provenance);
+    $this->assertSame(6, (int) $provenance->get('tokens_input')->value);
+    $this->assertSame(9, (int) $provenance->get('tokens_output')->value);
+    $this->assertSame(15, (int) $provenance->get('tokens_total')->value);
   }
 
   /**
@@ -88,9 +261,12 @@ class DraftingPluginSaveTest extends ExistingSiteBase {
     ]);
     $this->drupalLogin($user);
 
+    $context = $this->prepareDraftContext($user);
+
     $result = $this->httpPost('/api/ai/plugins/drafting/save', [
       'entityTypeId' => 'node',
       'bundle' => 'oe_news',
+      'sessionId' => $context['session']->id(),
       'fields' => [
         'title' => [['value' => 'Paragraph round-trip']],
         'field_content_paragraphs' => [
@@ -134,9 +310,12 @@ class DraftingPluginSaveTest extends ExistingSiteBase {
     $user = $this->createUser([], NULL, TRUE);
     $this->drupalLogin($user);
 
+    $context = $this->prepareDraftContext($user);
+
     $result = $this->httpPost('/api/ai/plugins/drafting/save', [
       'entityTypeId' => 'node',
       'bundle' => 'nonexistent_bundle',
+      'sessionId' => $context['session']->id(),
       'fields' => [
         'title' => 'x',
       ],
@@ -155,9 +334,12 @@ class DraftingPluginSaveTest extends ExistingSiteBase {
     ]);
     $this->drupalLogin($user);
 
+    $context = $this->prepareDraftContext($user);
+
     $result = $this->httpPost('/api/ai/plugins/drafting/save', [
       'entityTypeId' => 'node',
       'bundle' => 'oe_news',
+      'sessionId' => $context['session']->id(),
       'fields' => [
         'title' => 'Fail',
       ],
@@ -224,6 +406,68 @@ class DraftingPluginSaveTest extends ExistingSiteBase {
         $storage->delete($storage->loadMultiple($newIds));
       }
     }
+  }
+
+  /**
+   * Creates the shared session, template, and triggering assistant turn.
+   *
+   * @return array{session:\Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface, template:\Drupal\Core\Config\Entity\ConfigEntityInterface, assistant:\Drupal\oe_ai_assistant\Entity\AiConversationMessageInterface, child:\Drupal\oe_ai_assistant\Entity\AiConversationMessageInterface}
+   *   The draft context used by the save endpoint.
+   */
+  protected function prepareDraftContext(UserInterface $user): array {
+    $template = \Drupal::entityTypeManager()->getStorage('ai_drafting_template')->create([
+      'id' => 'save_provenance_' . uniqid(),
+      'label' => 'Save provenance',
+      'content_type' => 'oe_news',
+      'fields' => ['title' => ['prompt' => 'x']],
+    ]);
+    $template->save();
+    $this->markEntityForCleanup($template);
+
+    $session = \Drupal::entityTypeManager()->getStorage('ai_editorial_session')->create([
+      'type' => 'content_creation',
+      'uid' => $user->id(),
+      'content_type' => 'oe_news',
+      'template' => $template->id(),
+    ]);
+    $session->save();
+
+    $assistant = \Drupal::entityTypeManager()->getStorage('ai_conversation_message')->create([
+      'host_entity_type' => 'ai_editorial_session',
+      'host_entity_id' => (int) $session->id(),
+      'role' => 'assistant',
+      'agent_id' => 'orchestrator',
+      'content' => 'Draft ready.',
+      'provider' => 'mock',
+      'model' => 'mock-model',
+    ]);
+    $assistant->setToolCalls([
+      [
+        'type' => 'function',
+        'function' => ['name' => 'draft_content', 'arguments' => '{}'],
+      ],
+    ]);
+    $assistant->save();
+
+    $child = \Drupal::entityTypeManager()->getStorage('ai_conversation_message')->create([
+      'host_entity_type' => 'ai_editorial_session',
+      'host_entity_id' => (int) $session->id(),
+      'parent' => (int) $assistant->id(),
+      'role' => 'assistant',
+      'agent_id' => 'title-agent',
+      'content' => 'Title slice.',
+      'provider' => 'mock',
+      'model' => 'mock-model',
+    ]);
+    $child->setTokenUsage(['input' => 2, 'output' => 3, 'total' => 5]);
+    $child->save();
+
+    return [
+      'session' => $session,
+      'template' => $template,
+      'assistant' => $assistant,
+      'child' => $child,
+    ];
   }
 
 }

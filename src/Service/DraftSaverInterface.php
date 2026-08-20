@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Drupal\oe_ai_assistant\Service;
 
+use Drupal\oe_ai_assistant\Entity\AiConversationMessageInterface;
+use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
+
 /**
  * Interface for the draft saving service.
  *
@@ -21,6 +24,10 @@ interface DraftSaverInterface {
    *   The LLM-produced fields map, keyed by field machine name.
    *   Values are in the Drupal serialization format (arrays of
    *   items, e.g. [["value" => "Title"]]).
+   * @param \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $session
+   *   The active editorial session.
+   * @param \Drupal\oe_ai_assistant\Entity\AiConversationMessageInterface $message
+   *   The assistant message that triggered the draft.
    *
    * @return array
    *   An array with 'nodeId' (string) and 'previewUrl' (string).
@@ -31,6 +38,6 @@ interface DraftSaverInterface {
    *   - 'invalid_payload' (400) if the entity builder rejects
    *     the payload.
    */
-  public function save(string $bundle, array $fields): array;
+  public function save(string $bundle, array $fields, AiEditorialSessionInterface $session, AiConversationMessageInterface $message): array;
 
 }
