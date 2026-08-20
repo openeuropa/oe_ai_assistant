@@ -1,14 +1,16 @@
 /**
  * Vertical draft rail on the right edge of the drafting workspace.
  *
- * Always visible; starts empty and gains a version button for every
- * draft produced in the session, newest on top. Clicking a version
- * opens that draft in the artifact pane; clicking the active version
- * again (shown as an X) collapses the pane. Hovering a version shows
- * the draft's chat card in a popover on the left for an at-a-glance
- * preview. The rail scrolls when the session accumulates more drafts
- * than fit. Reopening a session that already has drafts auto-opens the
- * latest one.
+ * Always visible; starts empty and gains a version tab for every draft
+ * produced in the session, newest on top. Clicking a version opens
+ * that draft in the artifact pane; clicking the active version again
+ * (shown as an X) collapses the pane. The active tab is white and sits
+ * flush against the white pane for visual continuity, while inactive
+ * tabs rest on the grayer strip. Hovering a version shows the draft's
+ * chat card in a popover on the left for an at-a-glance preview. The
+ * rail scrolls when the session accumulates more drafts than fit.
+ * Reopening a session that already has drafts auto-opens the latest
+ * one.
  */
 
 import { X } from "lucide-react";
@@ -52,7 +54,9 @@ export function DraftRail() {
   const newestFirst = [...drafts].reverse();
 
   return (
-    <div className="flex w-12 shrink-0 flex-col items-center gap-1.5 overflow-y-auto border-l border-gray-200 bg-white py-2">
+    // Vertical tab strip: no divider against the pane so the active white
+    // tab reads as a continuation of the white draft pane on its left.
+    <div className="flex w-12 shrink-0 flex-col items-stretch gap-1 overflow-y-auto bg-gray-100 py-2 pr-1.5">
       {newestFirst.map((draft, index) => {
         const isActive =
           hasFields &&
@@ -76,10 +80,10 @@ export function DraftRail() {
                     ? setDraftingState({ isArtifactCollapsed: true })
                     : openSessionDraft(draft)
                 }
-                className={`flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-full border text-xs font-medium transition-colors ${
+                className={`flex h-9 w-full shrink-0 cursor-pointer items-center justify-center rounded-r-md text-xs font-medium transition-colors ${
                   isActive
-                    ? "border-blue-600 bg-blue-600 text-white hover:bg-blue-700"
-                    : "border-gray-300 bg-gray-100 text-gray-600 hover:bg-gray-200"
+                    ? "border-y border-r border-gray-200 bg-white text-gray-900"
+                    : "text-gray-600 hover:bg-gray-200 hover:text-gray-900"
                 }`}
               >
                 {isActive ? (

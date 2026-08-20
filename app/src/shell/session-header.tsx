@@ -7,6 +7,7 @@
  * neutral title when the host does not supply one.
  */
 
+import { Bot } from "lucide-react";
 import { getConfig } from "@/config";
 import { ExitControl } from "@/shell/exit-control";
 
@@ -15,7 +16,12 @@ export function SessionHeader() {
 
   return (
     <header className="flex shrink-0 items-center justify-between border-b border-gray-200 bg-white px-4 py-2.5">
-      <h1 className="truncate text-lg font-semibold text-gray-900">{title}</h1>
+      <div className="flex min-w-0 items-center gap-2">
+        <Bot size={22} className="shrink-0 text-gray-700" aria-hidden="true" />
+        <h1 className="truncate text-lg font-semibold text-gray-900">
+          {title}
+        </h1>
+      </div>
       {/* Session-level controls (exit link, future controls). */}
       <div className="flex items-center gap-2">
         <ExitControl />
