@@ -25,6 +25,21 @@ class DocumentSummaryExtractor implements DocumentSummaryExtractorInterface {
   private const string OPERATION_TYPE = 'chat_with_image_vision';
 
   /**
+   * Maximum source document size sent directly to the provider.
+   */
+  private const int MAX_DOCUMENT_BYTES = 20971520;
+
+  /**
+   * Supported document extensions and their provider MIME types.
+   */
+  private const array SUPPORTED_MIME_TYPES = [
+    'docx' => 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'md' => 'text/markdown',
+    'pdf' => 'application/pdf',
+    'txt' => 'text/plain',
+  ];
+
+  /**
    * Media UUIDs currently being summarised by this service instance.
    *
    * @var array<string, bool>
@@ -139,6 +154,9 @@ class DocumentSummaryExtractor implements DocumentSummaryExtractorInterface {
       ));
     }
 
+    $mimeType = $this->resolveMimeType($file);
+    $this->assertSupportedFileSize($file);
+
     $binary = file_get_contents($file->getFileUri());
     if ($binary === FALSE) {
       throw new \RuntimeException(sprintf(
@@ -153,7 +171,7 @@ class DocumentSummaryExtractor implements DocumentSummaryExtractorInterface {
       [
         new DocumentFile(
           $binary,
-          $this->resolveMimeType($file),
+          $mimeType,
           $file->getFilename(),
         ),
       ],
@@ -186,13 +204,29 @@ class DocumentSummaryExtractor implements DocumentSummaryExtractorInterface {
    */
   private function resolveMimeType(FileInterface $file): string {
     $extension = strtolower(pathinfo($file->getFilename(), PATHINFO_EXTENSION));
-    return match ($extension) {
-      'docx' => 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-      'md' => 'text/markdown',
-      'pdf' => 'application/pdf',
-      'txt' => 'text/plain',
-      default => $file->getMimeType() ?: 'application/octet-stream',
-    };
+    if (!isset(self::SUPPORTED_MIME_TYPES[$extension])) {
+      throw new \RuntimeException(sprintf(
+        'The document file "%s" uses unsupported extension "%s". Supported extensions are: %s.',
+        $file->getFilename(),
+        $extension !== '' ? $extension : 'none',
+        implode(', ', array_keys(self::SUPPORTED_MIME_TYPES)),
+      ));
+    }
+
+    return self::SUPPORTED_MIME_TYPES[$extension];
+  }
+
+  /**
+   * Ensures the direct provider payload remains within the MVP size limit.
+   */
+  private function assertSupportedFileSize(FileInterface $file): void {
+    $size = (int) $file->getSize();
+    if ($size > self::MAX_DOCUMENT_BYTES) {
+      throw new \RuntimeException(sprintf(
+        'The document file "%s" is too large to summarise synchronously.',
+        $file->getFilename(),
+      ));
+    }
   }
 
   /**
