@@ -1,5 +1,5 @@
 entity.ai_editorial_session.collection:
   route_name: entity.ai_editorial_session.collection
-  title: 'AI Editorial Assistant'
+  title: 'AI Editorial Sessions'
   base_route: system.admin_content
   weight: 20

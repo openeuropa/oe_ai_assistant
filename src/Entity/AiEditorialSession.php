@@ -17,7 +17,7 @@ use Drupal\user\EntityOwnerTrait;
  * @ContentEntityType(
  *   id = "ai_editorial_session",
  *   label = @Translation("AI editorial session"),
- *   label_collection = @Translation("AI editorial sessions"),
+ *   label_collection = @Translation("AI Editorial Sessions"),
  *   label_singular = @Translation("AI editorial session"),
  *   label_plural = @Translation("AI editorial sessions"),
  *   bundle_label = @Translation("AI editorial session type"),
@@ -88,13 +88,18 @@ class AiEditorialSession extends ContentEntityBase implements AiEditorialSession
     }
 
     if ($this->get('label')->isEmpty()) {
-      $bundle_label = $this->bundle();
+      // Default label from the human readable bundle label, never the
+      // bundle machine name.
+      $bundle = \Drupal::entityTypeManager()
+        ->getStorage('ai_editorial_session_type')
+        ->load($this->bundle());
+      $bundle_label = (string) ($bundle?->label() ?? $this->bundle());
       $date = \Drupal::service('date.formatter')->format(
         \Drupal::time()->getRequestTime(),
         'custom',
         'Y-m-d'
       );
-      $this->set('label', ucfirst($bundle_label) . ' - ' . $date);
+      $this->set('label', $bundle_label . ' - ' . $date);
     }
   }
 

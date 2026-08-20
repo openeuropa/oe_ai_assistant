@@ -28,19 +28,21 @@ class AiEditorialSessionDashboardTest extends AiEditorialSessionBrowserTestBase 
     $this->drupalGet(Url::fromRoute('entity.ai_editorial_session.collection'));
 
     $this->assertSession()->statusCodeEquals(200);
-    $this->assertSession()->pageTextContains('AI editorial sessions');
+    $this->assertSession()->pageTextContains('AI Editorial Sessions');
     $this->assertSession()->pageTextContains('Add new session');
-    $this->assertSession()->pageTextContains('Label');
-    $this->assertSession()->pageTextContains('Bundle');
-    $this->assertSession()->pageTextContains('Content type');
+    $this->assertSession()->pageTextContains('Session');
+    $this->assertSession()->pageTextContains('Type');
+    $this->assertSession()->pageTextContains('Target');
     $this->assertSession()->pageTextContains('Initiated by');
     $this->assertSession()->pageTextContains('Status');
     $this->assertSession()->pageTextContains('Created');
     $this->assertSession()->pageTextContains('Changed');
     $this->assertSession()->pageTextContains($session->label());
-    $this->assertSession()->pageTextContains('oe_news');
-    $this->assertSession()->pageTextContains('content_creation');
-    $this->assertSession()->pageTextContains('active');
+    // Human readable labels, never machine names.
+    $this->assertSession()->pageTextContains('News');
+    $this->assertSession()->pageTextContains('Content creation');
+    $this->assertSession()->pageTextContains('Active');
+    $this->assertSession()->pageTextNotContains('content_creation');
     $this->assertSession()->linkExists('Continue');
     $this->assertSession()->linkByHrefExists($session->toUrl('canonical')->toString());
     $this->assertSession()->linkExists('Delete');
@@ -69,7 +71,7 @@ class AiEditorialSessionDashboardTest extends AiEditorialSessionBrowserTestBase 
 
     $this->drupalGet(Url::fromRoute('entity.ai_editorial_session.collection'));
     $this->assertSession()->statusCodeEquals(200);
-    $this->assertSession()->pageTextContains('AI editorial sessions');
+    $this->assertSession()->pageTextContains('AI Editorial Sessions');
 
     $admin_settings_url = Url::fromRoute('oe_ai_assistant.admin_settings');
     $dashboard_url = Url::fromRoute('entity.ai_editorial_session.collection');
@@ -126,7 +128,7 @@ class AiEditorialSessionDashboardTest extends AiEditorialSessionBrowserTestBase 
 
     $this->drupalGet(Url::fromRoute('entity.ai_editorial_session.collection'));
     $this->assertSession()->statusCodeEquals(200);
-    $this->assertSession()->pageTextContains('AI editorial sessions');
+    $this->assertSession()->pageTextContains('AI Editorial Sessions');
     $this->assertSession()->pageTextContains('Owned session');
     $this->assertSession()->pageTextNotContains('Private session');
     $this->assertSession()->pageTextNotContains('Hidden session');
