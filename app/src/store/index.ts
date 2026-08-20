@@ -53,6 +53,8 @@ interface AppState {
   isSidebarOpen: boolean;
   /** Pending-work flags reported by plugins, keyed by reporting source. */
   pendingWork: Record<string, boolean>;
+  /** Contributor display names, in order of their first message. */
+  sessionParticipants: string[];
 
   // -- Actions --
 
@@ -63,6 +65,8 @@ interface AppState {
   setSidebarOpen: (open: boolean) => void;
   /** Report whether a source (usually a plugin) has work in flight. */
   setPendingWork: (source: string, pending: boolean) => void;
+  /** Publish the session participants shown in the session header. */
+  setSessionParticipants: (names: string[]) => void;
   /** Shallow-merge partial state into a plugin's slice. */
   setPluginState: (pluginId: string, partial: Record<string, unknown>) => void;
 }
@@ -95,6 +99,7 @@ function createInitialState() {
     // flag is transient every session load starts collapsed again.
     isSidebarOpen: false,
     pendingWork: {},
+    sessionParticipants: [],
   };
 }
 
@@ -196,6 +201,7 @@ export const useAppStore = create<AppState>()(
         set((state) => ({
           pendingWork: { ...state.pendingWork, [source]: pending },
         })),
+      setSessionParticipants: (names) => set({ sessionParticipants: names }),
       setPluginState: (pluginId, partial) =>
         set((state) => ({
           pluginStates: {

@@ -31,12 +31,19 @@ import { useDraftingRuntime } from "./hooks/use-drafting-runtime";
 import { useDraftingTemplate } from "./hooks/use-drafting-template";
 import { useDraftingTone } from "./hooks/use-drafting-tone";
 import { useReportPendingWork } from "./hooks/use-report-pending-work";
+import { useReportParticipants } from "./participants";
 import { useDraftingSlice } from "./store";
 import { appendEventToThread } from "./thread-events";
 
 /** Bridges the runtime's pending state into the shell store. */
 function PendingWorkReporter() {
   useReportPendingWork();
+  return null;
+}
+
+/** Publishes the thread's participants to the session header. */
+function ParticipantsReporter() {
+  useReportParticipants();
   return null;
 }
 
@@ -219,6 +226,8 @@ function DraftingChat() {
 
       {/* Feed the shell exit guard with this plugin's pending state. */}
       <PendingWorkReporter />
+      {/* Feed the session header with the chat participants. */}
+      <ParticipantsReporter />
 
       <div className="flex min-h-0 flex-1">
         {/* Left panel: chat, always flexing into the width the pane

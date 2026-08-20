@@ -102,9 +102,14 @@ export function toThreadMessage(
   }
 
   // The parts are valid assistant-ui content; cast past the wide union.
+  // The author's display name travels in the custom metadata so avatars
+  // and the participants list can attribute the turn.
   return {
     role: message.role as "user" | "assistant",
     content: parts,
+    ...(message.userName
+      ? { metadata: { custom: { userName: message.userName } } }
+      : {}),
   } as unknown as ThreadMessageLike;
 }
 

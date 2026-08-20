@@ -133,8 +133,24 @@ abstract class AiAssistantPluginBase extends PluginBase implements AiAssistantPl
   public function getMessages(Request $request): array {
     $session = $this->loadSession($this->decodeJsonBody($request));
     $storage = $this->entityTypeManager->getStorage('ai_conversation_message');
+    $transcript = $storage->loadTranscript($session);
+
+    // Preload the authors of user turns in one query, grouped by uid, so
+    // each turn can carry the author's display name for avatars and the
+    // participants list.
+    $authorIds = [];
+    foreach ($transcript as $message) {
+      $uid = (int) $message->get('uid')->target_id;
+      if ($message->getRole() === 'user' && $uid > 0) {
+        $authorIds[$uid] = $uid;
+      }
+    }
+    $authors = $authorIds === []
+      ? []
+      : $this->entityTypeManager->getStorage('user')->loadMultiple($authorIds);
+
     $messages = [];
-    foreach ($storage->loadTranscript($session) as $message) {
+    foreach ($transcript as $message) {
       $role = $message->getRole();
       // Event rows surface as compact timeline entries.
       if ($role === 'event') {
@@ -157,6 +173,11 @@ abstract class AiAssistantPluginBase extends PluginBase implements AiAssistantPl
         continue;
       }
       $item = ['role' => $role, 'content' => $content];
+      // Attribute user turns to their author for shared sessions.
+      $uid = (int) $message->get('uid')->target_id;
+      if ($role === 'user' && isset($authors[$uid])) {
+        $item['userName'] = (string) $authors[$uid]->getDisplayName();
+      }
       if ($toolCalls) {
         $item['toolCalls'] = $toolCalls;
       }

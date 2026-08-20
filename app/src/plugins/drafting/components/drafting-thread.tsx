@@ -28,7 +28,9 @@ import {
   X,
 } from "lucide-react";
 import type { PaneTabItem } from "@/components/ui/pane-tabs";
+import { avatarColorClass, UserAvatar } from "@/components/ui/user-avatar";
 import { getConfig } from "@/config";
+import { useAppStore } from "@/store";
 import { ContextButtons } from "./context-buttons";
 import { ToolFallbackCard } from "./tool-uis";
 
@@ -82,26 +84,20 @@ function UserMessageAttachment() {
   );
 }
 
-/**
- * Avatar for user messages: the initial of the authenticated user's
- * display name in a circle matching the bubble color.
- */
-function UserAvatar() {
-  const name = getConfig().userName.trim();
-  const initial = (name.charAt(0) || "U").toUpperCase();
-
-  return (
-    <div
-      className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-blue-600 text-base font-medium text-white"
-      aria-hidden="true"
-    >
-      {initial}
-    </div>
-  );
-}
-
 /** Renders a single user message bubble with attachments and avatar. */
 function UserMessage() {
+  // The author's name travels in the message metadata for shared
+  // sessions; the current user's own turns fall back to the config.
+  const authorName = useAuiState(
+    (s) =>
+      (s.message.metadata?.custom as { userName?: string } | undefined)
+        ?.userName,
+  );
+  const name = authorName ?? getConfig().userName;
+  // The author's color follows their position in the participants list.
+  const participants = useAppStore((s) => s.sessionParticipants);
+  const colorClass = avatarColorClass(participants.indexOf(name));
+
   return (
     <MessagePrimitive.Root className="mb-4 flex flex-col items-end gap-1">
       {/* Attachments shown above the message text */}
@@ -110,15 +106,17 @@ function UserMessage() {
       />
       <div className="flex max-w-[80%] items-start justify-end gap-2">
         {/* The sharp top-right corner points at the avatar like a comic
-            speech bubble tail. */}
-        <div className="min-w-0 rounded-lg rounded-tr-none bg-blue-600 px-4 py-2 text-white">
+            speech bubble tail; the bubble shares the author's color. */}
+        <div
+          className={`min-w-0 rounded-lg rounded-tr-none px-4 py-2 text-white ${colorClass}`}
+        >
           <MessagePrimitive.Content
             components={{
               Text: ({ text }) => <p className="text-base">{text}</p>,
             }}
           />
         </div>
-        <UserAvatar />
+        <UserAvatar name={name} colorClass={colorClass} />
       </div>
     </MessagePrimitive.Root>
   );

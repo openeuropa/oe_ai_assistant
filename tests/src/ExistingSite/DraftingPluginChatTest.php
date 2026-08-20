@@ -464,7 +464,7 @@ class DraftingPluginChatTest extends ExistingSiteBase {
     $this->loginUser($user);
     $session = $this->createSession($user);
 
-    $this->seedMessage($session, 'user', 'Draft a news article.');
+    $this->seedMessage($session, 'user', 'Draft a news article.', [], (int) $user->id());
     $this->seedMessage($session, 'assistant', 'Here is a draft.');
     // A tool row is not user-visible and must be filtered out.
     $this->seedMessage($session, 'tool', 'Tool payload.');
@@ -477,7 +477,11 @@ class DraftingPluginChatTest extends ExistingSiteBase {
 
     $this->assertSame(
       [
-        ['role' => 'user', 'content' => 'Draft a news article.'],
+        [
+          'role' => 'user',
+          'content' => 'Draft a news article.',
+          'userName' => $user->getDisplayName(),
+        ],
         ['role' => 'assistant', 'content' => 'Here is a draft.'],
       ],
       $messages,
@@ -582,8 +586,10 @@ class DraftingPluginChatTest extends ExistingSiteBase {
    *   The message text.
    * @param array $toolCalls
    *   Optional tool calls to store on the message.
+   * @param int|null $uid
+   *   Optional author user ID, set on user turns.
    */
-  protected function seedMessage(AiEditorialSessionInterface $session, string $role, string $content, array $toolCalls = []): void {
+  protected function seedMessage(AiEditorialSessionInterface $session, string $role, string $content, array $toolCalls = [], ?int $uid = NULL): void {
     /** @var \Drupal\oe_ai_assistant\Entity\AiConversationMessageInterface $message */
     $message = \Drupal::entityTypeManager()->getStorage('ai_conversation_message')
       ->create([
@@ -591,7 +597,7 @@ class DraftingPluginChatTest extends ExistingSiteBase {
         'host_entity_id' => (int) $session->id(),
         'role' => $role,
         'content' => $content,
-      ]);
+      ] + ($uid !== NULL ? ['uid' => $uid] : []));
     if ($toolCalls) {
       $message->setToolCalls($toolCalls);
     }

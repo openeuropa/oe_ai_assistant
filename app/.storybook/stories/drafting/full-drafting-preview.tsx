@@ -28,6 +28,7 @@ import { useDraftingDocuments } from "../../../src/plugins/drafting/hooks/use-dr
 import { useDraftingTemplate } from "../../../src/plugins/drafting/hooks/use-drafting-template";
 import { useReportPendingWork } from "../../../src/plugins/drafting/hooks/use-report-pending-work";
 import { toThreadMessages } from "../../../src/plugins/drafting/hydrate-transcript";
+import { useReportParticipants } from "../../../src/plugins/drafting/participants";
 import {
   draftingSliceConfig,
   setDraftingState,
@@ -87,6 +88,7 @@ const transcript: SessionMessage[] = [
   },
   {
     role: "user",
+    userName: "Dev Editor",
     content: "Draft a news article about the EU AI Act entering into force.",
   },
   {
@@ -135,6 +137,7 @@ const transcript: SessionMessage[] = [
   },
   {
     role: "user",
+    userName: "Maria Rossi",
     content: "Add a summary and a publication date, and use the formal tone.",
   },
   {
@@ -157,6 +160,7 @@ const transcript: SessionMessage[] = [
   },
   {
     role: "user",
+    userName: "Jan Kowalski",
     content: "Save the draft as a new unpublished revision.",
   },
   {
@@ -180,11 +184,20 @@ const transcript: SessionMessage[] = [
 ];
 
 // Additional revisions (versions 3 to 10) so the previews show how the
-// draft rail feels in a long session with many versions.
+// draft rail feels in a long session with many versions. Authors rotate
+// so the participants stack and message avatars show several users.
+const revisionAuthors = [
+  "Dev Editor",
+  "Maria Rossi",
+  "Jan Kowalski",
+  "Ana Silva",
+  "Peter Novak",
+];
 for (let version = 3; version <= 10; version++) {
   transcript.push(
     {
       role: "user",
+      userName: revisionAuthors[version % revisionAuthors.length],
       content: `Revise the article again, revision round ${version}.`,
     },
     {
@@ -248,6 +261,12 @@ function PendingWorkReporter() {
   return null;
 }
 
+/** Publishes the seeded thread's participants to the session header. */
+function ParticipantsReporter() {
+  useReportParticipants();
+  return null;
+}
+
 /** Full drafting plugin UI preview; fills its parent flex container. */
 export function FullDraftingPreview() {
   const [toneId, setToneId] = useState(defaultToneId);
@@ -278,6 +297,8 @@ export function FullDraftingPreview() {
     <AssistantRuntimeProvider runtime={runtime}>
       {/* Feed the shell exit guard with the mock runtime's pending state. */}
       <PendingWorkReporter />
+      {/* Feed the session header with the seeded participants. */}
+      <ParticipantsReporter />
       {/* Register tool call renderers so they appear inline in chat. */}
       <DraftContentToolUI />
       <EditorialEventToolUI />
