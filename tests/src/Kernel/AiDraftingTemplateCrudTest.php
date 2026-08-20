@@ -72,7 +72,7 @@ class AiDraftingTemplateCrudTest extends KernelTestBase {
    * {@inheritdoc}
    */
   protected function tearDown(): void {
-    foreach (['test_news_crud', 'test_paragraphs_crud', 'test_contacts_crud'] as $id) {
+    foreach (['test_news_crud', 'test_paragraphs_crud', 'test_contacts_crud', 'test_news_sync_invalid'] as $id) {
       $template = AiDraftingTemplate::load($id);
       if ($template) {
         $template->delete();
@@ -828,6 +828,71 @@ class AiDraftingTemplateCrudTest extends KernelTestBase {
       $this->assertNotEmpty($this->violationMessages($e->getResult()));
       $this->assertEquals('test_news_invalid', $e->getTemplateId());
     }
+  }
+
+  /**
+   * Tests that a missing-required-field-only violation is not blocked.
+   *
+   * When saved during config sync.
+   */
+  public function testSyncingInvalidTemplateLogsInsteadOfThrowing(): void {
+    $template = AiDraftingTemplate::create([
+      'id' => 'test_news_sync_invalid',
+      'label' => 'Invalid template saved during sync',
+      'status' => TRUE,
+      'content_type' => 'oe_news',
+      'fields' => ['field_teaser' => ['prompt' => 'Teaser.']],
+      'defaults' => [],
+    ]);
+    $template->setSyncing(TRUE);
+    $template->save();
+
+    $loaded = AiDraftingTemplate::load('test_news_sync_invalid');
+    $this->assertNotNull($loaded, 'The invalid template should still be saved when syncing.');
+    $this->assertGreaterThan(0, count($loaded->validate()));
+  }
+
+  /**
+   * Tests that a structural violation still throws during config sync.
+   */
+  public function testSyncingTemplateWithStructuralViolationStillThrows(): void {
+    $template = AiDraftingTemplate::create([
+      'id' => 'test_news_sync_invalid',
+      'label' => 'Structurally invalid template saved during sync',
+      'status' => TRUE,
+      'content_type' => 'oe_news',
+      'fields' => ['field_does_not_exist' => ['prompt' => 'Bad.']],
+      'defaults' => [],
+    ]);
+    $template->setSyncing(TRUE);
+
+    $this->expectException(TemplateValidationException::class);
+    $template->save();
+  }
+
+  /**
+   * Tests that a missing-required-field-only violation does not block install.
+   */
+  public function testTemplateWithMissingRequiredFieldIsInstalledDuringConfigInstall(): void {
+    // Broken template config is installed by installConfig() in setUp().
+    $loaded = AiDraftingTemplate::load('broken_template_fields');
+    $this->assertNotNull(
+      $loaded,
+      'The template with only a missing required field should still be installed.'
+    );
+    $this->assertGreaterThan(0, count($loaded->validate()));
+  }
+
+  /**
+   * Tests that a structural violation still blocks config install.
+   */
+  public function testTemplateWithStructuralViolationIsSkippedDuringConfigInstall(): void {
+    // Structurally broken template config is tried to be installed by
+    // $this->installConfig(['oe_ai_assistant_test']); in setUp.
+    $this->assertNull(
+      AiDraftingTemplate::load('broken_template_structural'),
+      'The structurally invalid template should be skipped, not created.'
+    );
   }
 
   /**
