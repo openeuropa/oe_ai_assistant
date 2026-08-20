@@ -519,7 +519,13 @@ class DraftingPlugin extends AiAssistantPluginBase {
       );
     }
 
-    $result = $this->draftSaver->save($session, $draft['fields'], $draft['templateId'], $version);
+    $result = $this->draftSaver->save(
+      $session,
+      $draft['fields'],
+      $draft['templateId'],
+      $version,
+      $this->resolveDraftMessage($session, $version),
+    );
 
     $this->messageRecorder->recordEvent(
       $session,
@@ -529,6 +535,46 @@ class DraftingPlugin extends AiAssistantPluginBase {
     );
 
     return $result;
+  }
+
+  /**
+   * Resolves the assistant message that produced a stored draft version.
+   *
+   * The draft fields and their provenance must come from the same persisted
+   * draft_content result. This deliberately does not trust client-supplied
+   * draft metadata.
+   *
+   * @param \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $session
+   *   The session hosting the draft.
+   * @param int $version
+   *   The stored draft version.
+   *
+   * @return \Drupal\oe_ai_assistant\Entity\AiConversationMessageInterface
+   *   The assistant message containing the requested draft result.
+   *
+   * @throws \Drupal\oe_ai_assistant\Exception\ActionException
+   *   If the draft result has no triggering message.
+   */
+  private function resolveDraftMessage(AiEditorialSessionInterface $session, int $version): AiConversationMessageInterface {
+    $storage = $this->entityTypeManager->getStorage('ai_conversation_message');
+    foreach ($storage->loadTranscript($session) as $message) {
+      if (!$message instanceof AiConversationMessageInterface) {
+        continue;
+      }
+      foreach ($message->getToolCalls() as $call) {
+        if (($call['function']['name'] ?? '') === 'draft_content'
+          && (int) ($call['result']['version'] ?? 0) === $version
+        ) {
+          return $message;
+        }
+      }
+    }
+
+    throw new ActionException(
+      'invalid_request',
+      sprintf('Draft %d has no triggering assistant message.', $version),
+      400,
+    );
   }
 
   /**

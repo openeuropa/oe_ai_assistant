@@ -1,0 +1,113 @@
+<?php
+
+/**
+ * @file
+ * Hooks for the AI Assistant module.
+ */
+
+declare(strict_types=1);
+
+use Drupal\node\NodeInterface;
+use Drupal\Core\Cache\CacheableMetadata;
+use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
+
+/**
+ * Implements hook_preprocess_table().
+ */
+function oe_ai_assistant_preprocess_table(array &$variables): void {
+  oe_ai_assistant_apply_revision_table_badge($variables);
+}
+
+/**
+ * Implements hook_preprocess_table__node_revision_table().
+ */
+function oe_ai_assistant_preprocess_table__node_revision_table(array &$variables): void {
+  oe_ai_assistant_apply_revision_table_badge($variables);
+}
+
+/**
+ * Applies the provenance badge and cache metadata to a revision table.
+ */
+function oe_ai_assistant_apply_revision_table_badge(array &$variables): void {
+  $node = \Drupal::routeMatch()->getParameter('node');
+  if (!$node instanceof NodeInterface) {
+    return;
+  }
+
+  $revision_id = (int) $node->getRevisionId();
+  $rows_key = isset($variables['#rows']) ? '#rows' : 'rows';
+  if (!isset($variables[$rows_key]) || !is_array($variables[$rows_key])) {
+    return;
+  }
+
+  foreach ($variables[$rows_key] as &$row) {
+    if (!isset($row['cells'][0]['content'])) {
+      continue;
+    }
+    $cell = &$row['cells'][0]['content'];
+
+    if (!isset($row['attributes']) || !$row['attributes']->hasClass('revision-current')) {
+      continue;
+    }
+
+    $storage = \Drupal::entityTypeManager()->getStorage('ai_content_provenance');
+    $ids = $storage->getQuery()
+      ->accessCheck(FALSE)
+      ->condition('entity_type', 'node')
+      ->condition('entity_id', $node->id())
+      ->condition('revision_id', $revision_id)
+      ->range(0, 1)
+      ->execute();
+    $table_cacheability = CacheableMetadata::createFromRenderArray($variables);
+    $table_cacheability->addCacheTags(['ai_content_provenance_list']);
+    $table_cacheability->addCacheableDependency($node);
+    $table_cacheability->addCacheContexts(['user']);
+    if (!$ids) {
+      $table_cacheability->applyTo($variables);
+      if (is_array($cell)) {
+        CacheableMetadata::createFromRenderArray($cell)
+          ->addCacheContexts(['user'])
+          ->applyTo($cell);
+      }
+      continue;
+    }
+
+    $provenance = $storage->load(reset($ids));
+    if ($provenance === NULL) {
+      continue;
+    }
+    $table_cacheability->addCacheableDependency($provenance);
+
+    $badge = '<span class="ai-content-provenance-badge">' . t('AI-assisted') . '</span>';
+    $session = $provenance->get('session')->entity;
+    if ($session instanceof AiEditorialSessionInterface && $session->access('view')) {
+      $badge .= ' ' . $session->toLink(t('Session'))->toString();
+    }
+    if ($session instanceof AiEditorialSessionInterface) {
+      $table_cacheability->addCacheableDependency($session);
+    }
+    $table_cacheability->applyTo($variables);
+
+    if (is_array($cell)) {
+      $cacheability = CacheableMetadata::createFromRenderArray($cell);
+      $cacheability->addCacheContexts(['user']);
+      $cacheability->applyTo($cell);
+      $cell['#suffix'] = ($cell['#suffix'] ?? '') . ' ' . $badge;
+    }
+    else {
+      $cell .= ' ' . $badge;
+    }
+  }
+  unset($row);
+}
+
+/**
+ * Implements hook_theme_suggestions_table_alter().
+ */
+function oe_ai_assistant_theme_suggestions_table_alter(array &$suggestions, array $variables): void {
+  if (empty($variables['attributes']['class']) || !in_array('node-revision-table', $variables['attributes']['class'], TRUE)) {
+    return;
+  }
+
+  $suggestions[] = 'table__node_revision_table';
+}

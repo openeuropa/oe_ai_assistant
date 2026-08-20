@@ -30,8 +30,20 @@ class DraftingPluginSaveTest extends DraftingPluginTestBase {
    */
   protected function setUp(): void {
     parent::setUp();
+    if (!\Drupal::moduleHandler()->moduleExists('entity_version')) {
+      \Drupal::service('module_installer')->install(['entity_version']);
+    }
+    \Drupal::service('entity_version.entity_version_installer')
+      ->install('node', ['oe_news'], [
+        'major' => 0,
+        'minor' => 1,
+        'patch' => 0,
+      ]);
     $this->trackEntityType('node');
     $this->trackEntityType('paragraph');
+    $this->trackEntityType('ai_content_provenance');
+    $this->trackEntityType('ai_editorial_session');
+    $this->trackEntityType('ai_conversation_message');
   }
 
   /**
