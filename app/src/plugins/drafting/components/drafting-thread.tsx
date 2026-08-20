@@ -99,7 +99,7 @@ function UserMessage() {
   const colorClass = avatarColorClass(participants.indexOf(name));
 
   return (
-    <MessagePrimitive.Root className="mb-4 flex flex-col items-end gap-1">
+    <MessagePrimitive.Root className="group/message mb-4 flex flex-col items-end gap-1">
       {/* Attachments shown above the message text */}
       <MessagePrimitive.Attachments
         components={{ Attachment: UserMessageAttachment }}
@@ -118,6 +118,8 @@ function UserMessage() {
         </div>
         <UserAvatar name={name} colorClass={colorClass} />
       </div>
+      {/* Copy and timestamp, aligned with the bubble's right edge. */}
+      <MessageFooter className="justify-end pr-12" />
     </MessagePrimitive.Root>
   );
 }
@@ -195,18 +197,20 @@ function formatMessageTime(createdAt: Date): string {
 }
 
 /**
- * Action row under an assistant message: the copy-to-clipboard control
- * (provided by assistant-ui's action bar) and the message timestamp.
- * Hidden while the message is still streaming.
+ * Action row under a message: the copy-to-clipboard control (provided
+ * by assistant-ui's action bar) and the message timestamp. The row is
+ * always rendered so its height is reserved, but it is only visible
+ * while the related message is hovered (no vertical flickering).
+ * Hidden entirely while the message is still streaming.
  */
-function AssistantMessageFooter() {
+function MessageFooter({ className = "" }: { className?: string }) {
   const isCopied = useAuiState((s) => s.message.isCopied);
   const createdAt = useAuiState((s) => s.message.createdAt);
 
   return (
     <ActionBarPrimitive.Root
       hideWhenRunning
-      className="mt-1 flex items-center gap-2 text-xs text-gray-400"
+      className={`mt-1 flex items-center gap-2 text-xs text-gray-400 opacity-0 transition-opacity duration-150 group-hover/message:opacity-100 ${className}`}
     >
       <ActionBarPrimitive.Copy
         aria-label="Copy message"
@@ -278,7 +282,10 @@ function AssistantMessage() {
   }
 
   return (
-    <MessagePrimitive.Root className="mb-4" data-testid="assistant-message">
+    <MessagePrimitive.Root
+      className="group/message mb-4"
+      data-testid="assistant-message"
+    >
       {/* Assistant responses render directly on the chat surface with no
           bubble; only user messages keep one. */}
       <div className="text-gray-900">
@@ -290,7 +297,7 @@ function AssistantMessage() {
         />
       </div>
       <MessageError />
-      {hasText && <AssistantMessageFooter />}
+      {hasText && <MessageFooter />}
     </MessagePrimitive.Root>
   );
 }
@@ -370,6 +377,9 @@ export function DraftingThread({
   tabs = [],
   defaultActiveTabId,
 }: DraftingThreadProps) {
+  // Host-controlled disclaimer under the composer; hidden when empty.
+  const disclaimer = getConfig().disclaimer.trim();
+
   return (
     <ThreadPrimitive.Root className="flex min-h-0 flex-1 flex-col">
       <ThreadPrimitive.Viewport className="flex-1 overflow-y-auto">
@@ -385,6 +395,9 @@ export function DraftingThread({
       </ThreadPrimitive.Viewport>
       <div className="mx-auto w-full max-w-3xl">
         <Composer tabs={tabs} defaultActiveTabId={defaultActiveTabId} />
+        {disclaimer !== "" && (
+          <p className="pb-2 text-center text-xs text-gray-400">{disclaimer}</p>
+        )}
       </div>
     </ThreadPrimitive.Root>
   );

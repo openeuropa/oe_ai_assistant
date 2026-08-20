@@ -144,6 +144,8 @@ class AiEditorialSessionController extends ControllerBase {
       // Where the exit control returns the editor to: the AI editorial
       // sessions dashboard.
       'exitUrl' => Url::fromRoute('entity.ai_editorial_session.collection')->toString(),
+      // Disclaimer shown under the chat composer.
+      'disclaimer' => (string) $this->t('AI assistant can make mistakes. Please double-check responses.'),
       // List of plugin IDs that should be available in the UI for this node.
       // The React app only registers plugins whose IDs appear in this list,
       // allowing server-side control over which tools are shown per context.

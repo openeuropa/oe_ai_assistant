@@ -30,6 +30,8 @@ export interface AppConfig {
   exitUrl: string;
   /** Display name of the authenticated user (e.g. for avatars). */
   userName: string;
+  /** Disclaimer shown under the composer. Empty string hides it. */
+  disclaimer: string;
 }
 
 /** Init-time config accepted from the host application. */
@@ -50,6 +52,7 @@ const defaults = {
   sessionTitle: "",
   exitUrl: "",
   userName: "",
+  disclaimer: "",
 } satisfies Omit<AppConfig, "userId" | "sessionId">;
 
 /** Module-level singleton holding the active config after init(). */

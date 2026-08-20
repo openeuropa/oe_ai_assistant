@@ -8,6 +8,7 @@ export const developmentConfig = {
   sessionId: "dev-session",
   sessionTitle: "Content creation: Dev editorial session",
   exitUrl: "/",
+  disclaimer: "AI assistant can make mistakes. Please double-check responses.",
   pluginConfig: {
     drafting: {
       entityTypeId: "node",

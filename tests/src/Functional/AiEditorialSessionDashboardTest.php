@@ -302,6 +302,7 @@ class AiEditorialSessionDashboardTest extends AiEditorialSessionBrowserTestBase 
     $this->assertSession()->responseContains('"sessionId":"' . $sessionId . '"');
     $this->assertSession()->responseContains('"sessionTitle":' . json_encode('Content creation: ' . $session->label()));
     $this->assertSession()->responseContains('"exitUrl":"\/admin\/content\/ai"');
+    $this->assertSession()->responseContains('"disclaimer":"AI assistant can make mistakes. Please double-check responses."');
     $this->assertSession()->responseContains('"enabledPlugins":["echo","notes","drafting"]');
     $this->assertSession()->responseContains('"entityTypeId":"node"');
     $this->assertSession()->responseContains('"bundle":"' . $bundle . '"');

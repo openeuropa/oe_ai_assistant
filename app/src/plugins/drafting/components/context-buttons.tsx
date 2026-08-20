@@ -58,9 +58,16 @@ export function ContextButtons({
         </button>
       ))}
 
-      {/* Panel modal, centered on the screen; the panel owns its chrome. */}
+      {/* Panel modal, centered on the screen; the panel owns its chrome.
+          Wider than the dialog default; the height follows the content. */}
       {activeTab && (
-        <Dialog open onClose={closePanel} title={activeTab.title} hideHeader>
+        <Dialog
+          open
+          onClose={closePanel}
+          title={activeTab.title}
+          hideHeader
+          className="max-w-3xl"
+        >
           {activeTab.render(closePanel)}
         </Dialog>
       )}
