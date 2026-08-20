@@ -31,7 +31,7 @@ interface DocumentSummaryExtractorInterface {
    * @return string
    *   The extracted summary saved to the media entity.
    *
-   * @throws \RuntimeException
+   * @throws \Drupal\oe_ai_assistant\Exception\DocumentSummaryExtractionException
    *   When the media cannot be summarised or the provider returns no summary.
    */
   public function extractAndSave(MediaInterface $media): string;

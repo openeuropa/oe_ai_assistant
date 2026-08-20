@@ -18,6 +18,7 @@ use Drupal\oe_ai_assistant\Document\ContextDocumentStorage;
 use Drupal\oe_ai_assistant\Entity\AiConversationMessageInterface;
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
 use Drupal\oe_ai_assistant\Exception\ActionException;
+use Drupal\oe_ai_assistant\Exception\DocumentSummaryExtractionException;
 use Drupal\oe_ai_assistant\Plugin\AiAssistantPluginBase;
 use Drupal\oe_ai_assistant\Service\AiEditorialContextInterface;
 use Drupal\oe_ai_assistant\Service\DocumentSerializerInterface;
@@ -762,7 +763,19 @@ class DraftingPlugin extends AiAssistantPluginBase {
         'target_id' => $file->id(),
       ],
     ]);
-    $media->save();
+    try {
+      $media->save();
+    }
+    catch (DocumentSummaryExtractionException $e) {
+      if ($media instanceof MediaInterface && !$media->isNew()) {
+        $media->delete();
+      }
+      throw new ActionException(
+        'summary_extraction_failed',
+        'The uploaded document could not be summarised.',
+        500,
+      );
+    }
 
     if (!$media instanceof MediaInterface) {
       throw new ActionException(

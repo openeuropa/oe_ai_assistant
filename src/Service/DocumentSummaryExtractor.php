@@ -12,6 +12,7 @@ use Drupal\Core\DependencyInjection\Attribute\Autowire;
 use Drupal\file\FileInterface;
 use Drupal\media\MediaInterface;
 use Drupal\oe_ai_assistant\Document\ContextDocumentStorage;
+use Drupal\oe_ai_assistant\Exception\DocumentSummaryExtractionException;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -91,6 +92,7 @@ class DocumentSummaryExtractor implements DocumentSummaryExtractorInterface {
       return $summary;
     }
     catch (\Throwable $e) {
+      $this->clearSummary($media, $details['summaryField']);
       $this->logger->error('Document summary extraction failed for media @media_id (@bundle), file @file_id (@filename): @message', [
         '@media_id' => $media->id() ?? 'new',
         '@bundle' => $media->bundle(),
@@ -98,7 +100,11 @@ class DocumentSummaryExtractor implements DocumentSummaryExtractorInterface {
         '@filename' => isset($file) ? $file->getFilename() : 'unknown',
         '@message' => $e->getMessage(),
       ]);
-      throw $e;
+      throw new DocumentSummaryExtractionException(
+        'The document summary could not be extracted.',
+        0,
+        $e,
+      );
     }
     finally {
       unset($this->activeExtractions[$key]);
@@ -226,6 +232,26 @@ class DocumentSummaryExtractor implements DocumentSummaryExtractorInterface {
         'The document file "%s" is too large to summarise synchronously.',
         $file->getFilename(),
       ));
+    }
+  }
+
+  /**
+   * Clears any stale summary after a failed extraction.
+   */
+  private function clearSummary(MediaInterface $media, string $summaryField): void {
+    if (!$media->hasField($summaryField) || $media->get($summaryField)->isEmpty()) {
+      return;
+    }
+
+    try {
+      $media->set($summaryField, NULL);
+      $media->save();
+    }
+    catch (\Throwable $e) {
+      $this->logger->warning('Document summary cleanup failed for media @media_id: @message', [
+        '@media_id' => $media->id() ?? 'new',
+        '@message' => $e->getMessage(),
+      ]);
     }
   }
 
