@@ -35,49 +35,191 @@ import {
   useDraftingSlice,
 } from "../../../src/plugins/drafting/store";
 
-/** Drafted field values shown in the artifact pane (latest draft). */
-const draftFields: Record<string, unknown> = {
-  title: [{ value: "EU AI Act enters into force" }],
-  oe_summary: [
-    {
-      value:
-        "<p>The EU Artificial Intelligence Act enters into force today, " +
-        "introducing the world's first comprehensive rules for AI.</p>",
-      format: "full_html",
-    },
-  ],
-  body: [
-    {
-      value:
-        "<p>The regulation follows a risk-based approach: minimal-risk " +
-        "systems face no obligations, while high-risk systems must meet " +
-        "strict requirements before entering the market.</p>" +
-        "<p>National authorities have twelve months to designate the " +
-        "bodies overseeing conformity assessments.</p>",
-      format: "full_html",
-    },
-  ],
-  oe_publication_date: [{ value: "2026-08-19" }],
-};
+/**
+ * Builds the Drupal-shaped field values for one draft version. Each
+ * revision in the narrative gets clearly different content so switching
+ * versions on the rail is visible at a glance.
+ */
+function draftFields(
+  title: string,
+  summary: string,
+  bodyHtml: string,
+): Record<string, unknown> {
+  return {
+    title: [{ value: title }],
+    oe_summary: [{ value: `<p>${summary}</p>`, format: "full_html" }],
+    body: [{ value: bodyHtml, format: "full_html" }],
+    oe_publication_date: [{ value: "2026-08-19" }],
+  };
+}
 
-/** Fields captured on the first draft, before the editor asked for changes. */
-const firstDraftFields: Record<string, unknown> = {
-  title: [{ value: "New EU rules for artificial intelligence" }],
-  body: [
-    {
-      value:
-        "<p>The EU introduces a comprehensive framework regulating " +
-        "artificial intelligence across the single market.</p>",
-      format: "full_html",
-    },
-  ],
-};
+/** Draft 1: Dev Editor's plain first draft. */
+const v1Fields = draftFields(
+  "New EU rules for artificial intelligence",
+  "The EU introduces the first comprehensive rules for artificial intelligence.",
+  "<p>The European Union introduces a comprehensive framework regulating " +
+    "artificial intelligence across the single market. The rules follow a " +
+    "risk-based approach, from minimal-risk systems with no obligations to " +
+    "high-risk systems subject to strict requirements.</p>" +
+    "<p>National authorities have twelve months to designate the bodies " +
+    "overseeing conformity assessments.</p>",
+);
+
+/** Draft 2: punchier headline and a standfirst. */
+const v2Fields = draftFields(
+  "EU AI Act enters into force",
+  "From today, the world's first comprehensive AI rulebook applies across " +
+    "the Union, phasing in obligations by risk.",
+  "<p>The countdown has started. As of today the AI Act is law across the " +
+    "Union, and every provider placing an AI system on the European market " +
+    "is on the clock to comply.</p>" +
+    "<p>The rules follow a risk-based approach: minimal-risk systems face " +
+    "no obligations, while high-risk systems must meet strict requirements " +
+    "before entering the market.</p>",
+);
+
+/** Draft 3: reworked in the formal register. */
+const v3Fields = draftFields(
+  "EU AI Act enters into force",
+  "The Artificial Intelligence Act applies across the Union as of today, " +
+    "introducing obligations proportionate to risk.",
+  "<p>The Regulation establishes a harmonised legal framework for the " +
+    "development, placing on the market and use of artificial intelligence " +
+    "systems in the Union. Obligations are proportionate to the risk an AI " +
+    "system presents to health, safety and fundamental rights.</p>" +
+    "<p>Member States shall designate national competent authorities " +
+    "within twelve months of the entry into force.</p>",
+);
+
+/** Draft 4: Commissioner quote and the AI Office added. */
+const v4Fields = draftFields(
+  "EU AI Act enters into force",
+  "The Artificial Intelligence Act applies across the Union as of today, " +
+    "introducing obligations proportionate to risk.",
+  "<p>The Regulation establishes a harmonised legal framework for the " +
+    "development, placing on the market and use of artificial intelligence " +
+    "systems in the Union.</p>" +
+    '<p>"As of today, providers know exactly what is expected of them," ' +
+    'said the Commissioner for Internal Market. "Trustworthy AI is now a ' +
+    'legal standard, not a slogan."</p>' +
+    "<p>A newly established AI Office will coordinate supervision and " +
+    "enforcement across Member States.</p>",
+);
+
+/** Draft 5: legally corrected timeline and softened claims. */
+const v5Fields = draftFields(
+  "EU AI Act enters into force",
+  "The Artificial Intelligence Act applies across the Union as of today, " +
+    "with obligations phasing in over the coming years.",
+  "<p>The Regulation establishes a harmonised legal framework for " +
+    "artificial intelligence systems in the Union.</p>" +
+    "<p>The prohibitions on unacceptable-risk practices apply six months " +
+    "from today; obligations for general-purpose AI models follow at " +
+    "twelve months, while most remaining duties phase in over twenty-four " +
+    "months. Providers must prepare to comply as each deadline " +
+    "approaches.</p>" +
+    '<p>"As of today, providers know exactly what is expected of them," ' +
+    "said the Commissioner for Internal Market.</p>",
+);
+
+/** Draft 6: restructured into three subheaded sections for the site. */
+const v6Fields = draftFields(
+  "EU AI Act enters into force",
+  "The Artificial Intelligence Act applies across the Union as of today, " +
+    "with obligations phasing in over the coming years.",
+  "<h3>What changes today</h3>" +
+    "<p>The AI Act is law across the Union. The entry into force starts " +
+    "the compliance countdown for every provider and deployer of AI " +
+    "systems on the European market.</p>" +
+    "<h3>Who is affected</h3>" +
+    '<p>Obligations are proportionate to risk. "As of today, providers ' +
+    'know exactly what is expected of them," said the Commissioner for ' +
+    "Internal Market.</p>" +
+    "<h3>What comes next</h3>" +
+    "<p>Prohibitions apply in six months, general-purpose AI obligations " +
+    "in twelve, and most remaining duties within twenty-four months.</p>",
+);
+
+/** Draft 7: trimmed middle section and a bulleted timeline. */
+const v7Fields = draftFields(
+  "EU AI Act enters into force",
+  "The Artificial Intelligence Act applies across the Union as of today, " +
+    "with obligations phasing in over the coming years.",
+  "<h3>What changes today</h3>" +
+    "<p>The AI Act is law across the Union. The entry into force starts " +
+    "the compliance countdown for every provider and deployer of AI " +
+    "systems on the European market.</p>" +
+    "<h3>Who is affected</h3>" +
+    '<p>"As of today, providers know exactly what is expected of them," ' +
+    "said the Commissioner for Internal Market.</p>" +
+    "<h3>What comes next</h3>" +
+    "<ul>" +
+    "<li>February 2027: prohibited practices banned</li>" +
+    "<li>August 2027: general-purpose AI obligations apply</li>" +
+    "<li>August 2028: most remaining obligations apply</li>" +
+    "<li>August 2029: rules for high-risk systems in regulated " +
+    "products</li>" +
+    "</ul>",
+);
+
+/** Draft 8: the final, consistency-checked version. */
+const v8Fields = draftFields(
+  "EU AI Act enters into force",
+  "The world's first comprehensive AI rulebook applies across the Union " +
+    "as of today, phasing in obligations by risk until August 2029.",
+  "<h3>What changes today</h3>" +
+    "<p>The AI Act is law across the Union. The entry into force starts " +
+    "the compliance countdown for every provider and deployer of AI " +
+    "systems on the European market.</p>" +
+    "<h3>Who is affected</h3>" +
+    '<p>"As of today, providers know exactly what is expected of them," ' +
+    "said Commissioner for Internal Market Thierry Breton.</p>" +
+    "<h3>What comes next</h3>" +
+    "<ul>" +
+    "<li>February 2027: prohibited practices banned</li>" +
+    "<li>August 2027: general-purpose AI obligations apply</li>" +
+    "<li>August 2028: most remaining obligations apply</li>" +
+    "<li>August 2029: rules for high-risk systems in regulated " +
+    "products</li>" +
+    "</ul>",
+);
 
 /**
- * Persisted-transcript fixture covering the full conversation surface:
- * user turns, event chips, versioned draft cards, and a save tool call.
- * It is mapped through the real hydrate path so the story exercises the
- * same rendering pipeline as a reloaded session.
+ * Builds the tool calls for one versioned draft revision so the
+ * narrative fixture below stays compact.
+ */
+function draftCall(
+  version: number,
+  toneLabel: string,
+  fields: Record<string, unknown>,
+) {
+  return [
+    {
+      function: { name: "draft_content" },
+      result: {
+        version,
+        context: {
+          tone: {
+            id: toneLabel.toLowerCase().replace(/\s+/g, "-"),
+            label: toneLabel,
+          },
+          template: { id: "news-article", label: "News article" },
+          documents: [],
+        },
+        fields,
+      },
+    },
+  ];
+}
+
+/**
+ * Persisted-transcript fixture simulating a full editorial session.
+ * Several editors take turns one after another (sessions have no real
+ * concurrency: one active user at any moment), handing the work over as
+ * they come and go. Covers user turns from five authors, event chips,
+ * eight draft versions, and save tool calls, all mapped through the
+ * real hydrate path so the story exercises the same rendering pipeline
+ * as a reloaded session.
  */
 const transcript: SessionMessage[] = [
   {
@@ -86,10 +228,14 @@ const transcript: SessionMessage[] = [
     summary: "Session started",
     at: "2026-08-19T09:00:00Z",
   },
+
+  // Dev Editor opens the session and produces the first two drafts.
   {
     role: "user",
     userName: "Dev Editor",
-    content: "Draft a news article about the EU AI Act entering into force.",
+    content:
+      "Draft a news article about the EU AI Act entering into force. " +
+      "Keep it around 400 words, we need it for the morning briefing.",
   },
   {
     role: "assistant",
@@ -110,121 +256,208 @@ const transcript: SessionMessage[] = [
       "- The body keeps the timeline concrete: twelve months for " +
       "national authorities, twenty-four months for most obligations, " +
       "thirty-six for high-risk systems embedded in regulated products.\n\n" +
-      "If you want a stronger political angle, I can rework the middle " +
-      "section around the member state positions instead of the " +
-      "implementation timeline. Review the draft on the right and tell me " +
-      "what to adjust.",
-    toolCalls: [
-      {
-        function: { name: "draft_content" },
-        result: {
-          version: 1,
-          context: {
-            tone: { id: "clear-professional", label: "Clear and professional" },
-            template: { id: "news-article", label: "News article" },
-            documents: [],
-          },
-          fields: firstDraftFields,
-        },
-      },
-    ],
+      "Review the draft on the right and tell me what to adjust.",
+    toolCalls: draftCall(1, "Clear and professional", v1Fields),
   },
+  {
+    role: "user",
+    userName: "Dev Editor",
+    content:
+      "Good start. The headline is flat though: make it punchier and lead " +
+      "with what changes today. Also add a one-line standfirst under the " +
+      "title.",
+  },
+  {
+    role: "assistant",
+    content:
+      "Done. The headline now leads with the legal effect starting today " +
+      "and a standfirst sums up the risk-based approach in one line. " +
+      "Draft 2 is on the right.",
+    toolCalls: draftCall(2, "Clear and professional", v2Fields),
+  },
+  {
+    role: "user",
+    userName: "Dev Editor",
+    content:
+      "Thanks, that reads much better. I have to jump into the editorial " +
+      "meeting now, Maria will take this over from here.",
+  },
+  {
+    role: "assistant",
+    content:
+      "Understood. The session stays open and both drafts are in the " +
+      "version rail, so Maria can pick up right from Draft 2.",
+  },
+
+  // Maria Rossi takes over: formal tone and institutional additions.
   {
     role: "event",
     type: "tone",
     summary: "Tone changed from Clear and professional to Formal",
-    at: "2026-08-19T09:05:00Z",
+    at: "2026-08-19T09:40:00Z",
   },
   {
     role: "user",
     userName: "Maria Rossi",
-    content: "Add a summary and a publication date, and use the formal tone.",
+    content:
+      "Picking this up after the briefing. I switched the tone to formal " +
+      "since the piece will also go out through the institutional " +
+      "newsletter. Can you rework the body accordingly?",
   },
   {
     role: "assistant",
-    content: "I updated the draft with a summary and the publication date.",
-    toolCalls: [
-      {
-        function: { name: "draft_content" },
-        result: {
-          version: 2,
-          context: {
-            tone: { id: "formal", label: "Formal" },
-            template: { id: "news-article", label: "News article" },
-            documents: [],
-          },
-          fields: draftFields,
-        },
-      },
-    ],
+    content:
+      "Reworked in the formal register: contractions removed, the " +
+      "colloquial framing in the opening replaced with the institutional " +
+      "wording, and the compliance timeline is now stated in full dates " +
+      "rather than relative terms. The structure is unchanged.",
+    toolCalls: draftCall(3, "Formal", v3Fields),
+  },
+  {
+    role: "user",
+    userName: "Maria Rossi",
+    content:
+      "Better. Now add a short quote from the Commissioner for Internal " +
+      "Market on what changes for companies from today, and mention the " +
+      "role of the new AI Office.",
+  },
+  {
+    role: "assistant",
+    content:
+      "Added a two-sentence quote in the middle section on the immediate " +
+      "obligations for providers, and a closing paragraph introducing the " +
+      "AI Office as the supervision and enforcement hub. Draft 4 is " +
+      "ready for review.",
+    toolCalls: draftCall(4, "Formal", v4Fields),
+  },
+  {
+    role: "user",
+    userName: "Maria Rossi",
+    content: "That works for me. Leaving it here for the legal pass.",
+  },
+
+  // Jan Kowalski does the legal review and saves a revision.
+  {
+    role: "user",
+    userName: "Jan Kowalski",
+    content:
+      "Legal pass. Two corrections: the prohibitions apply in six months, " +
+      "not immediately, and the general-purpose AI obligations in twelve. " +
+      "Please fix the timeline and soften the compliance claims " +
+      "accordingly.",
+  },
+  {
+    role: "assistant",
+    content:
+      "Corrected. The timeline paragraph now distinguishes the six-month " +
+      "mark for prohibited practices from the twelve-month mark for " +
+      "general-purpose AI obligations, and the compliance wording says " +
+      "'must prepare to comply' where the duties are not yet applicable.",
+    toolCalls: draftCall(5, "Formal", v5Fields),
   },
   {
     role: "user",
     userName: "Jan Kowalski",
-    content: "Save the draft as a new unpublished revision.",
+    content: "Correct now. Save the draft as a new unpublished revision.",
   },
   {
     role: "assistant",
     content:
       "The draft has been saved as an unpublished revision. Nothing has " +
-      "been published: the revision sits in the moderation queue and the " +
-      "live page is untouched until an editor with publishing rights " +
-      "approves it. You can keep iterating here in the meantime; every " +
-      "save creates a separate revision, so earlier versions remain " +
-      "recoverable from the content history if you ever need to roll " +
-      "back to a previous state of the article.",
+      "been published: the revision sits in the moderation queue until an " +
+      "editor with publishing rights approves it, and every save creates " +
+      "a separate revision so earlier versions remain recoverable.",
     toolCalls: [{ function: { name: "save_draft_revision" }, result: {} }],
   },
   {
     role: "event",
     type: "saved",
     summary: "Draft saved as unpublished revision",
-    at: "2026-08-19T09:12:00Z",
+    at: "2026-08-19T10:25:00Z",
+  },
+
+  // Ana Silva restructures the piece for the website layout.
+  {
+    role: "event",
+    type: "template",
+    summary: "Template changed to News article with paragraphs",
+    at: "2026-08-19T11:30:00Z",
+  },
+  {
+    role: "user",
+    userName: "Ana Silva",
+    content:
+      "Web team here. I switched the template so the article renders with " +
+      "the paragraph layout on the site. Restructure the body into three " +
+      "short sections with subheadings.",
+  },
+  {
+    role: "assistant",
+    content:
+      "Restructured into three sections: 'What changes today', 'Who is " +
+      "affected', and 'What comes next', each with a subheading and two " +
+      "short paragraphs. The quote stays in the second section.",
+    toolCalls: draftCall(6, "Formal", v6Fields),
+  },
+  {
+    role: "user",
+    userName: "Ana Silva",
+    content:
+      "Trim the middle section, it repeats the standfirst. And end with " +
+      "the timeline as a bullet list, it scans better on the site.",
+  },
+  {
+    role: "assistant",
+    content:
+      "Trimmed and reformatted:\n\n" +
+      "- The middle section lost the sentence duplicating the standfirst " +
+      "and now goes straight into the obligations.\n" +
+      "- The closing timeline is a four-item bullet list, one per " +
+      "milestone, each starting with the date.\n\n" +
+      "Draft 7 is on the right.",
+    toolCalls: draftCall(7, "Formal", v7Fields),
+  },
+
+  // Peter Novak does the final consistency pass and saves again.
+  {
+    role: "user",
+    userName: "Peter Novak",
+    content:
+      "Final check before scheduling. Read the whole piece once more and " +
+      "fix anything inconsistent after all the edits, especially numbers " +
+      "and dates.",
+  },
+  {
+    role: "assistant",
+    content:
+      "Full pass done. Three fixes: the standfirst still said 'twenty " +
+      "months' where the body was corrected to twenty-four, one date was " +
+      "written in US format, and the AI Office was introduced twice after " +
+      "the restructuring. All aligned now, and the quote attribution " +
+      "matches the official title. This is Draft 8, ready for scheduling.",
+    toolCalls: draftCall(8, "Formal", v8Fields),
+  },
+  {
+    role: "user",
+    userName: "Peter Novak",
+    content:
+      "Save it as a new revision, this is the version going to " +
+      "publication review.",
+  },
+  {
+    role: "assistant",
+    content:
+      "Saved as a new unpublished revision and ready for publication " +
+      "review.",
+    toolCalls: [{ function: { name: "save_draft_revision" }, result: {} }],
+  },
+  {
+    role: "event",
+    type: "saved",
+    summary: "Draft saved as unpublished revision",
+    at: "2026-08-19T12:40:00Z",
   },
 ];
-
-// Additional revisions (versions 3 to 10) so the previews show how the
-// draft rail feels in a long session with many versions. Authors rotate
-// so the participants stack and message avatars show several users.
-const revisionAuthors = [
-  "Dev Editor",
-  "Maria Rossi",
-  "Jan Kowalski",
-  "Ana Silva",
-  "Peter Novak",
-];
-for (let version = 3; version <= 10; version++) {
-  transcript.push(
-    {
-      role: "user",
-      userName: revisionAuthors[version % revisionAuthors.length],
-      content: `Revise the article again, revision round ${version}.`,
-    },
-    {
-      role: "assistant",
-      content: `I refined the draft once more; this is draft ${version}.`,
-      toolCalls: [
-        {
-          function: { name: "draft_content" },
-          result: {
-            version,
-            context: {
-              tone: { id: "formal", label: "Formal" },
-              template: { id: "news-article", label: "News article" },
-              documents: [],
-            },
-            fields: {
-              ...draftFields,
-              title: [
-                { value: `EU AI Act enters into force (revision ${version})` },
-              ],
-            },
-          },
-        },
-      ],
-    },
-  );
-}
 
 /** Tone options mirroring the standalone development config. */
 const toneOptions = [
@@ -249,9 +482,9 @@ const defaultToneId = toneOptions[1]?.value ?? "";
 export function seedDraftingPreviewState(): void {
   setDraftingState({
     ...draftingSliceConfig.initialState,
-    draftedFields: draftFields,
+    draftedFields: v8Fields,
     // The seeded fields belong to the latest draft in the transcript.
-    activeDraftVersion: 10,
+    activeDraftVersion: 8,
   });
 }
 
