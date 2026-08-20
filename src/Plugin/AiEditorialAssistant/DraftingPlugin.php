@@ -10,8 +10,11 @@ use Drupal\ai\OperationType\Chat\Tools\ToolsFunctionInput;
 use Drupal\ai_agents\PluginManager\AiAgentManager;
 use Drupal\oe_ai_assistant\Annotation\AiEditorialAssistant;
 use Drupal\oe_ai_assistant\Entity\AiConversationMessageInterface;
+use Drupal\oe_ai_assistant\AiDraftingTemplateInterface;
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
 use Drupal\oe_ai_assistant\Exception\ActionException;
+use Drupal\oe_ai_assistant\Service\Drafting\DraftHistoryInterface;
+use Drupal\oe_ai_assistant\Service\Drafting\EditorialContext;
 use Drupal\oe_ai_assistant\Plugin\AiAssistantPluginBase;
 use Drupal\oe_ai_assistant\Service\AiEditorialContextInterface;
 use Drupal\oe_ai_assistant\Service\DraftingOrchestratorInterface;
@@ -96,6 +99,13 @@ class DraftingPlugin extends AiAssistantPluginBase {
   protected AiEditorialContextInterface $aiEditorialContext;
 
   /**
+   * The draft history reader.
+   *
+   * @var \Drupal\oe_ai_assistant\Service\Drafting\DraftHistoryInterface
+   */
+  protected DraftHistoryInterface $draftHistory;
+
+  /**
    * {@inheritdoc}
    */
   public static function create(
@@ -111,6 +121,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
     $instance->toolLoop = $container->get(ToolExecutionLoopInterface::class);
     $instance->orchestrator = $container->get(DraftingOrchestratorInterface::class);
     $instance->aiEditorialContext = $container->get(AiEditorialContextInterface::class);
+    $instance->draftHistory = $container->get(DraftHistoryInterface::class);
     return $instance;
   }
 
@@ -181,6 +192,12 @@ class DraftingPlugin extends AiAssistantPluginBase {
     }
     $context['template'] = $template?->id();
 
+    // Resolve the full editorial context once: tone (id, label, prompt),
+    // template (id, label) and documents (empty until the documents
+    // backend lands). Sub-agents receive it for prompt injection and it
+    // becomes the provenance snapshot of the produced draft.
+    $editorialContext = $this->buildEditorialContext($session, $template);
+
     // Load the persisted transcript, then append the current user's message
     // for this turn's LLM call and persist it as a user turn.
     $history = $this->buildHistory($session);
@@ -235,6 +252,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
       function (UiMessageStreamInterface $stream) use (
         $history, $context, $systemPrompt, $tools,
         $defaults, $provider, $recordTurn, $session, &$lastAssistant,
+        $editorialContext,
       ): void {
         $stream->start();
 
@@ -261,6 +279,11 @@ class DraftingPlugin extends AiAssistantPluginBase {
               // The context definition is string-typed; NULL becomes ''.
               'template' => $context['template'] ?? '',
             ],
+            // Pin the session so the model cannot read another session's
+            // draft history.
+            'get_draft_history' => [
+              'session_id' => (string) $session->id(),
+            ],
           ],
           recordTurn: $recordTurn,
         );
@@ -275,20 +298,33 @@ class DraftingPlugin extends AiAssistantPluginBase {
             $stream, $history,
             $context['entityTypeId'], $context['bundle'],
             $session, $lastAssistant,
-            $context['template']
+            $editorialContext
           );
+          // Version the draft and snapshot the context that produced it.
+          // Prior drafts already carry a result; the current draft_content
+          // call does not yet, so the count is the number of earlier drafts.
+          $version = $this->draftHistory->countDrafts($session) + 1;
+          $draftResult = [
+            'version' => $version,
+            'context' => $editorialContext->toSnapshot(),
+            'fields' => $drafted,
+          ];
           // Emit the draft_content tool call with its result so the card
           // appears live, matching what a reload rehydrates.
-          $stream->toolCall('draft_content', [], $drafted);
-          // Record the drafted fields as the result of the draft_content call
-          // so the transcript keeps a trace that can repopulate the artifact.
+          $stream->toolCall('draft_content', [], $draftResult);
+          // Record the versioned result on the draft_content call so the
+          // transcript keeps a provenance trace that can repopulate the
+          // artifact.
           if ($lastAssistant !== NULL) {
-            $this->attachDraftResult($lastAssistant, $drafted);
+            $this->attachDraftResult($lastAssistant, $draftResult);
           }
-          // Stream and record a confirmation so it survives a reload.
+          // Stream and record a confirmation so it survives a reload. The
+          // draft name in the text is how the version reaches the model on
+          // later turns (the reconstructed history carries text rows only).
           if ($drafted) {
             $confirmation = sprintf(
-              'Draft generated with %d fields. Review the content on the right.',
+              'Draft %d generated with %d fields. Review the content on the right.',
+              $version,
               count($drafted)
             );
             $stream->startStep('confirmation');
@@ -414,23 +450,23 @@ class DraftingPlugin extends AiAssistantPluginBase {
   }
 
   /**
-   * Attaches the drafted fields as the result of the draft_content call.
+   * Attaches the versioned draft result to the draft_content tool call.
    *
-   * The drafted fields are the output of the draft_content tool, produced by
-   * the orchestrator after the loop returns. Storing them on the tool call
-   * lets the transcript render a clickable trace that repopulates the artifact.
+   * The result is the output of the draft_content tool, produced by the
+   * orchestrator after the loop returns. Storing it on the tool call lets the
+   * transcript render a clickable trace that repopulates the artifact.
    *
    * @param \Drupal\oe_ai_assistant\Entity\AiConversationMessageInterface $message
    *   The assistant turn that triggered drafting.
-   * @param array $drafted
-   *   The consolidated drafted field values.
+   * @param array $result
+   *   The versioned draft result: {version, context, fields}.
    */
-  private function attachDraftResult(AiConversationMessageInterface $message, array $drafted): void {
+  private function attachDraftResult(AiConversationMessageInterface $message, array $result): void {
     $toolCalls = $message->getToolCalls();
     $found = FALSE;
     foreach ($toolCalls as &$call) {
       if (($call['function']['name'] ?? '') === 'draft_content') {
-        $call['result'] = $drafted;
+        $call['result'] = $result;
         $found = TRUE;
       }
     }
@@ -441,7 +477,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
       $toolCalls[] = [
         'type' => 'function',
         'function' => ['name' => 'draft_content', 'arguments' => '{}'],
-        'result' => $drafted,
+        'result' => $result,
       ];
     }
     $message->setToolCalls($toolCalls);
@@ -476,15 +512,55 @@ class DraftingPlugin extends AiAssistantPluginBase {
    *   The session hosting the conversation.
    *
    * @return array
-   *   Context with entityTypeId, bundle, toneId, and template.
+   *   Context with entityTypeId, bundle, and template.
    */
   private function buildContext(AiEditorialSessionInterface $session): array {
     return [
       'entityTypeId' => 'node',
       'bundle' => $session->getContentType(),
-      'toneId' => (string) $session->get(static::TONE_FIELD)->target_id,
       'template' => (string) $session->get(static::TEMPLATE_FIELD)->target_id,
     ];
+  }
+
+  /**
+   * Resolves the editorial context for one drafting request.
+   *
+   * The tone is resolved through AiEditorialContext, which stays the single
+   * source of tone wording; an invalid stored tone is a 400 exactly as the
+   * former router prompt injection made it. Labels are captured at request
+   * time so the provenance snapshot survives later renames. Documents stay
+   * empty until their backend lands.
+   *
+   * @param \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $session
+   *   The session hosting the conversation.
+   * @param \Drupal\oe_ai_assistant\AiDraftingTemplateInterface|null $template
+   *   The resolved drafting template, or NULL without one.
+   *
+   * @return \Drupal\oe_ai_assistant\Service\Drafting\EditorialContext
+   *   The immutable per-request editorial context.
+   *
+   * @throws \Drupal\oe_ai_assistant\Exception\ActionException
+   *   When the stored tone is invalid or not prompt-ready.
+   */
+  private function buildEditorialContext(AiEditorialSessionInterface $session, ?AiDraftingTemplateInterface $template): EditorialContext {
+    $toneId = (string) $session->get(static::TONE_FIELD)->target_id;
+    $tone = NULL;
+    if ($toneId !== '') {
+      try {
+        $tone = $this->aiEditorialContext->getTone($toneId);
+      }
+      catch (\InvalidArgumentException $e) {
+        throw new ActionException('invalid_context', $e->getMessage(), 400);
+      }
+    }
+    return new EditorialContext(
+      toneId: $tone['id'] ?? NULL,
+      toneLabel: $tone['label'] ?? NULL,
+      tonePrompt: $tone['prompt'] ?? NULL,
+      templateId: $template?->id(),
+      templateLabel: $template?->label(),
+      documents: [],
+    );
   }
 
   /**
@@ -504,20 +580,6 @@ class DraftingPlugin extends AiAssistantPluginBase {
         . json_encode($groups, JSON_PRETTY_PRINT) . "\n";
     }
 
-    if ($context['toneId'] !== '') {
-      try {
-        $prompt .= "\nEditorial context:\n"
-          . $this->aiEditorialContext->buildSelectedPrompt($context['toneId'])
-          . "\n";
-      }
-      catch (\InvalidArgumentException $e) {
-        throw new ActionException(
-          'invalid_context',
-          $e->getMessage(),
-          400,
-        );
-      }
-    }
     return $prompt;
   }
 

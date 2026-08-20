@@ -6,6 +6,7 @@ namespace Drupal\Tests\oe_ai_assistant\Unit;
 
 use Drupal\Core\Entity\EntityInterface;
 use Drupal\ai_agents\PluginManager\AiAgentManager;
+use Drupal\oe_ai_assistant\Service\Drafting\EditorialContext;
 use Drupal\oe_ai_assistant\Service\DraftingOrchestrator;
 use Drupal\oe_ai_assistant\Service\DraftingSchemaProviderInterface;
 use Drupal\oe_ai_assistant\Service\MessageRecorderInterface;
@@ -40,9 +41,16 @@ class DraftingOrchestratorTest extends TestCase {
       $this->createMock(MessageRecorderInterface::class),
     );
 
+    $context = new EditorialContext(
+      toneId: NULL,
+      toneLabel: NULL,
+      tonePrompt: NULL,
+      templateId: 'my_template',
+      templateLabel: NULL,
+    );
     $host = $this->createMock(EntityInterface::class);
     $result = $orchestrator->run(
-      $stream, [], 'node', 'oe_news', $host, NULL, 'my_template'
+      $stream, [], 'node', 'oe_news', $host, NULL, $context
     );
 
     $this->assertSame([], $result);

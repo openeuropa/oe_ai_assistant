@@ -50,3 +50,6 @@ services:
 
   Drupal\oe_ai_assistant\Service\DraftingOrchestrator: {}
   Drupal\oe_ai_assistant\Service\DraftingOrchestratorInterface: '@Drupal\oe_ai_assistant\Service\DraftingOrchestrator'
+
+  Drupal\oe_ai_assistant\Service\Drafting\DraftHistory: {}
+  Drupal\oe_ai_assistant\Service\Drafting\DraftHistoryInterface: '@Drupal\oe_ai_assistant\Service\Drafting\DraftHistory'
