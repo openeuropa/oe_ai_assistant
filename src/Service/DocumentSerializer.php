@@ -6,6 +6,7 @@ namespace Drupal\oe_ai_assistant\Service;
 
 use Drupal\file\FileInterface;
 use Drupal\media\MediaInterface;
+use Drupal\oe_ai_assistant\Document\ContextDocumentStorage;
 
 /**
  * Serializes assistant document media entities for API and UI bootstrap.
@@ -74,11 +75,11 @@ class DocumentSerializer implements DocumentSerializerInterface {
    *   The optional summary payload.
    */
   private function serializeSummary(MediaInterface $media): array {
-    if (!$media->hasField('field_document_summary') || $media->get('field_document_summary')->isEmpty()) {
+    if (!$media->hasField(ContextDocumentStorage::SUMMARY_FIELD) || $media->get(ContextDocumentStorage::SUMMARY_FIELD)->isEmpty()) {
       return [];
     }
 
-    $summary = trim((string) $media->get('field_document_summary')->value);
+    $summary = trim((string) $media->get(ContextDocumentStorage::SUMMARY_FIELD)->value);
     return $summary !== '' ? ['summary' => $summary] : [];
   }
 
