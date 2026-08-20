@@ -30,9 +30,30 @@ final class ContextDocumentStorage {
   public const string SOURCE_FIELD = 'field_media_context_document';
 
   /**
+   * The media field that stores the extracted document summary.
+   */
+  public const string SUMMARY_FIELD = 'field_document_summary';
+
+  /**
    * The private directory used for uploaded context documents.
    */
   public const string UPLOAD_DIRECTORY = 'private://ai-context-documents';
+
+  /**
+   * Returns working-material media storage details keyed by media bundle.
+   *
+   * @return array<string, array{category: string, sourceField: string, summaryField: string}>
+   *   The supported document storage details.
+   */
+  public static function workingMaterialBundles(): array {
+    return [
+      self::MEDIA_BUNDLE => [
+        'category' => self::CATEGORY,
+        'sourceField' => self::SOURCE_FIELD,
+        'summaryField' => self::SUMMARY_FIELD,
+      ],
+    ];
+  }
 
   /**
    * This class only carries shared storage constants.
