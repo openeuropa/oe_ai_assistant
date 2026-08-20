@@ -103,10 +103,12 @@ export function toThreadMessage(
 
   // The parts are valid assistant-ui content; cast past the wide union.
   // The author's display name travels in the custom metadata so avatars
-  // and the participants list can attribute the turn.
+  // and the participants list can attribute the turn; the persisted
+  // creation time becomes createdAt so timestamps survive reloads.
   return {
     role: message.role as "user" | "assistant",
     content: parts,
+    ...(message.at ? { createdAt: new Date(message.at) } : {}),
     ...(message.userName
       ? { metadata: { custom: { userName: message.userName } } }
       : {}),

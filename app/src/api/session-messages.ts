@@ -31,7 +31,7 @@ export interface SessionMessage {
   type?: string;
   /** Human-readable event summary (event items). */
   summary?: string;
-  /** RFC 3339 timestamp of the event (event items). */
+  /** RFC 3339 creation timestamp of the entry. */
   at?: string;
 }
 

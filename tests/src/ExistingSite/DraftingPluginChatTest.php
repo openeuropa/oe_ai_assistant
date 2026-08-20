@@ -475,14 +475,25 @@ class DraftingPluginChatTest extends ExistingSiteBase {
       fn($m) => $m['role'] !== 'event',
     ));
 
+    // Timestamps must come from the persisted rows' created field.
+    $rows = array_values(array_filter(
+      $this->loadTranscript($session),
+      fn($row) => in_array($row->getRole(), ['user', 'assistant'], TRUE),
+    ));
+
     $this->assertSame(
       [
         [
           'role' => 'user',
           'content' => 'Draft a news article.',
+          'at' => $rows[0]->get('created')->date->format('c'),
           'userName' => $user->getDisplayName(),
         ],
-        ['role' => 'assistant', 'content' => 'Here is a draft.'],
+        [
+          'role' => 'assistant',
+          'content' => 'Here is a draft.',
+          'at' => $rows[1]->get('created')->date->format('c'),
+        ],
       ],
       $messages,
     );

@@ -10,11 +10,31 @@
  * the expanded default.
  */
 
-import type { ReactNode } from "react";
-import { useDraftingSlice } from "../store";
+import { type ReactNode, useEffect } from "react";
+import { setDraftingState, useDraftingSlice } from "../store";
 
 export function ArtifactPane({ children }: { children: ReactNode }) {
   const { isArtifactCollapsed } = useDraftingSlice();
+
+  // Escape collapses the expanded pane. Open modals own the Escape key:
+  // Radix closes them on the same press, and at that moment the dialog
+  // is still in the DOM, so the guard below skips the collapse.
+  useEffect(() => {
+    if (isArtifactCollapsed) {
+      return;
+    }
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || event.defaultPrevented) {
+        return;
+      }
+      if (document.querySelector('[role="dialog"][data-state="open"]')) {
+        return;
+      }
+      setDraftingState({ isArtifactCollapsed: true });
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [isArtifactCollapsed]);
 
   return (
     <div

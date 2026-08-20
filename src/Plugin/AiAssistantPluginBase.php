@@ -152,13 +152,16 @@ abstract class AiAssistantPluginBase extends PluginBase implements AiAssistantPl
     $messages = [];
     foreach ($transcript as $message) {
       $role = $message->getRole();
+      // The created field is a datetime stored in UTC; expose it in RFC
+      // 3339 so clients can render local timestamps.
+      $at = (string) $message->get('created')->date?->format('c');
       // Event rows surface as compact timeline entries.
       if ($role === 'event') {
         $messages[] = [
           'role' => 'event',
           'type' => (string) ($message->getMetadata()['type'] ?? ''),
           'summary' => (string) $message->get('content')->value,
-          'at' => date('c', (int) $message->get('created')->value),
+          'at' => $at,
         ];
         continue;
       }
@@ -172,7 +175,12 @@ abstract class AiAssistantPluginBase extends PluginBase implements AiAssistantPl
       if ($content === '' && !$toolCalls) {
         continue;
       }
-      $item = ['role' => $role, 'content' => $content];
+      $item = [
+        'role' => $role,
+        'content' => $content,
+        // Creation time of the turn, for client-side timestamps.
+        'at' => $at,
+      ];
       // Attribute user turns to their author for shared sessions.
       $uid = (int) $message->get('uid')->target_id;
       if ($role === 'user' && isset($authors[$uid])) {
