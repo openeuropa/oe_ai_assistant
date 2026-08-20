@@ -132,6 +132,8 @@ class AiEditorialSessionController extends ControllerBase {
       // Current user ID as a string, available to the React app for
       // user-specific behaviour.
       'userId' => (string) $this->currentUser()->id(),
+      // Display name of the current user, e.g. for message avatars.
+      'userName' => (string) $this->currentUser()->getDisplayName(),
       // AI editorial session entity ID. It scopes the state the React
       // app persists in localStorage, so different sessions never share
       // frontend state while collaborating users on the same session do.

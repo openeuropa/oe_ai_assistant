@@ -27,7 +27,7 @@ describe("config", () => {
     ).toThrow("[ai-editorial-assistant] init() requires a non-empty sessionId");
   });
 
-  it("defaults sessionTitle and exitUrl to empty strings", () => {
+  it("defaults sessionTitle, exitUrl, and userName to empty strings", () => {
     setConfig({
       userId: "editor-7",
       sessionId: "session-1",
@@ -35,6 +35,7 @@ describe("config", () => {
 
     expect(getConfig().sessionTitle).toBe("");
     expect(getConfig().exitUrl).toBe("");
+    expect(getConfig().userName).toBe("");
   });
 
   it("passes sessionTitle and exitUrl through from the host config", () => {

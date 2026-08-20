@@ -28,6 +28,8 @@ export interface AppConfig {
   sessionTitle: string;
   /** URL the exit control navigates to. Empty string hides the control. */
   exitUrl: string;
+  /** Display name of the authenticated user (e.g. for avatars). */
+  userName: string;
 }
 
 /** Init-time config accepted from the host application. */
@@ -47,6 +49,7 @@ const defaults = {
   pluginConfig: {},
   sessionTitle: "",
   exitUrl: "",
+  userName: "",
 } satisfies Omit<AppConfig, "userId" | "sessionId">;
 
 /** Module-level singleton holding the active config after init(). */

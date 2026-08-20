@@ -298,6 +298,7 @@ class AiEditorialSessionDashboardTest extends AiEditorialSessionBrowserTestBase 
     $this->assertSession()->responseContains('oeAiAssistant');
     $this->assertSession()->responseContains('"apiBaseUrl":"\/api\/ai"');
     $this->assertSession()->responseContains('"userId":"' . $this->loggedInUser->id() . '"');
+    $this->assertSession()->responseContains('"userName":' . json_encode($this->loggedInUser->getDisplayName()));
     $this->assertSession()->responseContains('"sessionId":"' . $sessionId . '"');
     $this->assertSession()->responseContains('"sessionTitle":' . json_encode('Content creation: ' . $session->label()));
     $this->assertSession()->responseContains('"exitUrl":"\/admin\/content\/ai"');

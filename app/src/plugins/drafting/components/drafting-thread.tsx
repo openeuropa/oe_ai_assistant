@@ -28,6 +28,7 @@ import {
   X,
 } from "lucide-react";
 import type { PaneTabItem } from "@/components/ui/pane-tabs";
+import { getConfig } from "@/config";
 import { ContextButtons } from "./context-buttons";
 import { ToolFallbackCard } from "./tool-uis";
 
@@ -81,7 +82,25 @@ function UserMessageAttachment() {
   );
 }
 
-/** Renders a single user message bubble with attachments. */
+/**
+ * Avatar for user messages: the initial of the authenticated user's
+ * display name in a circle matching the bubble color.
+ */
+function UserAvatar() {
+  const name = getConfig().userName.trim();
+  const initial = (name.charAt(0) || "U").toUpperCase();
+
+  return (
+    <div
+      className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-blue-600 text-base font-medium text-white"
+      aria-hidden="true"
+    >
+      {initial}
+    </div>
+  );
+}
+
+/** Renders a single user message bubble with attachments and avatar. */
 function UserMessage() {
   return (
     <MessagePrimitive.Root className="mb-4 flex flex-col items-end gap-1">
@@ -89,12 +108,17 @@ function UserMessage() {
       <MessagePrimitive.Attachments
         components={{ Attachment: UserMessageAttachment }}
       />
-      <div className="max-w-[80%] rounded-lg bg-blue-600 px-4 py-2 text-white">
-        <MessagePrimitive.Content
-          components={{
-            Text: ({ text }) => <p className="text-base">{text}</p>,
-          }}
-        />
+      <div className="flex max-w-[80%] items-start justify-end gap-2">
+        {/* The sharp top-right corner points at the avatar like a comic
+            speech bubble tail. */}
+        <div className="min-w-0 rounded-lg rounded-tr-none bg-blue-600 px-4 py-2 text-white">
+          <MessagePrimitive.Content
+            components={{
+              Text: ({ text }) => <p className="text-base">{text}</p>,
+            }}
+          />
+        </div>
+        <UserAvatar />
       </div>
     </MessagePrimitive.Root>
   );
