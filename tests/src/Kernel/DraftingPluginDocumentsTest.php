@@ -11,6 +11,8 @@ use Drupal\oe_ai_assistant\Controller\PluginController;
 use Drupal\oe_ai_assistant\Exception\ActionException;
 use Drupal\oe_ai_assistant\Plugin\AiAssistantPluginManager;
 use Drupal\oe_ai_assistant\Service\RequestValidator;
+use Drupal\oe_ai_assistant_test\Plugin\AiProvider\MockAiProvider;
+use Drupal\oe_ai_assistant_test\Plugin\AiProvider\MockResponse;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
@@ -48,7 +50,15 @@ class DraftingPluginDocumentsTest extends AiEditorialSessionKernelTestBase {
    */
   protected function setUp(): void {
     parent::setUp();
+    $this->enableModules(['oe_ai_assistant_test']);
     $this->installSchema('file', ['file_usage']);
+    $this->config('ai.settings')
+      ->set('default_providers.chat_with_image_vision', [
+        'provider_id' => 'mock_ai',
+        'model_id' => 'mock-model',
+      ])
+      ->save();
+    MockAiProvider::reset();
   }
 
   /**
@@ -64,6 +74,7 @@ class DraftingPluginDocumentsTest extends AiEditorialSessionKernelTestBase {
     $source = $this->container->getParameter('site.path') . '/document-source.txt';
     $contents = 'Context document contents.';
     file_put_contents($source, $contents);
+    MockAiProvider::enqueue(new MockResponse('Extracted summary for brief.'));
 
     $addRequest = Request::create('', 'POST', [
       'sessionId' => $session->id(),
@@ -84,6 +95,7 @@ class DraftingPluginDocumentsTest extends AiEditorialSessionKernelTestBase {
     $this->assertSame('brief.txt', $addResponse['document']['title']);
     $this->assertSame('txt', $addResponse['document']['meta']['type']);
     $this->assertNotEmpty($addResponse['document']['meta']['size']);
+    $this->assertSame('Extracted summary for brief.', $addResponse['document']['summary']);
 
     $documentId = $addResponse['document']['id'];
     $media = $this->container->get('entity_type.manager')
@@ -97,6 +109,7 @@ class DraftingPluginDocumentsTest extends AiEditorialSessionKernelTestBase {
     $this->assertInstanceOf(FileInterface::class, $file);
     $this->assertStringStartsWith('private://ai-context-documents/', $file->getFileUri());
     $this->assertSame(strlen($contents), (int) $file->getSize());
+    $this->assertSame('Extracted summary for brief.', $media->get('field_document_summary')->value);
 
     $sessionStorage = $this->container->get('entity_type.manager')
       ->getStorage('ai_editorial_session');
@@ -138,6 +151,7 @@ class DraftingPluginDocumentsTest extends AiEditorialSessionKernelTestBase {
 
     $source = $this->container->getParameter('site.path') . '/controller-document-source.txt';
     file_put_contents($source, 'Context document contents.');
+    MockAiProvider::enqueue(new MockResponse('Controller extracted summary.'));
 
     $addRequest = Request::create('', 'POST', [
       'sessionId' => $session->id(),
@@ -161,6 +175,7 @@ class DraftingPluginDocumentsTest extends AiEditorialSessionKernelTestBase {
 
     $this->assertSame('controller-brief.txt', $addPayload['document']['title']);
     $this->assertSame('txt', $addPayload['document']['meta']['type']);
+    $this->assertSame('Controller extracted summary.', $addPayload['document']['summary']);
     $documentId = $addPayload['document']['id'];
 
     $listRequest = Request::create('', 'POST', [], [], [], [], json_encode([
@@ -206,6 +221,7 @@ class DraftingPluginDocumentsTest extends AiEditorialSessionKernelTestBase {
 
     $source = $this->container->getParameter('site.path') . '/generic-mime-source.txt';
     file_put_contents($source, 'Context document contents.');
+    MockAiProvider::enqueue(new MockResponse('Generic MIME extracted summary.'));
 
     $request = Request::create('', 'POST', [
       'sessionId' => $session->id(),
@@ -224,6 +240,7 @@ class DraftingPluginDocumentsTest extends AiEditorialSessionKernelTestBase {
 
     $this->assertSame('generic-mime.txt', $response['document']['title']);
     $this->assertSame('txt', $response['document']['meta']['type']);
+    $this->assertSame('Generic MIME extracted summary.', $response['document']['summary']);
   }
 
   /**
