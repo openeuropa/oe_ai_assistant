@@ -131,6 +131,29 @@ class EditorialEventsTest extends DraftingPluginTestBase {
   }
 
   /**
+   * Tests that re-selecting the current template records no event.
+   */
+  public function testNoOpTemplateChangeRecordsNoEvent(): void {
+    $user = $this->createUser(['use oe ai assistant']);
+    $this->loginUser($user);
+    $session = $this->createSession($user);
+
+    $this->httpPost('/api/ai/plugins/drafting/set-template', [
+      'sessionId' => $session->id(),
+      'template' => 'news_default',
+    ]);
+    $result = $this->httpPost('/api/ai/plugins/drafting/set-template', [
+      'sessionId' => $session->id(),
+      'template' => 'news_default',
+    ]);
+
+    $this->assertEquals(200, $result['status'],
+      'Re-selecting the current template still succeeds.');
+    $this->assertCount(1, $this->loadEvents($session, 'template'),
+      'A no-op template selection must not record a change event.');
+  }
+
+  /**
    * Tests that a rejected tone change records no event.
    */
   public function testInvalidToneChangeRecordsNoEvent(): void {
