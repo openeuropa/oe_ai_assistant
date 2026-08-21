@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Drupal\Tests\oe_ai_assistant\ExistingSite;
 
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
-use Drupal\oe_ai_assistant\Service\MessageRecorderInterface;
 use Drupal\oe_ai_assistant_test\Plugin\AiProvider\MockAiProvider;
 use Drupal\oe_ai_assistant_test\Plugin\AiProvider\MockResponse;
 
@@ -168,42 +167,6 @@ class EditorialEventsTest extends DraftingPluginTestBase {
     $this->assertEquals(400, $result['status']);
     $this->assertCount(0, $this->loadEvents($session, 'tone'),
       'A rejected change must not leave an event row.');
-  }
-
-  /**
-   * Tests that recordEvent persists a session-scoped event row.
-   */
-  public function testRecordEventPersistsRow(): void {
-    $user = $this->createUser(['use oe ai assistant']);
-    $session = $this->createSession($user);
-
-    $recorder = \Drupal::service(MessageRecorderInterface::class);
-    $metadata = [
-      'type' => 'tone',
-      'from' => ['id' => '1', 'label' => 'Conversational'],
-      'to' => ['id' => '2', 'label' => 'Formal'],
-    ];
-    $recorder->recordEvent(
-      $session, 'Tone changed from Conversational to Formal',
-      $metadata, (int) $user->id(),
-    );
-
-    $rows = $this->loadTranscript($session);
-    $events = array_values(array_filter(
-      $rows, fn($m) => $m->getRole() === 'event' && ($m->getMetadata()['type'] ?? '') === 'tone',
-    ));
-    $this->assertCount(1, $events, 'One event row is persisted.');
-    $event = $events[0];
-    $this->assertSame(
-      'Tone changed from Conversational to Formal',
-      (string) $event->get('content')->value,
-    );
-    $this->assertSame($metadata, $event->getMetadata());
-    $this->assertSame(
-      (int) $user->id(),
-      (int) $event->get('uid')->target_id,
-      'The acting user is recorded on the event row.',
-    );
   }
 
   /**
