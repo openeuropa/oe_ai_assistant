@@ -13,29 +13,38 @@
 
 import { useAuiState } from "@assistant-ui/react";
 import { useEffect, useRef } from "react";
+import { getConfig } from "@/config";
 import { useAppStore } from "@/store";
 
 /** Minimal shape of a thread message this module inspects. */
 interface MessageLikeShape {
+  role?: string;
   metadata?: { custom?: Record<string, unknown> };
 }
 
 /**
  * Extracts the contributors in the order of their first message in the
- * transcript, deduplicated.
+ * transcript, deduplicated. User turns without author metadata are
+ * turns sent live in this browser (only rehydrated messages carry the
+ * name), so they are attributed to the current user; the backend
+ * records the same author, keeping the order identical after reloads
+ * and in other browsers.
  */
 export function extractParticipants(
   messages: readonly MessageLikeShape[],
+  currentUserName: string,
 ): string[] {
   const contributors: string[] = [];
 
   for (const message of messages) {
-    const name = message.metadata?.custom?.["userName"];
-    if (
-      typeof name === "string" &&
-      name.trim() !== "" &&
-      !contributors.includes(name)
-    ) {
+    const metadataName = message.metadata?.custom?.["userName"];
+    const name =
+      typeof metadataName === "string" && metadataName.trim() !== ""
+        ? metadataName
+        : message.role === "user"
+          ? currentUserName.trim()
+          : "";
+    if (name !== "" && !contributors.includes(name)) {
       contributors.push(name);
     }
   }
@@ -55,6 +64,7 @@ export function useReportParticipants(): void {
   useEffect(() => {
     const participants = extractParticipants(
       messages as readonly MessageLikeShape[],
+      getConfig().userName,
     );
     // Only publish when the list actually changed to avoid store churn.
     const key = participants.join("|");
