@@ -107,6 +107,30 @@ class EditorialEventsTest extends DraftingPluginTestBase {
   }
 
   /**
+   * Tests that re-selecting the current tone records no event.
+   */
+  public function testNoOpToneChangeRecordsNoEvent(): void {
+    $user = $this->createUser(['use oe ai assistant']);
+    $this->loginUser($user);
+    $session = $this->createSession($user);
+
+    $formalId = $this->getTermIdByName('oe_ai_tone', 'Formal');
+    $this->httpPost('/api/ai/plugins/drafting/set-tone', [
+      'sessionId' => $session->id(),
+      'toneId' => $formalId,
+    ]);
+    $result = $this->httpPost('/api/ai/plugins/drafting/set-tone', [
+      'sessionId' => $session->id(),
+      'toneId' => $formalId,
+    ]);
+
+    $this->assertEquals(200, $result['status'],
+      'Re-selecting the current tone still succeeds.');
+    $this->assertCount(1, $this->loadEvents($session, 'tone'),
+      'A no-op tone selection must not record a change event.');
+  }
+
+  /**
    * Tests that a rejected tone change records no event.
    */
   public function testInvalidToneChangeRecordsNoEvent(): void {
