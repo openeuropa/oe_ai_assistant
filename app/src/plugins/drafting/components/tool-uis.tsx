@@ -100,10 +100,20 @@ export const DraftContentToolUI = makeAssistantToolUI<
 
     // On completion, parse the result (versioned object on the live path,
     // or fall back to args.fields when result is empty on a rehydrated trace).
+    // This choice only picks the data source; success itself is signalled by
+    // the complete status checked above.
     const raw =
       result && Object.keys(result).length > 0 ? result : (args?.fields ?? {});
     const parsed = parseDraftResult(raw);
     const fields = parsed.fields;
+
+    // A completed call that yielded no fields has nothing to open, so show
+    // the plain status card instead of an openable draft card.
+    if (Object.keys(fields).length === 0) {
+      return (
+        <ToolCallCard icon={PenLine} label="Drafting content" status={status} />
+      );
+    }
 
     return (
       <DraftCard

@@ -10,6 +10,7 @@
 
 import { Download } from "lucide-react";
 import { Dialog } from "@/components/ui/dialog";
+import { formatFileSize } from "@/lib/format-file-size";
 import type { DraftDocumentFile, DraftDocumentSnapshot } from "../draft-result";
 
 /** Props for DocumentDetailsDialog. */
@@ -54,19 +55,6 @@ function fileTypeLabel(file: DraftDocumentFile): string {
     return subtype.toUpperCase();
   }
   return "";
-}
-
-/**
- * Formats a byte count as a compact human-readable size.
- */
-function formatFileSize(bytes: number): string {
-  if (bytes >= 1024 * 1024) {
-    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  }
-  if (bytes >= 1024) {
-    return `${Math.round(bytes / 1024)} KB`;
-  }
-  return `${bytes} B`;
 }
 
 /**
@@ -116,6 +104,7 @@ export function DocumentDetailsDialog({
       open={document !== null}
       onClose={onClose}
       title={document ? categoryHeaderLabel(document.category) : "Document"}
+      description={document?.title}
     >
       {document && (
         <div>

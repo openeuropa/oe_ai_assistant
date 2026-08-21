@@ -20,6 +20,11 @@ export interface DialogProps {
   onClose: () => void;
   /** Text rendered as the accessible dialog title. */
   title: string;
+  /**
+   * Screen-reader-only text describing the dialog. When omitted, the
+   * aria-describedby wiring is explicitly disabled per the Radix docs.
+   */
+  description?: string;
   /** Content rendered inside the dialog panel. */
   children: React.ReactNode;
   /** Optional extra class names for the panel element. */
@@ -42,6 +47,7 @@ export function Dialog({
   open,
   onClose,
   title,
+  description,
   children,
   className,
   hideHeader = false,
@@ -64,9 +70,15 @@ export function Dialog({
 
         {/* Centered content panel; closes without an exit animation. The
             explicit h-auto overrides the 100vh container baseline that
-            the data-ai-app reset scope would otherwise apply. */}
+            the data-ai-app reset scope would otherwise apply. Without a
+            description, aria-describedby must be set to undefined to
+            override the Radix default, which would otherwise point at a
+            non-existent element. */}
         <DialogPrimitive.Content
           data-ai-app=""
+          {...(description === undefined
+            ? { "aria-describedby": undefined }
+            : {})}
           className={cn(
             "fixed left-1/2 top-1/2 z-50 h-auto w-full max-w-lg -translate-x-1/2 -translate-y-1/2",
             "overflow-hidden rounded-lg border border-gray-200 bg-white shadow-lg",
@@ -76,20 +88,34 @@ export function Dialog({
           )}
         >
           {hideHeader ? (
-            // The content brings its own chrome; keep the title for
-            // screen readers only. Uses the sr-only utility rather than
-            // Radix VisuallyHidden: the scoped reset reverts inline
-            // styles inside the portal, which would make the visually
-            // hidden title show up.
-            <DialogPrimitive.Title className="sr-only">
-              {title}
-            </DialogPrimitive.Title>
+            // The content brings its own chrome; keep the title (and
+            // description, when given) for screen readers only. Uses the
+            // sr-only utility rather than Radix VisuallyHidden: the
+            // scoped reset reverts inline styles inside the portal, which
+            // would make the visually hidden title show up.
+            <>
+              <DialogPrimitive.Title className="sr-only">
+                {title}
+              </DialogPrimitive.Title>
+              {description !== undefined && (
+                <DialogPrimitive.Description className="sr-only">
+                  {description}
+                </DialogPrimitive.Description>
+              )}
+            </>
           ) : (
             // Header row: title on the left, close button on the right.
             <div className="flex items-center justify-between border-b border-gray-200 px-5 py-4">
               <DialogPrimitive.Title className="text-sm font-semibold text-gray-800">
                 {title}
               </DialogPrimitive.Title>
+
+              {/* Screen-reader-only description wired to aria-describedby. */}
+              {description !== undefined && (
+                <DialogPrimitive.Description className="sr-only">
+                  {description}
+                </DialogPrimitive.Description>
+              )}
 
               {/* Close button: Radix Close triggers onOpenChange(false). */}
               <DialogPrimitive.Close
