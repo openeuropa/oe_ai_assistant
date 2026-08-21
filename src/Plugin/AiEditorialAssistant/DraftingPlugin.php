@@ -473,14 +473,11 @@ class DraftingPlugin extends AiAssistantPluginBase {
 
     $session->save();
 
-    // Record the change as a durable timeline event.
+    // Record the change as a durable timeline event. The field is mandatory
+    // and validated above, so the referenced template always exists here.
     $template = $session->get(static::TEMPLATE_FIELD)->entity;
-    $to = $template
-      ? ['id' => (string) $template->id(), 'label' => (string) $template->label()]
-      : NULL;
-    $summary = $to === NULL
-      ? 'Template cleared'
-      : sprintf('Template changed to %s', $to['label']);
+    $to = ['id' => (string) $template->id(), 'label' => (string) $template->label()];
+    $summary = sprintf('Template changed to %s', $to['label']);
     $this->messageRecorder->recordEvent(
       $session, $summary,
       ['type' => 'template', 'from' => $from, 'to' => $to],
