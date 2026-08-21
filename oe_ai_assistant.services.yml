@@ -28,7 +28,10 @@ services:
   Drupal\oe_ai_assistant\Service\DocumentSerializer: {}
   Drupal\oe_ai_assistant\Service\DocumentSerializerInterface: '@Drupal\oe_ai_assistant\Service\DocumentSerializer'
 
-  Drupal\oe_ai_assistant\Service\DocumentSummaryExtractor: {}
+  Drupal\oe_ai_assistant\Service\DocumentSummaryExtractor:
+    arguments:
+      $aiProviderManager: '@ai.provider'
+      $logger: '@logger.channel.oe_ai_assistant'
   Drupal\oe_ai_assistant\Service\DocumentSummaryExtractorInterface: '@Drupal\oe_ai_assistant\Service\DocumentSummaryExtractor'
 
   Drupal\oe_ai_assistant\Service\InlineEntityHydrator: {}

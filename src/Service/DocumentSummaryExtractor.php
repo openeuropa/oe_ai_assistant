@@ -8,7 +8,6 @@ use Drupal\ai\AiProviderPluginManager;
 use Drupal\ai\OperationType\Chat\ChatInput;
 use Drupal\ai\OperationType\Chat\ChatMessage;
 use Drupal\ai\OperationType\GenericType\DocumentFile;
-use Drupal\Core\DependencyInjection\Attribute\Autowire;
 use Drupal\file\FileInterface;
 use Drupal\media\MediaInterface;
 use Drupal\oe_ai_assistant\Document\ContextDocumentStorage;
@@ -49,7 +48,6 @@ class DocumentSummaryExtractor implements DocumentSummaryExtractorInterface {
 
   public function __construct(
     private readonly AiProviderPluginManager $aiProviderManager,
-    #[Autowire(service: 'logger.channel.oe_ai_assistant')]
     private readonly LoggerInterface $logger,
   ) {}
 
