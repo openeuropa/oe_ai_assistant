@@ -62,11 +62,13 @@ export function buildEventThreadMessage(
 /**
  * Appends the event to the live thread without any network access.
  *
- * Extracts the existing messages from the current repository, appends the
- * new event message, and rebuilds the repository via
- * ExportedMessageRepository.fromArray so that assistant-ui normalizes every
- * entry. Hand-built entries bypass that normalization and cause a TypeError
- * during import (reading 'type' on undefined).
+ * Only the new event message is normalized via
+ * ExportedMessageRepository.fromArray; hand-built entries bypass that
+ * normalization and cause a TypeError during import (reading 'type' on
+ * undefined). The exported messages are already normalized ThreadMessages,
+ * so they are re-imported untouched, preserving their parentId links and
+ * any branch structure. The event is parented onto the exported head and
+ * becomes the new head.
  *
  * The thread parameter uses structural typing so this function is
  * testable with a plain fake object without importing the full runtime.
@@ -78,19 +80,23 @@ export function appendEventToThread(
   },
   event: LocalThreadEvent,
 ): void {
-  // Extract plain message shapes from the current repository so they can be
-  // passed as ThreadMessageLike values to fromArray.
-  const existing = thread
-    .export()
-    .messages.map((entry) => entry.message as unknown as ThreadMessageLike);
+  const exported = thread.export();
 
-  // Rebuild via fromArray: this lets assistant-ui normalize every entry,
-  // including the new one, avoiding the crash that occurs when a partially
-  // formed object is imported directly.
-  thread.import(
-    ExportedMessageRepository.fromArray([
-      ...existing,
-      buildEventThreadMessage(event),
-    ]),
-  );
+  // Normalize the hand-built event message through fromArray so it carries
+  // the id, status, and part shapes assistant-ui expects on import. The
+  // guard only narrows the indexed access; one input yields one item.
+  const [eventItem] = ExportedMessageRepository.fromArray([
+    buildEventThreadMessage(event),
+  ]).messages;
+  if (eventItem === undefined) {
+    return;
+  }
+
+  thread.import({
+    headId: eventItem.message.id,
+    messages: [
+      ...exported.messages,
+      { message: eventItem.message, parentId: exported.headId ?? null },
+    ],
+  });
 }

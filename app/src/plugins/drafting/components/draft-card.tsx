@@ -2,9 +2,10 @@
  * DraftCard component.
  *
  * Displays a summary of a draft tool-call result as a clickable card in the
- * chat thread. The card body is a button that calls onOpen, which repopulates
- * the artifact panel. Documents are listed as link-style buttons that open a
- * detail dialog; their click events are stopped from bubbling to the card.
+ * chat thread. The title is a button whose stretched overlay makes the whole
+ * card surface call onOpen, which repopulates the artifact panel. Documents
+ * are listed as link-style buttons layered above the overlay that open a
+ * detail dialog without triggering onOpen.
  */
 
 import {
@@ -69,9 +70,6 @@ function documentKindIcon(doc: DraftDocumentSnapshot): typeof FileText {
 
 /**
  * One row of the provenance table: an iconed bold label and its value.
- *
- * Rendered with div cells inside the card's grid because the card body is a
- * button, whose content model does not allow a real table element.
  */
 function ProvenanceRow({
   icon: Icon,
@@ -140,12 +138,8 @@ export function DraftCard({
           <button
             key={doc.id}
             type="button"
-            className="inline-flex cursor-pointer items-center gap-1 text-blue-600 underline-offset-2 hover:underline"
-            onClick={(event) => {
-              // Stop propagation so opening a document does not trigger onOpen.
-              event.stopPropagation();
-              setSelectedDocument(doc);
-            }}
+            className="relative z-10 inline-flex cursor-pointer items-center gap-1 text-blue-600 underline-offset-2 hover:underline"
+            onClick={() => setSelectedDocument(doc)}
           >
             <KindIcon
               size={12}
@@ -161,12 +155,9 @@ export function DraftCard({
 
   return (
     <>
-      {/* Card body is a button so the whole surface is clickable. */}
-      <button
-        type="button"
-        className="my-4 flex w-full flex-col items-start gap-0 rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-left cursor-pointer transition-colors hover:border-gray-300 hover:bg-gray-50"
-        onClick={onOpen}
-      >
+      {/* Relative card wrapper: the title button's stretched overlay makes
+          the whole surface clickable without nesting interactive elements. */}
+      <div className="relative my-4 flex w-full flex-col items-start gap-0 rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-left transition-colors hover:border-gray-300 hover:bg-gray-50">
         {/* Header row: status icon, PenLine icon, and title. */}
         <div className="flex w-full items-start gap-3">
           <div className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center">
@@ -174,12 +165,18 @@ export function DraftCard({
           </div>
 
           <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-1.5">
+            {/* Title button: the after overlay stretches its click target
+                over the card; document links sit above it with z-10. */}
+            <button
+              type="button"
+              className="flex cursor-pointer items-center gap-1.5 after:absolute after:inset-0 after:content-['']"
+              onClick={onOpen}
+            >
               <PenLine size={14} className="shrink-0 text-gray-400" />
               <span className="text-sm font-medium text-gray-700">
                 {draftTitle(version)}
               </span>
-            </div>
+            </button>
 
             {/* Field count subline. */}
             {fieldCount > 0 && (
@@ -216,7 +213,7 @@ export function DraftCard({
             )}
           </div>
         </div>
-      </button>
+      </div>
 
       {/* Document details dialog: controlled by selectedDocument state. */}
       <DocumentDetailsDialog

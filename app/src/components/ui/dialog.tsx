@@ -20,6 +20,11 @@ export interface DialogProps {
   onClose: () => void;
   /** Text rendered as the accessible dialog title. */
   title: string;
+  /**
+   * Screen-reader-only text describing the dialog. When omitted, the
+   * aria-describedby wiring is explicitly disabled per the Radix docs.
+   */
+  description?: string;
   /** Content rendered inside the dialog panel. */
   children: React.ReactNode;
   /** Optional extra class names for the panel element. */
@@ -36,6 +41,7 @@ export function Dialog({
   open,
   onClose,
   title,
+  description,
   children,
   className,
 }: DialogProps) {
@@ -50,8 +56,13 @@ export function Dialog({
         {/* Dimmed overlay behind the panel. */}
         <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-black/40 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0" />
 
-        {/* Centered content panel. */}
+        {/* Centered content panel. Without a description, aria-describedby
+            must be set to undefined to override the Radix default, which
+            would otherwise point at a non-existent element. */}
         <DialogPrimitive.Content
+          {...(description === undefined
+            ? { "aria-describedby": undefined }
+            : {})}
           className={cn(
             "fixed left-1/2 top-1/2 z-50 w-full max-w-lg -translate-x-1/2 -translate-y-1/2",
             "rounded-lg border border-gray-200 bg-white shadow-lg",
@@ -66,6 +77,13 @@ export function Dialog({
             <DialogPrimitive.Title className="text-sm font-semibold text-gray-800">
               {title}
             </DialogPrimitive.Title>
+
+            {/* Screen-reader-only description wired to aria-describedby. */}
+            {description !== undefined && (
+              <DialogPrimitive.Description className="sr-only">
+                {description}
+              </DialogPrimitive.Description>
+            )}
 
             {/* Close button: Radix Close triggers onOpenChange(false). */}
             <DialogPrimitive.Close
