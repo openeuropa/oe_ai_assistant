@@ -81,7 +81,7 @@ final class DocumentMediaHooks {
   }
 
   /**
-   * Persists an empty summary before a replacement file is extracted.
+   * Clears a stale summary before a replacement file is extracted.
    */
   private function clearSummary(MediaInterface $media, string $summaryField): void {
     if (!$media->hasField($summaryField) || $media->get($summaryField)->isEmpty()) {
@@ -89,7 +89,6 @@ final class DocumentMediaHooks {
     }
 
     $media->set($summaryField, NULL);
-    $media->save();
   }
 
 }

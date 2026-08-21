@@ -128,9 +128,16 @@ class MockAiProvider extends AiProviderClientBase implements ChatInterface {
     $log[] = [
       'system_prompt' => $input->getSystemPrompt() ?? '',
       'tools' => $input->getChatTools() ? $input->getChatTools()->renderToolsArray() : [],
+      'model_id' => $model_id,
+      'tags' => $tags,
       'messages' => array_map(fn(ChatMessage $m) => [
         'role' => $m->getRole(),
         'text' => $m->getText(),
+        'files' => array_map(fn($file) => [
+          'filename' => $file->getFilename(),
+          'mime_type' => $file->getMimeType(),
+          'size' => strlen($file->getBinary()),
+        ], $m->getFiles()),
       ], $input->getMessages()),
     ];
     $state->set(static::LOG_KEY, $log);
@@ -171,7 +178,7 @@ class MockAiProvider extends AiProviderClientBase implements ChatInterface {
    * {@inheritdoc}
    */
   public function getSupportedOperationTypes(): array {
-    return ['chat'];
+    return ['chat', 'chat_with_image_vision'];
   }
 
   /**

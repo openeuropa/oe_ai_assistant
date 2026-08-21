@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\oe_ai_assistant\Kernel;
 
-use Drupal\file\Entity\File;
+use Drupal\Core\File\FileExists;
 use Drupal\file\FileInterface;
 use Drupal\media\Entity\Media;
 use Drupal\media\MediaInterface;
@@ -13,6 +13,8 @@ use Drupal\oe_ai_assistant\Entity\AiConversationMessage;
 use Drupal\oe_ai_assistant\Entity\AiConversationMessageInterface;
 use Drupal\oe_ai_assistant\Entity\AiEditorialSession;
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
+use Drupal\oe_ai_assistant_test\Plugin\AiProvider\MockAiProvider;
+use Drupal\oe_ai_assistant_test\Plugin\AiProvider\MockResponse;
 use Drupal\Tests\oe_ai_assistant\Traits\AiConversationMessageTrait;
 use PHPUnit\Framework\Attributes\Group;
 
@@ -32,7 +34,15 @@ class AiEditorialSessionMessageCleanupTest extends AiEditorialSessionKernelTestB
    */
   protected function setUp(): void {
     parent::setUp();
+    $this->enableModules(['oe_ai_assistant_test']);
     $this->installSchema('file', ['file_usage']);
+    $this->config('ai.settings')
+      ->set('default_providers.chat_with_image_vision', [
+        'provider_id' => 'mock_ai',
+        'model_id' => 'mock-model',
+      ])
+      ->save();
+    MockAiProvider::reset();
   }
 
   /**
@@ -174,11 +184,14 @@ class AiEditorialSessionMessageCleanupTest extends AiEditorialSessionKernelTestB
    *   The created media and file entities.
    */
   private function createContextDocument(string $filename): array {
-    $file = File::create([
-      'filename' => $filename,
-      'uri' => 'public://' . $filename,
-      'status' => FileInterface::STATUS_PERMANENT,
-    ]);
+    MockAiProvider::enqueue(new MockResponse('Summary for ' . $filename));
+    $file = $this->container->get('file.repository')->writeData(
+      'Context document contents.',
+      'public://' . $filename,
+      FileExists::Rename,
+    );
+    assert($file instanceof FileInterface);
+    $file->setPermanent();
     $file->save();
 
     $media = Media::create([
