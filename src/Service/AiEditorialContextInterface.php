@@ -36,4 +36,19 @@ interface AiEditorialContextInterface {
    */
   public function buildSelectedPrompt(string $toneId): string;
 
+  /**
+   * Resolves one prompt-ready tone term.
+   *
+   * @param string $toneId
+   *   The taxonomy term ID.
+   *
+   * @return array{id: string, label: string, prompt: string}
+   *   The tone id, label and raw prompt guidelines.
+   *
+   * @throws \InvalidArgumentException
+   *   Thrown when the term does not exist, belongs to another vocabulary,
+   *   or has no prompt defined.
+   */
+  public function getTone(string $toneId): array;
+
 }

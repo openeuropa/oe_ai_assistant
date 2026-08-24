@@ -40,6 +40,16 @@ class AiEditorialSessionMessageCleanupTest extends AiEditorialSessionKernelTestB
 
     // Another session's conversation must survive.
     $other_session = $this->createSession($user);
+
+    // Session creation records an initial-state event row that survives
+    // together with the rest of the other session's conversation.
+    $query_result = $storage->getQuery()
+      ->accessCheck(FALSE)
+      ->condition('host_entity_type', $other_session->getEntityTypeId())
+      ->condition('host_entity_id', (int) $other_session->id())
+      ->execute();
+    $other_session_event_id = (int) reset($query_result);
+
     $other_session_message = $this->createMessage($other_session, AiConversationMessageInterface::ROLE_USER, 'Other session turn.');
 
     // A message hosted by a different entity type but sharing the session id
@@ -61,6 +71,7 @@ class AiEditorialSessionMessageCleanupTest extends AiEditorialSessionKernelTestB
     // Nothing beyond the session's own conversation was touched.
     $remaining = $storage->getQuery()->accessCheck(FALSE)->execute();
     $this->assertSame([
+      $other_session_event_id,
       (int) $other_session_message->id(),
       (int) $other_host_message->id(),
     ], array_map('intval', array_values($remaining)));

@@ -127,4 +127,25 @@ interface MessageRecorderInterface {
    */
   public function recordError(EntityInterface $host, string $message, string $agentId = '', ?AiConversationMessageInterface $parent = NULL): AiConversationMessageInterface;
 
+  /**
+   * Records an editorial change event as a persisted conversation row.
+   *
+   * Event rows carry a human summary in the content field and the machine
+   * payload in metadata ({type, from, to}). The acting user is stored on
+   * purpose: who changed the context is part of the provenance.
+   *
+   * @param \Drupal\Core\Entity\EntityInterface $host
+   *   The entity hosting the conversation.
+   * @param string $summary
+   *   The human-readable summary, e.g. "Tone changed to Formal".
+   * @param array $metadata
+   *   The event payload: type plus from and to descriptors.
+   * @param int|null $uid
+   *   The acting user id, or NULL when not attributable.
+   *
+   * @return \Drupal\oe_ai_assistant\Entity\AiConversationMessageInterface
+   *   The saved event row.
+   */
+  public function recordEvent(EntityInterface $host, string $summary, array $metadata, ?int $uid = NULL): AiConversationMessageInterface;
+
 }

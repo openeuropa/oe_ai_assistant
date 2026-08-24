@@ -6,6 +6,7 @@ namespace Drupal\oe_ai_assistant\Service;
 
 use Drupal\Core\Entity\EntityInterface;
 use Drupal\oe_ai_assistant\Entity\AiConversationMessageInterface;
+use Drupal\oe_ai_assistant\Service\Drafting\EditorialContext;
 
 /**
  * Interface for the sub-agent orchestration service.
@@ -34,9 +35,10 @@ interface DraftingOrchestratorInterface {
    * @param \Drupal\oe_ai_assistant\Entity\AiConversationMessageInterface|null $parent
    *   The draft_content turn each sub-agent turn nests under, or NULL to run
    *   without recording the sub-agent transcript.
-   * @param string|null $templateId
-   *   An ai_drafting_template id to restrict generation to, or NULL to
-   *   auto-select one for the bundle.
+   * @param \Drupal\oe_ai_assistant\Service\Drafting\EditorialContext|null $context
+   *   The editorial context resolved from the session: template id for
+   *   schema pruning, tone prompt for sub-agent injection, document
+   *   descriptors for the provenance snapshot. NULL runs without context.
    *
    * @return array
    *   The consolidated fields map, or empty array if no fields
@@ -49,7 +51,7 @@ interface DraftingOrchestratorInterface {
     string $bundle,
     EntityInterface $host,
     ?AiConversationMessageInterface $parent = NULL,
-    ?string $templateId = NULL,
+    ?EditorialContext $context = NULL,
   ): array;
 
 }

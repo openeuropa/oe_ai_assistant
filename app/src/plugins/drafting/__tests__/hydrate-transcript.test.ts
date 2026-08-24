@@ -23,8 +23,41 @@ describe("toThreadMessages", () => {
     ]);
   });
 
-  it("maps a draft_content tool call to a clickable tool-call part", () => {
+  it("maps a draft_content tool call with a versioned result to args.fields from parsed shape", () => {
+    // Versioned result shape: the parser extracts fields from result.fields.
     const fields = { title: [{ value: "Test Title" }] };
+    const versionedResult = { version: 1, context: null, fields };
+    const input: SessionMessage[] = [
+      {
+        role: "assistant",
+        content: "",
+        toolCalls: [
+          {
+            type: "function",
+            function: { name: "draft_content", arguments: "{}" },
+            result: versionedResult,
+          },
+        ],
+      },
+    ];
+
+    const result = toThreadMessages(input);
+
+    expect(result).toHaveLength(1);
+    const [message] = result;
+    if (!message) throw new Error("expected a message");
+    const part = (message.content as AnyPart[])[0];
+    expect(part.type).toBe("tool-call");
+    expect(part.toolName).toBe("draft_content");
+    // args.fields comes from the parsed shape, not the raw result object.
+    expect(part.args).toEqual({ fields });
+    // result carries the raw value so ToolUI can parse it independently.
+    expect(part.result).toEqual(versionedResult);
+  });
+
+  it("maps a draft_content tool call with a legacy flat result to args.fields", () => {
+    // Legacy shape: a flat object without a numeric version; used as-is.
+    const fields = { title: [{ value: "Legacy Title" }] };
     const input: SessionMessage[] = [
       {
         role: "assistant",
@@ -47,11 +80,43 @@ describe("toThreadMessages", () => {
     const part = (message.content as AnyPart[])[0];
     expect(part.type).toBe("tool-call");
     expect(part.toolName).toBe("draft_content");
+    // Legacy: parseDraftResult returns fields = the flat object itself.
     expect(part.args).toEqual({ fields });
     expect(part.result).toEqual(fields);
   });
 
-  it("ignores non-draft tool calls and drops empty turns", () => {
+  it("maps an event item to an editorial_event tool-call part", () => {
+    const input: SessionMessage[] = [
+      {
+        role: "event",
+        type: "tone",
+        summary: "Tone set to Formal.",
+        at: "2026-08-12T10:00:00Z",
+      },
+    ];
+
+    const result = toThreadMessages(input);
+
+    expect(result).toHaveLength(1);
+    const [message] = result;
+    if (!message) throw new Error("expected a message");
+    // Events are surfaced as assistant messages so they appear in the thread.
+    expect(message.role).toBe("assistant");
+    const part = (message.content as AnyPart[])[0];
+    expect(part.type).toBe("tool-call");
+    expect(part.toolCallId).toBe("event-0");
+    expect(part.toolName).toBe("editorial_event");
+    expect(part.args).toEqual({
+      eventType: "tone",
+      summary: "Tone set to Formal.",
+      at: "2026-08-12T10:00:00Z",
+    });
+    expect(part.result).toEqual({});
+  });
+
+  it("maps a get_draft_history tool call to a tool-call part with parsed args", () => {
+    const args = { sessionId: "abc-123" };
+    const historyResult = { drafts: [] };
     const input: SessionMessage[] = [
       {
         role: "assistant",
@@ -59,9 +124,59 @@ describe("toThreadMessages", () => {
         toolCalls: [
           {
             type: "function",
-            function: { name: "get_content_schema", arguments: "{}" },
+            function: {
+              name: "get_draft_history",
+              arguments: JSON.stringify(args),
+            },
+            result: historyResult,
           },
         ],
+      },
+    ];
+
+    const result = toThreadMessages(input);
+
+    expect(result).toHaveLength(1);
+    const [message] = result;
+    if (!message) throw new Error("expected a message");
+    const part = (message.content as AnyPart[])[0];
+    expect(part.type).toBe("tool-call");
+    expect(part.toolName).toBe("get_draft_history");
+    // Arguments JSON must be safe-parsed into an object.
+    expect(part.args).toEqual(args);
+    expect(part.result).toEqual(historyResult);
+  });
+
+  it("safe-parses invalid arguments JSON to an empty object", () => {
+    const input: SessionMessage[] = [
+      {
+        role: "assistant",
+        content: "",
+        toolCalls: [
+          {
+            type: "function",
+            function: { name: "some_tool", arguments: "NOT JSON" },
+          },
+        ],
+      },
+    ];
+
+    const result = toThreadMessages(input);
+
+    expect(result).toHaveLength(1);
+    const [message] = result;
+    if (!message) throw new Error("expected a message");
+    const part = (message.content as AnyPart[])[0];
+    expect(part.args).toEqual({});
+    expect(part.result).toEqual({});
+  });
+
+  it("drops items that have no content, no tool calls, and are not events", () => {
+    // An assistant item with empty content and no tool calls produces nothing.
+    const input: SessionMessage[] = [
+      {
+        role: "assistant",
+        content: "",
       },
     ];
 

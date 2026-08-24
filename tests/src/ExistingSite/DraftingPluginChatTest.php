@@ -4,13 +4,9 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\oe_ai_assistant\ExistingSite;
 
-use Drupal\Core\Url;
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
 use Drupal\oe_ai_assistant_test\Plugin\AiProvider\MockAiProvider;
 use Drupal\oe_ai_assistant_test\Plugin\AiProvider\MockResponse;
-use Drupal\Tests\oe_ai_assistant\Traits\ExistingSiteConfigBackupTrait;
-use Drupal\user\UserInterface;
-use weitzman\DrupalTestTraits\ExistingSiteBase;
 
 /**
  * Integration tests for the DraftingPlugin chat action.
@@ -19,68 +15,8 @@ use weitzman\DrupalTestTraits\ExistingSiteBase;
  * with a mock AI provider and verifies the SSE response stream. The
  * conversation is scoped by an editorial session: history and turns
  * persist as ai_conversation_message rows hosted by the session.
- *
- * Requires OE_AI_SKIP_PROVIDER_OVERRIDE=1 in the web container
- * environment so settings.ai.php does not override the mock
- * provider config set in setUp().
- *
- * @see .ddev/settings.ai.php
- * @see .ddev/docker-compose.phpunit.yaml
  */
-class DraftingPluginChatTest extends ExistingSiteBase {
-
-  use ExistingSiteConfigBackupTrait;
-
-  /**
-   * Sessions created by the test, cleared of messages on teardown.
-   *
-   * @var \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface[]
-   */
-  protected array $sessions = [];
-
-  /**
-   * {@inheritdoc}
-   */
-  protected function setUp(): void {
-    parent::setUp();
-
-    // Ensure the shared test module is enabled (provides MockAiProvider).
-    \Drupal::service('module_installer')
-      ->install(['oe_ai_assistant_test']);
-
-    // Backup AI settings and set mock_ai as the default provider.
-    $this->backupSimpleConfig('ai.settings');
-    \Drupal::configFactory()->getEditable('ai.settings')
-      ->set('default_providers', [
-        'chat' => [
-          'provider_id' => 'mock_ai',
-          'model_id' => 'mock-model',
-        ],
-        'chat_with_tools' => [
-          'provider_id' => 'mock_ai',
-          'model_id' => 'mock-model',
-        ],
-      ])
-      ->save();
-
-    MockAiProvider::reset();
-  }
-
-  /**
-   * {@inheritdoc}
-   */
-  protected function tearDown(): void {
-    // Remove any conversation messages persisted against the test sessions.
-    $storage = \Drupal::entityTypeManager()
-      ->getStorage('ai_conversation_message');
-    foreach ($this->sessions as $session) {
-      $storage->deleteForHost($session);
-    }
-
-    MockAiProvider::reset();
-    $this->restoreConfiguration();
-    parent::tearDown();
-  }
+class DraftingPluginChatTest extends DraftingPluginTestBase {
 
   /**
    * Tests that a text response is streamed and persisted for the session.
@@ -134,7 +70,11 @@ class DraftingPluginChatTest extends ExistingSiteBase {
     $this->assertContains('user', $roles, 'A user turn must be persisted.');
     $this->assertContains('assistant', $roles, 'An assistant turn must be persisted.');
 
-    $messages = $this->getMessages($session);
+    // Events are exercised in EditorialEventsTest; filter here.
+    $messages = array_values(array_filter(
+      $this->getMessages($session),
+      fn($m) => $m['role'] !== 'event',
+    ));
     $this->assertSame('user', $messages[0]['role']);
     $this->assertSame('Hi there.', $messages[0]['content']);
     $this->assertSame('assistant', $messages[1]['role']);
@@ -294,9 +234,13 @@ class DraftingPluginChatTest extends ExistingSiteBase {
   }
 
   /**
-   * Tests that selected editorial context is injected into the system prompt.
+   * Tests that the router system prompt is stable and tone-free.
+   *
+   * The router prompt carries role and capabilities only; the tone reaches
+   * the sub-agents instead, and tone changes must not alter the router
+   * prompt between turns.
    */
-  public function testSelectedContextIsInjectedIntoSystemPrompt(): void {
+  public function testRouterSystemPromptIsStableAndToneFree(): void {
     $user = $this->createUser(['use oe ai assistant']);
     $this->loginUser($user);
     $session = $this->createSession($user);
@@ -306,39 +250,114 @@ class DraftingPluginChatTest extends ExistingSiteBase {
       'toneId' => $this->getTermIdByName('oe_ai_tone', 'Formal'),
     ]);
 
-    MockAiProvider::enqueue(new MockResponse(
-      text: 'Drafting with selected context.',
-    ));
-
-    $result = $this->httpPost('/api/ai/plugins/drafting/chat', [
+    MockAiProvider::enqueue(new MockResponse(text: 'First reply.'));
+    $this->httpPost('/api/ai/plugins/drafting/chat', [
       'message' => 'Draft this with context.',
       'sessionId' => $session->id(),
     ]);
 
-    $this->assertEquals(200, $result['status'],
-      'Expected 200 response. Body: ' . substr($result['body'], 0, 500));
+    // Change the tone and chat again: the router prompt must not change.
+    $this->httpPost('/api/ai/plugins/drafting/set-tone', [
+      'sessionId' => $session->id(),
+      'toneId' => $this->getTermIdByName('oe_ai_tone', 'Technical'),
+    ]);
+    MockAiProvider::enqueue(new MockResponse(text: 'Second reply.'));
+    $this->httpPost('/api/ai/plugins/drafting/chat', [
+      'message' => 'And again.',
+      'sessionId' => $session->id(),
+    ]);
 
     \Drupal::state()->resetCache();
     $log = MockAiProvider::getCallLog();
-    $this->assertCount(1, $log, 'Mock provider should have been called once.');
+    $this->assertCount(2, $log, 'Two router calls should have been made.');
 
-    $this->assertStringContainsString(
-      'The user has selected:',
-      $log[0]['system_prompt'],
-    );
-    $this->assertStringContainsString(
-      'Use professional, institutional language. Maintain a neutral, authoritative voice.',
-      $log[0]['system_prompt'],
-    );
     $this->assertStringNotContainsString(
-      'Use professional language. Emphasize practical implications, compliance requirements, and economic impact.',
+      'Use professional, institutional language.',
       $log[0]['system_prompt'],
+      'The tone prompt must not be injected into the router prompt.',
+    );
+    $this->assertSame(
+      $log[0]['system_prompt'],
+      $log[1]['system_prompt'],
+      'The router prompt must be identical across tone changes.',
     );
 
     $toolNames = $this->extractToolNames($log[0]['tools']);
     $this->assertContains('draft_content', $toolNames);
-    $this->assertNotContains('select_context', $toolNames);
-    $this->assertNotContains('save_session', $toolNames);
+  }
+
+  /**
+   * Tests that the resolved tone prompt reaches every sub-agent.
+   *
+   * The recorded sub-agent system rows nested under the draft_content turn
+   * must contain the tone prompt text, proving the orchestrator injected the
+   * editorial context into the agents that produce the field values.
+   */
+  public function testTonePromptReachesSubAgents(): void {
+    $user = $this->createUser(['use oe ai assistant']);
+    $this->loginUser($user);
+    $session = $this->createSession($user);
+
+    $this->httpPost('/api/ai/plugins/drafting/set-tone', [
+      'sessionId' => $session->id(),
+      'toneId' => $this->getTermIdByName('oe_ai_tone', 'Formal'),
+    ]);
+
+    // Router signals draft_content, then one response per schema group.
+    MockAiProvider::enqueue(new MockResponse(
+      toolCalls: [
+        [
+          'id' => 'call_1',
+          'type' => 'function',
+          'function' => ['name' => 'draft_content', 'arguments' => '{}'],
+        ],
+      ],
+    ));
+    MockAiProvider::enqueue(new MockResponse(
+      text: '{"title": [{"value": "Test Title"}], "field_body": [{"value": "<p>Body</p>", "format": "full_html"}]}',
+    ));
+    MockAiProvider::enqueue(new MockResponse(text: '{"field_contacts": []}'));
+    MockAiProvider::enqueue(new MockResponse(text: '{"field_content_paragraphs": []}'));
+
+    $result = $this->httpPost('/api/ai/plugins/drafting/chat', [
+      'message' => 'Generate the draft now.',
+      'sessionId' => $session->id(),
+    ]);
+    $this->assertEquals(200, $result['status'],
+      'Expected 200. Body: ' . substr($result['body'], 0, 500));
+
+    // Find the draft_content turn and inspect its nested system rows.
+    $storage = \Drupal::entityTypeManager()
+      ->getStorage('ai_conversation_message');
+    $storage->resetCache();
+    $draftNode = NULL;
+    foreach ($storage->loadTree($session) as $node) {
+      foreach ($node['message']->getToolCalls() as $call) {
+        if (($call['function']['name'] ?? '') === 'draft_content') {
+          $draftNode = $node;
+        }
+      }
+    }
+    $this->assertNotNull($draftNode, 'A draft_content turn is recorded.');
+
+    $systemRows = array_filter(
+      $draftNode['children'],
+      fn($child) => $child['message']->getRole() === 'system',
+    );
+    $this->assertNotEmpty($systemRows, 'Sub-agent system rows are recorded.');
+    foreach ($systemRows as $row) {
+      $content = (string) $row['message']->get('content')->value;
+      $this->assertStringContainsString(
+        'Use professional, institutional language.',
+        $content,
+        'Every sub-agent system prompt must contain the tone prompt.',
+      );
+      $this->assertStringContainsString(
+        'Tone: Formal',
+        $content,
+        'Every sub-agent system prompt must contain the tone label.',
+      );
+    }
   }
 
   /**
@@ -386,7 +405,11 @@ class DraftingPluginChatTest extends ExistingSiteBase {
     // A tool row is not user-visible and must be filtered out.
     $this->seedMessage($session, 'tool', 'Tool payload.');
 
-    $messages = $this->getMessages($session);
+    // Events are exercised in EditorialEventsTest; filter here.
+    $messages = array_values(array_filter(
+      $this->getMessages($session),
+      fn($m) => $m['role'] !== 'event',
+    ));
 
     $this->assertSame(
       [
@@ -420,7 +443,11 @@ class DraftingPluginChatTest extends ExistingSiteBase {
       ],
     ]);
 
-    $messages = $this->getMessages($session);
+    // Events are exercised in EditorialEventsTest; filter here.
+    $messages = array_values(array_filter(
+      $this->getMessages($session),
+      fn($m) => $m['role'] !== 'event',
+    ));
 
     $this->assertCount(2, $messages);
     $this->assertSame('user', $messages[0]['role']);
@@ -457,30 +484,6 @@ class DraftingPluginChatTest extends ExistingSiteBase {
   }
 
   /**
-   * Creates an editorial session owned by the given user.
-   *
-   * @param \Drupal\user\UserInterface $owner
-   *   The session owner.
-   *
-   * @return \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface
-   *   The saved session.
-   */
-  protected function createSession(UserInterface $owner): AiEditorialSessionInterface {
-    /** @var \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $session */
-    $session = \Drupal::entityTypeManager()
-      ->getStorage('ai_editorial_session')
-      ->create([
-        'type' => 'content_creation',
-        'uid' => $owner->id(),
-        'content_type' => 'oe_news',
-      ]);
-    $session->save();
-    $this->markEntityForCleanup($session);
-    $this->sessions[] = $session;
-    return $session;
-  }
-
-  /**
    * Seeds a conversation message hosted by the session.
    *
    * @param \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $session
@@ -508,23 +511,6 @@ class DraftingPluginChatTest extends ExistingSiteBase {
   }
 
   /**
-   * Loads the persisted top-level transcript for a session.
-   *
-   * @param \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $session
-   *   The session hosting the conversation.
-   *
-   * @return \Drupal\oe_ai_assistant\Entity\AiConversationMessageInterface[]
-   *   The transcript entities.
-   */
-  protected function loadTranscript(AiEditorialSessionInterface $session): array {
-    \Drupal::entityTypeManager()->getStorage('ai_conversation_message')
-      ->resetCache();
-    return \Drupal::entityTypeManager()
-      ->getStorage('ai_conversation_message')
-      ->loadTranscript($session);
-  }
-
-  /**
    * Calls the get-messages action and returns its messages list.
    *
    * @param \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $session
@@ -541,61 +527,6 @@ class DraftingPluginChatTest extends ExistingSiteBase {
       'get-messages should return 200. Body: ' . substr($result['body'], 0, 500));
     $decoded = json_decode($result['body'], TRUE);
     return $decoded['messages'] ?? [];
-  }
-
-  /**
-   * Logs in a user via the login form.
-   *
-   * @param \Drupal\user\UserInterface $account
-   *   The user account to log in.
-   */
-  protected function loginUser(UserInterface $account): void {
-    if ($this->loggedInUser) {
-      $this->drupalLogout();
-    }
-
-    $this->drupalGet(Url::fromRoute('user.login'));
-    $this->submitForm([
-      'name' => $account->getAccountName(),
-      'pass' => $account->passRaw,
-    ], 'Log in');
-
-    $this->loggedInUser = $account;
-    $this->container->get('current_user')->setAccount($account);
-  }
-
-  /**
-   * Sends a POST request with JSON body using the BrowserKit client.
-   *
-   * @param string $url
-   *   The URL to post to.
-   * @param array $body
-   *   The request body to encode as JSON.
-   *
-   * @return array
-   *   An array with 'status' (int) and 'body' (raw string) keys.
-   */
-  protected function httpPost(string $url, array $body): array {
-    /** @var \Symfony\Component\BrowserKit\AbstractBrowser $client */
-    $client = $this->getSession()->getDriver()->getClient();
-
-    $fullUrl = $this->baseUrl . $url;
-
-    $client->request(
-      'POST',
-      $fullUrl,
-      [],
-      [],
-      ['CONTENT_TYPE' => 'application/json'],
-      json_encode($body),
-    );
-
-    $response = $client->getResponse();
-
-    return [
-      'status' => $response->getStatusCode(),
-      'body' => $response->getContent(),
-    ];
   }
 
   /**
@@ -641,22 +572,216 @@ class DraftingPluginChatTest extends ExistingSiteBase {
   }
 
   /**
-   * Returns the taxonomy term ID for a fixture term.
+   * Tests draft versioning and the immutable provenance snapshot.
+   *
+   * Two drafts with different tones must yield versions 1 and 2, each
+   * carrying the tone that was active when it was generated; changing the
+   * tone must not alter an already stored snapshot.
    */
-  protected function getTermIdByName(string $vid, string $name): string {
-    $terms = \Drupal::entityTypeManager()
-      ->getStorage('taxonomy_term')
-      ->loadByProperties([
-        'vid' => $vid,
-        'name' => $name,
-      ]);
+  public function testDraftResultCarriesVersionAndSnapshot(): void {
+    $user = $this->createUser(['use oe ai assistant']);
+    $this->loginUser($user);
+    $session = $this->createSession($user);
 
-    $term = reset($terms);
-    if (!$term) {
-      $this->fail(sprintf('Term "%s" was not found in "%s".', $name, $vid));
-    }
+    $this->httpPost('/api/ai/plugins/drafting/set-tone', [
+      'sessionId' => $session->id(),
+      'toneId' => $this->getTermIdByName('oe_ai_tone', 'Formal'),
+    ]);
+    $this->enqueueDraftFlow();
+    $this->httpPost('/api/ai/plugins/drafting/chat', [
+      'message' => 'Generate the draft now.',
+      'sessionId' => $session->id(),
+    ]);
 
-    return (string) $term->id();
+    $drafts = $this->loadDraftResults($session);
+    $this->assertCount(1, $drafts);
+    $this->assertSame(1, $drafts[0]['version']);
+    $this->assertSame('Formal', $drafts[0]['context']['tone']['label']);
+    $this->assertSame(
+      'Use professional, institutional language. Maintain a neutral, authoritative voice. Avoid contractions and colloquialisms.',
+      $drafts[0]['context']['tone']['prompt'],
+      'The snapshot must store the raw tone guidelines.',
+    );
+    $this->assertSame('news_with_paragraphs', $drafts[0]['context']['template']['id']);
+    $this->assertSame([], $drafts[0]['context']['documents']);
+    $this->assertArrayHasKey('title', $drafts[0]['fields']);
+
+    // The version reaches the model through the recorded confirmation.
+    $transcript = $this->loadTranscript($session);
+    $texts = array_map(
+      fn($m) => (string) $m->get('content')->value, $transcript,
+    );
+    $this->assertNotEmpty(array_filter(
+      $texts,
+      fn($t) => str_contains($t, 'Draft 1 generated with'),
+    ), 'The confirmation must name the draft version.');
+
+    // Second draft with a different tone.
+    $this->httpPost('/api/ai/plugins/drafting/set-tone', [
+      'sessionId' => $session->id(),
+      'toneId' => $this->getTermIdByName('oe_ai_tone', 'Technical'),
+    ]);
+    $this->enqueueDraftFlow();
+    $this->httpPost('/api/ai/plugins/drafting/chat', [
+      'message' => 'Generate another draft.',
+      'sessionId' => $session->id(),
+    ]);
+
+    $drafts = $this->loadDraftResults($session);
+    $this->assertCount(2, $drafts);
+    $this->assertSame(1, $drafts[0]['version']);
+    $this->assertSame('Formal', $drafts[0]['context']['tone']['label'],
+      'The first snapshot must not change when the tone changes.');
+    $this->assertSame(2, $drafts[1]['version']);
+    $this->assertSame('Technical', $drafts[1]['context']['tone']['label']);
+    $this->assertNotEmpty($drafts[1]['context']['tone']['prompt'],
+      'The second snapshot must carry its own tone guidelines.');
+  }
+
+  /**
+   * Tests that get_draft_history returns the drafts of the pinned session.
+   *
+   * The history is seeded directly, including a populated documents fixture
+   * of both categories, so the test does not depend on the drafting flow.
+   * The mock router calls the tool with a bogus session id to prove the
+   * fixed tool context pins the real one.
+   */
+  public function testGetDraftHistoryToolReturnsPinnedSessionDrafts(): void {
+    $user = $this->createUser(['use oe ai assistant']);
+    $this->loginUser($user);
+    $session = $this->createSession($user);
+
+    // Seed two drafted turns with provenance snapshots.
+    $documents = [
+      [
+        'id' => '12',
+        'title' => 'Climate briefing note',
+        'category' => 'context',
+        'summary' => 'Key figures on EU emissions.',
+        'meta' => ['mime' => 'application/pdf'],
+      ],
+      [
+        'id' => '15',
+        'title' => 'Hero image',
+        'category' => 'publishable',
+        'summary' => 'Wind turbines at sunset.',
+        'meta' => ['mime' => 'image/png'],
+      ],
+    ];
+    $this->seedMessage($session, 'assistant', '', [
+      [
+        'type' => 'function',
+        'function' => ['name' => 'draft_content', 'arguments' => '{}'],
+        'result' => [
+          'version' => 1,
+          'context' => [
+            'tone' => ['id' => '1', 'label' => 'Formal', 'prompt' => 'Use professional, institutional language.'],
+            'template' => ['id' => 'news_default', 'label' => 'News default'],
+            'documents' => $documents,
+          ],
+          'fields' => ['title' => [['value' => 'First']]],
+        ],
+      ],
+    ]);
+    $this->seedMessage($session, 'assistant', '', [
+      [
+        'type' => 'function',
+        'function' => ['name' => 'draft_content', 'arguments' => '{}'],
+        'result' => [
+          'version' => 2,
+          'context' => [
+            'tone' => ['id' => '2', 'label' => 'Technical', 'prompt' => 'Use domain-specific terminology precisely.'],
+            'template' => ['id' => 'news_default', 'label' => 'News default'],
+            'documents' => [],
+          ],
+          'fields' => ['title' => [['value' => 'Second']]],
+        ],
+      ],
+    ]);
+
+    // The router calls the tool with a bogus session id, then answers.
+    MockAiProvider::enqueue(new MockResponse(
+      toolCalls: [
+        [
+          'id' => 'call_1',
+          'type' => 'function',
+          'function' => [
+            'name' => 'get_draft_history',
+            'arguments' => '{"session_id": "999999"}',
+          ],
+        ],
+      ],
+    ));
+    MockAiProvider::enqueue(new MockResponse(
+      text: 'Draft 2 used the Technical tone.',
+    ));
+
+    $result = $this->httpPost('/api/ai/plugins/drafting/chat', [
+      'message' => 'Which tone produced draft 2?',
+      'sessionId' => $session->id(),
+    ]);
+    $this->assertEquals(200, $result['status'],
+      'Expected 200. Body: ' . substr($result['body'], 0, 500));
+
+    // The tool result was recorded as a tool row scoped to OUR session.
+    $toolRows = array_values(array_filter(
+      array_map(
+        fn($n) => $n['message'],
+        \Drupal::entityTypeManager()
+          ->getStorage('ai_conversation_message')->loadTree($session),
+      ),
+      fn($m) => $m->getRole() === 'tool',
+    ));
+    $this->assertNotEmpty($toolRows, 'The tool result must be recorded.');
+    $payload = (string) $toolRows[0]->get('content')->value;
+    $this->assertStringContainsString('Draft 1', $payload);
+    $this->assertStringContainsString('Draft 2', $payload);
+    $this->assertStringContainsString('Formal', $payload);
+    $this->assertStringContainsString('Technical', $payload);
+    $this->assertStringContainsString('Climate briefing note', $payload,
+      'Populated document descriptors must flow through the tool output.');
+  }
+
+  /**
+   * Tests that persisted tool result rows are not replayed to the provider.
+   *
+   * A stored tool row cannot be re-linked to the assistant call that
+   * produced it, and providers reject unpaired tool messages, so the
+   * reconstructed history must skip tool rows entirely.
+   */
+  public function testHistoryReconstructionSkipsToolRows(): void {
+    $user = $this->createUser(['use oe ai assistant']);
+    $this->loginUser($user);
+    $session = $this->createSession($user);
+
+    // Seed a turn that used a tool: the assistant row carries the call,
+    // the tool row carries the result, and a follow-up summarizes it.
+    $this->seedMessage($session, 'user', 'Which tone produced draft 1?');
+    $this->seedMessage($session, 'assistant', '', [
+      [
+        'type' => 'function',
+        'function' => ['name' => 'get_draft_history', 'arguments' => '{}'],
+      ],
+    ]);
+    $this->seedMessage($session, 'tool', '{"drafts":[]}');
+    $this->seedMessage($session, 'assistant', 'No drafts exist yet.');
+
+    MockAiProvider::enqueue(new MockResponse(text: 'Noted.'));
+    $result = $this->httpPost('/api/ai/plugins/drafting/chat', [
+      'message' => 'Thanks.',
+      'sessionId' => $session->id(),
+    ]);
+    $this->assertEquals(200, $result['status']);
+
+    \Drupal::state()->resetCache();
+    $log = MockAiProvider::getCallLog();
+    $this->assertCount(1, $log);
+    $roles = array_column($log[0]['messages'], 'role');
+    $this->assertNotContains('tool', $roles,
+      'Persisted tool rows must not be replayed to the provider.');
+    $this->assertContains('No drafts exist yet.',
+      array_column($log[0]['messages'], 'text'),
+      'The assistant summary of the tool outcome stays in the history.');
   }
 
   /**
@@ -669,6 +794,49 @@ class DraftingPluginChatTest extends ExistingSiteBase {
     }
 
     return array_values(array_filter($names));
+  }
+
+  /**
+   * Enqueues a full mock draft flow: router signal plus three sub-agents.
+   */
+  protected function enqueueDraftFlow(): void {
+    MockAiProvider::enqueue(new MockResponse(
+      toolCalls: [
+        [
+          'id' => 'call_1',
+          'type' => 'function',
+          'function' => ['name' => 'draft_content', 'arguments' => '{}'],
+        ],
+      ],
+    ));
+    MockAiProvider::enqueue(new MockResponse(
+      text: '{"title": [{"value": "Test Title"}], "field_body": [{"value": "<p>Body</p>", "format": "full_html"}]}',
+    ));
+    MockAiProvider::enqueue(new MockResponse(text: '{"field_contacts": []}'));
+    MockAiProvider::enqueue(new MockResponse(text: '{"field_content_paragraphs": []}'));
+  }
+
+  /**
+   * Loads every stored draft_content result for a session, in order.
+   *
+   * @param \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $session
+   *   The session hosting the conversation.
+   *
+   * @return array
+   *   The result arrays stored on draft_content tool calls.
+   */
+  protected function loadDraftResults(AiEditorialSessionInterface $session): array {
+    $results = [];
+    foreach ($this->loadTranscript($session) as $message) {
+      foreach ($message->getToolCalls() as $call) {
+        if (($call['function']['name'] ?? '') === 'draft_content'
+          && isset($call['result'])
+        ) {
+          $results[] = $call['result'];
+        }
+      }
+    }
+    return $results;
   }
 
 }
