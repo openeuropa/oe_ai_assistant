@@ -5,6 +5,10 @@ declare(strict_types=1);
 namespace Drupal\Tests\oe_ai_assistant\ExistingSite;
 
 use Drupal\Core\Url;
+use Drupal\Core\File\FileExists;
+use Drupal\Core\File\FileSystemInterface;
+use Drupal\media\MediaInterface;
+use Drupal\oe_ai_assistant\Document\ContextDocumentStorage;
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
 use Drupal\oe_ai_assistant_test\Plugin\AiProvider\MockAiProvider;
 use Drupal\oe_ai_assistant_test\Plugin\AiProvider\MockResponse;
@@ -57,6 +61,10 @@ class DraftingPluginChatTest extends ExistingSiteBase {
           'model_id' => 'mock-model',
         ],
         'chat_with_tools' => [
+          'provider_id' => 'mock_ai',
+          'model_id' => 'mock-model',
+        ],
+        'chat_with_image_vision' => [
           'provider_id' => 'mock_ai',
           'model_id' => 'mock-model',
         ],
@@ -199,6 +207,9 @@ class DraftingPluginChatTest extends ExistingSiteBase {
     $user = $this->createUser(['use oe ai assistant']);
     $this->loginUser($user);
     $session = $this->createSession($user);
+    $this->createContextDocument($session, 'first-brief.txt', 'First supporting summary.');
+    $this->createContextDocument($session, 'second-brief.txt', 'Second supporting summary.');
+    MockAiProvider::reset();
 
     // Router calls draft_content (the "I'm ready" signal).
     MockAiProvider::enqueue(new MockResponse(
@@ -291,6 +302,18 @@ class DraftingPluginChatTest extends ExistingSiteBase {
       $this->assertNotEmpty($child['message']->get('agent_id')->value,
         'Sub-agent rows carry an agent id.');
     }
+
+    \Drupal::state()->resetCache();
+    $log = MockAiProvider::getCallLog();
+    $this->assertGreaterThan(1, count($log), 'Router plus sub-agent calls should be logged.');
+    foreach (array_slice($log, 1) as $subAgentCall) {
+      $messageText = implode("\n", array_column($subAgentCall['messages'], 'text'));
+      $this->assertStringContainsString('Supporting document context:', $messageText);
+      $this->assertStringContainsString('Do not copy or publish them verbatim.', $messageText);
+      $this->assertStringContainsString('First supporting summary.', $messageText);
+      $this->assertStringContainsString('Second supporting summary.', $messageText);
+      $this->assertStringNotContainsString('private://', $messageText);
+    }
   }
 
   /**
@@ -339,6 +362,63 @@ class DraftingPluginChatTest extends ExistingSiteBase {
     $this->assertContains('draft_content', $toolNames);
     $this->assertNotContains('select_context', $toolNames);
     $this->assertNotContains('save_session', $toolNames);
+  }
+
+  /**
+   * Tests supporting-document context reflects the latest session state.
+   */
+  public function testSupportingDocumentContextReflectsLatestCrudState(): void {
+    $user = $this->createUser(['use oe ai assistant']);
+    $this->loginUser($user);
+    $session = $this->createSession($user);
+
+    $first = $this->createContextDocument($session, 'first-brief.txt', 'First supporting summary.');
+    $second = $this->createContextDocument($session, 'second-brief.txt', 'Second supporting summary.');
+    $empty = $this->createContextDocument($session, 'empty-brief.txt', 'Temporary summary to clear.');
+    $empty->set(ContextDocumentStorage::SUMMARY_FIELD, NULL);
+    $empty->save();
+
+    MockAiProvider::reset();
+    $this->chat($session, 'Use the current supporting documents.');
+    $prompt = $this->singleRouterPrompt();
+    $this->assertStringContainsString('Supporting document context:', $prompt);
+    $this->assertStringContainsString('Do not copy or publish them verbatim.', $prompt);
+    $this->assertStringContainsString('First supporting summary.', $prompt);
+    $this->assertStringContainsString('Second supporting summary.', $prompt);
+    $this->assertStringNotContainsString('Third supporting summary.', $prompt);
+    $this->assertStringNotContainsString('Temporary summary to clear.', $prompt);
+    $this->assertStringNotContainsString('empty-brief.txt', $prompt);
+    $this->assertStringNotContainsString('Source contents for first-brief.txt', $prompt);
+
+    $second->set(ContextDocumentStorage::SUMMARY_FIELD, [
+      'value' => 'Updated second supporting summary.',
+    ]);
+    $second->save();
+    $this->createContextDocument($session, 'third-brief.txt', 'Third supporting summary.');
+
+    MockAiProvider::reset();
+    $this->chat($session, 'Use the updated supporting documents.');
+    $prompt = $this->singleRouterPrompt();
+    $this->assertStringContainsString('First supporting summary.', $prompt);
+    $this->assertStringNotContainsString('Second supporting summary.', $prompt);
+    $this->assertStringContainsString('Updated second supporting summary.', $prompt);
+    $this->assertStringContainsString('Third supporting summary.', $prompt);
+
+    $remove = $this->httpPost('/api/ai/plugins/drafting/remove-document', [
+      'sessionId' => $session->id(),
+      'category' => ContextDocumentStorage::CATEGORY,
+      'documentId' => $first->id(),
+    ]);
+    $this->assertSame(200, $remove['status'],
+      'remove-document should return 200. Body: ' . substr($remove['body'], 0, 500));
+
+    MockAiProvider::reset();
+    $this->chat($session, 'Use the remaining supporting documents.');
+    $prompt = $this->singleRouterPrompt();
+    $this->assertStringNotContainsString('First supporting summary.', $prompt);
+    $this->assertStringContainsString('Updated second supporting summary.', $prompt);
+    $this->assertStringContainsString('Third supporting summary.', $prompt);
+    $this->assertStringNotContainsString('private://', $prompt);
   }
 
   /**
@@ -478,6 +558,77 @@ class DraftingPluginChatTest extends ExistingSiteBase {
     $this->markEntityForCleanup($session);
     $this->sessions[] = $session;
     return $session;
+  }
+
+  /**
+   * Creates a context document and references it from the session.
+   */
+  protected function createContextDocument(AiEditorialSessionInterface $session, string $filename, string $summary): MediaInterface {
+    $fileSystem = \Drupal::service('file_system');
+    $directory = ContextDocumentStorage::UPLOAD_DIRECTORY;
+    $this->assertTrue($fileSystem->prepareDirectory(
+      $directory,
+      FileSystemInterface::CREATE_DIRECTORY | FileSystemInterface::MODIFY_PERMISSIONS,
+    ));
+
+    MockAiProvider::enqueue(new MockResponse($summary));
+    $file = \Drupal::service('file.repository')->writeData(
+      'Source contents for ' . $filename,
+      $directory . '/' . $filename,
+      FileExists::Rename,
+    );
+    $file->setPermanent();
+    $file->save();
+    $this->markEntityForCleanup($file);
+
+    /** @var \Drupal\media\MediaInterface $media */
+    $media = \Drupal::entityTypeManager()->getStorage('media')->create([
+      'bundle' => ContextDocumentStorage::MEDIA_BUNDLE,
+      'name' => $filename,
+      'status' => 0,
+      ContextDocumentStorage::SOURCE_FIELD => [
+        'target_id' => $file->id(),
+      ],
+    ]);
+    $media->save();
+    $this->markEntityForCleanup($media);
+
+    $session->get(ContextDocumentStorage::SESSION_FIELD)->appendItem([
+      'target_id' => $media->id(),
+    ]);
+    $session->save();
+    \Drupal::entityTypeManager()
+      ->getStorage('ai_editorial_session')
+      ->resetCache([$session->id()]);
+
+    return $media;
+  }
+
+  /**
+   * Sends one chat request with a queued mock response.
+   */
+  protected function chat(AiEditorialSessionInterface $session, string $message): void {
+    MockAiProvider::enqueue(new MockResponse(
+      text: 'Response grounded in the current supporting documents.',
+    ));
+
+    $result = $this->httpPost('/api/ai/plugins/drafting/chat', [
+      'message' => $message,
+      'sessionId' => $session->id(),
+    ]);
+    $this->assertSame(200, $result['status'],
+      'Expected 200 response. Body: ' . substr($result['body'], 0, 500));
+  }
+
+  /**
+   * Returns the only router prompt from the current mock provider log.
+   */
+  protected function singleRouterPrompt(): string {
+    \Drupal::state()->resetCache();
+    $log = MockAiProvider::getCallLog();
+    $this->assertCount(1, $log, 'Only the chat router call should be logged.');
+
+    return $log[0]['system_prompt'];
   }
 
   /**
