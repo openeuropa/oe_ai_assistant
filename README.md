@@ -173,14 +173,13 @@ path inside `vendor/`. To apply the patch in that case:
        }
    }
    ```
-3. Disable automatic dependency-patch discovery so composer-patches doesn't also try (and fail) to resolve the
-   original relative path from this module:
+3. Ignore this module's dependency-declared patches so composer-patches doesn't also try (and fail) to resolve
+   the original relative path from this module. The `ignore-dependency-patches` option takes a list of package
+   names, so patches discovered from other dependencies keep working:
    ```json
    "extra": {
        "composer-patches": {
-           "ignore-dependency-patches": true
+           "ignore-dependency-patches": ["openeuropa/oe_ai_assistant"]
        }
    }
    ```
-   Note this disables auto-discovered patches from *all* dependencies, not just this one — if you rely on other
-   dependency-declared patches, you'll need to re-declare those the same way.
