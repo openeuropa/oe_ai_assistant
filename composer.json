@@ -48,7 +48,7 @@
         "enable-patching": true,
         "patches": {
             "drupal/ai_agents": {
-                "Keep setUserInterface extra tags on the entity wrapper (getExtraTags)": "patches/ai-agents-agent-wrapper-extra-tags.patch"
+                "Keep setUserInterface extra tags on the entity wrapper (getExtraTags)": "https://raw.githubusercontent.com/openeuropa/oe_ai_assistant/b8b547b688e2c48bb6bc4a8bed0b84b474bf32ff/patches/ai-agents-agent-wrapper-extra-tags.patch"
             }
         },
         "installer-paths": {

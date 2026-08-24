@@ -6,6 +6,7 @@ namespace Drupal\oe_ai_assistant\Entity;
 
 use Drupal\Component\Datetime\TimeInterface;
 use Drupal\Core\Config\Entity\ConfigEntityBase;
+use Drupal\Core\Config\Entity\ConfigEntityInterface;
 use Drupal\Core\Entity\Attribute\ConfigEntityType;
 use Drupal\Core\Entity\EntityDeleteForm;
 use Drupal\Core\Entity\EntityFieldManagerInterface;
@@ -65,23 +66,6 @@ use Symfony\Component\Validator\ConstraintViolationListInterface;
   ],
 )]
 final class AiDraftingTemplate extends ConfigEntityBase implements AiDraftingTemplateInterface {
-
-  /**
-   * Violation code used for "required field missing" violations.
-   *
-   * Lets preSave() and isInstallable() distinguish these from structural
-   * violations, which are never tolerated.
-   */
-  private const REQUIRED_FIELD_MISSING_CODE = 'oe_ai_assistant.required_field_missing';
-
-  /**
-   * Whether isInstallable() pre-cleared a save with missing required fields.
-   *
-   * Runtime-only, not part of config_export: config install saves entities
-   * with isSyncing() FALSE, so preSave() needs another way to know this
-   * particular save was already vetted by isInstallable().
-   */
-  private bool $allowMissingRequiredFieldsOnSave = FALSE;
 
   /**
    * The ID.
@@ -211,6 +195,8 @@ final class AiDraftingTemplate extends ConfigEntityBase implements AiDraftingTem
         $field_definition->isComputed() ||
         $field_definition->isReadOnly() ||
         !$field_definition->isDisplayConfigurable('form') ||
+        $field_definition->getDefaultValueLiteral() !== [] ||
+        $field_definition->getDefaultValueCallback() ||
         in_array($field_name, $defined_field_names, TRUE)
       ) {
         continue;
@@ -234,8 +220,6 @@ final class AiDraftingTemplate extends ConfigEntityBase implements AiDraftingTem
         $this,
         $path_prefix === '' ? "fields.$field_name" : "$path_prefix.fields.$field_name",
         NULL,
-        NULL,
-        self::REQUIRED_FIELD_MISSING_CODE,
       ));
     }
 
@@ -280,14 +264,7 @@ final class AiDraftingTemplate extends ConfigEntityBase implements AiDraftingTem
     $result = $this->validate();
 
     if (count($result) > 0) {
-      $tolerated = ($this->isSyncing() || $this->allowMissingRequiredFieldsOnSave)
-        && $this->hasOnlyRequiredFieldViolations($result);
-      if ($tolerated) {
-        $this->logValidationFailure($result, 'saved with missing required fields');
-      }
-      else {
-        throw new TemplateValidationException($this->id(), $result);
-      }
+      throw new TemplateValidationException($this->id(), $result);
     }
 
     parent::preSave($storage);
@@ -303,33 +280,8 @@ final class AiDraftingTemplate extends ConfigEntityBase implements AiDraftingTem
       return TRUE;
     }
 
-    if ($this->hasOnlyRequiredFieldViolations($result)) {
-      $this->logValidationFailure($result, 'installed with missing required fields');
-      $this->allowMissingRequiredFieldsOnSave = TRUE;
-      return TRUE;
-    }
-
     $this->logValidationFailure($result, 'skipped during config install');
     return FALSE;
-  }
-
-  /**
-   * Checks whether a violation list contains only required-field violations.
-   *
-   * @param \Symfony\Component\Validator\ConstraintViolationListInterface $violations
-   *   The validation violations.
-   *
-   * @return bool
-   *   TRUE if every violation is a missing-required-field violation.
-   */
-  private function hasOnlyRequiredFieldViolations(ConstraintViolationListInterface $violations): bool {
-    foreach ($violations as $violation) {
-      if ($violation->getCode() !== self::REQUIRED_FIELD_MISSING_CODE) {
-        return FALSE;
-      }
-    }
-
-    return TRUE;
   }
 
   /**
@@ -467,6 +419,150 @@ final class AiDraftingTemplate extends ConfigEntityBase implements AiDraftingTem
         );
       }
     }
+  }
+
+  /**
+   * {@inheritdoc}
+   *
+   * Removes references to deleted fields and bundles from the template.
+   */
+  public function onDependencyRemoval(array $dependencies): bool {
+    $changed = parent::onDependencyRemoval($dependencies);
+
+    foreach ($dependencies['config'] ?? [] as $entity) {
+      if ($entity instanceof FieldConfigInterface) {
+        $changed = $this->stripField(
+          $this->fields,
+          $this->defaults,
+          'node',
+          $this->content_type,
+          $entity->getTargetEntityTypeId(),
+          $entity->getTargetBundle(),
+          $entity->getName(),
+        ) || $changed;
+        continue;
+      }
+      if ($entity instanceof ConfigEntityInterface) {
+        $bundle_of = $entity->getEntityType()->getBundleOf();
+        if ($bundle_of !== NULL) {
+          $changed = $this->stripItemsOfBundle($this->fields, $bundle_of, (string) $entity->id()) || $changed;
+        }
+      }
+    }
+
+    return $changed;
+  }
+
+  /**
+   * Recursively removes a field from a fields/defaults definition pair.
+   *
+   * @param array<string, mixed> $fields
+   *   The field definitions of the current level, altered by reference.
+   * @param array<string, mixed> $defaults
+   *   The default definitions of the current level, altered by reference.
+   * @param string $host_entity_type_id
+   *   The entity type the current level describes.
+   * @param string $host_bundle
+   *   The bundle the current level describes.
+   * @param string $target_entity_type_id
+   *   The entity type of the deleted field.
+   * @param string $target_bundle
+   *   The bundle of the deleted field.
+   * @param string $field_name
+   *   The deleted field name.
+   *
+   * @return bool
+   *   TRUE if anything was removed.
+   */
+  private function stripField(
+    array &$fields,
+    array &$defaults,
+    string $host_entity_type_id,
+    string $host_bundle,
+    string $target_entity_type_id,
+    string $target_bundle,
+    string $field_name,
+  ): bool {
+    $changed = FALSE;
+
+    if ($host_entity_type_id === $target_entity_type_id && $host_bundle === $target_bundle) {
+      if (array_key_exists($field_name, $fields)) {
+        unset($fields[$field_name]);
+        $changed = TRUE;
+      }
+      if (array_key_exists($field_name, $defaults)) {
+        unset($defaults[$field_name]);
+        $changed = TRUE;
+      }
+    }
+
+    foreach ($fields as &$field_config) {
+      if (!is_array($field_config) || empty($field_config['items']) || !is_array($field_config['items'])) {
+        continue;
+      }
+      foreach ($field_config['items'] as &$item) {
+        if (!is_array($item) || empty($item['entity_type']) || empty($item['bundle']) || !is_array($item['fields'] ?? NULL)) {
+          continue;
+        }
+        $item_defaults = [];
+        $changed = $this->stripField(
+          $item['fields'],
+          $item_defaults,
+          $item['entity_type'],
+          $item['bundle'],
+          $target_entity_type_id,
+          $target_bundle,
+          $field_name,
+        ) || $changed;
+      }
+    }
+
+    return $changed;
+  }
+
+  /**
+   * Recursively removes reference items targeting a deleted bundle.
+   *
+   * @param array<string, mixed> $fields
+   *   The field definitions of the current level, altered by reference.
+   * @param string $entity_type_id
+   *   The entity type of the deleted bundle.
+   * @param string $bundle
+   *   The deleted bundle machine name.
+   *
+   * @return bool
+   *   TRUE if anything was removed.
+   */
+  private function stripItemsOfBundle(array &$fields, string $entity_type_id, string $bundle): bool {
+    $changed = FALSE;
+
+    foreach ($fields as &$field_config) {
+      if (!is_array($field_config) || empty($field_config['items']) || !is_array($field_config['items'])) {
+        continue;
+      }
+
+      $kept = [];
+      foreach ($field_config['items'] as $item) {
+        if (
+          is_array($item) &&
+          ($item['entity_type'] ?? NULL) === $entity_type_id &&
+          ($item['bundle'] ?? NULL) === $bundle
+        ) {
+          $changed = TRUE;
+          continue;
+        }
+        $kept[] = $item;
+      }
+      $field_config['items'] = $kept;
+
+      foreach ($field_config['items'] as &$item) {
+        if (is_array($item) && is_array($item['fields'] ?? NULL)) {
+          $changed = $this->stripItemsOfBundle($item['fields'], $entity_type_id, $bundle) || $changed;
+        }
+      }
+    }
+
+    return $changed;
   }
 
 }
