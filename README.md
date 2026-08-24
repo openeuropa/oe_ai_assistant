@@ -158,11 +158,14 @@ This module ships a patch for `drupal/ai_agents` under `patches/`, declared in `
 `cweagans/composer-patches`. The patch path is relative, so it resolves correctly for this repository's own
 `composer install`.
 
-If your project relies on `cweagans/composer-patches` v2's automatic "patches from dependencies" discovery, the
-relative path will **not** resolve for you: it is applied against your project's root, not this package's install
-path inside `vendor/`. To apply the patch in that case:
+In consumer projects, the "patches from dependencies" feature of `cweagans/composer-patches` (both v1 and v2)
+resolves that relative path against **your project's root**, not this package's install path inside `vendor/`.
+So the patch cannot apply from the dependency declaration alone. To apply it in your project:
 
-1. Copy `vendor/openeuropa/oe_ai_assistant/patches/ai-agents-agent-wrapper-extra-tags.patch` into your own project.
+1. Copy `vendor/openeuropa/oe_ai_assistant/patches/ai-agents-agent-wrapper-extra-tags.patch` into a `patches/`
+   directory in your project root. Keep the same relative path: both plugin versions then collapse your
+   declaration and this module's into a single entry (v2 dedupes identical patch URLs, v1 merges by
+   description key), so the patch applies exactly once.
 2. Declare it yourself in your project's `composer.json`:
    ```json
    "extra": {
@@ -173,13 +176,33 @@ path inside `vendor/`. To apply the patch in that case:
        }
    }
    ```
-3. Ignore this module's dependency-declared patches so composer-patches doesn't also try (and fail) to resolve
-   the original relative path from this module. The `ignore-dependency-patches` option takes a list of package
-   names, so patches discovered from other dependencies keep working:
-   ```json
-   "extra": {
-       "composer-patches": {
-           "ignore-dependency-patches": ["openeuropa/oe_ai_assistant"]
-       }
-   }
-   ```
+
+With **v2**, additionally ignore this module's dependency-declared patches so the plugin does not try to resolve
+the original relative path from this module. The `ignore-dependency-patches` option takes a list of package
+names, so patches discovered from other dependencies keep working:
+```json
+"extra": {
+    "composer-patches": {
+        "ignore-dependency-patches": ["openeuropa/oe_ai_assistant"]
+    }
+}
+```
+
+With **v1**, no extra step is needed: declaring any root patch enables dependency-patch gathering, and the
+identical entry collapses as described above. Two v1 caveats:
+
+- If your project declares no root patches and does not set `"enable-patching": true`, v1 skips dependency
+  patches entirely and this module's patch is silently not applied.
+- If you store the patch under a different path than the one above, the module's dependency-declared entry no
+  longer collapses with yours and its unresolvable path wins the merge. In that case exclude it explicitly:
+  ```json
+  "extra": {
+      "patches-ignore": {
+          "openeuropa/oe_ai_assistant": {
+              "drupal/ai_agents": {
+                  "Keep setUserInterface extra tags on the entity wrapper (getExtraTags)": "patches/ai-agents-agent-wrapper-extra-tags.patch"
+              }
+          }
+      }
+  }
+  ```
