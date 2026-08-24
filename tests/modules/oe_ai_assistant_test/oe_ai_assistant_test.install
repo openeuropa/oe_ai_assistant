@@ -28,15 +28,15 @@ function oe_ai_assistant_test_install(): void {
         'provider_id' => 'gpt_at_ec',
         'model_id' => 'gpt-5.1',
       ],
-      'chat_with_image_vision' => [
-        'provider_id' => 'gpt_at_ec',
-        'model_id' => 'gpt-5.1',
-      ],
       'chat_with_structured_response' => [
         'provider_id' => 'gpt_at_ec',
         'model_id' => 'gpt-5.1',
       ],
       'chat_with_tools' => [
+        'provider_id' => 'gpt_at_ec',
+        'model_id' => 'gpt-5.1',
+      ],
+      'chat_with_image_vision' => [
         'provider_id' => 'gpt_at_ec',
         'model_id' => 'gpt-5.1',
       ],

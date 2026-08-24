@@ -5,9 +5,7 @@ declare(strict_types=1);
 namespace Drupal\Tests\oe_ai_assistant\Functional;
 
 use Drupal\node\Entity\Node;
-use Drupal\node\Entity\NodeType;
 use Drupal\node\NodeInterface;
-use Drupal\taxonomy\Entity\Term;
 use Drupal\Tests\BrowserTestBase;
 use Drupal\user\UserInterface;
 use Drupal\oe_ai_assistant\Entity\AiEditorialSession;
@@ -21,12 +19,7 @@ abstract class AiEditorialSessionBrowserTestBase extends BrowserTestBase {
    * {@inheritdoc}
    */
   protected static $modules = [
-    'ai',
-    'field',
-    'key',
-    'node',
-    'oe_ai_assistant',
-    'options',
+    'oe_ai_assistant_test',
   ];
 
   /**
@@ -40,49 +33,19 @@ abstract class AiEditorialSessionBrowserTestBase extends BrowserTestBase {
   protected function setUp(): void {
     parent::setUp();
 
-    $this->createNodeType('oe_contact', 'Contact');
-    $this->createNodeType('oe_news', 'News');
-    $this->createEditorialContextTerms();
-    $this->createDefaultTemplate();
+    $this->configureSummaryTestProvider();
   }
 
   /**
-   * Creates the default drafting template for the oe_news content type.
+   * Configures a deterministic multimodal provider for document fixtures.
    */
-  protected function createDefaultTemplate(): void {
-    $this->container->get('entity_type.manager')
-      ->getStorage('ai_drafting_template')
-      ->create([
-        'id' => 'news_default',
-        'label' => 'News (default)',
-        'content_type' => 'oe_news',
-        'fields' => ['title' => ['prompt' => 'Headline.']],
-      ])->save();
-  }
-
-  /**
-   * Creates a node type for the tests.
-   */
-  protected function createNodeType(string $type, string $label): void {
-    NodeType::create([
-      'type' => $type,
-      'name' => $label,
-    ])->save();
-  }
-
-  /**
-   * Creates editorial taxonomy terms used by page bootstrap assertions.
-   */
-  protected function createEditorialContextTerms(): void {
-    Term::create([
-      'vid' => 'oe_ai_tone',
-      'name' => 'Formal',
-      'description' => [
-        'value' => 'A professional and neutral tone suitable for official or institutional communication.',
-        'format' => 'plain_text',
-      ],
-      'field_oe_ai_prompt' => 'Use professional, institutional language. Maintain a neutral, authoritative voice. Avoid contractions and colloquialisms.',
-    ])->save();
+  protected function configureSummaryTestProvider(): void {
+    $this->config('ai.settings')
+      ->set('default_providers.chat_with_image_vision', [
+        'provider_id' => 'summary_test',
+        'model_id' => 'summary-test-model',
+      ])
+      ->save();
   }
 
   /**
@@ -110,6 +73,7 @@ abstract class AiEditorialSessionBrowserTestBase extends BrowserTestBase {
       'type' => $type,
       'title' => $title,
       'status' => 1,
+      'moderation_state' => 'published',
     ]);
     $node->save();
 
