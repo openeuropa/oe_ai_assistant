@@ -51,6 +51,7 @@ class DraftingOrchestrator implements DraftingOrchestratorInterface {
     EntityInterface $host,
     ?AiConversationMessageInterface $parent = NULL,
     ?string $templateId = NULL,
+    array $supportingDocumentSummaries = [],
   ): array {
     $groups = $this->schemaProvider->groups(
       $entityTypeId, $bundle, $templateId
@@ -89,6 +90,7 @@ class DraftingOrchestrator implements DraftingOrchestratorInterface {
         $fullText = $this->runSubAgent(
           $stepId, $group['schemaSlice'],
           $conversationContext, $mainFieldsResult,
+          $supportingDocumentSummaries,
           $host, $parent,
         );
 
@@ -174,6 +176,7 @@ class DraftingOrchestrator implements DraftingOrchestratorInterface {
     array $schemaSlice,
     string $conversationContext,
     string $mainFieldsResult,
+    array $supportingDocumentSummaries,
     EntityInterface $host,
     ?AiConversationMessageInterface $parent,
   ): string {
@@ -196,6 +199,13 @@ class DraftingOrchestrator implements DraftingOrchestratorInterface {
       ]));
 
     $taskPrompt = "Conversation context:\n$conversationContext\n";
+    if ($supportingDocumentSummaries !== []) {
+      $taskPrompt .= "\nSupporting document context:\n"
+        . "Use these summaries as background source material for drafting. "
+        . "Do not copy or publish them verbatim.\n"
+        . $this->formatSupportingDocumentSummaries($supportingDocumentSummaries)
+        . "\n\n";
+    }
     if ($stepId !== 'main_fields' && $mainFieldsResult !== '') {
       $taskPrompt .= "Main fields already generated:\n"
         . $mainFieldsResult . "\n\n";
@@ -230,6 +240,37 @@ class DraftingOrchestrator implements DraftingOrchestratorInterface {
     }
 
     return $fullText;
+  }
+
+  /**
+   * Formats supporting-document summaries for prompt context.
+   *
+   * @param array<int, array{label: string, summary: string}> $summaries
+   *   Labelled supporting-document summaries.
+   *
+   * @return string
+   *   The formatted summaries.
+   */
+  private function formatSupportingDocumentSummaries(array $summaries): string {
+    $items = [];
+    $count = 1;
+    foreach ($summaries as $document) {
+      $label = trim(preg_replace('/\s+/', ' ', $document['label']) ?? '');
+      $summary = trim($document['summary']);
+      if ($summary === '') {
+        continue;
+      }
+
+      $items[] = sprintf(
+        'Document %d - %s: %s',
+        $count,
+        $label !== '' ? $label : 'Supporting document',
+        $summary,
+      );
+      $count++;
+    }
+
+    return implode("\n", $items);
   }
 
 }

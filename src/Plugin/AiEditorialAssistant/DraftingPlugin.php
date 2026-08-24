@@ -339,7 +339,8 @@ class DraftingPlugin extends AiAssistantPluginBase {
             $stream, $history,
             $context['entityTypeId'], $context['bundle'],
             $session, $lastAssistant,
-            $context['template']
+            $context['template'],
+            $context['supportingDocumentSummaries'],
           );
           // Emit the draft_content tool call with its result so the card
           // appears live, matching what a reload rehydrates.
