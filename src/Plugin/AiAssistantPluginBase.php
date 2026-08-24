@@ -11,6 +11,7 @@ use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Plugin\ContainerFactoryPluginInterface;
 use Drupal\Core\Plugin\PluginBase;
 use Drupal\Core\Session\AccountInterface;
+use Drupal\oe_ai_assistant\Entity\AiConversationMessageInterface;
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
 use Drupal\oe_ai_assistant\Exception\ActionException;
 use Drupal\oe_ai_assistant\Service\MessageRecorderInterface;
@@ -135,8 +136,19 @@ abstract class AiAssistantPluginBase extends PluginBase implements AiAssistantPl
     $storage = $this->entityTypeManager->getStorage('ai_conversation_message');
     $messages = [];
     foreach ($storage->loadTranscript($session) as $message) {
+      $role = $message->getRole();
+      // Event rows surface as compact timeline entries.
+      if ($role === 'event') {
+        $messages[] = [
+          'role' => 'event',
+          'type' => (string) ($message->getMetadata()['type'] ?? ''),
+          'summary' => (string) $message->get('content')->value,
+          'at' => date('c', (int) $message->get('created')->value),
+        ];
+        continue;
+      }
       // Only user and assistant turns are shown to the editor.
-      if (!in_array($message->getRole(), ['user', 'assistant'], TRUE)) {
+      if (!in_array($role, ['user', 'assistant'], TRUE)) {
         continue;
       }
       $content = (string) $message->get('content')->value;
@@ -145,7 +157,7 @@ abstract class AiAssistantPluginBase extends PluginBase implements AiAssistantPl
       if ($content === '' && !$toolCalls) {
         continue;
       }
-      $item = ['role' => $message->getRole(), 'content' => $content];
+      $item = ['role' => $role, 'content' => $content];
       if ($toolCalls) {
         $item['toolCalls'] = $toolCalls;
       }
@@ -268,9 +280,28 @@ abstract class AiAssistantPluginBase extends PluginBase implements AiAssistantPl
    */
   protected function buildHistory(AiEditorialSessionInterface $session): array {
     $storage = $this->entityTypeManager->getStorage('ai_conversation_message');
-    $entities = array_slice($storage->loadTranscript($session), -static::MAX_HISTORY);
+    // Skip persisted tool results: a bare chat message cannot re-link
+    // them to the assistant call that produced them, and providers
+    // reject unpaired tool messages. The assistant's follow-up text
+    // already carries the outcome.
+    $entities = array_filter(
+      $storage->loadTranscript($session),
+      fn(AiConversationMessageInterface $message): bool => $message->getRole() !== AiConversationMessageInterface::ROLE_TOOL,
+    );
+    // Slice AFTER filtering so tool rows do not consume history slots.
+    $entities = array_slice($entities, -static::MAX_HISTORY);
     return array_map(
-      fn ($m) => new ChatMessage($m->getRole(), (string) $m->get('content')->value),
+      function (AiConversationMessageInterface $message): ChatMessage {
+        $content = (string) $message->get('content')->value;
+        // Editorial events enter the history as compact notes.
+        // The user role is used because mid-history system messages are
+        // provider-dependent, and the bracket prefix marks the note as
+        // non-conversational.
+        if ($message->getRole() === AiConversationMessageInterface::ROLE_EVENT) {
+          return new ChatMessage('user', '[Editorial change] ' . $content);
+        }
+        return new ChatMessage($message->getRole(), $content);
+      },
       $entities,
     );
   }

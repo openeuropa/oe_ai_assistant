@@ -396,8 +396,10 @@ class DraftingPlugin extends AiAssistantPluginBase {
     $body = $this->decodeJsonBody($request);
     $toneId = (string) ($body['toneId'] ?? '');
 
+    // Validate before any write; getTone throws the same exception as
+    // buildSelectedPrompt and also returns the label needed for the event.
     try {
-      $this->aiEditorialContext->buildSelectedPrompt($toneId);
+      $tone = $this->aiEditorialContext->getTone($toneId);
     }
     catch (\InvalidArgumentException $e) {
       throw new ActionException(
@@ -408,8 +410,28 @@ class DraftingPlugin extends AiAssistantPluginBase {
     }
 
     $session = $this->loadSession($body);
+    $previous = $session->get(static::TONE_FIELD)->entity;
+    $from = $previous
+      ? ['id' => (string) $previous->id(), 'label' => (string) $previous->label()]
+      : NULL;
     $session->set(static::TONE_FIELD, $toneId);
     $session->save();
+
+    // Record the change as a durable timeline event; the summary names
+    // both tones when there was a previous one. Re-selecting the current
+    // tone is a no-op and must not record a misleading change event.
+    $to = ['id' => $tone['id'], 'label' => $tone['label']];
+    if ($from !== NULL && $from['id'] === $to['id']) {
+      return ['status' => 'ok'];
+    }
+    $summary = $from === NULL
+      ? sprintf('Tone changed to %s', $to['label'])
+      : sprintf('Tone changed from %s to %s', $from['label'], $to['label']);
+    $this->messageRecorder->recordEvent(
+      $session, $summary,
+      ['type' => 'tone', 'from' => $from, 'to' => $to],
+      (int) $this->currentUser->id(),
+    );
 
     return ['status' => 'ok'];
   }
@@ -434,6 +456,10 @@ class DraftingPlugin extends AiAssistantPluginBase {
     $templateId = (string) ($body['template'] ?? '');
 
     $session = $this->loadSession($body);
+    $previous = $session->get(static::TEMPLATE_FIELD)->entity;
+    $from = $previous
+      ? ['id' => (string) $previous->id(), 'label' => (string) $previous->label()]
+      : NULL;
     $session->set(static::TEMPLATE_FIELD, $templateId !== '' ? $templateId : NULL);
 
     $violations = $session->get(static::TEMPLATE_FIELD)->validate();
@@ -446,6 +472,23 @@ class DraftingPlugin extends AiAssistantPluginBase {
     }
 
     $session->save();
+
+    // Record the change as a durable timeline event. The field is mandatory
+    // and validated above, so the referenced template always exists here.
+    // Re-selecting the current template is a no-op and must not record a
+    // misleading change event.
+    $template = $session->get(static::TEMPLATE_FIELD)->entity;
+    $to = ['id' => (string) $template->id(), 'label' => (string) $template->label()];
+    if ($from !== NULL && $from['id'] === $to['id']) {
+      return ['status' => 'ok'];
+    }
+    $summary = sprintf('Template changed to %s', $to['label']);
+    $this->messageRecorder->recordEvent(
+      $session, $summary,
+      ['type' => 'template', 'from' => $from, 'to' => $to],
+      (int) $this->currentUser->id(),
+    );
+
     return ['status' => 'ok'];
   }
 

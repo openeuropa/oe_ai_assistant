@@ -116,6 +116,23 @@ class MessageRecorder implements MessageRecorderInterface {
   }
 
   /**
+   * {@inheritdoc}
+   */
+  public function recordEvent(EntityInterface $host, string $summary, array $metadata, ?int $uid = NULL): AiConversationMessageInterface {
+    $values = $this->base($host, AiConversationMessageInterface::ROLE_EVENT) + [
+      'content' => $summary,
+    ];
+    if ($uid !== NULL) {
+      $values['uid'] = $uid;
+    }
+    /** @var \Drupal\oe_ai_assistant\Entity\AiConversationMessageInterface $row */
+    $row = $this->storage()->create($values);
+    $row->setMetadata($metadata);
+    $row->save();
+    return $row;
+  }
+
+  /**
    * Builds the shared field values for a new message.
    *
    * @param \Drupal\Core\Entity\EntityInterface $host

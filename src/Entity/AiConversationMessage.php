@@ -281,6 +281,7 @@ class AiConversationMessage extends ContentEntityBase implements AiConversationM
         self::ROLE_ASSISTANT => 'Assistant',
         self::ROLE_TOOL => 'Tool',
         self::ROLE_ERROR => 'Error',
+        self::ROLE_EVENT => 'Event',
       ]);
 
     // Author of the message, set for user-role messages.

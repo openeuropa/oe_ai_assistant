@@ -98,7 +98,7 @@ class AiConversationHistoryTest extends AiEditorialSessionBrowserTestBase {
 
     $this->visitHistoryPage($session);
 
-    [$assistant, $user] = $this->messageRows();
+    [$assistant, $user] = $this->nonEventRows();
 
     // Column-by-column assertions on the assistant row. The author cell is
     // empty because the assistant turn has no owner.
@@ -169,7 +169,7 @@ class AiConversationHistoryTest extends AiEditorialSessionBrowserTestBase {
     $this->visitHistoryPage($session);
 
     // The fallback item replaces the usual "Tool calls" one.
-    [$assistant] = $this->messageRows();
+    [$assistant] = $this->nonEventRows();
     $this->assertMessageItems($this->detailRowFor($assistant), [
       'Content' => 'Broken tool call.',
       'Tool calls (invalid JSON)' => 'not valid json',
@@ -203,7 +203,7 @@ class AiConversationHistoryTest extends AiEditorialSessionBrowserTestBase {
 
     $this->visitHistoryPage($session);
 
-    [$row] = $this->messageRows();
+    [$row] = $this->nonEventRows();
     $this->assertSame('not-a-datetime', $this->cellText($row, 3));
   }
 
@@ -275,7 +275,7 @@ class AiConversationHistoryTest extends AiEditorialSessionBrowserTestBase {
 
     $this->visitHistoryPage($session);
 
-    [$structured, $scalar] = $this->messageRows();
+    [$structured, $scalar] = $this->nonEventRows();
 
     // The snippet cell keeps the stored single-line value.
     $this->assertSame('{"title":[{"value":"New Policy"}],"tags":["ai","policy"]}', $this->cellText($structured, 5));
@@ -394,12 +394,17 @@ class AiConversationHistoryTest extends AiEditorialSessionBrowserTestBase {
       $assert_session->elementExists('css', 'tr.ai-history-role-user'), 4,
     ));
 
-    // Session totals: 4 messages, grand total 200 + 50 + 25 + 100 = 375.
-    $assert_session->pageTextContains('4 messages, 375 tokens');
+    // Session totals: 4 user/AI messages plus 1 initial event row;
+    // grand total 200 + 50 + 25 + 100 = 375 (event has 0 tokens).
+    $assert_session->pageTextContains('5 messages, 375 tokens');
   }
 
   /**
-   * Tests that an empty session shows the empty-state message only.
+   * Tests that a new session shows only the initial event row.
+   *
+   * Session creation always records a session_start event, so the history page
+   * shows a table with exactly one event row. The empty-state message is not
+   * shown because the session is not empty.
    */
   public function testEmptySession(): void {
     $assert_session = $this->assertSession();
@@ -408,10 +413,10 @@ class AiConversationHistoryTest extends AiEditorialSessionBrowserTestBase {
 
     $this->visitHistoryPage($session);
 
-    $assert_session->pageTextContains('This session has no conversation messages yet.');
-    $assert_session->pageTextNotContains('Session totals');
-    $assert_session->elementNotExists('css', 'table.ai-history-table');
-    $assert_session->elementNotExists('css', 'tr.ai-history-message');
+    $assert_session->pageTextNotContains('This session has no conversation messages yet.');
+    $assert_session->elementExists('css', 'table.ai-history-table');
+    $assert_session->elementsCount('css', 'tr.ai-history-message', 1);
+    $assert_session->elementsCount('css', 'tr.ai-history-role-event', 1);
   }
 
   /**
@@ -468,7 +473,7 @@ class AiConversationHistoryTest extends AiEditorialSessionBrowserTestBase {
     $assert_session->responseNotContains('<em>EMINJECTION</em>');
     $assert_session->responseNotContains('<img src="https://evil.example/pixel.png"');
 
-    [$longRow, $shortRow] = $this->messageRows();
+    [$longRow, $shortRow] = $this->nonEventRows();
 
     // The agent cell escapes the stored markup as literal text.
     $this->assertSame('<em>EMINJECTION</em>', $this->cellText($longRow, 1));
@@ -535,8 +540,10 @@ class AiConversationHistoryTest extends AiEditorialSessionBrowserTestBase {
       $assert_session->elementExists('css', 'h1')->getText(),
     );
 
-    $this->assertCount(6, $this->messageRows());
+    // Seven rows: one session_start event plus the six conversation turns.
+    $this->assertCount(7, $this->messageRows());
     $this->assertSame([
+      '0:event:Session started',
       '0:user:Draft a news article.',
       '0:assistant:Delegating to sub-agents.',
       '1:system:You are the title agent.',
@@ -580,7 +587,7 @@ class AiConversationHistoryTest extends AiEditorialSessionBrowserTestBase {
       $assert_session->elementExists('css', 'button.ai-history-toggle-children', $orchestratorRow)->getAttribute('aria-controls'),
     );
 
-    $assert_session->pageTextContains('6 messages, 350 tokens');
+    $assert_session->pageTextContains('7 messages, 350 tokens');
   }
 
   /**
@@ -642,9 +649,10 @@ class AiConversationHistoryTest extends AiEditorialSessionBrowserTestBase {
     $this->assertSame(['Role', 'Agent', 'Author', 'Created', 'Tokens', 'Content'], $headers);
     $assert_session->elementNotExists('css', 'button.ai-history-toggle-detail');
 
-    // Every message row is paired with exactly one detail row.
-    $assert_session->elementsCount('css', 'tr.ai-history-message', 2);
-    $assert_session->elementsCount('css', 'tr.ai-history-detail', 2);
+    // Every message row is paired with exactly one detail row; the count
+    // includes the session_start event row created automatically.
+    $assert_session->elementsCount('css', 'tr.ai-history-message', 3);
+    $assert_session->elementsCount('css', 'tr.ai-history-detail', 3);
 
     // The parent's caret sits inside the role cell, server-rendered
     // expanded, and points at the direct child row; the childless row gets
@@ -754,6 +762,22 @@ class AiConversationHistoryTest extends AiEditorialSessionBrowserTestBase {
    */
   private function messageRows(): array {
     return $this->getSession()->getPage()->findAll('css', 'tr.ai-history-message');
+  }
+
+  /**
+   * Returns non-event message rows, in document order.
+   *
+   * Event rows are auto-generated by session creation and change actions.
+   * Tests that focus on user or assistant turns use this to skip event rows.
+   *
+   * @return \Behat\Mink\Element\NodeElement[]
+   *   The tr elements for non-event messages, nested ones included.
+   */
+  private function nonEventRows(): array {
+    return array_values(array_filter(
+      $this->messageRows(),
+      fn(NodeElement $row) => !$row->hasClass('ai-history-role-event'),
+    ));
   }
 
   /**

@@ -43,6 +43,11 @@ interface AiConversationMessageInterface extends ContentEntityInterface, EntityO
   public const ROLE_ERROR = 'error';
 
   /**
+   * Role for editorial change events recorded outside the LLM exchange.
+   */
+  public const ROLE_EVENT = 'event';
+
+  /**
    * Returns the message role.
    */
   public function getRole(): string;
