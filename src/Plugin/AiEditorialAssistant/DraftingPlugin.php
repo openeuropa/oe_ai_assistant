@@ -830,7 +830,8 @@ class DraftingPlugin extends AiAssistantPluginBase {
    *   The session hosting the conversation.
    *
    * @return array
-   *   Context with entityTypeId, bundle, toneId, and template.
+   *   Context with entityTypeId, bundle, toneId, template, and supporting
+   *   document summaries.
    */
   private function buildContext(AiEditorialSessionInterface $session): array {
     return [
@@ -838,7 +839,64 @@ class DraftingPlugin extends AiAssistantPluginBase {
       'bundle' => $session->getContentType(),
       'toneId' => (string) $session->get(static::TONE_FIELD)->target_id,
       'template' => (string) $session->get(static::TEMPLATE_FIELD)->target_id,
+      'supportingDocumentSummaries' => $this->collectSupportingDocumentSummaries($session),
     ];
+  }
+
+  /**
+   * Collects current supporting-document summaries from the session.
+   *
+   * @param \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $session
+   *   The session hosting the conversation.
+   *
+   * @return array<int, array{label: string, summary: string}>
+   *   Labelled summaries for prompt context.
+   */
+  private function collectSupportingDocumentSummaries(AiEditorialSessionInterface $session): array {
+    if (!$session->hasField(ContextDocumentStorage::SESSION_FIELD)) {
+      return [];
+    }
+
+    $summaries = [];
+    foreach ($session->get(ContextDocumentStorage::SESSION_FIELD)->referencedEntities() as $media) {
+      if (!$media instanceof MediaInterface
+        || $media->bundle() !== ContextDocumentStorage::MEDIA_BUNDLE
+        || !$media->hasField(ContextDocumentStorage::SUMMARY_FIELD)
+        || $media->get(ContextDocumentStorage::SUMMARY_FIELD)->isEmpty()
+      ) {
+        continue;
+      }
+
+      $summary = trim((string) $media->get(ContextDocumentStorage::SUMMARY_FIELD)->value);
+      if ($summary === '') {
+        continue;
+      }
+
+      $summaries[] = [
+        'label' => $this->documentContextLabel($media),
+        'summary' => $summary,
+      ];
+    }
+
+    return $summaries;
+  }
+
+  /**
+   * Builds a readable document label for prompt context.
+   *
+   * @param \Drupal\media\MediaInterface $media
+   *   The document media entity.
+   *
+   * @return string
+   *   The media label or source filename.
+   */
+  private function documentContextLabel(MediaInterface $media): string {
+    $label = trim((string) $media->label());
+    if ($label !== '') {
+      return $label;
+    }
+
+    return $this->getDocumentFile($media)?->getFilename() ?: 'Supporting document';
   }
 
   /**
