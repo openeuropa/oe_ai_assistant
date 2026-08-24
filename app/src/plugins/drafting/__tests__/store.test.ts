@@ -51,7 +51,7 @@ describe("drafting plugin state", () => {
       selections: { tone: "clear-professional" },
     });
 
-    expect(getDraftingState()).toMatchObject({
+    expect(getDraftingState()).toEqual({
       plan: [{ stepId: "s1", label: "Step 1", status: "done" }],
       draftedFields: {
         title: { label: "Title", value: "Draft", type: "string" },

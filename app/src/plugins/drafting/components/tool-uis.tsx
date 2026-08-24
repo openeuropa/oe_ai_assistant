@@ -8,9 +8,13 @@
  * and a result summary when complete.
  */
 
+import type { ToolCallMessagePartProps } from "@assistant-ui/react";
 import { makeAssistantToolUI } from "@assistant-ui/react";
-import { Check, Loader2, PenLine, RefreshCw, Save, X } from "lucide-react";
+import { Check, Loader2, PenLine, Save, Wrench, X } from "lucide-react";
+import { parseDraftResult } from "../draft-result";
 import { setDraftingState } from "../store";
+import { DraftCard } from "./draft-card";
+import { EventChip } from "./event-chip";
 
 /** Shared wrapper for tool call cards in the chat. */
 function ToolCallCard({
@@ -77,71 +81,66 @@ export const DraftContentToolUI = makeAssistantToolUI<
 >({
   toolName: "draft_content",
   render: ({ args, result, status }) => {
-    // The drafted fields are the tool result; on a rehydrated trace they also
-    // sit in args.fields. When present, clicking the card shows them again.
-    const fields = result ?? args?.fields ?? {};
-    const fieldCount = Object.keys(fields).length;
-    const clickable = fieldCount > 0;
+    // While running or on error, show the generic tool card with status.
+    if (status.type !== "complete") {
+      const fieldCount = Object.keys(args?.fields ?? {}).length;
+      return (
+        <ToolCallCard
+          icon={PenLine}
+          label="Drafting content"
+          detail={
+            fieldCount > 0
+              ? `${fieldCount} field${fieldCount > 1 ? "s" : ""}`
+              : undefined
+          }
+          status={status}
+        />
+      );
+    }
+
+    // On completion, parse the result (versioned object on the live path,
+    // or fall back to args.fields when result is empty on a rehydrated trace).
+    // This choice only picks the data source; success itself is signalled by
+    // the complete status checked above.
+    const raw =
+      result && Object.keys(result).length > 0 ? result : (args?.fields ?? {});
+    const parsed = parseDraftResult(raw);
+    const fields = parsed.fields;
+
+    // A completed call that yielded no fields has nothing to open, so show
+    // the plain status card instead of an openable draft card.
+    if (Object.keys(fields).length === 0) {
+      return (
+        <ToolCallCard icon={PenLine} label="Drafting content" status={status} />
+      );
+    }
+
     return (
-      <ToolCallCard
-        icon={PenLine}
-        label="Drafting content"
-        detail={
-          fieldCount > 0
-            ? `${fieldCount} field${fieldCount > 1 ? "s" : ""} - click to view`
-            : undefined
-        }
-        status={status}
-        onClick={
-          clickable
-            ? () => setDraftingState({ draftedFields: fields })
-            : undefined
-        }
+      <DraftCard
+        version={parsed.version}
+        context={parsed.context}
+        fields={fields}
+        onOpen={() => setDraftingState({ draftedFields: fields })}
       />
     );
   },
 });
 
-/** UI for the set_field_content tool call. */
-export const SetFieldContentToolUI = makeAssistantToolUI<
-  Record<string, unknown>,
+/**
+ * UI for the editorial_event tool call.
+ *
+ * Editorial events are injected into the transcript by the history adapter
+ * so they appear at their chronological position in the thread. This renderer
+ * converts the tool-call part into a compact, centered EventChip.
+ */
+export const EditorialEventToolUI = makeAssistantToolUI<
+  { eventType: string; summary: string; at?: string },
   unknown
 >({
-  toolName: "set_field_content",
-  render: ({ args, status }) => {
-    const fieldCount = args ? Object.keys(args).length : 0;
-    return (
-      <ToolCallCard
-        icon={PenLine}
-        label="Generating drafted content"
-        detail={
-          fieldCount > 0
-            ? `${fieldCount} field${fieldCount > 1 ? "s" : ""}`
-            : undefined
-        }
-        status={status}
-      />
-    );
-  },
-});
-
-/** UI for the regenerate_fields tool call. */
-export const RegenerateFieldsToolUI = makeAssistantToolUI<
-  { fields: string[] },
-  unknown
->({
-  toolName: "regenerate_fields",
-  render: ({ args, status }) => {
-    const fields = args?.fields ?? [];
-    return (
-      <ToolCallCard
-        icon={RefreshCw}
-        label="Regenerating fields"
-        detail={fields.length > 0 ? fields.join(", ") : undefined}
-        status={status}
-      />
-    );
-  },
+  toolName: "editorial_event",
+  render: ({ args }) => (
+    <EventChip eventType={args.eventType} summary={args.summary} at={args.at} />
+  ),
 });
 
 /** UI for the save_draft_revision tool call. */
@@ -159,3 +158,19 @@ export const SaveDraftRevisionToolUI = makeAssistantToolUI<
     />
   ),
 });
+
+/**
+ * Fallback renderer for any tool call not registered with makeAssistantToolUI.
+ *
+ * Receives ToolCallMessagePartProps from assistant-ui (toolName, args, result,
+ * argsText, status, addResult, resume, type, toolCallId). Renders a generic
+ * ToolCallCard with a Wrench icon and the tool name humanized for display.
+ */
+export function ToolFallbackCard({
+  toolName,
+  status,
+}: ToolCallMessagePartProps) {
+  // Convert snake_case tool name to a readable label (underscores to spaces).
+  const label = toolName.replace(/_/g, " ");
+  return <ToolCallCard icon={Wrench} label={label} status={status} />;
+}
