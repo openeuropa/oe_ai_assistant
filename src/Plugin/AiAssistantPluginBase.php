@@ -11,6 +11,7 @@ use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Plugin\ContainerFactoryPluginInterface;
 use Drupal\Core\Plugin\PluginBase;
 use Drupal\Core\Session\AccountInterface;
+use Drupal\oe_ai_assistant\Entity\AiConversationMessageInterface;
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
 use Drupal\oe_ai_assistant\Exception\ActionException;
 use Drupal\oe_ai_assistant\Service\MessageRecorderInterface;
@@ -314,21 +315,21 @@ abstract class AiAssistantPluginBase extends PluginBase implements AiAssistantPl
     // already carries the outcome.
     $entities = array_filter(
       $storage->loadTranscript($session),
-      fn($m) => $m->getRole() !== 'tool',
+      fn(AiConversationMessageInterface $message): bool => $message->getRole() !== AiConversationMessageInterface::ROLE_TOOL,
     );
     // Slice AFTER filtering so tool rows do not consume history slots.
     $entities = array_slice($entities, -static::MAX_HISTORY);
     return array_map(
-      function ($m) {
-        $content = (string) $m->get('content')->value;
+      function (AiConversationMessageInterface $message): ChatMessage {
+        $content = (string) $message->get('content')->value;
         // Editorial events enter the history as compact notes.
         // The user role is used because mid-history system messages are
         // provider-dependent, and the bracket prefix marks the note as
         // non-conversational.
-        if ($m->getRole() === 'event') {
+        if ($message->getRole() === AiConversationMessageInterface::ROLE_EVENT) {
           return new ChatMessage('user', '[Editorial change] ' . $content);
         }
-        return new ChatMessage($m->getRole(), $content);
+        return new ChatMessage($message->getRole(), $content);
       },
       $entities,
     );

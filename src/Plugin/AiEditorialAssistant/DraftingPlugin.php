@@ -418,8 +418,12 @@ class DraftingPlugin extends AiAssistantPluginBase {
     $session->save();
 
     // Record the change as a durable timeline event; the summary names
-    // both tones when there was a previous one.
+    // both tones when there was a previous one. Re-selecting the current
+    // tone is a no-op and must not record a misleading change event.
     $to = ['id' => $tone['id'], 'label' => $tone['label']];
+    if ($from !== NULL && $from['id'] === $to['id']) {
+      return ['status' => 'ok'];
+    }
     $summary = $from === NULL
       ? sprintf('Tone changed to %s', $to['label'])
       : sprintf('Tone changed from %s to %s', $from['label'], $to['label']);
@@ -469,14 +473,16 @@ class DraftingPlugin extends AiAssistantPluginBase {
 
     $session->save();
 
-    // Record the change as a durable timeline event.
+    // Record the change as a durable timeline event. The field is mandatory
+    // and validated above, so the referenced template always exists here.
+    // Re-selecting the current template is a no-op and must not record a
+    // misleading change event.
     $template = $session->get(static::TEMPLATE_FIELD)->entity;
-    $to = $template
-      ? ['id' => (string) $template->id(), 'label' => (string) $template->label()]
-      : NULL;
-    $summary = $to === NULL
-      ? 'Template cleared'
-      : sprintf('Template changed to %s', $to['label']);
+    $to = ['id' => (string) $template->id(), 'label' => (string) $template->label()];
+    if ($from !== NULL && $from['id'] === $to['id']) {
+      return ['status' => 'ok'];
+    }
+    $summary = sprintf('Template changed to %s', $to['label']);
     $this->messageRecorder->recordEvent(
       $session, $summary,
       ['type' => 'template', 'from' => $from, 'to' => $to],

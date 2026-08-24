@@ -4,13 +4,9 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\oe_ai_assistant\ExistingSite;
 
-use Drupal\Core\Url;
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
 use Drupal\oe_ai_assistant_test\Plugin\AiProvider\MockAiProvider;
 use Drupal\oe_ai_assistant_test\Plugin\AiProvider\MockResponse;
-use Drupal\Tests\oe_ai_assistant\Traits\ExistingSiteConfigBackupTrait;
-use Drupal\user\UserInterface;
-use weitzman\DrupalTestTraits\ExistingSiteBase;
 
 /**
  * Integration tests for the DraftingPlugin chat action.
@@ -19,68 +15,8 @@ use weitzman\DrupalTestTraits\ExistingSiteBase;
  * with a mock AI provider and verifies the SSE response stream. The
  * conversation is scoped by an editorial session: history and turns
  * persist as ai_conversation_message rows hosted by the session.
- *
- * Requires OE_AI_SKIP_PROVIDER_OVERRIDE=1 in the web container
- * environment so settings.ai.php does not override the mock
- * provider config set in setUp().
- *
- * @see .ddev/settings.ai.php
- * @see .ddev/docker-compose.phpunit.yaml
  */
-class DraftingPluginChatTest extends ExistingSiteBase {
-
-  use ExistingSiteConfigBackupTrait;
-
-  /**
-   * Sessions created by the test, cleared of messages on teardown.
-   *
-   * @var \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface[]
-   */
-  protected array $sessions = [];
-
-  /**
-   * {@inheritdoc}
-   */
-  protected function setUp(): void {
-    parent::setUp();
-
-    // Ensure the shared test module is enabled (provides MockAiProvider).
-    \Drupal::service('module_installer')
-      ->install(['oe_ai_assistant_test']);
-
-    // Backup AI settings and set mock_ai as the default provider.
-    $this->backupSimpleConfig('ai.settings');
-    \Drupal::configFactory()->getEditable('ai.settings')
-      ->set('default_providers', [
-        'chat' => [
-          'provider_id' => 'mock_ai',
-          'model_id' => 'mock-model',
-        ],
-        'chat_with_tools' => [
-          'provider_id' => 'mock_ai',
-          'model_id' => 'mock-model',
-        ],
-      ])
-      ->save();
-
-    MockAiProvider::reset();
-  }
-
-  /**
-   * {@inheritdoc}
-   */
-  protected function tearDown(): void {
-    // Remove any conversation messages persisted against the test sessions.
-    $storage = \Drupal::entityTypeManager()
-      ->getStorage('ai_conversation_message');
-    foreach ($this->sessions as $session) {
-      $storage->deleteForHost($session);
-    }
-
-    MockAiProvider::reset();
-    $this->restoreConfiguration();
-    parent::tearDown();
-  }
+class DraftingPluginChatTest extends DraftingPluginTestBase {
 
   /**
    * Tests that a text response is streamed and persisted for the session.
@@ -563,30 +499,6 @@ class DraftingPluginChatTest extends ExistingSiteBase {
   }
 
   /**
-   * Creates an editorial session owned by the given user.
-   *
-   * @param \Drupal\user\UserInterface $owner
-   *   The session owner.
-   *
-   * @return \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface
-   *   The saved session.
-   */
-  protected function createSession(UserInterface $owner): AiEditorialSessionInterface {
-    /** @var \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $session */
-    $session = \Drupal::entityTypeManager()
-      ->getStorage('ai_editorial_session')
-      ->create([
-        'type' => 'content_creation',
-        'uid' => $owner->id(),
-        'content_type' => 'oe_news',
-      ]);
-    $session->save();
-    $this->markEntityForCleanup($session);
-    $this->sessions[] = $session;
-    return $session;
-  }
-
-  /**
    * Seeds a conversation message hosted by the session.
    *
    * @param \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $session
@@ -616,23 +528,6 @@ class DraftingPluginChatTest extends ExistingSiteBase {
   }
 
   /**
-   * Loads the persisted top-level transcript for a session.
-   *
-   * @param \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $session
-   *   The session hosting the conversation.
-   *
-   * @return \Drupal\oe_ai_assistant\Entity\AiConversationMessageInterface[]
-   *   The transcript entities.
-   */
-  protected function loadTranscript(AiEditorialSessionInterface $session): array {
-    \Drupal::entityTypeManager()->getStorage('ai_conversation_message')
-      ->resetCache();
-    return \Drupal::entityTypeManager()
-      ->getStorage('ai_conversation_message')
-      ->loadTranscript($session);
-  }
-
-  /**
    * Calls the get-messages action and returns its messages list.
    *
    * @param \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $session
@@ -649,61 +544,6 @@ class DraftingPluginChatTest extends ExistingSiteBase {
       'get-messages should return 200. Body: ' . substr($result['body'], 0, 500));
     $decoded = json_decode($result['body'], TRUE);
     return $decoded['messages'] ?? [];
-  }
-
-  /**
-   * Logs in a user via the login form.
-   *
-   * @param \Drupal\user\UserInterface $account
-   *   The user account to log in.
-   */
-  protected function loginUser(UserInterface $account): void {
-    if ($this->loggedInUser) {
-      $this->drupalLogout();
-    }
-
-    $this->drupalGet(Url::fromRoute('user.login'));
-    $this->submitForm([
-      'name' => $account->getAccountName(),
-      'pass' => $account->passRaw,
-    ], 'Log in');
-
-    $this->loggedInUser = $account;
-    $this->container->get('current_user')->setAccount($account);
-  }
-
-  /**
-   * Sends a POST request with JSON body using the BrowserKit client.
-   *
-   * @param string $url
-   *   The URL to post to.
-   * @param array $body
-   *   The request body to encode as JSON.
-   *
-   * @return array
-   *   An array with 'status' (int) and 'body' (raw string) keys.
-   */
-  protected function httpPost(string $url, array $body): array {
-    /** @var \Symfony\Component\BrowserKit\AbstractBrowser $client */
-    $client = $this->getSession()->getDriver()->getClient();
-
-    $fullUrl = $this->baseUrl . $url;
-
-    $client->request(
-      'POST',
-      $fullUrl,
-      [],
-      [],
-      ['CONTENT_TYPE' => 'application/json'],
-      json_encode($body),
-    );
-
-    $response = $client->getResponse();
-
-    return [
-      'status' => $response->getStatusCode(),
-      'body' => $response->getContent(),
-    ];
   }
 
   /**
@@ -746,25 +586,6 @@ class DraftingPluginChatTest extends ExistingSiteBase {
     }
 
     return $events;
-  }
-
-  /**
-   * Returns the taxonomy term ID for a fixture term.
-   */
-  protected function getTermIdByName(string $vid, string $name): string {
-    $terms = \Drupal::entityTypeManager()
-      ->getStorage('taxonomy_term')
-      ->loadByProperties([
-        'vid' => $vid,
-        'name' => $name,
-      ]);
-
-    $term = reset($terms);
-    if (!$term) {
-      $this->fail(sprintf('Term "%s" was not found in "%s".', $name, $vid));
-    }
-
-    return (string) $term->id();
   }
 
   /**
