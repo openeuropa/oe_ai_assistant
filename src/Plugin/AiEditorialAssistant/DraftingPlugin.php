@@ -930,7 +930,45 @@ class DraftingPlugin extends AiAssistantPluginBase {
         );
       }
     }
+
+    if (!empty($context['supportingDocumentSummaries'])) {
+      $prompt .= "\nSupporting document context:\n"
+        . "Use these summaries as background source material for drafting. "
+        . "Do not copy or publish them verbatim.\n"
+        . $this->formatSupportingDocumentSummaries($context['supportingDocumentSummaries'])
+        . "\n";
+    }
+
     return $prompt;
+  }
+
+  /**
+   * Formats supporting-document summaries for prompt context.
+   *
+   * @param array<int, array{label: string, summary: string}> $summaries
+   *   Labelled supporting-document summaries.
+   *
+   * @return string
+   *   The formatted summaries.
+   */
+  private function formatSupportingDocumentSummaries(array $summaries): string {
+    $items = [];
+    foreach ($summaries as $index => $document) {
+      $label = trim(preg_replace('/\s+/', ' ', $document['label']) ?? '');
+      $summary = trim($document['summary']);
+      if ($summary === '') {
+        continue;
+      }
+
+      $items[] = sprintf(
+        'Document %d - %s: %s',
+        $index + 1,
+        $label !== '' ? $label : 'Supporting document',
+        $summary,
+      );
+    }
+
+    return implode("\n", $items);
   }
 
 }
