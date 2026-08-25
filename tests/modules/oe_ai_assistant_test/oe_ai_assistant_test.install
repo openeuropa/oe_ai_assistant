@@ -7,6 +7,8 @@
 
 declare(strict_types=1);
 
+use Drupal\Core\File\FileSystem;
+use Drupal\Core\Site\Settings;
 use Drupal\taxonomy\Entity\Term;
 
 /**
@@ -15,6 +17,8 @@ use Drupal\taxonomy\Entity\Term;
  * Configures AI defaults and providers for the test environment.
  */
 function oe_ai_assistant_test_install(): void {
+  oe_ai_assistant_test_ensure_private_file_path();
+
   $configFactory = \Drupal::configFactory();
 
   // Set GPT@EC as the default LLM provider for all operation types.
@@ -55,6 +59,48 @@ function oe_ai_assistant_test_install(): void {
     ->save();
 
   oe_ai_assistant_test_install_editorial_taxonomy_terms();
+}
+
+/**
+ * Ensures the test site has a usable private file path.
+ */
+function oe_ai_assistant_test_ensure_private_file_path(): void {
+  $privatePath = Settings::get('file_private_path');
+  if (!is_string($privatePath) || $privatePath === '') {
+    $sitePath = \Drupal::getContainer()->getParameter('site.path');
+    $privatePath = DRUPAL_ROOT . '/' . $sitePath . '/private';
+    new Settings(array_replace(Settings::getAll(), [
+      'file_private_path' => $privatePath,
+    ]));
+    oe_ai_assistant_test_append_private_file_path_setting($privatePath);
+  }
+
+  if (!is_dir($privatePath)) {
+    mkdir($privatePath, 0775, TRUE);
+  }
+  \Drupal::service('file_system')->chmod($privatePath, FileSystem::CHMOD_DIRECTORY);
+}
+
+/**
+ * Appends the private file path setting to settings.php for later requests.
+ */
+function oe_ai_assistant_test_append_private_file_path_setting(string $privatePath): void {
+  $settingsFile = DRUPAL_ROOT . '/' . \Drupal::getContainer()->getParameter('site.path') . '/settings.php';
+  if (!is_writable($settingsFile)) {
+    return;
+  }
+
+  $contents = file_get_contents($settingsFile);
+  if ($contents !== FALSE && str_contains($contents, 'OE AI Assistant Test private file path')) {
+    return;
+  }
+
+  file_put_contents(
+    $settingsFile,
+    "\n// OE AI Assistant Test private file path.\n"
+    . "\$settings['file_private_path'] = " . var_export($privatePath, TRUE) . ";\n",
+    FILE_APPEND,
+  );
 }
 
 /**
