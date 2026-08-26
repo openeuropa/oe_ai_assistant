@@ -14,7 +14,9 @@ export type { DraftingDocument } from "../types";
  * state.
  *
  * TODO: Persist uploads and removals via a backend document service; until
- * then those changes are lost on reload.
+ * then those changes are lost on reload. When that lands, report the
+ * in-flight save to the shell exit guard under a "drafting:documents"
+ * source key, the way useCardSelection does for tone and template.
  */
 export function useDraftingDocuments() {
   const draftingConfig = getConfig().pluginConfig.drafting ?? {};

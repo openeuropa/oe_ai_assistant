@@ -239,7 +239,8 @@ function DraftingChat() {
       <EditorialEventToolUI />
       <SaveDraftRevisionToolUI />
 
-      {/* Feed the shell exit guard with this plugin's pending state. */}
+      {/* Feed the shell exit guard with this plugin's pending state.
+          Panel saves report themselves via useCardSelection. */}
       <PendingWorkReporter />
       {/* Feed the session header with the chat participants. */}
       <ParticipantsReporter />

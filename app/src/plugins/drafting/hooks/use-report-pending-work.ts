@@ -3,9 +3,11 @@
  *
  * Pending means the assistant run is in flight (streaming text, tool
  * calls, or a save triggered through the chat) or the composer holds
- * unsent text. The shell exit guard blocks navigation while any plugin
- * reports pending work. Must be called inside the
- * AssistantRuntimeProvider so the assistant-ui state is available.
+ * unsent text. Editorial panel saves report themselves to the same
+ * store under their own source keys (see useCardSelection). The shell
+ * exit guard blocks navigation while any source reports pending work.
+ * Must be called inside the AssistantRuntimeProvider so the
+ * assistant-ui state is available.
  */
 
 import { useAuiState } from "@assistant-ui/react";
