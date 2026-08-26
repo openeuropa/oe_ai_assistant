@@ -15,6 +15,8 @@ import { FileText, LayoutTemplate, Megaphone } from "lucide-react";
 import { type ReactNode, useCallback } from "react";
 import { CardSelectPane } from "@/components/ui/card-select-pane";
 import type { PaneTabItem } from "@/components/ui/pane-tabs";
+import { useAppStore } from "@/store";
+import { saveDraftRevision } from "./api/drafting-api";
 import { ArtifactPane } from "./components/artifact-pane";
 import { ContentTable } from "./components/content-table";
 import { DocumentsPanel } from "./components/documents-panel";
@@ -24,7 +26,6 @@ import { PlanSteps } from "./components/plan-steps";
 import {
   DraftContentToolUI,
   EditorialEventToolUI,
-  SaveDraftRevisionToolUI,
 } from "./components/tool-uis";
 import { useDraftingDocuments } from "./hooks/use-drafting-documents";
 import { useDraftingRuntime } from "./hooks/use-drafting-runtime";
@@ -33,7 +34,7 @@ import { useDraftingTone } from "./hooks/use-drafting-tone";
 import { useReportPendingWork } from "./hooks/use-report-pending-work";
 import { useReportParticipants } from "./participants";
 import { useSessionDrafts } from "./session-drafts";
-import { useDraftingSlice } from "./store";
+import { getDraftingState, useDraftingSlice } from "./store";
 import { appendEventToThread } from "./thread-events";
 
 /** Bridges the runtime's pending state into the shell store. */
@@ -72,6 +73,7 @@ function SessionArtifactPane({ children }: { children: ReactNode }) {
  */
 function DraftingChat() {
   const { draftedFields, plan } = useDraftingSlice();
+  const setPendingWork = useAppStore((s) => s.setPendingWork);
   const runtime = useDraftingRuntime();
   const tone = useDraftingTone();
   const documents = useDraftingDocuments();
@@ -93,18 +95,33 @@ function DraftingChat() {
     [runtime],
   );
 
-  /** Trigger save via the chat so the agent runs the save tool. */
-  const handleSave = useCallback(() => {
-    runtime.thread.append({
-      role: "user",
-      content: [
-        {
-          type: "text",
-          text: "Save the draft as a new unpublished revision.",
-        },
-      ],
-    });
-  }, [runtime]);
+  /**
+   * Saves the draft version open in the artifact pane via the save
+   * endpoint. The backend resolves the fields for that version from its
+   * own draft history, so saving an older version saves exactly what
+   * the pane shows. The in-flight request reports pending work so the
+   * exit guard blocks navigation, and the outcome lands in the thread
+   * as a local event chip (the backend records the matching durable
+   * event row).
+   */
+  const handleSave = useCallback(async () => {
+    const version = getDraftingState().activeDraftVersion;
+    if (version === null) {
+      // Legacy unversioned drafts cannot be addressed by the contract.
+      appendEvent("error", "This draft has no version and cannot be saved");
+      return;
+    }
+    setPendingWork("drafting:save", true);
+    try {
+      await saveDraftRevision({ version });
+    } catch {
+      appendEvent("error", `Draft ${version} could not be saved`);
+      return;
+    } finally {
+      setPendingWork("drafting:save", false);
+    }
+    appendEvent("save", `Draft ${version} saved as unpublished revision`);
+  }, [appendEvent, setPendingWork]);
 
   /** Determine what the artifact pane shows. */
   function renderArtifact() {
@@ -237,7 +254,6 @@ function DraftingChat() {
       {/* Register tool call renderers so they appear inline in chat. */}
       <DraftContentToolUI />
       <EditorialEventToolUI />
-      <SaveDraftRevisionToolUI />
 
       {/* Feed the shell exit guard with this plugin's pending state.
           Panel saves report themselves via useCardSelection. */}

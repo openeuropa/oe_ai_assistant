@@ -12,6 +12,8 @@
 import { getConfig } from "@/config";
 import type {
   DraftingChatRequest,
+  DraftingSaveRequest,
+  DraftingSaveResponse,
   DraftingSetTemplateRequest,
   DraftingSetTemplateResponse,
   DraftingSetToneRequest,
@@ -74,6 +76,30 @@ export async function setDraftingTone(
     throw new Error(`Drafting set-tone error: ${response.status}`);
   }
   return (await response.json()) as DraftingSetToneResponse;
+}
+
+/**
+ * Saves one of the current session's draft versions as an unpublished
+ * node. The backend resolves the drafted fields from its own draft
+ * history, so the request only names the version.
+ */
+export async function saveDraftRevision(
+  request: DraftingSaveRequest,
+): Promise<DraftingSaveResponse> {
+  const response = await fetch(
+    `${getConfig().apiBaseUrl}/plugins/drafting/save`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      // Scope the save to the current editorial session.
+      body: JSON.stringify({ ...request, sessionId: getConfig().sessionId }),
+    },
+  );
+  if (!response.ok) {
+    throw new Error(`Drafting save error: ${response.status}`);
+  }
+  return (await response.json()) as DraftingSaveResponse;
 }
 
 /** Sets the selected drafting template on the current session. */

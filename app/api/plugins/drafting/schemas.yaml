@@ -40,22 +40,25 @@ DraftingResetResponse:
 
 DraftingSaveRequest:
   type: object
+  description: >
+    Save one of the session's drafts as an unpublished revision. The
+    backend resolves the target content type and the drafted field
+    values from the session and its draft history, so the client only
+    names the version being saved; a client can never save field data
+    the session did not produce.
   required:
-    - entityTypeId
-    - bundle
-    - fields
+    - sessionId
+    - version
   properties:
-    entityTypeId:
+    sessionId:
       type: string
-      description: The entity type ID (e.g. "node").
-    bundle:
-      type: string
-      description: The content type machine name (e.g. "oe_news").
-    fields:
-      type: object
+      description: The editorial session that owns the draft.
+    version:
+      type: integer
       description: >
-        The drafted field values, keyed by field machine name.
-        Shape matches the content type form schema.
+        The draft version to save, matching the version of a
+        draft_content result in the session transcript (the version
+        shown in the artifact pane and the version rail).
 
 DraftingSaveResponse:
   type: object

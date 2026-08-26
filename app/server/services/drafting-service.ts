@@ -61,11 +61,10 @@ export interface ChatOptions {
   schema: ContentTypeSchema | null;
 }
 
-/** Request body for the mock save action. */
+/** Request body for the save action: names a session draft version. */
 export interface DraftSavePayload {
-  entityTypeId?: string;
-  bundle?: string;
-  fields?: Record<string, unknown>;
+  sessionId?: string;
+  version?: number;
 }
 
 /** Mock save result returned by the dev server. */
@@ -78,7 +77,8 @@ export interface DraftSaveResult {
 export interface DraftingService {
   chat(opts: ChatOptions): AsyncGenerator<StreamEvent>;
   reset(sessionId: string): { status: string };
-  save(body: DraftSavePayload): DraftSaveResult;
+  /** Returns null when the session has no draft with that version. */
+  save(body: DraftSavePayload): DraftSaveResult | null;
   getMessages(sessionId: string): TranscriptMessage[];
 }
 
@@ -252,7 +252,8 @@ export class MistralDraftingService implements DraftingService {
     return this.store.getTranscript(sessionId);
   }
 
-  save(_body: DraftSavePayload): DraftSaveResult {
+  save(_body: DraftSavePayload): DraftSaveResult | null {
+    // This dev service keeps no draft history; accept any version.
     const nodeId = String(Math.floor(Math.random() * 90000) + 10000);
     return { nodeId, previewUrl: `/node/${nodeId}/latest` };
   }

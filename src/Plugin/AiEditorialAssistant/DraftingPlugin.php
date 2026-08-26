@@ -358,23 +358,46 @@ class DraftingPlugin extends AiAssistantPluginBase {
   }
 
   /**
-   * Saves a drafted node built from the LLM-produced fields map.
+   * Saves one of the session's draft versions as an unpublished node.
+   *
+   * The request names a session and a draft version; the fields come from
+   * the session's own draft history, so clients can never save field data
+   * the session did not produce. The save is recorded as a durable
+   * timeline event on the transcript.
    *
    * @param \Symfony\Component\HttpFoundation\Request $request
-   *   The save request.
+   *   The save request with `sessionId` and `version`.
    *
    * @return array<string, string>
    *   An array with `nodeId` and `previewUrl`.
    *
    * @throws \Drupal\oe_ai_assistant\Exception\ActionException
-   *   On invalid bundle, missing permission, or builder rejection.
+   *   On an unknown version, missing permission, or builder rejection.
    */
   public function save(Request $request): array {
     $body = $this->decodeJsonBody($request);
-    return $this->draftSaver->save(
-      $body['bundle'] ?? '',
-      $body['fields'] ?? [],
+    $session = $this->loadSession($body);
+    $version = (int) ($body['version'] ?? 0);
+
+    $fields = $this->draftHistory->getDraftFields($session, $version);
+    if ($fields === NULL) {
+      throw new ActionException(
+        'invalid_request',
+        sprintf('Draft %d does not exist in this session.', $version),
+        400,
+      );
+    }
+
+    $result = $this->draftSaver->save($session->getContentType(), $fields);
+
+    $this->messageRecorder->recordEvent(
+      $session,
+      sprintf('Draft %d saved as unpublished revision', $version),
+      ['type' => 'save', 'version' => $version, 'nodeId' => $result['nodeId']],
+      (int) $this->currentUser->id(),
     );
+
+    return $result;
   }
 
   /**

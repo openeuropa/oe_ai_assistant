@@ -119,7 +119,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Save an approved draft as an unpublished node */
+        /** Save a session draft version as an unpublished node */
         post: operations["postDraftingSave"];
         delete?: never;
         options?: never;
@@ -352,13 +352,12 @@ export interface components {
             /** @description Confirmation status (e.g. "ok"). */
             status: string;
         };
+        /** @description Save one of the session's drafts as an unpublished revision. The backend resolves the target content type and the drafted field values from the session and its draft history, so the client only names the version being saved; a client can never save field data the session did not produce. */
         DraftingSaveRequest: {
-            /** @description The entity type ID (e.g. "node"). */
-            entityTypeId: string;
-            /** @description The content type machine name (e.g. "oe_news"). */
-            bundle: string;
-            /** @description The drafted field values, keyed by field machine name. Shape matches the content type form schema. */
-            fields: Record<string, never>;
+            /** @description The editorial session that owns the draft. */
+            sessionId: string;
+            /** @description The draft version to save, matching the version of a draft_content result in the session transcript (the version shown in the artifact pane and the version rail). */
+            version: number;
         };
         DraftingSaveResponse: {
             /** @description The ID of the created node. */

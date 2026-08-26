@@ -160,23 +160,30 @@ export function createDraftingRouter(service: DraftingService): Router {
     res.json({ messages: service.getMessages(sessionId) });
   });
 
-  /** POST /save - Mock: save draft as node. */
+  /** POST /save - Mock: save a session draft version as a node. */
   router.post("/save", (req, res) => {
-    const { entityTypeId, bundle, fields } = req.body as {
-      entityTypeId?: string;
-      bundle?: string;
-      fields?: Record<string, unknown>;
+    const { sessionId, version } = req.body as {
+      sessionId?: string;
+      version?: number;
     };
 
-    if (!entityTypeId || !bundle || !fields) {
+    if (!sessionId || typeof version !== "number") {
       res.status(400).json({
         code: "bad_request",
-        message: "entityTypeId, bundle, and fields are required",
+        message: "sessionId and version are required",
       });
       return;
     }
 
-    res.json(service.save({ entityTypeId, bundle, fields }));
+    const result = service.save({ sessionId, version });
+    if (!result) {
+      res.status(400).json({
+        code: "invalid_request",
+        message: `Draft ${version} does not exist in this session.`,
+      });
+      return;
+    }
+    res.json(result);
   });
 
   /**

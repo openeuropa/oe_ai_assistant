@@ -51,6 +51,23 @@ class DraftHistory implements DraftHistoryInterface {
   }
 
   /**
+   * {@inheritdoc}
+   */
+  public function getDraftFields(EntityInterface $session, int $version): ?array {
+    foreach ($this->collectResults($session) as $position => $result) {
+      // The same versioning rule as listDrafts: legacy flat results get a
+      // positional version and ARE the fields map themselves.
+      $resultVersion = (int) ($result['version'] ?? $position + 1);
+      if ($resultVersion !== $version) {
+        continue;
+      }
+      $fields = $result['fields'] ?? $result;
+      return is_array($fields) && $fields !== [] ? $fields : NULL;
+    }
+    return NULL;
+  }
+
+  /**
    * Collects every stored draft_content result in transcript order.
    *
    * @param \Drupal\Core\Entity\EntityInterface $session

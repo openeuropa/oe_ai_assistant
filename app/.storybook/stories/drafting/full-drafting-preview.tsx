@@ -22,7 +22,6 @@ import { DraftingThread } from "../../../src/plugins/drafting/components/draftin
 import {
   DraftContentToolUI,
   EditorialEventToolUI,
-  SaveDraftRevisionToolUI,
 } from "../../../src/plugins/drafting/components/tool-uis";
 import { useDraftingDocuments } from "../../../src/plugins/drafting/hooks/use-drafting-documents";
 import { useDraftingTemplate } from "../../../src/plugins/drafting/hooks/use-drafting-template";
@@ -362,25 +361,12 @@ const transcript: SessionMessage[] = [
       "'must prepare to comply' where the duties are not yet applicable.",
     toolCalls: draftCall(5, "Formal", v5Fields),
   },
-  {
-    role: "user",
-    userName: "Jan Kowalski",
-    userId: "jan-kowalski",
-    content: "Correct now. Save the draft as a new unpublished revision.",
-  },
-  {
-    role: "assistant",
-    content:
-      "The draft has been saved as an unpublished revision. Nothing has " +
-      "been published: the revision sits in the moderation queue until an " +
-      "editor with publishing rights approves it, and every save creates " +
-      "a separate revision so earlier versions remain recoverable.",
-    toolCalls: [{ function: { name: "save_draft_revision" }, result: {} }],
-  },
+  // Saving happens through the pane's Save button, which records a
+  // durable timeline event; no chat exchange is involved.
   {
     role: "event",
-    type: "saved",
-    summary: "Draft saved as unpublished revision",
+    type: "save",
+    summary: "Draft 5 saved as unpublished revision",
     at: "2026-08-19T10:25:00Z",
   },
 
@@ -448,25 +434,11 @@ const transcript: SessionMessage[] = [
       "matches the official title. This is Draft 8, ready for scheduling.",
     toolCalls: draftCall(8, "Formal", v8Fields),
   },
-  {
-    role: "user",
-    userName: "Peter Novak",
-    userId: "peter-novak",
-    content:
-      "Save it as a new revision, this is the version going to " +
-      "publication review.",
-  },
-  {
-    role: "assistant",
-    content:
-      "Saved as a new unpublished revision and ready for publication " +
-      "review.",
-    toolCalls: [{ function: { name: "save_draft_revision" }, result: {} }],
-  },
+  // Peter saves the final version through the pane's Save button.
   {
     role: "event",
-    type: "saved",
-    summary: "Draft saved as unpublished revision",
+    type: "save",
+    summary: "Draft 8 saved as unpublished revision",
     at: "2026-08-19T12:40:00Z",
   },
 ];
@@ -547,7 +519,6 @@ export function FullDraftingPreview() {
       {/* Register tool call renderers so they appear inline in chat. */}
       <DraftContentToolUI />
       <EditorialEventToolUI />
-      <SaveDraftRevisionToolUI />
 
       <div className="flex min-h-0 flex-1 bg-white">
         {/* Left panel: chat in the faint gray well, as in the root. */}
