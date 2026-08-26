@@ -34,6 +34,9 @@ services:
       $logger: '@logger.channel.oe_ai_assistant'
   Drupal\oe_ai_assistant\Service\DocumentSummaryExtractorInterface: '@Drupal\oe_ai_assistant\Service\DocumentSummaryExtractor'
 
+  Drupal\oe_ai_assistant\Service\SupportingDocumentPromptBuilder: {}
+  Drupal\oe_ai_assistant\Service\SupportingDocumentPromptBuilderInterface: '@Drupal\oe_ai_assistant\Service\SupportingDocumentPromptBuilder'
+
   Drupal\oe_ai_assistant\Service\InlineEntityHydrator: {}
 
   Drupal\oe_ai_assistant\Service\DraftEntityBuilder: {}

@@ -13,6 +13,7 @@ use Drupal\oe_ai_assistant\Entity\AiConversationMessageInterface;
 use Drupal\oe_ai_assistant\Service\DraftingOrchestrator;
 use Drupal\oe_ai_assistant\Service\DraftingSchemaProviderInterface;
 use Drupal\oe_ai_assistant\Service\MessageRecorderInterface;
+use Drupal\oe_ai_assistant\Service\SupportingDocumentPromptBuilder;
 use Drupal\oe_ai_assistant\Service\UiMessageStreamInterface;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
@@ -236,6 +237,7 @@ class DraftingOrchestratorFailureTest extends TestCase {
       $manager,
       $logger ?? $this->createMock(LoggerInterface::class),
       $recorder,
+      new SupportingDocumentPromptBuilder(),
     );
   }
 

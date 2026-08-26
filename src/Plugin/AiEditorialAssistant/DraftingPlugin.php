@@ -25,6 +25,7 @@ use Drupal\oe_ai_assistant\Service\DocumentSerializerInterface;
 use Drupal\oe_ai_assistant\Service\DraftingOrchestratorInterface;
 use Drupal\oe_ai_assistant\Service\DraftSaverInterface;
 use Drupal\oe_ai_assistant\Service\DraftingSchemaProviderInterface;
+use Drupal\oe_ai_assistant\Service\SupportingDocumentPromptBuilderInterface;
 use Drupal\oe_ai_assistant\Service\ToolExecutionLoopInterface;
 use Drupal\oe_ai_assistant\Service\UiMessageStreamInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
@@ -151,6 +152,13 @@ class DraftingPlugin extends AiAssistantPluginBase {
   protected DocumentSerializerInterface $documentSerializer;
 
   /**
+   * The supporting-document prompt builder.
+   *
+   * @var \Drupal\oe_ai_assistant\Service\SupportingDocumentPromptBuilderInterface
+   */
+  protected SupportingDocumentPromptBuilderInterface $supportingDocumentPromptBuilder;
+
+  /**
    * {@inheritdoc}
    */
   public static function create(
@@ -169,6 +177,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
     $instance->fileRepository = $container->get('file.repository');
     $instance->fileSystem = $container->get('file_system');
     $instance->documentSerializer = $container->get(DocumentSerializerInterface::class);
+    $instance->supportingDocumentPromptBuilder = $container->get(SupportingDocumentPromptBuilderInterface::class);
     return $instance;
   }
 
@@ -339,7 +348,8 @@ class DraftingPlugin extends AiAssistantPluginBase {
             $stream, $history,
             $context['entityTypeId'], $context['bundle'],
             $session, $lastAssistant,
-            $context['template']
+            $context['template'],
+            $context['supportingDocumentSummaries'],
           );
           // Emit the draft_content tool call with its result so the card
           // appears live, matching what a reload rehydrates.
@@ -830,7 +840,8 @@ class DraftingPlugin extends AiAssistantPluginBase {
    *   The session hosting the conversation.
    *
    * @return array
-   *   Context with entityTypeId, bundle, toneId, and template.
+   *   Context with entityTypeId, bundle, toneId, template, and supporting
+   *   document summaries.
    */
   private function buildContext(AiEditorialSessionInterface $session): array {
     return [
@@ -838,7 +849,64 @@ class DraftingPlugin extends AiAssistantPluginBase {
       'bundle' => $session->getContentType(),
       'toneId' => (string) $session->get(static::TONE_FIELD)->target_id,
       'template' => (string) $session->get(static::TEMPLATE_FIELD)->target_id,
+      'supportingDocumentSummaries' => $this->collectSupportingDocumentSummaries($session),
     ];
+  }
+
+  /**
+   * Collects current supporting-document summaries from the session.
+   *
+   * @param \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $session
+   *   The session hosting the conversation.
+   *
+   * @return array<int, array{label: string, summary: string}>
+   *   Labelled summaries for prompt context.
+   */
+  private function collectSupportingDocumentSummaries(AiEditorialSessionInterface $session): array {
+    if (!$session->hasField(ContextDocumentStorage::SESSION_FIELD)) {
+      return [];
+    }
+
+    $summaries = [];
+    foreach ($session->get(ContextDocumentStorage::SESSION_FIELD)->referencedEntities() as $media) {
+      if (!$media instanceof MediaInterface
+        || $media->bundle() !== ContextDocumentStorage::MEDIA_BUNDLE
+        || !$media->hasField(ContextDocumentStorage::SUMMARY_FIELD)
+        || $media->get(ContextDocumentStorage::SUMMARY_FIELD)->isEmpty()
+      ) {
+        continue;
+      }
+
+      $summary = trim((string) $media->get(ContextDocumentStorage::SUMMARY_FIELD)->value);
+      if ($summary === '') {
+        continue;
+      }
+
+      $summaries[] = [
+        'label' => $this->documentContextLabel($media),
+        'summary' => $summary,
+      ];
+    }
+
+    return $summaries;
+  }
+
+  /**
+   * Builds a readable document label for prompt context.
+   *
+   * @param \Drupal\media\MediaInterface $media
+   *   The document media entity.
+   *
+   * @return string
+   *   The media label or source filename.
+   */
+  private function documentContextLabel(MediaInterface $media): string {
+    $label = trim((string) $media->label());
+    if ($label !== '') {
+      return $label;
+    }
+
+    return $this->getDocumentFile($media)?->getFilename() ?: 'Supporting document';
   }
 
   /**
@@ -872,6 +940,14 @@ class DraftingPlugin extends AiAssistantPluginBase {
         );
       }
     }
+
+    if (!empty($context['supportingDocumentSummaries'])) {
+      $section = $this->supportingDocumentPromptBuilder->buildSection($context['supportingDocumentSummaries']);
+      if ($section !== '') {
+        $prompt .= "\n" . $section . "\n";
+      }
+    }
+
     return $prompt;
   }
 

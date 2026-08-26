@@ -37,6 +37,8 @@ interface DraftingOrchestratorInterface {
    * @param string|null $templateId
    *   An ai_drafting_template id to restrict generation to, or NULL to
    *   auto-select one for the bundle.
+   * @param array<int, array{label: string, summary: string}> $supportingDocumentSummaries
+   *   Labelled supporting-document summaries to include in sub-agent prompts.
    *
    * @return array
    *   The consolidated fields map, or empty array if no fields
@@ -50,6 +52,7 @@ interface DraftingOrchestratorInterface {
     EntityInterface $host,
     ?AiConversationMessageInterface $parent = NULL,
     ?string $templateId = NULL,
+    array $supportingDocumentSummaries = [],
   ): array;
 
 }

@@ -30,6 +30,8 @@ class DraftingOrchestrator implements DraftingOrchestratorInterface {
    *   The logger channel.
    * @param \Drupal\oe_ai_assistant\Service\MessageRecorderInterface $messageRecorder
    *   The message recorder, used to record sub-agent failures as error turns.
+   * @param \Drupal\oe_ai_assistant\Service\SupportingDocumentPromptBuilderInterface $supportingDocumentPromptBuilder
+   *   The supporting-document prompt builder.
    */
   public function __construct(
     private readonly DraftingSchemaProviderInterface $schemaProvider,
@@ -38,6 +40,7 @@ class DraftingOrchestrator implements DraftingOrchestratorInterface {
     #[Autowire(service: 'logger.channel.oe_ai_assistant')]
     private readonly LoggerInterface $logger,
     private readonly MessageRecorderInterface $messageRecorder,
+    private readonly SupportingDocumentPromptBuilderInterface $supportingDocumentPromptBuilder,
   ) {}
 
   /**
@@ -51,6 +54,7 @@ class DraftingOrchestrator implements DraftingOrchestratorInterface {
     EntityInterface $host,
     ?AiConversationMessageInterface $parent = NULL,
     ?string $templateId = NULL,
+    array $supportingDocumentSummaries = [],
   ): array {
     $groups = $this->schemaProvider->groups(
       $entityTypeId, $bundle, $templateId
@@ -89,6 +93,7 @@ class DraftingOrchestrator implements DraftingOrchestratorInterface {
         $fullText = $this->runSubAgent(
           $stepId, $group['schemaSlice'],
           $conversationContext, $mainFieldsResult,
+          $supportingDocumentSummaries,
           $host, $parent,
         );
 
@@ -174,6 +179,7 @@ class DraftingOrchestrator implements DraftingOrchestratorInterface {
     array $schemaSlice,
     string $conversationContext,
     string $mainFieldsResult,
+    array $supportingDocumentSummaries,
     EntityInterface $host,
     ?AiConversationMessageInterface $parent,
   ): string {
@@ -196,6 +202,12 @@ class DraftingOrchestrator implements DraftingOrchestratorInterface {
       ]));
 
     $taskPrompt = "Conversation context:\n$conversationContext\n";
+    if ($supportingDocumentSummaries !== []) {
+      $section = $this->supportingDocumentPromptBuilder->buildSection($supportingDocumentSummaries);
+      if ($section !== '') {
+        $taskPrompt .= "\n" . $section . "\n\n";
+      }
+    }
     if ($stepId !== 'main_fields' && $mainFieldsResult !== '') {
       $taskPrompt .= "Main fields already generated:\n"
         . $mainFieldsResult . "\n\n";
