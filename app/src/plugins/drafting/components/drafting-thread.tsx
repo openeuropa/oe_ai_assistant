@@ -200,7 +200,8 @@ function formatMessageTime(createdAt: Date): string {
  * Action row under a message: the copy-to-clipboard control (provided
  * by assistant-ui's action bar) and the message timestamp. The row is
  * always rendered so its height is reserved, but it is only visible
- * while the related message is hovered (no vertical flickering).
+ * while the related message is hovered or a control inside it holds
+ * keyboard focus (no vertical flickering, no invisible tab stop).
  * Hidden entirely while the message is still streaming.
  */
 function MessageFooter({ className = "" }: { className?: string }) {
@@ -210,7 +211,7 @@ function MessageFooter({ className = "" }: { className?: string }) {
   return (
     <ActionBarPrimitive.Root
       hideWhenRunning
-      className={`mt-1 flex items-center gap-2 text-xs text-gray-400 opacity-0 transition-opacity duration-150 group-hover/message:opacity-100 ${className}`}
+      className={`mt-1 flex items-center gap-2 text-xs text-gray-400 opacity-0 transition-opacity duration-150 focus-within:opacity-100 group-hover/message:opacity-100 ${className}`}
     >
       <ActionBarPrimitive.Copy
         aria-label="Copy message"
