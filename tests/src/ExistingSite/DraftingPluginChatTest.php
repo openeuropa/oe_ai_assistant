@@ -423,6 +423,7 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
           'role' => 'user',
           'content' => 'Draft a news article.',
           'at' => $rows[0]->get('created')->date->format('c'),
+          'userId' => (string) $user->id(),
           'userName' => $user->getDisplayName(),
         ],
         [

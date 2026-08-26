@@ -326,6 +326,10 @@ export interface components {
                 role: string;
                 /** @description The message text (user and assistant items). */
                 content?: string;
+                /** @description Display name of the author (user items). Together with userId it attributes turns in shared sessions. */
+                userName?: string;
+                /** @description Stable CMS user id of the author (user items). Clients key participants by this id so two users sharing a display name stay distinct. */
+                userId?: string;
                 /** @description The event type, e.g. "session_start", "tone", "template" (event items). */
                 type?: string;
                 /** @description The human-readable event summary (event items). */

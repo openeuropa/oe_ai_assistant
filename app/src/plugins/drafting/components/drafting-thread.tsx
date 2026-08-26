@@ -31,6 +31,7 @@ import type { PaneTabItem } from "@/components/ui/pane-tabs";
 import { avatarColorClass, UserAvatar } from "@/components/ui/user-avatar";
 import { getConfig } from "@/config";
 import { useAppStore } from "@/store";
+import { resolveMessageAuthor } from "../participants";
 import { ContextButtons } from "./context-buttons";
 import { ToolFallbackCard } from "./tool-uis";
 
@@ -86,17 +87,22 @@ function UserMessageAttachment() {
 
 /** Renders a single user message bubble with attachments and avatar. */
 function UserMessage() {
-  // The author's name travels in the message metadata for shared
-  // sessions; the current user's own turns fall back to the config.
-  const authorName = useAuiState(
-    (s) =>
-      (s.message.metadata?.custom as { userName?: string } | undefined)
-        ?.userName,
+  // The author travels in the message metadata for shared sessions;
+  // the current user's own turns fall back to the config.
+  const custom = useAuiState(
+    (s) => s.message.metadata?.custom as Record<string, unknown> | undefined,
   );
-  const name = authorName ?? getConfig().userName;
+  const config = getConfig();
+  const author = resolveMessageAuthor(
+    { role: "user", metadata: { custom } },
+    { id: config.userId, name: config.userName },
+  );
+  const name = author?.name ?? config.userName;
   // The author's color follows their position in the participants list.
   const participants = useAppStore((s) => s.sessionParticipants);
-  const colorClass = avatarColorClass(participants.indexOf(name));
+  const colorClass = avatarColorClass(
+    participants.findIndex((p) => p.id === author?.id),
+  );
 
   return (
     <MessagePrimitive.Root className="group/message mb-4 flex flex-col items-end gap-1">

@@ -50,6 +50,7 @@ export const Stack: Story = {
     <div className="flex justify-end bg-white p-6">
       <AvatarStack
         items={participants.map((name, index) => ({
+          id: name,
           name,
           colorClass: avatarColorClass(index),
         }))}

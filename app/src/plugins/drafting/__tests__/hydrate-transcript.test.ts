@@ -182,4 +182,21 @@ describe("toThreadMessages", () => {
 
     expect(toThreadMessages(input)).toEqual([]);
   });
+
+  it("carries the author name and id into the message metadata", () => {
+    const input: SessionMessage[] = [
+      {
+        role: "user",
+        content: "Rework the headline.",
+        userName: "Maria Rossi",
+        userId: "2",
+      },
+    ];
+
+    const [message] = toThreadMessages(input);
+    if (!message) throw new Error("expected a message");
+    expect((message as AnyPart).metadata).toEqual({
+      custom: { userName: "Maria Rossi", userId: "2" },
+    });
+  });
 });

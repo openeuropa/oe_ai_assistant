@@ -182,9 +182,12 @@ abstract class AiAssistantPluginBase extends PluginBase implements AiAssistantPl
         // Creation time of the turn, for client-side timestamps.
         'at' => $at,
       ];
-      // Attribute user turns to their author for shared sessions.
+      // Attribute user turns to their author for shared sessions. The
+      // uid keeps same-named users apart; the display name is what the
+      // client renders.
       $uid = (int) $message->get('uid')->target_id;
       if ($role === 'user' && isset($authors[$uid])) {
+        $item['userId'] = (string) $uid;
         $item['userName'] = (string) $authors[$uid]->getDisplayName();
       }
       if ($toolCalls) {

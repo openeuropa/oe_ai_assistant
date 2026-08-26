@@ -90,6 +90,8 @@ export function UserAvatar({
 
 /** One entry of the avatar stack. */
 export interface AvatarStackItem {
+  /** Stable participant id; also the React key, so it must be unique. */
+  id: string;
   /** The participant's display name. */
   name: string;
   /** Background color class, usually from avatarColorClass(). */
@@ -107,7 +109,7 @@ export function AvatarStack({ items }: AvatarStackProps) {
     <div className="group/stack flex items-center">
       {items.map((item, index) => (
         <div
-          key={item.name}
+          key={item.id}
           className={`relative rounded-full ring-2 ring-white transition-[margin] duration-200 ${
             index > 0 ? "-ml-3 group-hover/stack:ml-1" : ""
           }`}

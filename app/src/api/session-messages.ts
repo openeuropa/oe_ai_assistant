@@ -26,6 +26,8 @@ export interface SessionMessage {
   content?: string;
   /** Display name of the author (user items in shared sessions). */
   userName?: string;
+  /** CMS user id of the author (user items in shared sessions). */
+  userId?: string;
   toolCalls?: SessionToolCall[];
   /** Event type, e.g. "session_start", "tone", "template" (event items). */
   type?: string;

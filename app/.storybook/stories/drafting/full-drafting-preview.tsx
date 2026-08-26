@@ -233,6 +233,7 @@ const transcript: SessionMessage[] = [
   {
     role: "user",
     userName: "Dev Editor",
+    userId: "dev-editor",
     content:
       "Draft a news article about the EU AI Act entering into force. " +
       "Keep it around 400 words, we need it for the morning briefing.",
@@ -262,6 +263,7 @@ const transcript: SessionMessage[] = [
   {
     role: "user",
     userName: "Dev Editor",
+    userId: "dev-editor",
     content:
       "Good start. The headline is flat though: make it punchier and lead " +
       "with what changes today. Also add a one-line standfirst under the " +
@@ -278,6 +280,7 @@ const transcript: SessionMessage[] = [
   {
     role: "user",
     userName: "Dev Editor",
+    userId: "dev-editor",
     content:
       "Thanks, that reads much better. I have to jump into the editorial " +
       "meeting now, Maria will take this over from here.",
@@ -299,6 +302,7 @@ const transcript: SessionMessage[] = [
   {
     role: "user",
     userName: "Maria Rossi",
+    userId: "maria-rossi",
     content:
       "Picking this up after the briefing. I switched the tone to formal " +
       "since the piece will also go out through the institutional " +
@@ -316,6 +320,7 @@ const transcript: SessionMessage[] = [
   {
     role: "user",
     userName: "Maria Rossi",
+    userId: "maria-rossi",
     content:
       "Better. Now add a short quote from the Commissioner for Internal " +
       "Market on what changes for companies from today, and mention the " +
@@ -333,6 +338,7 @@ const transcript: SessionMessage[] = [
   {
     role: "user",
     userName: "Maria Rossi",
+    userId: "maria-rossi",
     content: "That works for me. Leaving it here for the legal pass.",
   },
 
@@ -340,6 +346,7 @@ const transcript: SessionMessage[] = [
   {
     role: "user",
     userName: "Jan Kowalski",
+    userId: "jan-kowalski",
     content:
       "Legal pass. Two corrections: the prohibitions apply in six months, " +
       "not immediately, and the general-purpose AI obligations in twelve. " +
@@ -358,6 +365,7 @@ const transcript: SessionMessage[] = [
   {
     role: "user",
     userName: "Jan Kowalski",
+    userId: "jan-kowalski",
     content: "Correct now. Save the draft as a new unpublished revision.",
   },
   {
@@ -386,6 +394,7 @@ const transcript: SessionMessage[] = [
   {
     role: "user",
     userName: "Ana Silva",
+    userId: "ana-silva",
     content:
       "Web team here. I switched the template so the article renders with " +
       "the paragraph layout on the site. Restructure the body into three " +
@@ -402,6 +411,7 @@ const transcript: SessionMessage[] = [
   {
     role: "user",
     userName: "Ana Silva",
+    userId: "ana-silva",
     content:
       "Trim the middle section, it repeats the standfirst. And end with " +
       "the timeline as a bullet list, it scans better on the site.",
@@ -422,6 +432,7 @@ const transcript: SessionMessage[] = [
   {
     role: "user",
     userName: "Peter Novak",
+    userId: "peter-novak",
     content:
       "Final check before scheduling. Read the whole piece once more and " +
       "fix anything inconsistent after all the edits, especially numbers " +
@@ -440,6 +451,7 @@ const transcript: SessionMessage[] = [
   {
     role: "user",
     userName: "Peter Novak",
+    userId: "peter-novak",
     content:
       "Save it as a new revision, this is the version going to " +
       "publication review.",
