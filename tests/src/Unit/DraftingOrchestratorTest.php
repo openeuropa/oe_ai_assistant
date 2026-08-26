@@ -14,6 +14,7 @@ use Drupal\Core\Entity\EntityInterface;
 use Drupal\oe_ai_assistant\Service\DraftingOrchestrator;
 use Drupal\oe_ai_assistant\Service\DraftingSchemaProviderInterface;
 use Drupal\oe_ai_assistant\Service\MessageRecorderInterface;
+use Drupal\oe_ai_assistant\Service\SupportingDocumentPromptBuilder;
 use Drupal\oe_ai_assistant\Service\UiMessageStreamInterface;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
@@ -43,6 +44,7 @@ class DraftingOrchestratorTest extends TestCase {
       $this->createMock(AiAgentManager::class),
       new NullLogger(),
       $this->createMock(MessageRecorderInterface::class),
+      new SupportingDocumentPromptBuilder(),
     );
 
     $host = $this->createMock(EntityInterface::class);
@@ -104,6 +106,7 @@ class DraftingOrchestratorTest extends TestCase {
       $manager,
       new NullLogger(),
       $this->createMock(MessageRecorderInterface::class),
+      new SupportingDocumentPromptBuilder(),
     );
 
     $result = $orchestrator->run(

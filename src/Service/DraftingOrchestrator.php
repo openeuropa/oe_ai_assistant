@@ -30,6 +30,8 @@ class DraftingOrchestrator implements DraftingOrchestratorInterface {
    *   The logger channel.
    * @param \Drupal\oe_ai_assistant\Service\MessageRecorderInterface $messageRecorder
    *   The message recorder, used to record sub-agent failures as error turns.
+   * @param \Drupal\oe_ai_assistant\Service\SupportingDocumentPromptBuilderInterface $supportingDocumentPromptBuilder
+   *   The supporting-document prompt builder.
    */
   public function __construct(
     private readonly DraftingSchemaProviderInterface $schemaProvider,
@@ -38,6 +40,7 @@ class DraftingOrchestrator implements DraftingOrchestratorInterface {
     #[Autowire(service: 'logger.channel.oe_ai_assistant')]
     private readonly LoggerInterface $logger,
     private readonly MessageRecorderInterface $messageRecorder,
+    private readonly SupportingDocumentPromptBuilderInterface $supportingDocumentPromptBuilder,
   ) {}
 
   /**
@@ -200,11 +203,10 @@ class DraftingOrchestrator implements DraftingOrchestratorInterface {
 
     $taskPrompt = "Conversation context:\n$conversationContext\n";
     if ($supportingDocumentSummaries !== []) {
-      $taskPrompt .= "\nSupporting document context:\n"
-        . "Use these summaries as background source material for drafting. "
-        . "Do not copy or publish them verbatim.\n"
-        . $this->formatSupportingDocumentSummaries($supportingDocumentSummaries)
-        . "\n\n";
+      $section = $this->supportingDocumentPromptBuilder->buildSection($supportingDocumentSummaries);
+      if ($section !== '') {
+        $taskPrompt .= "\n" . $section . "\n\n";
+      }
     }
     if ($stepId !== 'main_fields' && $mainFieldsResult !== '') {
       $taskPrompt .= "Main fields already generated:\n"
@@ -240,37 +242,6 @@ class DraftingOrchestrator implements DraftingOrchestratorInterface {
     }
 
     return $fullText;
-  }
-
-  /**
-   * Formats supporting-document summaries for prompt context.
-   *
-   * @param array<int, array{label: string, summary: string}> $summaries
-   *   Labelled supporting-document summaries.
-   *
-   * @return string
-   *   The formatted summaries.
-   */
-  private function formatSupportingDocumentSummaries(array $summaries): string {
-    $items = [];
-    $count = 1;
-    foreach ($summaries as $document) {
-      $label = trim(preg_replace('/\s+/', ' ', $document['label']) ?? '');
-      $summary = trim($document['summary']);
-      if ($summary === '') {
-        continue;
-      }
-
-      $items[] = sprintf(
-        'Document %d - %s: %s',
-        $count,
-        $label !== '' ? $label : 'Supporting document',
-        $summary,
-      );
-      $count++;
-    }
-
-    return implode("\n", $items);
   }
 
 }

@@ -25,6 +25,7 @@ use Drupal\oe_ai_assistant\Service\DocumentSerializerInterface;
 use Drupal\oe_ai_assistant\Service\DraftingOrchestratorInterface;
 use Drupal\oe_ai_assistant\Service\DraftSaverInterface;
 use Drupal\oe_ai_assistant\Service\DraftingSchemaProviderInterface;
+use Drupal\oe_ai_assistant\Service\SupportingDocumentPromptBuilderInterface;
 use Drupal\oe_ai_assistant\Service\ToolExecutionLoopInterface;
 use Drupal\oe_ai_assistant\Service\UiMessageStreamInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
@@ -151,6 +152,13 @@ class DraftingPlugin extends AiAssistantPluginBase {
   protected DocumentSerializerInterface $documentSerializer;
 
   /**
+   * The supporting-document prompt builder.
+   *
+   * @var \Drupal\oe_ai_assistant\Service\SupportingDocumentPromptBuilderInterface
+   */
+  protected SupportingDocumentPromptBuilderInterface $supportingDocumentPromptBuilder;
+
+  /**
    * {@inheritdoc}
    */
   public static function create(
@@ -169,6 +177,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
     $instance->fileRepository = $container->get('file.repository');
     $instance->fileSystem = $container->get('file_system');
     $instance->documentSerializer = $container->get(DocumentSerializerInterface::class);
+    $instance->supportingDocumentPromptBuilder = $container->get(SupportingDocumentPromptBuilderInterface::class);
     return $instance;
   }
 
@@ -933,43 +942,13 @@ class DraftingPlugin extends AiAssistantPluginBase {
     }
 
     if (!empty($context['supportingDocumentSummaries'])) {
-      $prompt .= "\nSupporting document context:\n"
-        . "Use these summaries as background source material for drafting. "
-        . "Do not copy or publish them verbatim.\n"
-        . $this->formatSupportingDocumentSummaries($context['supportingDocumentSummaries'])
-        . "\n";
+      $section = $this->supportingDocumentPromptBuilder->buildSection($context['supportingDocumentSummaries']);
+      if ($section !== '') {
+        $prompt .= "\n" . $section . "\n";
+      }
     }
 
     return $prompt;
-  }
-
-  /**
-   * Formats supporting-document summaries for prompt context.
-   *
-   * @param array<int, array{label: string, summary: string}> $summaries
-   *   Labelled supporting-document summaries.
-   *
-   * @return string
-   *   The formatted summaries.
-   */
-  private function formatSupportingDocumentSummaries(array $summaries): string {
-    $items = [];
-    foreach ($summaries as $index => $document) {
-      $label = trim(preg_replace('/\s+/', ' ', $document['label']) ?? '');
-      $summary = trim($document['summary']);
-      if ($summary === '') {
-        continue;
-      }
-
-      $items[] = sprintf(
-        'Document %d - %s: %s',
-        $index + 1,
-        $label !== '' ? $label : 'Supporting document',
-        $summary,
-      );
-    }
-
-    return implode("\n", $items);
   }
 
 }
