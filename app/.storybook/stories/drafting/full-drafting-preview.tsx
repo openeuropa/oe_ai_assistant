@@ -614,9 +614,10 @@ export function FullDraftingPreview() {
           />
         </div>
 
-        {/* Middle panel: artifact pane with the open draft. */}
+        {/* Middle panel: artifact pane with the open draft. The seeded
+            transcript always carries drafts, so the rail can restore it. */}
         {hasArtifact && (
-          <ArtifactPane>
+          <ArtifactPane canCollapse>
             <ContentTable onSave={() => {}} />
           </ArtifactPane>
         )}

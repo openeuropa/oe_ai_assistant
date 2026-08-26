@@ -12,7 +12,7 @@
 
 import { AssistantRuntimeProvider } from "@assistant-ui/react";
 import { FileText, LayoutTemplate, Megaphone } from "lucide-react";
-import { useCallback } from "react";
+import { type ReactNode, useCallback } from "react";
 import { CardSelectPane } from "@/components/ui/card-select-pane";
 import type { PaneTabItem } from "@/components/ui/pane-tabs";
 import { ArtifactPane } from "./components/artifact-pane";
@@ -32,6 +32,7 @@ import { useDraftingTemplate } from "./hooks/use-drafting-template";
 import { useDraftingTone } from "./hooks/use-drafting-tone";
 import { useReportPendingWork } from "./hooks/use-report-pending-work";
 import { useReportParticipants } from "./participants";
+import { useSessionDrafts } from "./session-drafts";
 import { useDraftingSlice } from "./store";
 import { appendEventToThread } from "./thread-events";
 
@@ -45,6 +46,20 @@ function PendingWorkReporter() {
 function ParticipantsReporter() {
   useReportParticipants();
   return null;
+}
+
+/**
+ * Artifact pane wired to the session drafts index: Escape may only
+ * collapse the pane once a rail tab exists to restore it. Reads the
+ * thread, so it must render inside the AssistantRuntimeProvider.
+ */
+function SessionArtifactPane({ children }: { children: ReactNode }) {
+  const sessionDrafts = useSessionDrafts();
+  return (
+    <ArtifactPane canCollapse={sessionDrafts.length > 0}>
+      {children}
+    </ArtifactPane>
+  );
 }
 
 /**
@@ -239,7 +254,9 @@ function DraftingChat() {
 
         {/* Middle panel appears once a plan or draft exists: plan steps
             while generating, then the content table. */}
-        {hasArtifact && <ArtifactPane>{renderArtifact()}</ArtifactPane>}
+        {hasArtifact && (
+          <SessionArtifactPane>{renderArtifact()}</SessionArtifactPane>
+        )}
 
         {/* Right edge: the always-present draft rail driving the pane. */}
         <DraftRail />

@@ -43,7 +43,7 @@ export const Expanded: Story = {
   ],
   render: () => (
     <div className="flex h-96 justify-end border border-gray-200 bg-white">
-      <ArtifactPane>
+      <ArtifactPane canCollapse>
         <PaneBody />
       </ArtifactPane>
     </div>
@@ -60,7 +60,7 @@ export const Collapsed: Story = {
   ],
   render: () => (
     <div className="flex h-96 justify-end border border-gray-200 bg-white">
-      <ArtifactPane>
+      <ArtifactPane canCollapse>
         <PaneBody />
       </ArtifactPane>
     </div>

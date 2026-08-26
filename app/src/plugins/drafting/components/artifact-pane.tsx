@@ -5,7 +5,7 @@
  * share of the workspace width and hosts the pane body (content table or
  * plan steps). Collapsed, it animates down to zero width so the chat
  * reclaims the whole workspace; expanding it again is done from the
- * toggle in the drafting toolbar. The collapse flag lives in the
+ * version tabs in the draft rail. The collapse flag lives in the
  * drafting store slice and is transient: every session load starts from
  * the expanded default.
  */
@@ -13,14 +13,24 @@
 import { type ReactNode, useEffect } from "react";
 import { setDraftingState, useDraftingSlice } from "../store";
 
-export function ArtifactPane({ children }: { children: ReactNode }) {
+interface ArtifactPaneProps {
+  /**
+   * Whether Escape may collapse the pane. Only enabled once the draft
+   * rail has a version tab to restore it from; before that (e.g. while
+   * only the plan is shown) collapsing would leave no way to reopen.
+   */
+  canCollapse: boolean;
+  children: ReactNode;
+}
+
+export function ArtifactPane({ canCollapse, children }: ArtifactPaneProps) {
   const { isArtifactCollapsed } = useDraftingSlice();
 
   // Escape collapses the expanded pane. Open modals own the Escape key:
   // Radix closes them on the same press, and at that moment the dialog
   // is still in the DOM, so the guard below skips the collapse.
   useEffect(() => {
-    if (isArtifactCollapsed) {
+    if (isArtifactCollapsed || !canCollapse) {
       return;
     }
     const onKeyDown = (event: KeyboardEvent) => {
@@ -34,7 +44,7 @@ export function ArtifactPane({ children }: { children: ReactNode }) {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [isArtifactCollapsed]);
+  }, [isArtifactCollapsed, canCollapse]);
 
   return (
     <div
