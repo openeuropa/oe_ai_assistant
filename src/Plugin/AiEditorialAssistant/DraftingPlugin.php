@@ -168,7 +168,6 @@ class DraftingPlugin extends AiAssistantPluginBase {
       'save' => 'DraftingSaveRequest',
       'set-tone' => 'DraftingSetToneRequest',
       'set-template' => 'DraftingSetTemplateRequest',
-      'preview' => 'DraftingPreviewRequest',
     ];
   }
 
@@ -428,6 +427,11 @@ class DraftingPlugin extends AiAssistantPluginBase {
    * but never persists it: the built node is handed straight to
    * PreviewRenderer and discarded after the response is built.
    *
+   * Unlike the other actions this one is addressed with GET, so the
+   * app's preview iframe can load it through its src attribute. The
+   * sessionId and version parameters therefore come from the query
+   * string instead of a JSON body.
+   *
    * @param \Symfony\Component\HttpFoundation\Request $request
    *   The preview request.
    *
@@ -439,10 +443,11 @@ class DraftingPlugin extends AiAssistantPluginBase {
    *   bundle, missing permission, or a build/render failure.
    */
   public function preview(Request $request): Response {
-    $body = $this->decodeJsonBody($request);
-    $session = $this->loadSession($body);
+    $session = $this->loadSession([
+      'sessionId' => (string) $request->query->get('sessionId', ''),
+    ]);
 
-    $version = (int) ($body['version'] ?? 0);
+    $version = (int) $request->query->get('version', 0);
     if ($version <= 0) {
       throw new ActionException('invalid_request', 'A positive version is required.', 400);
     }

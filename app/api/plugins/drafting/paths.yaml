@@ -109,26 +109,34 @@ setTemplate:
               $ref: "../../openapi.yaml#/components/schemas/ApiError"
 
 preview:
-  post:
-    operationId: postDraftingPreview
+  get:
+    operationId: getDraftingPreview
     summary: Render a themed HTML preview of a stored draft version, without saving
     tags: [Drafting]
-    requestBody:
-      required: true
-      content:
-        application/json:
-          schema:
-            $ref: "../../openapi.yaml#/components/schemas/DraftingPreviewRequest"
+    parameters:
+      - name: sessionId
+        in: query
+        required: true
+        schema:
+          type: string
+        description: The editorial session hosting the draft to preview.
+      - name: version
+        in: query
+        required: true
+        schema:
+          type: integer
+        description: >
+          The draft version to render, as returned by get_draft_history /
+          the draft_content result (e.g. 1 for "Draft 1").
     responses:
       "200":
         description: >
           A complete, standalone HTML document rendering the draft as the
-          live site would show it. Not JSON: load it into an iframe via
-          srcdoc or a blob URL — this action is POST-only, so an iframe's
-          src attribute cannot address it directly. The rendered document
-          contains LLM-authored content, so when it is eventually consumed
-          in an iframe (OEL-4856), it should be sandboxed rather than given
-          full same-origin trust via a bare srcdoc.
+          live site would show it. Not JSON: the action is a GET so an
+          iframe can load it directly through its src attribute. The
+          rendered document contains LLM-authored content, so consuming
+          iframes should sandbox it (no script execution) rather than
+          grant full same-origin trust.
         content:
           text/html:
             schema:

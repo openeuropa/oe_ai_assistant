@@ -15,11 +15,13 @@ import { FileText, LayoutTemplate, Megaphone } from "lucide-react";
 import { type ReactNode, useCallback } from "react";
 import { CardSelectPane } from "@/components/ui/card-select-pane";
 import type { PaneTabItem } from "@/components/ui/pane-tabs";
+import { getConfig } from "@/config";
 import { useAppStore } from "@/store";
 import { saveDraftRevision } from "./api/drafting-api";
 import { ArtifactPane } from "./components/artifact-pane";
 import { ContentTable } from "./components/content-table";
 import { DocumentsPanel } from "./components/documents-panel";
+import { DraftPreview } from "./components/draft-preview";
 import { DraftRail } from "./components/draft-rail";
 import { DraftingThread } from "./components/drafting-thread";
 import { PlanSteps } from "./components/plan-steps";
@@ -72,7 +74,7 @@ function SessionArtifactPane({ children }: { children: ReactNode }) {
  * export/import. This avoids any remount or network refetch after a save.
  */
 function DraftingChat() {
-  const { draftedFields, plan } = useDraftingSlice();
+  const { draftedFields, plan, activeDraftVersion } = useDraftingSlice();
   const setPendingWork = useAppStore((s) => s.setPendingWork);
   const runtime = useDraftingRuntime();
   const tone = useDraftingTone();
@@ -126,6 +128,18 @@ function DraftingChat() {
   /** Determine what the artifact pane shows. */
   function renderArtifact() {
     if (hasFields) {
+      // Versioned drafts get the tabbed live preview pane; legacy
+      // unversioned drafts cannot be addressed by the preview
+      // endpoint and keep the plain data table.
+      if (activeDraftVersion !== null) {
+        return (
+          <DraftPreview
+            sessionId={getConfig().sessionId}
+            versionId={activeDraftVersion}
+            onSave={handleSave}
+          />
+        );
+      }
       return <ContentTable onSave={handleSave} />;
     }
     return (

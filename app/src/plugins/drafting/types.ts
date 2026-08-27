@@ -83,6 +83,11 @@ export interface DraftingPluginConfig {
   templates?: DraftingSelectPanelConfig;
   /** Documents panel: gate + documents attached from the server. */
   documents?: { enabled?: boolean; options?: DraftingDocument[] };
+  /**
+   * Live preview pane. The url is a template with {sessionId} and
+   * {versionId} placeholders, resolved before loading the iframe.
+   */
+  preview?: { url?: string };
 }
 
 /** Response body for the drafting reset endpoint. */

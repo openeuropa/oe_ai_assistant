@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\oe_ai_assistant\Service;
 
+use Drupal\Core\Cache\CacheableResponseInterface;
 use Drupal\Core\Entity\ContentEntityInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Extension\ThemeHandlerInterface;
@@ -79,7 +80,16 @@ class PreviewRenderer implements PreviewRendererInterface {
       // Do not render-cache an unsaved, possibly id-less entity.
       unset($build['#cache']);
 
-      return $this->htmlRenderer->renderResponse($build, $request, $this->routeMatch);
+      $response = $this->htmlRenderer->renderResponse($build, $request, $this->routeMatch);
+      // The preview reflects transient draft state addressed by query
+      // parameters the route cache contexts know nothing about. Mark the
+      // response uncacheable, or the dynamic page cache would replay the
+      // first rendered version for every later version of the session.
+      if ($response instanceof CacheableResponseInterface) {
+        $response->getCacheableMetadata()->setCacheMaxAge(0);
+      }
+      $response->headers->set('Cache-Control', 'no-store');
+      return $response;
     }
     catch (\Throwable $e) {
       $this->logger->error('Failed to render draft preview: @e', ['@e' => (string) $e]);

@@ -121,19 +121,3 @@ DraftingSetTemplateResponse:
     status:
       type: string
       description: Confirmation status (e.g. "ok").
-
-DraftingPreviewRequest:
-  type: object
-  required:
-    - sessionId
-    - version
-  properties:
-    sessionId:
-      type: string
-      description: >
-        The editorial session hosting the draft to preview.
-    version:
-      type: integer
-      description: >
-        The draft version to render, as returned by get_draft_history /
-        the draft_content result (e.g. 1 for "Draft 1").

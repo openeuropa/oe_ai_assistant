@@ -9,7 +9,7 @@ use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
 /**
  * Integration tests for the DraftingPlugin preview action.
  *
- * Sends real HTTP POST requests to /api/ai/plugins/drafting/preview and
+ * Sends real HTTP GET requests to /api/ai/plugins/drafting/preview and
  * verifies the HTML response, that no node is ever persisted, and every
  * error path from the design doc's error table.
  */
@@ -117,7 +117,7 @@ class DraftingPluginPreviewTest extends DraftingPluginTestBase {
 
     $nodesBefore = $this->countNodes();
 
-    $result = $this->httpPost('/api/ai/plugins/drafting/preview', [
+    $result = $this->httpGet('/api/ai/plugins/drafting/preview', [
       'sessionId' => $session->id(),
       'version' => 1,
     ]);
@@ -140,13 +140,44 @@ class DraftingPluginPreviewTest extends DraftingPluginTestBase {
     $session = $this->createSession($user);
     $this->seedLegacyDraft($session, ['title' => [['value' => 'Legacy Draft Title']]]);
 
-    $result = $this->httpPost('/api/ai/plugins/drafting/preview', [
+    $result = $this->httpGet('/api/ai/plugins/drafting/preview', [
       'sessionId' => $session->id(),
       'version' => 1,
     ]);
 
     $this->assertEquals(200, $result['status'], 'Expected 200. Body: ' . substr($result['body'], 0, 2000));
     $this->assertStringContainsString('Legacy Draft Title', $result['body']);
+  }
+
+  /**
+   * Each version renders its own content; responses are never cached.
+   *
+   * The preview is a GET, so without an uncacheable response Drupal's
+   * dynamic page cache would replay the first rendered version for
+   * every later version query on the same route.
+   */
+  public function testPreviewIsNotCachedAcrossVersions(): void {
+    $user = $this->createUser(['use oe ai assistant', 'create oe_news content']);
+    $this->drupalLogin($user);
+
+    $session = $this->createSession($user);
+    $this->seedVersionedDraft($session, 1, ['title' => [['value' => 'First Version Title']]], NULL);
+    $this->seedVersionedDraft($session, 2, ['title' => [['value' => 'Second Version Title']]], NULL);
+
+    $first = $this->httpGet('/api/ai/plugins/drafting/preview', [
+      'sessionId' => $session->id(),
+      'version' => 1,
+    ]);
+    $second = $this->httpGet('/api/ai/plugins/drafting/preview', [
+      'sessionId' => $session->id(),
+      'version' => 2,
+    ]);
+
+    $this->assertEquals(200, $first['status']);
+    $this->assertStringContainsString('First Version Title', $first['body']);
+    $this->assertEquals(200, $second['status']);
+    $this->assertStringContainsString('Second Version Title', $second['body']);
+    $this->assertStringNotContainsString('First Version Title', $second['body'], 'A cached response for another version must never be replayed.');
   }
 
   /**
@@ -159,7 +190,7 @@ class DraftingPluginPreviewTest extends DraftingPluginTestBase {
     $session = $this->createSession($user);
     $this->seedVersionedDraft($session, 1, ['title' => [['value' => 'x']]], NULL);
 
-    $result = $this->httpPost('/api/ai/plugins/drafting/preview', [
+    $result = $this->httpGet('/api/ai/plugins/drafting/preview', [
       'sessionId' => $session->id(),
       'version' => 1,
     ]);
@@ -177,7 +208,7 @@ class DraftingPluginPreviewTest extends DraftingPluginTestBase {
 
     $session = $this->createSession($user);
 
-    $result = $this->httpPost('/api/ai/plugins/drafting/preview', [
+    $result = $this->httpGet('/api/ai/plugins/drafting/preview', [
       'sessionId' => $session->id(),
       'version' => 1,
     ]);
@@ -201,7 +232,7 @@ class DraftingPluginPreviewTest extends DraftingPluginTestBase {
       'template_does_not_exist',
     );
 
-    $result = $this->httpPost('/api/ai/plugins/drafting/preview', [
+    $result = $this->httpGet('/api/ai/plugins/drafting/preview', [
       'sessionId' => $session->id(),
       'version' => 1,
     ]);

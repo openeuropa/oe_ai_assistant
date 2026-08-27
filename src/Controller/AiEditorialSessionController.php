@@ -177,6 +177,12 @@ class AiEditorialSessionController extends ControllerBase {
           'documents' => [
             'enabled' => FALSE,
           ],
+          // Live preview iframe URL template. The app substitutes the
+          // {sessionId} and {versionId} placeholders before loading the
+          // draft preview endpoint in the artifact pane iframe.
+          'preview' => [
+            'url' => Url::fromRoute('oe_ai_assistant.drafting_preview')->toString() . '?sessionId={sessionId}&version={versionId}',
+          ],
         ],
       ],
     ];

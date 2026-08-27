@@ -168,10 +168,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
-        put?: never;
         /** Render a themed HTML preview of a stored draft version, without saving */
-        post: operations["postDraftingPreview"];
+        get: operations["getDraftingPreview"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -401,12 +401,6 @@ export interface components {
         DraftingSetTemplateResponse: {
             /** @description Confirmation status (e.g. "ok"). */
             status: string;
-        };
-        DraftingPreviewRequest: {
-            /** @description The editorial session hosting the draft to preview. */
-            sessionId: string;
-            /** @description The draft version to render, as returned by get_draft_history / the draft_content result (e.g. 1 for "Draft 1"). */
-            version: number;
         };
         /** @description Request body for the echo stream endpoint. */
         EchoRequest: {
@@ -762,20 +756,21 @@ export interface operations {
             };
         };
     };
-    postDraftingPreview: {
+    getDraftingPreview: {
         parameters: {
-            query?: never;
+            query: {
+                /** @description The editorial session hosting the draft to preview. */
+                sessionId: string;
+                /** @description The draft version to render, as returned by get_draft_history / the draft_content result (e.g. 1 for "Draft 1"). */
+                version: number;
+            };
             header?: never;
             path?: never;
             cookie?: never;
         };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["DraftingPreviewRequest"];
-            };
-        };
+        requestBody?: never;
         responses: {
-            /** @description A complete, standalone HTML document rendering the draft as the live site would show it. Not JSON: load it into an iframe via srcdoc or a blob URL — this action is POST-only, so an iframe's src attribute cannot address it directly. The rendered document contains LLM-authored content, so when it is eventually consumed in an iframe (OEL-4856), it should be sandboxed rather than given full same-origin trust via a bare srcdoc. */
+            /** @description A complete, standalone HTML document rendering the draft as the live site would show it. Not JSON: the action is a GET so an iframe can load it directly through its src attribute. The rendered document contains LLM-authored content, so consuming iframes should sandbox it (no script execution) rather than grant full same-origin trust. */
             200: {
                 headers: {
                     [name: string]: unknown;

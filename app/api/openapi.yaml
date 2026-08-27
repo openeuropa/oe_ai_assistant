@@ -154,8 +154,6 @@ components:
       $ref: "plugins/drafting/schemas.yaml#/DraftingSetTemplateRequest"
     DraftingSetTemplateResponse:
       $ref: "plugins/drafting/schemas.yaml#/DraftingSetTemplateResponse"
-    DraftingPreviewRequest:
-      $ref: "plugins/drafting/schemas.yaml#/DraftingPreviewRequest"
 
     # -- Plugin: echo --
     EchoRequest:
