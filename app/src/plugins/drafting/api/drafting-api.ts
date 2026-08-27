@@ -180,7 +180,6 @@ export async function listDraftingDocuments(
 /** Removes a document from the current drafting session. */
 export async function removeDraftingDocument(
   documentId: string,
-  category: DraftingCategory = "context",
 ): Promise<DraftingRemoveDocumentResponse> {
   const response = await fetch(
     `${getConfig().apiBaseUrl}/plugins/drafting/remove-document`,
@@ -190,7 +189,6 @@ export async function removeDraftingDocument(
       credentials: "include",
       body: JSON.stringify({
         sessionId: getConfig().sessionId,
-        category,
         documentId,
       }),
     },
