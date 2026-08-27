@@ -398,8 +398,8 @@ class DraftingPlugin extends AiAssistantPluginBase {
     $session = $this->loadSession($body);
     $version = (int) ($body['version'] ?? 0);
 
-    $fields = $this->draftHistory->getDraftFields($session, $version);
-    if ($fields === NULL) {
+    $draft = $this->draftHistory->getDraftContent($session, $version);
+    if ($draft === NULL || $draft['fields'] === []) {
       throw new ActionException(
         'invalid_request',
         sprintf('Draft %d does not exist in this session.', $version),
@@ -407,7 +407,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
       );
     }
 
-    $result = $this->draftSaver->save($session->getContentType(), $fields);
+    $result = $this->draftSaver->save($session->getContentType(), $draft['fields']);
 
     $this->messageRecorder->recordEvent(
       $session,
