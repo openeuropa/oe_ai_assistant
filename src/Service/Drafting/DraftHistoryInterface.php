@@ -39,20 +39,6 @@ interface DraftHistoryInterface {
   public function listDrafts(EntityInterface $session): array;
 
   /**
-   * Returns the drafted field values of one stored draft version.
-   *
-   * @param \Drupal\Core\Entity\EntityInterface $session
-   *   The session hosting the conversation.
-   * @param int $version
-   *   The draft version to look up.
-   *
-   * @return array|null
-   *   The field values keyed by field machine name, or NULL when the
-   *   session has no draft with that version.
-   */
-  public function getDraftFields(EntityInterface $session, int $version): ?array;
-
-  /**
    * Returns the fields and template id for one stored draft version.
    *
    * @param \Drupal\Core\Entity\EntityInterface $session
