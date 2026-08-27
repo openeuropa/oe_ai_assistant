@@ -13,7 +13,8 @@ describe("global app store", () => {
       activePluginId: null,
       notifications: [],
       pluginStates: {},
-      isSidebarOpen: true,
+      // Collapsed by default: every session opens with the sidebar closed.
+      isSidebarOpen: false,
     });
   });
 

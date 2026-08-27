@@ -8,6 +8,7 @@
  */
 
 import {
+  ActionBarPrimitive,
   AttachmentPrimitive,
   ComposerPrimitive,
   MessagePrimitive,
@@ -19,12 +20,19 @@ import { Streamdown } from "streamdown";
 import "streamdown/styles.css";
 import {
   AlertCircle,
+  Check,
+  Copy,
   FileText,
   PenLine,
   SendHorizontal,
   X,
 } from "lucide-react";
-import { type PaneTabItem, PaneTabs } from "@/components/ui/pane-tabs";
+import type { PaneTabItem } from "@/components/ui/pane-tabs";
+import { avatarColorClass, UserAvatar } from "@/components/ui/user-avatar";
+import { getConfig } from "@/config";
+import { useAppStore } from "@/store";
+import { resolveMessageAuthor } from "../participants";
+import { ContextButtons } from "./context-buttons";
 import { ToolFallbackCard } from "./tool-uis";
 
 /** Welcome message shown when the chat is empty. */
@@ -77,21 +85,47 @@ function UserMessageAttachment() {
   );
 }
 
-/** Renders a single user message bubble with attachments. */
+/** Renders a single user message bubble with attachments and avatar. */
 function UserMessage() {
+  // The author travels in the message metadata for shared sessions;
+  // the current user's own turns fall back to the config.
+  const custom = useAuiState(
+    (s) => s.message.metadata?.custom as Record<string, unknown> | undefined,
+  );
+  const config = getConfig();
+  const author = resolveMessageAuthor(
+    { role: "user", metadata: { custom } },
+    { id: config.userId, name: config.userName },
+  );
+  const name = author?.name ?? config.userName;
+  // The author's color follows their position in the participants list.
+  const participants = useAppStore((s) => s.sessionParticipants);
+  const colorClass = avatarColorClass(
+    participants.findIndex((p) => p.id === author?.id),
+  );
+
   return (
-    <MessagePrimitive.Root className="mb-4 flex flex-col items-end gap-1">
+    <MessagePrimitive.Root className="group/message mb-4 flex flex-col items-end gap-1">
       {/* Attachments shown above the message text */}
       <MessagePrimitive.Attachments
         components={{ Attachment: UserMessageAttachment }}
       />
-      <div className="max-w-[80%] rounded-lg bg-blue-600 px-4 py-2 text-white">
-        <MessagePrimitive.Content
-          components={{
-            Text: ({ text }) => <p className="text-sm">{text}</p>,
-          }}
-        />
+      <div className="flex max-w-[80%] items-start justify-end gap-2">
+        {/* The sharp top-right corner points at the avatar like a comic
+            speech bubble tail; the bubble shares the author's color. */}
+        <div
+          className={`min-w-0 rounded-lg rounded-tr-none px-4 py-2 text-white ${colorClass}`}
+        >
+          <MessagePrimitive.Content
+            components={{
+              Text: ({ text }) => <p className="text-base">{text}</p>,
+            }}
+          />
+        </div>
+        <UserAvatar name={name} colorClass={colorClass} />
       </div>
+      {/* Copy and timestamp, aligned with the bubble's right edge. */}
+      <MessageFooter className="justify-end pr-12" />
     </MessagePrimitive.Root>
   );
 }
@@ -128,50 +162,84 @@ function AssistantText({
   status: { type: string };
 }) {
   return (
-    <div className="text-sm prose prose-sm max-w-none">
+    <div className="chat-markdown text-base prose max-w-none">
       <Streamdown isAnimating={status.type === "running"}>{text}</Streamdown>
     </div>
   );
 }
 
 /**
- * Typing indicator with three pulsating dots, shown in place of
- * the assistant message bubble while the assistant is processing
- * but has not yet started streaming content. Once the first
- * content part arrives, the indicator is replaced by the normal
- * message bubble.
- *
- * Uses the animate-typing-pulse Tailwind utility registered
- * via @theme in index.css.
+ * Typing indicator with three bouncing dots, shown in place of the
+ * assistant message while the assistant is processing but has not
+ * yet started streaming content. Once the first content part
+ * arrives, the indicator is replaced by the message text. The wave
+ * motion comes from the typing-dot class in index.css, which staggers
+ * each dot by its position. Exported for Storybook.
  */
-function TypingIndicator() {
+export function TypingIndicator() {
   return (
-    <div className="flex justify-start">
-      <div className="rounded-lg bg-gray-100 px-4 py-3">
-        <div className="flex items-center gap-1.5">
-          {[0, 1, 2].map((i) => (
-            <span
-              key={i}
-              className="inline-block h-2 w-2 animate-typing-pulse rounded-full bg-gray-400"
-              style={{ animationDelay: `${i * 0.2}s` }}
-            />
-          ))}
-        </div>
-      </div>
+    <div className="flex items-center gap-1.5 py-2">
+      {[0, 1, 2].map((i) => (
+        <span
+          key={i}
+          className="typing-dot inline-block h-2 w-2 rounded-full bg-gray-400"
+        />
+      ))}
     </div>
+  );
+}
+
+/**
+ * Formats a message timestamp as a compact local date with 24h time.
+ */
+function formatMessageTime(createdAt: Date): string {
+  return createdAt.toLocaleString(undefined, {
+    day: "numeric",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+}
+
+/**
+ * Action row under a message: the copy-to-clipboard control (provided
+ * by assistant-ui's action bar) and the message timestamp. The row is
+ * always rendered so its height is reserved, but it is only visible
+ * while the related message is hovered or a control inside it holds
+ * keyboard focus (no vertical flickering, no invisible tab stop).
+ * Hidden entirely while the message is still streaming.
+ */
+function MessageFooter({ className = "" }: { className?: string }) {
+  const isCopied = useAuiState((s) => s.message.isCopied);
+  const createdAt = useAuiState((s) => s.message.createdAt);
+
+  return (
+    <ActionBarPrimitive.Root
+      hideWhenRunning
+      className={`mt-1 flex items-center gap-2 text-xs text-gray-400 opacity-0 transition-opacity duration-150 focus-within:opacity-100 group-hover/message:opacity-100 ${className}`}
+    >
+      <ActionBarPrimitive.Copy
+        aria-label="Copy message"
+        className="flex cursor-pointer items-center rounded-md p-1 hover:bg-gray-200 hover:text-gray-600"
+      >
+        {isCopied ? <Check size={14} /> : <Copy size={14} />}
+      </ActionBarPrimitive.Copy>
+      <span>{formatMessageTime(createdAt)}</span>
+    </ActionBarPrimitive.Root>
   );
 }
 
 /**
  * Renders a single assistant message, or the typing indicator
  * when the message has no content yet (waiting for the LLM to
- * start streaming). This ensures the empty chat bubble is never
- * visible -- the user sees pulsating dots until real content
- * arrives.
+ * start streaming), so the user sees pulsating dots until real
+ * content arrives.
  *
- * When every content part is an editorial_event tool-call, the
- * message renders without the gray bubble wrapper so event chips
- * appear at full width, centered by their own styles.
+ * Assistant responses sit directly on the chat surface with no
+ * bubble; only user messages keep one. Event-only messages (all
+ * parts are editorial_event tool-calls) render with a tighter
+ * bottom margin so consecutive chips stay grouped.
  */
 function AssistantMessage() {
   const content = useAuiState((s) => s.message?.content ?? []);
@@ -186,6 +254,14 @@ function AssistantMessage() {
         part.type === "tool-call" &&
         (part as { toolName?: string }).toolName === "editorial_event",
     );
+
+  // The copy/timestamp footer only makes sense under textual replies;
+  // tool-call-only messages (draft cards, saves) render without it.
+  const hasText = content.some(
+    (part) =>
+      part.type === "text" &&
+      ((part as { text?: string }).text ?? "").trim().length > 0,
+  );
 
   // Show pulsating dots while waiting for the first content
   // part (text or tool call) to arrive from the backend.
@@ -214,20 +290,21 @@ function AssistantMessage() {
 
   return (
     <MessagePrimitive.Root
-      className="mb-4 flex justify-start"
+      className="group/message mb-4"
       data-testid="assistant-message"
     >
-      <div className="max-w-[80%]">
-        <div className="rounded-lg bg-gray-100 px-4 py-2 text-gray-900">
-          <MessagePrimitive.Content
-            components={{
-              Text: AssistantText,
-              tools: { Fallback: ToolFallbackCard },
-            }}
-          />
-        </div>
-        <MessageError />
+      {/* Assistant responses render directly on the chat surface with no
+          bubble; only user messages keep one. */}
+      <div className="text-gray-900">
+        <MessagePrimitive.Content
+          components={{
+            Text: AssistantText,
+            tools: { Fallback: ToolFallbackCard },
+          }}
+        />
       </div>
+      <MessageError />
+      {hasText && <MessageFooter />}
     </MessagePrimitive.Root>
   );
 }
@@ -249,59 +326,86 @@ function ComposerAttachment() {
   );
 }
 
-/** Chat composer with text input and send. */
-function Composer() {
+/**
+ * Chat composer arranged like the Claude web interface: a rounded box
+ * with the text input on top and a bottom row holding the editorial
+ * context pill buttons on the left and the send button on the right.
+ */
+function Composer({
+  tabs,
+  defaultActiveTabId,
+}: {
+  tabs: PaneTabItem[];
+  defaultActiveTabId?: string;
+}) {
   return (
-    <ComposerPrimitive.Root className="border-t border-gray-200 p-4 pt-3">
-      {/* Pending attachments row (populated by the documents tab). */}
-      <div className="mb-1.5 flex flex-wrap gap-1">
-        <ComposerPrimitive.Attachments
-          components={{ Attachment: ComposerAttachment }}
-        />
-      </div>
+    <ComposerPrimitive.Root className="p-4 pt-2">
+      <div className="rounded-xl border border-gray-300 bg-white shadow-sm focus-within:border-blue-500">
+        {/* Pending attachments row (populated by the documents panel). */}
+        <div className="flex flex-wrap gap-1 empty:hidden [&:not(:empty)]:px-3 [&:not(:empty)]:pt-3">
+          <ComposerPrimitive.Attachments
+            components={{ Attachment: ComposerAttachment }}
+          />
+        </div>
 
-      {/* Input row */}
-      <div className="flex items-end gap-2">
+        {/* Text input on top, sized like the conversation messages. */}
         <ComposerPrimitive.Input
           placeholder="Describe the content you want to draft..."
-          className="flex-1 resize-none rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+          className="w-full resize-none border-0 bg-transparent px-3 pt-3 text-base focus:outline-none"
           autoFocus
         />
-        <ComposerPrimitive.Send className="flex h-9 w-9 cursor-pointer items-center justify-center rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50">
-          <SendHorizontal size={16} />
-        </ComposerPrimitive.Send>
+
+        {/* Bottom row: context pills left, send right. */}
+        <div className="flex items-end justify-between gap-2 p-2 pl-3">
+          <ContextButtons tabs={tabs} defaultActiveTabId={defaultActiveTabId} />
+          <ComposerPrimitive.Send className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50">
+            <SendHorizontal size={16} />
+          </ComposerPrimitive.Send>
+        </div>
       </div>
     </ComposerPrimitive.Root>
   );
 }
 
 interface DraftingThreadProps {
-  /** Tabs shown on top of the composer; each opens a pane over the chat. */
+  /** Context panels shown as pill buttons inside the composer. */
   tabs?: PaneTabItem[];
-  /** Opens a tab by id on mount (Storybook/previews). */
+  /** Opens a panel modal by id on mount (Storybook/previews). */
   defaultActiveTabId?: string;
 }
 
-/** Full chat thread with welcome, messages, tabs, and composer. */
+/**
+ * Full chat thread with welcome, messages, and composer. The scroll
+ * container spans the whole chat area so the scrollbar sits at its
+ * outer edge, while the messages and the composer are centered with a
+ * comfortable reading width.
+ */
 export function DraftingThread({
   tabs = [],
   defaultActiveTabId,
 }: DraftingThreadProps) {
+  // Host-controlled disclaimer under the composer; hidden when empty.
+  const disclaimer = getConfig().disclaimer.trim();
+
   return (
     <ThreadPrimitive.Root className="flex min-h-0 flex-1 flex-col">
-      <ThreadPrimitive.Viewport className="flex-1 overflow-y-auto p-4">
-        <WelcomeMessage />
-        <ThreadPrimitive.Messages
-          components={{
-            UserMessage,
-            AssistantMessage,
-          }}
-        />
+      <ThreadPrimitive.Viewport className="flex-1 overflow-y-auto">
+        <div className="mx-auto w-full max-w-3xl p-4">
+          <WelcomeMessage />
+          <ThreadPrimitive.Messages
+            components={{
+              UserMessage,
+              AssistantMessage,
+            }}
+          />
+        </div>
       </ThreadPrimitive.Viewport>
-      {tabs.length > 0 && (
-        <PaneTabs tabs={tabs} defaultActiveId={defaultActiveTabId} />
-      )}
-      <Composer />
+      <div className="mx-auto w-full max-w-3xl">
+        <Composer tabs={tabs} defaultActiveTabId={defaultActiveTabId} />
+        {disclaimer !== "" && (
+          <p className="pb-2 text-center text-xs text-gray-400">{disclaimer}</p>
+        )}
+      </div>
     </ThreadPrimitive.Root>
   );
 }

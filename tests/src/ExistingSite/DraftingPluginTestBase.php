@@ -104,6 +104,35 @@ abstract class DraftingPluginTestBase extends ExistingSiteBase {
   }
 
   /**
+   * Seeds a conversation message hosted by the session.
+   *
+   * @param \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $session
+   *   The session hosting the conversation.
+   * @param string $role
+   *   The message role.
+   * @param string $content
+   *   The message text.
+   * @param array $toolCalls
+   *   Optional tool calls to store on the message.
+   * @param int|null $uid
+   *   Optional author user ID, set on user turns.
+   */
+  protected function seedMessage(AiEditorialSessionInterface $session, string $role, string $content, array $toolCalls = [], ?int $uid = NULL): void {
+    /** @var \Drupal\oe_ai_assistant\Entity\AiConversationMessageInterface $message */
+    $message = \Drupal::entityTypeManager()->getStorage('ai_conversation_message')
+      ->create([
+        'host_entity_type' => $session->getEntityTypeId(),
+        'host_entity_id' => (int) $session->id(),
+        'role' => $role,
+        'content' => $content,
+      ] + ($uid !== NULL ? ['uid' => $uid] : []));
+    if ($toolCalls) {
+      $message->setToolCalls($toolCalls);
+    }
+    $message->save();
+  }
+
+  /**
    * Loads the persisted top-level transcript for a session.
    *
    * @param \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $session
@@ -117,6 +146,25 @@ abstract class DraftingPluginTestBase extends ExistingSiteBase {
       ->getStorage('ai_conversation_message');
     $storage->resetCache();
     return $storage->loadTranscript($session);
+  }
+
+  /**
+   * Calls the get-messages action and returns its messages list.
+   *
+   * @param \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $session
+   *   The session whose transcript to load.
+   *
+   * @return array
+   *   The decoded messages list.
+   */
+  protected function getMessages(AiEditorialSessionInterface $session): array {
+    $result = $this->httpPost('/api/ai/plugins/drafting/get-messages', [
+      'sessionId' => $session->id(),
+    ]);
+    $this->assertEquals(200, $result['status'],
+      'get-messages should return 200. Body: ' . substr($result['body'], 0, 500));
+    $decoded = json_decode($result['body'], TRUE);
+    return $decoded['messages'] ?? [];
   }
 
   /**

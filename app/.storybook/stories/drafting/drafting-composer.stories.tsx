@@ -64,7 +64,7 @@ function DraftingChatPreview() {
           tabs={[
             {
               id: "tone",
-              icon: <Megaphone size={16} />,
+              icon: <Megaphone size={20} />,
               title: "Tone",
               summary: toneLabel,
               render: (close) => (
@@ -83,7 +83,7 @@ function DraftingChatPreview() {
             },
             {
               id: "documents",
-              icon: <FileText size={16} />,
+              icon: <FileText size={20} />,
               title: "Documents",
               summary: `${documents.count} documents`,
               render: (close) => (
@@ -98,7 +98,7 @@ function DraftingChatPreview() {
             },
             {
               id: "templates",
-              icon: <LayoutTemplate size={16} />,
+              icon: <LayoutTemplate size={20} />,
               title: "Templates",
               summary: template.selectedLabel ?? "Not set",
               render: (close) => (

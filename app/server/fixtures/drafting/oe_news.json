@@ -1,8 +1,7 @@
 {
   "bundle": "oe_news",
   "conversationReplies": {
-    "default": "Mock drafting mode is active. Ask me to draft or regenerate content and I will return deterministic fixture data for the oe_news bundle.",
-    "saveWithoutDraft": "There is no drafted content to save yet in mock mode. Generate a fixture-backed draft first, then try Save draft again."
+    "default": "Mock drafting mode is active. Ask me to draft or regenerate content and I will return deterministic fixture data for the oe_news bundle."
   },
   "drafts": {
     "initial": {

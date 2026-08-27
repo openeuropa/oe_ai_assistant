@@ -1,7 +1,9 @@
 /**
  * Sidebar plugin navigation.
  *
- * Lists the active plugins as nav links. Supports two states:
+ * Lists the active plugins as nav links. Renders nothing with fewer
+ * than two active plugins: navigation between plugins only earns its
+ * space when there is somewhere to navigate to. Supports two states:
  * - Expanded: shows icon + label, with a "Plugins" heading and a
  *   collapse button.
  * - Collapsed: shows icons only with tooltips, and an expand button.
@@ -21,8 +23,8 @@ export function Nav() {
   const setSidebarOpen = useAppStore((s) => s.setSidebarOpen);
   const plugins = getActivePlugins();
 
-  // Nothing to render if no plugins are registered.
-  if (plugins.length === 0) {
+  // With zero or one active plugin the sidebar earns no space at all.
+  if (plugins.length <= 1) {
     return null;
   }
 

@@ -4,15 +4,17 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\oe_ai_assistant\ExistingSite;
 
-use weitzman\DrupalTestTraits\ExistingSiteBase;
+use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
 
 /**
  * Integration tests for the DraftingPlugin save action.
  *
  * Sends real HTTP POST requests to /api/ai/plugins/drafting/save and verifies
- * the responses and created entities.
+ * the responses and created entities. The request names a session and a draft
+ * version; the backend resolves the drafted field values from its own draft
+ * history, so clients never submit field data.
  */
-class DraftingPluginSaveTest extends ExistingSiteBase {
+class DraftingPluginSaveTest extends DraftingPluginTestBase {
 
   /**
    * The IDs of existing entities before the test, keyed by entity type.
@@ -39,37 +41,56 @@ class DraftingPluginSaveTest extends ExistingSiteBase {
   }
 
   /**
-   * Tests that save creates a node with simple fields in the new payload shape.
+   * Tests that save resolves the named draft version from the history.
+   *
+   * Two versions are seeded; saving version 1 must use version 1 fields even
+   * though a newer draft exists, and the save is recorded as a durable
+   * timeline event.
    */
-  public function testSaveCreatesNodeWithSimpleFields(): void {
+  public function testSaveCreatesNodeFromDraftVersion(): void {
     $user = $this->createUser([
       'use oe ai assistant',
       'create oe_news content',
     ]);
-    $this->drupalLogin($user);
+    $this->loginUser($user);
+    $session = $this->createSession($user);
 
-    $result = $this->httpPost('/api/ai/plugins/drafting/save', [
-      'entityTypeId' => 'node',
-      'bundle' => 'oe_news',
-      'fields' => [
-        'title' => [['value' => 'Test Save']],
-      ],
+    $this->seedDraft($session, 1, [
+      'title' => [['value' => 'Draft one title']],
+    ]);
+    $this->seedDraft($session, 2, [
+      'title' => [['value' => 'Draft two title']],
     ]);
 
-    $this->assertEquals(200, $result['status'], 'Expected 200 response. Body: ' . json_encode($result['body']));
-    $this->assertArrayHasKey('nodeId', $result['body']);
-    $this->assertArrayHasKey('previewUrl', $result['body']);
+    $result = $this->httpPost('/api/ai/plugins/drafting/save', [
+      'sessionId' => $session->id(),
+      'version' => 1,
+    ]);
 
-    // Verify the node exists and has the correct values.
-    $nodeId = $result['body']['nodeId'];
-    $node = \Drupal::entityTypeManager()->getStorage('node')->load($nodeId);
+    $this->assertEquals(200, $result['status'],
+      'Expected 200 response. Body: ' . substr($result['body'], 0, 500));
+    $body = json_decode($result['body'], TRUE);
+    $this->assertArrayHasKey('nodeId', $body);
+    $this->assertArrayHasKey('previewUrl', $body);
+
+    // The node carries the fields of the REQUESTED version, not the latest.
+    $node = \Drupal::entityTypeManager()->getStorage('node')
+      ->load($body['nodeId']);
     $this->assertNotNull($node, 'The created node should exist.');
-    $this->assertEquals('Test Save', $node->getTitle());
+    $this->assertEquals('Draft one title', $node->getTitle());
     $this->assertEquals('oe_news', $node->bundle());
     $this->assertEquals('draft', $node->get('moderation_state')->value);
     // Owner must be the current user, set explicitly post-deserialize.
     $this->assertEquals((int) $user->id(), (int) $node->getOwnerId(),
       'Saved node owner must be the current user.');
+
+    // The save is recorded as a durable timeline event on the transcript.
+    $events = array_values(array_filter(
+      $this->getMessages($session),
+      fn($m) => $m['role'] === 'event' && $m['type'] === 'save',
+    ));
+    $this->assertCount(1, $events, 'The save must record one event row.');
+    $this->assertStringContainsString('Draft 1', $events[0]['summary']);
   }
 
   /**
@@ -86,31 +107,34 @@ class DraftingPluginSaveTest extends ExistingSiteBase {
       'use oe ai assistant',
       'create oe_news content',
     ]);
-    $this->drupalLogin($user);
+    $this->loginUser($user);
+    $session = $this->createSession($user);
 
-    $result = $this->httpPost('/api/ai/plugins/drafting/save', [
-      'entityTypeId' => 'node',
-      'bundle' => 'oe_news',
-      'fields' => [
-        'title' => [['value' => 'Paragraph round-trip']],
-        'field_content_paragraphs' => [
-          [
-            'type' => [['target_id' => 'text_block']],
-            'field_text_body' => [['value' => 'First paragraph.']],
-          ],
-          [
-            'type' => [['target_id' => 'quote_block']],
-            'field_quote_text' => [['value' => 'A wise quote.']],
-            'field_quote_attribution' => [['value' => 'Anon']],
-          ],
+    $this->seedDraft($session, 1, [
+      'title' => [['value' => 'Paragraph round-trip']],
+      'field_content_paragraphs' => [
+        [
+          'type' => [['target_id' => 'text_block']],
+          'field_text_body' => [['value' => 'First paragraph.']],
+        ],
+        [
+          'type' => [['target_id' => 'quote_block']],
+          'field_quote_text' => [['value' => 'A wise quote.']],
+          'field_quote_attribution' => [['value' => 'Anon']],
         ],
       ],
     ]);
 
+    $result = $this->httpPost('/api/ai/plugins/drafting/save', [
+      'sessionId' => $session->id(),
+      'version' => 1,
+    ]);
+
     $this->assertEquals(200, $result['status'],
-      'Expected 200 response. Body: ' . json_encode($result['body']));
-    $nodeId = $result['body']['nodeId'];
-    $node = \Drupal::entityTypeManager()->getStorage('node')->load($nodeId);
+      'Expected 200 response. Body: ' . substr($result['body'], 0, 500));
+    $body = json_decode($result['body'], TRUE);
+    $node = \Drupal::entityTypeManager()->getStorage('node')
+      ->load($body['nodeId']);
     $this->assertNotNull($node, 'Saved node exists.');
     $this->assertEquals('Paragraph round-trip', $node->getTitle());
 
@@ -124,26 +148,28 @@ class DraftingPluginSaveTest extends ExistingSiteBase {
   }
 
   /**
-   * Tests that save with an invalid bundle returns 400.
-   *
-   * The user must have create permission for the bundle being tested, so we
-   * use an admin user. Otherwise the permission check would reject the request
-   * with 403 before the bundle validation is reached.
+   * Tests that saving a version the session never produced returns 400.
    */
-  public function testSaveInvalidBundle(): void {
-    $user = $this->createUser([], NULL, TRUE);
-    $this->drupalLogin($user);
+  public function testSaveUnknownVersionReturns400(): void {
+    $user = $this->createUser([
+      'use oe ai assistant',
+      'create oe_news content',
+    ]);
+    $this->loginUser($user);
+    $session = $this->createSession($user);
+
+    $this->seedDraft($session, 1, [
+      'title' => [['value' => 'Only draft']],
+    ]);
 
     $result = $this->httpPost('/api/ai/plugins/drafting/save', [
-      'entityTypeId' => 'node',
-      'bundle' => 'nonexistent_bundle',
-      'fields' => [
-        'title' => 'x',
-      ],
+      'sessionId' => $session->id(),
+      'version' => 99,
     ]);
 
     $this->assertEquals(400, $result['status']);
-    $this->assertEquals('invalid_bundle', $result['body']['code']);
+    $body = json_decode($result['body'], TRUE);
+    $this->assertEquals('invalid_request', $body['code']);
   }
 
   /**
@@ -153,52 +179,48 @@ class DraftingPluginSaveTest extends ExistingSiteBase {
     $user = $this->createUser([
       'use oe ai assistant',
     ]);
-    $this->drupalLogin($user);
+    $this->loginUser($user);
+    $session = $this->createSession($user);
+
+    $this->seedDraft($session, 1, [
+      'title' => [['value' => 'Fail']],
+    ]);
 
     $result = $this->httpPost('/api/ai/plugins/drafting/save', [
-      'entityTypeId' => 'node',
-      'bundle' => 'oe_news',
-      'fields' => [
-        'title' => 'Fail',
-      ],
+      'sessionId' => $session->id(),
+      'version' => 1,
     ]);
 
     $this->assertEquals(403, $result['status']);
-    $this->assertEquals('forbidden', $result['body']['code']);
+    $body = json_decode($result['body'], TRUE);
+    $this->assertEquals('forbidden', $body['code']);
   }
 
   /**
-   * Sends a POST request with JSON body using the BrowserKit client.
+   * Seeds a completed draft version into the session's transcript.
    *
-   * @param string $url
-   *   The URL to post to.
-   * @param array $body
-   *   The request body to encode as JSON.
+   * Mirrors how the chat flow records drafts: an assistant turn carrying a
+   * draft_content tool call whose result holds the versioned fields.
    *
-   * @return array
-   *   An array with 'status' and 'body' keys.
+   * @param \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $session
+   *   The session hosting the conversation.
+   * @param int $version
+   *   The draft version number.
+   * @param array $fields
+   *   The drafted field values, keyed by field machine name.
    */
-  protected function httpPost(string $url, array $body): array {
-    /** @var \Symfony\Component\BrowserKit\AbstractBrowser $client */
-    $client = $this->getSession()->getDriver()->getClient();
-
-    $fullUrl = $this->baseUrl . $url;
-
-    $client->request(
-      'POST',
-      $fullUrl,
-      [],
-      [],
-      ['CONTENT_TYPE' => 'application/json'],
-      json_encode($body),
-    );
-
-    $response = $client->getResponse();
-
-    return [
-      'status' => $response->getStatusCode(),
-      'body' => json_decode($response->getContent(), TRUE),
-    ];
+  protected function seedDraft(AiEditorialSessionInterface $session, int $version, array $fields): void {
+    $this->seedMessage($session, 'assistant', '', [
+      [
+        'type' => 'function',
+        'function' => ['name' => 'draft_content', 'arguments' => '{}'],
+        'result' => [
+          'version' => $version,
+          'context' => NULL,
+          'fields' => $fields,
+        ],
+      ],
+    ]);
   }
 
   /**

@@ -132,10 +132,20 @@ class AiEditorialSessionController extends ControllerBase {
       // Current user ID as a string, available to the React app for
       // user-specific behaviour.
       'userId' => (string) $this->currentUser()->id(),
+      // Display name of the current user, e.g. for message avatars.
+      'userName' => (string) $this->currentUser()->getDisplayName(),
       // AI editorial session entity ID. It scopes the state the React
       // app persists in localStorage, so different sessions never share
       // frontend state while collaborating users on the same session do.
       'sessionId' => $sessionId,
+      // Session title shown by the app shell header, prefixed with the
+      // human readable bundle, e.g. "Content creation: March newsletter".
+      'sessionTitle' => $this->sessionBundleLabel($session) . ': ' . $session->label(),
+      // Where the exit control returns the editor to: the AI editorial
+      // sessions dashboard.
+      'exitUrl' => Url::fromRoute('entity.ai_editorial_session.collection')->toString(),
+      // Disclaimer shown under the chat composer.
+      'disclaimer' => (string) $this->t('AI assistant can make mistakes. Please double-check responses.'),
       // List of plugin IDs that should be available in the UI for this node.
       // The React app only registers plugins whose IDs appear in this list,
       // allowing server-side control over which tools are shown per context.
@@ -184,15 +194,16 @@ class AiEditorialSessionController extends ControllerBase {
       // The React mount point: a plain <div> with a stable ID that the
       // bundled React app locates via getElementById('oe-ai-assistant').
       // The data-ai-app attribute is a hook for automated tests.
-      // The inline height style reserves viewport space for the assistant
-      // panel below Drupal's toolbar and node action buttons (~250px).
+      // The region-less session page template leaves the whole viewport
+      // to the mount; the displacement variable subtracts whatever the
+      // Drupal toolbar currently occupies at the top.
       'container' => [
         '#type' => 'html_tag',
         '#tag' => 'div',
         '#attributes' => [
           'id' => 'oe-ai-assistant',
           'data-ai-app' => TRUE,
-          'style' => 'height: calc(100vh - 250px) !important;',
+          'style' => 'height: calc(100vh - var(--drupal-displace-offset-top, 0px)) !important;',
         ],
       ],
       '#attached' => [
@@ -208,12 +219,31 @@ class AiEditorialSessionController extends ControllerBase {
       ],
     ];
 
-    // Invalidate the page when the session's selected template changes.
+    // Invalidate the page when the session or its bundle changes; the
+    // settings embed the session label and the bundle label.
     CacheableMetadata::createFromRenderArray($build)
       ->addCacheableDependency($session)
+      ->addCacheableDependency($this->sessionEntityTypeManager->getStorage('ai_editorial_session_type')->load($session->bundle()))
       ->applyTo($build);
 
     return $build;
+  }
+
+  /**
+   * Returns the human readable label of the session's bundle.
+   *
+   * @param \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $session
+   *   The AI editorial session.
+   *
+   * @return string
+   *   The session type label, falling back to the bundle machine name.
+   */
+  private function sessionBundleLabel(AiEditorialSessionInterface $session): string {
+    $bundle = $this->sessionEntityTypeManager
+      ->getStorage('ai_editorial_session_type')
+      ->load($session->bundle());
+
+    return (string) ($bundle?->label() ?? $session->bundle());
   }
 
   /**

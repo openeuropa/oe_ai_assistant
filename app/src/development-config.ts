@@ -4,7 +4,11 @@ import type { AppInitConfig } from "./config";
 
 export const developmentConfig = {
   userId: "dev-editor",
+  userName: "Dev Editor",
   sessionId: "dev-session",
+  sessionTitle: "Content creation: Dev editorial session",
+  exitUrl: "/",
+  disclaimer: "AI assistant can make mistakes. Please double-check responses.",
   pluginConfig: {
     drafting: {
       entityTypeId: "node",

@@ -9,6 +9,7 @@ use Drupal\Core\Entity\EntityInterface;
 use Drupal\Core\Entity\EntityListBuilder;
 use Drupal\Core\Entity\EntityStorageInterface;
 use Drupal\Core\Entity\EntityTypeInterface;
+use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Routing\RedirectDestinationInterface;
 use Drupal\Core\Url;
 use Drupal\Core\Entity\Query\QueryInterface;
@@ -23,6 +24,11 @@ class AiEditorialSessionListBuilder extends EntityListBuilder {
    * The date formatter.
    */
   protected DateFormatterInterface $dateFormatter;
+
+  /**
+   * The entity type manager, for resolving referenced entity labels.
+   */
+  protected EntityTypeManagerInterface $entityTypeManager;
 
   /**
    * {@inheritdoc}
@@ -43,10 +49,12 @@ class AiEditorialSessionListBuilder extends EntityListBuilder {
     EntityStorageInterface $storage,
     DateFormatterInterface $date_formatter,
     RedirectDestinationInterface $redirect_destination,
+    EntityTypeManagerInterface $entity_type_manager,
   ) {
     parent::__construct($entity_type, $storage);
     $this->dateFormatter = $date_formatter;
     $this->redirectDestination = $redirect_destination;
+    $this->entityTypeManager = $entity_type_manager;
   }
 
   /**
@@ -58,6 +66,7 @@ class AiEditorialSessionListBuilder extends EntityListBuilder {
       $container->get('entity_type.manager')->getStorage($entity_type->id()),
       $container->get('date.formatter'),
       $container->get('redirect.destination'),
+      $container->get('entity_type.manager'),
     );
   }
 
@@ -65,9 +74,9 @@ class AiEditorialSessionListBuilder extends EntityListBuilder {
    * {@inheritdoc}
    */
   public function buildHeader(): array {
-    $header['label'] = $this->t('Label');
-    $header['bundle'] = $this->t('Bundle');
-    $header['content_type'] = $this->t('Content type');
+    $header['label'] = $this->t('Session');
+    $header['bundle'] = $this->t('Type');
+    $header['content_type'] = $this->t('Target');
     $header['creator'] = $this->t('Initiated by');
     $header['status'] = $this->t('Status');
     $header['created'] = $this->t('Created');
@@ -97,14 +106,23 @@ class AiEditorialSessionListBuilder extends EntityListBuilder {
       '#title' => $entity->label(),
       '#url' => $entity->toUrl('canonical'),
     ];
-    $row['bundle'] = $entity->bundle();
-    $row['content_type'] = $entity->get('content_type')->target_id ?? '';
-    $row['label'] = $entity->get('label')->value ?? '';
+    // Human readable labels only, never machine names: the session type,
+    // the targeted node type, and the status all resolve to their labels.
+    $bundle = $this->entityTypeManager
+      ->getStorage('ai_editorial_session_type')
+      ->load($entity->bundle());
+    $row['bundle'] = (string) ($bundle?->label() ?? $entity->bundle());
+    $target_id = $entity->get('content_type')->target_id ?? '';
+    $node_type = $target_id === ''
+      ? NULL
+      : $this->entityTypeManager->getStorage('node_type')->load($target_id);
+    $row['content_type'] = (string) ($node_type?->label() ?? $target_id);
     $row['creator']['data'] = [
       '#theme' => 'username',
       '#account' => $entity->getOwner(),
     ];
-    $row['status'] = $entity->getStatus();
+    $allowed = $entity->getFieldDefinition('status')->getSetting('allowed_values');
+    $row['status'] = (string) ($allowed[$entity->getStatus()] ?? $entity->getStatus());
     $row['created'] = $this->dateFormatter->format((int) $entity->get('created')->value, 'short');
     $row['changed'] = $this->dateFormatter->format((int) $entity->get('changed')->value, 'short');
 

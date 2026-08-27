@@ -42,7 +42,7 @@ reset:
 save:
   post:
     operationId: postDraftingSave
-    summary: Save an approved draft as an unpublished node
+    summary: Save a session draft version as an unpublished node
     tags: [Drafting]
     requestBody:
       required: true

@@ -28,22 +28,26 @@ class AiEditorialSessionDashboardTest extends AiEditorialSessionBrowserTestBase 
     $this->drupalGet(Url::fromRoute('entity.ai_editorial_session.collection'));
 
     $this->assertSession()->statusCodeEquals(200);
-    $this->assertSession()->pageTextContains('AI editorial sessions');
+    $this->assertSession()->pageTextContains('AI Editorial Sessions');
     $this->assertSession()->pageTextContains('Add new session');
-    $this->assertSession()->pageTextContains('Label');
-    $this->assertSession()->pageTextContains('Bundle');
-    $this->assertSession()->pageTextContains('Content type');
+    $this->assertSession()->pageTextContains('Session');
+    $this->assertSession()->pageTextContains('Type');
+    $this->assertSession()->pageTextContains('Target');
     $this->assertSession()->pageTextContains('Initiated by');
     $this->assertSession()->pageTextContains('Status');
     $this->assertSession()->pageTextContains('Created');
     $this->assertSession()->pageTextContains('Changed');
     $this->assertSession()->pageTextContains($session->label());
-    $this->assertSession()->pageTextContains('oe_news');
-    $this->assertSession()->pageTextContains('content_creation');
-    $this->assertSession()->pageTextContains('active');
+    // Human readable labels, never machine names.
+    $this->assertSession()->pageTextContains('News');
+    $this->assertSession()->pageTextContains('Content creation');
+    $this->assertSession()->pageTextContains('Active');
+    $this->assertSession()->pageTextNotContains('content_creation');
     $this->assertSession()->linkExists('Continue');
     $this->assertSession()->linkByHrefExists($session->toUrl('canonical')->toString());
     $this->assertSession()->linkExists('Delete');
+    // The region-less session template only applies on the session route.
+    $this->assertSession()->responseNotContains('oe-ai-session-page');
 
     $this->clickLink('Continue');
     $this->assertSession()->statusCodeEquals(200);
@@ -67,7 +71,7 @@ class AiEditorialSessionDashboardTest extends AiEditorialSessionBrowserTestBase 
 
     $this->drupalGet(Url::fromRoute('entity.ai_editorial_session.collection'));
     $this->assertSession()->statusCodeEquals(200);
-    $this->assertSession()->pageTextContains('AI editorial sessions');
+    $this->assertSession()->pageTextContains('AI Editorial Sessions');
 
     $admin_settings_url = Url::fromRoute('oe_ai_assistant.admin_settings');
     $dashboard_url = Url::fromRoute('entity.ai_editorial_session.collection');
@@ -124,7 +128,7 @@ class AiEditorialSessionDashboardTest extends AiEditorialSessionBrowserTestBase 
 
     $this->drupalGet(Url::fromRoute('entity.ai_editorial_session.collection'));
     $this->assertSession()->statusCodeEquals(200);
-    $this->assertSession()->pageTextContains('AI editorial sessions');
+    $this->assertSession()->pageTextContains('AI Editorial Sessions');
     $this->assertSession()->pageTextContains('Owned session');
     $this->assertSession()->pageTextNotContains('Private session');
     $this->assertSession()->pageTextNotContains('Hidden session');
@@ -286,13 +290,21 @@ class AiEditorialSessionDashboardTest extends AiEditorialSessionBrowserTestBase 
    *   The expected AI editorial session entity ID.
    */
   protected function assertSessionAppPage(string $bundle, string $sessionId): void {
-    $this->assertSession()->elementExists('css', '#oe-ai-assistant[data-ai-app]');
+    $session = $this->container->get('entity_type.manager')
+      ->getStorage('ai_editorial_session')
+      ->load($sessionId);
+    // The module-provided region-less page template wraps the mount.
+    $this->assertSession()->elementExists('css', '.oe-ai-session-page #oe-ai-assistant[data-ai-app]');
     $this->assertSession()->responseContains('oe_ai_assistant/js/init.js');
     $this->assertSession()->responseContains('dist/ai-editorial-assistant.iife.js');
     $this->assertSession()->responseContains('oeAiAssistant');
     $this->assertSession()->responseContains('"apiBaseUrl":"\/api\/ai"');
     $this->assertSession()->responseContains('"userId":"' . $this->loggedInUser->id() . '"');
+    $this->assertSession()->responseContains('"userName":' . json_encode($this->loggedInUser->getDisplayName()));
     $this->assertSession()->responseContains('"sessionId":"' . $sessionId . '"');
+    $this->assertSession()->responseContains('"sessionTitle":' . json_encode('Content creation: ' . $session->label()));
+    $this->assertSession()->responseContains('"exitUrl":"\/admin\/content\/ai"');
+    $this->assertSession()->responseContains('"disclaimer":"AI assistant can make mistakes. Please double-check responses."');
     $this->assertSession()->responseContains('"enabledPlugins":["echo","notes","drafting"]');
     $this->assertSession()->responseContains('"entityTypeId":"node"');
     $this->assertSession()->responseContains('"bundle":"' . $bundle . '"');

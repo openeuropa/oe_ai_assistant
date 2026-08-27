@@ -24,6 +24,14 @@ export interface AppConfig {
   enabledPlugins: string[];
   /** Per-plugin init configuration from the host page. */
   pluginConfig: Record<string, Record<string, unknown>>;
+  /** Human-readable session title shown in the session header. */
+  sessionTitle: string;
+  /** URL the exit control navigates to. Empty string hides the control. */
+  exitUrl: string;
+  /** Display name of the authenticated user (e.g. for avatars). */
+  userName: string;
+  /** Disclaimer shown under the composer. Empty string hides it. */
+  disclaimer: string;
 }
 
 /** Init-time config accepted from the host application. */
@@ -41,6 +49,10 @@ const defaults = {
   nodeId: null,
   enabledPlugins: [],
   pluginConfig: {},
+  sessionTitle: "",
+  exitUrl: "",
+  userName: "",
+  disclaimer: "",
 } satisfies Omit<AppConfig, "userId" | "sessionId">;
 
 /** Module-level singleton holding the active config after init(). */

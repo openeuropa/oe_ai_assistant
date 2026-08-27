@@ -29,6 +29,17 @@ export interface Notification {
   message: string;
 }
 
+/**
+ * One session contributor. Keyed by the CMS user id so two users who
+ * happen to share a display name stay distinct participants.
+ */
+export interface SessionParticipant {
+  /** Stable author id (the CMS user id). */
+  id: string;
+  /** Display name shown in avatars and popups. */
+  name: string;
+}
+
 /** Full shape of the global store, including actions. */
 interface AppState {
   // -- Persisted state --
@@ -51,6 +62,10 @@ interface AppState {
 
   /** Whether the sidebar navigation is expanded. */
   isSidebarOpen: boolean;
+  /** Pending-work flags reported by plugins, keyed by reporting source. */
+  pendingWork: Record<string, boolean>;
+  /** Contributors, in order of their first message. */
+  sessionParticipants: SessionParticipant[];
 
   // -- Actions --
 
@@ -59,6 +74,10 @@ interface AppState {
   removeNotification: (id: string) => void;
   clearNotifications: () => void;
   setSidebarOpen: (open: boolean) => void;
+  /** Report whether a source (usually a plugin) has work in flight. */
+  setPendingWork: (source: string, pending: boolean) => void;
+  /** Publish the session participants shown in the session header. */
+  setSessionParticipants: (participants: SessionParticipant[]) => void;
   /** Shallow-merge partial state into a plugin's slice. */
   setPluginState: (pluginId: string, partial: Record<string, unknown>) => void;
 }
@@ -87,7 +106,11 @@ function createPersistedState(): PersistedAppState {
 function createInitialState() {
   return {
     ...createPersistedState(),
-    isSidebarOpen: true,
+    // Collapsed by default: the sidebar must earn its space, and since the
+    // flag is transient every session load starts collapsed again.
+    isSidebarOpen: false,
+    pendingWork: {},
+    sessionParticipants: [],
   };
 }
 
@@ -185,6 +208,12 @@ export const useAppStore = create<AppState>()(
         })),
       clearNotifications: () => set({ notifications: [] }),
       setSidebarOpen: (open) => set({ isSidebarOpen: open }),
+      setPendingWork: (source, pending) =>
+        set((state) => ({
+          pendingWork: { ...state.pendingWork, [source]: pending },
+        })),
+      setSessionParticipants: (participants) =>
+        set({ sessionParticipants: participants }),
       setPluginState: (pluginId, partial) =>
         set((state) => ({
           pluginStates: {
@@ -207,6 +236,16 @@ export const useAppStore = create<AppState>()(
     },
   ),
 );
+
+/**
+ * True when any source reports in-flight or unsent work. Used by the
+ * shell exit guard to block navigation until the session is idle.
+ */
+export function useHasPendingWork(): boolean {
+  return useAppStore((s) =>
+    Object.values(s.pendingWork).some((pending) => pending),
+  );
+}
 
 /**
  * Prepare the store for a specific host context before rendering.

@@ -1,0 +1,14 @@
+{#
+/**
+ * @file
+ * Region-less page template for AI editorial session pages.
+ *
+ * Provided and forced by the module on the session route regardless of
+ * the active theme, so the assistant mount can use the whole page. Only
+ * the content region is printed; the Drupal toolbar is unaffected
+ * because it renders from html.html.twig outside this template.
+ */
+#}
+<div class="oe-ai-session-page">
+  {{ page.content }}
+</div>

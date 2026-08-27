@@ -11,6 +11,7 @@ import {
   Info,
   LayoutTemplate,
   Megaphone,
+  Save,
   Sparkles,
 } from "lucide-react";
 import type * as React from "react";
@@ -32,8 +33,8 @@ export interface EventChipProps {
  * Returns the Lucide icon component that matches the given event type.
  *
  * Megaphone for tone changes, LayoutTemplate for template changes,
- * Sparkles for session start, AlertCircle for errors, and Info for
- * everything else.
+ * Sparkles for session start, Save for draft saves, AlertCircle for
+ * errors, and Info for everything else.
  */
 function iconForEventType(eventType: string): React.ElementType {
   switch (eventType) {
@@ -43,6 +44,8 @@ function iconForEventType(eventType: string): React.ElementType {
       return LayoutTemplate;
     case "session_start":
       return Sparkles;
+    case "save":
+      return Save;
     case "error":
       return AlertCircle;
     default:

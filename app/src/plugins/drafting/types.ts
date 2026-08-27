@@ -28,6 +28,18 @@ export interface DraftingSetToneResponse {
   status: "ok";
 }
 
+/** Request body for saving a draft version (sessionId added by the helper). */
+export interface DraftingSaveRequest {
+  /** The draft version to save, as shown in the version rail. */
+  version: number;
+}
+
+/** Response body for the drafting save endpoint. */
+export interface DraftingSaveResponse {
+  nodeId: string;
+  previewUrl: string;
+}
+
 /** Request body for setting the selected template. */
 export interface DraftingSetTemplateRequest {
   template: string;

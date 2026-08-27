@@ -10,7 +10,7 @@
 
 import type { ToolCallMessagePartProps } from "@assistant-ui/react";
 import { makeAssistantToolUI } from "@assistant-ui/react";
-import { Check, Loader2, PenLine, Save, Wrench, X } from "lucide-react";
+import { Check, Loader2, PenLine, Wrench, X } from "lucide-react";
 import { parseDraftResult } from "../draft-result";
 import { setDraftingState } from "../store";
 import { DraftCard } from "./draft-card";
@@ -120,7 +120,14 @@ export const DraftContentToolUI = makeAssistantToolUI<
         version={parsed.version}
         context={parsed.context}
         fields={fields}
-        onOpen={() => setDraftingState({ draftedFields: fields })}
+        onOpen={() =>
+          // Show this draft in the pane, expanding it if collapsed.
+          setDraftingState({
+            draftedFields: fields,
+            activeDraftVersion: parsed.version,
+            isArtifactCollapsed: false,
+          })
+        }
       />
     );
   },
@@ -140,22 +147,6 @@ export const EditorialEventToolUI = makeAssistantToolUI<
   toolName: "editorial_event",
   render: ({ args }) => (
     <EventChip eventType={args.eventType} summary={args.summary} at={args.at} />
-  ),
-});
-
-/** UI for the save_draft_revision tool call. */
-export const SaveDraftRevisionToolUI = makeAssistantToolUI<
-  Record<string, unknown>,
-  unknown
->({
-  toolName: "save_draft_revision",
-  render: ({ status }) => (
-    <ToolCallCard
-      icon={Save}
-      label="Saving draft revision"
-      detail="Creating an unpublished revision"
-      status={status}
-    />
   ),
 });
 

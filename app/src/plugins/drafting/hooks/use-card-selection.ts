@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import type { RadioCardOption } from "@/components/ui/radio-card-group";
+import { useAppStore } from "@/store";
 import { setDraftingSelection, useDraftingSelection } from "../store";
 
 export interface UseCardSelectionParams {
@@ -25,6 +26,7 @@ export function useCardSelection({
   onSave,
 }: UseCardSelectionParams) {
   const stored = useDraftingSelection(panelId);
+  const setPendingWork = useAppStore((s) => s.setPendingWork);
   const [error, setError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
 
@@ -61,6 +63,10 @@ export function useCardSelection({
 
     setError(null);
     setIsSaving(true);
+    // Report the in-flight save to the shell exit guard under a
+    // panel-scoped source key, so navigating away is blocked until the
+    // backend has accepted (or rejected) the selection.
+    setPendingWork(`drafting:${panelId}`, true);
     try {
       // Only confirm locally after the backend accepts the selection.
       await onSave(value);
@@ -74,6 +80,7 @@ export function useCardSelection({
       throw caughtError;
     } finally {
       setIsSaving(false);
+      setPendingWork(`drafting:${panelId}`, false);
     }
   }
 

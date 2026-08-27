@@ -29,6 +29,12 @@ export interface DialogProps {
   children: React.ReactNode;
   /** Optional extra class names for the panel element. */
   className?: string;
+  /**
+   * Hides the header row and body padding for content that brings its
+   * own chrome (title, description, close action). The title is still
+   * rendered visually hidden for accessibility.
+   */
+  hideHeader?: boolean;
 }
 
 /**
@@ -44,6 +50,7 @@ export function Dialog({
   description,
   children,
   className,
+  hideHeader = false,
 }: DialogProps) {
   return (
     <DialogPrimitive.Root
@@ -53,49 +60,75 @@ export function Dialog({
       }}
     >
       <DialogPrimitive.Portal>
-        {/* Dimmed overlay behind the panel. */}
-        <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-black/40 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0" />
+        {/* Dimmed overlay behind the panel. The data-ai-app attribute
+            re-applies the scoped CSS reset inside the portal, which
+            renders outside the app mount into the host page body. */}
+        <DialogPrimitive.Overlay
+          data-ai-app=""
+          className="fixed inset-0 z-50 bg-black/40 data-[state=open]:animate-in data-[state=open]:fade-in-0"
+        />
 
-        {/* Centered content panel. Without a description, aria-describedby
-            must be set to undefined to override the Radix default, which
-            would otherwise point at a non-existent element. */}
+        {/* Centered content panel; closes without an exit animation. The
+            explicit h-auto overrides the 100vh container baseline that
+            the data-ai-app reset scope would otherwise apply. Without a
+            description, aria-describedby must be set to undefined to
+            override the Radix default, which would otherwise point at a
+            non-existent element. */}
         <DialogPrimitive.Content
+          data-ai-app=""
           {...(description === undefined
             ? { "aria-describedby": undefined }
             : {})}
           className={cn(
-            "fixed left-1/2 top-1/2 z-50 w-full max-w-lg -translate-x-1/2 -translate-y-1/2",
-            "rounded-lg border border-gray-200 bg-white shadow-lg",
-            "data-[state=open]:animate-in data-[state=closed]:animate-out",
-            "data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
-            "data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95",
+            "fixed left-1/2 top-1/2 z-50 h-auto w-full max-w-lg -translate-x-1/2 -translate-y-1/2",
+            "overflow-hidden rounded-lg border border-gray-200 bg-white shadow-lg",
+            "data-[state=open]:animate-in",
+            "data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95",
             className,
           )}
         >
-          {/* Header row: title on the left, close button on the right. */}
-          <div className="flex items-center justify-between border-b border-gray-200 px-5 py-4">
-            <DialogPrimitive.Title className="text-sm font-semibold text-gray-800">
-              {title}
-            </DialogPrimitive.Title>
+          {hideHeader ? (
+            // The content brings its own chrome; keep the title (and
+            // description, when given) for screen readers only. Uses the
+            // sr-only utility rather than Radix VisuallyHidden: the
+            // scoped reset reverts inline styles inside the portal, which
+            // would make the visually hidden title show up.
+            <>
+              <DialogPrimitive.Title className="sr-only">
+                {title}
+              </DialogPrimitive.Title>
+              {description !== undefined && (
+                <DialogPrimitive.Description className="sr-only">
+                  {description}
+                </DialogPrimitive.Description>
+              )}
+            </>
+          ) : (
+            // Header row: title on the left, close button on the right.
+            <div className="flex items-center justify-between border-b border-gray-200 px-5 py-4">
+              <DialogPrimitive.Title className="text-sm font-semibold text-gray-800">
+                {title}
+              </DialogPrimitive.Title>
 
-            {/* Screen-reader-only description wired to aria-describedby. */}
-            {description !== undefined && (
-              <DialogPrimitive.Description className="sr-only">
-                {description}
-              </DialogPrimitive.Description>
-            )}
+              {/* Screen-reader-only description wired to aria-describedby. */}
+              {description !== undefined && (
+                <DialogPrimitive.Description className="sr-only">
+                  {description}
+                </DialogPrimitive.Description>
+              )}
 
-            {/* Close button: Radix Close triggers onOpenChange(false). */}
-            <DialogPrimitive.Close
-              className="cursor-pointer rounded-md p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-300"
-              aria-label="Close dialog"
-            >
-              <X size={16} />
-            </DialogPrimitive.Close>
-          </div>
+              {/* Close button: Radix Close triggers onOpenChange(false). */}
+              <DialogPrimitive.Close
+                className="cursor-pointer rounded-md p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-300"
+                aria-label="Close dialog"
+              >
+                <X size={16} />
+              </DialogPrimitive.Close>
+            </div>
+          )}
 
-          {/* Panel body. */}
-          <div className="px-5 py-4">{children}</div>
+          {/* Panel body; headerless content manages its own padding. */}
+          <div className={hideHeader ? undefined : "px-5 py-4"}>{children}</div>
         </DialogPrimitive.Content>
       </DialogPrimitive.Portal>
     </DialogPrimitive.Root>

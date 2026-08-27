@@ -24,12 +24,16 @@ export interface SessionMessage {
   role: string;
   /** Message text; present on user and assistant items only. */
   content?: string;
+  /** Display name of the author (user items in shared sessions). */
+  userName?: string;
+  /** CMS user id of the author (user items in shared sessions). */
+  userId?: string;
   toolCalls?: SessionToolCall[];
   /** Event type, e.g. "session_start", "tone", "template" (event items). */
   type?: string;
   /** Human-readable event summary (event items). */
   summary?: string;
-  /** RFC 3339 timestamp of the event (event items). */
+  /** RFC 3339 creation timestamp of the entry. */
   at?: string;
 }
 

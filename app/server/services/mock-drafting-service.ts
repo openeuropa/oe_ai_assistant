@@ -32,7 +32,6 @@ interface BundleDraftingFixture {
   bundle: string;
   conversationReplies: {
     default: string;
-    saveWithoutDraft: string;
   };
   drafts: {
     initial: DraftFixtureVariant;
@@ -43,8 +42,6 @@ interface BundleDraftingFixture {
 const DEFAULT_USAGE = { inputTokens: 0, outputTokens: 0 };
 const DRAFT_INTENT_PATTERN =
   /\b(draft|generate|write|create|prepare|regenerate|rewrite|revise|update)\b/i;
-const SAVE_INTENT_PATTERN =
-  /\bsave the draft as a new unpublished revision\b|\bsave\b.*\bdraft\b/i;
 const FIXTURE_CACHE = new Map<string, BundleDraftingFixture | null>();
 
 /** Delay helper used to make mock SSE behavior visible in the UI. */
@@ -101,16 +98,17 @@ function isDraftRequest(message: string, fieldsToStream: string[]): boolean {
   return fieldsToStream.length > 0 || DRAFT_INTENT_PATTERN.test(message);
 }
 
-/** True when the prompt is the frontend save action. */
-function isSaveRequest(message: string): boolean {
-  return SAVE_INTENT_PATTERN.test(message);
-}
-
 export class MockDraftingService implements DraftingService {
   private nextNodeId = 42000;
-  private readonly draftFieldsBySession = new Map<
+
+  /**
+   * Draft history per session: fields keyed by version, mirroring the
+   * Drupal backend's draft_content result history. The save action
+   * resolves the requested version from here.
+   */
+  private readonly draftsBySession = new Map<
     string,
-    Record<string, unknown>
+    Map<number, Record<string, unknown>>
   >();
 
   constructor(private readonly store: ConversationStore) {}
@@ -139,19 +137,6 @@ export class MockDraftingService implements DraftingService {
       } else if (!fixture) {
         assistantText = `Mock drafting mode does not have a fixture for bundle "${bundle}".`;
         yield* this.createTextStep(assistantText);
-      } else if (isSaveRequest(message)) {
-        const fields = this.draftFieldsBySession.get(sessionId);
-
-        if (!fields) {
-          assistantText = fixture.conversationReplies.saveWithoutDraft;
-          yield* this.createTextStep(assistantText);
-        } else {
-          const result = this.save({ fields });
-          assistantText =
-            `Mock save complete. Created draft node ${result.nodeId}. ` +
-            `Preview: ${result.previewUrl}`;
-          yield* this.createSaveStep(result, assistantText);
-        }
       } else if (isDraftRequest(message, fieldsToStream)) {
         const useRegeneratedVariant =
           fieldsToStream.length > 0 ||
@@ -160,9 +145,16 @@ export class MockDraftingService implements DraftingService {
           ? fixture.drafts.regenerated
           : fixture.drafts.initial;
 
-        this.draftFieldsBySession.set(sessionId, variant.fields);
+        // Record the draft under the next version so save can resolve it.
+        const versions =
+          this.draftsBySession.get(sessionId) ??
+          new Map<number, Record<string, unknown>>();
+        const version = versions.size + 1;
+        versions.set(version, variant.fields);
+        this.draftsBySession.set(sessionId, versions);
+
         assistantText = variant.assistantText;
-        yield* this.createDraftStep(variant, fieldsToStream);
+        yield* this.createDraftStep(variant, fieldsToStream, version);
       } else {
         assistantText = fixture.conversationReplies.default;
         yield* this.createTextStep(assistantText);
@@ -188,7 +180,7 @@ export class MockDraftingService implements DraftingService {
 
   reset(sessionId: string): { status: string } {
     this.store.delete(sessionId);
-    this.draftFieldsBySession.delete(sessionId);
+    this.draftsBySession.delete(sessionId);
     return { status: "ok" };
   }
 
@@ -196,7 +188,15 @@ export class MockDraftingService implements DraftingService {
     return this.store.getTranscript(sessionId);
   }
 
-  save(_body: DraftSavePayload): DraftSaveResult {
+  save(body: DraftSavePayload): DraftSaveResult | null {
+    // Resolve the requested version from the session's draft history,
+    // the way the Drupal backend does; unknown versions are rejected.
+    const fields = this.draftsBySession
+      .get(body.sessionId ?? "")
+      ?.get(body.version ?? 0);
+    if (!fields) {
+      return null;
+    }
     this.nextNodeId += 1;
     const nodeId = String(this.nextNodeId);
     return {
@@ -234,6 +234,7 @@ export class MockDraftingService implements DraftingService {
   private async *createDraftStep(
     variant: DraftFixtureVariant,
     fieldsToStream: string[],
+    version: number,
   ): AsyncGenerator<StreamEvent> {
     const selectedFields = selectDraftedFields(variant.fields, fieldsToStream);
 
@@ -263,44 +264,20 @@ export class MockDraftingService implements DraftingService {
       data: selectedFields,
     };
 
-    // Emit the draft_content tool call so the clickable card appears inline.
-    yield* emitDraftToolCall(selectedFields);
+    // Emit the draft_content tool call so the clickable card appears
+    // inline, with the versioned result shape the Drupal backend uses.
+    yield* emitDraftToolCall({
+      version,
+      context: null,
+      fields: selectedFields,
+    });
 
-    // Confirmation text.
+    // Confirmation text, matching the Drupal backend wording.
     const confirmText =
-      `Draft generated with ${fieldNames.length} fields. ` +
+      `Draft ${version} generated with ${fieldNames.length} fields. ` +
       "Review the content on the right.";
     yield { type: "start-step" };
     yield* this.streamText(confirmText);
-    yield {
-      type: "finish-step",
-      finishReason: "stop",
-      usage: DEFAULT_USAGE,
-      isContinued: false,
-    };
-  }
-
-  private async *createSaveStep(
-    result: DraftSaveResult,
-    confirmation: string,
-  ): AsyncGenerator<StreamEvent> {
-    const toolCallId = randomUUID();
-    yield { type: "start-step" };
-    yield {
-      type: "tool-call-start",
-      id: randomUUID(),
-      toolCallId,
-      toolName: "save_draft_revision",
-    };
-    await delay(SSE_CHUNK_DELAY_MS);
-
-    yield { type: "tool-call-end" };
-    yield {
-      type: "tool-result",
-      toolCallId,
-      result,
-    };
-    yield* this.streamText(confirmation);
     yield {
       type: "finish-step",
       finishReason: "stop",

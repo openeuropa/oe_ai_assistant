@@ -400,7 +400,7 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
     $this->loginUser($user);
     $session = $this->createSession($user);
 
-    $this->seedMessage($session, 'user', 'Draft a news article.');
+    $this->seedMessage($session, 'user', 'Draft a news article.', [], (int) $user->id());
     $this->seedMessage($session, 'assistant', 'Here is a draft.');
     // A tool row is not user-visible and must be filtered out.
     $this->seedMessage($session, 'tool', 'Tool payload.');
@@ -411,10 +411,26 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
       fn($m) => $m['role'] !== 'event',
     ));
 
+    // Timestamps must come from the persisted rows' created field.
+    $rows = array_values(array_filter(
+      $this->loadTranscript($session),
+      fn($row) => in_array($row->getRole(), ['user', 'assistant'], TRUE),
+    ));
+
     $this->assertSame(
       [
-        ['role' => 'user', 'content' => 'Draft a news article.'],
-        ['role' => 'assistant', 'content' => 'Here is a draft.'],
+        [
+          'role' => 'user',
+          'content' => 'Draft a news article.',
+          'at' => $rows[0]->get('created')->date->format('c'),
+          'userId' => (string) $user->id(),
+          'userName' => $user->getDisplayName(),
+        ],
+        [
+          'role' => 'assistant',
+          'content' => 'Here is a draft.',
+          'at' => $rows[1]->get('created')->date->format('c'),
+        ],
       ],
       $messages,
     );
@@ -481,52 +497,6 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
 
     $this->assertSame([], $this->loadTranscript($session),
       'Reset must delete every message hosted by the session.');
-  }
-
-  /**
-   * Seeds a conversation message hosted by the session.
-   *
-   * @param \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $session
-   *   The session hosting the conversation.
-   * @param string $role
-   *   The message role.
-   * @param string $content
-   *   The message text.
-   * @param array $toolCalls
-   *   Optional tool calls to store on the message.
-   */
-  protected function seedMessage(AiEditorialSessionInterface $session, string $role, string $content, array $toolCalls = []): void {
-    /** @var \Drupal\oe_ai_assistant\Entity\AiConversationMessageInterface $message */
-    $message = \Drupal::entityTypeManager()->getStorage('ai_conversation_message')
-      ->create([
-        'host_entity_type' => $session->getEntityTypeId(),
-        'host_entity_id' => (int) $session->id(),
-        'role' => $role,
-        'content' => $content,
-      ]);
-    if ($toolCalls) {
-      $message->setToolCalls($toolCalls);
-    }
-    $message->save();
-  }
-
-  /**
-   * Calls the get-messages action and returns its messages list.
-   *
-   * @param \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $session
-   *   The session whose transcript to load.
-   *
-   * @return array
-   *   The decoded messages list.
-   */
-  protected function getMessages(AiEditorialSessionInterface $session): array {
-    $result = $this->httpPost('/api/ai/plugins/drafting/get-messages', [
-      'sessionId' => $session->id(),
-    ]);
-    $this->assertEquals(200, $result['status'],
-      'get-messages should return 200. Body: ' . substr($result['body'], 0, 500));
-    $decoded = json_decode($result['body'], TRUE);
-    return $decoded['messages'] ?? [];
   }
 
   /**
