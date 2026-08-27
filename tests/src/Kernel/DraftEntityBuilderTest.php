@@ -4,8 +4,12 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\oe_ai_assistant\Kernel;
 
+use Drupal\field\Entity\FieldConfig;
+use Drupal\filter\Entity\FilterFormat;
 use Drupal\KernelTests\KernelTestBase;
 use Drupal\oe_ai_assistant\Service\DraftEntityBuilder;
+use Drupal\user\Entity\Role;
+use Drupal\user\Entity\User;
 use PHPUnit\Framework\Attributes\Group;
 
 /**
@@ -119,6 +123,96 @@ class DraftEntityBuilderTest extends KernelTestBase {
     $this->assertSame('Inline body', $items->get(0)->entity->get('field_text_body')->value);
     $this->assertSame('quote_block', $items->get(1)->entity->bundle());
     $this->assertSame('A quote', $items->get(1)->entity->get('field_quote_text')->value);
+  }
+
+  /**
+   * Resolves a missing format, honouring the user's format permissions.
+   *
+   * Proves the resolver skips an allowed_formats entry the user is not
+   * permitted to use, rather than picking the first entry regardless of
+   * access.
+   */
+  public function testResolvesMissingFormatOnBuiltEntityField(): void {
+    FilterFormat::create(['format' => 'oe_test_permitted', 'name' => 'Permitted', 'weight' => 0])->save();
+    FilterFormat::create(['format' => 'oe_test_forbidden', 'name' => 'Forbidden', 'weight' => 1])->save();
+
+    $fieldConfig = FieldConfig::loadByName('node', 'oe_news', 'field_body');
+    $fieldConfig->setSetting('allowed_formats', ['oe_test_forbidden', 'oe_test_permitted']);
+    $fieldConfig->save();
+
+    Role::create(['id' => 'oe_test_role', 'label' => 'Test role'])
+      ->grantPermission('use text format oe_test_permitted')
+      ->save();
+    // Uid 1 bypasses all permission checks; consume it so the real test user
+    // below is subject to the ordinary permission check the test exercises.
+    User::create(['name' => 'Uid 1 placeholder'])->save();
+    $user = User::create(['name' => 'Format tester', 'roles' => ['oe_test_role']]);
+    $user->save();
+    $this->container->get('current_user')->setAccount($user);
+
+    $node = $this->builder()->fromLlmFields('node', 'oe_news', [
+      'title' => [['value' => 'Formatted body']],
+      'field_news_type' => [['value' => 'announcement']],
+      'field_body' => [['value' => '<p>Body copy.</p>']],
+    ]);
+
+    $this->assertSame(
+      'oe_test_permitted',
+      $node->get('field_body')->format,
+      'Resolver skips the earlier allowed_formats entry the user may not use.',
+    );
+  }
+
+  /**
+   * Leaves an already-set format untouched.
+   *
+   * The resolver only fills in a missing format; it must not override a
+   * format the LLM payload (or a template default) already supplied.
+   */
+  public function testPreservesAlreadySetFormat(): void {
+    FilterFormat::create(['format' => 'oe_test_existing', 'name' => 'Existing', 'weight' => 0])->save();
+
+    $node = $this->builder()->fromLlmFields('node', 'oe_news', [
+      'title' => [['value' => 'Formatted body']],
+      'field_news_type' => [['value' => 'announcement']],
+      'field_body' => [['value' => '<p>Body copy.</p>', 'format' => 'oe_test_existing']],
+    ]);
+
+    $this->assertSame('oe_test_existing', $node->get('field_body')->format);
+  }
+
+  /**
+   * Picks the first allowed_formats entry when the user may use more than one.
+   *
+   * With no permission gap to disambiguate, this proves the resolver honours
+   * allowed_formats order rather than, say, filter_formats()' weight order.
+   */
+  public function testResolvesMissingFormatToFirstAllowedFormatWhenBothPermitted(): void {
+    FilterFormat::create(['format' => 'oe_test_first', 'name' => 'First', 'weight' => 0])->save();
+    FilterFormat::create(['format' => 'oe_test_second', 'name' => 'Second', 'weight' => 1])->save();
+
+    $fieldConfig = FieldConfig::loadByName('node', 'oe_news', 'field_body');
+    $fieldConfig->setSetting('allowed_formats', ['oe_test_first', 'oe_test_second']);
+    $fieldConfig->save();
+
+    Role::create(['id' => 'oe_test_role_both', 'label' => 'Test role both'])
+      ->grantPermission('use text format oe_test_first')
+      ->grantPermission('use text format oe_test_second')
+      ->save();
+    // Uid 1 bypasses all permission checks; consume it so the real test user
+    // below is subject to the ordinary permission check the test exercises.
+    User::create(['name' => 'Uid 1 placeholder'])->save();
+    $user = User::create(['name' => 'Format tester both', 'roles' => ['oe_test_role_both']]);
+    $user->save();
+    $this->container->get('current_user')->setAccount($user);
+
+    $node = $this->builder()->fromLlmFields('node', 'oe_news', [
+      'title' => [['value' => 'Formatted body']],
+      'field_news_type' => [['value' => 'announcement']],
+      'field_body' => [['value' => '<p>Body copy.</p>']],
+    ]);
+
+    $this->assertSame('oe_test_first', $node->get('field_body')->format);
   }
 
   /**
