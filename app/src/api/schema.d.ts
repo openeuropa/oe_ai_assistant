@@ -161,6 +161,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/plugins/drafting/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Render a themed HTML preview of a stored draft version, without saving */
+        post: operations["postDraftingPreview"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/plugins/echo/stream": {
         parameters: {
             query?: never;
@@ -384,6 +401,12 @@ export interface components {
         DraftingSetTemplateResponse: {
             /** @description Confirmation status (e.g. "ok"). */
             status: string;
+        };
+        DraftingPreviewRequest: {
+            /** @description The editorial session hosting the draft to preview. */
+            sessionId: string;
+            /** @description The draft version to render, as returned by get_draft_history / the draft_content result (e.g. 1 for "Draft 1"). */
+            version: number;
         };
         /** @description Request body for the echo stream endpoint. */
         EchoRequest: {
@@ -730,6 +753,66 @@ export interface operations {
             };
             /** @description Validation error. */
             400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    postDraftingPreview: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DraftingPreviewRequest"];
+            };
+        };
+        responses: {
+            /** @description A complete, standalone HTML document rendering the draft as the live site would show it. Not JSON: load it into an iframe via srcdoc or a blob URL — this action is POST-only, so an iframe's src attribute cannot address it directly. The rendered document contains LLM-authored content, so when it is eventually consumed in an iframe (OEL-4856), it should be sandboxed rather than given full same-origin trust via a bare srcdoc. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/html": string;
+                };
+            };
+            /** @description Validation error, unresolvable template, or invalid payload. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Missing create permission for the bundle. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description The requested draft version was not found. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Rendering failed. See the system log for details. */
+            500: {
                 headers: {
                     [name: string]: unknown;
                 };

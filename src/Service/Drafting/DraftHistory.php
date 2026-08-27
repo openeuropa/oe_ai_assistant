@@ -68,6 +68,28 @@ class DraftHistory implements DraftHistoryInterface {
   }
 
   /**
+   * {@inheritdoc}
+   */
+  public function getDraftContent(EntityInterface $session, int $version): ?array {
+    foreach ($this->collectResults($session) as $position => $result) {
+      $resultVersion = (int) ($result['version'] ?? $position + 1);
+      if ($resultVersion !== $version) {
+        continue;
+      }
+      if (array_key_exists('version', $result)) {
+        return [
+          'fields' => $result['fields'] ?? [],
+          'templateId' => $result['context']['template']['id'] ?? NULL,
+        ];
+      }
+      // Legacy (pre-provenance) result: the stored value IS the flat fields
+      // map, with no version/context wrapper.
+      return ['fields' => $result, 'templateId' => NULL];
+    }
+    return NULL;
+  }
+
+  /**
    * Collects every stored draft_content result in transcript order.
    *
    * @param \Drupal\Core\Entity\EntityInterface $session

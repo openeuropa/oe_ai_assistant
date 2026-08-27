@@ -29,6 +29,9 @@ services:
 
   Drupal\oe_ai_assistant\Service\DraftEntityBuilder: {}
 
+  Drupal\oe_ai_assistant\Service\DraftAssembler: {}
+  Drupal\oe_ai_assistant\Service\DraftAssemblerInterface: '@Drupal\oe_ai_assistant\Service\DraftAssembler'
+
   Drupal\oe_ai_assistant\Service\UiMessageStream: {}
   Drupal\oe_ai_assistant\Service\UiMessageStreamInterface: '@Drupal\oe_ai_assistant\Service\UiMessageStream'
 
@@ -53,3 +56,6 @@ services:
 
   Drupal\oe_ai_assistant\Service\Drafting\DraftHistory: {}
   Drupal\oe_ai_assistant\Service\Drafting\DraftHistoryInterface: '@Drupal\oe_ai_assistant\Service\Drafting\DraftHistory'
+
+  Drupal\oe_ai_assistant\Service\PreviewRenderer: {}
+  Drupal\oe_ai_assistant\Service\PreviewRendererInterface: '@Drupal\oe_ai_assistant\Service\PreviewRenderer'

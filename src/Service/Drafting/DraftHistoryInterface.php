@@ -52,4 +52,19 @@ interface DraftHistoryInterface {
    */
   public function getDraftFields(EntityInterface $session, int $version): ?array;
 
+  /**
+   * Returns the fields and template id for one stored draft version.
+   *
+   * @param \Drupal\Core\Entity\EntityInterface $session
+   *   The session hosting the conversation.
+   * @param int $version
+   *   The draft version to look up (as returned by listDrafts()).
+   *
+   * @return array|null
+   *   {fields: array, templateId: string|null}, or NULL if no draft_content
+   *   result carries that version. A legacy (pre-provenance, unwrapped)
+   *   result always resolves to templateId: NULL.
+   */
+  public function getDraftContent(EntityInterface $session, int $version): ?array;
+
 }
