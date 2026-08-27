@@ -244,6 +244,23 @@ class InlineEntityHydratorTest extends KernelTestBase {
   }
 
   /**
+   * Resolves a missing format on a hydrated child's formatted-text field.
+   *
+   * Proves this call site invokes the resolver too; the resolver's own
+   * permission and ordering logic is covered by DraftEntityBuilderTest.
+   */
+  public function testResolvesMissingFormatOnHydratedChild(): void {
+    $entities = $this->hydrator()->buildInlineEntities([
+      [
+        'type' => [['target_id' => 'text_block']],
+        'field_text_body' => [['value' => '<p>Hydrated body.</p>']],
+      ],
+    ], 'paragraph');
+
+    $this->assertSame('plain_text', $entities[0]->get('field_text_body')->format);
+  }
+
+  /**
    * Asserts hydrateInto attaches inline entities and strips them from the map.
    */
   public function testHydrateIntoAttachesAndStripsFromMap(): void {
