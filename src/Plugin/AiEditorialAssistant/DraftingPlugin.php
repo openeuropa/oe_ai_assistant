@@ -11,7 +11,10 @@ use Drupal\ai_agents\PluginManager\AiAgentManager;
 use Drupal\Core\File\FileExists;
 use Drupal\Core\File\FileSystemInterface;
 use Drupal\file\FileInterface;
-use Drupal\file\FileRepositoryInterface;
+use Drupal\file\Upload\FileUploadHandlerInterface;
+use Drupal\file\Upload\FormUploadedFile;
+use Drupal\file\Upload\InputStreamUploadedFile;
+use Drupal\file\Upload\UploadedFileInterface;
 use Drupal\media\MediaInterface;
 use Drupal\oe_ai_assistant\Annotation\AiEditorialAssistant;
 use Drupal\oe_ai_assistant\Document\ContextDocumentStorage;
@@ -114,11 +117,11 @@ class DraftingPlugin extends AiAssistantPluginBase {
   protected DraftHistoryInterface $draftHistory;
 
   /**
-   * The file repository service.
+   * The file upload handler service.
    *
-   * @var \Drupal\file\FileRepositoryInterface
+   * @var \Drupal\file\Upload\FileUploadHandlerInterface
    */
-  protected FileRepositoryInterface $fileRepository;
+  protected FileUploadHandlerInterface $fileUploadHandler;
 
   /**
    * The file system service.
@@ -151,7 +154,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
     $instance->orchestrator = $container->get(DraftingOrchestratorInterface::class);
     $instance->aiEditorialContext = $container->get(AiEditorialContextInterface::class);
     $instance->draftHistory = $container->get(DraftHistoryInterface::class);
-    $instance->fileRepository = $container->get('file.repository');
+    $instance->fileUploadHandler = $container->get(FileUploadHandlerInterface::class);
     $instance->fileSystem = $container->get('file_system');
     $instance->documentSerializer = $container->get(DocumentSerializerInterface::class);
     return $instance;
@@ -555,6 +558,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
 
   /**
    * Attaches the versioned draft result to the draft_content tool call.
+   *
    * Adds an uploaded document to the session document references.
    *
    * @param \Symfony\Component\HttpFoundation\Request $request
@@ -576,9 +580,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
         400,
       );
     }
-    $this->validateUploadedDocumentExtension($upload, $category);
-
-    $managedFile = $this->saveUploadedDocument($upload);
+    $managedFile = $this->saveUploadedDocument($upload, $category);
     $managedFile->setPermanent();
     $managedFile->save();
 
@@ -739,43 +741,17 @@ class DraftingPlugin extends AiAssistantPluginBase {
   }
 
   /**
-   * Validates the uploaded document extension against the media field config.
+   * Saves an uploaded document as a managed private file.
    *
    * @param \Symfony\Component\HttpFoundation\File\UploadedFile $upload
    *   The uploaded file.
    * @param array $category
    *   The resolved category storage details.
-   */
-  private function validateUploadedDocumentExtension(UploadedFile $upload, array $category): void {
-    $fieldConfig = $this->entityTypeManager->getStorage('field_config')
-      ->load('media.' . $category['mediaBundle'] . '.' . $category['sourceField']);
-    $extensions = preg_split(
-      '/\s+/',
-      trim((string) $fieldConfig?->getSetting('file_extensions')),
-      -1,
-      PREG_SPLIT_NO_EMPTY,
-    ) ?: [];
-    $extension = strtolower($upload->getClientOriginalExtension());
-
-    if (!in_array($extension, $extensions, TRUE)) {
-      throw new ActionException(
-        'invalid_request',
-        sprintf('The uploaded document extension "%s" is not allowed.', $extension),
-        400,
-      );
-    }
-  }
-
-  /**
-   * Saves an uploaded document as a managed private file.
-   *
-   * @param \Symfony\Component\HttpFoundation\File\UploadedFile $upload
-   *   The uploaded file.
    *
    * @return \Drupal\file\FileInterface
    *   The managed file entity.
    */
-  private function saveUploadedDocument(UploadedFile $upload): FileInterface {
+  private function saveUploadedDocument(UploadedFile $upload, array $category): FileInterface {
     $directory = ContextDocumentStorage::UPLOAD_DIRECTORY;
     if (!$this->fileSystem->prepareDirectory(
       $directory,
@@ -788,21 +764,17 @@ class DraftingPlugin extends AiAssistantPluginBase {
       );
     }
 
-    $filename = $this->fileSystem->basename($upload->getClientOriginalName());
-    $destination = $directory . '/' . $filename;
-    $data = file_get_contents($upload->getPathname());
-    if ($data === FALSE) {
-      throw new ActionException(
-        'upload_failed',
-        'The uploaded document could not be read.',
-        500,
-      );
-    }
+    $validators = [
+      'FileExtension' => [
+        'extensions' => $this->getDocumentFileExtensions($category),
+      ],
+    ];
 
     try {
-      return $this->fileRepository->writeData(
-        $data,
-        $destination,
+      $result = $this->fileUploadHandler->handleFileUpload(
+        $this->createDrupalUploadedFile($upload),
+        $validators,
+        $directory,
         FileExists::Rename,
       );
     }
@@ -816,6 +788,58 @@ class DraftingPlugin extends AiAssistantPluginBase {
         500,
       );
     }
+
+    if ($result->hasViolations()) {
+      $messages = [];
+      foreach ($result->getViolations() as $violation) {
+        $messages[] = (string) $violation->getMessage();
+      }
+      throw new ActionException(
+        'invalid_request',
+        implode(' ', $messages),
+        400,
+      );
+    }
+
+    return $result->getFile();
+  }
+
+  /**
+   * Wraps a Symfony upload for Drupal's upload handler.
+   *
+   * @param \Symfony\Component\HttpFoundation\File\UploadedFile $upload
+   *   The source upload.
+   *
+   * @return \Drupal\file\Upload\UploadedFileInterface
+   *   The Drupal upload adapter.
+   */
+  private function createDrupalUploadedFile(UploadedFile $upload): UploadedFileInterface {
+    if (is_uploaded_file($upload->getPathname())) {
+      return new FormUploadedFile($upload);
+    }
+
+    return new InputStreamUploadedFile(
+      $upload->getClientOriginalName(),
+      $upload->getClientOriginalName(),
+      $upload->getPathname(),
+      $upload->getSize(),
+    );
+  }
+
+  /**
+   * Gets the configured document file extensions.
+   *
+   * @param array $category
+   *   The resolved category storage details.
+   *
+   * @return string
+   *   The space-separated extension list.
+   */
+  private function getDocumentFileExtensions(array $category): string {
+    $fieldConfig = $this->entityTypeManager->getStorage('field_config')
+      ->load('media.' . $category['mediaBundle'] . '.' . $category['sourceField']);
+
+    return trim((string) $fieldConfig?->getSetting('file_extensions'));
   }
 
   /**
@@ -948,6 +972,11 @@ class DraftingPlugin extends AiAssistantPluginBase {
 
   /**
    * Builds the system prompt with content type context and schema.
+   *
+   * @param string $basePrompt
+   *   The initial prompt.
+   * @param array<int,mixed> $context
+   *   The context to add to the prompt.
    */
   private function buildSystemPrompt(string $basePrompt, array $context): string {
     $prompt = $basePrompt
