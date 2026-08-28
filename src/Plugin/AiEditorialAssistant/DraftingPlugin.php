@@ -410,6 +410,9 @@ class DraftingPlugin extends AiAssistantPluginBase {
     $result = $this->draftSaver->save(
       $session->getContentType(), $draft['fields'], $draft['templateId']
     );
+    if ($session->getNode() === NULL) {
+      $session->setNode((int) $result['nodeId'])->save();
+    }
 
     $this->messageRecorder->recordEvent(
       $session,

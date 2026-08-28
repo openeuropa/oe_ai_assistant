@@ -84,6 +84,14 @@ class DraftingPluginSaveTest extends DraftingPluginTestBase {
     $this->assertEquals((int) $user->id(), (int) $node->getOwnerId(),
       'Saved node owner must be the current user.');
 
+    // The save flow writes the created node back onto the session.
+    $storage = \Drupal::entityTypeManager()->getStorage('ai_editorial_session');
+    $storage->resetCache([$session->id()]);
+    /** @var \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $reloaded */
+    $reloaded = $storage->load($session->id());
+    $this->assertNotNull($reloaded->getNode(), 'The session must reference the saved node.');
+    $this->assertEquals($body['nodeId'], $reloaded->getNode()->id());
+
     // The save is recorded as a durable timeline event on the transcript.
     $events = array_values(array_filter(
       $this->getMessages($session),
