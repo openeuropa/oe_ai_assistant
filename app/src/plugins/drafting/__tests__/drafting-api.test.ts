@@ -139,7 +139,6 @@ describe("drafting api", () => {
         method: "POST",
         body: JSON.stringify({
           sessionId: "session-42",
-          category: "context",
           documentId: "12",
         }),
       }),
