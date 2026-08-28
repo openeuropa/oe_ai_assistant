@@ -33,6 +33,7 @@ class AiEditorialSessionDashboardTest extends AiEditorialSessionBrowserTestBase 
     $this->assertSession()->pageTextContains('Session');
     $this->assertSession()->pageTextContains('Type');
     $this->assertSession()->pageTextContains('Target');
+    $this->assertSession()->pageTextContains('Node');
     $this->assertSession()->pageTextContains('Initiated by');
     $this->assertSession()->pageTextContains('Status');
     $this->assertSession()->pageTextContains('Created');
@@ -46,6 +47,9 @@ class AiEditorialSessionDashboardTest extends AiEditorialSessionBrowserTestBase 
     $this->assertSession()->linkExists('Continue');
     $this->assertSession()->linkByHrefExists($session->toUrl('canonical')->toString());
     $this->assertSession()->linkExists('Delete');
+    // The node column links to the session's node (not moderated: canonical).
+    $this->assertSession()->linkExists('Linked node');
+    $this->assertSession()->linkByHrefExists($node->toUrl('canonical')->toString());
     // The region-less session template only applies on the session route.
     $this->assertSession()->responseNotContains('oe-ai-session-page');
 
