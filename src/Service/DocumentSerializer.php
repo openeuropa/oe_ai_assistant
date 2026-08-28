@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Drupal\oe_ai_assistant\Service;
 
-use Drupal\Core\StringTranslation\ByteSizeMarkup;
 use Drupal\file\FileInterface;
 use Drupal\media\MediaInterface;
 
@@ -26,7 +25,7 @@ class DocumentSerializer implements DocumentSerializerInterface {
       'title' => (string) ($media->label() ?: $filename),
       'meta' => [
         'type' => $extension !== '' ? strtolower($extension) : 'file',
-        'size' => $file instanceof FileInterface ? (string) ByteSizeMarkup::create((int) $file->getSize()) : '',
+        'size' => $file instanceof FileInterface ? (int) $file->getSize() : 0,
       ],
     ];
   }

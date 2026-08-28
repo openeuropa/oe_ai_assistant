@@ -233,7 +233,7 @@ class AiEditorialSessionDashboardTest extends AiEditorialSessionBrowserTestBase 
     $this->assertSession()->responseContains('"documents":{"enabled":true,"options":[{');
     $this->assertSession()->responseContains('"id":"' . $media->id() . '"');
     $this->assertSession()->responseContains('"title":"Policy brief"');
-    $this->assertSession()->responseContains('"meta":{"type":"md","size":"');
+    $this->assertSession()->responseContains('"meta":{"type":"md","size":');
   }
 
   /**

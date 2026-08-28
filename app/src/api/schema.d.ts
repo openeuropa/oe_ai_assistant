@@ -449,8 +449,8 @@ export interface components {
             meta: {
                 /** @description Lowercase file extension or generic file type. */
                 type: string;
-                /** @description Human-readable file size. */
-                size: string;
+                /** @description File size in bytes. */
+                size: number;
             };
         };
         DraftingAddDocumentRequest: {

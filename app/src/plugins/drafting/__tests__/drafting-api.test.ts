@@ -64,7 +64,7 @@ describe("drafting api", () => {
         document: {
           id: "12",
           title: "brief.pdf",
-          meta: { type: "pdf", size: "12 KB" },
+          meta: { type: "pdf", size: 12288 },
         },
       }),
     });
@@ -102,7 +102,7 @@ describe("drafting api", () => {
           {
             id: "12",
             title: "brief.pdf",
-            meta: { type: "pdf", size: "12 KB" },
+            meta: { type: "pdf", size: 12288 },
           },
         ],
       }),

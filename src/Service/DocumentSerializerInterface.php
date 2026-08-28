@@ -19,7 +19,7 @@ interface DocumentSerializerInterface {
    * @param string $sourceField
    *   The media source field name.
    *
-   * @return array{id: string, title: string, meta: array{type: string, size: string}}
+   * @return array{id: string, title: string, meta: array{type: string, size: int}}
    *   The serialized document.
    */
   public function serialize(MediaInterface $media, string $sourceField): array;
@@ -32,7 +32,7 @@ interface DocumentSerializerInterface {
    * @param string $sourceField
    *   The media source field name.
    *
-   * @return array<int, array{id: string, title: string, meta: array{type: string, size: string}}>
+   * @return array<int, array{id: string, title: string, meta: array{type: string, size: int}}>
    *   The serialized documents.
    */
   public function serializeList(array $media, string $sourceField): array;

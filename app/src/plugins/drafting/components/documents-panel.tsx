@@ -1,6 +1,7 @@
 import { FileText, Upload, X } from "lucide-react";
 import { useRef } from "react";
 import { Pane } from "@/components/ui/pane";
+import { formatFileSize } from "@/lib/format-file-size";
 import type { DraftingDocument } from "../hooks/use-drafting-documents";
 
 export interface DocumentsPanelProps {
@@ -81,7 +82,8 @@ export function DocumentsPanel({
                   {document.title}
                 </p>
                 <p className="text-xs text-gray-500">
-                  {document.meta.type.toUpperCase()} - {document.meta.size}
+                  {document.meta.type.toUpperCase()} -{" "}
+                  {formatFileSize(document.meta.size)}
                 </p>
               </div>
               <button
