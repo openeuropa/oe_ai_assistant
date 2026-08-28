@@ -44,7 +44,7 @@ export function useDraftingDocuments() {
       id: crypto.randomUUID(),
       title: file.name,
       meta: {
-        type: file.name.split(".").pop()?.toLowerCase() || file.type || "file",
+        type: file.type || file.name.split(".").pop()?.toLowerCase() || "file",
         size: file.size,
       },
     }));
