@@ -764,16 +764,10 @@ class DraftingPlugin extends AiAssistantPluginBase {
       );
     }
 
-    $validators = [
-      'FileExtension' => [
-        'extensions' => $this->getDocumentFileExtensions($category),
-      ],
-    ];
-
     try {
       $result = $this->fileUploadHandler->handleFileUpload(
         $this->createDrupalUploadedFile($upload),
-        $validators,
+        ['FileExtension' => []],
         $directory,
         FileExists::Rename,
       );
@@ -827,22 +821,6 @@ class DraftingPlugin extends AiAssistantPluginBase {
   }
 
   /**
-   * Gets the configured document file extensions.
-   *
-   * @param array $category
-   *   The resolved category storage details.
-   *
-   * @return string
-   *   The space-separated extension list.
-   */
-  private function getDocumentFileExtensions(array $category): string {
-    $fieldConfig = $this->entityTypeManager->getStorage('field_config')
-      ->load('media.' . $category['mediaBundle'] . '.' . $category['sourceField']);
-
-    return trim((string) $fieldConfig?->getSetting('file_extensions'));
-  }
-
-  /**
    * Creates the document media entity for a managed file.
    *
    * @param \Drupal\file\FileInterface $file
@@ -862,8 +840,28 @@ class DraftingPlugin extends AiAssistantPluginBase {
       'status' => 0,
       $category['sourceField'] => [
         'target_id' => $file->id(),
+        'entity' => $file,
       ],
     ]);
+    $file->enforceIsNew();
+    try {
+      $violations = $media->get($category['sourceField'])->validate();
+    }
+    finally {
+      $file->enforceIsNew(FALSE);
+    }
+    if ($violations->count() > 0) {
+      $messages = [];
+      foreach ($violations as $violation) {
+        $messages[] = (string) $violation->getMessage();
+      }
+      throw new ActionException(
+        'invalid_request',
+        implode(' ', $messages),
+        400,
+      );
+    }
+
     $media->save();
 
     if (!$media instanceof MediaInterface) {

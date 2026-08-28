@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Drupal\Tests\oe_ai_assistant\Kernel;
 
 use Drupal\file\FileInterface;
+use Drupal\field\FieldConfigInterface;
 use Drupal\media\MediaInterface;
 use Drupal\oe_ai_assistant\Controller\PluginController;
 use Drupal\oe_ai_assistant\Exception\ActionException;
@@ -228,6 +229,59 @@ class DraftingPluginDocumentsTest extends AiEditorialSessionKernelTestBase {
   }
 
   /**
+   * Tests document uploads reject files larger than the configured field limit.
+   */
+  public function testDocumentUploadRejectsFileLargerThanConfiguredLimit(): void {
+    $fieldConfig = $this->container->get('entity_type.manager')
+      ->getStorage('field_config')
+      ->load('media.ai_context_document.field_media_context_document');
+    $this->assertInstanceOf(FieldConfigInterface::class, $fieldConfig);
+    $fieldConfig->setSetting('max_filesize', '2 KB');
+    $fieldConfig->save();
+    $this->container->get('entity_field.manager')->clearCachedFieldDefinitions();
+
+    $owner = $this->createUser();
+    $this->container->get('current_user')->setAccount($owner);
+    $session = $this->createSession($owner);
+    $plugin = $this->container->get(AiAssistantPluginManager::class)
+      ->createInstance('drafting');
+
+    $source = $this->container->getParameter('site.path') . '/oversized-document-source.txt';
+    file_put_contents($source, str_repeat('a', 3000));
+
+    $request = Request::create('', 'POST', [
+      'sessionId' => $session->id(),
+      'category' => 'context',
+    ], [], [
+      'file' => new UploadedFile(
+        $source,
+        'oversized-document.txt',
+        'text/plain',
+        UPLOAD_ERR_OK,
+        TRUE,
+      ),
+    ]);
+
+    try {
+      $plugin->executeAction('add-document', $request);
+      $this->fail('The add-document action did not reject an oversized file.');
+    }
+    catch (ActionException $e) {
+      $this->assertSame('invalid_request', $e->errorCode);
+      $this->assertSame(400, $e->statusCode);
+      $this->assertStringContainsString('exceeding the maximum file size', $e->getMessage());
+    }
+
+    $this->container->get('entity_type.manager')
+      ->getStorage('ai_editorial_session')
+      ->resetCache([$session->id()]);
+    $reloadedSession = $this->container->get('entity_type.manager')
+      ->getStorage('ai_editorial_session')
+      ->load($session->id());
+    $this->assertTrue($reloadedSession->get('context_documents')->isEmpty());
+  }
+
+  /**
    * Tests document uploads reject unsupported extensions.
    */
   public function testDocumentUploadRejectsUnsupportedExtension(): void {
@@ -260,7 +314,7 @@ class DraftingPluginDocumentsTest extends AiEditorialSessionKernelTestBase {
     catch (ActionException $e) {
       $this->assertSame('invalid_request', $e->errorCode);
       $this->assertSame(400, $e->statusCode);
-      $this->assertSame('The uploaded document extension "exe" is not allowed.', $e->getMessage());
+      $this->assertStringContainsString('Only files with the following extensions are allowed:', $e->getMessage());
     }
 
     $this->container->get('entity_type.manager')
