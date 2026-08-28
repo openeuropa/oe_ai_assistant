@@ -26,9 +26,9 @@ class DraftSaver implements DraftSaverInterface {
   /**
    * {@inheritdoc}
    */
-  public function save(string $bundle, array $fields): array {
+  public function save(string $bundle, array $fields, ?string $templateId = NULL): array {
     /** @var \Drupal\node\NodeInterface $node */
-    $node = $this->draftAssembler->assemble($bundle, $fields, NULL);
+    $node = $this->draftAssembler->assemble($bundle, $fields, $templateId);
 
     // Set owner and moderation state.
     $node->setOwnerId((int) $this->currentUser->id());

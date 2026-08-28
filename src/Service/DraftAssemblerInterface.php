@@ -25,8 +25,8 @@ interface DraftAssemblerInterface {
    * @param string|null $templateId
    *   The drafting template id whose resolved defaults are merged under
    *   $fields (a drafted value always wins on a key collision), or NULL to
-   *   skip the merge entirely — used by the plain save path and by legacy
-   *   pre-provenance drafts with no template snapshot.
+   *   skip the merge entirely (legacy pre-provenance drafts with no template
+   *   snapshot).
    *
    * @return \Drupal\Core\Entity\ContentEntityInterface
    *   The unsaved node, with inline child entities attached.

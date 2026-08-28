@@ -407,7 +407,9 @@ class DraftingPlugin extends AiAssistantPluginBase {
       );
     }
 
-    $result = $this->draftSaver->save($session->getContentType(), $draft['fields']);
+    $result = $this->draftSaver->save(
+      $session->getContentType(), $draft['fields'], $draft['templateId']
+    );
 
     $this->messageRecorder->recordEvent(
       $session,

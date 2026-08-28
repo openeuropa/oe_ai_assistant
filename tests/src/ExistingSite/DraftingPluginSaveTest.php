@@ -148,6 +148,42 @@ class DraftingPluginSaveTest extends DraftingPluginTestBase {
   }
 
   /**
+   * Tests that the snapshot template's defaults land on the saved node.
+   *
+   * The field_teaser value is absent from the drafted fields but supplied by
+   * the news_preview_defaults template's defaults, so the saved node must
+   * carry it. Keeps save aligned with preview, which merges the same defaults.
+   */
+  public function testSaveMergesTemplateDefaults(): void {
+    $user = $this->createUser([
+      'use oe ai assistant',
+      'create oe_news content',
+    ]);
+    $this->loginUser($user);
+    $session = $this->createSession($user);
+
+    $this->seedDraft($session, 1, [
+      'title' => [['value' => 'Defaults round-trip']],
+    ], 'news_preview_defaults');
+
+    $result = $this->httpPost('/api/ai/plugins/drafting/save', [
+      'sessionId' => $session->id(),
+      'version' => 1,
+    ]);
+
+    $this->assertEquals(200, $result['status'],
+      'Expected 200 response. Body: ' . substr($result['body'], 0, 500));
+    $body = json_decode($result['body'], TRUE);
+    $node = \Drupal::entityTypeManager()->getStorage('node')
+      ->load($body['nodeId']);
+    $this->assertNotNull($node, 'Saved node exists.');
+    $this->assertEquals('Defaults round-trip', $node->getTitle());
+    $this->assertSame('Default teaser from template.',
+      $node->get('field_teaser')->value,
+      'Template default must be merged into the saved node.');
+  }
+
+  /**
    * Tests that saving a version the session never produced returns 400.
    */
   public function testSaveUnknownVersionReturns400(): void {
@@ -208,15 +244,19 @@ class DraftingPluginSaveTest extends DraftingPluginTestBase {
    *   The draft version number.
    * @param array $fields
    *   The drafted field values, keyed by field machine name.
+   * @param string|null $templateId
+   *   The template id to snapshot in the result context, or NULL for none.
    */
-  protected function seedDraft(AiEditorialSessionInterface $session, int $version, array $fields): void {
+  protected function seedDraft(AiEditorialSessionInterface $session, int $version, array $fields, ?string $templateId = NULL): void {
     $this->seedMessage($session, 'assistant', '', [
       [
         'type' => 'function',
         'function' => ['name' => 'draft_content', 'arguments' => '{}'],
         'result' => [
           'version' => $version,
-          'context' => NULL,
+          'context' => $templateId !== NULL
+            ? ['template' => ['id' => $templateId, 'label' => $templateId]]
+            : NULL,
           'fields' => $fields,
         ],
       ],
