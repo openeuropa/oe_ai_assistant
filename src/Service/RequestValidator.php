@@ -129,7 +129,7 @@ class RequestValidator {
 
     if (!file_exists($schemaFile)) {
       // Cache the empty array so repeated calls do not stat the filesystem.
-      $this->schemas = $this->getBuiltInSchemas();
+      $this->schemas = [];
       return $this->schemas;
     }
 
@@ -139,7 +139,7 @@ class RequestValidator {
 
     if (!is_object($raw)) {
       // The file exists but contains invalid JSON or is not a JSON object.
-      $this->schemas = $this->getBuiltInSchemas();
+      $this->schemas = [];
       return $this->schemas;
     }
 
@@ -150,57 +150,8 @@ class RequestValidator {
     foreach ($raw as $name => $definition) {
       $this->schemas[$name] = $definition;
     }
-    $this->schemas += $this->getBuiltInSchemas();
 
     return $this->schemas;
-  }
-
-  /**
-   * Returns backend-owned schemas for APIs not yet in the frontend spec.
-   *
-   * @return array<string, object>
-   *   Schema definitions keyed by schema name.
-   */
-  private function getBuiltInSchemas(): array {
-    $schemas = [
-      'DraftingAddDocumentRequest' => [
-        'type' => 'object',
-        'required' => ['sessionId', 'category'],
-        'properties' => [
-          'sessionId' => ['type' => 'string'],
-          'category' => ['type' => 'string', 'enum' => ['context']],
-        ],
-      ],
-      'DraftingListDocumentsRequest' => [
-        'type' => 'object',
-        'required' => ['sessionId', 'category'],
-        'properties' => [
-          'sessionId' => ['type' => 'string'],
-          'category' => ['type' => 'string', 'enum' => ['context']],
-        ],
-      ],
-      'DraftingRemoveDocumentRequest' => [
-        'type' => 'object',
-        'required' => ['sessionId', 'category', 'documentId'],
-        'properties' => [
-          'sessionId' => ['type' => 'string'],
-          'category' => ['type' => 'string', 'enum' => ['context']],
-          'documentId' => ['type' => 'string'],
-        ],
-      ],
-    ];
-
-    $definitions = [];
-    foreach ($schemas as $name => $schema) {
-      $definitions[$name] = json_decode(
-        json_encode($schema, JSON_THROW_ON_ERROR),
-        FALSE,
-        512,
-        JSON_THROW_ON_ERROR,
-      );
-    }
-
-    return $definitions;
   }
 
 }
