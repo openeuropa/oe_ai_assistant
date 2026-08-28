@@ -27,18 +27,25 @@ interface DraftAssemblerInterface {
    *   $fields (a drafted value always wins on a key collision), or NULL to
    *   skip the merge entirely (legacy pre-provenance drafts with no template
    *   snapshot).
+   * @param \Drupal\Core\Entity\ContentEntityInterface|null $existingNode
+   *   NULL (default) to build and return a brand-new unsaved node, checking
+   *   the bundle's create permission. Pass an already-saved node to instead
+   *   check update access on it and return that same node (mutated) with the
+   *   merged field values applied in place, ready for a revision save.
    *
    * @return \Drupal\Core\Entity\ContentEntityInterface
-   *   The unsaved node, with inline child entities attached.
+   *   The unsaved (or updated) node, with inline child entities attached.
    *
    * @throws \Drupal\oe_ai_assistant\Exception\ActionException
-   *   - 'invalid_bundle' (400) if the bundle does not exist.
-   *   - 'forbidden' (403) if the user lacks create permission for the bundle.
+   *   - 'invalid_bundle' (400) if the bundle does not exist ($existingNode
+   *     is NULL only).
+   *   - 'forbidden' (403) if the user lacks create permission for the bundle
+   *     ($existingNode is NULL), or update access on $existingNode.
    *   - 'invalid_request' (400) if $templateId cannot be resolved (deleted,
    *     disabled, or targets a different bundle).
    *   - 'invalid_payload' (400) if the entity builder rejects the merged
    *     payload.
    */
-  public function assemble(string $bundle, array $fields, ?string $templateId): ContentEntityInterface;
+  public function assemble(string $bundle, array $fields, ?string $templateId, ?ContentEntityInterface $existingNode = NULL): ContentEntityInterface;
 
 }

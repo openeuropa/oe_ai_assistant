@@ -241,6 +241,151 @@ class DraftingPluginSaveTest extends DraftingPluginTestBase {
   }
 
   /**
+   * Tests that a second save adds a revision to the session's node.
+   *
+   * The session owns at most one node: the first save creates it, every
+   * later explicit save adds a new revision instead of a fresh node.
+   */
+  public function testSecondSaveAddsRevisionToSameNode(): void {
+    $user = $this->createUser([
+      'use oe ai assistant',
+      'create oe_news content',
+      'edit own oe_news content',
+      'use editorial transition create_new_draft',
+    ]);
+    $this->loginUser($user);
+    $session = $this->createSession($user);
+
+    $this->seedDraft($session, 1, ['title' => [['value' => 'First save']]]);
+    $this->seedDraft($session, 2, ['title' => [['value' => 'Second save']]]);
+
+    $first = $this->httpPost('/api/ai/plugins/drafting/save', [
+      'sessionId' => $session->id(),
+      'version' => 1,
+    ]);
+    $this->assertEquals(200, $first['status']);
+    $firstBody = json_decode($first['body'], TRUE);
+
+    $second = $this->httpPost('/api/ai/plugins/drafting/save', [
+      'sessionId' => $session->id(),
+      'version' => 2,
+    ]);
+    $this->assertEquals(200, $second['status'],
+      'Expected 200 response. Body: ' . substr($second['body'], 0, 500));
+    $secondBody = json_decode($second['body'], TRUE);
+
+    $this->assertEquals($firstBody['nodeId'], $secondBody['nodeId'],
+      'A later save must revise the same node, not create a new one.');
+
+    $storage = \Drupal::entityTypeManager()->getStorage('node');
+    $storage->resetCache([(int) $secondBody['nodeId']]);
+    /** @var \Drupal\node\NodeInterface $node */
+    $node = $storage->load($secondBody['nodeId']);
+    $this->assertEquals('Second save', $node->getTitle(), 'The latest revision carries the second draft.');
+    $this->assertEquals('draft', $node->get('moderation_state')->value);
+    $this->assertStringContainsString(
+      sprintf('Draft 2 from session %s', $session->label()),
+      $node->getRevisionLogMessage(),
+    );
+
+    $revisionIds = \Drupal::entityTypeManager()->getStorage('node')
+      ->getQuery()
+      ->allRevisions()
+      ->condition('nid', $secondBody['nodeId'])
+      ->accessCheck(FALSE)
+      ->execute();
+    $this->assertGreaterThanOrEqual(2, count($revisionIds), 'The second save must add a new revision.');
+
+    // The session's node reference stays on the same node.
+    $sessionStorage = \Drupal::entityTypeManager()->getStorage('ai_editorial_session');
+    $sessionStorage->resetCache([$session->id()]);
+    /** @var \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $reloaded */
+    $reloaded = $sessionStorage->load($session->id());
+    $this->assertEquals($firstBody['nodeId'], $reloaded->getNode()->id());
+  }
+
+  /**
+   * Tests that a later save without node update access returns 403.
+   */
+  public function testReviseSaveWithoutUpdateAccessReturns403(): void {
+    $user = $this->createUser([
+      'use oe ai assistant',
+      'create oe_news content',
+    ]);
+    $this->loginUser($user);
+    $session = $this->createSession($user);
+
+    $this->seedDraft($session, 1, ['title' => [['value' => 'First save']]]);
+    $this->seedDraft($session, 2, ['title' => [['value' => 'Second save']]]);
+
+    $first = $this->httpPost('/api/ai/plugins/drafting/save', [
+      'sessionId' => $session->id(),
+      'version' => 1,
+    ]);
+    $this->assertEquals(200, $first['status']);
+
+    // The user has no edit permission on the node the first save created,
+    // so the second, revision-adding save must be denied.
+    $second = $this->httpPost('/api/ai/plugins/drafting/save', [
+      'sessionId' => $session->id(),
+      'version' => 2,
+    ]);
+
+    $this->assertEquals(403, $second['status']);
+    $body = json_decode($second['body'], TRUE);
+    $this->assertEquals('forbidden', $body['code']);
+  }
+
+  /**
+   * Tests the fallback when the referenced node was deleted.
+   *
+   * The save must create a fresh node and repoint the session, instead of
+   * failing.
+   */
+  public function testSaveAfterNodeDeletedFallsBackToCreatingNewNode(): void {
+    $user = $this->createUser([
+      'use oe ai assistant',
+      'create oe_news content',
+    ]);
+    $this->loginUser($user);
+    $session = $this->createSession($user);
+
+    $this->seedDraft($session, 1, ['title' => [['value' => 'First save']]]);
+    $this->seedDraft($session, 2, ['title' => [['value' => 'After deletion']]]);
+
+    $first = $this->httpPost('/api/ai/plugins/drafting/save', [
+      'sessionId' => $session->id(),
+      'version' => 1,
+    ]);
+    $this->assertEquals(200, $first['status']);
+    $firstBody = json_decode($first['body'], TRUE);
+
+    $nodeStorage = \Drupal::entityTypeManager()->getStorage('node');
+    $nodeStorage->delete([$nodeStorage->load($firstBody['nodeId'])]);
+
+    $second = $this->httpPost('/api/ai/plugins/drafting/save', [
+      'sessionId' => $session->id(),
+      'version' => 2,
+    ]);
+    $this->assertEquals(200, $second['status'],
+      'Expected 200 response. Body: ' . substr($second['body'], 0, 500));
+    $secondBody = json_decode($second['body'], TRUE);
+
+    $this->assertNotEquals($firstBody['nodeId'], $secondBody['nodeId'],
+      'A fresh node must be created once the referenced one is gone.');
+    $node = $nodeStorage->load($secondBody['nodeId']);
+    $this->assertNotNull($node, 'The fallback node exists.');
+    $this->assertEquals('After deletion', $node->getTitle());
+
+    $sessionStorage = \Drupal::entityTypeManager()->getStorage('ai_editorial_session');
+    $sessionStorage->resetCache([$session->id()]);
+    /** @var \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $reloaded */
+    $reloaded = $sessionStorage->load($session->id());
+    $this->assertEquals($secondBody['nodeId'], $reloaded->getNode()->id(),
+      'The session must repoint to the newly created node.');
+  }
+
+  /**
    * Seeds a completed draft version into the session's transcript.
    *
    * Mirrors how the chat flow records drafts: an assistant turn carrying a

@@ -28,16 +28,25 @@ class DraftAssembler implements DraftAssemblerInterface {
   /**
    * {@inheritdoc}
    */
-  public function assemble(string $bundle, array $fields, ?string $templateId): ContentEntityInterface {
-    if (!$this->entityTypeManager->getStorage('node_type')->load($bundle)) {
-      throw new ActionException('invalid_bundle',
-        sprintf('Content type "%s" does not exist.', $bundle), 400);
-    }
+  public function assemble(string $bundle, array $fields, ?string $templateId, ?ContentEntityInterface $existingNode = NULL): ContentEntityInterface {
+    if ($existingNode === NULL) {
+      if (!$this->entityTypeManager->getStorage('node_type')->load($bundle)) {
+        throw new ActionException('invalid_bundle',
+          sprintf('Content type "%s" does not exist.', $bundle), 400);
+      }
 
-    if (!$this->currentUser->hasPermission("create $bundle content")) {
+      if (!$this->currentUser->hasPermission("create $bundle content")) {
+        throw new ActionException(
+          'forbidden',
+          sprintf('You do not have permission to create %s content.', $bundle),
+          403,
+        );
+      }
+    }
+    elseif (!$existingNode->access('update', $this->currentUser)) {
       throw new ActionException(
         'forbidden',
-        sprintf('You do not have permission to create %s content.', $bundle),
+        'You do not have permission to update this node.',
         403,
       );
     }
@@ -68,7 +77,7 @@ class DraftAssembler implements DraftAssemblerInterface {
     }
 
     try {
-      return $this->draftEntityBuilder->fromLlmFields('node', $bundle, $mergedFields);
+      $built = $this->draftEntityBuilder->fromLlmFields('node', $bundle, $mergedFields);
     }
     catch (\Throwable $e) {
       $this->logger->error('Failed to build draft entity: @e', ['@e' => (string) $e]);
@@ -78,6 +87,18 @@ class DraftAssembler implements DraftAssemblerInterface {
         400,
       );
     }
+
+    if ($existingNode === NULL) {
+      return $built;
+    }
+
+    // Transplant only the merged fields' values onto the existing node, the
+    // same field-by-field idiom core's EntityResource::patch() uses for
+    // updates, so fields outside this draft are left untouched.
+    foreach (array_keys($mergedFields) as $fieldName) {
+      $existingNode->set($fieldName, $built->get($fieldName)->getValue());
+    }
+    return $existingNode;
   }
 
 }
