@@ -303,10 +303,12 @@ test.describe("Drafting text streaming", () => {
     });
 
     await expect(page.getByText(uploadedDocument.title)).toBeVisible();
+    await page.getByRole("button", { name: "Save" }).click();
     await expect(page.getByRole("button", { name: /Documents/ })).toContainText(
       "3 documents",
     );
 
+    await page.getByRole("button", { name: /Documents/ }).click();
     await page
       .getByRole("button", { name: `Remove ${uploadedDocument.title}` })
       .click();
@@ -315,10 +317,12 @@ test.describe("Drafting text streaming", () => {
     resolveRemoval();
 
     await expect(page.getByText(uploadedDocument.title)).toBeHidden();
+    await page.getByRole("button", { name: "Save" }).click();
     await expect(page.getByRole("button", { name: /Documents/ })).toContainText(
       "2 documents",
     );
 
+    await page.getByRole("button", { name: /Documents/ }).click();
     await page
       .getByRole("button", { name: "Remove EU AI Act briefing note.pdf" })
       .click();

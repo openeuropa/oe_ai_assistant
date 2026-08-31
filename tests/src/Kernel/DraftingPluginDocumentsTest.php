@@ -115,7 +115,6 @@ class DraftingPluginDocumentsTest extends AiEditorialSessionKernelTestBase {
 
     $removeRequest = Request::create('', 'POST', [], [], [], [], json_encode([
       'sessionId' => $session->id(),
-      'category' => 'context',
       'documentId' => $documentId,
     ], JSON_THROW_ON_ERROR));
     $removeResponse = $plugin->executeAction('remove-document', $removeRequest);
@@ -177,7 +176,6 @@ class DraftingPluginDocumentsTest extends AiEditorialSessionKernelTestBase {
 
     $removeRequest = Request::create('', 'POST', [], [], [], [], json_encode([
       'sessionId' => $session->id(),
-      'category' => 'context',
       'documentId' => $documentId,
     ], JSON_THROW_ON_ERROR));
     $removeResponse = $controller->dispatch('drafting', 'remove-document', $removeRequest);
@@ -351,7 +349,7 @@ class DraftingPluginDocumentsTest extends AiEditorialSessionKernelTestBase {
   /**
    * Tests unsupported document categories are rejected.
    */
-  #[DataProvider('documentActionAccessProvider')]
+  #[DataProvider('categorizedDocumentActionProvider')]
   public function testUnsupportedDocumentCategoryIsRejected(string $action): void {
     $owner = $this->createUser();
     $this->container->get('current_user')->setAccount($owner);
@@ -385,6 +383,19 @@ class DraftingPluginDocumentsTest extends AiEditorialSessionKernelTestBase {
   }
 
   /**
+   * Provides document action names that require a category.
+   *
+   * @return array<string, array{0: string}>
+   *   Test cases keyed by action name.
+   */
+  public static function categorizedDocumentActionProvider(): array {
+    return [
+      'add-document' => ['add-document'],
+      'list-documents' => ['list-documents'],
+    ];
+  }
+
+  /**
    * Creates a request for a document action.
    */
   private function createDocumentActionRequest(string $action, string $sessionId, string $category = 'context'): Request {
@@ -406,12 +417,12 @@ class DraftingPluginDocumentsTest extends AiEditorialSessionKernelTestBase {
       ]);
     }
 
-    $body = [
-      'sessionId' => $sessionId,
-      'category' => $category,
-    ];
+    $body = ['sessionId' => $sessionId];
     if ($action === 'remove-document') {
       $body['documentId'] = '1';
+    }
+    else {
+      $body['category'] = $category;
     }
 
     return Request::create('', 'POST', [], [], [], [], json_encode($body, JSON_THROW_ON_ERROR));
