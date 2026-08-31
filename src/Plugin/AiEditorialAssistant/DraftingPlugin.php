@@ -19,6 +19,7 @@ use Drupal\media\MediaInterface;
 use Drupal\oe_ai_assistant\Annotation\AiEditorialAssistant;
 use Drupal\oe_ai_assistant\Document\ContextDocumentStorage;
 use Drupal\oe_ai_assistant\Entity\AiConversationMessageInterface;
+use Drupal\oe_ai_assistant\Exception\DocumentSummaryExtractionException;
 use Drupal\oe_ai_assistant\AiDraftingTemplateInterface;
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
 use Drupal\oe_ai_assistant\Exception\ActionException;
@@ -593,14 +594,17 @@ class DraftingPlugin extends AiAssistantPluginBase {
       $session->save();
     }
     catch (\Throwable $e) {
-      if ($media instanceof MediaInterface) {
-        $media->delete();
+      if (!$e->getPrevious() instanceof DocumentSummaryExtractionException) {
+        if ($media instanceof MediaInterface) {
+          $media->delete();
+        }
+        $managedFile->delete();
+
       }
-      $managedFile->delete();
       throw $e;
     }
-
-    return ['document' => $this->documentSerializer->serialize($media, ContextDocumentStorage::SOURCE_FIELD)];
+    $document = $this->documentSerializer->serialize($media, ContextDocumentStorage::SOURCE_FIELD);
+    return ['document' => $document];
   }
 
   /**

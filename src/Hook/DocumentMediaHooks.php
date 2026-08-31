@@ -9,6 +9,7 @@ use Drupal\Core\Entity\EntityInterface;
 use Drupal\Core\Hook\Attribute\Hook;
 use Drupal\media\MediaInterface;
 use Drupal\oe_ai_assistant\Document\ContextDocumentStorage;
+use Drupal\oe_ai_assistant\Exception\DocumentSummaryExtractionException;
 use Drupal\oe_ai_assistant\Service\DocumentSummaryExtractorInterface;
 
 /**
@@ -32,8 +33,14 @@ final class DocumentMediaHooks {
     if (!$entity instanceof MediaInterface || !$this->documentSummaryExtractor->supports($entity)) {
       return;
     }
+    try {
+      $this->documentSummaryExtractor->extractAndSave($entity);
+    }
+    catch (DocumentSummaryExtractionException $e) {
+      // The document itself is still valid working material. Extraction
+      // failures are logged by the extractor and leave the summary empty.
+    }
 
-    $this->documentSummaryExtractor->extractAndSave($entity);
   }
 
   /**
@@ -54,7 +61,12 @@ final class DocumentMediaHooks {
     }
 
     $this->clearSummary($entity, $details['summaryField']);
-    $this->documentSummaryExtractor->extractAndSave($entity);
+    try {
+      $this->documentSummaryExtractor->extractAndSave($entity);
+    }
+    catch (DocumentSummaryExtractionException $e) {
+      // Keep the file replacement/update and leave the summary empty.
+    }
   }
 
   /**

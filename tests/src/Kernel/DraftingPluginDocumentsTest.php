@@ -244,6 +244,59 @@ class DraftingPluginDocumentsTest extends AiEditorialSessionKernelTestBase {
   }
 
   /**
+   * Tests document uploads still succeed when no summary provider is set.
+   */
+  public function testDocumentUploadSucceedsWithoutSummaryProvider(): void {
+    $this->config('ai.settings')
+      ->clear('default_providers.chat_with_image_vision')
+      ->save();
+
+    $owner = $this->createUser();
+    $this->container->get('current_user')->setAccount($owner);
+    $session = $this->createSession($owner);
+    $plugin = $this->container->get(AiAssistantPluginManager::class)
+      ->createInstance('drafting');
+
+    $source = $this->container->getParameter('site.path') . '/no-provider-document-source.txt';
+    file_put_contents($source, 'Context document contents.');
+
+    $request = Request::create('', 'POST', [
+      'sessionId' => $session->id(),
+      'category' => 'context',
+    ], [], [
+      'file' => new UploadedFile(
+        $source,
+        'no-provider-document.txt',
+        'text/plain',
+        UPLOAD_ERR_OK,
+        TRUE,
+      ),
+    ]);
+
+    $response = $plugin->executeAction('add-document', $request);
+
+    $this->assertSame('no-provider-document.txt', $response['document']['title']);
+    $this->assertSame('txt', $response['document']['meta']['type']);
+    $this->assertArrayNotHasKey('summary', $response['document']);
+    $this->assertSame([], MockAiProvider::getCallLog());
+
+    $documentId = $response['document']['id'];
+    $media = $this->container->get('entity_type.manager')
+      ->getStorage('media')
+      ->load($documentId);
+    $this->assertInstanceOf(MediaInterface::class, $media);
+    $this->assertTrue($media->get('field_document_summary')->isEmpty());
+
+    $this->container->get('entity_type.manager')
+      ->getStorage('ai_editorial_session')
+      ->resetCache([$session->id()]);
+    $reloadedSession = $this->container->get('entity_type.manager')
+      ->getStorage('ai_editorial_session')
+      ->load($session->id());
+    $this->assertSame($documentId, (string) $reloadedSession->get('context_documents')->target_id);
+  }
+
+  /**
    * Tests document uploads reject files larger than the configured field limit.
    */
   public function testDocumentUploadRejectsFileLargerThanConfiguredLimit(): void {
