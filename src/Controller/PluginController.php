@@ -116,6 +116,7 @@ class PluginController extends ControllerBase {
           JSON_THROW_ON_ERROR,
         );
       }
+
       $errors = $this->requestValidator->validateRaw($rawBody, $schemas[$action]);
       if (!empty($errors)) {
         // Flatten all validation error messages into a single semicolon-

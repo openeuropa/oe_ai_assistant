@@ -129,6 +129,7 @@ class RequestValidator {
 
     if (!file_exists($schemaFile)) {
       // Cache the empty array so repeated calls do not stat the filesystem.
+      $this->schemas = [];
       return $this->schemas;
     }
 
@@ -138,6 +139,7 @@ class RequestValidator {
 
     if (!is_object($raw)) {
       // The file exists but contains invalid JSON or is not a JSON object.
+      $this->schemas = [];
       return $this->schemas;
     }
 

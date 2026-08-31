@@ -122,12 +122,6 @@ class AiEditorialSessionController extends ControllerBase {
     $tones = $this->serializeToneOptions($this->aiEditorialContext->getAvailableTones());
     // Read the tone already saved on the session so the app can rehydrate the
     // selector on load.
-    $loadedSession = $this->sessionEntityTypeManager
-      ->getStorage('ai_editorial_session')
-      ->load($sessionId);
-    $session = $loadedSession instanceof AiEditorialSessionInterface
-      ? $loadedSession
-      : $session;
     $selectedTone = (string) $session->get('tone')->target_id;
     $selectedTemplate = (string) $session->get('template')->target_id;
     $documents = $this->documentSerializer->serializeList(
