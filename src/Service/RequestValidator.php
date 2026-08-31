@@ -150,7 +150,6 @@ class RequestValidator {
     foreach ($raw as $name => $definition) {
       $this->schemas[$name] = $definition;
     }
-    $this->schemas += $this->getBuiltInSchemas();
 
     return $this->schemas;
   }

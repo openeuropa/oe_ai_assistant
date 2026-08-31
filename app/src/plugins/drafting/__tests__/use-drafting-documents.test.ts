@@ -39,19 +39,19 @@ vi.mock("../api/drafting-api", () => apiMocks);
 const initialDocument: DraftingDocument = {
   id: "initial-document",
   title: "Initial brief.md",
-  meta: { type: "md", size: "1 KB" },
+  meta: { type: "md", size: 1 },
 };
 
 const uploadedDocuments: DraftingDocument[] = [
   {
     id: "uploaded-a",
     title: "Uploaded A.txt",
-    meta: { type: "txt", size: "12 B" },
+    meta: { type: "txt", size: 12 },
   },
   {
     id: "uploaded-b",
     title: "Uploaded B.pdf",
-    meta: { type: "pdf", size: "24 B" },
+    meta: { type: "pdf", size: 24 },
   },
 ];
 
@@ -137,7 +137,6 @@ describe("useDraftingDocuments", () => {
 
     expect(apiMocks.removeDraftingDocument).toHaveBeenCalledWith(
       initialDocument.id,
-      "context",
     );
     expect(selectedState()).toEqual([initialDocument]);
     expect(isSavingState()).toBe(true);
