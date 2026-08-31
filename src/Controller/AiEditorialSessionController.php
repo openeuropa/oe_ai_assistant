@@ -8,11 +8,10 @@ use Drupal\Core\Cache\CacheableMetadata;
 use Drupal\Core\Controller\ControllerBase;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Url;
-use Drupal\oe_ai_assistant\Document\ContextDocumentStorage;
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionType;
 use Drupal\oe_ai_assistant\Service\AiEditorialContextInterface;
-use Drupal\oe_ai_assistant\Service\DocumentSerializerInterface;
+use Drupal\oe_ai_assistant\Service\Drafting\ContextDocumentRepository;
 use Drupal\oe_ai_assistant\Service\DraftingSchemaProviderInterface;
 use Drupal\system\SystemManager;
 use Symfony\Component\HttpFoundation\RedirectResponse;
@@ -27,7 +26,7 @@ class AiEditorialSessionController extends ControllerBase {
   public function __construct(
     private readonly AiEditorialContextInterface $aiEditorialContext,
     private readonly EntityTypeManagerInterface $sessionEntityTypeManager,
-    private readonly DocumentSerializerInterface $documentSerializer,
+    private readonly ContextDocumentRepository $contextDocumentRepository,
     private readonly SystemManager $systemManager,
     private readonly RequestStack $requestStack,
     private readonly DraftingSchemaProviderInterface $schemaProvider,
@@ -124,10 +123,7 @@ class AiEditorialSessionController extends ControllerBase {
     // selector on load.
     $selectedTone = (string) $session->get('tone')->target_id;
     $selectedTemplate = (string) $session->get('template')->target_id;
-    $documents = $this->documentSerializer->serializeList(
-      $session->get(ContextDocumentStorage::SESSION_FIELD)->referencedEntities(),
-      ContextDocumentStorage::SOURCE_FIELD,
-    );
+    $documents = $this->contextDocumentRepository->list($session);
     // Build the configuration object that bootstraps the React app.
     // This data is serialised into window.drupalSettings.oeAiAssistant
     // and read by the React entry point before the first render.
