@@ -8,6 +8,7 @@ use Drupal\ai\OperationType\Chat\ChatMessage;
 use Drupal\ai\OperationType\Chat\ChatOutput;
 use Drupal\ai\OperationType\Chat\Tools\ToolsFunctionInput;
 use Drupal\ai_agents\PluginManager\AiAgentManager;
+use Drupal\Core\Cache\RefinableCacheableDependencyInterface;
 use Drupal\oe_ai_assistant\Annotation\AiEditorialAssistant;
 use Drupal\oe_ai_assistant\Entity\AiConversationMessageInterface;
 use Drupal\oe_ai_assistant\AiDraftingTemplateInterface;
@@ -167,6 +168,64 @@ class DraftingPlugin extends AiAssistantPluginBase {
       'list-documents' => 'DraftingListDocumentsRequest',
       'remove-document' => 'DraftingRemoveDocumentRequest',
     ];
+  }
+
+  /**
+   * {@inheritdoc}
+   *
+   * Provides the drafting scope (entity type and bundle) and the composer
+   * panels. Each panel is gated by an 'enabled' flag so the host controls
+   * which tabs appear. Tone options come from the tone vocabulary; template
+   * options come from the enabled drafting templates for the bundle; the
+   * document options are the session's private context documents.
+   */
+  public function getAppConfig(AiEditorialSessionInterface $session, RefinableCacheableDependencyInterface $cacheability): array {
+    $context = $this->buildContext($session);
+    // The configuration embeds the drafting template list, so the page must
+    // be invalidated whenever a template is added, edited or deleted. The
+    // list cache tag covers all three operations for config entities.
+    $cacheability->addCacheTags(['config:ai_drafting_template_list']);
+
+    return [
+      'entityTypeId' => $context['entityTypeId'],
+      'bundle' => $context['bundle'],
+      'tone' => [
+        'enabled' => TRUE,
+        'options' => $this->serializeToneOptions($this->aiEditorialContext->getAvailableTones()),
+        // The tone already saved on the session, so the app can rehydrate
+        // the selector on load.
+        'selected' => (string) $session->get(static::TONE_FIELD)->target_id,
+      ],
+      'templates' => [
+        'enabled' => TRUE,
+        'options' => $this->schemaProvider->availableTemplates($context['bundle']),
+        'selected' => (string) $session->get(static::TEMPLATE_FIELD)->target_id,
+      ],
+      'documents' => [
+        'enabled' => TRUE,
+        'options' => $this->contextDocumentRepository->list($session),
+      ],
+    ];
+  }
+
+  /**
+   * Serializes internal prompt-ready tone options for frontend bootstrap.
+   *
+   * @param array<int, array{id: string, label: string, description: string, oe_ai_prompt: string}> $options
+   *   The prompt-ready service options.
+   *
+   * @return array<int, array{id: string, label: string, description: string}>
+   *   Frontend-safe tone options.
+   */
+  private function serializeToneOptions(array $options): array {
+    return array_map(
+      static fn (array $option): array => [
+        'id' => $option['id'],
+        'label' => $option['label'],
+        'description' => $option['description'],
+      ],
+      $options,
+    );
   }
 
   /**
