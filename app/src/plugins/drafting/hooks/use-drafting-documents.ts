@@ -33,7 +33,7 @@ export function useDraftingDocuments() {
     setIsSaving(true);
     setError(null);
     try {
-      await removeDraftingDocument(id, "context");
+      await removeDraftingDocument(id);
       setSelected((current) => current.filter((item) => item.id !== id));
     } catch (exception) {
       setError(
