@@ -638,7 +638,6 @@ class DraftingPlugin extends AiAssistantPluginBase {
    */
   public function removeDocument(Request $request): array {
     $body = $this->decodeJsonBody($request);
-    $category = $this->resolveDocumentCategory((string) ($body['category'] ?? ''));
     $session = $this->loadSession($body);
     $documentId = (string) ($body['documentId'] ?? '');
 
@@ -650,6 +649,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
       );
     }
 
+    $category = $this->resolveDocumentCategory(ContextDocumentStorage::CATEGORY);
     $field = $session->get($category['sessionField']);
     $referenced = FALSE;
     foreach ($field as $delta => $item) {

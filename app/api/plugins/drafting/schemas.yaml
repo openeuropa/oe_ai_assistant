@@ -213,14 +213,11 @@ DraftingRemoveDocumentRequest:
   type: object
   required:
     - sessionId
-    - category
     - documentId
   properties:
     sessionId:
       type: string
       description: The editorial session that references the document.
-    category:
-      $ref: "../../openapi.yaml#/components/schemas/DraftingDocumentCategory"
     documentId:
       type: string
       description: Server-assigned document ID to remove.

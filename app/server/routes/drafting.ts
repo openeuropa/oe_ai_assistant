@@ -384,16 +384,15 @@ export function createDraftingRouter(service: DraftingService): Router {
 
   /** POST /remove-document - Remove a mock document for a session. */
   router.post("/remove-document", (req, res) => {
-    const { sessionId, category, documentId } = req.body as {
+    const { sessionId, documentId } = req.body as {
       sessionId?: string;
-      category?: string;
       documentId?: string;
     };
 
-    if (!sessionId || category !== "context" || !documentId) {
+    if (!sessionId || !documentId) {
       res.status(400).json({
         code: "bad_request",
-        message: "sessionId, category, and documentId are required",
+        message: "sessionId and documentId are required",
       });
       return;
     }
