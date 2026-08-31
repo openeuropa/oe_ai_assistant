@@ -18,12 +18,11 @@ use weitzman\DrupalTestTraits\ExistingSiteBase;
  * shared helpers to create editorial sessions, authenticate, POST
  * JSON to the plugin endpoints and load the persisted transcript.
  *
- * Requires OE_AI_SKIP_PROVIDER_OVERRIDE=1 in the web container
- * environment so settings.ai.php does not override the mock
- * provider config set in setUp().
+ * Requires OE_AI_PROVIDER_OVERRIDE to be unset in .ddev/.env so
+ * settings.ai.php does not override the mock provider config set
+ * in setUp().
  *
  * @see .ddev/settings.ai.php
- * @see .ddev/docker-compose.phpunit.yaml
  */
 abstract class DraftingPluginTestBase extends ExistingSiteBase {
 
