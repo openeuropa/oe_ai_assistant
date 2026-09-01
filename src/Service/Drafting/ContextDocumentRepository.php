@@ -37,7 +37,7 @@ final class ContextDocumentRepository extends DocumentRepositoryBase {
    * {@inheritdoc}
    */
   protected function getSourceField(): string {
-    return 'field_media_context_document';
+    return 'oe_ai_context_document';
   }
 
   /**

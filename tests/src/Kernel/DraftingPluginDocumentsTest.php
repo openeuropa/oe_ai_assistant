@@ -93,7 +93,7 @@ class DraftingPluginDocumentsTest extends AiEditorialSessionKernelTestBase {
     $this->assertSame('ai_context_document', $media->bundle());
     $this->assertFalse($media->isPublished());
 
-    $file = $media->get('field_media_context_document')->entity;
+    $file = $media->get('oe_ai_context_document')->entity;
     $this->assertInstanceOf(FileInterface::class, $file);
     $this->assertStringStartsWith('private://ai-context-documents/', $file->getFileUri());
     $this->assertSame(strlen($contents), (int) $file->getSize());
@@ -234,7 +234,7 @@ class DraftingPluginDocumentsTest extends AiEditorialSessionKernelTestBase {
   public function testDocumentUploadRejectsFileLargerThanConfiguredLimit(): void {
     $fieldConfig = $this->container->get('entity_type.manager')
       ->getStorage('field_config')
-      ->load('media.ai_context_document.field_media_context_document');
+      ->load('media.ai_context_document.oe_ai_context_document');
     $this->assertInstanceOf(FieldConfigInterface::class, $fieldConfig);
     $fieldConfig->setSetting('max_filesize', '2 KB');
     $fieldConfig->save();

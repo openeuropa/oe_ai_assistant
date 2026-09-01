@@ -195,7 +195,7 @@ class AiEditorialSessionMessageCleanupTest extends AiEditorialSessionKernelTestB
       'bundle' => 'ai_context_document',
       'name' => $filename,
       'status' => 0,
-      'field_media_context_document' => [
+      'oe_ai_context_document' => [
         'target_id' => $file->id(),
       ],
     ]);

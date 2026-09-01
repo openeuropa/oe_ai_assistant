@@ -2,12 +2,12 @@ langcode: en
 status: true
 dependencies:
   config:
-    - field.storage.media.field_document_summary
+    - field.storage.media.oe_ai_document_summary
     - media.type.ai_context_document
   module:
     - text
-id: media.ai_context_document.field_document_summary
-field_name: field_document_summary
+id: media.ai_context_document.oe_ai_document_summary
+field_name: oe_ai_document_summary
 entity_type: media
 bundle: ai_context_document
 label: 'Document summary'
