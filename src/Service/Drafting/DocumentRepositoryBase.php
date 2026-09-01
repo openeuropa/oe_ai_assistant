@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace Drupal\oe_ai_assistant\Service\Drafting;
 
 use Drupal\Core\Entity\EntityTypeManagerInterface;
+use Drupal\Core\Field\TypedData\FieldItemDataDefinition;
 use Drupal\Core\File\FileExists;
 use Drupal\Core\File\FileSystemInterface;
 use Drupal\file\FileInterface;
+use Drupal\file\Plugin\Field\FieldType\FileItem;
 use Drupal\file\Upload\FileUploadHandlerInterface;
 use Drupal\file\Upload\FormUploadedFile;
 use Drupal\file\Upload\InputStreamUploadedFile;
@@ -65,9 +67,24 @@ abstract class DocumentRepositoryBase implements DocumentRepositoryInterface {
   abstract protected function getSourceField(): string;
 
   /**
-   * Gets the directory used for uploaded documents of this category.
+   * Builds a bare source field item to read upload settings from.
+   *
+   * The file field type encapsulates the upload destination
+   * (getUploadLocation) and the configured validators
+   * (getUploadValidators). Building a bare item from the field
+   * definition gives access to that API without creating an entity,
+   * exactly as core's FileUploadLocationTrait does, so API uploads
+   * behave like uploads through the field widget.
+   *
+   * @return \Drupal\file\Plugin\Field\FieldType\FileItem
+   *   A bare item for the source field.
    */
-  abstract protected function getUploadDirectory(): string;
+  private function getSourceFieldItem(): FileItem {
+    $definition = $this->entityTypeManager->getStorage('field_config')
+      ->load('media.' . $this->getMediaBundle() . '.' . $this->getSourceField());
+
+    return new FileItem(FieldItemDataDefinition::create($definition));
+  }
 
   /**
    * {@inheritdoc}
@@ -205,7 +222,10 @@ abstract class DocumentRepositoryBase implements DocumentRepositoryInterface {
    *   The managed file entity.
    */
   private function saveUploadedFile(UploadedFile $upload): FileInterface {
-    $directory = $this->getUploadDirectory();
+    // Destination and validators come from the source field configuration,
+    // through the same field type API the file widget uses.
+    $item = $this->getSourceFieldItem();
+    $directory = $item->getUploadLocation();
     if (!$this->fileSystem->prepareDirectory(
       $directory,
       FileSystemInterface::CREATE_DIRECTORY | FileSystemInterface::MODIFY_PERMISSIONS,
@@ -220,7 +240,7 @@ abstract class DocumentRepositoryBase implements DocumentRepositoryInterface {
     try {
       $result = $this->fileUploadHandler->handleFileUpload(
         $this->createDrupalUploadedFile($upload),
-        ['FileExtension' => []],
+        $item->getUploadValidators(),
         $directory,
         FileExists::Rename,
       );
@@ -294,13 +314,9 @@ abstract class DocumentRepositoryBase implements DocumentRepositoryInterface {
         'entity' => $file,
       ],
     ]);
-    $file->enforceIsNew();
-    try {
-      $violations = $media->get($this->getSourceField())->validate();
-    }
-    finally {
-      $file->enforceIsNew(FALSE);
-    }
+    // The upload validators configured on the source field already ran in
+    // saveUploadedFile(); this validates the reference itself.
+    $violations = $media->get($this->getSourceField())->validate();
     if ($violations->count() > 0) {
       $messages = [];
       foreach ($violations as $violation) {
