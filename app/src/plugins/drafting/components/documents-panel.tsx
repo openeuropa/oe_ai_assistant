@@ -69,17 +69,13 @@ export function DocumentsPanel({
   return (
     <Pane
       icon={<FileText size={18} />}
-      title="Documents"
-      description="Attach or select documents that should guide the next draft."
+      title="Context documents"
+      description="Attach documents that should guide the next draft. They are private, never published, and only feed the context when generating the draft."
       onSave={onSave}
       onCancel={onCancel}
       isSaving={isSaving}
     >
       <div className="space-y-4 text-sm text-gray-700">
-        <p className="text-xs font-medium uppercase text-blue-700">
-          Temporary briefing context
-        </p>
-
         {/* Upload control. */}
         <button
           type="button"
