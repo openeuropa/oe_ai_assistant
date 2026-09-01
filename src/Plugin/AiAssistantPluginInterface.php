@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Drupal\oe_ai_assistant\Plugin;
 
 use Drupal\Component\Plugin\PluginInspectionInterface;
+use Drupal\Core\Cache\RefinableCacheableDependencyInterface;
+use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
 
 /**
  * Defines the contract for all AI Assistant plugins.
@@ -90,5 +92,26 @@ interface AiAssistantPluginInterface extends PluginInspectionInterface {
    *   as top-level keys inside dist/schemas.json).
    */
   public function getRequestSchemas(): array;
+
+  /**
+   * Returns the plugin's portion of the frontend bootstrap configuration.
+   *
+   * The session page controller assembles the pluginConfig object passed to
+   * the React app by collecting this method's result from every plugin, so
+   * the controller stays plugin-agnostic. Plugins that need no bootstrap
+   * configuration return an empty array, which the controller omits.
+   *
+   * @param \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $session
+   *   The editorial session the page is built for.
+   * @param \Drupal\Core\Cache\RefinableCacheableDependencyInterface $cacheability
+   *   The page cacheability. Plugins whose configuration depends on other
+   *   data (config entities, vocabularies) must add the matching cache tags
+   *   and contexts here.
+   *
+   * @return array<string, mixed>
+   *   The plugin configuration, serialised into drupalSettings under
+   *   pluginConfig.{plugin_id}.
+   */
+  public function getAppConfig(AiEditorialSessionInterface $session, RefinableCacheableDependencyInterface $cacheability): array;
 
 }

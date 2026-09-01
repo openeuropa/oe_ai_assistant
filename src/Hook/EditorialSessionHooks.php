@@ -10,6 +10,7 @@ use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Hook\Attribute\Hook;
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
 use Drupal\oe_ai_assistant\Entity\Storage\AiConversationMessageStorageInterface;
+use Drupal\oe_ai_assistant\Service\Drafting\ContextDocumentRepository;
 use Drupal\oe_ai_assistant\Service\MessageRecorderInterface;
 
 /**
@@ -22,6 +23,7 @@ final class EditorialSessionHooks {
   public function __construct(
     private readonly EntityTypeManagerInterface $entityTypeManager,
     private readonly MessageRecorderInterface $messageRecorder,
+    private readonly ContextDocumentRepository $contextDocumentRepository,
   ) {}
 
   /**
@@ -81,6 +83,19 @@ final class EditorialSessionHooks {
     assert($storage instanceof AiConversationMessageStorageInterface);
 
     $storage->deleteForHost($entity);
+  }
+
+  /**
+   * Implements hook_ai_editorial_session_delete().
+   *
+   * Removes private context document media that are owned only by the deleted
+   * session, together with their managed files.
+   */
+  #[Hook('ai_editorial_session_delete')]
+  public function deleteSessionContextDocuments(EntityInterface $entity): void {
+    assert($entity instanceof AiEditorialSessionInterface);
+
+    $this->contextDocumentRepository->deleteOrphanedBy($entity);
   }
 
 }

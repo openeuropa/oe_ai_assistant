@@ -107,3 +107,84 @@ setTemplate:
           application/json:
             schema:
               $ref: "../../openapi.yaml#/components/schemas/ApiError"
+
+addDocument:
+  post:
+    operationId: postDraftingAddDocument
+    summary: Upload a drafting context document
+    tags: [Drafting]
+    requestBody:
+      required: true
+      content:
+        multipart/form-data:
+          schema:
+            $ref: "../../openapi.yaml#/components/schemas/DraftingAddDocumentRequest"
+    responses:
+      "200":
+        description: Uploaded document details
+        content:
+          application/json:
+            schema:
+              $ref: "../../openapi.yaml#/components/schemas/DraftingAddDocumentResponse"
+      "400":
+        description: Validation error.
+        content:
+          application/json:
+            schema:
+              $ref: "../../openapi.yaml#/components/schemas/ApiError"
+      "403":
+        $ref: "../../openapi.yaml#/components/responses/Forbidden"
+
+listDocuments:
+  post:
+    operationId: postDraftingListDocuments
+    summary: List drafting context documents
+    tags: [Drafting]
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: "../../openapi.yaml#/components/schemas/DraftingListDocumentsRequest"
+    responses:
+      "200":
+        description: Referenced documents for the current session
+        content:
+          application/json:
+            schema:
+              $ref: "../../openapi.yaml#/components/schemas/DraftingListDocumentsResponse"
+      "400":
+        description: Validation error.
+        content:
+          application/json:
+            schema:
+              $ref: "../../openapi.yaml#/components/schemas/ApiError"
+      "403":
+        $ref: "../../openapi.yaml#/components/responses/Forbidden"
+
+removeDocument:
+  post:
+    operationId: postDraftingRemoveDocument
+    summary: Remove a drafting context document
+    tags: [Drafting]
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: "../../openapi.yaml#/components/schemas/DraftingRemoveDocumentRequest"
+    responses:
+      "200":
+        description: Removal confirmation
+        content:
+          application/json:
+            schema:
+              $ref: "../../openapi.yaml#/components/schemas/DraftingRemoveDocumentResponse"
+      "400":
+        description: Validation error.
+        content:
+          application/json:
+            schema:
+              $ref: "../../openapi.yaml#/components/schemas/ApiError"
+      "403":
+        $ref: "../../openapi.yaml#/components/responses/Forbidden"

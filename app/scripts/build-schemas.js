@@ -1,36 +1,32 @@
 /**
  * Consolidate OpenAPI schemas into a single JSON file for Drupal.
  *
- * Reads all schemas.yaml files under api/, extracts every named schema
- * definition, and writes a flat map to dist/schemas.json. The Drupal
- * module's RequestValidator reads this file to validate incoming
- * request bodies against the spec.
+ * Dereferences the root OpenAPI spec (api/openapi.yaml) and writes its
+ * components/schemas section as a flat map to dist/schemas.json. The
+ * Drupal module's RequestValidator reads this file to validate incoming
+ * request bodies against the spec, so every schema must be fully
+ * self-contained: the PHP validator cannot resolve file-based $refs.
  *
  * Run standalone:  node scripts/build-schemas.js
  * Run via build:   npm run build (chained after vite build)
  */
 
-import { globSync, readFileSync, writeFileSync } from "node:fs";
+import { writeFileSync } from "node:fs";
 import { resolve } from "node:path";
-import yaml from "js-yaml";
+import $RefParser from "@apidevtools/json-schema-ref-parser";
 
-const apiDir = resolve(import.meta.dirname, "../api");
+const specFile = resolve(import.meta.dirname, "../api/openapi.yaml");
 const outFile = resolve(import.meta.dirname, "../../dist/schemas.json");
 
-// Find all schemas.yaml files under api/.
-const files = globSync("**/schemas.yaml", { cwd: apiDir });
-const consolidated = {};
+// Resolve every $ref inline. Circular references cannot be represented
+// in the flat JSON output, so fail the build instead of allowing them.
+const spec = await $RefParser.dereference(specFile, {
+  dereference: { circular: false },
+});
 
-for (const file of files) {
-  const fullPath = resolve(apiDir, file);
-  const doc = yaml.load(readFileSync(fullPath, "utf8"));
+const schemas = spec.components?.schemas ?? {};
 
-  if (doc && typeof doc === "object") {
-    Object.assign(consolidated, doc);
-  }
-}
+writeFileSync(outFile, JSON.stringify(schemas, null, 2));
 
-writeFileSync(outFile, JSON.stringify(consolidated, null, 2));
-
-const count = Object.keys(consolidated).length;
+const count = Object.keys(schemas).length;
 console.log(`schemas: ${count} definitions written to dist/schemas.json`);
