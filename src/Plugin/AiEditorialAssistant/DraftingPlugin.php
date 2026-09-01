@@ -164,9 +164,11 @@ class DraftingPlugin extends AiAssistantPluginBase {
       'save' => 'DraftingSaveRequest',
       'set-tone' => 'DraftingSetToneRequest',
       'set-template' => 'DraftingSetTemplateRequest',
-      'add-document' => 'DraftingAddDocumentRequest',
       'list-documents' => 'DraftingListDocumentsRequest',
       'remove-document' => 'DraftingRemoveDocumentRequest',
+      // The add-document action is multipart rather than JSON, so it is not
+      // validated against a body schema; the action checks its own inputs
+      // and the file is validated through the source field configuration.
     ];
   }
 
