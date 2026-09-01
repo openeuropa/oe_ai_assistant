@@ -454,11 +454,6 @@ export interface components {
             };
             /** @description Extracted document summary used as temporary drafting context. */
             summary?: string;
-            /**
-             * @description Current text extraction state when no summary is available yet.
-             * @enum {string}
-             */
-            extractionStatus?: "pending" | "processing" | "completed" | "failed";
         };
         DraftingAddDocumentRequest: {
             /** @description The editorial session receiving the uploaded document. */

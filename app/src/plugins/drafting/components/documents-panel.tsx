@@ -18,31 +18,11 @@ export interface DocumentsPanelProps {
   error?: string | null;
 }
 
-function formatExtractionStatus(status: DraftingDocument["extractionStatus"]) {
-  switch (status) {
-    case "pending":
-      return "Extraction pending";
-    case "processing":
-      return "Extracting text";
-    case "completed":
-      return "Extraction complete";
-    case "failed":
-      return "Extraction failed";
-    default:
-      return null;
-  }
-}
-
 function DocumentContextDetails({ document }: { document: DraftingDocument }) {
   const summary = document.summary?.trim();
-  const status = formatExtractionStatus(document.extractionStatus);
 
   if (summary) {
     return <p className="line-clamp-2 text-xs text-gray-600">{summary}</p>;
-  }
-
-  if (status) {
-    return <p className="text-xs font-medium text-blue-700">{status}</p>;
   }
 
   return null;
