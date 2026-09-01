@@ -4,8 +4,8 @@ dependencies:
   module:
     - file
     - media
-id: media.field_media_context_document
-field_name: field_media_context_document
+id: media.oe_ai_context_document
+field_name: oe_ai_context_document
 entity_type: media
 type: file
 settings:

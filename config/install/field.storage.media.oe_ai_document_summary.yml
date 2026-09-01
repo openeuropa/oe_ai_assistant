@@ -4,8 +4,8 @@ dependencies:
   module:
     - media
     - text
-id: media.field_document_summary
-field_name: field_document_summary
+id: media.oe_ai_document_summary
+field_name: oe_ai_document_summary
 entity_type: media
 type: text_long
 settings: {  }

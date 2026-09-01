@@ -216,10 +216,10 @@ class AiEditorialSessionDashboardTest extends AiEditorialSessionBrowserTestBase 
       'bundle' => 'ai_context_document',
       'name' => 'Policy brief',
       'status' => 0,
-      'field_media_context_document' => [
+      'oe_ai_context_document' => [
         'target_id' => $file->id(),
       ],
-      'field_document_summary' => [
+      'oe_ai_document_summary' => [
         'value' => 'Extracted context summary.',
       ],
     ]);
@@ -358,7 +358,7 @@ class AiEditorialSessionDashboardTest extends AiEditorialSessionBrowserTestBase 
     $this->assertSession()->responseContains('"sessionTitle":' . json_encode('Content creation: ' . $session->label()));
     $this->assertSession()->responseContains('"exitUrl":"\/admin\/content\/ai"');
     $this->assertSession()->responseContains('"disclaimer":"AI assistant can make mistakes. Please double-check responses."');
-    $this->assertSession()->responseContains('"enabledPlugins":["echo","notes","drafting"]');
+    $this->assertSession()->responseContains('"enabledPlugins":["drafting","echo","notes"]');
     $this->assertSession()->responseContains('"entityTypeId":"node"');
     $this->assertSession()->responseContains('"bundle":"' . $bundle . '"');
     $this->assertSession()->responseContains('"tone":{"enabled":true');
