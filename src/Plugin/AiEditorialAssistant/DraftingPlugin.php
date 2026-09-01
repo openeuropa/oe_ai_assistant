@@ -603,7 +603,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
       }
       throw $e;
     }
-    $document = $this->documentSerializer->serialize($media, ContextDocumentStorage::SOURCE_FIELD);
+    $document = $this->documentSerializer->serialize($media, $category['sourceField']);
     return ['document' => $document];
   }
 
@@ -624,7 +624,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
     $documents = [];
     foreach ($session->get($category['sessionField'])->referencedEntities() as $media) {
       if ($media instanceof MediaInterface) {
-        $documents[] = $this->documentSerializer->serialize($media, ContextDocumentStorage::SOURCE_FIELD);
+        $documents[] = $this->documentSerializer->serialize($media, $category['sourceField']);
       }
     }
 
@@ -724,17 +724,13 @@ class DraftingPlugin extends AiAssistantPluginBase {
    * @param string $category
    *   The request category.
    *
-   * @return array{category: string, sessionField: string, mediaBundle: string, sourceField: string}
+   * @return array{category: string, sessionField: string, mediaBundle: string, sourceField: string, summaryField: string}
    *   The resolved storage details.
    */
   private function resolveDocumentCategory(string $category): array {
-    if ($category === ContextDocumentStorage::CATEGORY) {
-      return [
-        'category' => ContextDocumentStorage::CATEGORY,
-        'sessionField' => ContextDocumentStorage::SESSION_FIELD,
-        'mediaBundle' => ContextDocumentStorage::MEDIA_BUNDLE,
-        'sourceField' => ContextDocumentStorage::SOURCE_FIELD,
-      ];
+    $details = ContextDocumentStorage::workingMaterialCategory($category);
+    if ($details !== NULL) {
+      return $details;
     }
 
     throw new ActionException(
@@ -749,6 +745,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
    *
    * @param \Symfony\Component\HttpFoundation\File\UploadedFile $upload
    *   The uploaded file.
+   * @param array $category
    *   The resolved category storage details.
    *
    * @return \Drupal\file\FileInterface
@@ -888,7 +885,12 @@ class DraftingPlugin extends AiAssistantPluginBase {
    *   The referenced file, if available.
    */
   private function getDocumentFile(MediaInterface $media): ?FileInterface {
-    $file = $media->get(ContextDocumentStorage::SOURCE_FIELD)->entity;
+    $details = ContextDocumentStorage::workingMaterialBundle($media->bundle());
+    if ($details === NULL || !$media->hasField($details['sourceField'])) {
+      return NULL;
+    }
+
+    $file = $media->get($details['sourceField'])->entity;
     return $file instanceof FileInterface ? $file : NULL;
   }
 

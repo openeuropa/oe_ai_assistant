@@ -60,18 +60,17 @@ class DocumentSummaryExtractorTest extends AiEditorialSessionKernelTestBase {
   /**
    * Tests direct extraction with the configured mock provider.
    */
-  public function testExtractAndSaveUsesConfiguredProviderAndAttachedFile(): void {
+  public function testExtractUsesConfiguredProviderAndAttachedFile(): void {
     MockAiProvider::enqueue(new MockResponse('Extracted context summary.'));
     $file = $this->createManagedFile('brief.txt', 'Context document contents.');
     $media = $this->createUnsavedContextDocument($file);
 
     $summary = $this->container
       ->get(DocumentSummaryExtractorInterface::class)
-      ->extractAndSave($media);
+      ->extract($media);
 
     $this->assertSame('Extracted context summary.', $summary);
-    $this->assertFalse($media->get(ContextDocumentStorage::SUMMARY_FIELD)->isEmpty());
-    $this->assertSame('Extracted context summary.', $media->get(ContextDocumentStorage::SUMMARY_FIELD)->value);
+    $this->assertTrue($media->get(ContextDocumentStorage::SUMMARY_FIELD)->isEmpty());
 
     $log = MockAiProvider::getCallLog();
     $this->assertCount(1, $log);
@@ -102,7 +101,7 @@ class DocumentSummaryExtractorTest extends AiEditorialSessionKernelTestBase {
     try {
       $this->container
         ->get(DocumentSummaryExtractorInterface::class)
-        ->extractAndSave($media);
+        ->extract($media);
       $this->fail('Provider failure did not surface as an extraction exception.');
     }
     catch (DocumentSummaryExtractionException $e) {
@@ -205,7 +204,7 @@ class DocumentSummaryExtractorTest extends AiEditorialSessionKernelTestBase {
 
     $this->container
       ->get(DocumentSummaryExtractorInterface::class)
-      ->extractAndSave($media);
+      ->extract($media);
 
     $log = MockAiProvider::getCallLog();
     $this->assertSame($filename, $log[0]['messages'][0]['files'][0]['filename']);

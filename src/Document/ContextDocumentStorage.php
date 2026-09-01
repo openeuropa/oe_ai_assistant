@@ -42,17 +42,47 @@ final class ContextDocumentStorage {
   /**
    * Returns working-material media storage details keyed by media bundle.
    *
-   * @return array<string, array{category: string, sourceField: string, summaryField: string}>
+   * @return array<string, array{category: string, sessionField: string, mediaBundle: string, sourceField: string, summaryField: string}>
    *   The supported document storage details.
    */
   public static function workingMaterialBundles(): array {
     return [
       self::MEDIA_BUNDLE => [
         'category' => self::CATEGORY,
+        'sessionField' => self::SESSION_FIELD,
+        'mediaBundle' => self::MEDIA_BUNDLE,
         'sourceField' => self::SOURCE_FIELD,
         'summaryField' => self::SUMMARY_FIELD,
       ],
     ];
+  }
+
+  /**
+   * Returns working-material media storage details for a bundle.
+   *
+   * @return array{category: string, sessionField: string, mediaBundle: string, sourceField: string, summaryField: string}|null
+   *   The supported document storage details, or NULL for unsupported bundles.
+   */
+  public static function workingMaterialBundle(string $bundle): ?array {
+    $bundles = self::workingMaterialBundles();
+    return $bundles[$bundle] ?? NULL;
+  }
+
+  /**
+   * Returns working-material media storage details for a category.
+   *
+   * @return array{category: string, sessionField: string, mediaBundle: string, sourceField: string, summaryField: string}|null
+   *   The supported document storage details, or NULL for unsupported
+   *   categories.
+   */
+  public static function workingMaterialCategory(string $category): ?array {
+    foreach (self::workingMaterialBundles() as $details) {
+      if ($details['category'] === $category) {
+        return $details;
+      }
+    }
+
+    return NULL;
   }
 
   /**

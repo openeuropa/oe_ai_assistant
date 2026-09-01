@@ -8,6 +8,7 @@ use Drupal\ai\AiProviderPluginManager;
 use Drupal\ai\OperationType\Chat\ChatInput;
 use Drupal\ai\OperationType\Chat\ChatMessage;
 use Drupal\ai\OperationType\GenericType\DocumentFile;
+use Drupal\file\Entity\File;
 use Drupal\file\FileInterface;
 use Drupal\media\MediaInterface;
 use Drupal\oe_ai_assistant\Document\ContextDocumentStorage;
@@ -30,16 +31,6 @@ class DocumentSummaryExtractor implements DocumentSummaryExtractorInterface {
   private const int MAX_DOCUMENT_BYTES = 20971520;
 
   /**
-   * Supported document extensions and their provider MIME types.
-   */
-  private const array SUPPORTED_MIME_TYPES = [
-    'docx' => 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-    'md' => 'text/markdown',
-    'pdf' => 'application/pdf',
-    'txt' => 'text/plain',
-  ];
-
-  /**
    * Media UUIDs currently being summarised by this service instance.
    *
    * @var array<string, bool>
@@ -55,7 +46,7 @@ class DocumentSummaryExtractor implements DocumentSummaryExtractorInterface {
    * {@inheritdoc}
    */
   public function supports(MediaInterface $media): bool {
-    $details = $this->getStorageDetails($media);
+    $details = ContextDocumentStorage::workingMaterialBundle($media->bundle());
     return $details !== NULL
       && $media->hasField($details['sourceField'])
       && $media->hasField($details['summaryField']);
@@ -64,8 +55,15 @@ class DocumentSummaryExtractor implements DocumentSummaryExtractorInterface {
   /**
    * {@inheritdoc}
    */
-  public function extractAndSave(MediaInterface $media): string {
-    $details = $this->getStorageDetails($media);
+  public function isExtracting(MediaInterface $media): bool {
+    return isset($this->activeExtractions[$this->getExtractionKey($media)]);
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function extract(MediaInterface $media): string {
+    $details = ContextDocumentStorage::workingMaterialBundle($media->bundle());
     if ($details === NULL) {
       throw new \RuntimeException(sprintf(
         'Document summary extraction does not support media bundle "%s".',
@@ -74,30 +72,17 @@ class DocumentSummaryExtractor implements DocumentSummaryExtractorInterface {
     }
 
     $key = $this->getExtractionKey($media);
-    if (isset($this->activeExtractions[$key])) {
+    if ($this->isExtracting($media)) {
       return $this->getStoredSummary($media, $details['summaryField']);
     }
 
     $this->activeExtractions[$key] = TRUE;
     try {
-      $file = $this->getSourceFile($media, $details['sourceField']);
-      $summary = $this->requestSummary($file);
-      $media->set($details['summaryField'], [
-        'value' => $summary,
-      ]);
-      $media->save();
-
-      return $summary;
+      return $this->extractSummary($media, $details);
     }
     catch (\Throwable $e) {
-      $this->clearSummary($media, $details['summaryField']);
-      $this->logger->error('Document summary extraction failed for media @media_id (@bundle), file @file_id (@filename): @message', [
-        '@media_id' => $media->id() ?? 'new',
-        '@bundle' => $media->bundle(),
-        '@file_id' => isset($file) ? $file->id() : 'unknown',
-        '@filename' => isset($file) ? $file->getFilename() : 'unknown',
-        '@message' => $e->getMessage(),
-      ]);
+      $this->clearSummary($media, $details['summaryField'], FALSE);
+      $this->logExtractionFailure($media, $details['sourceField'], $e);
       throw new DocumentSummaryExtractionException(
         'The document summary could not be extracted.',
         0,
@@ -110,23 +95,40 @@ class DocumentSummaryExtractor implements DocumentSummaryExtractorInterface {
   }
 
   /**
-   * Returns configured storage details for a supported media entity.
+   * Logs a failed extraction with source-file context when available.
+   */
+  private function logExtractionFailure(MediaInterface $media, string $sourceField, \Throwable $e): void {
+    $file = NULL;
+    if ($media->hasField($sourceField) && !$media->get($sourceField)->isEmpty()) {
+      $file = $media->get($sourceField)->entity;
+    }
+
+    $this->logger->error('Document summary extraction failed for media @media_id (@bundle), file @file_id (@filename): @message', [
+      '@media_id' => $media->id() ?? 'new',
+      '@bundle' => $media->bundle(),
+      '@file_id' => $file instanceof FileInterface ? $file->id() : 'unknown',
+      '@filename' => $file instanceof FileInterface ? $file->getFilename() : 'unknown',
+      '@message' => $e->getMessage(),
+    ]);
+  }
+
+  /**
+   * Extracts a summary for the configured media source field.
    *
    * @param \Drupal\media\MediaInterface $media
    *   The media entity.
-   *
-   * @return array{category: string, sourceField: string, summaryField: string}|null
-   *   Storage details, or NULL for unsupported bundles.
+   * @param array{category: string, sessionField: string, mediaBundle: string, sourceField: string, summaryField: string} $details
+   *   Storage details for the media bundle.
    */
-  private function getStorageDetails(MediaInterface $media): ?array {
-    $bundles = ContextDocumentStorage::workingMaterialBundles();
-    return $bundles[$media->bundle()] ?? NULL;
+  private function extractSummary(MediaInterface $media, array $details): string {
+    $file = $this->getSourceFile($media, $details['sourceField']);
+    return $this->requestSummary($file);
   }
 
   /**
    * Gets the source file from the configured media source field.
    */
-  private function getSourceFile(MediaInterface $media, string $sourceField): FileInterface {
+  private function getSourceFile(MediaInterface $media, string $sourceField): File {
     if (!$media->hasField($sourceField) || $media->get($sourceField)->isEmpty()) {
       throw new \RuntimeException(sprintf(
         'Document media "%s" has no source file.',
@@ -135,7 +137,7 @@ class DocumentSummaryExtractor implements DocumentSummaryExtractorInterface {
     }
 
     $file = $media->get($sourceField)->entity;
-    if (!$file instanceof FileInterface) {
+    if (!$file instanceof File) {
       throw new \RuntimeException(sprintf(
         'Document media "%s" source field does not reference a managed file.',
         $media->id() ?? 'new',
@@ -148,7 +150,7 @@ class DocumentSummaryExtractor implements DocumentSummaryExtractorInterface {
   /**
    * Requests a document summary from the configured multimodal provider.
    */
-  private function requestSummary(FileInterface $file): string {
+  private function requestSummary(File $file): string {
     $defaults = $this->aiProviderManager
       ->getDefaultProviderForOperationType(self::OPERATION_TYPE);
     if (empty($defaults['provider_id']) || empty($defaults['model_id'])) {
@@ -158,27 +160,15 @@ class DocumentSummaryExtractor implements DocumentSummaryExtractorInterface {
       ));
     }
 
-    $mimeType = $this->resolveMimeType($file);
     $this->assertSupportedFileSize($file);
-
-    $binary = file_get_contents($file->getFileUri());
-    if ($binary === FALSE) {
-      throw new \RuntimeException(sprintf(
-        'The document file "%s" could not be read.',
-        $file->getFilename(),
-      ));
-    }
+    $documentFile = new DocumentFile();
+    $documentFile->setFileFromFile($file);
+    $this->applyMimeTypeOverrides($documentFile);
 
     $message = new ChatMessage(
       'user',
       'Summarise the attached document for an editor who will use it as temporary briefing context. Return only the summary.',
-      [
-        new DocumentFile(
-          $binary,
-          $mimeType,
-          $file->getFilename(),
-        ),
-      ],
+      [$documentFile],
     );
     $input = new ChatInput([$message]);
     $input->setSystemPrompt(
@@ -204,20 +194,12 @@ class DocumentSummaryExtractor implements DocumentSummaryExtractorInterface {
   }
 
   /**
-   * Resolves a stable MIME type for provider file input.
+   * Applies MIME overrides for formats Drupal guesses too generically.
    */
-  private function resolveMimeType(FileInterface $file): string {
-    $extension = strtolower(pathinfo($file->getFilename(), PATHINFO_EXTENSION));
-    if (!isset(self::SUPPORTED_MIME_TYPES[$extension])) {
-      throw new \RuntimeException(sprintf(
-        'The document file "%s" uses unsupported extension "%s". Supported extensions are: %s.',
-        $file->getFilename(),
-        $extension !== '' ? $extension : 'none',
-        implode(', ', array_keys(self::SUPPORTED_MIME_TYPES)),
-      ));
+  private function applyMimeTypeOverrides(DocumentFile $file): void {
+    if (strtolower(pathinfo($file->getFilename(), PATHINFO_EXTENSION)) === 'md') {
+      $file->setMimeType('text/markdown');
     }
-
-    return self::SUPPORTED_MIME_TYPES[$extension];
   }
 
   /**
@@ -236,13 +218,17 @@ class DocumentSummaryExtractor implements DocumentSummaryExtractorInterface {
   /**
    * Clears any stale summary after a failed extraction.
    */
-  private function clearSummary(MediaInterface $media, string $summaryField): void {
+  private function clearSummary(MediaInterface $media, string $summaryField, bool $save): void {
     if (!$media->hasField($summaryField) || $media->get($summaryField)->isEmpty()) {
       return;
     }
 
+    $media->set($summaryField, NULL);
+    if (!$save) {
+      return;
+    }
+
     try {
-      $media->set($summaryField, NULL);
       $media->save();
     }
     catch (\Throwable $e) {

@@ -23,17 +23,28 @@ interface DocumentSummaryExtractorInterface {
   public function supports(MediaInterface $media): bool;
 
   /**
-   * Sends the media source file to the configured provider and saves a summary.
+   * Checks whether this media entity is already being summarised.
+   *
+   * @param \Drupal\media\MediaInterface $media
+   *   The media entity.
+   *
+   * @return bool
+   *   TRUE when extraction is active for the media entity.
+   */
+  public function isExtracting(MediaInterface $media): bool;
+
+  /**
+   * Sends the media source file to the configured provider.
    *
    * @param \Drupal\media\MediaInterface $media
    *   The supported working-material media entity.
    *
    * @return string
-   *   The extracted summary saved to the media entity.
+   *   The extracted summary.
    *
    * @throws \Drupal\oe_ai_assistant\Exception\DocumentSummaryExtractionException
    *   When the media cannot be summarised or the provider returns no summary.
    */
-  public function extractAndSave(MediaInterface $media): string;
+  public function extract(MediaInterface $media): string;
 
 }
