@@ -8,12 +8,9 @@ use Drupal\Core\Cache\CacheableMetadata;
 use Drupal\Core\Controller\ControllerBase;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Url;
-use Drupal\oe_ai_assistant\Document\ContextDocumentStorage;
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionType;
-use Drupal\oe_ai_assistant\Service\AiEditorialContextInterface;
-use Drupal\oe_ai_assistant\Service\DocumentSerializerInterface;
-use Drupal\oe_ai_assistant\Service\DraftingSchemaProviderInterface;
+use Drupal\oe_ai_assistant\Plugin\AiAssistantPluginManager;
 use Drupal\system\SystemManager;
 use Symfony\Component\HttpFoundation\RedirectResponse;
 use Symfony\Component\HttpFoundation\RequestStack;
@@ -25,12 +22,10 @@ use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 class AiEditorialSessionController extends ControllerBase {
 
   public function __construct(
-    private readonly AiEditorialContextInterface $aiEditorialContext,
     private readonly EntityTypeManagerInterface $sessionEntityTypeManager,
-    private readonly DocumentSerializerInterface $documentSerializer,
     private readonly SystemManager $systemManager,
     private readonly RequestStack $requestStack,
-    private readonly DraftingSchemaProviderInterface $schemaProvider,
+    private readonly AiAssistantPluginManager $pluginManager,
   ) {}
 
   /**
@@ -97,11 +92,7 @@ class AiEditorialSessionController extends ControllerBase {
    *   The render array to show on the page.
    */
   public function view(AiEditorialSessionInterface $ai_editorial_session): array {
-    return $this->buildRenderArray(
-      $ai_editorial_session,
-      'node',
-      $ai_editorial_session->get('content_type')->target_id,
-    );
+    return $this->buildRenderArray($ai_editorial_session);
   }
 
   /**
@@ -109,31 +100,34 @@ class AiEditorialSessionController extends ControllerBase {
    *
    * @param \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $session
    *   The AI editorial session the page is built for.
-   * @param string $entityTypeId
-   *   The entity type ID (always 'node' for now).
-   * @param string $bundle
-   *   The content type machine name (e.g. 'article', 'page').
    *
    * @return array
    *   A Drupal render array with mount point, library, and settings.
    */
-  private function buildRenderArray(AiEditorialSessionInterface $session, string $entityTypeId, string $bundle): array {
+  private function buildRenderArray(AiEditorialSessionInterface $session): array {
     $sessionId = (string) $session->id();
-    $tones = $this->serializeToneOptions($this->aiEditorialContext->getAvailableTones());
-    // Read the tone already saved on the session so the app can rehydrate the
-    // selector on load.
+    // Reload the session so the bootstrap reflects the latest saved state
+    // rather than a stale copy of the route parameter entity.
     $loadedSession = $this->sessionEntityTypeManager
       ->getStorage('ai_editorial_session')
       ->load($sessionId);
     $session = $loadedSession instanceof AiEditorialSessionInterface
       ? $loadedSession
       : $session;
-    $selectedTone = (string) $session->get('tone')->target_id;
-    $selectedTemplate = (string) $session->get('template')->target_id;
-    $documents = $this->documentSerializer->serializeList(
-      $session->get(ContextDocumentStorage::SESSION_FIELD)->referencedEntities(),
-      ContextDocumentStorage::SOURCE_FIELD,
-    );
+    // Collect the per-plugin bootstrap configuration. Each plugin owns its
+    // portion of the config and contributes its cacheable metadata, keeping
+    // this controller plugin-agnostic.
+    $cacheability = new CacheableMetadata();
+    $enabledPlugins = array_keys($this->pluginManager->getDefinitions());
+    // Discovery order is not guaranteed; sort for a deterministic output.
+    sort($enabledPlugins);
+    $pluginConfig = [];
+    foreach ($enabledPlugins as $pluginId) {
+      $config = $this->pluginManager->createInstance($pluginId)->getAppConfig($session, $cacheability);
+      if ($config !== []) {
+        $pluginConfig[$pluginId] = $config;
+      }
+    }
     // Build the configuration object that bootstraps the React app.
     // This data is serialised into window.drupalSettings.oeAiAssistant
     // and read by the React entry point before the first render.
@@ -163,47 +157,17 @@ class AiEditorialSessionController extends ControllerBase {
       // List of plugin IDs that should be available in the UI for this node.
       // The React app only registers plugins whose IDs appear in this list,
       // allowing server-side control over which tools are shown per context.
-      'enabledPlugins' => ['echo', 'notes', 'drafting'],
+      'enabledPlugins' => $enabledPlugins,
       // Per-plugin configuration objects passed directly to each plugin's
-      // frontend initialisation code. Only plugins that require extra context
-      // need an entry here.
-      'pluginConfig' => [
-        // The drafting plugin needs to know which entity type and bundle it
-        // is operating on so it can request the correct content schema and
-        // build appropriately scoped AI prompts.
-        'drafting' => [
-          'entityTypeId' => $entityTypeId,
-          'bundle' => $bundle,
-          // Composer panels. Each is gated by an 'enabled' flag so the host
-          // controls which tabs appear. Tone options come from the tone
-          // vocabulary; template options come from the enabled drafting
-          // templates for the bundle.
-          'tone' => [
-            'enabled' => TRUE,
-            'options' => $tones,
-            'selected' => $selectedTone,
-          ],
-          'templates' => [
-            'enabled' => TRUE,
-            'options' => $this->schemaProvider->availableTemplates($bundle),
-            'selected' => $selectedTemplate,
-          ],
-          'documents' => [
-            'enabled' => TRUE,
-            'options' => $documents,
-          ],
-        ],
-      ],
+      // frontend initialisation code. Only plugins whose getAppConfig()
+      // returns a non-empty array have an entry here.
+      'pluginConfig' => $pluginConfig,
     ];
 
     $build = [
-      // The settings embed the drafting template list, so the page must be
-      // invalidated whenever a template is added, edited or deleted. The
-      // list cache tag covers all three operations for config entities.
-      // The user context is needed because the settings also embed the
-      // current user id.
+      // The user context is needed because the settings embed the current
+      // user id. Plugin-specific cacheability is merged in below.
       '#cache' => [
-        'tags' => ['config:ai_drafting_template_list'],
         'contexts' => ['user'],
       ],
       // The React mount point: a plain <div> with a stable ID that the
@@ -234,11 +198,13 @@ class AiEditorialSessionController extends ControllerBase {
       ],
     ];
 
-    // Invalidate the page when the session or its bundle changes; the
-    // settings embed the session label and the bundle label.
+    // Invalidate the page when the session or its bundle changes (the
+    // settings embed the session label and the bundle label), and merge in
+    // whatever cacheability the plugins declared for their configuration.
     CacheableMetadata::createFromRenderArray($build)
       ->addCacheableDependency($session)
       ->addCacheableDependency($this->sessionEntityTypeManager->getStorage('ai_editorial_session_type')->load($session->bundle()))
+      ->merge($cacheability)
       ->applyTo($build);
 
     return $build;
@@ -259,26 +225,6 @@ class AiEditorialSessionController extends ControllerBase {
       ->load($session->bundle());
 
     return (string) ($bundle?->label() ?? $session->bundle());
-  }
-
-  /**
-   * Serializes internal prompt-ready tone options for frontend bootstrap.
-   *
-   * @param array<int, array{id: string, label: string, description: string, oe_ai_prompt: string}> $options
-   *   The prompt-ready service options.
-   *
-   * @return array<int, array{id: string, label: string, description: string}>
-   *   Frontend-safe tone options.
-   */
-  private function serializeToneOptions(array $options): array {
-    return array_map(
-      static fn (array $option): array => [
-        'id' => $option['id'],
-        'label' => $option['label'],
-        'description' => $option['description'],
-      ],
-      $options,
-    );
   }
 
 }

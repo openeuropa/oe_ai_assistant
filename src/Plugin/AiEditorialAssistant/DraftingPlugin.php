@@ -8,25 +8,18 @@ use Drupal\ai\OperationType\Chat\ChatMessage;
 use Drupal\ai\OperationType\Chat\ChatOutput;
 use Drupal\ai\OperationType\Chat\Tools\ToolsFunctionInput;
 use Drupal\ai_agents\PluginManager\AiAgentManager;
-use Drupal\Core\File\FileExists;
-use Drupal\Core\File\FileSystemInterface;
-use Drupal\file\FileInterface;
-use Drupal\file\Upload\FileUploadHandlerInterface;
-use Drupal\file\Upload\FormUploadedFile;
-use Drupal\file\Upload\InputStreamUploadedFile;
-use Drupal\file\Upload\UploadedFileInterface;
-use Drupal\media\MediaInterface;
+use Drupal\Core\Cache\RefinableCacheableDependencyInterface;
 use Drupal\oe_ai_assistant\Annotation\AiEditorialAssistant;
-use Drupal\oe_ai_assistant\Document\ContextDocumentStorage;
 use Drupal\oe_ai_assistant\Entity\AiConversationMessageInterface;
 use Drupal\oe_ai_assistant\AiDraftingTemplateInterface;
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
 use Drupal\oe_ai_assistant\Exception\ActionException;
+use Drupal\oe_ai_assistant\Service\Drafting\ContextDocumentRepository;
+use Drupal\oe_ai_assistant\Service\Drafting\DocumentRepositoryInterface;
 use Drupal\oe_ai_assistant\Service\Drafting\DraftHistoryInterface;
 use Drupal\oe_ai_assistant\Service\Drafting\EditorialContext;
 use Drupal\oe_ai_assistant\Plugin\AiAssistantPluginBase;
 use Drupal\oe_ai_assistant\Service\AiEditorialContextInterface;
-use Drupal\oe_ai_assistant\Service\DocumentSerializerInterface;
 use Drupal\oe_ai_assistant\Service\DraftingOrchestratorInterface;
 use Drupal\oe_ai_assistant\Service\DraftSaverInterface;
 use Drupal\oe_ai_assistant\Service\DraftingSchemaProviderInterface;
@@ -117,25 +110,11 @@ class DraftingPlugin extends AiAssistantPluginBase {
   protected DraftHistoryInterface $draftHistory;
 
   /**
-   * The file upload handler service.
+   * The context document repository.
    *
-   * @var \Drupal\file\Upload\FileUploadHandlerInterface
+   * @var \Drupal\oe_ai_assistant\Service\Drafting\ContextDocumentRepository
    */
-  protected FileUploadHandlerInterface $fileUploadHandler;
-
-  /**
-   * The file system service.
-   *
-   * @var \Drupal\Core\File\FileSystemInterface
-   */
-  protected FileSystemInterface $fileSystem;
-
-  /**
-   * The document serializer.
-   *
-   * @var \Drupal\oe_ai_assistant\Service\DocumentSerializerInterface
-   */
-  protected DocumentSerializerInterface $documentSerializer;
+  protected ContextDocumentRepository $contextDocumentRepository;
 
   /**
    * {@inheritdoc}
@@ -154,9 +133,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
     $instance->orchestrator = $container->get(DraftingOrchestratorInterface::class);
     $instance->aiEditorialContext = $container->get(AiEditorialContextInterface::class);
     $instance->draftHistory = $container->get(DraftHistoryInterface::class);
-    $instance->fileUploadHandler = $container->get(FileUploadHandlerInterface::class);
-    $instance->fileSystem = $container->get('file_system');
-    $instance->documentSerializer = $container->get(DocumentSerializerInterface::class);
+    $instance->contextDocumentRepository = $container->get(ContextDocumentRepository::class);
     return $instance;
   }
 
@@ -187,10 +164,70 @@ class DraftingPlugin extends AiAssistantPluginBase {
       'save' => 'DraftingSaveRequest',
       'set-tone' => 'DraftingSetToneRequest',
       'set-template' => 'DraftingSetTemplateRequest',
-      'add-document' => 'DraftingAddDocumentRequest',
       'list-documents' => 'DraftingListDocumentsRequest',
       'remove-document' => 'DraftingRemoveDocumentRequest',
+      // The add-document action is multipart rather than JSON, so it is not
+      // validated against a body schema; the action checks its own inputs
+      // and the file is validated through the source field configuration.
     ];
+  }
+
+  /**
+   * {@inheritdoc}
+   *
+   * Provides the drafting scope (entity type and bundle) and the composer
+   * panels. Each panel is gated by an 'enabled' flag so the host controls
+   * which tabs appear. Tone options come from the tone vocabulary; template
+   * options come from the enabled drafting templates for the bundle; the
+   * document options are the session's private context documents.
+   */
+  public function getAppConfig(AiEditorialSessionInterface $session, RefinableCacheableDependencyInterface $cacheability): array {
+    $context = $this->buildContext($session);
+    // The configuration embeds the drafting template list, so the page must
+    // be invalidated whenever a template is added, edited or deleted. The
+    // list cache tag covers all three operations for config entities.
+    $cacheability->addCacheTags(['config:ai_drafting_template_list']);
+
+    return [
+      'entityTypeId' => $context['entityTypeId'],
+      'bundle' => $context['bundle'],
+      'tone' => [
+        'enabled' => TRUE,
+        'options' => $this->serializeToneOptions($this->aiEditorialContext->getAvailableTones()),
+        // The tone already saved on the session, so the app can rehydrate
+        // the selector on load.
+        'selected' => (string) $session->get(static::TONE_FIELD)->target_id,
+      ],
+      'templates' => [
+        'enabled' => TRUE,
+        'options' => $this->schemaProvider->availableTemplates($context['bundle']),
+        'selected' => (string) $session->get(static::TEMPLATE_FIELD)->target_id,
+      ],
+      'documents' => [
+        'enabled' => TRUE,
+        'options' => $this->contextDocumentRepository->list($session),
+      ],
+    ];
+  }
+
+  /**
+   * Serializes internal prompt-ready tone options for frontend bootstrap.
+   *
+   * @param array<int, array{id: string, label: string, description: string, oe_ai_prompt: string}> $options
+   *   The prompt-ready service options.
+   *
+   * @return array<int, array{id: string, label: string, description: string}>
+   *   Frontend-safe tone options.
+   */
+  private function serializeToneOptions(array $options): array {
+    return array_map(
+      static fn (array $option): array => [
+        'id' => $option['id'],
+        'label' => $option['label'],
+        'description' => $option['description'],
+      ],
+      $options,
+    );
   }
 
   /**
@@ -569,7 +606,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
    */
   public function addDocument(Request $request): array {
     $body = $request->request->all();
-    $category = $this->resolveDocumentCategory((string) ($body['category'] ?? ''));
+    $repository = $this->resolveDocumentRepository((string) ($body['category'] ?? ''));
     $session = $this->loadSession($body);
 
     $upload = $request->files->get('file');
@@ -580,27 +617,8 @@ class DraftingPlugin extends AiAssistantPluginBase {
         400,
       );
     }
-    $managedFile = $this->saveUploadedDocument($upload, $category);
-    $managedFile->setPermanent();
-    $managedFile->save();
 
-    $media = NULL;
-    try {
-      $media = $this->createDocumentMedia($managedFile, $upload, $category);
-      $session->get($category['sessionField'])->appendItem([
-        'target_id' => $media->id(),
-      ]);
-      $session->save();
-    }
-    catch (\Throwable $e) {
-      if ($media instanceof MediaInterface) {
-        $media->delete();
-      }
-      $managedFile->delete();
-      throw $e;
-    }
-
-    return ['document' => $this->documentSerializer->serialize($media, ContextDocumentStorage::SOURCE_FIELD)];
+    return ['document' => $repository->add($session, $upload)];
   }
 
   /**
@@ -614,17 +632,10 @@ class DraftingPlugin extends AiAssistantPluginBase {
    */
   public function listDocuments(Request $request): array {
     $body = $this->decodeJsonBody($request);
-    $category = $this->resolveDocumentCategory((string) ($body['category'] ?? ''));
+    $repository = $this->resolveDocumentRepository((string) ($body['category'] ?? ''));
     $session = $this->loadSession($body);
 
-    $documents = [];
-    foreach ($session->get($category['sessionField'])->referencedEntities() as $media) {
-      if ($media instanceof MediaInterface) {
-        $documents[] = $this->documentSerializer->serialize($media, ContextDocumentStorage::SOURCE_FIELD);
-      }
-    }
-
-    return ['documents' => $documents];
+    return ['documents' => $repository->list($session)];
   }
 
   /**
@@ -649,32 +660,9 @@ class DraftingPlugin extends AiAssistantPluginBase {
       );
     }
 
-    $category = $this->resolveDocumentCategory(ContextDocumentStorage::CATEGORY);
-    $field = $session->get($category['sessionField']);
-    $referenced = FALSE;
-    foreach ($field as $delta => $item) {
-      if ((string) $item->target_id === $documentId) {
-        $field->removeItem($delta);
-        $referenced = TRUE;
-        break;
-      }
-    }
-
-    if (!$referenced) {
-      throw new ActionException(
-        'invalid_request',
-        'The document is not referenced by this editorial session.',
-        404,
-      );
-    }
-
-    $media = $this->entityTypeManager->getStorage('media')->load($documentId);
-    $session->save();
-    if ($media instanceof MediaInterface) {
-      $file = $this->getDocumentFile($media);
-      $media->delete();
-      $file?->delete();
-    }
+    // Removal needs no category: the document is identified by its ID and
+    // context documents are the only category referenced by sessions.
+    $this->contextDocumentRepository->remove($session, $documentId);
 
     return ['status' => 'ok'];
   }
@@ -715,22 +703,17 @@ class DraftingPlugin extends AiAssistantPluginBase {
   }
 
   /**
-   * Resolves a document category into server-owned storage details.
+   * Resolves a document category into the repository that serves it.
    *
    * @param string $category
    *   The request category.
    *
-   * @return array{category: string, sessionField: string, mediaBundle: string, sourceField: string}
-   *   The resolved storage details.
+   * @return \Drupal\oe_ai_assistant\Service\Drafting\DocumentRepositoryInterface
+   *   The document repository for the category.
    */
-  private function resolveDocumentCategory(string $category): array {
-    if ($category === ContextDocumentStorage::CATEGORY) {
-      return [
-        'category' => ContextDocumentStorage::CATEGORY,
-        'sessionField' => ContextDocumentStorage::SESSION_FIELD,
-        'mediaBundle' => ContextDocumentStorage::MEDIA_BUNDLE,
-        'sourceField' => ContextDocumentStorage::SOURCE_FIELD,
-      ];
+  private function resolveDocumentRepository(string $category): DocumentRepositoryInterface {
+    if ($category === ContextDocumentRepository::CATEGORY) {
+      return $this->contextDocumentRepository;
     }
 
     throw new ActionException(
@@ -738,155 +721,6 @@ class DraftingPlugin extends AiAssistantPluginBase {
       sprintf('Unsupported document category "%s".', $category),
       400,
     );
-  }
-
-  /**
-   * Saves an uploaded document as a managed private file.
-   *
-   * @param \Symfony\Component\HttpFoundation\File\UploadedFile $upload
-   *   The uploaded file.
-   * @param array $category
-   *   The resolved category storage details.
-   *
-   * @return \Drupal\file\FileInterface
-   *   The managed file entity.
-   */
-  private function saveUploadedDocument(UploadedFile $upload, array $category): FileInterface {
-    $directory = ContextDocumentStorage::UPLOAD_DIRECTORY;
-    if (!$this->fileSystem->prepareDirectory(
-      $directory,
-      FileSystemInterface::CREATE_DIRECTORY | FileSystemInterface::MODIFY_PERMISSIONS,
-    )) {
-      throw new ActionException(
-        'upload_failed',
-        'The private document directory could not be prepared.',
-        500,
-      );
-    }
-
-    try {
-      $result = $this->fileUploadHandler->handleFileUpload(
-        $this->createDrupalUploadedFile($upload),
-        ['FileExtension' => []],
-        $directory,
-        FileExists::Rename,
-      );
-    }
-    catch (\Throwable $e) {
-      $this->logger->error('Context document upload failed: @message', [
-        '@message' => $e->getMessage(),
-      ]);
-      throw new ActionException(
-        'upload_failed',
-        'The uploaded document could not be saved.',
-        500,
-      );
-    }
-
-    if ($result->hasViolations()) {
-      $messages = [];
-      foreach ($result->getViolations() as $violation) {
-        $messages[] = (string) $violation->getMessage();
-      }
-      throw new ActionException(
-        'invalid_request',
-        implode(' ', $messages),
-        400,
-      );
-    }
-
-    return $result->getFile();
-  }
-
-  /**
-   * Wraps a Symfony upload for Drupal's upload handler.
-   *
-   * @param \Symfony\Component\HttpFoundation\File\UploadedFile $upload
-   *   The source upload.
-   *
-   * @return \Drupal\file\Upload\UploadedFileInterface
-   *   The Drupal upload adapter.
-   */
-  private function createDrupalUploadedFile(UploadedFile $upload): UploadedFileInterface {
-    if (is_uploaded_file($upload->getPathname())) {
-      return new FormUploadedFile($upload);
-    }
-
-    return new InputStreamUploadedFile(
-      $upload->getClientOriginalName(),
-      $upload->getClientOriginalName(),
-      $upload->getPathname(),
-      $upload->getSize(),
-    );
-  }
-
-  /**
-   * Creates the document media entity for a managed file.
-   *
-   * @param \Drupal\file\FileInterface $file
-   *   The managed file entity.
-   * @param \Symfony\Component\HttpFoundation\File\UploadedFile $upload
-   *   The source upload.
-   * @param array $category
-   *   The resolved category storage details.
-   *
-   * @return \Drupal\media\MediaInterface
-   *   The saved media entity.
-   */
-  private function createDocumentMedia(FileInterface $file, UploadedFile $upload, array $category): MediaInterface {
-    $media = $this->entityTypeManager->getStorage('media')->create([
-      'bundle' => $category['mediaBundle'],
-      'name' => $upload->getClientOriginalName(),
-      'status' => 0,
-      $category['sourceField'] => [
-        'target_id' => $file->id(),
-        'entity' => $file,
-      ],
-    ]);
-    $file->enforceIsNew();
-    try {
-      $violations = $media->get($category['sourceField'])->validate();
-    }
-    finally {
-      $file->enforceIsNew(FALSE);
-    }
-    if ($violations->count() > 0) {
-      $messages = [];
-      foreach ($violations as $violation) {
-        $messages[] = (string) $violation->getMessage();
-      }
-      throw new ActionException(
-        'invalid_request',
-        implode(' ', $messages),
-        400,
-      );
-    }
-
-    $media->save();
-
-    if (!$media instanceof MediaInterface) {
-      throw new ActionException(
-        'upload_failed',
-        'The uploaded document could not be saved.',
-        500,
-      );
-    }
-
-    return $media;
-  }
-
-  /**
-   * Gets the file referenced by a document media entity.
-   *
-   * @param \Drupal\media\MediaInterface $media
-   *   The document media entity.
-   *
-   * @return \Drupal\file\FileInterface|null
-   *   The referenced file, if available.
-   */
-  private function getDocumentFile(MediaInterface $media): ?FileInterface {
-    $file = $media->get(ContextDocumentStorage::SOURCE_FIELD)->entity;
-    return $file instanceof FileInterface ? $file : NULL;
   }
 
   /**

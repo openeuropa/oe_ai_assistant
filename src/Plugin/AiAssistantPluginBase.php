@@ -7,6 +7,7 @@ namespace Drupal\oe_ai_assistant\Plugin;
 use Drupal\ai\AiProviderPluginManager;
 use Drupal\ai\OperationType\Chat\ChatMessage;
 use Drupal\Component\Plugin\Exception\PluginException;
+use Drupal\Core\Cache\RefinableCacheableDependencyInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Plugin\ContainerFactoryPluginInterface;
 use Drupal\Core\Plugin\PluginBase;
@@ -120,6 +121,16 @@ abstract class AiAssistantPluginBase extends PluginBase implements AiAssistantPl
     return [
       'get-messages' => 'GetMessagesRequest',
     ];
+  }
+
+  /**
+   * {@inheritdoc}
+   *
+   * Most plugins need no bootstrap configuration; plugins that do override
+   * this method.
+   */
+  public function getAppConfig(AiEditorialSessionInterface $session, RefinableCacheableDependencyInterface $cacheability): array {
+    return [];
   }
 
   /**

@@ -8,7 +8,6 @@ use Drupal\file\Entity\File;
 use Drupal\file\FileInterface;
 use Drupal\media\Entity\Media;
 use Drupal\media\MediaInterface;
-use Drupal\oe_ai_assistant\Document\ContextDocumentStorage;
 use Drupal\oe_ai_assistant\Entity\AiConversationMessage;
 use Drupal\oe_ai_assistant\Entity\AiConversationMessageInterface;
 use Drupal\oe_ai_assistant\Entity\AiEditorialSession;
@@ -139,7 +138,7 @@ class AiEditorialSessionMessageCleanupTest extends AiEditorialSessionKernelTestB
     $session = $this->createSession($user);
     [$media, $file] = $this->createContextDocument('brief.txt');
 
-    $session->get(ContextDocumentStorage::SESSION_FIELD)->appendItem([
+    $session->get('context_documents')->appendItem([
       'target_id' => $media->id(),
     ]);
     $session->save();
@@ -193,10 +192,10 @@ class AiEditorialSessionMessageCleanupTest extends AiEditorialSessionKernelTestB
     $file->save();
 
     $media = Media::create([
-      'bundle' => ContextDocumentStorage::MEDIA_BUNDLE,
+      'bundle' => 'ai_context_document',
       'name' => $filename,
       'status' => 0,
-      ContextDocumentStorage::SOURCE_FIELD => [
+      'oe_ai_context_document' => [
         'target_id' => $file->id(),
       ],
     ]);
@@ -209,7 +208,7 @@ class AiEditorialSessionMessageCleanupTest extends AiEditorialSessionKernelTestB
    * Attaches a context document to a session.
    */
   private function attachContextDocument(AiEditorialSessionInterface $session, MediaInterface $media): void {
-    $session->get(ContextDocumentStorage::SESSION_FIELD)->appendItem([
+    $session->get('context_documents')->appendItem([
       'target_id' => $media->id(),
     ]);
     $session->save();
