@@ -157,10 +157,6 @@ DraftingDocument:
     summary:
       type: string
       description: Extracted document summary used as temporary drafting context.
-    extractionStatus:
-      type: string
-      enum: [pending, processing, completed, failed]
-      description: Current text extraction state when no summary is available yet.
 
 DraftingAddDocumentRequest:
   type: object

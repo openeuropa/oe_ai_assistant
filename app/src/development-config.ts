@@ -66,7 +66,6 @@ export const developmentConfig = {
             id: "c9bf9e57-1685-4c89-bafb-ff5af830be8a",
             title: "Stakeholder comments.docx",
             meta: { type: "docx", size: 98304 },
-            extractionStatus: "processing",
           },
         ],
       },
