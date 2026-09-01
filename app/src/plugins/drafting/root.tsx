@@ -192,7 +192,7 @@ function DraftingChat() {
     tabs.push({
       id: "documents",
       icon: <FileText size={20} />,
-      title: "Documents",
+      title: "Context documents",
       summary:
         documents.count === 1 ? "1 document" : `${documents.count} documents`,
       render: (close) => (
