@@ -12,7 +12,6 @@ use Drupal\media\Entity\Media;
 use Drupal\media\Entity\MediaType;
 use Drupal\media\MediaInterface;
 use Drupal\oe_ai_assistant\Document\ContextDocumentStorage;
-use Drupal\oe_ai_assistant\Exception\DocumentSummaryExtractionException;
 use Drupal\oe_ai_assistant\Service\DocumentSummaryExtractorInterface;
 use Drupal\oe_ai_assistant_test\Plugin\AiProvider\MockAiProvider;
 use Drupal\oe_ai_assistant_test\Plugin\AiProvider\MockResponse;
@@ -89,28 +88,19 @@ class DocumentSummaryExtractorTest extends AiEditorialSessionKernelTestBase {
   }
 
   /**
-   * Tests provider failures clear stale summaries and surface an error.
+   * Tests media presave failures clear stale summaries.
    */
-  public function testProviderErrorLeavesSummaryEmptyAndReportsFailure(): void {
+  public function testMediaPresaveFailureLeavesSummaryEmpty(): void {
     MockAiProvider::enqueue(new MockResponse(
       error: new \RuntimeException('Provider exploded.'),
     ));
     $file = $this->createManagedFile('failure.txt', 'Context document contents.');
     $media = $this->createUnsavedContextDocument($file, 'Stale summary.');
 
-    try {
-      $this->container
-        ->get(DocumentSummaryExtractorInterface::class)
-        ->extract($media);
-      $this->fail('Provider failure did not surface as an extraction exception.');
-    }
-    catch (DocumentSummaryExtractionException $e) {
-      $this->assertSame('The document summary could not be extracted.', $e->getMessage());
-      $this->assertInstanceOf(\RuntimeException::class, $e->getPrevious());
-      $this->assertSame('Provider exploded.', $e->getPrevious()->getMessage());
-    }
+    $media->save();
 
     $this->assertTrue($media->get(ContextDocumentStorage::SUMMARY_FIELD)->isEmpty());
+    $this->assertCount(1, MockAiProvider::getCallLog());
   }
 
   /**
