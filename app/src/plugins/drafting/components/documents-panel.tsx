@@ -1,8 +1,9 @@
 import { FileText, Upload, X } from "lucide-react";
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import { Pane } from "@/components/ui/pane";
 import { formatFileSize } from "@/lib/format-file-size";
 import type { DraftingDocument } from "../hooks/use-drafting-documents";
+import { ConfirmRemovalDialog } from "./confirm-removal-dialog";
 
 export interface DocumentsPanelProps {
   /** Documents attached to ground the next draft. */
@@ -45,6 +46,10 @@ export function DocumentsPanel({
   error = null,
 }: DocumentsPanelProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // Document awaiting removal confirmation; NULL keeps the dialog closed.
+  const [pendingRemoval, setPendingRemoval] = useState<DraftingDocument | null>(
+    null,
+  );
 
   return (
     <Pane
@@ -111,9 +116,7 @@ export function DocumentsPanel({
                   type="button"
                   className="cursor-pointer rounded-md p-1 text-gray-400 hover:bg-white hover:text-gray-600 disabled:cursor-not-allowed disabled:opacity-50"
                   aria-label={`Remove ${document.title}`}
-                  onClick={() => {
-                    void Promise.resolve(onRemove(document.id)).catch(() => {});
-                  }}
+                  onClick={() => setPendingRemoval(document)}
                   disabled={isSaving}
                 >
                   <X size={14} />
@@ -127,6 +130,21 @@ export function DocumentsPanel({
             session.
           </p>
         )}
+
+        {/* Removal confirmation; deletes only after explicit approval. */}
+        <ConfirmRemovalDialog
+          open={pendingRemoval !== null}
+          title="Remove context document"
+          message={`"${pendingRemoval?.title}" will be deleted and would need to be uploaded again to feed the drafting context.`}
+          confirmLabel="Delete document"
+          onConfirm={async () => {
+            if (pendingRemoval) {
+              await onRemove(pendingRemoval.id);
+              setPendingRemoval(null);
+            }
+          }}
+          onCancel={() => setPendingRemoval(null)}
+        />
       </div>
     </Pane>
   );

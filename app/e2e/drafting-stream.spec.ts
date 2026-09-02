@@ -252,8 +252,7 @@ test.describe("Drafting text streaming", () => {
     const uploadedDocument = {
       id: "uploaded-context-document",
       title: "Reload memo.txt",
-      meta: { type: "txt", size: "11 B" },
-      extractionStatus: "completed",
+      meta: { type: "txt", size: 11 },
     };
     let resolveRemoval!: () => void;
     const removalResponse = new Promise<void>((resolve) => {
@@ -304,32 +303,44 @@ test.describe("Drafting text streaming", () => {
 
     await expect(page.getByText(uploadedDocument.title)).toBeVisible();
     await page.getByRole("button", { name: "Save" }).click();
-    await expect(page.getByRole("button", { name: /Context documents/ })).toContainText(
-      "3 documents",
-    );
+    await expect(
+      page.getByRole("button", { name: /Context documents/ }),
+    ).toContainText("3 documents");
 
     await page.getByRole("button", { name: /Context documents/ }).click();
     await page
       .getByRole("button", { name: `Remove ${uploadedDocument.title}` })
       .click();
-    await expect(page.getByText(uploadedDocument.title)).toBeVisible();
+    // Removal requires explicit confirmation; while the request is pending
+    // the dialog stays open with the confirm control locked.
+    await page.getByRole("button", { name: "Delete document" }).click();
+    await expect(
+      page.getByRole("button", { name: "Delete document" }),
+    ).toBeDisabled();
 
     resolveRemoval();
 
-    await expect(page.getByText(uploadedDocument.title)).toBeHidden();
+    // Exact match targets the list row; the dialog message quotes the
+    // title inside a longer sentence.
+    await expect(
+      page.getByText(uploadedDocument.title, { exact: true }),
+    ).toBeHidden();
     await page.getByRole("button", { name: "Save" }).click();
-    await expect(page.getByRole("button", { name: /Context documents/ })).toContainText(
-      "2 documents",
-    );
+    await expect(
+      page.getByRole("button", { name: /Context documents/ }),
+    ).toContainText("2 documents");
 
     await page.getByRole("button", { name: /Context documents/ }).click();
     await page
       .getByRole("button", { name: "Remove EU AI Act briefing note.pdf" })
       .click();
+    await page.getByRole("button", { name: "Delete document" }).click();
 
-    await expect(page.getByText("EU AI Act briefing note.pdf")).toBeVisible();
+    // The failure keeps the confirmation dialog open with the error.
     await expect(
       page.getByText("Drafting remove-document error: 500"),
     ).toBeVisible();
+    await page.getByRole("button", { name: "Cancel" }).click();
+    await expect(page.getByText("EU AI Act briefing note.pdf")).toBeVisible();
   });
 });

@@ -28,20 +28,18 @@ export function useDraftingDocuments() {
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  /** Removes a document from the persisted context list. */
+  /**
+   * Removes a document from the persisted context list.
+   *
+   * Failures are rethrown without touching the panel-level error state:
+   * the removal confirmation dialog owns their display.
+   */
   async function removeDocument(id: string) {
     setIsSaving(true);
     setError(null);
     try {
       await removeDraftingDocument(id);
       setSelected((current) => current.filter((item) => item.id !== id));
-    } catch (exception) {
-      setError(
-        exception instanceof Error
-          ? exception.message
-          : "The document could not be removed.",
-      );
-      throw exception;
     } finally {
       setIsSaving(false);
     }

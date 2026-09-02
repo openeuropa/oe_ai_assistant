@@ -182,6 +182,8 @@ describe("useDraftingDocuments", () => {
 
     expect(selectedState()).toEqual([initialDocument]);
     expect(isSavingState()).toBe(false);
-    expect(errorState()).toBe("Drafting remove-document error: 500");
+    // Removal failures surface in the confirmation dialog, not the panel
+    // error banner, so the hook leaves the shared error state untouched.
+    expect(errorState()).toBeNull();
   });
 });
