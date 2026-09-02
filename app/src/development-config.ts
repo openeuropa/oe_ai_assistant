@@ -52,20 +52,8 @@ export const developmentConfig = {
         ],
       },
       documents: {
+        // The document list is fetched from the mock API after boot.
         enabled: true,
-        // Ids are the server-assigned document UUIDs.
-        options: [
-          {
-            id: "3f2504e0-4f89-41d3-9a0c-0305e82c3301",
-            title: "EU AI Act briefing note.pdf",
-            meta: { type: "pdf", size: 245760 },
-          },
-          {
-            id: "c9bf9e57-1685-4c89-bafb-ff5af830be8a",
-            title: "Stakeholder comments.docx",
-            meta: { type: "docx", size: 98304 },
-          },
-        ],
       },
     },
   },

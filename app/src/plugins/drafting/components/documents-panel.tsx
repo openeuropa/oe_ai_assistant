@@ -1,4 +1,4 @@
-import { FileText, Upload, X } from "lucide-react";
+import { FileText, Loader2, Upload, X } from "lucide-react";
 import { useRef, useState } from "react";
 import { Pane } from "@/components/ui/pane";
 import { formatFileSize } from "@/lib/format-file-size";
@@ -22,6 +22,10 @@ export interface DocumentsPanelProps {
   /** Closes the panel; uploads and removals persist immediately. */
   onClose: () => void;
   isSaving?: boolean;
+  /** TRUE while the initial document list is being fetched. */
+  isLoading?: boolean;
+  /** Failure of the initial document fetch, shown instead of the list. */
+  loadError?: string | null;
 }
 
 /**
@@ -39,6 +43,8 @@ export function DocumentsPanel({
   onDismissUpload,
   onClose,
   isSaving = false,
+  isLoading = false,
+  loadError = null,
 }: DocumentsPanelProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   // Document awaiting removal confirmation; NULL keeps the dialog closed.
@@ -61,7 +67,7 @@ export function DocumentsPanel({
           type="button"
           className="block w-full cursor-pointer rounded-lg border border-dashed border-gray-300 bg-white p-4 text-center hover:border-blue-300 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-50"
           onClick={() => fileInputRef.current?.click()}
-          disabled={isSaving}
+          disabled={isSaving || isLoading}
         >
           <Upload size={18} className="mx-auto mb-2 text-gray-400" />
           <p className="text-xs font-medium text-gray-700">
@@ -83,8 +89,24 @@ export function DocumentsPanel({
           }}
         />
 
+        {/* Documents are fetched after boot; block interaction until the
+            list request settles, and surface its failure in place. */}
+        {isLoading && (
+          <p className="flex items-center gap-2 rounded-md border border-gray-200 bg-white px-3 py-2 text-xs text-gray-600">
+            <Loader2 size={14} className="animate-spin" />
+            Loading documents
+          </p>
+        )}
+        {!isLoading && loadError && (
+          <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+            {loadError}
+          </p>
+        )}
+
         {/* Attached documents and upload slots, two per row. */}
-        {selected.length > 0 || uploads.length > 0 ? (
+        {!isLoading &&
+        !loadError &&
+        (selected.length > 0 || uploads.length > 0) ? (
           <div className="grid gap-2 md:grid-cols-2">
             {selected.map((document) => (
               <div
@@ -152,12 +174,16 @@ export function DocumentsPanel({
               </div>
             ))}
           </div>
-        ) : (
-          <p className="rounded-md border border-gray-200 bg-white px-3 py-2 text-xs text-gray-600">
-            No temporary context documents are attached to this drafting
-            session.
-          </p>
-        )}
+        ) : null}
+        {!isLoading &&
+          !loadError &&
+          selected.length === 0 &&
+          uploads.length === 0 && (
+            <p className="rounded-md border border-gray-200 bg-white px-3 py-2 text-xs text-gray-600">
+              No temporary context documents are attached to this drafting
+              session.
+            </p>
+          )}
 
         {/* Removal confirmation; deletes only after explicit approval. */}
         <ConfirmRemovalDialog

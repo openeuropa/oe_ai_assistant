@@ -59,6 +59,23 @@ export const Empty: Story = {
   ),
 };
 
+/** Initial document fetch in flight: interaction is blocked. */
+export const Loading: Story = {
+  render: () => (
+    <div className="max-w-2xl border border-gray-200 bg-white">
+      <DocumentsPanel
+        selected={[]}
+        uploads={[]}
+        onRemove={() => {}}
+        onUpload={() => {}}
+        onDismissUpload={() => {}}
+        onClose={() => {}}
+        isLoading
+      />
+    </div>
+  ),
+};
+
 /**
  * Concurrent uploads in flight: each file holds a slot with an
  * indeterminate progress bar and no remove cross.

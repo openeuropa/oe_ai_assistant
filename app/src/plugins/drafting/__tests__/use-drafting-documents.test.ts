@@ -10,10 +10,14 @@ const reactState = vi.hoisted(() => ({
 
 const apiMocks = vi.hoisted(() => ({
   addDraftingDocument: vi.fn(),
+  listDraftingDocuments: vi.fn(),
   removeDraftingDocument: vi.fn(),
 }));
 
 vi.mock("react", () => ({
+  useEffect: vi.fn((effect: () => void | (() => void)) => {
+    effect();
+  }),
   useState: vi.fn((initialValue: unknown) => {
     const index = reactState.values.length;
     reactState.values.push(
@@ -77,6 +81,19 @@ function isSavingState(): boolean {
   return reactState.values[2] as boolean;
 }
 
+function isLoadingState(): boolean {
+  return reactState.values[3] as boolean;
+}
+
+function loadErrorState(): string | null {
+  return reactState.values[4] as string | null;
+}
+
+/** Settles promises queued by the initial list fetch. */
+async function flushAsync(): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, 0));
+}
+
 /** Reads the exit-guard flag the hook reports for document requests. */
 function pendingDocumentsWork(): boolean {
   return useAppStore.getState().pendingWork["drafting:documents"] ?? false;
@@ -86,7 +103,9 @@ describe("useDraftingDocuments", () => {
   beforeEach(() => {
     reactState.values = [];
     apiMocks.addDraftingDocument.mockReset();
+    apiMocks.listDraftingDocuments.mockReset();
     apiMocks.removeDraftingDocument.mockReset();
+    apiMocks.listDraftingDocuments.mockResolvedValue([initialDocument]);
     setConfig({
       userId: "editor",
       sessionId: "session-42",
@@ -94,11 +113,39 @@ describe("useDraftingDocuments", () => {
         drafting: {
           documents: {
             enabled: true,
-            options: [initialDocument],
           },
         },
       },
     });
+  });
+
+  it("fetches the persisted documents on boot", async () => {
+    const { useDraftingDocuments } = await loadHook();
+    useDraftingDocuments();
+
+    // The panel blocks interaction until the list request settles.
+    expect(isLoadingState()).toBe(true);
+
+    await flushAsync();
+
+    expect(apiMocks.listDraftingDocuments).toHaveBeenCalledWith("context");
+    expect(selectedState()).toEqual([initialDocument]);
+    expect(isLoadingState()).toBe(false);
+    expect(loadErrorState()).toBeNull();
+  });
+
+  it("surfaces initial list failures instead of the document list", async () => {
+    apiMocks.listDraftingDocuments.mockRejectedValue(
+      new Error("Drafting list-documents error: 500"),
+    );
+    const { useDraftingDocuments } = await loadHook();
+    useDraftingDocuments();
+
+    await flushAsync();
+
+    expect(selectedState()).toEqual([]);
+    expect(isLoadingState()).toBe(false);
+    expect(loadErrorState()).toBe("Drafting list-documents error: 500");
   });
 
   it("uploads files concurrently and appends server-returned documents", async () => {
@@ -107,6 +154,7 @@ describe("useDraftingDocuments", () => {
       .mockResolvedValueOnce(uploadedDocuments[1]);
     const { useDraftingDocuments } = await loadHook();
     const documents = useDraftingDocuments();
+    await flushAsync();
 
     const upload = documents.uploadFiles(
       fileList([
@@ -153,11 +201,13 @@ describe("useDraftingDocuments", () => {
     );
     const { useDraftingDocuments } = await loadHook();
     const documents = useDraftingDocuments();
+    await flushAsync();
 
     const removal = documents.removeDocument(initialDocument.id);
 
     expect(apiMocks.removeDraftingDocument).toHaveBeenCalledWith(
       initialDocument.id,
+      "context",
     );
     expect(selectedState()).toEqual([initialDocument]);
     expect(isSavingState()).toBe(true);
@@ -178,6 +228,7 @@ describe("useDraftingDocuments", () => {
       .mockResolvedValueOnce(uploadedDocuments[1]);
     const { useDraftingDocuments } = await loadHook();
     const documents = useDraftingDocuments();
+    await flushAsync();
 
     await documents.uploadFiles(
       fileList([
@@ -211,6 +262,7 @@ describe("useDraftingDocuments", () => {
     );
     const { useDraftingDocuments } = await loadHook();
     const documents = useDraftingDocuments();
+    await flushAsync();
 
     await expect(documents.removeDocument(initialDocument.id)).rejects.toThrow(
       "Drafting remove-document error: 500",

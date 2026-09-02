@@ -193,8 +193,11 @@ function DraftingChat() {
       id: "documents",
       icon: <FileText size={20} />,
       title: "Context documents",
-      summary:
-        documents.count === 1 ? "1 document" : `${documents.count} documents`,
+      summary: documents.isLoading
+        ? "Loading"
+        : documents.count === 1
+          ? "1 document"
+          : `${documents.count} documents`,
       render: (close) => (
         <DocumentsPanel
           selected={documents.selected}
@@ -204,6 +207,8 @@ function DraftingChat() {
           onDismissUpload={documents.dismissUpload}
           onClose={close}
           isSaving={documents.isSaving}
+          isLoading={documents.isLoading}
+          loadError={documents.loadError}
         />
       ),
     });

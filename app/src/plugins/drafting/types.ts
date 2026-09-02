@@ -79,8 +79,8 @@ export interface DraftingPluginConfig {
   tone?: DraftingSelectPanelConfig;
   /** Template panel: gate + available templates. */
   templates?: DraftingSelectPanelConfig;
-  /** Documents panel: gate + documents attached from the server. */
-  documents?: { enabled?: boolean; options?: DraftingDocument[] };
+  /** Documents panel gate; the list itself is fetched after boot. */
+  documents?: { enabled?: boolean };
 }
 
 /** Response body for the drafting reset endpoint. */

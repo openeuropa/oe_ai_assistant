@@ -179,7 +179,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
    * panels. Each panel is gated by an 'enabled' flag so the host controls
    * which tabs appear. Tone options come from the tone vocabulary; template
    * options come from the enabled drafting templates for the bundle; the
-   * document options are the session's private context documents.
+   * document list is fetched by the app through the list-documents action.
    */
   public function getAppConfig(AiEditorialSessionInterface $session, RefinableCacheableDependencyInterface $cacheability): array {
     $context = $this->buildContext($session);
@@ -204,8 +204,9 @@ class DraftingPlugin extends AiAssistantPluginBase {
         'selected' => (string) $session->get(static::TEMPLATE_FIELD)->target_id,
       ],
       'documents' => [
+        // Only the gate ships with the bootstrap; the app fetches the
+        // document list through the list-documents action after boot.
         'enabled' => TRUE,
-        'options' => $this->contextDocumentRepository->list($session),
       ],
     ];
   }

@@ -30,9 +30,8 @@ interface MockDocument {
   title: string;
   meta: {
     type: string;
-    size: string;
+    size: number;
   };
-  extractionStatus: "pending" | "processing" | "completed" | "failed";
 }
 
 interface MultipartFileInfo {
@@ -44,27 +43,18 @@ const initialMockDocuments: MockDocument[] = [
   {
     id: "3f2504e0-4f89-41d3-9a0c-0305e82c3301",
     title: "EU AI Act briefing note.pdf",
-    meta: { type: "pdf", size: "240 KB" },
-    extractionStatus: "completed",
+    meta: { type: "pdf", size: 245760 },
   },
   {
     id: "c9bf9e57-1685-4c89-bafb-ff5af830be8a",
     title: "Stakeholder comments.docx",
-    meta: { type: "docx", size: "96 KB" },
-    extractionStatus: "processing",
+    meta: { type: "docx", size: 98304 },
   },
 ];
 
 function extensionFromFilename(filename: string): string {
   const extension = filename.split(".").pop();
   return extension && extension !== filename ? extension.toLowerCase() : "file";
-}
-
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) {
-    return `${bytes} B`;
-  }
-  return `${Math.ceil(bytes / 1024)} KB`;
 }
 
 async function readRequestBody(req: NodeJS.ReadableStream): Promise<Buffer> {
@@ -354,9 +344,8 @@ export function createDraftingRouter(service: DraftingService): Router {
       title: file.filename,
       meta: {
         type: extensionFromFilename(file.filename),
-        size: formatBytes(file.size),
+        size: file.size,
       },
-      extractionStatus: "completed",
     };
     const documents = documentsBySession.get(sessionId) ?? [];
     documentsBySession.set(sessionId, [...documents, document]);
