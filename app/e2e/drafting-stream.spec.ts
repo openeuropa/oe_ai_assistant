@@ -293,7 +293,7 @@ test.describe("Drafting text streaming", () => {
     );
 
     await page.goto("/#/drafting");
-    await page.getByRole("button", { name: /Documents/ }).click();
+    await page.getByRole("button", { name: /Context documents/ }).click();
 
     await expect(page.getByText("EU AI Act briefing note.pdf")).toBeVisible();
     await page.locator('input[type="file"]').setInputFiles({
@@ -304,11 +304,11 @@ test.describe("Drafting text streaming", () => {
 
     await expect(page.getByText(uploadedDocument.title)).toBeVisible();
     await page.getByRole("button", { name: "Save" }).click();
-    await expect(page.getByRole("button", { name: /Documents/ })).toContainText(
+    await expect(page.getByRole("button", { name: /Context documents/ })).toContainText(
       "3 documents",
     );
 
-    await page.getByRole("button", { name: /Documents/ }).click();
+    await page.getByRole("button", { name: /Context documents/ }).click();
     await page
       .getByRole("button", { name: `Remove ${uploadedDocument.title}` })
       .click();
@@ -318,11 +318,11 @@ test.describe("Drafting text streaming", () => {
 
     await expect(page.getByText(uploadedDocument.title)).toBeHidden();
     await page.getByRole("button", { name: "Save" }).click();
-    await expect(page.getByRole("button", { name: /Documents/ })).toContainText(
+    await expect(page.getByRole("button", { name: /Context documents/ })).toContainText(
       "2 documents",
     );
 
-    await page.getByRole("button", { name: /Documents/ }).click();
+    await page.getByRole("button", { name: /Context documents/ }).click();
     await page
       .getByRole("button", { name: "Remove EU AI Act briefing note.pdf" })
       .click();
