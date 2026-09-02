@@ -192,18 +192,23 @@ function DraftingChat() {
     tabs.push({
       id: "documents",
       icon: <FileText size={20} />,
-      title: "Documents",
-      summary: `${documents.count} documents`,
+      title: "Context documents",
+      summary: documents.isLoading
+        ? "Loading"
+        : documents.count === 1
+          ? "1 document"
+          : `${documents.count} documents`,
       render: (close) => (
         <DocumentsPanel
           selected={documents.selected}
+          uploads={documents.uploads}
           onRemove={documents.removeDocument}
           onUpload={documents.uploadFiles}
-          onSave={async () => {
-            // No backend yet; just close the pane.
-            close();
-          }}
-          onCancel={close}
+          onDismissUpload={documents.dismissUpload}
+          onClose={close}
+          isSaving={documents.isSaving}
+          isLoading={documents.isLoading}
+          loadError={documents.loadError}
         />
       ),
     });

@@ -243,4 +243,104 @@ test.describe("Drafting text streaming", () => {
     });
     expect(finishEvent).toBeDefined();
   });
+
+  test("documents panel persists upload and removal through API calls", async ({
+    page,
+  }) => {
+    await mockApiRoutes(page);
+
+    const uploadedDocument = {
+      id: "uploaded-context-document",
+      title: "Reload memo.txt",
+      meta: { type: "txt", size: 11 },
+    };
+    let resolveRemoval!: () => void;
+    const removalResponse = new Promise<void>((resolve) => {
+      resolveRemoval = resolve;
+    });
+
+    await page.route("**/api/plugins/drafting/add-document", (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ document: uploadedDocument }),
+      }),
+    );
+    await page.route(
+      "**/api/plugins/drafting/remove-document",
+      async (route) => {
+        const body = route.request().postDataJSON() as { documentId?: string };
+
+        if (body.documentId === uploadedDocument.id) {
+          await removalResponse;
+          return route.fulfill({
+            status: 200,
+            contentType: "application/json",
+            body: JSON.stringify({ status: "ok" }),
+          });
+        }
+
+        return route.fulfill({
+          status: 500,
+          contentType: "application/json",
+          body: JSON.stringify({
+            code: "server_error",
+            message: "Removal failed",
+          }),
+        });
+      },
+    );
+
+    await page.goto("/#/drafting");
+    await page.getByRole("button", { name: /Context documents/ }).click();
+
+    await expect(page.getByText("EU AI Act briefing note.pdf")).toBeVisible();
+    await page.locator('input[type="file"]').setInputFiles({
+      name: "Reload memo.txt",
+      mimeType: "text/plain",
+      buffer: Buffer.from("hello world"),
+    });
+
+    await expect(page.getByText(uploadedDocument.title)).toBeVisible();
+    await page.getByRole("button", { name: "Close" }).click();
+    await expect(
+      page.getByRole("button", { name: /Context documents/ }),
+    ).toContainText("3 documents");
+
+    await page.getByRole("button", { name: /Context documents/ }).click();
+    await page
+      .getByRole("button", { name: `Remove ${uploadedDocument.title}` })
+      .click();
+    // Removal requires explicit confirmation; while the request is pending
+    // the dialog stays open with the confirm control locked.
+    await page.getByRole("button", { name: "Delete document" }).click();
+    await expect(
+      page.getByRole("button", { name: "Delete document" }),
+    ).toBeDisabled();
+
+    resolveRemoval();
+
+    // Exact match targets the list row; the dialog message quotes the
+    // title inside a longer sentence.
+    await expect(
+      page.getByText(uploadedDocument.title, { exact: true }),
+    ).toBeHidden();
+    await page.getByRole("button", { name: "Close" }).click();
+    await expect(
+      page.getByRole("button", { name: /Context documents/ }),
+    ).toContainText("2 documents");
+
+    await page.getByRole("button", { name: /Context documents/ }).click();
+    await page
+      .getByRole("button", { name: "Remove EU AI Act briefing note.pdf" })
+      .click();
+    await page.getByRole("button", { name: "Delete document" }).click();
+
+    // The failure keeps the confirmation dialog open with the error.
+    await expect(
+      page.getByText("Drafting remove-document error: 500"),
+    ).toBeVisible();
+    await page.getByRole("button", { name: "Cancel" }).click();
+    await expect(page.getByText("EU AI Act briefing note.pdf")).toBeVisible();
+  });
 });

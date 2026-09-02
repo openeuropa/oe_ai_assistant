@@ -351,7 +351,7 @@ class DraftingPluginDocumentsTest extends AiEditorialSessionKernelTestBase {
   /**
    * Tests unsupported document categories are rejected.
    */
-  #[DataProvider('documentActionAccessProvider')]
+  #[DataProvider('categorizedDocumentActionProvider')]
   public function testUnsupportedDocumentCategoryIsRejected(string $action): void {
     $owner = $this->createUser();
     $this->container->get('current_user')->setAccount($owner);
@@ -381,6 +381,19 @@ class DraftingPluginDocumentsTest extends AiEditorialSessionKernelTestBase {
       'add-document' => ['add-document'],
       'list-documents' => ['list-documents'],
       'remove-document' => ['remove-document'],
+    ];
+  }
+
+  /**
+   * Provides document action names that require a category.
+   *
+   * @return array<string, array{0: string}>
+   *   Test cases keyed by action name.
+   */
+  public static function categorizedDocumentActionProvider(): array {
+    return [
+      'add-document' => ['add-document'],
+      'list-documents' => ['list-documents'],
     ];
   }
 
