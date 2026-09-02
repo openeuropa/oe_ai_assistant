@@ -477,6 +477,7 @@ export interface components {
         DraftingRemoveDocumentRequest: {
             /** @description The editorial session that references the document. */
             sessionId: string;
+            category: components["schemas"]["DraftingDocumentCategory"];
             /** @description Server-assigned document ID to remove. */
             documentId: string;
         };

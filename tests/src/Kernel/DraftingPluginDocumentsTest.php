@@ -115,6 +115,7 @@ class DraftingPluginDocumentsTest extends AiEditorialSessionKernelTestBase {
 
     $removeRequest = Request::create('', 'POST', [], [], [], [], json_encode([
       'sessionId' => $session->id(),
+      'category' => 'context',
       'documentId' => $documentId,
     ], JSON_THROW_ON_ERROR));
     $removeResponse = $plugin->executeAction('remove-document', $removeRequest);
@@ -176,6 +177,7 @@ class DraftingPluginDocumentsTest extends AiEditorialSessionKernelTestBase {
 
     $removeRequest = Request::create('', 'POST', [], [], [], [], json_encode([
       'sessionId' => $session->id(),
+      'category' => 'context',
       'documentId' => $documentId,
     ], JSON_THROW_ON_ERROR));
     $removeResponse = $controller->dispatch('drafting', 'remove-document', $removeRequest);
@@ -417,12 +419,12 @@ class DraftingPluginDocumentsTest extends AiEditorialSessionKernelTestBase {
       ]);
     }
 
-    $body = ['sessionId' => $sessionId];
+    $body = [
+      'sessionId' => $sessionId,
+      'category' => $category,
+    ];
     if ($action === 'remove-document') {
       $body['documentId'] = '1';
-    }
-    else {
-      $body['category'] = $category;
     }
 
     return Request::create('', 'POST', [], [], [], [], json_encode($body, JSON_THROW_ON_ERROR));
