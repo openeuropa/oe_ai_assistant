@@ -556,8 +556,7 @@ export function FullDraftingPreview() {
                     onRemove={documents.removeDocument}
                     onUpload={documents.uploadFiles}
                     onDismissUpload={documents.dismissUpload}
-                    onSave={async () => close()}
-                    onCancel={close}
+                    onClose={close}
                   />
                 ),
               },

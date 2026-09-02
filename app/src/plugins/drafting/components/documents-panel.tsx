@@ -19,9 +19,8 @@ export interface DocumentsPanelProps {
   onUpload: (files: FileList | null) => void | Promise<void>;
   /** Drops a failed upload slot. */
   onDismissUpload: (id: string) => void;
-  onSave: () => Promise<void>;
-  /** Closes the panel. */
-  onCancel: () => void;
+  /** Closes the panel; uploads and removals persist immediately. */
+  onClose: () => void;
   isSaving?: boolean;
 }
 
@@ -38,8 +37,7 @@ export function DocumentsPanel({
   onRemove,
   onUpload,
   onDismissUpload,
-  onSave,
-  onCancel,
+  onClose,
   isSaving = false,
 }: DocumentsPanelProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -53,8 +51,8 @@ export function DocumentsPanel({
       icon={<FileText size={18} />}
       title="Context documents"
       description="Attach documents that should guide the next draft. They are private, never published, and only feed the context when generating the draft."
-      onSave={onSave}
-      onCancel={onCancel}
+      onCancel={onClose}
+      cancelLabel="Close"
       isSaving={isSaving}
     >
       <div className="space-y-4 text-sm text-gray-700">

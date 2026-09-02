@@ -33,8 +33,7 @@ function InteractiveDocuments() {
         onRemove={documents.removeDocument}
         onUpload={documents.uploadFiles}
         onDismissUpload={documents.dismissUpload}
-        onSave={async () => {}}
-        onCancel={() => {}}
+        onClose={() => {}}
       />
     </div>
   );
@@ -54,8 +53,7 @@ export const Empty: Story = {
         onRemove={() => {}}
         onUpload={() => {}}
         onDismissUpload={() => {}}
-        onSave={async () => {}}
-        onCancel={() => {}}
+        onClose={() => {}}
       />
     </div>
   ),
@@ -87,8 +85,7 @@ export const Uploading: Story = {
         onRemove={() => {}}
         onUpload={() => {}}
         onDismissUpload={() => {}}
-        onSave={async () => {}}
-        onCancel={() => {}}
+        onClose={() => {}}
       />
     </div>
   ),
@@ -121,8 +118,7 @@ export const UploadFailed: Story = {
         onRemove={() => {}}
         onUpload={() => {}}
         onDismissUpload={() => {}}
-        onSave={async () => {}}
-        onCancel={() => {}}
+        onClose={() => {}}
       />
     </div>
   ),

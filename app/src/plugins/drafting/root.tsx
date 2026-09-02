@@ -202,11 +202,7 @@ function DraftingChat() {
           onRemove={documents.removeDocument}
           onUpload={documents.uploadFiles}
           onDismissUpload={documents.dismissUpload}
-          onSave={async () => {
-            // Uploads and removals are persisted immediately.
-            close();
-          }}
-          onCancel={close}
+          onClose={close}
           isSaving={documents.isSaving}
         />
       ),
