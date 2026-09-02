@@ -106,14 +106,6 @@ class AiEditorialSessionController extends ControllerBase {
    */
   private function buildRenderArray(AiEditorialSessionInterface $session): array {
     $sessionId = (string) $session->id();
-    // Reload the session so the bootstrap reflects the latest saved state
-    // rather than a stale copy of the route parameter entity.
-    $loadedSession = $this->sessionEntityTypeManager
-      ->getStorage('ai_editorial_session')
-      ->load($sessionId);
-    $session = $loadedSession instanceof AiEditorialSessionInterface
-      ? $loadedSession
-      : $session;
     // Collect the per-plugin bootstrap configuration. Each plugin owns its
     // portion of the config and contributes its cacheable metadata, keeping
     // this controller plugin-agnostic.
