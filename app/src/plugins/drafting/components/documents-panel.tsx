@@ -2,31 +2,27 @@ import { FileText, Upload, X } from "lucide-react";
 import { useRef, useState } from "react";
 import { Pane } from "@/components/ui/pane";
 import { formatFileSize } from "@/lib/format-file-size";
-import type { DraftingDocument } from "../hooks/use-drafting-documents";
+import type {
+  DocumentUpload,
+  DraftingDocument,
+} from "../hooks/use-drafting-documents";
 import { ConfirmRemovalDialog } from "./confirm-removal-dialog";
 
 export interface DocumentsPanelProps {
   /** Documents attached to ground the next draft. */
   selected: DraftingDocument[];
+  /** Uploads in flight or failed, rendered as slots after the documents. */
+  uploads: DocumentUpload[];
   /** Removes a document from the list. */
   onRemove: (id: string) => void | Promise<void>;
   /** Handles files chosen from the upload control. */
   onUpload: (files: FileList | null) => void | Promise<void>;
+  /** Drops a failed upload slot. */
+  onDismissUpload: (id: string) => void;
   onSave: () => Promise<void>;
   /** Closes the panel. */
   onCancel: () => void;
   isSaving?: boolean;
-  error?: string | null;
-}
-
-function DocumentContextDetails({ document }: { document: DraftingDocument }) {
-  const summary = document.summary?.trim();
-
-  if (summary) {
-    return <p className="line-clamp-2 text-xs text-gray-600">{summary}</p>;
-  }
-
-  return null;
 }
 
 /**
@@ -38,12 +34,13 @@ function DocumentContextDetails({ document }: { document: DraftingDocument }) {
  */
 export function DocumentsPanel({
   selected,
+  uploads,
   onRemove,
   onUpload,
+  onDismissUpload,
   onSave,
   onCancel,
   isSaving = false,
-  error = null,
 }: DocumentsPanelProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   // Document awaiting removal confirmation; NULL keeps the dialog closed.
@@ -88,14 +85,8 @@ export function DocumentsPanel({
           }}
         />
 
-        {error && (
-          <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
-            {error}
-          </p>
-        )}
-
-        {/* Attached documents, two per row to save space. */}
-        {selected.length > 0 ? (
+        {/* Attached documents and upload slots, two per row. */}
+        {selected.length > 0 || uploads.length > 0 ? (
           <div className="grid gap-2 md:grid-cols-2">
             {selected.map((document) => (
               <div
@@ -110,7 +101,6 @@ export function DocumentsPanel({
                     {document.meta.type.toUpperCase()} -{" "}
                     {formatFileSize(document.meta.size)}
                   </p>
-                  <DocumentContextDetails document={document} />
                 </div>
                 <button
                   type="button"
@@ -121,6 +111,46 @@ export function DocumentsPanel({
                 >
                   <X size={14} />
                 </button>
+              </div>
+            ))}
+
+            {/* Upload slots: progress bar while running, error when
+                failed. The remove cross only appears on failed slots. */}
+            {uploads.map((upload) => (
+              <div
+                key={upload.id}
+                className="flex items-start justify-between gap-3 rounded-md border border-blue-100 bg-blue-50 px-3 py-2"
+              >
+                <div className="min-w-0 flex-1 space-y-1">
+                  <p className="truncate text-xs font-medium text-gray-900">
+                    {upload.title}
+                  </p>
+                  <p className="text-xs text-gray-500">
+                    {formatFileSize(upload.size)}
+                  </p>
+                  {upload.status === "uploading" ? (
+                    // Indeterminate bar: fetch exposes no upload progress.
+                    <div
+                      role="progressbar"
+                      aria-label={`Uploading ${upload.title}`}
+                      className="h-1 w-full overflow-hidden rounded-full bg-blue-100"
+                    >
+                      <div className="h-full w-1/3 animate-upload-progress rounded-full bg-blue-500" />
+                    </div>
+                  ) : (
+                    <p className="text-xs text-red-700">{upload.error}</p>
+                  )}
+                </div>
+                {upload.status === "error" && (
+                  <button
+                    type="button"
+                    className="cursor-pointer rounded-md p-1 text-gray-400 hover:bg-white hover:text-gray-600"
+                    aria-label={`Dismiss ${upload.title}`}
+                    onClick={() => onDismissUpload(upload.id)}
+                  >
+                    <X size={14} />
+                  </button>
+                )}
               </div>
             ))}
           </div>

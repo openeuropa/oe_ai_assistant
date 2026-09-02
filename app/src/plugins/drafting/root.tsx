@@ -198,15 +198,16 @@ function DraftingChat() {
       render: (close) => (
         <DocumentsPanel
           selected={documents.selected}
+          uploads={documents.uploads}
           onRemove={documents.removeDocument}
           onUpload={documents.uploadFiles}
+          onDismissUpload={documents.dismissUpload}
           onSave={async () => {
             // Uploads and removals are persisted immediately.
             close();
           }}
           onCancel={close}
           isSaving={documents.isSaving}
-          error={documents.error}
         />
       ),
     });

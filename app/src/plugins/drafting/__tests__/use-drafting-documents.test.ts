@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { setConfig } from "@/config";
+import type { DocumentUpload } from "../hooks/use-drafting-documents";
 import type { DraftingDocument } from "../types";
 
 const reactState = vi.hoisted(() => ({
@@ -67,12 +68,12 @@ function selectedState(): DraftingDocument[] {
   return reactState.values[0] as DraftingDocument[];
 }
 
-function isSavingState(): boolean {
-  return reactState.values[1] as boolean;
+function uploadsState(): DocumentUpload[] {
+  return reactState.values[1] as DocumentUpload[];
 }
 
-function errorState(): string | null {
-  return reactState.values[2] as string | null;
+function isSavingState(): boolean {
+  return reactState.values[2] as boolean;
 }
 
 describe("useDraftingDocuments", () => {
@@ -94,19 +95,28 @@ describe("useDraftingDocuments", () => {
     });
   });
 
-  it("uploads files and appends only server-returned documents in order", async () => {
+  it("uploads files concurrently and appends server-returned documents", async () => {
     apiMocks.addDraftingDocument
       .mockResolvedValueOnce(uploadedDocuments[0])
       .mockResolvedValueOnce(uploadedDocuments[1]);
     const { useDraftingDocuments } = await loadHook();
     const documents = useDraftingDocuments();
 
-    await documents.uploadFiles(
+    const upload = documents.uploadFiles(
       fileList([
         new File(["alpha"], "Uploaded A.txt", { type: "text/plain" }),
         new File(["bravo"], "Uploaded B.pdf", { type: "application/pdf" }),
       ]),
     );
+
+    // Every file gets an uploading slot before any request settles.
+    expect(uploadsState()).toHaveLength(2);
+    expect(uploadsState().map((slot) => slot.status)).toEqual([
+      "uploading",
+      "uploading",
+    ]);
+
+    await upload;
 
     expect(apiMocks.addDraftingDocument).toHaveBeenNthCalledWith(
       1,
@@ -119,8 +129,9 @@ describe("useDraftingDocuments", () => {
       "context",
     );
     expect(selectedState()).toEqual([initialDocument, ...uploadedDocuments]);
+    // Finished uploads release their slots.
+    expect(uploadsState()).toEqual([]);
     expect(isSavingState()).toBe(false);
-    expect(errorState()).toBeNull();
   });
 
   it("waits for backend removal success before removing the document", async () => {
@@ -146,27 +157,37 @@ describe("useDraftingDocuments", () => {
 
     expect(selectedState()).toEqual([]);
     expect(isSavingState()).toBe(false);
-    expect(errorState()).toBeNull();
   });
 
-  it("exposes upload failures without mutating selected documents", async () => {
-    apiMocks.addDraftingDocument.mockRejectedValue(
-      new Error("Drafting add-document error: 500"),
-    );
+  it("keeps failed uploads as dismissible error slots", async () => {
+    apiMocks.addDraftingDocument
+      .mockRejectedValueOnce(new Error("Drafting add-document error: 500"))
+      .mockResolvedValueOnce(uploadedDocuments[1]);
     const { useDraftingDocuments } = await loadHook();
     const documents = useDraftingDocuments();
 
-    await expect(
-      documents.uploadFiles(
-        fileList([
-          new File(["alpha"], "Uploaded A.txt", { type: "text/plain" }),
-        ]),
-      ),
-    ).rejects.toThrow("Drafting add-document error: 500");
+    await documents.uploadFiles(
+      fileList([
+        new File(["alpha"], "Uploaded A.txt", { type: "text/plain" }),
+        new File(["bravo"], "Uploaded B.pdf", { type: "application/pdf" }),
+      ]),
+    );
 
-    expect(selectedState()).toEqual([initialDocument]);
+    // The successful file lands in the list; the failed one stays as an
+    // error slot carrying the endpoint message.
+    expect(selectedState()).toEqual([initialDocument, uploadedDocuments[1]]);
+    expect(uploadsState()).toHaveLength(1);
+    const failedSlot = uploadsState()[0];
+    expect(failedSlot).toMatchObject({
+      title: "Uploaded A.txt",
+      status: "error",
+      error: "Drafting add-document error: 500",
+    });
+
+    documents.dismissUpload(failedSlot?.id ?? "");
+
+    expect(uploadsState()).toEqual([]);
     expect(isSavingState()).toBe(false);
-    expect(errorState()).toBe("Drafting add-document error: 500");
   });
 
   it("exposes removal failures without mutating selected documents", async () => {
@@ -182,8 +203,8 @@ describe("useDraftingDocuments", () => {
 
     expect(selectedState()).toEqual([initialDocument]);
     expect(isSavingState()).toBe(false);
-    // Removal failures surface in the confirmation dialog, not the panel
-    // error banner, so the hook leaves the shared error state untouched.
-    expect(errorState()).toBeNull();
+    // Removal failures surface in the confirmation dialog and never touch
+    // the upload slots.
+    expect(uploadsState()).toEqual([]);
   });
 });

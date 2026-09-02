@@ -20,6 +20,20 @@
 
 @theme {
   /*
+   * Indeterminate upload progress: a short bar sweeping left to right,
+   * used by the documents panel while a file upload is in flight.
+   */
+  --animate-upload-progress: upload-progress 1.2s ease-in-out infinite;
+  @keyframes upload-progress {
+    0% {
+      margin-left: -33%;
+    }
+    100% {
+      margin-left: 100%;
+    }
+  }
+
+  /*
    * Raised type scale: every text-* utility renders one notch larger
    * than the Tailwind default (sm reads ~15px instead of 14px, base
    * ~17px, ...) for comfortable editorial reading. This is the single
