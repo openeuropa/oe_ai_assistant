@@ -302,7 +302,7 @@ test.describe("Drafting text streaming", () => {
     });
 
     await expect(page.getByText(uploadedDocument.title)).toBeVisible();
-    await page.getByRole("button", { name: "Save" }).click();
+    await page.getByRole("button", { name: "Close" }).click();
     await expect(
       page.getByRole("button", { name: /Context documents/ }),
     ).toContainText("3 documents");
@@ -325,7 +325,7 @@ test.describe("Drafting text streaming", () => {
     await expect(
       page.getByText(uploadedDocument.title, { exact: true }),
     ).toBeHidden();
-    await page.getByRole("button", { name: "Save" }).click();
+    await page.getByRole("button", { name: "Close" }).click();
     await expect(
       page.getByRole("button", { name: /Context documents/ }),
     ).toContainText("2 documents");
