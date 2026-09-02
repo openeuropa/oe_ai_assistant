@@ -154,9 +154,6 @@ DraftingDocument:
         size:
           type: integer
           description: File size in bytes.
-    summary:
-      type: string
-      description: Extracted document summary used as temporary drafting context.
 
 DraftingAddDocumentRequest:
   type: object

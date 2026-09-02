@@ -40,11 +40,4 @@ final class ContextDocumentRepository extends DocumentRepositoryBase {
     return 'oe_ai_context_document';
   }
 
-  /**
-   * {@inheritdoc}
-   */
-  protected function getSummaryField(): ?string {
-    return 'oe_ai_document_summary';
-  }
-
 }

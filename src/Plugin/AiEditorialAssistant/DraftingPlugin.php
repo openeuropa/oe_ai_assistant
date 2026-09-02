@@ -660,8 +660,6 @@ class DraftingPlugin extends AiAssistantPluginBase {
       );
     }
 
-    // Removal needs no category: the document is identified by its ID and
-    // context documents are the only category referenced by sessions.
     $this->contextDocumentRepository->remove($session, $documentId);
 
     return ['status' => 'ok'];

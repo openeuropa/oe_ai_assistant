@@ -67,16 +67,6 @@ abstract class DocumentRepositoryBase implements DocumentRepositoryInterface {
   abstract protected function getSourceField(): string;
 
   /**
-   * Gets the media field holding the extracted document summary.
-   *
-   * @return string|null
-   *   The field name, or NULL when the category carries no summary.
-   */
-  protected function getSummaryField(): ?string {
-    return NULL;
-  }
-
-  /**
    * Builds a bare source field item to read upload settings from.
    *
    * The file field type encapsulates the upload destination
@@ -219,26 +209,7 @@ abstract class DocumentRepositoryBase implements DocumentRepositoryInterface {
         'type' => $extension !== '' ? strtolower($extension) : 'file',
         'size' => $file instanceof FileInterface ? (int) $file->getSize() : 0,
       ],
-    ] + $this->serializeSummary($media);
-  }
-
-  /**
-   * Serializes the extracted document summary when one is available.
-   *
-   * @param \Drupal\media\MediaInterface $media
-   *   The document media entity.
-   *
-   * @return array{summary?: string}
-   *   The optional summary payload.
-   */
-  private function serializeSummary(MediaInterface $media): array {
-    $field = $this->getSummaryField();
-    if ($field === NULL || !$media->hasField($field) || $media->get($field)->isEmpty()) {
-      return [];
-    }
-
-    $summary = trim((string) $media->get($field)->value);
-    return $summary !== '' ? ['summary' => $summary] : [];
+    ];
   }
 
   /**

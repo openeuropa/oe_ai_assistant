@@ -452,8 +452,6 @@ export interface components {
                 /** @description File size in bytes. */
                 size: number;
             };
-            /** @description Extracted document summary used as temporary drafting context. */
-            summary?: string;
         };
         DraftingAddDocumentRequest: {
             /** @description The editorial session receiving the uploaded document. */
