@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { getConfig } from "@/config";
+import { useAppStore } from "@/store";
 import {
   addDraftingDocument,
   removeDraftingDocument,
@@ -8,6 +9,29 @@ import { readConfigOptions } from "../config-options";
 import type { DraftingDocument } from "../types";
 
 export type { DraftingDocument } from "../types";
+
+/**
+ * In-flight document requests, counted across concurrent operations.
+ *
+ * Module-level so parallel uploads and removals share one counter: the
+ * shell exit guard stays blocked until the last request settles, instead
+ * of unblocking when any single request finishes.
+ */
+let pendingDocumentRequests = 0;
+
+/** Reports one more document request to the shell exit guard. */
+function beginDocumentWork(): void {
+  pendingDocumentRequests += 1;
+  useAppStore.getState().setPendingWork("drafting:documents", true);
+}
+
+/** Settles one document request, releasing the guard on the last one. */
+function endDocumentWork(): void {
+  pendingDocumentRequests = Math.max(0, pendingDocumentRequests - 1);
+  if (pendingDocumentRequests === 0) {
+    useAppStore.getState().setPendingWork("drafting:documents", false);
+  }
+}
 
 /** A file upload in flight or failed, shown as a slot card in the panel. */
 export interface DocumentUpload {
@@ -51,11 +75,13 @@ export function useDraftingDocuments() {
    */
   async function removeDocument(id: string) {
     setIsSaving(true);
+    beginDocumentWork();
     try {
       await removeDraftingDocument(id);
       setSelected((current) => current.filter((item) => item.id !== id));
     } finally {
       setIsSaving(false);
+      endDocumentWork();
     }
   }
 
@@ -86,6 +112,7 @@ export function useDraftingDocuments() {
 
     await Promise.all(
       entries.map(async ({ file, slot }) => {
+        beginDocumentWork();
         try {
           const document = await addDraftingDocument(file, "context");
           setSelected((current) => [...current, document]);
@@ -107,6 +134,8 @@ export function useDraftingDocuments() {
                 : upload,
             ),
           );
+        } finally {
+          endDocumentWork();
         }
       }),
     );

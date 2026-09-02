@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { setConfig } from "@/config";
+import { useAppStore } from "@/store";
 import type { DocumentUpload } from "../hooks/use-drafting-documents";
 import type { DraftingDocument } from "../types";
 
@@ -76,6 +77,11 @@ function isSavingState(): boolean {
   return reactState.values[2] as boolean;
 }
 
+/** Reads the exit-guard flag the hook reports for document requests. */
+function pendingDocumentsWork(): boolean {
+  return useAppStore.getState().pendingWork["drafting:documents"] ?? false;
+}
+
 describe("useDraftingDocuments", () => {
   beforeEach(() => {
     reactState.values = [];
@@ -109,14 +115,18 @@ describe("useDraftingDocuments", () => {
       ]),
     );
 
-    // Every file gets an uploading slot before any request settles.
+    // Every file gets an uploading slot before any request settles, and
+    // the exit guard is blocked while requests run.
     expect(uploadsState()).toHaveLength(2);
     expect(uploadsState().map((slot) => slot.status)).toEqual([
       "uploading",
       "uploading",
     ]);
+    expect(pendingDocumentsWork()).toBe(true);
 
     await upload;
+
+    expect(pendingDocumentsWork()).toBe(false);
 
     expect(apiMocks.addDraftingDocument).toHaveBeenNthCalledWith(
       1,
@@ -151,12 +161,15 @@ describe("useDraftingDocuments", () => {
     );
     expect(selectedState()).toEqual([initialDocument]);
     expect(isSavingState()).toBe(true);
+    // The exit guard is blocked while the removal request runs.
+    expect(pendingDocumentsWork()).toBe(true);
 
     resolveRemoval();
     await removal;
 
     expect(selectedState()).toEqual([]);
     expect(isSavingState()).toBe(false);
+    expect(pendingDocumentsWork()).toBe(false);
   });
 
   it("keeps failed uploads as dismissible error slots", async () => {
@@ -188,6 +201,8 @@ describe("useDraftingDocuments", () => {
 
     expect(uploadsState()).toEqual([]);
     expect(isSavingState()).toBe(false);
+    // Failed requests release the exit guard too.
+    expect(pendingDocumentsWork()).toBe(false);
   });
 
   it("exposes removal failures without mutating selected documents", async () => {
