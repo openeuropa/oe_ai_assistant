@@ -6,8 +6,10 @@
  * button. The Live preview tab renders the draft as a full page in an
  * iframe whose URL comes from the plugin config template; the Data
  * tab reuses the raw field table. A viewport toolbar lets editors
- * check the draft at mobile, tablet and desktop widths, and a
- * fullscreen toggle expands the whole pane over the page.
+ * check the draft at mobile, tablet and desktop widths, a reload
+ * button returns the frame to the draft page after a stray click on
+ * a link inside it, and a fullscreen toggle expands the whole pane
+ * over the page.
  */
 
 import {
@@ -16,6 +18,7 @@ import {
   Maximize2,
   Minimize2,
   Monitor,
+  RefreshCw,
   Save,
   Smartphone,
   Table,
@@ -88,7 +91,7 @@ function TabButton({
   );
 }
 
-/** An icon-only toolbar button (viewport preset, fullscreen). */
+/** An icon-only toolbar button (viewport preset, reload, fullscreen). */
 function ToolbarButton({
   icon,
   label,
@@ -254,6 +257,9 @@ export function DraftPreview({
   // Fullscreen turns the whole pane (header included) into a page
   // overlay, so the tabs, toolbar and save action stay available.
   const [isFullscreen, setIsFullscreen] = useState(false);
+  // Bumped by the reload button to remount the frame at the original
+  // preview URL, undoing any navigation from links clicked inside it.
+  const [reloadCount, setReloadCount] = useState(0);
   const [showConfirm, setShowConfirm] = useState(false);
 
   return (
@@ -312,6 +318,11 @@ export function DraftPreview({
                 onClick={() => setViewport("desktop")}
               />
               <ToolbarButton
+                icon={<RefreshCw size={14} />}
+                label="Reload preview"
+                onClick={() => setReloadCount((count) => count + 1)}
+              />
+              <ToolbarButton
                 icon={
                   isFullscreen ? (
                     <Minimize2 size={14} />
@@ -335,11 +346,12 @@ export function DraftPreview({
         </div>
       </div>
 
-      {/* Keyed on the URL so switching draft versions remounts the
-          frame and shows the spinner for the new document. */}
+      {/* Keyed on the URL and the reload count so switching draft
+          versions or pressing reload remounts the frame and shows the
+          spinner for the new document. */}
       {hasLivePreview && (
         <LivePreviewFrame
-          key={previewUrl}
+          key={`${reloadCount}:${previewUrl}`}
           url={previewUrl}
           hidden={activeTab !== "live"}
           width={VIEWPORT_WIDTHS[viewport]}
