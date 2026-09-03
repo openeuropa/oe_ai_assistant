@@ -34,7 +34,7 @@ interface DraftHistoryInterface {
    *
    * @return array
    *   One entry per draft, in version order: {name: "Draft N", version: N,
-   *   context: snapshot array or NULL for pre-provenance legacy results}.
+   *   context: snapshot array}.
    */
   public function listDrafts(EntityInterface $session): array;
 
@@ -48,8 +48,8 @@ interface DraftHistoryInterface {
    *
    * @return array|null
    *   {fields: array, templateId: string|null}, or NULL if no draft_content
-   *   result carries that version. A legacy (pre-provenance, unwrapped)
-   *   result always resolves to templateId: NULL.
+   *   result carries that version. templateId is NULL when the draft's
+   *   snapshot has no template.
    */
   public function getDraftContent(EntityInterface $session, int $version): ?array;
 

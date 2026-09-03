@@ -63,32 +63,6 @@ class DraftingPluginPreviewTest extends DraftingPluginTestBase {
   }
 
   /**
-   * Seeds a legacy (pre-provenance, unwrapped) draft_content result.
-   *
-   * @param \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $session
-   *   The session hosting the conversation.
-   * @param array $fields
-   *   The drafted fields map — stored bare, with no version/context wrapper.
-   */
-  protected function seedLegacyDraft(AiEditorialSessionInterface $session, array $fields): void {
-    $storage = \Drupal::entityTypeManager()->getStorage('ai_conversation_message');
-    $message = $storage->create([
-      'host_entity_type' => $session->getEntityTypeId(),
-      'host_entity_id' => (int) $session->id(),
-      'role' => 'assistant',
-      'content' => '',
-    ]);
-    $message->setToolCalls([
-      [
-        'type' => 'function',
-        'function' => ['name' => 'draft_content', 'arguments' => '{}'],
-        'result' => $fields,
-      ],
-    ]);
-    $message->save();
-  }
-
-  /**
    * Counts existing nodes, to assert preview never creates one.
    */
   protected function countNodes(): int {
@@ -129,25 +103,6 @@ class DraftingPluginPreviewTest extends DraftingPluginTestBase {
     $this->assertStringContainsString('Default teaser from template.', $result['body']);
     $this->assertMatchesRegularExpression('/field__label[^>]*>\s*Teaser\s*</', $result['body'], 'Field labels must be displayed in the preview.');
     $this->assertEquals($nodesBefore, $this->countNodes(), 'Preview must not persist a node.');
-  }
-
-  /**
-   * A legacy (unwrapped) draft renders best-effort, without defaults.
-   */
-  public function testPreviewRendersLegacyDraftBestEffort(): void {
-    $user = $this->createUser(['use oe ai assistant', 'create oe_news content']);
-    $this->drupalLogin($user);
-
-    $session = $this->createSession($user);
-    $this->seedLegacyDraft($session, ['title' => [['value' => 'Legacy Draft Title']]]);
-
-    $result = $this->httpGet('/api/ai/plugins/drafting/preview', [
-      'sessionId' => $session->id(),
-      'version' => 1,
-    ]);
-
-    $this->assertEquals(200, $result['status'], 'Expected 200. Body: ' . substr($result['body'], 0, 2000));
-    $this->assertStringContainsString('Legacy Draft Title', $result['body']);
   }
 
   /**

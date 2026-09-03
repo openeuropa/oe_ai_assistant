@@ -30,8 +30,8 @@ interface DraftSaverInterface {
    *   items, e.g. [["value" => "Title"]]).
    * @param string|null $templateId
    *   The drafting template id whose resolved defaults are merged under
-   *   $fields before saving, or NULL to skip the merge (legacy drafts with
-   *   no template snapshot).
+   *   $fields before saving, or NULL to skip the merge (drafts with no
+   *   template snapshot).
    * @param int $version
    *   The draft version being saved, recorded in the revision log message
    *   when this save adds a revision to an existing node.

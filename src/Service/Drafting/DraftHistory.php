@@ -36,15 +36,12 @@ class DraftHistory implements DraftHistoryInterface {
    */
   public function listDrafts(EntityInterface $session): array {
     $drafts = [];
-    foreach ($this->collectResults($session) as $position => $result) {
-      // Versioned results carry their own version and snapshot; legacy
-      // results are a flat fields map and get a positional version with no
-      // provenance.
-      $version = (int) ($result['version'] ?? $position + 1);
+    foreach ($this->collectResults($session) as $result) {
+      $version = (int) $result['version'];
       $drafts[] = [
         'name' => sprintf('Draft %d', $version),
         'version' => $version,
-        'context' => $result['context'] ?? NULL,
+        'context' => $result['context'],
       ];
     }
     return $drafts;
@@ -54,20 +51,14 @@ class DraftHistory implements DraftHistoryInterface {
    * {@inheritdoc}
    */
   public function getDraftContent(EntityInterface $session, int $version): ?array {
-    foreach ($this->collectResults($session) as $position => $result) {
-      $resultVersion = (int) ($result['version'] ?? $position + 1);
-      if ($resultVersion !== $version) {
+    foreach ($this->collectResults($session) as $result) {
+      if ((int) $result['version'] !== $version) {
         continue;
       }
-      if (array_key_exists('version', $result)) {
-        return [
-          'fields' => $result['fields'] ?? [],
-          'templateId' => $result['context']['template']['id'] ?? NULL,
-        ];
-      }
-      // Legacy (pre-provenance) result: the stored value IS the flat fields
-      // map, with no version/context wrapper.
-      return ['fields' => $result, 'templateId' => NULL];
+      return [
+        'fields' => $result['fields'] ?? [],
+        'templateId' => $result['context']['template']['id'] ?? NULL,
+      ];
     }
     return NULL;
   }
