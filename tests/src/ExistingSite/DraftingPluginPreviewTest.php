@@ -127,6 +127,7 @@ class DraftingPluginPreviewTest extends DraftingPluginTestBase {
     $this->assertMatchesRegularExpression('/<html[\s>]/i', $result['body'], 'Expected a full HTML document, not a fragment.');
     $this->assertStringContainsString('Preview Test Title', $result['body']);
     $this->assertStringContainsString('Default teaser from template.', $result['body']);
+    $this->assertMatchesRegularExpression('/field__label[^>]*>\s*Teaser\s*</', $result['body'], 'Field labels must be displayed in the preview.');
     $this->assertEquals($nodesBefore, $this->countNodes(), 'Preview must not persist a node.');
   }
 

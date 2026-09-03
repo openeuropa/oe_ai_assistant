@@ -1,0 +1,43 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - core.entity_view_mode.node.full
+    - field.field.node.oe_contact.field_contact_email
+    - field.field.node.oe_contact.field_contact_name
+    - field.field.node.oe_contact.field_contact_role
+    - node.type.oe_contact
+  module:
+    - user
+id: node.oe_contact.full
+targetEntityType: node
+bundle: oe_contact
+mode: full
+content:
+  field_contact_email:
+    type: basic_string
+    label: above
+    settings: {  }
+    third_party_settings: {  }
+    weight: 2
+    region: content
+  field_contact_name:
+    type: string
+    label: above
+    settings:
+      link_to_entity: false
+    third_party_settings: {  }
+    weight: 0
+    region: content
+  field_contact_role:
+    type: string
+    label: above
+    settings:
+      link_to_entity: false
+    third_party_settings: {  }
+    weight: 1
+    region: content
+  links:
+    weight: 100
+    region: content
+hidden: {  }
