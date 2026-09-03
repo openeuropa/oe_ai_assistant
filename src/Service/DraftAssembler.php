@@ -70,9 +70,9 @@ class DraftAssembler implements DraftAssemblerInterface {
           static fn (array $default) => $default['default_value'],
           $template->resolveDefaults(),
         );
-        // Drafted fields win on collision: template fields/defaults are
-        // disjoint by the template's own validation, but stay defensive.
-        $mergedFields = $fields + $resolvedDefaults;
+        // Template defaults win on collision, so editors keep control over
+        // the values a template pins regardless of what the LLM produced.
+        $mergedFields = $resolvedDefaults + $fields;
       }
     }
 

@@ -29,7 +29,7 @@ interface DraftSaverInterface {
    *   Values are in the Drupal serialization format (arrays of
    *   items, e.g. [["value" => "Title"]]).
    * @param string|null $templateId
-   *   The drafting template id whose resolved defaults are merged under
+   *   The drafting template id whose resolved defaults are merged over
    *   $fields before saving, or NULL to skip the merge (drafts with no
    *   template snapshot).
    * @param int $version

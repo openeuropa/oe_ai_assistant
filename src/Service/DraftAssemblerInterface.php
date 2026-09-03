@@ -23,8 +23,8 @@ interface DraftAssemblerInterface {
    *   The LLM-produced fields map, keyed by field machine name. Values are
    *   in the Drupal serialization format (arrays of items).
    * @param string|null $templateId
-   *   The drafting template id whose resolved defaults are merged under
-   *   $fields (a drafted value always wins on a key collision), or NULL to
+   *   The drafting template id whose resolved defaults are merged over
+   *   $fields (a template default always wins on a key collision), or NULL to
    *   skip the merge entirely (drafts with no template snapshot).
    * @param \Drupal\Core\Entity\ContentEntityInterface|null $existingNode
    *   NULL (default) to build and return a brand-new unsaved node, checking

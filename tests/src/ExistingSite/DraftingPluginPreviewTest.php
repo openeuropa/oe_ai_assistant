@@ -106,6 +106,34 @@ class DraftingPluginPreviewTest extends DraftingPluginTestBase {
   }
 
   /**
+   * A template default overrides the drafted value for the same field.
+   */
+  public function testPreviewTemplateDefaultsOverrideDraftedFields(): void {
+    $user = $this->createUser(['use oe ai assistant', 'create oe_news content']);
+    $this->drupalLogin($user);
+
+    $session = $this->createSession($user);
+    $this->seedVersionedDraft(
+      $session,
+      1,
+      [
+        'title' => [['value' => 'Override Test Title']],
+        'field_teaser' => [['value' => 'Drafted teaser.']],
+      ],
+      'news_preview_defaults',
+    );
+
+    $result = $this->httpGet('/api/ai/plugins/drafting/preview', [
+      'sessionId' => $session->id(),
+      'version' => 1,
+    ]);
+
+    $this->assertEquals(200, $result['status'], 'Expected 200. Body: ' . substr($result['body'], 0, 2000));
+    $this->assertStringContainsString('Default teaser from template.', $result['body']);
+    $this->assertStringNotContainsString('Drafted teaser.', $result['body'], 'Template defaults must override drafted values.');
+  }
+
+  /**
    * Each version renders its own content; responses are never cached.
    *
    * The preview is a GET, so without an uncacheable response Drupal's
