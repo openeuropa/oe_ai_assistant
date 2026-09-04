@@ -12,7 +12,7 @@ use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
  *
  * @group oe_ai_assistant
  */
-final class AiContentProvenanceRevisionHistoryTest extends AiEditorialSessionBrowserTestBase {
+class AiContentProvenanceRevisionHistoryTest extends AiEditorialSessionBrowserTestBase {
 
   /**
    * Tests the marker on tracked revisions and the access-checked session link.

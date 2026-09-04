@@ -27,7 +27,6 @@ abstract class AiEditorialSessionBrowserTestBase extends BrowserTestBase {
     'node',
     'oe_ai_assistant',
     'options',
-    'entity_version',
   ];
 
   /**

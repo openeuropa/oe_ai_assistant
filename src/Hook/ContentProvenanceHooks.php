@@ -32,15 +32,12 @@ final class ContentProvenanceHooks {
 
   /**
    * Implements hook_ai_editorial_session_delete().
-   *
-   * Clears the session and message references.
    */
   #[Hook('ai_editorial_session_delete')]
   public function clearSessionReferences(EntityInterface $entity): void {
     assert($entity instanceof AiEditorialSessionInterface);
     foreach ($this->storage()->loadForSession((int) $entity->id()) as $record) {
       $record->set('session', NULL);
-      $record->set('message', NULL);
       $record->save();
     }
   }

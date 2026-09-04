@@ -9,7 +9,6 @@ dependencies:
   - drupal:content_moderation
   - drupal:node
   - drupal:datetime
-  - drupal:entity_version
   - drupal:options
   - drupal:serialization
   - key:key
