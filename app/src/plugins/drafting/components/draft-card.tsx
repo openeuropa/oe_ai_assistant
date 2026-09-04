@@ -9,7 +9,9 @@
  */
 
 import {
-  Check,
+  CalendarClock,
+  CircleCheck,
+  CircleDashed,
   FileText,
   Film,
   Image,
@@ -19,6 +21,7 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import type { DraftContext, DraftDocumentSnapshot } from "../draft-result";
+import { formatDraftDate } from "../format-draft-date";
 import { DocumentDetailsDialog } from "./document-details-dialog";
 
 /** Props for DraftCard. */
@@ -32,6 +35,10 @@ export interface DraftCardProps {
   context: DraftContext | null;
   /** The drafted fields produced by the AI. */
   fields: Record<string, unknown>;
+  /** Whether this version has been saved as a revision. */
+  isSaved: boolean;
+  /** When the draft was generated; null when unknown. */
+  createdAt: Date | null;
   /** Called when the user clicks the card body to view this draft. */
   onOpen: () => void;
 }
@@ -95,13 +102,16 @@ function ProvenanceRow({
  * Clickable card that summarises a draft tool-call result.
  *
  * Styled to match ToolCallCard in tool-uis.tsx for visual consistency in the
- * chat thread. A green check icon signals that the draft completed
- * successfully. Documents open a detail dialog without triggering onOpen.
+ * chat thread. The status icon matches the preview header: a grey dashed
+ * circle until the version is saved, then a green tick. Documents open a
+ * detail dialog without triggering onOpen.
  */
 export function DraftCard({
   version,
   context,
   fields,
+  isSaved,
+  createdAt,
   onOpen,
 }: DraftCardProps) {
   // The currently selected document for the detail dialog; null means closed.
@@ -124,6 +134,7 @@ export function DraftCard({
     (d) => d.category !== "publishable",
   );
   const hasProvenance =
+    createdAt !== null ||
     tone !== null ||
     template !== null ||
     briefingDocuments.length > 0 ||
@@ -161,7 +172,19 @@ export function DraftCard({
         {/* Header row: status icon, PenLine icon, and title. */}
         <div className="flex w-full items-start gap-3">
           <div className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center">
-            <Check size={16} className="text-green-500" />
+            {isSaved ? (
+              <CircleCheck
+                size={16}
+                className="text-green-600"
+                aria-label="Saved"
+              />
+            ) : (
+              <CircleDashed
+                size={16}
+                className="text-gray-400"
+                aria-label="Not saved"
+              />
+            )}
           </div>
 
           <div className="min-w-0 flex-1">
@@ -189,6 +212,11 @@ export function DraftCard({
             {/* Provenance table: label column with icons, value column. */}
             {hasProvenance && (
               <div className="mt-2 grid grid-cols-[auto_1fr] items-start gap-x-3 gap-y-1 text-xs">
+                {createdAt && (
+                  <ProvenanceRow icon={CalendarClock} label="Created">
+                    {formatDraftDate(createdAt)}
+                  </ProvenanceRow>
+                )}
                 {tone && (
                   <ProvenanceRow icon={Megaphone} label="Tone">
                     {tone.label}

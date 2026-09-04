@@ -37,6 +37,18 @@ describe("buildEventThreadMessage", () => {
   });
 
   it("produces distinct toolCallIds on successive calls", () => {
+    const saved = buildEventThreadMessage({
+      eventType: "save",
+      summary: "Draft 3 saved",
+      version: 3,
+    });
+    const savedPart = (saved.content as AnyPart[])[0];
+    expect(savedPart?.args).toEqual({
+      eventType: "save",
+      summary: "Draft 3 saved",
+      version: 3,
+    });
+
     const first = buildEventThreadMessage({ eventType: "tone", summary: "A" });
     const second = buildEventThreadMessage({ eventType: "tone", summary: "B" });
 

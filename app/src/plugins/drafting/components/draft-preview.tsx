@@ -13,6 +13,8 @@
  */
 
 import {
+  CircleCheck,
+  CircleDashed,
   Eye,
   Loader2,
   Maximize2,
@@ -60,6 +62,8 @@ interface DraftPreviewProps {
   versionId: number;
   /** When the draft was generated; null when unknown. */
   createdAt: Date | null;
+  /** Whether this version has already been saved as a revision. */
+  isSaved: boolean;
   /** Tab shown on mount. Defaults to the live preview. */
   defaultTab?: PreviewTab;
   /** Invoked after the user confirms the save dialog. */
@@ -239,6 +243,7 @@ export function DraftPreview({
   sessionId,
   versionId,
   createdAt,
+  isSaved,
   defaultTab = "live",
   onSave,
 }: DraftPreviewProps) {
@@ -278,7 +283,21 @@ export function DraftPreview({
     >
       {/* Header: draft title, then viewport toolbar, fullscreen, tab switcher, save. */}
       <div className="flex h-12 shrink-0 items-center justify-between border-b border-gray-200 px-4">
-        <div className="flex min-w-0 items-baseline gap-2">
+        <div className="flex min-w-0 items-center gap-2">
+          {/* Save status: a green tick once this version is saved. */}
+          {isSaved ? (
+            <CircleCheck
+              size={16}
+              className="shrink-0 text-green-600"
+              aria-label="Saved"
+            />
+          ) : (
+            <CircleDashed
+              size={16}
+              className="shrink-0 text-gray-400"
+              aria-label="Not saved"
+            />
+          )}
           <h2 className="text-base font-semibold whitespace-nowrap text-gray-900">
             Draft {versionId}
           </h2>
@@ -345,13 +364,15 @@ export function DraftPreview({
               />
             </div>
           )}
+          {/* A saved version cannot be saved twice. */}
           <button
             type="button"
             onClick={() => setShowConfirm(true)}
-            className="flex h-7 cursor-pointer items-center gap-1.5 rounded-md bg-blue-600 px-3 text-xs font-medium whitespace-nowrap text-white hover:bg-blue-700"
+            disabled={isSaved}
+            className="flex h-7 cursor-pointer items-center gap-1.5 rounded-md bg-blue-600 px-3 text-xs font-medium whitespace-nowrap text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-gray-300 disabled:text-gray-500"
           >
             <Save size={12} />
-            Save draft
+            {isSaved ? "Saved" : "Save draft"}
           </button>
         </div>
       </div>

@@ -35,6 +35,8 @@ export interface SessionMessage {
   summary?: string;
   /** RFC 3339 creation timestamp of the entry. */
   at?: string;
+  /** The draft version a "save" event persisted (event items). */
+  version?: number;
 }
 
 /**

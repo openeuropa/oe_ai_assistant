@@ -54,6 +54,7 @@ export function toThreadMessage(
         eventType: message.type,
         summary: message.summary,
         at: message.at,
+        ...(message.version !== undefined ? { version: message.version } : {}),
       },
       result: {},
     };

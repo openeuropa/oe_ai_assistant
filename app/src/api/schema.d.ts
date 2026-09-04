@@ -353,6 +353,8 @@ export interface components {
                 summary?: string;
                 /** @description RFC 3339 timestamp of the event (event items). */
                 at?: string;
+                /** @description The draft version a "save" event persisted (event items). */
+                version?: number;
             }[];
         };
         DraftingChatRequest: {

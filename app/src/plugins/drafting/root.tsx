@@ -35,6 +35,7 @@ import { useDraftingTemplate } from "./hooks/use-drafting-template";
 import { useDraftingTone } from "./hooks/use-drafting-tone";
 import { useReportPendingWork } from "./hooks/use-report-pending-work";
 import { useReportParticipants } from "./participants";
+import { useSavedVersions } from "./saved-versions";
 import { useSessionDrafts } from "./session-drafts";
 import { getDraftingState, useDraftingSlice } from "./store";
 import { appendEventToThread } from "./thread-events";
@@ -78,12 +79,14 @@ function VersionedDraftPreview({
   onSave: () => void;
 }) {
   const sessionDrafts = useSessionDrafts();
+  const savedVersions = useSavedVersions();
   const activeDraft = sessionDrafts.find((draft) => draft.version === version);
   return (
     <DraftPreview
       sessionId={getConfig().sessionId}
       versionId={version}
       createdAt={activeDraft?.createdAt ?? null}
+      isSaved={savedVersions.has(version)}
       onSave={onSave}
     />
   );
@@ -116,8 +119,8 @@ function DraftingChat() {
    * not change the runtime reference.
    */
   const appendEvent = useCallback(
-    (eventType: string, summary: string) =>
-      appendEventToThread(runtime.thread, { eventType, summary }),
+    (eventType: string, summary: string, version?: number) =>
+      appendEventToThread(runtime.thread, { eventType, summary, version }),
     [runtime],
   );
 
@@ -146,7 +149,11 @@ function DraftingChat() {
     } finally {
       setPendingWork("drafting:save", false);
     }
-    appendEvent("save", `Draft ${version} saved as unpublished revision`);
+    appendEvent(
+      "save",
+      `Draft ${version} saved as unpublished revision`,
+      version,
+    );
   }, [appendEvent, setPendingWork]);
 
   /** Determine what the artifact pane shows. */

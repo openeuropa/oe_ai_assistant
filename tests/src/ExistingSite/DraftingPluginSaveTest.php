@@ -99,6 +99,7 @@ class DraftingPluginSaveTest extends DraftingPluginTestBase {
     ));
     $this->assertCount(1, $events, 'The save must record one event row.');
     $this->assertStringContainsString('Draft 1', $events[0]['summary']);
+    $this->assertSame(1, $events[0]['version'], 'The save event must name the saved version.');
   }
 
   /**
