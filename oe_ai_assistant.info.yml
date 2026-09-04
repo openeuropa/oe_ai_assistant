@@ -10,7 +10,6 @@ dependencies:
   - drupal:datetime
   - document_loader:document_loader
   - document_loader_tika:document_loader_tika
-  - drupal:entity_version
   - drupal:file
   - drupal:media
   - drupal:node
