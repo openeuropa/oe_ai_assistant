@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\oe_ai_assistant\ExistingSite;
 
+use Drupal\node\Entity\Node;
 use Drupal\user\UserInterface;
 use weitzman\DrupalTestTraits\ExistingSiteBase;
 
@@ -27,15 +28,6 @@ class DraftingPluginSaveTest extends ExistingSiteBase {
    */
   protected function setUp(): void {
     parent::setUp();
-    if (!\Drupal::moduleHandler()->moduleExists('entity_version')) {
-      \Drupal::service('module_installer')->install(['entity_version']);
-    }
-    \Drupal::service('entity_version.entity_version_installer')
-      ->install('node', ['oe_news'], [
-        'major' => 0,
-        'minor' => 1,
-        'patch' => 0,
-      ]);
     $this->trackEntityType('node');
     $this->trackEntityType('paragraph');
     $this->trackEntityType('ai_content_provenance');
@@ -86,12 +78,52 @@ class DraftingPluginSaveTest extends ExistingSiteBase {
     ]);
     $this->assertNotEmpty($provenance, 'A provenance record should be created.');
     $provenance = reset($provenance);
-    $this->assertSame((int) $context['session']->id(), (int) $provenance->get('session')->target_id);
-    $this->assertSame((int) $context['assistant']->id(), (int) $provenance->get('message')->target_id);
-    $this->assertSame((int) $context['template']->id(), (int) $provenance->get('template')->target_id);
-    $this->assertSame(2, (int) $provenance->get('tokens_input')->value);
-    $this->assertSame(3, (int) $provenance->get('tokens_output')->value);
-    $this->assertSame(5, (int) $provenance->get('tokens_total')->value);
+    $this->assertSame((int) $context['session']->id(), (int) $provenance->getSession()?->id());
+    $this->assertSame((int) $context['assistant']->id(), (int) $provenance->getMessage()?->id());
+    $this->assertSame($context['template']->id(), $provenance->getTemplateId());
+    $this->assertSame((int) $user->id(), (int) $provenance->getOwnerId());
+    $this->assertSame(['input' => 3, 'output' => 4, 'total' => 7], $provenance->getTokenUsage());
+    $this->assertSame('mock', $provenance->getProvider());
+    $this->assertSame('mock-model', $provenance->getModel());
+    $expected_version = ['major' => NULL, 'minor' => NULL, 'patch' => NULL];
+    if ($node->hasField('version')) {
+      $version = $node->get('version')->first()->getValue();
+      $expected_version = [
+        'major' => (int) $version['major'],
+        'minor' => (int) $version['minor'],
+        'patch' => (int) $version['patch'],
+      ];
+    }
+    $this->assertSame($expected_version, $provenance->getVersion());
+  }
+
+  /**
+   * Tests that only AI-assisted revisions are tracked and queryable.
+   */
+  public function testManualSaveIsNotTrackedAndQueryReturnsAiRevisions(): void {
+    $user = $this->createUser([
+      'use oe ai assistant',
+      'create oe_news content',
+    ]);
+    $this->drupalLogin($user);
+    $context = $this->prepareDraftContext($user);
+    $storage = \Drupal::entityTypeManager()->getStorage('ai_content_provenance');
+    $before = $storage->getQuery()->accessCheck(FALSE)->condition('entity_type', 'node')->execute();
+
+    $result = $this->httpPost('/api/ai/plugins/drafting/save', [
+      'entityTypeId' => 'node',
+      'bundle' => 'oe_news',
+      'sessionId' => $context['session']->id(),
+      'fields' => ['title' => [['value' => 'AI draft']]],
+    ]);
+    $this->assertEquals(200, $result['status'], 'Expected 200 response. Body: ' . json_encode($result['body']));
+    $manual = Node::create(['type' => 'oe_news', 'title' => 'Manual draft', 'uid' => $user->id()]);
+    $manual->save();
+
+    $after = $storage->getQuery()->accessCheck(FALSE)->condition('entity_type', 'node')->execute();
+    $records = $storage->loadMultiple(array_diff($after, $before));
+    $this->assertCount(1, $records);
+    $this->assertSame((int) $result['body']['nodeId'], reset($records)->getTrackedEntityId());
   }
 
   /**
@@ -155,7 +187,7 @@ class DraftingPluginSaveTest extends ExistingSiteBase {
     ]);
     $this->assertNotEmpty($first_provenance);
     $first_provenance = reset($first_provenance);
-    $this->assertSame((int) $context['assistant']->id(), (int) $first_provenance->get('message')->target_id);
+    $this->assertSame((int) $context['assistant']->id(), (int) $first_provenance->getMessage()?->id());
 
     $second_result = $this->httpPost('/api/ai/plugins/drafting/save', [
       'entityTypeId' => 'node',
@@ -175,7 +207,7 @@ class DraftingPluginSaveTest extends ExistingSiteBase {
     ]);
     $this->assertNotEmpty($second_provenance);
     $second_provenance = reset($second_provenance);
-    $this->assertSame((int) $second_assistant->id(), (int) $second_provenance->get('message')->target_id);
+    $this->assertSame((int) $second_assistant->id(), (int) $second_provenance->getMessage()?->id());
 
     $latest_result = $this->httpPost('/api/ai/plugins/drafting/save', [
       'entityTypeId' => 'node',
@@ -194,7 +226,7 @@ class DraftingPluginSaveTest extends ExistingSiteBase {
     ]);
     $this->assertNotEmpty($latest_provenance);
     $latest_provenance = reset($latest_provenance);
-    $this->assertSame((int) $second_assistant->id(), (int) $latest_provenance->get('message')->target_id);
+    $this->assertSame((int) $second_assistant->id(), (int) $latest_provenance->getMessage()?->id());
   }
 
   /**
@@ -240,9 +272,7 @@ class DraftingPluginSaveTest extends ExistingSiteBase {
     ]);
     $this->assertNotEmpty($provenance);
     $provenance = reset($provenance);
-    $this->assertSame(6, (int) $provenance->get('tokens_input')->value);
-    $this->assertSame(9, (int) $provenance->get('tokens_output')->value);
-    $this->assertSame(15, (int) $provenance->get('tokens_total')->value);
+    $this->assertSame(['input' => 7, 'output' => 10, 'total' => 17], $provenance->getTokenUsage());
   }
 
   /**
@@ -447,6 +477,7 @@ class DraftingPluginSaveTest extends ExistingSiteBase {
         'function' => ['name' => 'draft_content', 'arguments' => '{}'],
       ],
     ]);
+    $assistant->setTokenUsage(['input' => 1, 'output' => 1, 'total' => 2]);
     $assistant->save();
 
     $child = \Drupal::entityTypeManager()->getStorage('ai_conversation_message')->create([

@@ -5,39 +5,54 @@ declare(strict_types=1);
 namespace Drupal\Tests\oe_ai_assistant\Functional;
 
 use Drupal\oe_ai_assistant\Entity\AiContentProvenance;
+use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
 
 /**
- * Tests the node revision history page provenance badge.
+ * Tests the AI-assisted marker on the node revision history page.
  *
  * @group oe_ai_assistant
  */
 final class AiContentProvenanceRevisionHistoryTest extends AiEditorialSessionBrowserTestBase {
 
   /**
-   * Tests that the revision history page shows a provenance badge.
+   * Tests the marker on tracked revisions and the access-checked session link.
    */
-  public function testRevisionHistoryShowsProvenanceBadge(): void {
-    $user = $this->drupalCreateUser([
+  public function testRevisionHistoryMarker(): void {
+    $owner = $this->drupalCreateUser([
       'access content',
       'view all revisions',
       'view_update own sessions',
     ]);
-    $this->drupalLogin($user);
-
-    $session = $this->createSession($user);
+    $session = $this->createSession($owner);
     $node = $this->createPublishedNode('oe_news', 'Revision history article');
-    $revision_id = (int) $node->getRevisionId();
+    $this->createRecord($node->id(), (int) $node->getRevisionId(), $owner->id(), $session);
+    $node->setNewRevision();
+    $node->setTitle('Revision history article, edited');
+    $node->save();
+    $this->createRecord($node->id(), (int) $node->getRevisionId(), $owner->id(), $session);
+    $history_url = $node->toUrl('version-history')->toString();
+    $session_url = $session->toUrl('canonical')->toString();
 
-    $this->drupalGet($node->toUrl('version-history')->toString());
-    $initial_html = $this->getSession()->getPage()->getContent();
-    $this->assertStringNotContainsString('ai-content-provenance-badge', $initial_html);
-    $this->assertSession()->responseHeaderContains('X-Drupal-Cache-Tags', 'ai_content_provenance_list');
+    $this->drupalLogin($owner);
+    $this->drupalGet($history_url);
+    $this->assertSession()->elementsCount('css', '.ai-content-provenance-badge', 2);
+    $this->assertSession()->linkByHrefExists($session_url);
 
+    $this->drupalLogin($this->drupalCreateUser(['access content', 'view all revisions']));
+    $this->drupalGet($history_url);
+    $this->assertSession()->elementsCount('css', '.ai-content-provenance-badge', 2);
+    $this->assertSession()->linkByHrefNotExists($session_url);
+  }
+
+  /**
+   * Creates a provenance record for a node revision.
+   */
+  private function createRecord(int|string $nid, int $revision_id, int|string $uid, AiEditorialSessionInterface $session): void {
     AiContentProvenance::create([
       'entity_type' => 'node',
-      'entity_id' => (int) $node->id(),
+      'entity_id' => (int) $nid,
       'revision_id' => $revision_id,
-      'uid' => $user->id(),
+      'uid' => $uid,
       'session' => $session->id(),
       'tokens_input' => 1,
       'tokens_output' => 2,
@@ -45,17 +60,6 @@ final class AiContentProvenanceRevisionHistoryTest extends AiEditorialSessionBro
       'provider' => 'mock',
       'model' => 'mock-model',
     ])->save();
-
-    $this->drupalGet($node->toUrl('version-history')->toString(), [
-      'query' => [
-        'cache-bust' => '1',
-      ],
-    ]);
-    $html = $this->getSession()->getPage()->getContent();
-
-    $this->assertStringContainsString('ai-content-provenance-badge', $html);
-    $this->assertStringContainsString('AI-assisted', $html);
-    $this->assertStringContainsString($session->toUrl('canonical')->toString(), $html);
   }
 
 }
