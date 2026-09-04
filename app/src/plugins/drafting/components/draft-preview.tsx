@@ -32,6 +32,7 @@ import {
   useState,
 } from "react";
 import { getConfig } from "@/config";
+import { formatDraftDate } from "../format-draft-date";
 import { buildPreviewUrl } from "../preview-url";
 import type { DraftingPluginConfig } from "../types";
 import { ContentTableBody, SaveConfirmDialog } from "./content-table";
@@ -57,6 +58,8 @@ interface DraftPreviewProps {
   sessionId: string;
   /** Draft version to preview, as shown in the version rail. */
   versionId: number;
+  /** When the draft was generated; null when unknown. */
+  createdAt: Date | null;
   /** Tab shown on mount. Defaults to the live preview. */
   defaultTab?: PreviewTab;
   /** Invoked after the user confirms the save dialog. */
@@ -79,7 +82,7 @@ function TabButton({
     <button
       type="button"
       onClick={onClick}
-      className={`flex cursor-pointer items-center gap-1.5 rounded px-2.5 py-1 text-xs font-medium transition-colors ${
+      className={`flex h-full cursor-pointer items-center gap-1.5 rounded px-2.5 text-xs font-medium whitespace-nowrap transition-colors ${
         active
           ? "bg-white text-gray-900 shadow-sm"
           : "text-gray-500 hover:text-gray-700"
@@ -108,7 +111,7 @@ function ToolbarButton({
       type="button"
       onClick={onClick}
       aria-label={label}
-      className={`group relative cursor-pointer rounded p-1.5 transition-colors ${
+      className={`group relative flex h-full cursor-pointer items-center rounded px-1.5 transition-colors ${
         active
           ? "bg-white text-gray-900 shadow-sm"
           : "text-gray-500 hover:text-gray-700"
@@ -235,6 +238,7 @@ function LivePreviewFrame({
 export function DraftPreview({
   sessionId,
   versionId,
+  createdAt,
   defaultTab = "live",
   onSave,
 }: DraftPreviewProps) {
@@ -272,33 +276,22 @@ export function DraftPreview({
           : "flex min-h-0 flex-1 flex-col"
       }
     >
-      {/* Header: draft title, tab switcher, viewport toolbar, save. */}
+      {/* Header: draft title, then viewport toolbar, fullscreen, tab switcher, save. */}
       <div className="flex h-12 shrink-0 items-center justify-between border-b border-gray-200 px-4">
-        <div className="flex items-center gap-3">
-          <h2 className="text-base font-semibold text-gray-900">
+        <div className="flex min-w-0 items-baseline gap-2">
+          <h2 className="text-base font-semibold whitespace-nowrap text-gray-900">
             Draft {versionId}
           </h2>
-          {hasLivePreview && (
-            <div className="flex items-center gap-1 rounded-md bg-gray-100 p-0.5">
-              <TabButton
-                icon={<Eye size={12} />}
-                label="Live preview"
-                active={activeTab === "live"}
-                onClick={() => setActiveTab("live")}
-              />
-              <TabButton
-                icon={<Table size={12} />}
-                label="Data"
-                active={activeTab === "data"}
-                onClick={() => setActiveTab("data")}
-              />
-            </div>
+          {createdAt && (
+            <span className="truncate text-xs text-gray-500">
+              {formatDraftDate(createdAt)}
+            </span>
           )}
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex shrink-0 items-center gap-3">
           {/* Viewport toolbar: only meaningful for the live page. */}
           {hasLivePreview && activeTab === "live" && (
-            <div className="flex items-center gap-1 rounded-md bg-gray-100 p-0.5">
+            <div className="flex h-7 items-center gap-1 rounded-md bg-gray-100 p-0.5">
               <ToolbarButton
                 icon={<Smartphone size={14} />}
                 label="Mobile (375px)"
@@ -322,23 +315,40 @@ export function DraftPreview({
                 label="Reload preview"
                 onClick={() => setReloadCount((count) => count + 1)}
               />
-              <ToolbarButton
-                icon={
-                  isFullscreen ? (
-                    <Minimize2 size={14} />
-                  ) : (
-                    <Maximize2 size={14} />
-                  )
-                }
-                label={isFullscreen ? "Exit full screen" : "Full screen"}
-                onClick={() => setIsFullscreen(!isFullscreen)}
+            </div>
+          )}
+          {/* Fullscreen applies to both tabs, so it lives outside the
+              viewport toolbar and stays available for leaving full
+              screen while the Data tab is open. */}
+          <div className="flex h-7 items-center rounded-md bg-gray-100 p-0.5">
+            <ToolbarButton
+              icon={
+                isFullscreen ? <Minimize2 size={14} /> : <Maximize2 size={14} />
+              }
+              label={isFullscreen ? "Exit full screen" : "Full screen"}
+              onClick={() => setIsFullscreen(!isFullscreen)}
+            />
+          </div>
+          {hasLivePreview && (
+            <div className="flex h-7 items-center gap-1 rounded-md bg-gray-100 p-0.5">
+              <TabButton
+                icon={<Eye size={12} />}
+                label="Live preview"
+                active={activeTab === "live"}
+                onClick={() => setActiveTab("live")}
+              />
+              <TabButton
+                icon={<Table size={12} />}
+                label="Data"
+                active={activeTab === "data"}
+                onClick={() => setActiveTab("data")}
               />
             </div>
           )}
           <button
             type="button"
             onClick={() => setShowConfirm(true)}
-            className="flex cursor-pointer items-center gap-1.5 rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700"
+            className="flex h-7 cursor-pointer items-center gap-1.5 rounded-md bg-blue-600 px-3 text-xs font-medium whitespace-nowrap text-white hover:bg-blue-700"
           >
             <Save size={12} />
             Save draft

@@ -66,6 +66,30 @@ function SessionArtifactPane({ children }: { children: ReactNode }) {
 }
 
 /**
+ * Preview pane for a versioned draft, stamped with its creation time.
+ * Reads the thread for the timestamp, so it must render inside the
+ * AssistantRuntimeProvider.
+ */
+function VersionedDraftPreview({
+  version,
+  onSave,
+}: {
+  version: number;
+  onSave: () => void;
+}) {
+  const sessionDrafts = useSessionDrafts();
+  const activeDraft = sessionDrafts.find((draft) => draft.version === version);
+  return (
+    <DraftPreview
+      sessionId={getConfig().sessionId}
+      versionId={version}
+      createdAt={activeDraft?.createdAt ?? null}
+      onSave={onSave}
+    />
+  );
+}
+
+/**
  * Inner component that owns the assistant-ui runtime and all runtime-dependent
  * state, including tone/template/documents hooks and composer tab construction.
  *
@@ -133,9 +157,8 @@ function DraftingChat() {
       // endpoint and keep the plain data table.
       if (activeDraftVersion !== null) {
         return (
-          <DraftPreview
-            sessionId={getConfig().sessionId}
-            versionId={activeDraftVersion}
+          <VersionedDraftPreview
+            version={activeDraftVersion}
             onSave={handleSave}
           />
         );
