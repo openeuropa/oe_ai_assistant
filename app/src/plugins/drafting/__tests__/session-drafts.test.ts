@@ -46,6 +46,24 @@ describe("extractSessionDrafts", () => {
     expect(drafts[1]?.version).toBe(2);
   });
 
+  it("carries the creation time of the message holding the draft", () => {
+    const createdAt = new Date(2026, 4, 22, 14, 30);
+    const versioned = {
+      version: 1,
+      context: { tone: null, template: null, documents: [] },
+      fields: { title: "Timed" },
+    };
+    const messages = [
+      { content: [draftPart(versioned)], createdAt },
+      { content: [draftPart({ ...versioned, version: 2 })] },
+    ];
+
+    const drafts = extractSessionDrafts(messages);
+
+    expect(drafts[0]?.createdAt).toBe(createdAt);
+    expect(drafts[1]?.createdAt).toBeNull();
+  });
+
   it("falls back to args fields when a rehydrated result is empty", () => {
     const messages = [{ content: [draftPart({}, { title: "From args" })] }];
 

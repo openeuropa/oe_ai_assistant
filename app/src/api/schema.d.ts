@@ -161,6 +161,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/plugins/drafting/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Render a themed HTML preview of a stored draft version, without saving */
+        get: operations["getDraftingPreview"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/plugins/echo/stream": {
         parameters: {
             query?: never;
@@ -336,6 +353,8 @@ export interface components {
                 summary?: string;
                 /** @description RFC 3339 timestamp of the event (event items). */
                 at?: string;
+                /** @description The draft version a "save" event persisted (event items). */
+                version?: number;
             }[];
         };
         DraftingChatRequest: {
@@ -730,6 +749,67 @@ export interface operations {
             };
             /** @description Validation error. */
             400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    getDraftingPreview: {
+        parameters: {
+            query: {
+                /** @description The editorial session hosting the draft to preview. */
+                sessionId: string;
+                /** @description The draft version to render, as returned by get_draft_history / the draft_content result (e.g. 1 for "Draft 1"). */
+                version: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A complete, standalone HTML document rendering the draft as the live site would show it. Not JSON: the action is a GET so an iframe can load it directly through its src attribute. The rendered document contains LLM-authored content, so consuming iframes should sandbox it (no script execution) rather than grant full same-origin trust. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/html": string;
+                };
+            };
+            /** @description Validation error, unresolvable template, or invalid payload. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Missing create permission for the bundle. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description The requested draft version was not found. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Rendering failed. See the system log for details. */
+            500: {
                 headers: {
                     [name: string]: unknown;
                 };

@@ -17,9 +17,11 @@ use Drupal\oe_ai_assistant\Service\Drafting\DraftHistoryInterface;
 use Drupal\oe_ai_assistant\Service\Drafting\EditorialContext;
 use Drupal\oe_ai_assistant\Plugin\AiAssistantPluginBase;
 use Drupal\oe_ai_assistant\Service\AiEditorialContextInterface;
+use Drupal\oe_ai_assistant\Service\DraftAssemblerInterface;
 use Drupal\oe_ai_assistant\Service\DraftingOrchestratorInterface;
 use Drupal\oe_ai_assistant\Service\DraftSaverInterface;
 use Drupal\oe_ai_assistant\Service\DraftingSchemaProviderInterface;
+use Drupal\oe_ai_assistant\Service\PreviewRendererInterface;
 use Drupal\oe_ai_assistant\Service\ToolExecutionLoopInterface;
 use Drupal\oe_ai_assistant\Service\UiMessageStreamInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
@@ -106,6 +108,20 @@ class DraftingPlugin extends AiAssistantPluginBase {
   protected DraftHistoryInterface $draftHistory;
 
   /**
+   * The draft assembler.
+   *
+   * @var \Drupal\oe_ai_assistant\Service\DraftAssemblerInterface
+   */
+  protected DraftAssemblerInterface $draftAssembler;
+
+  /**
+   * The preview renderer.
+   *
+   * @var \Drupal\oe_ai_assistant\Service\PreviewRendererInterface
+   */
+  protected PreviewRendererInterface $previewRenderer;
+
+  /**
    * {@inheritdoc}
    */
   public static function create(
@@ -122,6 +138,8 @@ class DraftingPlugin extends AiAssistantPluginBase {
     $instance->orchestrator = $container->get(DraftingOrchestratorInterface::class);
     $instance->aiEditorialContext = $container->get(AiEditorialContextInterface::class);
     $instance->draftHistory = $container->get(DraftHistoryInterface::class);
+    $instance->draftAssembler = $container->get(DraftAssemblerInterface::class);
+    $instance->previewRenderer = $container->get(PreviewRendererInterface::class);
     return $instance;
   }
 
@@ -136,6 +154,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
       'save' => $this->save(...),
       'set-tone' => $this->setTone(...),
       'set-template' => $this->setTemplate(...),
+      'preview' => $this->preview(...),
     ];
   }
 
@@ -379,8 +398,8 @@ class DraftingPlugin extends AiAssistantPluginBase {
     $session = $this->loadSession($body);
     $version = (int) ($body['version'] ?? 0);
 
-    $fields = $this->draftHistory->getDraftFields($session, $version);
-    if ($fields === NULL) {
+    $draft = $this->draftHistory->getDraftContent($session, $version);
+    if ($draft === NULL || $draft['fields'] === []) {
       throw new ActionException(
         'invalid_request',
         sprintf('Draft %d does not exist in this session.', $version),
@@ -388,7 +407,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
       );
     }
 
-    $result = $this->draftSaver->save($session->getContentType(), $fields);
+    $result = $this->draftSaver->save($session, $draft['fields'], $draft['templateId'], $version);
 
     $this->messageRecorder->recordEvent(
       $session,
@@ -398,6 +417,54 @@ class DraftingPlugin extends AiAssistantPluginBase {
     );
 
     return $result;
+  }
+
+  /**
+   * Renders a themed HTML preview of a stored draft version.
+   *
+   * Builds the unsaved node the same way save() would (bundle validation,
+   * create-permission check, template-defaults merge via DraftAssembler),
+   * but never persists it: the built node is handed straight to
+   * PreviewRenderer and discarded after the response is built.
+   *
+   * Unlike the other actions this one is addressed with GET, so the
+   * app's preview iframe can load it through its src attribute. The
+   * sessionId and version parameters therefore come from the query
+   * string instead of a JSON body.
+   *
+   * @param \Symfony\Component\HttpFoundation\Request $request
+   *   The preview request.
+   *
+   * @return \Symfony\Component\HttpFoundation\Response
+   *   A complete HTML document response.
+   *
+   * @throws \Drupal\oe_ai_assistant\Exception\ActionException
+   *   On a missing/invalid version, an unresolvable template, an invalid
+   *   bundle, missing permission, or a build/render failure.
+   */
+  public function preview(Request $request): Response {
+    $session = $this->loadSession([
+      'sessionId' => (string) $request->query->get('sessionId', ''),
+    ]);
+
+    $version = (int) $request->query->get('version', 0);
+    if ($version <= 0) {
+      throw new ActionException('invalid_request', 'A positive version is required.', 400);
+    }
+
+    $draft = $this->draftHistory->getDraftContent($session, $version);
+    if ($draft === NULL) {
+      throw new ActionException(
+        'invalid_request',
+        sprintf('Draft version %d was not found.', $version),
+        404,
+      );
+    }
+
+    $bundle = $session->getContentType();
+    $node = $this->draftAssembler->assemble($bundle, $draft['fields'], $draft['templateId']);
+
+    return $this->previewRenderer->render($node);
   }
 
   /**

@@ -158,12 +158,19 @@ abstract class AiAssistantPluginBase extends PluginBase implements AiAssistantPl
       $at = (string) $message->get('created')->date?->format('c');
       // Event rows surface as compact timeline entries.
       if ($role === 'event') {
-        $messages[] = [
+        $metadata = $message->getMetadata();
+        $item = [
           'role' => 'event',
-          'type' => (string) ($message->getMetadata()['type'] ?? ''),
+          'type' => (string) ($metadata['type'] ?? ''),
           'summary' => (string) $message->get('content')->value,
           'at' => $at,
         ];
+        // Save events name the draft version they persisted, so clients
+        // can mark that version as saved.
+        if (isset($metadata['version'])) {
+          $item['version'] = (int) $metadata['version'];
+        }
+        $messages[] = $item;
         continue;
       }
       // Only user and assistant turns are shown to the editor.

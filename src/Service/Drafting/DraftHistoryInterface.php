@@ -34,22 +34,23 @@ interface DraftHistoryInterface {
    *
    * @return array
    *   One entry per draft, in version order: {name: "Draft N", version: N,
-   *   context: snapshot array or NULL for pre-provenance legacy results}.
+   *   context: snapshot array}.
    */
   public function listDrafts(EntityInterface $session): array;
 
   /**
-   * Returns the drafted field values of one stored draft version.
+   * Returns the fields and template id for one stored draft version.
    *
    * @param \Drupal\Core\Entity\EntityInterface $session
    *   The session hosting the conversation.
    * @param int $version
-   *   The draft version to look up.
+   *   The draft version to look up (as returned by listDrafts()).
    *
    * @return array|null
-   *   The field values keyed by field machine name, or NULL when the
-   *   session has no draft with that version.
+   *   {fields: array, templateId: string|null}, or NULL if no draft_content
+   *   result carries that version. templateId is NULL when the draft's
+   *   snapshot has no template.
    */
-  public function getDraftFields(EntityInterface $session, int $version): ?array;
+  public function getDraftContent(EntityInterface $session, int $version): ?array;
 
 }

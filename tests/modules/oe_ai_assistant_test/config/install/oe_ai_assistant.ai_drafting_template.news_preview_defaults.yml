@@ -1,0 +1,23 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - workflows.workflow.editorial
+    - field.field.node.oe_news.field_teaser
+    - node.type.oe_news
+  module:
+    - oe_ai_assistant
+id: news_preview_defaults
+label: 'News article (preview defaults fixture)'
+description: 'Omits field_teaser from fields but supplies it via defaults, for exercising the preview template-defaults merge.'
+content_type: oe_news
+fields:
+  title:
+    prompt: 'News headline.'
+defaults:
+  langcode:
+    default_value:
+      - value: en
+  field_teaser:
+    default_value:
+      - value: 'Default teaser from template.'

@@ -107,3 +107,61 @@ setTemplate:
           application/json:
             schema:
               $ref: "../../openapi.yaml#/components/schemas/ApiError"
+
+preview:
+  get:
+    operationId: getDraftingPreview
+    summary: Render a themed HTML preview of a stored draft version, without saving
+    tags: [Drafting]
+    parameters:
+      - name: sessionId
+        in: query
+        required: true
+        schema:
+          type: string
+        description: The editorial session hosting the draft to preview.
+      - name: version
+        in: query
+        required: true
+        schema:
+          type: integer
+        description: >
+          The draft version to render, as returned by get_draft_history /
+          the draft_content result (e.g. 1 for "Draft 1").
+    responses:
+      "200":
+        description: >
+          A complete, standalone HTML document rendering the draft as the
+          live site would show it. Not JSON: the action is a GET so an
+          iframe can load it directly through its src attribute. The
+          rendered document contains LLM-authored content, so consuming
+          iframes should sandbox it (no script execution) rather than
+          grant full same-origin trust.
+        content:
+          text/html:
+            schema:
+              type: string
+      "400":
+        description: Validation error, unresolvable template, or invalid payload.
+        content:
+          application/json:
+            schema:
+              $ref: "../../openapi.yaml#/components/schemas/ApiError"
+      "403":
+        description: Missing create permission for the bundle.
+        content:
+          application/json:
+            schema:
+              $ref: "../../openapi.yaml#/components/schemas/ApiError"
+      "404":
+        description: The requested draft version was not found.
+        content:
+          application/json:
+            schema:
+              $ref: "../../openapi.yaml#/components/schemas/ApiError"
+      "500":
+        description: Rendering failed. See the system log for details.
+        content:
+          application/json:
+            schema:
+              $ref: "../../openapi.yaml#/components/schemas/ApiError"

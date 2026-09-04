@@ -9,6 +9,7 @@ use Drupal\Core\Entity\EntityChangedTrait;
 use Drupal\Core\Entity\EntityStorageInterface;
 use Drupal\Core\Entity\EntityTypeInterface;
 use Drupal\Core\Field\BaseFieldDefinition;
+use Drupal\node\NodeInterface;
 use Drupal\user\EntityOwnerTrait;
 
 /**
@@ -122,6 +123,22 @@ class AiEditorialSession extends ContentEntityBase implements AiEditorialSession
    */
   public function setStatus(string $status): AiEditorialSessionInterface {
     $this->set('status', $status);
+    return $this;
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function getNode(): ?NodeInterface {
+    $entity = $this->get('node')->entity;
+    return $entity instanceof NodeInterface ? $entity : NULL;
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function setNode(int $nid): AiEditorialSessionInterface {
+    $this->set('node', $nid);
     return $this;
   }
 

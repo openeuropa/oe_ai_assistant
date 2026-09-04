@@ -6,8 +6,9 @@
  * that draft in the artifact pane; clicking the active version again
  * (shown as an X) collapses the pane. The active tab is white and sits
  * flush against the white pane for visual continuity, while inactive
- * tabs rest on the grayer strip. Hovering a version shows the draft's
- * chat card in a popover on the left for an at-a-glance preview. The
+ * tabs rest on the grayer strip. Hovering an inactive version shows the
+ * draft's chat card in a popover on the left for an at-a-glance
+ * preview; the open version's X close control has no popover. The
  * rail scrolls when the session accumulates more drafts than fit.
  * Reopening a session that already has drafts auto-opens the latest
  * one.
@@ -15,13 +16,31 @@
 
 import { X } from "lucide-react";
 import { HoverCard } from "radix-ui";
-import { useEffect, useRef } from "react";
+import { Fragment, useEffect, useRef } from "react";
+import { useSavedVersions } from "../saved-versions";
 import { openSessionDraft, useSessionDrafts } from "../session-drafts";
 import { setDraftingState, useDraftingSlice } from "../store";
 import { DraftCard } from "./draft-card";
 
+/**
+ * Tab colours: every tab is bordered; saved versions get a subtle green
+ * tint on border, background and text; the open tab is white so it
+ * reads as a continuation of the pane.
+ */
+function tabClasses(isActive: boolean, isSaved: boolean): string {
+  if (isSaved) {
+    return isActive
+      ? "border-green-600 bg-white text-green-700"
+      : "border-green-600 bg-green-50 text-green-700 hover:bg-green-100";
+  }
+  return isActive
+    ? "border-gray-200 bg-white text-gray-900"
+    : "border-gray-200 text-gray-600 hover:bg-gray-200 hover:text-gray-900";
+}
+
 export function DraftRail() {
   const drafts = useSessionDrafts();
+  const savedVersions = useSavedVersions();
   const { draftedFields, activeDraftVersion, isArtifactCollapsed } =
     useDraftingSlice();
   const hasFields = Object.keys(draftedFields).length > 0;
@@ -62,39 +81,42 @@ export function DraftRail() {
           hasFields &&
           !isArtifactCollapsed &&
           activeDraftVersion === draft.version;
+        const key = draft.version ?? `legacy-${index}`;
+        const isSaved =
+          draft.version !== null && savedVersions.has(draft.version);
+
+        const tabButton = (
+          <button
+            type="button"
+            aria-label={
+              isActive ? `Close ${draft.label}` : `Open ${draft.label}`
+            }
+            onClick={() =>
+              isActive
+                ? setDraftingState({ isArtifactCollapsed: true })
+                : openSessionDraft(draft)
+            }
+            className={`flex h-9 w-full shrink-0 cursor-pointer items-center justify-center rounded-r-md border-y border-r text-xs font-medium transition-colors ${tabClasses(isActive, isSaved)}`}
+          >
+            {isActive ? (
+              <X size={14} />
+            ) : draft.version !== null ? (
+              `v${draft.version}`
+            ) : (
+              "v?"
+            )}
+          </button>
+        );
+
+        // The open draft's tab is a close control: its content is
+        // already on screen, so hovering the X shows no summary card.
+        if (isActive) {
+          return <Fragment key={key}>{tabButton}</Fragment>;
+        }
 
         return (
-          <HoverCard.Root
-            key={draft.version ?? `legacy-${index}`}
-            openDelay={200}
-            closeDelay={100}
-          >
-            <HoverCard.Trigger asChild>
-              <button
-                type="button"
-                aria-label={
-                  isActive ? `Close ${draft.label}` : `Open ${draft.label}`
-                }
-                onClick={() =>
-                  isActive
-                    ? setDraftingState({ isArtifactCollapsed: true })
-                    : openSessionDraft(draft)
-                }
-                className={`flex h-9 w-full shrink-0 cursor-pointer items-center justify-center rounded-r-md text-xs font-medium transition-colors ${
-                  isActive
-                    ? "border-y border-r border-gray-200 bg-white text-gray-900"
-                    : "text-gray-600 hover:bg-gray-200 hover:text-gray-900"
-                }`}
-              >
-                {isActive ? (
-                  <X size={14} />
-                ) : draft.version !== null ? (
-                  `v${draft.version}`
-                ) : (
-                  "v?"
-                )}
-              </button>
-            </HoverCard.Trigger>
+          <HoverCard.Root key={key} openDelay={200} closeDelay={100}>
+            <HoverCard.Trigger asChild>{tabButton}</HoverCard.Trigger>
 
             {/* At-a-glance preview: the draft's chat card, floated to the
                 left of the rail with an arrow pointing at the button. The
@@ -119,6 +141,8 @@ export function DraftRail() {
                     version={draft.version}
                     context={draft.context}
                     fields={draft.fields}
+                    isSaved={isSaved}
+                    createdAt={draft.createdAt}
                     onOpen={() => openSessionDraft(draft)}
                   />
                 </div>

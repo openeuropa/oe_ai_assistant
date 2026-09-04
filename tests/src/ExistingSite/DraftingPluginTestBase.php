@@ -218,6 +218,31 @@ abstract class DraftingPluginTestBase extends ExistingSiteBase {
   }
 
   /**
+   * Sends a GET request with query parameters using the BrowserKit client.
+   *
+   * @param string $url
+   *   The URL to request.
+   * @param array $query
+   *   The query parameters to append.
+   *
+   * @return array
+   *   An array with 'status' (int) and 'body' (raw string) keys.
+   */
+  protected function httpGet(string $url, array $query = []): array {
+    /** @var \Symfony\Component\BrowserKit\AbstractBrowser $client */
+    $client = $this->getSession()->getDriver()->getClient();
+    $client->request(
+      'GET',
+      $this->baseUrl . $url . ($query === [] ? '' : '?' . http_build_query($query)),
+    );
+    $response = $client->getResponse();
+    return [
+      'status' => $response->getStatusCode(),
+      'body' => $response->getContent(),
+    ];
+  }
+
+  /**
    * Returns the taxonomy term ID for a fixture term.
    */
   protected function getTermIdByName(string $vid, string $name): string {

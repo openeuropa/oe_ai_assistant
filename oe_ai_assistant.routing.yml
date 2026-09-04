@@ -17,6 +17,19 @@ oe_ai_assistant.plugin.dispatch:
     plugin_id: '[a-z][a-z0-9_-]*'
     action: '[a-z][a-z0-9_-]*'
 
+# Drafting preview route: GET, so the app's preview iframe can address
+# it directly through its src attribute. Reuses the dispatch pipeline
+# by fixing the plugin and action as route defaults.
+oe_ai_assistant.drafting_preview:
+  path: /api/ai/plugins/drafting/preview
+  defaults:
+    _controller: \Drupal\oe_ai_assistant\Controller\PluginController::dispatch
+    plugin_id: drafting
+    action: preview
+  methods: [GET]
+  requirements:
+    _permission: 'use oe ai assistant'
+
 # Content schema route: returns the JSON Schema for an entity type/bundle.
 oe_ai_assistant.content_schema:
   path: /api/ai/content-schema/{entity_type_id}/{bundle}

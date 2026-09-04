@@ -62,6 +62,8 @@ paths:
     $ref: "plugins/drafting/paths.yaml#/setTone"
   /plugins/drafting/set-template:
     $ref: "plugins/drafting/paths.yaml#/setTemplate"
+  /plugins/drafting/preview:
+    $ref: "plugins/drafting/paths.yaml#/preview"
 
   # -- Plugin: echo (dev-only) --
   /plugins/echo/stream:
