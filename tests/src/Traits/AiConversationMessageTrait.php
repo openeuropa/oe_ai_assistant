@@ -40,4 +40,29 @@ trait AiConversationMessageTrait {
     return $message;
   }
 
+  /**
+   * Creates a top-level assistant turn that called draft_content.
+   *
+   * @param \Drupal\Core\Entity\EntityInterface $host
+   *   The entity hosting the conversation.
+   * @param array<string, int> $usage
+   *   Optional token usage to store on the turn.
+   *
+   * @return \Drupal\oe_ai_assistant\Entity\AiConversationMessageInterface
+   *   The saved turn.
+   */
+  protected function createDraftTurn(EntityInterface $host, array $usage = []): AiConversationMessageInterface {
+    $message = $this->createMessage($host, AiConversationMessageInterface::ROLE_ASSISTANT, 'Draft ready.');
+    $message->set('provider', 'mock');
+    $message->set('model', 'mock-model');
+    $message->setToolCalls([
+      ['type' => 'function', 'function' => ['name' => 'draft_content', 'arguments' => '{}']],
+    ]);
+    if ($usage !== []) {
+      $message->setTokenUsage($usage);
+    }
+    $message->save();
+    return $message;
+  }
+
 }

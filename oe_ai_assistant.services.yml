@@ -38,6 +38,9 @@ services:
   Drupal\oe_ai_assistant\Service\MessageRecorder: {}
   Drupal\oe_ai_assistant\Service\MessageRecorderInterface: '@Drupal\oe_ai_assistant\Service\MessageRecorder'
 
+  Drupal\oe_ai_assistant\Service\ProvenanceRecorder: {}
+  Drupal\oe_ai_assistant\Service\ProvenanceRecorderInterface: '@Drupal\oe_ai_assistant\Service\ProvenanceRecorder'
+
   # Records drafting sub-agent turns from the ai_agents response event. Tagged
   # as an event subscriber automatically via autoconfigure.
   Drupal\oe_ai_assistant\EventSubscriber\SubAgentMessageSubscriber: {}

@@ -41,10 +41,18 @@ DraftingResetResponse:
 DraftingSaveRequest:
   type: object
   required:
+    - sessionId
     - entityTypeId
     - bundle
     - fields
   properties:
+    sessionId:
+      type: string
+      description: The editorial session that owns the draft being saved.
+    draftVersion:
+      type: integer
+      minimum: 1
+      description: Optional 1-based draft turn selector when multiple draft_content turns exist.
     entityTypeId:
       type: string
       description: The entity type ID (e.g. "node").

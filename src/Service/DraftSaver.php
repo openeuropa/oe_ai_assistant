@@ -8,6 +8,8 @@ use Drupal\content_moderation\ModerationInformationInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Session\AccountProxyInterface;
 use Drupal\node\NodeInterface;
+use Drupal\oe_ai_assistant\Entity\AiConversationMessageInterface;
+use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
 use Drupal\oe_ai_assistant\Exception\ActionException;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
@@ -45,6 +47,8 @@ class DraftSaver implements DraftSaverInterface {
    *   For detecting moderated bundles.
    * @param \Drupal\oe_ai_assistant\Service\DraftEntityBuilder $draftEntityBuilder
    *   Builds an unsaved node from the LLM fields map.
+   * @param \Drupal\oe_ai_assistant\Service\ProvenanceRecorderInterface $provenanceRecorder
+   *   Records AI provenance for the saved revision.
    * @param \Psr\Log\LoggerInterface $logger
    *   The logger channel.
    */
@@ -53,6 +57,7 @@ class DraftSaver implements DraftSaverInterface {
     private readonly AccountProxyInterface $currentUser,
     private readonly ModerationInformationInterface $moderationInformation,
     private readonly DraftEntityBuilder $draftEntityBuilder,
+    private readonly ProvenanceRecorderInterface $provenanceRecorder,
     #[Autowire(service: 'logger.channel.oe_ai_assistant')]
     private readonly LoggerInterface $logger,
   ) {}
@@ -60,7 +65,7 @@ class DraftSaver implements DraftSaverInterface {
   /**
    * {@inheritdoc}
    */
-  public function save(string $bundle, array $fields): array {
+  public function save(string $bundle, array $fields, AiEditorialSessionInterface $session, AiConversationMessageInterface $message): array {
     // Validate bundle exists.
     if (!$this->entityTypeManager->getStorage('node_type')->load($bundle)) {
       throw new ActionException('invalid_bundle',
@@ -104,6 +109,8 @@ class DraftSaver implements DraftSaverInterface {
     // Save the node (atomic: parent's preSave chain saves any
     // inline children in the same transaction).
     $node->save();
+
+    $this->provenanceRecorder->record($node, $session, $message);
 
     return [
       'nodeId' => (string) $node->id(),

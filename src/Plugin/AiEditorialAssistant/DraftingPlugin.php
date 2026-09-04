@@ -335,10 +335,58 @@ class DraftingPlugin extends AiAssistantPluginBase {
    */
   public function save(Request $request): array {
     $body = $this->decodeJsonBody($request);
+    $session = $this->loadSession($body);
+    $message = $this->resolveDraftMessage($session, isset($body['draftVersion']) ? (int) $body['draftVersion'] : NULL);
     return $this->draftSaver->save(
       $body['bundle'] ?? '',
       $body['fields'] ?? [],
+      $session,
+      $message,
     );
+  }
+
+  /**
+   * Resolves the assistant message that triggered drafting.
+   *
+   * @param \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $session
+   *   The editorial session whose transcript should be scanned.
+   * @param int|null $draftVersion
+   *   Optional 1-based draft version selector.
+   *
+   * @return \Drupal\oe_ai_assistant\Entity\AiConversationMessageInterface
+   *   The assistant message that called draft_content.
+   *
+   * @throws \Drupal\oe_ai_assistant\Exception\ActionException
+   *   Thrown when no draft turn exists or the requested version is missing.
+   */
+  private function resolveDraftMessage(AiEditorialSessionInterface $session, ?int $draftVersion = NULL): AiConversationMessageInterface {
+    $storage = $this->entityTypeManager->getStorage('ai_conversation_message');
+    $candidates = [];
+
+    foreach ($storage->loadTranscript($session) as $message) {
+      if ($message->getRole() !== AiConversationMessageInterface::ROLE_ASSISTANT) {
+        continue;
+      }
+      foreach ($message->getToolCalls() as $call) {
+        if (($call['function']['name'] ?? '') === 'draft_content') {
+          $candidates[] = $message;
+          break;
+        }
+      }
+    }
+
+    if ($candidates === []) {
+      throw new ActionException('invalid_request', 'No draft_content turn was found for the session.', 400);
+    }
+
+    if ($draftVersion !== NULL) {
+      if ($draftVersion < 1 || !isset($candidates[$draftVersion - 1])) {
+        throw new ActionException('invalid_request', 'The requested draftVersion was not found.', 400);
+      }
+      return $candidates[$draftVersion - 1];
+    }
+
+    return $candidates[array_key_last($candidates)];
   }
 
   /**

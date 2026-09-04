@@ -67,6 +67,7 @@ class AiConversationMessageStorageTest extends KernelTestBase {
 
     $this->installEntitySchema('user');
     $this->installEntitySchema('ai_conversation_message');
+    $this->installEntitySchema('ai_content_provenance');
 
     $this->storage = $this->container->get('entity_type.manager')
       ->getStorage('ai_conversation_message');
