@@ -1,0 +1,449 @@
+{
+  "ApiError": {
+    "type": "object",
+    "description": "Standard error envelope returned by all error responses.",
+    "required": [
+      "code",
+      "message"
+    ],
+    "properties": {
+      "code": {
+        "type": "string",
+        "description": "Machine-readable error code (e.g. \"not_found\")."
+      },
+      "message": {
+        "type": "string",
+        "description": "Human-readable explanation."
+      }
+    }
+  },
+  "AppStateBlob": {
+    "type": "object",
+    "description": "Opaque JSON blob representing the full persisted application state. The backend stores it as-is and returns it verbatim. The shape is owned by the frontend Zustand store.\n",
+    "additionalProperties": true
+  },
+  "ContentTypeField": {
+    "type": "object",
+    "description": "Describes a single field within a content type.",
+    "required": [
+      "name",
+      "label",
+      "type"
+    ],
+    "properties": {
+      "name": {
+        "type": "string",
+        "description": "Machine name (used as the key in content fields)."
+      },
+      "label": {
+        "type": "string",
+        "description": "Human-readable label."
+      },
+      "type": {
+        "type": "string",
+        "enum": [
+          "text",
+          "textarea",
+          "html",
+          "select",
+          "boolean",
+          "number"
+        ],
+        "description": "Field widget type."
+      },
+      "required": {
+        "type": "boolean",
+        "description": "Whether the field is required.",
+        "default": false
+      },
+      "options": {
+        "type": "array",
+        "description": "Allowed values for select fields.",
+        "items": {
+          "type": "object",
+          "required": [
+            "value",
+            "label"
+          ],
+          "properties": {
+            "value": {
+              "type": "string"
+            },
+            "label": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    }
+  },
+  "ContentType": {
+    "type": "object",
+    "description": "A content type definition. Tells the app which fields are available for a given type of content.\n",
+    "required": [
+      "id",
+      "name",
+      "fields"
+    ],
+    "properties": {
+      "id": {
+        "type": "string",
+        "description": "Machine name (e.g. \"article\", \"news_story\")."
+      },
+      "name": {
+        "type": "string",
+        "description": "Human-readable name."
+      },
+      "description": {
+        "type": "string",
+        "description": "Short explanation of the content type."
+      },
+      "fields": {
+        "type": "array",
+        "description": "Ordered list of fields the editor can fill.",
+        "items": {
+          "$ref": "#/ContentTypeField"
+        }
+      }
+    }
+  },
+  "GetMessagesRequest": {
+    "type": "object",
+    "description": "Load the persisted conversation transcript for an editorial session. Available on every plugin endpoint under /plugins/{pluginId}/get-messages.\n",
+    "required": [
+      "sessionId"
+    ],
+    "properties": {
+      "sessionId": {
+        "type": "string",
+        "description": "The editorial session whose transcript to load."
+      }
+    }
+  },
+  "GetMessagesResponse": {
+    "type": "object",
+    "required": [
+      "messages"
+    ],
+    "properties": {
+      "messages": {
+        "type": "array",
+        "description": "The user-visible transcript, oldest first.",
+        "items": {
+          "type": "object",
+          "required": [
+            "role"
+          ],
+          "dependentRequired": {
+            "userName": [
+              "userId"
+            ],
+            "userId": [
+              "userName"
+            ]
+          },
+          "properties": {
+            "role": {
+              "type": "string",
+              "description": "The message role (\"user\", \"assistant\" or \"event\")."
+            },
+            "content": {
+              "type": "string",
+              "description": "The message text (user and assistant items)."
+            },
+            "userName": {
+              "type": "string",
+              "description": "Display name of the author (user items). Together with userId it attributes turns in shared sessions.\n"
+            },
+            "userId": {
+              "type": "string",
+              "description": "Stable CMS user id of the author (user items). Clients key participants by this id so two users sharing a display name stay distinct.\n"
+            },
+            "type": {
+              "type": "string",
+              "description": "The event type, e.g. \"session_start\", \"tone\", \"template\" (event items)."
+            },
+            "summary": {
+              "type": "string",
+              "description": "The human-readable event summary (event items)."
+            },
+            "at": {
+              "type": "string",
+              "description": "RFC 3339 timestamp of the event (event items)."
+            }
+          }
+        }
+      }
+    }
+  },
+  "Note": {
+    "type": "object",
+    "description": "A note stored in the mock backend.",
+    "required": [
+      "id",
+      "title",
+      "content",
+      "createdAt",
+      "updatedAt"
+    ],
+    "properties": {
+      "id": {
+        "type": "string"
+      },
+      "title": {
+        "type": "string"
+      },
+      "content": {
+        "type": "string"
+      },
+      "createdAt": {
+        "type": "string",
+        "format": "date-time"
+      },
+      "updatedAt": {
+        "type": "string",
+        "format": "date-time"
+      }
+    }
+  },
+  "NotesListRequest": {
+    "type": "object",
+    "description": "Request body for the list action (currently empty).",
+    "properties": {}
+  },
+  "NotesGetRequest": {
+    "type": "object",
+    "description": "Request body for the get action.",
+    "required": [
+      "noteId"
+    ],
+    "properties": {
+      "noteId": {
+        "type": "string",
+        "description": "ID of the note to retrieve."
+      }
+    }
+  },
+  "NotesCreateRequest": {
+    "type": "object",
+    "description": "Request body for the create action.",
+    "required": [
+      "title",
+      "content"
+    ],
+    "properties": {
+      "title": {
+        "type": "string"
+      },
+      "content": {
+        "type": "string"
+      }
+    }
+  },
+  "NotesUpdateRequest": {
+    "type": "object",
+    "description": "Request body for the update action.",
+    "required": [
+      "noteId",
+      "title",
+      "content"
+    ],
+    "properties": {
+      "noteId": {
+        "type": "string",
+        "description": "ID of the note to update."
+      },
+      "title": {
+        "type": "string"
+      },
+      "content": {
+        "type": "string"
+      }
+    }
+  },
+  "NotesDeleteRequest": {
+    "type": "object",
+    "description": "Request body for the delete action.",
+    "required": [
+      "noteId"
+    ],
+    "properties": {
+      "noteId": {
+        "type": "string",
+        "description": "ID of the note to delete."
+      }
+    }
+  },
+  "EchoRequest": {
+    "type": "object",
+    "description": "Request body for the echo stream endpoint.",
+    "required": [
+      "message"
+    ],
+    "properties": {
+      "message": {
+        "type": "string",
+        "description": "Text to echo back word-by-word."
+      }
+    }
+  },
+  "EchoStreamEvent": {
+    "type": "object",
+    "description": "A single SSE data frame from the echo stream.",
+    "required": [
+      "word",
+      "index",
+      "done"
+    ],
+    "properties": {
+      "word": {
+        "type": "string",
+        "description": "The word being streamed back."
+      },
+      "index": {
+        "type": "integer",
+        "description": "Zero-based index of this word in the original message."
+      },
+      "done": {
+        "type": "boolean",
+        "description": "True when this is the last event in the stream."
+      }
+    }
+  },
+  "DraftingChatRequest": {
+    "type": "object",
+    "required": [
+      "message",
+      "sessionId"
+    ],
+    "properties": {
+      "message": {
+        "type": "string",
+        "description": "The user's drafting prompt or instruction."
+      },
+      "sessionId": {
+        "type": "string",
+        "description": "The editorial session that hosts the conversation. The backend derives the target content type and access from the session and persists every turn against it.\n"
+      }
+    }
+  },
+  "DraftingResetRequest": {
+    "type": "object",
+    "required": [
+      "sessionId"
+    ],
+    "properties": {
+      "sessionId": {
+        "type": "string",
+        "description": "The editorial session whose conversation to reset."
+      }
+    }
+  },
+  "DraftingResetResponse": {
+    "type": "object",
+    "required": [
+      "status"
+    ],
+    "properties": {
+      "status": {
+        "type": "string",
+        "description": "Confirmation status (e.g. \"ok\")."
+      }
+    }
+  },
+  "DraftingSaveRequest": {
+    "type": "object",
+    "description": "Save one of the session's drafts as an unpublished revision. The backend resolves the target content type and the drafted field values from the session and its draft history, so the client only names the version being saved; a client can never save field data the session did not produce.\n",
+    "required": [
+      "sessionId",
+      "version"
+    ],
+    "properties": {
+      "sessionId": {
+        "type": "string",
+        "description": "The editorial session that owns the draft."
+      },
+      "version": {
+        "type": "integer",
+        "description": "The draft version to save, matching the version of a draft_content result in the session transcript (the version shown in the artifact pane and the version rail).\n"
+      }
+    }
+  },
+  "DraftingSaveResponse": {
+    "type": "object",
+    "required": [
+      "nodeId",
+      "previewUrl"
+    ],
+    "properties": {
+      "nodeId": {
+        "type": "string",
+        "description": "The ID of the created node."
+      },
+      "previewUrl": {
+        "type": "string",
+        "description": "URL to preview the created draft node."
+      }
+    }
+  },
+  "DraftingSetToneRequest": {
+    "type": "object",
+    "required": [
+      "sessionId",
+      "toneId"
+    ],
+    "properties": {
+      "sessionId": {
+        "type": "string",
+        "description": "The editorial session on which the selected tone is saved.\n"
+      },
+      "toneId": {
+        "type": "string",
+        "description": "Selected tone taxonomy term ID."
+      }
+    }
+  },
+  "DraftingSetToneResponse": {
+    "type": "object",
+    "required": [
+      "status"
+    ],
+    "properties": {
+      "status": {
+        "type": "string",
+        "enum": [
+          "ok"
+        ]
+      }
+    }
+  },
+  "DraftingSetTemplateRequest": {
+    "type": "object",
+    "required": [
+      "sessionId",
+      "template"
+    ],
+    "properties": {
+      "sessionId": {
+        "type": "string",
+        "description": "The editorial session on which the selected template is saved.\n"
+      },
+      "template": {
+        "type": "string",
+        "description": "The ai_drafting_template id to select, from pluginConfig.drafting.templates.options. The template field is mandatory, so an empty value is rejected.\n"
+      }
+    }
+  },
+  "DraftingSetTemplateResponse": {
+    "type": "object",
+    "required": [
+      "status"
+    ],
+    "properties": {
+      "status": {
+        "type": "string",
+        "description": "Confirmation status (e.g. \"ok\")."
+      }
+    }
+  }
+}

@@ -1,0 +1,12 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - node.type.oe_news
+id: broken_template_structural
+label: 'Broken template (structural violation)'
+description: 'References a non-existent field, to test config install safety for structural violations.'
+content_type: oe_news
+fields:
+  field_does_not_exist: {  }
+defaults: {  }
