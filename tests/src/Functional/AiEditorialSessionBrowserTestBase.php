@@ -43,21 +43,8 @@ abstract class AiEditorialSessionBrowserTestBase extends BrowserTestBase {
 
     $this->createNodeType('oe_contact', 'Contact');
     $this->createNodeType('oe_news', 'News');
-    $this->installEntityVersionField('oe_news');
     $this->createEditorialContextTerms();
     $this->createDefaultTemplate();
-  }
-
-  /**
-   * Installs the version field on the given node bundle.
-   */
-  protected function installEntityVersionField(string $bundle): void {
-    \Drupal::service('entity_version.entity_version_installer')
-      ->install('node', [$bundle], [
-        'major' => 0,
-        'minor' => 1,
-        'patch' => 0,
-      ]);
   }
 
   /**

@@ -1,0 +1,20 @@
+/**
+ * @file
+ * AI-assisted marker on the node revision history table.
+ */
+
+.ai-content-provenance {
+  margin-inline-start: 0.5em;
+  white-space: nowrap;
+}
+
+.ai-content-provenance-badge {
+  display: inline-block;
+  padding: 0.1em 0.5em;
+  border-radius: 1em;
+  background-color: #e6f0fa;
+  color: #1c4e80;
+  font-size: 0.85em;
+  font-weight: 600;
+  line-height: 1.6;
+}

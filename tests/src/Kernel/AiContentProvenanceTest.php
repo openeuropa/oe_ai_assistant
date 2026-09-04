@@ -4,47 +4,116 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\oe_ai_assistant\Kernel;
 
+use Drupal\Core\Entity\EntityStorageException;
+use Drupal\node\Entity\Node;
 use Drupal\oe_ai_assistant\Entity\AiContentProvenance;
+use Drupal\oe_ai_assistant\Entity\AiContentProvenanceInterface;
 use Drupal\oe_ai_assistant\Entity\AiConversationMessageInterface;
+use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
+use Drupal\oe_ai_assistant\Entity\Storage\AiContentProvenanceStorageInterface;
+use Drupal\Tests\oe_ai_assistant\Traits\AiConversationMessageTrait;
 use PHPUnit\Framework\Attributes\Group;
 
 /**
- * Kernel tests for AI content provenance persistence.
+ * Kernel tests for the ai_content_provenance entity and its storage handler.
  */
 #[Group('oe_ai_assistant')]
 class AiContentProvenanceTest extends AiEditorialSessionKernelTestBase {
 
-  /**
-   * Tests that provenance records can be stored and cleaned up.
-   */
-  public function testCreateAndSessionCleanup(): void {
-    $storage = $this->container->get('entity_type.manager')->getStorage('ai_content_provenance');
-    $message_storage = $this->container->get('entity_type.manager')->getStorage('ai_conversation_message');
+  use AiConversationMessageTrait;
 
+  /**
+   * Tests the revision lookups.
+   */
+  public function testRevisionLookups(): void {
     $user = $this->createUser();
     $session = $this->createSession($user);
-    $message = $message_storage->create([
-      'host_entity_type' => 'ai_editorial_session',
-      'host_entity_id' => (int) $session->id(),
-      'role' => AiConversationMessageInterface::ROLE_ASSISTANT,
-      'agent_id' => 'orchestrator',
-      'content' => 'Draft ready.',
-      'provider' => 'mock',
-      'model' => 'mock-model',
-    ]);
-    $message->setToolCalls([
-      [
-        'type' => 'function',
-        'function' => ['name' => 'draft_content'],
-      ],
-    ]);
-    $message->save();
+    $message = $this->createDraftTurn($session);
+    $record = $this->createRecord(99, 123, $user->id(), $session, $message);
+    $this->createRecord(99, 123, $user->id(), $session, $message, 'link_list');
 
-    $provenance = AiContentProvenance::create([
-      'entity_type' => 'node',
-      'entity_id' => 99,
-      'revision_id' => 123,
-      'uid' => $user->id(),
+    $this->assertSame((int) $record->id(), (int) $this->storage()->loadForRevision('node', 99, 123)?->id());
+    $this->assertSame([123], array_keys($this->storage()->loadForRevisions('node', 99, [122, 123, 124])));
+    $this->assertSame('node 99 revision 123', $record->label());
+  }
+
+  /**
+   * Tests that the database rejects a second record for the same revision.
+   */
+  public function testUniqueRevisionKey(): void {
+    $user = $this->createUser();
+    $session = $this->createSession($user);
+    $message = $this->createDraftTurn($session);
+    $this->createRecord(99, 123, $user->id(), $session, $message);
+
+    $this->expectException(EntityStorageException::class);
+    $this->createRecord(99, 123, $user->id(), $session, $message);
+  }
+
+  /**
+   * Tests that deleting a session or a message clears the references.
+   */
+  public function testReferenceClearing(): void {
+    $user = $this->createUser();
+    $session = $this->createSession($user);
+    $message = $this->createDraftTurn($session);
+    $record = $this->createRecord(99, 123, $user->id(), $session, $message);
+
+    $message->delete();
+    $reloaded = $this->storage()->loadUnchanged($record->id());
+    $this->assertSame((int) $session->id(), (int) $reloaded->getSession()?->id());
+    $this->assertNull($reloaded->getMessage());
+
+    $session->delete();
+    $reloaded = $this->storage()->loadUnchanged($record->id());
+    $this->assertNull($reloaded->getSession());
+    $this->assertSame(['input' => 4, 'output' => 5, 'total' => 9], $reloaded->getTokenUsage());
+  }
+
+  /**
+   * Tests that deleting a tracked revision or entity removes its records.
+   */
+  public function testTrackedDeletion(): void {
+    $user = $this->createUser();
+    $session = $this->createSession($user);
+    $message = $this->createDraftTurn($session);
+
+    $node = Node::create(['type' => 'oe_news', 'title' => 'Tracked', 'uid' => $user->id()]);
+    $node->save();
+    $first_vid = (int) $node->getRevisionId();
+    $node->setNewRevision();
+    $node->save();
+    $first = $this->createRecord((int) $node->id(), $first_vid, $user->id(), $session, $message);
+    $second = $this->createRecord((int) $node->id(), (int) $node->getRevisionId(), $user->id(), $session, $message);
+
+    $this->container->get('entity_type.manager')->getStorage('node')->deleteRevision($first_vid);
+    $this->assertNull($this->storage()->loadUnchanged($first->id()));
+
+    $node->delete();
+    $this->assertNull($this->storage()->loadUnchanged($second->id()));
+  }
+
+  /**
+   * Tests the access handler.
+   */
+  public function testAccess(): void {
+    $owner = $this->createUser();
+    $session = $this->createSession($owner);
+    $record = $this->createRecord(99, 123, $owner->id(), $session, $this->createDraftTurn($session));
+
+    $this->assertTrue($record->access('view', $this->createUser(['view ai content provenance'])));
+    $this->assertTrue($record->access('delete', $this->createUser(['administer ai content provenance'])));
+  }
+
+  /**
+   * Creates a provenance record directly.
+   */
+  private function createRecord(int $entity_id, int $revision_id, int|string $uid, AiEditorialSessionInterface $session, AiConversationMessageInterface $message, string $entity_type = 'node'): AiContentProvenanceInterface {
+    $record = AiContentProvenance::create([
+      'entity_type' => $entity_type,
+      'entity_id' => $entity_id,
+      'revision_id' => $revision_id,
+      'uid' => $uid,
       'session' => $session->id(),
       'message' => $message->id(),
       'tokens_input' => 4,
@@ -53,71 +122,17 @@ class AiContentProvenanceTest extends AiEditorialSessionKernelTestBase {
       'provider' => 'mock',
       'model' => 'mock-model',
     ]);
-    $provenance->save();
-
-    $loaded = $storage->loadUnchanged($provenance->id());
-    $this->assertNotNull($loaded);
-    $this->assertSame('node', $loaded->get('entity_type')->value);
-    $this->assertSame(99, (int) $loaded->get('entity_id')->value);
-    $this->assertSame(123, (int) $loaded->get('revision_id')->value);
-    $this->assertSame((int) $session->id(), (int) $loaded->get('session')->target_id);
-    $this->assertSame((int) $message->id(), (int) $loaded->get('message')->target_id);
-
-    $session->delete();
-
-    $reloaded = $storage->loadUnchanged($provenance->id());
-    $this->assertNotNull($reloaded);
-    $this->assertNull($reloaded->get('session')->target_id);
-    $this->assertNull($reloaded->get('message')->target_id);
+    $record->save();
+    return $record;
   }
 
   /**
-   * Tests that deleting a message clears only the provenance message link.
+   * Returns the provenance storage handler.
    */
-  public function testMessageCleanupKeepsSessionReference(): void {
+  private function storage(): AiContentProvenanceStorageInterface {
     $storage = $this->container->get('entity_type.manager')->getStorage('ai_content_provenance');
-    $message_storage = $this->container->get('entity_type.manager')->getStorage('ai_conversation_message');
-
-    $user = $this->createUser();
-    $session = $this->createSession($user);
-    $message = $message_storage->create([
-      'host_entity_type' => 'ai_editorial_session',
-      'host_entity_id' => (int) $session->id(),
-      'role' => AiConversationMessageInterface::ROLE_ASSISTANT,
-      'agent_id' => 'orchestrator',
-      'content' => 'Draft ready.',
-      'provider' => 'mock',
-      'model' => 'mock-model',
-    ]);
-    $message->setToolCalls([
-      [
-        'type' => 'function',
-        'function' => ['name' => 'draft_content'],
-      ],
-    ]);
-    $message->save();
-
-    $provenance = AiContentProvenance::create([
-      'entity_type' => 'node',
-      'entity_id' => 101,
-      'revision_id' => 456,
-      'uid' => $user->id(),
-      'session' => $session->id(),
-      'message' => $message->id(),
-      'tokens_input' => 1,
-      'tokens_output' => 2,
-      'tokens_total' => 3,
-      'provider' => 'mock',
-      'model' => 'mock-model',
-    ]);
-    $provenance->save();
-
-    $message->delete();
-
-    $reloaded = $storage->loadUnchanged($provenance->id());
-    $this->assertNotNull($reloaded);
-    $this->assertSame((int) $session->id(), (int) $reloaded->get('session')->target_id);
-    $this->assertNull($reloaded->get('message')->target_id);
+    assert($storage instanceof AiContentProvenanceStorageInterface);
+    return $storage;
   }
 
 }
