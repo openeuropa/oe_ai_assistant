@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\oe_ai_assistant\Kernel;
 
+use Drupal\field\Entity\FieldConfig;
 use Drupal\KernelTests\KernelTestBase;
 use Drupal\oe_ai_assistant\Entity\AiDraftingTemplate;
 use Drupal\oe_ai_assistant\Exception\TemplateValidationException;
+use Drupal\paragraphs\Entity\ParagraphsType;
 use Symfony\Component\Validator\ConstraintViolationListInterface;
 
 /**
@@ -72,7 +74,18 @@ class AiDraftingTemplateCrudTest extends KernelTestBase {
    * {@inheritdoc}
    */
   protected function tearDown(): void {
-    foreach (['test_news_crud', 'test_paragraphs_crud', 'test_contacts_crud'] as $id) {
+    $ids = [
+      'test_news_crud',
+      'test_paragraphs_crud',
+      'test_contacts_crud',
+      'test_news_sync_invalid',
+      'test_default_covered',
+      'test_callback_covered',
+      'test_field_strip',
+      'test_default_strip',
+      'test_bundle_strip',
+    ];
+    foreach ($ids as $id) {
       $template = AiDraftingTemplate::load($id);
       if ($template) {
         $template->delete();
@@ -209,6 +222,57 @@ class AiDraftingTemplateCrudTest extends KernelTestBase {
     $template = AiDraftingTemplate::load('news_with_paragraphs');
     $result = $template->validate();
     $this->assertCount(0, $result, implode(', ', $this->violationMessages($result)));
+  }
+
+  /**
+   * Tests that calculateDependencies() derives field and bundle dependencies.
+   *
+   * Field-level and referenced-bundle config dependencies are derived from
+   * `fields`/`defaults` rather than hand-maintained, so a template's
+   * `dependencies.config` is always complete (see
+   * AiDraftingTemplate::calculateDependencies()). This directly exercises
+   * that derivation, independent of any shipped fixture.
+   */
+  public function testCalculateDependenciesDerivesFieldAndBundleDependencies(): void {
+    $template = $this->buildTemplate('oe_news', [
+      'title' => ['prompt' => 'Headline.'],
+      'field_teaser' => ['prompt' => 'Teaser.'],
+      'field_content_paragraphs' => [
+        'type' => 'entity_reference_revisions',
+        'items' => [
+          [
+            'entity_type' => 'paragraph',
+            'bundle' => 'text_block',
+            'prompt' => 'Text.',
+            'fields' => [
+              'field_text_body' => ['prompt' => 'Body.'],
+            ],
+          ],
+          [
+            'entity_type' => 'paragraph',
+            'bundle' => 'quote_block',
+            'prompt' => 'Quote.',
+            'fields' => [
+              'field_quote_text' => ['prompt' => 'Quote text.'],
+            ],
+          ],
+        ],
+      ],
+    ]);
+
+    $template->calculateDependencies();
+    $dependencies = $template->getDependencies()['config'] ?? [];
+    sort($dependencies);
+
+    $this->assertSame([
+      'field.field.node.oe_news.field_content_paragraphs',
+      'field.field.node.oe_news.field_teaser',
+      'field.field.paragraph.quote_block.field_quote_text',
+      'field.field.paragraph.text_block.field_text_body',
+      'node.type.oe_news',
+      'paragraphs.paragraphs_type.quote_block',
+      'paragraphs.paragraphs_type.text_block',
+    ], $dependencies);
   }
 
   /**
@@ -777,6 +841,193 @@ class AiDraftingTemplateCrudTest extends KernelTestBase {
       $this->assertNotEmpty($this->violationMessages($e->getResult()));
       $this->assertEquals('test_news_invalid', $e->getTemplateId());
     }
+  }
+
+  /**
+   * Tests that a missing-required-field violation throws during config sync.
+   */
+  public function testSyncingTemplateWithMissingRequiredFieldThrows(): void {
+    $template = AiDraftingTemplate::create([
+      'id' => 'test_news_sync_invalid',
+      'label' => 'Invalid template saved during sync',
+      'status' => TRUE,
+      'content_type' => 'oe_news',
+      'fields' => ['field_teaser' => ['prompt' => 'Teaser.']],
+      'defaults' => [],
+    ]);
+    $template->setSyncing(TRUE);
+
+    $this->expectException(TemplateValidationException::class);
+    $template->save();
+  }
+
+  /**
+   * Tests that a structural violation still throws during config sync.
+   */
+  public function testSyncingTemplateWithStructuralViolationStillThrows(): void {
+    $template = AiDraftingTemplate::create([
+      'id' => 'test_news_sync_invalid',
+      'label' => 'Structurally invalid template saved during sync',
+      'status' => TRUE,
+      'content_type' => 'oe_news',
+      'fields' => ['field_does_not_exist' => ['prompt' => 'Bad.']],
+      'defaults' => [],
+    ]);
+    $template->setSyncing(TRUE);
+
+    $this->expectException(TemplateValidationException::class);
+    $template->save();
+  }
+
+  /**
+   * Tests that a missing-required-field violation blocks config install.
+   */
+  public function testTemplateWithMissingRequiredFieldIsSkippedDuringConfigInstall(): void {
+    $this->assertNull(AiDraftingTemplate::load('broken_template_fields'));
+  }
+
+  /**
+   * Tests that a structural violation still blocks config install.
+   */
+  public function testTemplateWithStructuralViolationIsSkippedDuringConfigInstall(): void {
+    // Structurally broken template config is tried to be installed by
+    // $this->installConfig(['oe_ai_assistant_test']); in setUp.
+    $this->assertNull(
+      AiDraftingTemplate::load('broken_template_structural'),
+      'The structurally invalid template should be skipped, not created.'
+    );
+  }
+
+  /**
+   * Tests that a required field with a default value needs no coverage.
+   */
+  public function testRequiredFieldWithDefaultValueNeedsNoCoverage(): void {
+    $field = FieldConfig::loadByName('node', 'oe_news', 'field_teaser');
+    $field->setRequired(TRUE);
+    $field->setDefaultValue('Default teaser');
+    $field->save();
+
+    $template = AiDraftingTemplate::create([
+      'id' => 'test_default_covered',
+      'label' => 'Default covered',
+      'status' => TRUE,
+      'content_type' => 'oe_news',
+      'fields' => ['title' => ['prompt' => 'Headline.']],
+    ]);
+    $template->save();
+
+    $this->assertNotNull(AiDraftingTemplate::load('test_default_covered'));
+  }
+
+  /**
+   * Tests that a required field with a default value callback needs no coverage.
+   */
+  public function testRequiredFieldWithDefaultValueCallbackNeedsNoCoverage(): void {
+    $field = FieldConfig::loadByName('node', 'oe_news', 'field_teaser');
+    $field->setRequired(TRUE);
+    $field->setDefaultValueCallback('oe_ai_assistant_test_default_teaser');
+    $field->save();
+
+    $template = AiDraftingTemplate::create([
+      'id' => 'test_callback_covered',
+      'label' => 'Callback covered',
+      'status' => TRUE,
+      'content_type' => 'oe_news',
+      'fields' => ['title' => ['prompt' => 'Headline.']],
+    ]);
+    $template->save();
+
+    $this->assertNotNull(AiDraftingTemplate::load('test_callback_covered'));
+  }
+
+  /**
+   * Tests that deleting a referenced field strips it instead of deleting.
+   */
+  public function testFieldDeletionStripsFieldFromTemplate(): void {
+    $template = AiDraftingTemplate::create([
+      'id' => 'test_field_strip',
+      'label' => 'Field strip',
+      'status' => TRUE,
+      'content_type' => 'oe_news',
+      'fields' => [
+        'title' => ['prompt' => 'Headline.'],
+        'field_teaser' => ['prompt' => 'Teaser.'],
+      ],
+    ]);
+    $template->save();
+
+    FieldConfig::loadByName('node', 'oe_news', 'field_teaser')->delete();
+
+    $loaded = AiDraftingTemplate::load('test_field_strip');
+    $this->assertNotNull($loaded);
+    $this->assertSame(['title' => ['prompt' => 'Headline.']], $loaded->getFields());
+  }
+
+  /**
+   * Tests that deleting a field referenced only in defaults strips it.
+   */
+  public function testFieldDeletionStripsDefaultFromTemplate(): void {
+    $template = AiDraftingTemplate::create([
+      'id' => 'test_default_strip',
+      'label' => 'Default strip',
+      'status' => TRUE,
+      'content_type' => 'oe_news',
+      'fields' => ['title' => ['prompt' => 'Headline.']],
+      'defaults' => [
+        'field_keywords' => ['default_value' => [['value' => 'europa']]],
+      ],
+    ]);
+    $template->save();
+
+    FieldConfig::loadByName('node', 'oe_news', 'field_keywords')->delete();
+
+    $loaded = AiDraftingTemplate::load('test_default_strip');
+    $this->assertNotNull($loaded);
+    $this->assertSame([], $loaded->getDefaults());
+  }
+
+  /**
+   * Tests that deleting a referenced paragraph type strips its items.
+   */
+  public function testBundleDeletionStripsReferenceItems(): void {
+    $template = AiDraftingTemplate::create([
+      'id' => 'test_bundle_strip',
+      'label' => 'Bundle strip',
+      'status' => TRUE,
+      'content_type' => 'oe_news',
+      'fields' => [
+        'title' => ['prompt' => 'Headline.'],
+        'field_content_paragraphs' => [
+          'type' => 'entity_reference_revisions',
+          'items' => [
+            [
+              'entity_type' => 'paragraph',
+              'bundle' => 'text_block',
+              'prompt' => 'Intro.',
+              'fields' => ['field_text_body' => ['prompt' => 'Intro body.']],
+            ],
+            [
+              'entity_type' => 'paragraph',
+              'bundle' => 'quote_block',
+              'prompt' => 'Quote.',
+              'fields' => [
+                'field_quote_text' => ['prompt' => 'The quote.'],
+                'field_quote_attribution' => ['prompt' => 'Who said it.'],
+              ],
+            ],
+          ],
+        ],
+      ],
+    ]);
+    $template->save();
+
+    ParagraphsType::load('quote_block')->delete();
+
+    $loaded = AiDraftingTemplate::load('test_bundle_strip');
+    $this->assertNotNull($loaded);
+    $items = $loaded->getFields()['field_content_paragraphs']['items'];
+    $this->assertCount(1, $items);
+    $this->assertSame('text_block', $items[0]['bundle']);
   }
 
   /**

@@ -6,7 +6,6 @@ composer.lock
 /.gitattributes
 /recipes
 .env
-/dist
 .phpunit.result.cache
 test-results
 /.idea

@@ -64,6 +64,9 @@ class PreviewRenderer implements PreviewRendererInterface {
     $this->themeManager->setActiveTheme($activeTheme);
 
     $request = $this->requestStack->getCurrentRequest();
+    // Expose the previewed entity to the rest of the host site for the
+    // remainder of this request (e.g. response subscribers).
+    $request->attributes->set('oe_ai_assistant_preview_entity', $node);
 
     // Render as an anonymous visitor: the iframe is meant to show what a
     // real site visitor would see, with no admin toolbar/chrome and no

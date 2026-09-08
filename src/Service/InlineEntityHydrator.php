@@ -41,6 +41,7 @@ class InlineEntityHydrator {
     private readonly SerializerInterface $serializer,
     private readonly EntityFieldManagerInterface $entityFieldManager,
     private readonly EntityTypeManagerInterface $entityTypeManager,
+    private readonly TextFormatResolver $textFormatResolver,
   ) {}
 
   /**
@@ -164,6 +165,9 @@ class InlineEntityHydrator {
           $entity->get($fieldName)->appendItem($nested);
         }
       }
+
+      // The LLM never supplies a format; deserialize() leaves it unset.
+      $this->textFormatResolver->resolveEntityFormats($entity);
 
       $entities[] = $entity;
     }

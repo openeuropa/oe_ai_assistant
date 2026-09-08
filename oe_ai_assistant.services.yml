@@ -25,6 +25,8 @@ services:
   Drupal\oe_ai_assistant\Service\AiEditorialContext: {}
   Drupal\oe_ai_assistant\Service\AiEditorialContextInterface: '@Drupal\oe_ai_assistant\Service\AiEditorialContext'
 
+  Drupal\oe_ai_assistant\Service\TextFormatResolver: {}
+
   Drupal\oe_ai_assistant\Service\InlineEntityHydrator: {}
 
   Drupal\oe_ai_assistant\Service\DraftEntityBuilder: {}

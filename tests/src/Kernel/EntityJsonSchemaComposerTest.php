@@ -372,6 +372,20 @@ class EntityJsonSchemaComposerTest extends KernelTestBase {
   }
 
   /**
+   * Asserts the paragraphs serialized base field is excluded.
+   *
+   * `behavior_settings` has a serialized property (core's
+   * SerializedColumnNormalizerTrait raises `\LogicException` on
+   * denormalizing a string for it), so composing it into the schema would
+   * let the LLM emit a plain string that then fails deserialization.
+   */
+  public function testSerializedBehaviorSettingsFieldExcluded(): void {
+    $schema = $this->composer()->compose('paragraph', 'quote_block');
+    $this->assertArrayNotHasKey('behavior_settings', $schema['properties'],
+      'behavior_settings is excluded from the schema.');
+  }
+
+  /**
    * Asserts auto-managed base fields (created, changed) are excluded.
    */
   public function testAutoManagedBaseFieldsExcluded(): void {
