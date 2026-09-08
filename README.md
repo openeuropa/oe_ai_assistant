@@ -21,6 +21,33 @@ composer require openeuropa/oe_ai_assistant
 drush en oe_ai_assistant
 ```
 
+A plain `composer require` gets git source only. The `react-app` library's JS/CSS
+(built from `app/`, gitignored, not committed) won't exist until you also build the
+app yourself or pull the pre-built release artifact:
+
+- **For local/DDEV development**, use `ddev build-app` / `npm run build` as described
+  in [React app](#react-app) below -- no extra setup needed.
+- **For production**, require
+  [`openeuropa/composer-artifacts`](https://github.com/openeuropa/composer-artifacts)
+  in the consuming site and map the release zip published for each tagged version:
+
+  ```json
+  "require": {
+      "openeuropa/composer-artifacts": "^2",
+      "openeuropa/oe_ai_assistant": "^1.0"
+  },
+  "extra": {
+      "artifacts": {
+          "openeuropa/oe_ai_assistant": {
+              "dist": {
+                  "url": "https://github.com/{name}/releases/download/{pretty-version}/{project-name}-{pretty-version}.zip",
+                  "type": "zip"
+              }
+          }
+      }
+  }
+  ```
+
 ## Features
 
 - **Plugin system** -- extensible architecture for AI-powered editorial tools
@@ -121,14 +148,14 @@ ddev phpunit tests/src/ExistingSite/
 ### React app
 
 The React frontend lives in `app/` and produces an IIFE bundle consumed by the Drupal module. The Drupal library
-definition points directly to `app/dist/`.
+definition points directly to the module root's `dist/`.
 
 ```bash
 cd app
 npm install
 npm run dev          # Vite + Express mock API (standalone, no Drupal or API key needed)
 npm run dev:integration # Vite + Express API with real Mistral drafting
-npm run build        # Production IIFE bundle -> app/dist/
+npm run build        # Production IIFE bundle -> dist/ (module root)
 npm run lint         # Biome check
 npm run typecheck    # TypeScript strict
 npm run test:e2e     # Playwright end-to-end tests
