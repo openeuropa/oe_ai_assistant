@@ -155,9 +155,9 @@ class DraftingPluginSaveTest extends DraftingPluginTestBase {
     /** @var \Drupal\oe_ai_assistant\Service\Drafting\DraftHistoryInterface $history */
     $history = \Drupal::service('Drupal\oe_ai_assistant\Service\Drafting\DraftHistoryInterface');
     \Drupal::entityTypeManager()->getStorage('ai_conversation_message')->resetCache();
-    $fields = $history->getDraftFields($session, 1);
-    $this->assertNotNull($fields, 'Draft 1 must be recorded.');
-    $unknown = array_diff(array_keys($fields), ['title', 'field_teaser', 'field_body']);
+    $draft = $history->getDraftContent($session, 1);
+    $this->assertNotNull($draft, 'Draft 1 must be recorded.');
+    $unknown = array_diff(array_keys($draft['fields']), ['title', 'field_teaser', 'field_body']);
     $this->assertSame([], array_values($unknown),
       'The draft must not carry fields outside the template schema.');
 
