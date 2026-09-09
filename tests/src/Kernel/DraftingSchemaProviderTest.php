@@ -180,6 +180,11 @@ class DraftingSchemaProviderTest extends KernelTestBase {
         'description' => 'Standard news article with title, teaser, and body.',
       ],
       [
+        'id' => 'news_preview_defaults',
+        'label' => 'News article (preview defaults fixture)',
+        'description' => 'Omits field_teaser from fields but supplies it via defaults, for exercising the preview template-defaults merge.',
+      ],
+      [
         'id' => 'news_with_paragraphs',
         'label' => 'News article with paragraphs',
         'description' => 'News article using rich-text and quote paragraph types.',
@@ -207,7 +212,7 @@ class DraftingSchemaProviderTest extends KernelTestBase {
 
     $ids = array_column($this->provider()->availableTemplates('oe_news'), 'id');
 
-    $this->assertSame(['news_default'], $ids);
+    $this->assertSame(['news_default', 'news_preview_defaults'], $ids);
   }
 
   /**
@@ -220,11 +225,13 @@ class DraftingSchemaProviderTest extends KernelTestBase {
     $template->setStatus(FALSE);
     $template->save();
 
-    // With news_with_paragraphs disabled, auto-select must fall back to
-    // news_default (title, field_teaser, field_body - all simple fields).
+    // With news_with_paragraphs disabled, auto-select does a ksort() + end()
+    // over the remaining enabled candidates and picks the alphabetically
+    // last one: news_preview_defaults (not news_default), whose only field
+    // is title.
     $main = $this->mainFields($this->provider()->groups('node', 'oe_news', ''));
 
-    $this->assertSame(['title', 'field_teaser', 'field_body'], $main);
+    $this->assertSame(['title'], $main);
   }
 
 }

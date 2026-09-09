@@ -240,5 +240,41 @@ export function createDraftingRouter(service: DraftingService): Router {
     }, 1000);
   });
 
+  /**
+   * GET /preview - Mock themed preview of a draft version.
+   *
+   * The real backend renders the stored draft through the site theme.
+   * The mock returns a simple standalone HTML document echoing the
+   * requested session and version, delayed so the iframe spinner is
+   * visible during local development.
+   */
+  router.get("/preview", (req, res) => {
+    const sessionId = String(req.query.sessionId ?? "");
+    const version = Number(req.query.version ?? 0);
+
+    if (!sessionId || version <= 0) {
+      res.status(400).json({
+        code: "invalid_request",
+        message: "sessionId and a positive version are required",
+      });
+      return;
+    }
+
+    console.info("[drafting] preview", { sessionId, version });
+    setTimeout(() => {
+      res
+        .type("html")
+        .send(
+          "<!DOCTYPE html><html><head><title>Draft preview</title></head>" +
+            '<body style="font-family: sans-serif; margin: 2rem;">' +
+            `<h1>Draft ${version}</h1>` +
+            `<p>Mock live preview for session <strong>${sessionId}</strong>, ` +
+            `version <strong>${version}</strong>.</p>` +
+            "<p>The real backend renders the draft through the site theme.</p>" +
+            "</body></html>",
+        );
+    }, 800);
+  });
+
   return router;
 }

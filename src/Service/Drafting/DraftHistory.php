@@ -36,15 +36,12 @@ class DraftHistory implements DraftHistoryInterface {
    */
   public function listDrafts(EntityInterface $session): array {
     $drafts = [];
-    foreach ($this->collectResults($session) as $position => $result) {
-      // Versioned results carry their own version and snapshot; legacy
-      // results are a flat fields map and get a positional version with no
-      // provenance.
-      $version = (int) ($result['version'] ?? $position + 1);
+    foreach ($this->collectResults($session) as $result) {
+      $version = (int) $result['version'];
       $drafts[] = [
         'name' => sprintf('Draft %d', $version),
         'version' => $version,
-        'context' => $result['context'] ?? NULL,
+        'context' => $result['context'],
       ];
     }
     return $drafts;
@@ -53,16 +50,15 @@ class DraftHistory implements DraftHistoryInterface {
   /**
    * {@inheritdoc}
    */
-  public function getDraftFields(EntityInterface $session, int $version): ?array {
-    foreach ($this->collectResults($session) as $position => $result) {
-      // The same versioning rule as listDrafts: legacy flat results get a
-      // positional version and ARE the fields map themselves.
-      $resultVersion = (int) ($result['version'] ?? $position + 1);
-      if ($resultVersion !== $version) {
+  public function getDraftContent(EntityInterface $session, int $version): ?array {
+    foreach ($this->collectResults($session) as $result) {
+      if ((int) $result['version'] !== $version) {
         continue;
       }
-      $fields = $result['fields'] ?? $result;
-      return is_array($fields) && $fields !== [] ? $fields : NULL;
+      return [
+        'fields' => $result['fields'] ?? [],
+        'templateId' => $result['context']['template']['id'] ?? NULL,
+      ];
     }
     return NULL;
   }

@@ -13,6 +13,10 @@ export const developmentConfig = {
     drafting: {
       entityTypeId: "node",
       bundle: "oe_news",
+      preview: {
+        // Served by the Express mock API during standalone development.
+        url: "/api/plugins/drafting/preview?sessionId={sessionId}&version={versionId}",
+      },
       tone: {
         enabled: true,
         options: [

@@ -171,6 +171,15 @@ describe("toThreadMessages", () => {
     expect(part.result).toEqual({});
   });
 
+  it("carries the saved version on save event parts", () => {
+    const [message] = toThreadMessages([
+      { role: "event", type: "save", summary: "Draft 2 saved", version: 2 },
+    ]);
+    if (!message) throw new Error("expected a message");
+    const part = (message.content as AnyPart[])[0];
+    expect(part.args).toMatchObject({ eventType: "save", version: 2 });
+  });
+
   it("drops items that have no content, no tool calls, and are not events", () => {
     // An assistant item with empty content and no tool calls produces nothing.
     const input: SessionMessage[] = [
