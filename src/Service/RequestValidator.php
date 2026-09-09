@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\oe_ai_assistant\Service;
 
+use JsonSchema\Constraints\Constraint;
 use JsonSchema\Validator;
 
 /**
@@ -61,6 +62,56 @@ class RequestValidator {
    *   required.").
    */
   public function validateRaw(string $rawJson, string $schemaName): array {
+    // Decode as objects (not associative arrays) so the validator sees {}
+    // as stdClass, not an empty PHP array. json_decode() returns NULL on
+    // parse failure; JSON_ERROR_NONE means the input was literally 'null'
+    // which may still be a valid schema value depending on the schema.
+    $data = json_decode($rawJson);
+    if ($data === NULL && json_last_error() !== JSON_ERROR_NONE) {
+      return ['Invalid JSON in request body.'];
+    }
+
+    return $this->validateDecoded($data, $schemaName);
+  }
+
+  /**
+   * Validates already-parsed request data against a named schema.
+   *
+   * Used for bodies that do not arrive as JSON, such as multipart form
+   * data, where the caller has already assembled the fields into an
+   * associative array. The validator runs in type-cast mode so that
+   * associative arrays count as objects and list arrays as arrays, at
+   * every nesting level, without converting the data first.
+   *
+   * @param array<string, mixed> $data
+   *   The request fields keyed by name.
+   * @param string $schemaName
+   *   The schema name to validate against, matching a key in schemas.json.
+   *
+   * @return string[]
+   *   Array of human-readable validation error messages, as in
+   *   validateRaw(). An empty array means the data is valid.
+   */
+  public function validateData(array $data, string $schemaName): array {
+    return $this->validateDecoded($data, $schemaName, Constraint::CHECK_MODE_TYPE_CAST);
+  }
+
+  /**
+   * Validates decoded data against a named schema.
+   *
+   * @param mixed $data
+   *   The data to validate: a stdClass tree from json_decode(), or a PHP
+   *   array when $checkMode includes CHECK_MODE_TYPE_CAST.
+   * @param string $schemaName
+   *   The schema name to validate against, matching a key in schemas.json.
+   * @param int $checkMode
+   *   The validator check mode flags.
+   *
+   * @return string[]
+   *   Array of human-readable validation error messages. An empty array
+   *   means the data is valid.
+   */
+  private function validateDecoded(mixed $data, string $schemaName, int $checkMode = Constraint::CHECK_MODE_NORMAL): array {
     $schemas = $this->loadSchemas();
 
     if (!isset($schemas[$schemaName])) {
@@ -71,17 +122,8 @@ class RequestValidator {
 
     $schema = $schemas[$schemaName];
 
-    // Decode as objects (not associative arrays) so the validator sees {}
-    // as stdClass, not an empty PHP array. json_decode() returns NULL on
-    // parse failure; JSON_ERROR_NONE means the input was literally 'null'
-    // which may still be a valid schema value depending on the schema.
-    $data = json_decode($rawJson);
-    if ($data === NULL && json_last_error() !== JSON_ERROR_NONE) {
-      return ['Invalid JSON in request body.'];
-    }
-
     $validator = new Validator();
-    $validator->validate($data, $schema);
+    $validator->validate($data, $schema, $checkMode);
 
     if ($validator->isValid()) {
       return [];

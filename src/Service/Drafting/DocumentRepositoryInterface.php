@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Drupal\oe_ai_assistant\Service\Drafting;
 
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
-use Symfony\Component\HttpFoundation\File\UploadedFile;
+use Drupal\file\Upload\UploadedFileInterface;
 
 /**
  * Manages the documents of one category attached to editorial sessions.
@@ -26,8 +26,8 @@ interface DocumentRepositoryInterface {
    *
    * @param \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $session
    *   The session receiving the document.
-   * @param \Symfony\Component\HttpFoundation\File\UploadedFile $upload
-   *   The valid uploaded file.
+   * @param \Drupal\file\Upload\UploadedFileInterface $upload
+   *   The uploaded file, ready for the file upload handler.
    *
    * @return array<string, string|array<string, string|int>>
    *   The serialized document item.
@@ -35,7 +35,7 @@ interface DocumentRepositoryInterface {
    * @throws \Drupal\oe_ai_assistant\Exception\ActionException
    *   When the upload cannot be stored or fails validation.
    */
-  public function add(AiEditorialSessionInterface $session, UploadedFile $upload): array;
+  public function add(AiEditorialSessionInterface $session, UploadedFileInterface $upload): array;
 
   /**
    * Lists the documents referenced by a session.

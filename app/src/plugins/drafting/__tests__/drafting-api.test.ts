@@ -57,7 +57,7 @@ describe("drafting api", () => {
     );
   });
 
-  it("uploads a document with FormData scoped to the current session", async () => {
+  it("uploads a document as a raw body with query parameters", async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({
@@ -77,21 +77,14 @@ describe("drafting api", () => {
 
     expect(document.id).toBe("12");
     expect(fetchMock).toHaveBeenCalledWith(
-      "/api/plugins/drafting/add-document",
+      "/api/plugins/drafting/add-document?sessionId=session-42&category=context&filename=brief.pdf",
       expect.objectContaining({
         method: "POST",
+        headers: { "Content-Type": "application/octet-stream" },
         credentials: "include",
+        body: file,
       }),
     );
-    const firstCall = fetchMock.mock.calls[0];
-    if (!firstCall) {
-      throw new Error("fetch was not called");
-    }
-    const [, init] = firstCall;
-    expect(init.body).toBeInstanceOf(FormData);
-    expect(init.body.get("sessionId")).toBe("session-42");
-    expect(init.body.get("category")).toBe("context");
-    expect(init.body.get("file")).toBe(file);
   });
 
   it("lists documents with the current sessionId", async () => {

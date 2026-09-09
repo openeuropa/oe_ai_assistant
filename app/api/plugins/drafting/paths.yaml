@@ -112,13 +112,26 @@ addDocument:
   post:
     operationId: postDraftingAddDocument
     summary: Upload a drafting context document
+    description: >
+      The file bytes form the raw request body. Session, category and
+      filename are query parameters, exploded from the request schema.
     tags: [Drafting]
+    parameters:
+      - name: params
+        in: query
+        required: true
+        style: form
+        explode: true
+        schema:
+          $ref: "../../openapi.yaml#/components/schemas/DraftingAddDocumentRequest"
     requestBody:
       required: true
       content:
-        multipart/form-data:
+        application/octet-stream:
           schema:
-            $ref: "../../openapi.yaml#/components/schemas/DraftingAddDocumentRequest"
+            type: string
+            format: binary
+            description: The raw file bytes.
     responses:
       "200":
         description: Uploaded document details

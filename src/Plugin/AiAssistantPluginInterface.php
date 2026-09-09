@@ -70,8 +70,10 @@ interface AiAssistantPluginInterface extends PluginInspectionInterface {
    *
    * Maps action names to schema identifiers from dist/schemas.json. Before
    * the controller dispatches a request, it looks up the action name in this
-   * map. If a matching schema name is found, the request body is validated
-   * against the compiled JSON Schema. A validation failure yields a 422
+   * map. If a matching schema name is found, the request parameters are
+   * validated against the compiled JSON Schema: the JSON body for JSON
+   * requests, or the query string for any other content type, such as a raw
+   * file upload. A validation failure yields a 422
    * Unprocessable Entity response with a description of the errors.
    *
    * Actions that do not require a structured body (for example, simple GET-

@@ -132,22 +132,30 @@ export async function setDraftingTemplate(
   return (await response.json()) as DraftingSetTemplateResponse;
 }
 
-/** Uploads a document to the current drafting session. */
+/**
+ * Uploads a document to the current drafting session.
+ *
+ * The file bytes are sent as the raw request body. Session, category and
+ * filename travel in the query string, so the backend can validate them
+ * against the request schema without parsing a multipart body.
+ */
 export async function addDraftingDocument(
   file: File,
   category: DraftingCategory = "context",
 ): Promise<DraftingDocument> {
-  const formData = new FormData();
-  formData.append("sessionId", getConfig().sessionId);
-  formData.append("category", category);
-  formData.append("file", file);
+  const params = new URLSearchParams({
+    sessionId: getConfig().sessionId,
+    category,
+    filename: file.name,
+  });
 
   const response = await fetch(
-    `${getConfig().apiBaseUrl}/plugins/drafting/add-document`,
+    `${getConfig().apiBaseUrl}/plugins/drafting/add-document?${params}`,
     {
       method: "POST",
+      headers: { "Content-Type": "application/octet-stream" },
       credentials: "include",
-      body: formData,
+      body: file,
     },
   );
   if (!response.ok) {
