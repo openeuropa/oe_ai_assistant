@@ -204,7 +204,7 @@ function InlineEntityItems({ items }: { items: unknown[] }) {
 }
 
 /** Confirmation dialog for saving the draft. */
-function SaveConfirmDialog({
+export function SaveConfirmDialog({
   onConfirm,
   onCancel,
 }: {
@@ -243,6 +243,63 @@ function SaveConfirmDialog({
   );
 }
 
+/**
+ * Scrollable table of drafted field values, without the pane header.
+ * Reads the drafted fields from the store so any pane chrome (the
+ * classic header or the tabbed preview header) can embed it directly.
+ */
+export function ContentTableBody() {
+  const { draftedFields } = useDraftingSlice();
+  const entries = Object.entries(draftedFields);
+
+  return (
+    <div className="min-h-0 flex-1 overflow-y-auto">
+      <table className="w-full">
+        <thead>
+          <tr className="border-b border-gray-200 bg-gray-50">
+            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
+              Field
+            </th>
+            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
+              Value
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {entries.map(([name, val]) => {
+            const display = extractFieldDisplay(val);
+            if (display.text === "" && !display.isComplex) return null;
+            return (
+              <tr
+                key={name}
+                className="border-b border-gray-100 hover:bg-gray-50/50"
+              >
+                <td className="px-4 py-3 align-top">
+                  <span className="text-sm font-medium text-gray-900">
+                    {labelFromName(name)}
+                  </span>
+                  <span className="ml-1.5 text-xs text-gray-400 block">
+                    {name}
+                  </span>
+                </td>
+                <td className="px-4 py-3 align-top">
+                  {display.isComplex && display.items ? (
+                    <InlineEntityItems items={display.items} />
+                  ) : display.isHtml ? (
+                    <HtmlValue html={display.text} />
+                  ) : (
+                    <p className="text-sm text-gray-700">{display.text}</p>
+                  )}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 /** The content table showing drafted field values. */
 export function ContentTable({ onSave }: ContentTableProps) {
   const { draftedFields, activeDraftVersion } = useDraftingSlice();
@@ -271,50 +328,7 @@ export function ContentTable({ onSave }: ContentTableProps) {
       </div>
 
       {/* Field rows */}
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        <table className="w-full">
-          <thead>
-            <tr className="border-b border-gray-200 bg-gray-50">
-              <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
-                Field
-              </th>
-              <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
-                Value
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {entries.map(([name, val]) => {
-              const display = extractFieldDisplay(val);
-              if (display.text === "" && !display.isComplex) return null;
-              return (
-                <tr
-                  key={name}
-                  className="border-b border-gray-100 hover:bg-gray-50/50"
-                >
-                  <td className="px-4 py-3 align-top">
-                    <span className="text-sm font-medium text-gray-900">
-                      {labelFromName(name)}
-                    </span>
-                    <span className="ml-1.5 text-xs text-gray-400 block">
-                      {name}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 align-top">
-                    {display.isComplex && display.items ? (
-                      <InlineEntityItems items={display.items} />
-                    ) : display.isHtml ? (
-                      <HtmlValue html={display.text} />
-                    ) : (
-                      <p className="text-sm text-gray-700">{display.text}</p>
-                    )}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
+      <ContentTableBody />
 
       {showConfirm && (
         <SaveConfirmDialog

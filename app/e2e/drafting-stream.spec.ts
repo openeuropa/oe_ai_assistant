@@ -259,7 +259,7 @@ test.describe("Drafting text streaming", () => {
       resolveRemoval = resolve;
     });
 
-    await page.route("**/api/plugins/drafting/add-document", (route) =>
+    await page.route(/\/api\/plugins\/drafting\/add-document(\?|$)/, (route) =>
       route.fulfill({
         status: 200,
         contentType: "application/json",

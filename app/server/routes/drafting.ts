@@ -34,11 +34,6 @@ interface MockDocument {
   };
 }
 
-interface MultipartFileInfo {
-  filename: string;
-  size: number;
-}
-
 const initialMockDocuments: MockDocument[] = [
   {
     id: "3f2504e0-4f89-41d3-9a0c-0305e82c3301",
@@ -63,44 +58,6 @@ async function readRequestBody(req: NodeJS.ReadableStream): Promise<Buffer> {
     chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
   }
   return Buffer.concat(chunks);
-}
-
-function parseMultipartUpload(
-  body: Buffer,
-  contentType: string,
-): { sessionId: string; category: string; file: MultipartFileInfo | null } {
-  const boundary = contentType.match(/boundary=([^;]+)/)?.[1];
-  if (!boundary) {
-    return { sessionId: "", category: "", file: null };
-  }
-
-  const parts = body.toString("latin1").split(`--${boundary}`);
-  let sessionId = "";
-  let category = "";
-  let file: MultipartFileInfo | null = null;
-
-  for (const part of parts) {
-    const [rawHeaders, ...rawBodyParts] = part.split("\r\n\r\n");
-    if (!rawHeaders || rawBodyParts.length === 0) {
-      continue;
-    }
-    const content = rawBodyParts.join("\r\n\r\n").replace(/\r\n$/, "");
-    const name = rawHeaders.match(/name="([^"]+)"/)?.[1] ?? "";
-    const filename = rawHeaders.match(/filename="([^"]*)"/)?.[1];
-
-    if (filename !== undefined && name === "file") {
-      file = {
-        filename: filename || "document",
-        size: Buffer.byteLength(content, "latin1"),
-      };
-    } else if (name === "sessionId") {
-      sessionId = content;
-    } else if (name === "category") {
-      category = content;
-    }
-  }
-
-  return { sessionId, category, file };
 }
 
 /**
@@ -324,27 +281,32 @@ export function createDraftingRouter(service: DraftingService): Router {
     }, 1000);
   });
 
-  /** POST /add-document - Store a mock document for the current session. */
+  /**
+   * POST /add-document - Store a mock document for the current session.
+   *
+   * Mirrors the real contract: the file bytes are the raw request body and
+   * the session, category and filename travel in the query string.
+   */
   router.post("/add-document", async (req, res) => {
-    const { sessionId, category, file } = parseMultipartUpload(
-      await readRequestBody(req),
-      req.headers["content-type"] ?? "",
-    );
+    const sessionId = String(req.query.sessionId ?? "");
+    const category = String(req.query.category ?? "");
+    const filename = String(req.query.filename ?? "");
+    const body = await readRequestBody(req);
 
-    if (!sessionId || category !== "context" || file === null) {
+    if (!sessionId || category !== "context" || !filename) {
       res.status(400).json({
         code: "bad_request",
-        message: "sessionId, category, and file are required",
+        message: "sessionId, category, and filename are required",
       });
       return;
     }
 
     const document: MockDocument = {
       id: `mock-document-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-      title: file.filename,
+      title: filename,
       meta: {
-        type: extensionFromFilename(file.filename),
-        size: file.size,
+        type: extensionFromFilename(filename),
+        size: body.length,
       },
     };
     const documents = documentsBySession.get(sessionId) ?? [];
@@ -400,6 +362,42 @@ export function createDraftingRouter(service: DraftingService): Router {
       documents.filter((document) => document.id !== documentId),
     );
     res.json({ status: "ok" });
+  });
+
+  /**
+   * GET /preview - Mock themed preview of a draft version.
+   *
+   * The real backend renders the stored draft through the site theme.
+   * The mock returns a simple standalone HTML document echoing the
+   * requested session and version, delayed so the iframe spinner is
+   * visible during local development.
+   */
+  router.get("/preview", (req, res) => {
+    const sessionId = String(req.query.sessionId ?? "");
+    const version = Number(req.query.version ?? 0);
+
+    if (!sessionId || version <= 0) {
+      res.status(400).json({
+        code: "invalid_request",
+        message: "sessionId and a positive version are required",
+      });
+      return;
+    }
+
+    console.info("[drafting] preview", { sessionId, version });
+    setTimeout(() => {
+      res
+        .type("html")
+        .send(
+          "<!DOCTYPE html><html><head><title>Draft preview</title></head>" +
+            '<body style="font-family: sans-serif; margin: 2rem;">' +
+            `<h1>Draft ${version}</h1>` +
+            `<p>Mock live preview for session <strong>${sessionId}</strong>, ` +
+            `version <strong>${version}</strong>.</p>` +
+            "<p>The real backend renders the draft through the site theme.</p>" +
+            "</body></html>",
+        );
+    }, 800);
   });
 
   return router;

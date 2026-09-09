@@ -6,6 +6,7 @@ namespace Drupal\oe_ai_assistant\Entity;
 
 use Drupal\Core\Entity\ContentEntityInterface;
 use Drupal\Core\Entity\EntityChangedInterface;
+use Drupal\node\NodeInterface;
 use Drupal\user\EntityOwnerInterface;
 
 /**
@@ -27,5 +28,15 @@ interface AiEditorialSessionInterface extends ContentEntityInterface, EntityChan
    * Sets the session status.
    */
   public function setStatus(string $status): self;
+
+  /**
+   * Returns the node saved by this session, if any.
+   */
+  public function getNode(): ?NodeInterface;
+
+  /**
+   * Sets the node saved by this session.
+   */
+  public function setNode(int $nid): self;
 
 }

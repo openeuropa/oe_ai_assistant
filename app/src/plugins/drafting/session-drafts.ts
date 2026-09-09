@@ -22,6 +22,8 @@ export interface SessionDraft {
   fields: Record<string, unknown>;
   /** Menu label, e.g. "Draft 2"; plain "Draft" for legacy entries. */
   label: string;
+  /** When the thread message carrying the draft was created, if known. */
+  createdAt: Date | null;
 }
 
 /** Minimal shape of a thread message part this module inspects. */
@@ -35,6 +37,7 @@ interface ToolCallPartLike {
 /** Minimal shape of a thread message this module inspects. */
 interface ThreadMessageLikeShape {
   content?: readonly ToolCallPartLike[];
+  createdAt?: Date;
 }
 
 /**
@@ -75,6 +78,7 @@ export function extractSessionDrafts(
       drafts.push({
         ...parsed,
         label: parsed.version !== null ? `Draft ${parsed.version}` : "Draft",
+        createdAt: message.createdAt ?? null,
       });
     }
   }

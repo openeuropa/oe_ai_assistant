@@ -74,6 +74,8 @@ paths:
     $ref: "plugins/drafting/paths.yaml#/listDocuments"
   /plugins/drafting/remove-document:
     $ref: "plugins/drafting/paths.yaml#/removeDocument"
+  /plugins/drafting/preview:
+    $ref: "plugins/drafting/paths.yaml#/preview"
 
   # -- Plugin: echo (dev-only) --
   /plugins/echo/stream:

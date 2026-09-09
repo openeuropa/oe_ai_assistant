@@ -15,11 +15,13 @@ import { FileText, LayoutTemplate, Megaphone } from "lucide-react";
 import { type ReactNode, useCallback } from "react";
 import { CardSelectPane } from "@/components/ui/card-select-pane";
 import type { PaneTabItem } from "@/components/ui/pane-tabs";
+import { getConfig } from "@/config";
 import { useAppStore } from "@/store";
 import { saveDraftRevision } from "./api/drafting-api";
 import { ArtifactPane } from "./components/artifact-pane";
 import { ContentTable } from "./components/content-table";
 import { DocumentsPanel } from "./components/documents-panel";
+import { DraftPreview } from "./components/draft-preview";
 import { DraftRail } from "./components/draft-rail";
 import { DraftingThread } from "./components/drafting-thread";
 import { PlanSteps } from "./components/plan-steps";
@@ -33,6 +35,7 @@ import { useDraftingTemplate } from "./hooks/use-drafting-template";
 import { useDraftingTone } from "./hooks/use-drafting-tone";
 import { useReportPendingWork } from "./hooks/use-report-pending-work";
 import { useReportParticipants } from "./participants";
+import { useSavedVersions } from "./saved-versions";
 import { useSessionDrafts } from "./session-drafts";
 import { getDraftingState, useDraftingSlice } from "./store";
 import { appendEventToThread } from "./thread-events";
@@ -64,6 +67,32 @@ function SessionArtifactPane({ children }: { children: ReactNode }) {
 }
 
 /**
+ * Preview pane for a versioned draft, stamped with its creation time.
+ * Reads the thread for the timestamp, so it must render inside the
+ * AssistantRuntimeProvider.
+ */
+function VersionedDraftPreview({
+  version,
+  onSave,
+}: {
+  version: number;
+  onSave: () => void;
+}) {
+  const sessionDrafts = useSessionDrafts();
+  const savedVersions = useSavedVersions();
+  const activeDraft = sessionDrafts.find((draft) => draft.version === version);
+  return (
+    <DraftPreview
+      sessionId={getConfig().sessionId}
+      versionId={version}
+      createdAt={activeDraft?.createdAt ?? null}
+      isSaved={savedVersions.has(version)}
+      onSave={onSave}
+    />
+  );
+}
+
+/**
  * Inner component that owns the assistant-ui runtime and all runtime-dependent
  * state, including tone/template/documents hooks and composer tab construction.
  *
@@ -72,7 +101,7 @@ function SessionArtifactPane({ children }: { children: ReactNode }) {
  * export/import. This avoids any remount or network refetch after a save.
  */
 function DraftingChat() {
-  const { draftedFields, plan } = useDraftingSlice();
+  const { draftedFields, plan, activeDraftVersion } = useDraftingSlice();
   const setPendingWork = useAppStore((s) => s.setPendingWork);
   const runtime = useDraftingRuntime();
   const tone = useDraftingTone();
@@ -90,8 +119,8 @@ function DraftingChat() {
    * not change the runtime reference.
    */
   const appendEvent = useCallback(
-    (eventType: string, summary: string) =>
-      appendEventToThread(runtime.thread, { eventType, summary }),
+    (eventType: string, summary: string, version?: number) =>
+      appendEventToThread(runtime.thread, { eventType, summary, version }),
     [runtime],
   );
 
@@ -120,12 +149,27 @@ function DraftingChat() {
     } finally {
       setPendingWork("drafting:save", false);
     }
-    appendEvent("save", `Draft ${version} saved as unpublished revision`);
+    appendEvent(
+      "save",
+      `Draft ${version} saved as unpublished revision`,
+      version,
+    );
   }, [appendEvent, setPendingWork]);
 
   /** Determine what the artifact pane shows. */
   function renderArtifact() {
     if (hasFields) {
+      // Versioned drafts get the tabbed live preview pane; legacy
+      // unversioned drafts cannot be addressed by the preview
+      // endpoint and keep the plain data table.
+      if (activeDraftVersion !== null) {
+        return (
+          <VersionedDraftPreview
+            version={activeDraftVersion}
+            onSave={handleSave}
+          />
+        );
+      }
       return <ContentTable onSave={handleSave} />;
     }
     return (

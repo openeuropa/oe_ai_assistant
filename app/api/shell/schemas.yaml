@@ -133,3 +133,6 @@ GetMessagesResponse:
           at:
             type: string
             description: RFC 3339 timestamp of the event (event items).
+          version:
+            type: integer
+            description: The draft version a "save" event persisted (event items).

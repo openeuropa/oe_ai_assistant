@@ -12,6 +12,8 @@ import type { ToolCallMessagePartProps } from "@assistant-ui/react";
 import { makeAssistantToolUI } from "@assistant-ui/react";
 import { Check, Loader2, PenLine, Wrench, X } from "lucide-react";
 import { parseDraftResult } from "../draft-result";
+import { useSavedVersions } from "../saved-versions";
+import { useSessionDrafts } from "../session-drafts";
 import { setDraftingState } from "../store";
 import { DraftCard } from "./draft-card";
 import { EventChip } from "./event-chip";
@@ -81,6 +83,11 @@ export const DraftContentToolUI = makeAssistantToolUI<
 >({
   toolName: "draft_content",
   render: ({ args, result, status }) => {
+    // Saved state and creation time come from the thread index, so the
+    // card stays in step with the preview header and the rail.
+    const sessionDrafts = useSessionDrafts();
+    const savedVersions = useSavedVersions();
+
     // While running or on error, show the generic tool card with status.
     if (status.type !== "complete") {
       const fieldCount = Object.keys(args?.fields ?? {}).length;
@@ -120,6 +127,11 @@ export const DraftContentToolUI = makeAssistantToolUI<
         version={parsed.version}
         context={parsed.context}
         fields={fields}
+        isSaved={parsed.version !== null && savedVersions.has(parsed.version)}
+        createdAt={
+          sessionDrafts.find((draft) => draft.version === parsed.version)
+            ?.createdAt ?? null
+        }
         onOpen={() =>
           // Show this draft in the pane, expanding it if collapsed.
           setDraftingState({
