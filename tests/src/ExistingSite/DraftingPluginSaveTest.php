@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Drupal\Tests\oe_ai_assistant\ExistingSite;
 
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
+use Drupal\oe_ai_assistant_test\Plugin\AiProvider\MockAiProvider;
+use Drupal\oe_ai_assistant_test\Plugin\AiProvider\MockResponse;
 
 /**
  * Integration tests for the DraftingPlugin save action.
@@ -91,6 +93,76 @@ class DraftingPluginSaveTest extends DraftingPluginTestBase {
     ));
     $this->assertCount(1, $events, 'The save must record one event row.');
     $this->assertStringContainsString('Draft 1', $events[0]['summary']);
+  }
+
+  /**
+   * Tests that a draft with a field unknown to the bundle can still be saved.
+   *
+   * The drafter sub-agent is only steered towards the template's field names
+   * through the structured output schema. When the model ignores it and
+   * answers with a key the bundle does not have (here "body" instead of
+   * "field_body", which is exactly what the drafter's own system prompt uses
+   * as an example), the orchestrator must not record that key as part of the
+   * draft. Otherwise the draft looks fine in the UI and the save fails with an
+   * opaque 400 because the entity builder cannot deserialize the unknown
+   * field.
+   */
+  public function testSaveSurvivesDraftWithFieldUnknownToBundle(): void {
+    $user = $this->createUser([
+      'use oe ai assistant',
+      'create oe_news content',
+    ]);
+    $this->loginUser($user);
+    $session = $this->createSession($user);
+    // Pin the template so the drafted field names are deterministic: the
+    // news_default template exposes title, field_teaser and field_body in a
+    // single main_fields group.
+    $session->set('template', 'news_default')->save();
+
+    MockAiProvider::reset();
+    // The router calls draft_content.
+    MockAiProvider::enqueue(new MockResponse(
+      toolCalls: [
+        [
+          'id' => 'call_1',
+          'type' => 'function',
+          'function' => ['name' => 'draft_content', 'arguments' => '{}'],
+        ],
+      ],
+    ));
+    // The main_fields sub-agent ignores the schema and answers with "body".
+    MockAiProvider::enqueue(new MockResponse(
+      text: '{"title": [{"value": "Stray key title"}], "body": [{"value": "<p>Text</p>", "format": "full_html"}]}',
+    ));
+
+    $chat = $this->httpPost('/api/ai/plugins/drafting/chat', [
+      'message' => 'Generate the draft now.',
+      'sessionId' => $session->id(),
+    ]);
+    $this->assertEquals(200, $chat['status'],
+      'Expected 200 from chat. Body: ' . substr($chat['body'], 0, 500));
+
+    // The recorded draft must only contain fields from the template schema.
+    /** @var \Drupal\oe_ai_assistant\Service\Drafting\DraftHistoryInterface $history */
+    $history = \Drupal::service('Drupal\oe_ai_assistant\Service\Drafting\DraftHistoryInterface');
+    \Drupal::entityTypeManager()->getStorage('ai_conversation_message')->resetCache();
+    $fields = $history->getDraftFields($session, 1);
+    $this->assertNotNull($fields, 'Draft 1 must be recorded.');
+    $unknown = array_diff(array_keys($fields), ['title', 'field_teaser', 'field_body']);
+    $this->assertSame([], array_values($unknown),
+      'The draft must not carry fields outside the template schema.');
+
+    // And the draft must be saveable as a node.
+    $result = $this->httpPost('/api/ai/plugins/drafting/save', [
+      'sessionId' => $session->id(),
+      'version' => 1,
+    ]);
+    $this->assertEquals(200, $result['status'],
+      'Expected 200 from save. Body: ' . substr($result['body'], 0, 500));
+    $body = json_decode($result['body'], TRUE);
+    $node = \Drupal::entityTypeManager()->getStorage('node')->load($body['nodeId']);
+    $this->assertNotNull($node, 'The created node should exist.');
+    $this->assertEquals('Stray key title', $node->getTitle());
   }
 
   /**
