@@ -73,6 +73,15 @@ const MOCK_CONTENT_SCHEMA = {
  * requests so the tests do not depend on a running backend.
  */
 async function mockApiRoutes(page: import("@playwright/test").Page) {
+  // Mock the CSRF token every API request carries.
+  await page.route("**/session/token", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "text/plain",
+      body: "e2e-csrf-token",
+    }),
+  );
+
   // Mock content schema endpoint.
   await page.route("**/api/content-schema/**", (route) =>
     route.fulfill({
@@ -156,6 +165,15 @@ test.describe("Drafting text streaming", () => {
     const streamEvents: string[] = [];
 
     // Mock content schema.
+    // Mock the CSRF token every API request carries.
+    await page.route("**/session/token", (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "text/plain",
+        body: "e2e-csrf-token",
+      }),
+    );
+
     await page.route("**/api/content-schema/**", (route) =>
       route.fulfill({
         status: 200,
