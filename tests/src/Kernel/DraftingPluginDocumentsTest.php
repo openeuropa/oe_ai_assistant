@@ -14,8 +14,8 @@ use Drupal\oe_ai_assistant\Service\RequestValidator;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
+use Symfony\Component\DependencyInjection\Reference;
 use Symfony\Component\HttpFoundation\JsonResponse;
-use Symfony\Component\HttpFoundation\File\UploadedFile;
 use Symfony\Component\HttpFoundation\Request;
 
 /**
@@ -31,6 +31,9 @@ class DraftingPluginDocumentsTest extends AiEditorialSessionKernelTestBase {
     parent::register($container);
     $container->register('stream_wrapper.private', 'Drupal\Core\StreamWrapper\PrivateStream')
       ->addTag('stream_wrapper', ['scheme' => 'private']);
+    // Raw upload bodies are read from php://input, which tests cannot feed.
+    $container->register('file.input_stream_file_writer', TestInputStreamFileWriter::class)
+      ->addArgument(new Reference('file_system'));
   }
 
   /**
@@ -61,22 +64,8 @@ class DraftingPluginDocumentsTest extends AiEditorialSessionKernelTestBase {
     $plugin = $this->container->get(AiAssistantPluginManager::class)
       ->createInstance('drafting');
 
-    $source = $this->container->getParameter('site.path') . '/document-source.txt';
     $contents = 'Context document contents.';
-    file_put_contents($source, $contents);
-
-    $addRequest = Request::create('', 'POST', [
-      'sessionId' => $session->id(),
-      'category' => 'context',
-    ], [], [
-      'file' => new UploadedFile(
-        $source,
-        'brief.txt',
-        'text/plain',
-        UPLOAD_ERR_OK,
-        TRUE,
-      ),
-    ]);
+    $addRequest = $this->createUploadRequest((string) $session->id(), 'context', 'brief.txt', $contents);
 
     $addResponse = $plugin->executeAction('add-document', $addRequest);
 
@@ -104,7 +93,7 @@ class DraftingPluginDocumentsTest extends AiEditorialSessionKernelTestBase {
     $reloadedSession = $sessionStorage->load($session->id());
     $this->assertSame($documentId, (string) $reloadedSession->get('context_documents')->target_id);
 
-    $listRequest = Request::create('', 'POST', [], [], [], [], json_encode([
+    $listRequest = Request::create('', 'POST', [], [], [], ['CONTENT_TYPE' => 'application/json'], json_encode([
       'sessionId' => $session->id(),
       'category' => 'context',
     ], JSON_THROW_ON_ERROR));
@@ -113,7 +102,7 @@ class DraftingPluginDocumentsTest extends AiEditorialSessionKernelTestBase {
     $this->assertSame([$addResponse['document']], $listResponse['documents']);
     $this->assertArrayNotHasKey('url', $listResponse['documents'][0]);
 
-    $removeRequest = Request::create('', 'POST', [], [], [], [], json_encode([
+    $removeRequest = Request::create('', 'POST', [], [], [], ['CONTENT_TYPE' => 'application/json'], json_encode([
       'sessionId' => $session->id(),
       'category' => 'context',
       'documentId' => $documentId,
@@ -137,23 +126,7 @@ class DraftingPluginDocumentsTest extends AiEditorialSessionKernelTestBase {
     $session = $this->createSession($owner);
     $controller = $this->createPluginController();
 
-    $source = $this->container->getParameter('site.path') . '/controller-document-source.txt';
-    file_put_contents($source, 'Context document contents.');
-
-    $addRequest = Request::create('', 'POST', [
-      'sessionId' => $session->id(),
-      'category' => 'context',
-    ], [], [
-      'file' => new UploadedFile(
-        $source,
-        'controller-brief.txt',
-        'text/plain',
-        UPLOAD_ERR_OK,
-        TRUE,
-      ),
-    ], [
-      'CONTENT_TYPE' => 'multipart/form-data; boundary=kernel-test',
-    ]);
+    $addRequest = $this->createUploadRequest((string) $session->id(), 'context', 'controller-brief.txt', 'Context document contents.');
 
     $addResponse = $controller->dispatch('drafting', 'add-document', $addRequest);
     $this->assertInstanceOf(JsonResponse::class, $addResponse);
@@ -164,7 +137,7 @@ class DraftingPluginDocumentsTest extends AiEditorialSessionKernelTestBase {
     $this->assertSame('txt', $addPayload['document']['meta']['type']);
     $documentId = $addPayload['document']['id'];
 
-    $listRequest = Request::create('', 'POST', [], [], [], [], json_encode([
+    $listRequest = Request::create('', 'POST', [], [], [], ['CONTENT_TYPE' => 'application/json'], json_encode([
       'sessionId' => $session->id(),
       'category' => 'context',
     ], JSON_THROW_ON_ERROR));
@@ -175,7 +148,7 @@ class DraftingPluginDocumentsTest extends AiEditorialSessionKernelTestBase {
 
     $this->assertSame([$addPayload['document']], $listPayload['documents']);
 
-    $removeRequest = Request::create('', 'POST', [], [], [], [], json_encode([
+    $removeRequest = Request::create('', 'POST', [], [], [], ['CONTENT_TYPE' => 'application/json'], json_encode([
       'sessionId' => $session->id(),
       'category' => 'context',
       'documentId' => $documentId,
@@ -197,35 +170,85 @@ class DraftingPluginDocumentsTest extends AiEditorialSessionKernelTestBase {
   }
 
   /**
-   * Tests document uploads allow configured extensions with generic MIME types.
+   * Tests the controller rejects non-string add-document fields via the schema.
    */
-  public function testDocumentUploadAllowsGenericMimeTypeForConfiguredExtension(): void {
+  #[DataProvider('nonStringAddDocumentFieldProvider')]
+  public function testAddDocumentRejectsNonStringFieldsThroughController(string $field): void {
+    $owner = $this->createUser();
+    $this->container->get('current_user')->setAccount($owner);
+    $session = $this->createSession($owner);
+    $controller = $this->createPluginController();
+
+    // Replace one scalar field with an array, as a client would by sending
+    // the parameter with a bracket suffix.
+    $fields = [
+      'sessionId' => (string) $session->id(),
+      'category' => 'context',
+      'filename' => 'non-string-field.txt',
+    ];
+    $fields[$field] = [$fields[$field]];
+
+    $this->container->get('file.input_stream_file_writer')->setContents('Context document contents.');
+    $request = Request::create('?' . http_build_query($fields), 'POST', [], [], [], [
+      'CONTENT_TYPE' => 'application/octet-stream',
+    ], 'Context document contents.');
+
+    $response = $controller->dispatch('drafting', 'add-document', $request);
+    $this->assertInstanceOf(JsonResponse::class, $response);
+    $this->assertSame(400, $response->getStatusCode());
+    $payload = json_decode($response->getContent(), TRUE, 512, JSON_THROW_ON_ERROR);
+    $this->assertSame('bad_request', $payload['code']);
+    $this->assertStringContainsString($field . ':', $payload['message']);
+
+    $this->container->get('entity_type.manager')
+      ->getStorage('ai_editorial_session')
+      ->resetCache([$session->id()]);
+    $reloadedSession = $this->container->get('entity_type.manager')
+      ->getStorage('ai_editorial_session')
+      ->load($session->id());
+    $this->assertTrue($reloadedSession->get('context_documents')->isEmpty());
+  }
+
+  /**
+   * Provides the add-document scalar fields that must be strings.
+   *
+   * @return array<string, array{0: string}>
+   *   Test cases keyed by field name.
+   */
+  public static function nonStringAddDocumentFieldProvider(): array {
+    return [
+      'sessionId' => ['sessionId'],
+      'category' => ['category'],
+    ];
+  }
+
+  /**
+   * Tests the document title uses the sanitized file name.
+   *
+   * Core renames files with insecure double extensions (brief.php.txt
+   * becomes brief.php_.txt). The media label, which is echoed back to the
+   * client and embedded in the page bootstrap, must reflect the stored file
+   * name rather than the raw client-supplied one.
+   */
+  public function testDocumentTitleUsesSanitizedFilename(): void {
     $owner = $this->createUser();
     $this->container->get('current_user')->setAccount($owner);
     $session = $this->createSession($owner);
     $plugin = $this->container->get(AiAssistantPluginManager::class)
       ->createInstance('drafting');
 
-    $source = $this->container->getParameter('site.path') . '/generic-mime-source.txt';
-    file_put_contents($source, 'Context document contents.');
-
-    $request = Request::create('', 'POST', [
-      'sessionId' => $session->id(),
-      'category' => 'context',
-    ], [], [
-      'file' => new UploadedFile(
-        $source,
-        'generic-mime.txt',
-        'application/octet-stream',
-        UPLOAD_ERR_OK,
-        TRUE,
-      ),
-    ]);
-
+    $request = $this->createUploadRequest((string) $session->id(), 'context', 'brief.php.txt', 'Context document contents.');
     $response = $plugin->executeAction('add-document', $request);
 
-    $this->assertSame('generic-mime.txt', $response['document']['title']);
-    $this->assertSame('txt', $response['document']['meta']['type']);
+    $media = $this->container->get('entity_type.manager')
+      ->getStorage('media')
+      ->load($response['document']['id']);
+    $this->assertInstanceOf(MediaInterface::class, $media);
+    $storedFilename = $media->get('oe_ai_context_document')->entity->getFilename();
+
+    $this->assertSame('brief.php_.txt', $storedFilename);
+    $this->assertSame($storedFilename, $media->label());
+    $this->assertSame($storedFilename, $response['document']['title']);
   }
 
   /**
@@ -246,21 +269,7 @@ class DraftingPluginDocumentsTest extends AiEditorialSessionKernelTestBase {
     $plugin = $this->container->get(AiAssistantPluginManager::class)
       ->createInstance('drafting');
 
-    $source = $this->container->getParameter('site.path') . '/oversized-document-source.txt';
-    file_put_contents($source, str_repeat('a', 3000));
-
-    $request = Request::create('', 'POST', [
-      'sessionId' => $session->id(),
-      'category' => 'context',
-    ], [], [
-      'file' => new UploadedFile(
-        $source,
-        'oversized-document.txt',
-        'text/plain',
-        UPLOAD_ERR_OK,
-        TRUE,
-      ),
-    ]);
+    $request = $this->createUploadRequest((string) $session->id(), 'context', 'oversized-document.txt', str_repeat('a', 3000));
 
     try {
       $plugin->executeAction('add-document', $request);
@@ -291,21 +300,7 @@ class DraftingPluginDocumentsTest extends AiEditorialSessionKernelTestBase {
     $plugin = $this->container->get(AiAssistantPluginManager::class)
       ->createInstance('drafting');
 
-    $source = $this->container->getParameter('site.path') . '/unsupported-extension-source';
-    file_put_contents($source, random_bytes(128));
-
-    $request = Request::create('', 'POST', [
-      'sessionId' => $session->id(),
-      'category' => 'context',
-    ], [], [
-      'file' => new UploadedFile(
-        $source,
-        'unsupported-extension.exe',
-        'application/octet-stream',
-        UPLOAD_ERR_OK,
-        TRUE,
-      ),
-    ]);
+    $request = $this->createUploadRequest((string) $session->id(), 'context', 'unsupported-extension.exe', random_bytes(128));
 
     try {
       $plugin->executeAction('add-document', $request);
@@ -402,21 +397,7 @@ class DraftingPluginDocumentsTest extends AiEditorialSessionKernelTestBase {
    */
   private function createDocumentActionRequest(string $action, string $sessionId, string $category = 'context'): Request {
     if ($action === 'add-document') {
-      $source = $this->container->getParameter('site.path') . '/access-denied-document.txt';
-      file_put_contents($source, 'Context document contents.');
-
-      return Request::create('', 'POST', [
-        'sessionId' => $sessionId,
-        'category' => $category,
-      ], [], [
-        'file' => new UploadedFile(
-          $source,
-          'access-denied-document.txt',
-          'text/plain',
-          UPLOAD_ERR_OK,
-          TRUE,
-        ),
-      ]);
+      return $this->createUploadRequest($sessionId, $category, 'access-denied-document.txt', 'Context document contents.');
     }
 
     $body = [
@@ -427,7 +408,27 @@ class DraftingPluginDocumentsTest extends AiEditorialSessionKernelTestBase {
       $body['documentId'] = '1';
     }
 
-    return Request::create('', 'POST', [], [], [], [], json_encode($body, JSON_THROW_ON_ERROR));
+    return Request::create('', 'POST', [], [], [], ['CONTENT_TYPE' => 'application/json'], json_encode($body, JSON_THROW_ON_ERROR));
+  }
+
+  /**
+   * Creates a raw-body upload request for the add-document action.
+   *
+   * The scalar parameters travel in the query string and the file bytes
+   * form the whole request body, as the frontend sends them. The bytes are
+   * also primed on the writer double, which stands in for php://input.
+   */
+  private function createUploadRequest(string $sessionId, string $category, string $filename, string $contents): Request {
+    $this->container->get('file.input_stream_file_writer')->setContents($contents);
+    $query = http_build_query([
+      'sessionId' => $sessionId,
+      'category' => $category,
+      'filename' => $filename,
+    ]);
+
+    return Request::create('?' . $query, 'POST', [], [], [], [
+      'CONTENT_TYPE' => 'application/octet-stream',
+    ], $contents);
   }
 
   /**

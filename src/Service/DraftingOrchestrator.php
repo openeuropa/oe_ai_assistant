@@ -150,7 +150,12 @@ class DraftingOrchestrator implements DraftingOrchestratorInterface {
         continue;
       }
       if ($stepId === 'main_fields') {
-        $consolidated = array_merge($consolidated, $results[$stepId]);
+        // The model may answer with keys outside the schema slice; keep only
+        // the group's fields so the draft stays saveable.
+        $consolidated = array_merge(
+          $consolidated,
+          array_intersect_key($results[$stepId], array_flip($group['fieldNames'])),
+        );
         continue;
       }
       foreach ($group['fieldNames'] as $fieldName) {

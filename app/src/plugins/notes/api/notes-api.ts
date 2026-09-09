@@ -5,6 +5,7 @@
  * the URL path and all parameters in the JSON request body.
  */
 
+import { apiFetch } from "@/api/csrf-token";
 import type { components } from "@/api/schema";
 import { getConfig } from "@/config";
 
@@ -17,7 +18,7 @@ function notesUrl(action: string): string {
 
 /** POST /plugins/notes/list : fetch all notes. */
 export async function fetchNotes(): Promise<Note[]> {
-  const response = await fetch(notesUrl("list"), {
+  const response = await apiFetch(notesUrl("list"), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({}),
@@ -29,7 +30,7 @@ export async function fetchNotes(): Promise<Note[]> {
 
 /** POST /plugins/notes/get : fetch a single note. */
 export async function fetchNote(noteId: string): Promise<Note> {
-  const response = await fetch(notesUrl("get"), {
+  const response = await apiFetch(notesUrl("get"), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ noteId }),
@@ -43,7 +44,7 @@ export async function createNote(input: {
   title: string;
   content: string;
 }): Promise<Note> {
-  const response = await fetch(notesUrl("create"), {
+  const response = await apiFetch(notesUrl("create"), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
@@ -58,7 +59,7 @@ export async function updateNote(
   noteId: string,
   input: { title: string; content: string },
 ): Promise<Note> {
-  const response = await fetch(notesUrl("update"), {
+  const response = await apiFetch(notesUrl("update"), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ noteId, ...input }),
@@ -70,7 +71,7 @@ export async function updateNote(
 
 /** POST /plugins/notes/delete : delete a note. */
 export async function deleteNote(noteId: string): Promise<void> {
-  const response = await fetch(notesUrl("delete"), {
+  const response = await apiFetch(notesUrl("delete"), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ noteId }),

@@ -11,15 +11,12 @@ use Drupal\Core\File\FileSystemInterface;
 use Drupal\file\FileInterface;
 use Drupal\file\Plugin\Field\FieldType\FileItem;
 use Drupal\file\Upload\FileUploadHandlerInterface;
-use Drupal\file\Upload\FormUploadedFile;
-use Drupal\file\Upload\InputStreamUploadedFile;
 use Drupal\file\Upload\UploadedFileInterface;
 use Drupal\media\MediaInterface;
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
 use Drupal\oe_ai_assistant\Exception\ActionException;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
-use Symfony\Component\HttpFoundation\File\UploadedFile;
 
 /**
  * Base implementation of the session document lifecycle.
@@ -89,14 +86,16 @@ abstract class DocumentRepositoryBase implements DocumentRepositoryInterface {
   /**
    * {@inheritdoc}
    */
-  public function add(AiEditorialSessionInterface $session, UploadedFile $upload): array {
+  public function add(AiEditorialSessionInterface $session, UploadedFileInterface $upload): array {
     $managedFile = $this->saveUploadedFile($upload);
     $managedFile->setPermanent();
     $managedFile->save();
 
     $media = NULL;
     try {
-      $media = $this->createMedia($managedFile, $upload);
+      // Name the media after the stored file: core may have renamed the
+      // upload, for example to neutralise an insecure double extension.
+      $media = $this->createMedia($managedFile, $managedFile->getFilename());
       $session->get($this->getSessionField())->appendItem([
         'target_id' => $media->id(),
       ]);
@@ -215,13 +214,13 @@ abstract class DocumentRepositoryBase implements DocumentRepositoryInterface {
   /**
    * Saves an uploaded document as a managed file.
    *
-   * @param \Symfony\Component\HttpFoundation\File\UploadedFile $upload
+   * @param \Drupal\file\Upload\UploadedFileInterface $upload
    *   The uploaded file.
    *
    * @return \Drupal\file\FileInterface
    *   The managed file entity.
    */
-  private function saveUploadedFile(UploadedFile $upload): FileInterface {
+  private function saveUploadedFile(UploadedFileInterface $upload): FileInterface {
     // Destination and validators come from the source field configuration,
     // through the same field type API the file widget uses.
     $item = $this->getSourceFieldItem();
@@ -239,7 +238,7 @@ abstract class DocumentRepositoryBase implements DocumentRepositoryInterface {
 
     try {
       $result = $this->fileUploadHandler->handleFileUpload(
-        $this->createDrupalUploadedFile($upload),
+        $upload,
         $item->getUploadValidators(),
         $directory,
         FileExists::Rename,
@@ -272,42 +271,20 @@ abstract class DocumentRepositoryBase implements DocumentRepositoryInterface {
   }
 
   /**
-   * Wraps a Symfony upload for Drupal's upload handler.
-   *
-   * @param \Symfony\Component\HttpFoundation\File\UploadedFile $upload
-   *   The source upload.
-   *
-   * @return \Drupal\file\Upload\UploadedFileInterface
-   *   The Drupal upload adapter.
-   */
-  private function createDrupalUploadedFile(UploadedFile $upload): UploadedFileInterface {
-    if (is_uploaded_file($upload->getPathname())) {
-      return new FormUploadedFile($upload);
-    }
-
-    return new InputStreamUploadedFile(
-      $upload->getClientOriginalName(),
-      $upload->getClientOriginalName(),
-      $upload->getPathname(),
-      $upload->getSize(),
-    );
-  }
-
-  /**
    * Creates the document media entity for a managed file.
    *
    * @param \Drupal\file\FileInterface $file
    *   The managed file entity.
-   * @param \Symfony\Component\HttpFoundation\File\UploadedFile $upload
-   *   The source upload.
+   * @param string $name
+   *   The media name, taken from the stored filename.
    *
    * @return \Drupal\media\MediaInterface
    *   The saved media entity.
    */
-  private function createMedia(FileInterface $file, UploadedFile $upload): MediaInterface {
+  private function createMedia(FileInterface $file, string $name): MediaInterface {
     $media = $this->entityTypeManager->getStorage('media')->create([
       'bundle' => $this->getMediaBundle(),
-      'name' => $upload->getClientOriginalName(),
+      'name' => $name,
       'status' => 0,
       $this->getSourceField() => [
         'target_id' => $file->id(),

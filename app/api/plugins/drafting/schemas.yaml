@@ -157,20 +157,23 @@ DraftingDocument:
 
 DraftingAddDocumentRequest:
   type: object
+  description: >
+    Query parameters of the add-document upload. The file bytes form the
+    raw request body, so these fields travel in the query string.
   required:
     - sessionId
     - category
-    - file
+    - filename
   properties:
     sessionId:
       type: string
       description: The editorial session receiving the uploaded document.
     category:
       $ref: "../../openapi.yaml#/components/schemas/DraftingDocumentCategory"
-    file:
+    filename:
       type: string
-      format: binary
-      description: Uploaded document file.
+      minLength: 1
+      description: Client filename of the uploaded document, including its extension.
 
 DraftingAddDocumentResponse:
   type: object

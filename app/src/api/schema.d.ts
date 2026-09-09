@@ -170,7 +170,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Upload a drafting context document */
+        /**
+         * Upload a drafting context document
+         * @description The file bytes form the raw request body. Session, category and filename are query parameters, exploded from the request schema.
+         */
         post: operations["postDraftingAddDocument"];
         delete?: never;
         options?: never;
@@ -453,15 +456,13 @@ export interface components {
                 size: number;
             };
         };
+        /** @description Query parameters of the add-document upload. The file bytes form the raw request body, so these fields travel in the query string. */
         DraftingAddDocumentRequest: {
             /** @description The editorial session receiving the uploaded document. */
             sessionId: string;
             category: components["schemas"]["DraftingDocumentCategory"];
-            /**
-             * Format: binary
-             * @description Uploaded document file.
-             */
-            file: string;
+            /** @description Client filename of the uploaded document, including its extension. */
+            filename: string;
         };
         DraftingAddDocumentResponse: {
             document: components["schemas"]["DraftingDocument"];
@@ -841,14 +842,16 @@ export interface operations {
     };
     postDraftingAddDocument: {
         parameters: {
-            query?: never;
+            query: {
+                params: components["schemas"]["DraftingAddDocumentRequest"];
+            };
             header?: never;
             path?: never;
             cookie?: never;
         };
         requestBody: {
             content: {
-                "multipart/form-data": components["schemas"]["DraftingAddDocumentRequest"];
+                "application/octet-stream": string;
             };
         };
         responses: {

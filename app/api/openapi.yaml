@@ -16,6 +16,8 @@
 #
 # Conventions:
 # - Authentication is cookie-based (CMS session). 403 on failure.
+# - Every request carries the CSRF token in the X-CSRF-Token header,
+#   fetched once from the CMS token endpoint.
 # - Error responses use the ApiError schema: { code, message }.
 # - Streaming endpoints use Server-Sent Events (text/event-stream).
 
@@ -36,6 +38,10 @@ servers:
 # ---------------------------------------------------------------------------
 # Paths
 # ---------------------------------------------------------------------------
+
+# Cookie-authenticated requests must carry the CSRF token header.
+security:
+  - csrfToken: []
 
 paths:
 
@@ -90,6 +96,15 @@ paths:
 # ---------------------------------------------------------------------------
 
 components:
+
+  securitySchemes:
+    csrfToken:
+      type: apiKey
+      in: header
+      name: X-CSRF-Token
+      description: >
+        CSRF token of the CMS session, fetched once from the token endpoint
+        the host page announces at bootstrap.
 
   parameters:
     NodeId:

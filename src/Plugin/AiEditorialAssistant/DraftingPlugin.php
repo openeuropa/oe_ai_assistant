@@ -9,6 +9,8 @@ use Drupal\ai\OperationType\Chat\ChatOutput;
 use Drupal\ai\OperationType\Chat\Tools\ToolsFunctionInput;
 use Drupal\ai_agents\PluginManager\AiAgentManager;
 use Drupal\Core\Cache\RefinableCacheableDependencyInterface;
+use Drupal\file\Upload\InputStreamFileWriterInterface;
+use Drupal\file\Upload\InputStreamUploadedFile;
 use Drupal\oe_ai_assistant\Annotation\AiEditorialAssistant;
 use Drupal\oe_ai_assistant\Entity\AiConversationMessageInterface;
 use Drupal\oe_ai_assistant\AiDraftingTemplateInterface;
@@ -26,7 +28,6 @@ use Drupal\oe_ai_assistant\Service\DraftingSchemaProviderInterface;
 use Drupal\oe_ai_assistant\Service\ToolExecutionLoopInterface;
 use Drupal\oe_ai_assistant\Service\UiMessageStreamInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
-use Symfony\Component\HttpFoundation\File\UploadedFile;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 
@@ -117,6 +118,13 @@ class DraftingPlugin extends AiAssistantPluginBase {
   protected ContextDocumentRepository $contextDocumentRepository;
 
   /**
+   * The input stream file writer, which stages raw upload bodies.
+   *
+   * @var \Drupal\file\Upload\InputStreamFileWriterInterface
+   */
+  protected InputStreamFileWriterInterface $inputStreamFileWriter;
+
+  /**
    * {@inheritdoc}
    */
   public static function create(
@@ -134,6 +142,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
     $instance->aiEditorialContext = $container->get(AiEditorialContextInterface::class);
     $instance->draftHistory = $container->get(DraftHistoryInterface::class);
     $instance->contextDocumentRepository = $container->get(ContextDocumentRepository::class);
+    $instance->inputStreamFileWriter = $container->get(InputStreamFileWriterInterface::class);
     return $instance;
   }
 
@@ -164,11 +173,9 @@ class DraftingPlugin extends AiAssistantPluginBase {
       'save' => 'DraftingSaveRequest',
       'set-tone' => 'DraftingSetToneRequest',
       'set-template' => 'DraftingSetTemplateRequest',
+      'add-document' => 'DraftingAddDocumentRequest',
       'list-documents' => 'DraftingListDocumentsRequest',
       'remove-document' => 'DraftingRemoveDocumentRequest',
-      // The add-document action is multipart rather than JSON, so it is not
-      // validated against a body schema; the action checks its own inputs
-      // and the file is validated through the source field configuration.
     ];
   }
 
@@ -595,29 +602,28 @@ class DraftingPlugin extends AiAssistantPluginBase {
   }
 
   /**
-   * Attaches the versioned draft result to the draft_content tool call.
-   *
    * Adds an uploaded document to the session document references.
    *
+   * The file bytes form the whole request body and are staged to a
+   * temporary file the same way core's JSON:API file upload does. The
+   * session, category and filename travel in the query string, validated
+   * against the request schema before this action runs.
+   *
    * @param \Symfony\Component\HttpFoundation\Request $request
-   *   The incoming multipart request.
+   *   The incoming raw upload request.
    *
    * @return array<string, array<string, string|array<string, string>>>
    *   The serialized document item.
    */
   public function addDocument(Request $request): array {
-    $body = $request->request->all();
-    $repository = $this->resolveDocumentRepository((string) ($body['category'] ?? ''));
-    $session = $this->loadSession($body);
+    $params = $request->query->all();
+    $repository = $this->resolveDocumentRepository($params['category'] ?? '');
+    $session = $this->loadSession($params);
 
-    $upload = $request->files->get('file');
-    if (!$upload instanceof UploadedFile || !$upload->isValid()) {
-      throw new ActionException(
-        'invalid_request',
-        'An uploaded file is required.',
-        400,
-      );
-    }
+    // Drop any path component, as core does for Content-Disposition names.
+    $filename = basename($params['filename'] ?? '');
+    $path = $this->inputStreamFileWriter->writeStreamToFile();
+    $upload = new InputStreamUploadedFile($filename, $filename, $path, @filesize($path));
 
     return ['document' => $repository->add($session, $upload)];
   }
@@ -633,7 +639,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
    */
   public function listDocuments(Request $request): array {
     $body = $this->decodeJsonBody($request);
-    $repository = $this->resolveDocumentRepository((string) ($body['category'] ?? ''));
+    $repository = $this->resolveDocumentRepository($body['category'] ?? '');
     $session = $this->loadSession($body);
 
     return ['documents' => $repository->list($session)];
@@ -650,7 +656,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
    */
   public function removeDocument(Request $request): array {
     $body = $this->decodeJsonBody($request);
-    $repository = $this->resolveDocumentRepository((string) ($body['category'] ?? ''));
+    $repository = $this->resolveDocumentRepository($body['category'] ?? '');
     $session = $this->loadSession($body);
     $documentId = (string) ($body['documentId'] ?? '');
 

@@ -9,6 +9,7 @@
  * in the shared `@/api/session-messages` module.
  */
 
+import { apiFetch } from "@/api/csrf-token";
 import type { components } from "@/api/schema";
 import { getConfig } from "@/config";
 import type {
@@ -37,12 +38,11 @@ type DraftingRemoveDocumentResponse =
 export async function postDraftingChat(
   request: DraftingChatRequest,
 ): Promise<Response> {
-  const response = await fetch(
+  const response = await apiFetch(
     `${getConfig().apiBaseUrl}/plugins/drafting/chat`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      credentials: "include",
       body: JSON.stringify(request),
     },
   );
@@ -54,12 +54,11 @@ export async function postDraftingChat(
 
 /** Resets the conversation for the current session. */
 export async function resetDrafting(): Promise<void> {
-  const response = await fetch(
+  const response = await apiFetch(
     `${getConfig().apiBaseUrl}/plugins/drafting/reset`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      credentials: "include",
       body: JSON.stringify({ sessionId: getConfig().sessionId }),
     },
   );
@@ -72,12 +71,11 @@ export async function resetDrafting(): Promise<void> {
 export async function setDraftingTone(
   request: DraftingSetToneRequest,
 ): Promise<DraftingSetToneResponse> {
-  const response = await fetch(
+  const response = await apiFetch(
     `${getConfig().apiBaseUrl}/plugins/drafting/set-tone`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      credentials: "include",
       // Scope the tone to the current editorial session.
       body: JSON.stringify({ ...request, sessionId: getConfig().sessionId }),
     },
@@ -96,12 +94,11 @@ export async function setDraftingTone(
 export async function saveDraftRevision(
   request: DraftingSaveRequest,
 ): Promise<DraftingSaveResponse> {
-  const response = await fetch(
+  const response = await apiFetch(
     `${getConfig().apiBaseUrl}/plugins/drafting/save`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      credentials: "include",
       // Scope the save to the current editorial session.
       body: JSON.stringify({ ...request, sessionId: getConfig().sessionId }),
     },
@@ -116,12 +113,11 @@ export async function saveDraftRevision(
 export async function setDraftingTemplate(
   request: DraftingSetTemplateRequest,
 ): Promise<DraftingSetTemplateResponse> {
-  const response = await fetch(
+  const response = await apiFetch(
     `${getConfig().apiBaseUrl}/plugins/drafting/set-template`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      credentials: "include",
       // Scope the template to the current editorial session.
       body: JSON.stringify({ ...request, sessionId: getConfig().sessionId }),
     },
@@ -132,22 +128,29 @@ export async function setDraftingTemplate(
   return (await response.json()) as DraftingSetTemplateResponse;
 }
 
-/** Uploads a document to the current drafting session. */
+/**
+ * Uploads a document to the current drafting session.
+ *
+ * The file bytes are sent as the raw request body. Session, category and
+ * filename travel in the query string, so the backend can validate them
+ * against the request schema without parsing a multipart body.
+ */
 export async function addDraftingDocument(
   file: File,
   category: DraftingCategory = "context",
 ): Promise<DraftingDocument> {
-  const formData = new FormData();
-  formData.append("sessionId", getConfig().sessionId);
-  formData.append("category", category);
-  formData.append("file", file);
+  const params = new URLSearchParams({
+    sessionId: getConfig().sessionId,
+    category,
+    filename: file.name,
+  });
 
-  const response = await fetch(
-    `${getConfig().apiBaseUrl}/plugins/drafting/add-document`,
+  const response = await apiFetch(
+    `${getConfig().apiBaseUrl}/plugins/drafting/add-document?${params}`,
     {
       method: "POST",
-      credentials: "include",
-      body: formData,
+      headers: { "Content-Type": "application/octet-stream" },
+      body: file,
     },
   );
   if (!response.ok) {
@@ -161,12 +164,11 @@ export async function addDraftingDocument(
 export async function listDraftingDocuments(
   category: DraftingCategory = "context",
 ): Promise<DraftingDocument[]> {
-  const response = await fetch(
+  const response = await apiFetch(
     `${getConfig().apiBaseUrl}/plugins/drafting/list-documents`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      credentials: "include",
       body: JSON.stringify({ sessionId: getConfig().sessionId, category }),
     },
   );
@@ -182,12 +184,11 @@ export async function removeDraftingDocument(
   documentId: string,
   category: DraftingCategory = "context",
 ): Promise<DraftingRemoveDocumentResponse> {
-  const response = await fetch(
+  const response = await apiFetch(
     `${getConfig().apiBaseUrl}/plugins/drafting/remove-document`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      credentials: "include",
       body: JSON.stringify({
         sessionId: getConfig().sessionId,
         category,

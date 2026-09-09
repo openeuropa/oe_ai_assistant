@@ -14,6 +14,8 @@
 export interface AppConfig {
   /** Base URL for all API requests (e.g. "/api" or "https://cms.example.com/api"). */
   apiBaseUrl: string;
+  /** URL returning the CSRF token sent with every API request. */
+  csrfTokenUrl: string;
   /** Editorial session ID the app is mounted on. */
   sessionId: string;
   /** CMS content node ID the editor is currently working on. */
@@ -46,6 +48,7 @@ export interface AppInitConfig
 /** Sensible defaults for options that the host may omit. */
 const defaults = {
   apiBaseUrl: "/api",
+  csrfTokenUrl: "/session/token",
   nodeId: null,
   enabledPlugins: [],
   pluginConfig: {},
