@@ -638,7 +638,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
    */
   public function listDocuments(Request $request): array {
     $body = $this->decodeJsonBody($request);
-    $repository = $this->resolveDocumentRepository((string) ($body['category'] ?? ''));
+    $repository = $this->resolveDocumentRepository($body['category'] ?? '');
     $session = $this->loadSession($body);
 
     return ['documents' => $repository->list($session)];
@@ -655,7 +655,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
    */
   public function removeDocument(Request $request): array {
     $body = $this->decodeJsonBody($request);
-    $repository = $this->resolveDocumentRepository((string) ($body['category'] ?? ''));
+    $repository = $this->resolveDocumentRepository($body['category'] ?? '');
     $session = $this->loadSession($body);
     $documentId = (string) ($body['documentId'] ?? '');
 

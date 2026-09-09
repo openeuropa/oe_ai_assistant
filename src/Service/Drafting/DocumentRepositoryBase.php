@@ -93,7 +93,9 @@ abstract class DocumentRepositoryBase implements DocumentRepositoryInterface {
 
     $media = NULL;
     try {
-      $media = $this->createMedia($managedFile, $upload->getClientOriginalName());
+      // Name the media after the stored file: core may have renamed the
+      // upload, for example to neutralise an insecure double extension.
+      $media = $this->createMedia($managedFile, $managedFile->getFilename());
       $session->get($this->getSessionField())->appendItem([
         'target_id' => $media->id(),
       ]);
@@ -274,7 +276,7 @@ abstract class DocumentRepositoryBase implements DocumentRepositoryInterface {
    * @param \Drupal\file\FileInterface $file
    *   The managed file entity.
    * @param string $name
-   *   The media name, taken from the uploaded filename.
+   *   The media name, taken from the stored filename.
    *
    * @return \Drupal\media\MediaInterface
    *   The saved media entity.

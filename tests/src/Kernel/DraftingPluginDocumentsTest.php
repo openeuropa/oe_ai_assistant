@@ -223,6 +223,35 @@ class DraftingPluginDocumentsTest extends AiEditorialSessionKernelTestBase {
   }
 
   /**
+   * Tests the document title uses the sanitized file name.
+   *
+   * Core renames files with insecure double extensions (brief.php.txt
+   * becomes brief.php_.txt). The media label, which is echoed back to the
+   * client and embedded in the page bootstrap, must reflect the stored file
+   * name rather than the raw client-supplied one.
+   */
+  public function testDocumentTitleUsesSanitizedFilename(): void {
+    $owner = $this->createUser();
+    $this->container->get('current_user')->setAccount($owner);
+    $session = $this->createSession($owner);
+    $plugin = $this->container->get(AiAssistantPluginManager::class)
+      ->createInstance('drafting');
+
+    $request = $this->createUploadRequest((string) $session->id(), 'context', 'brief.php.txt', 'Context document contents.');
+    $response = $plugin->executeAction('add-document', $request);
+
+    $media = $this->container->get('entity_type.manager')
+      ->getStorage('media')
+      ->load($response['document']['id']);
+    $this->assertInstanceOf(MediaInterface::class, $media);
+    $storedFilename = $media->get('oe_ai_context_document')->entity->getFilename();
+
+    $this->assertSame('brief.php_.txt', $storedFilename);
+    $this->assertSame($storedFilename, $media->label());
+    $this->assertSame($storedFilename, $response['document']['title']);
+  }
+
+  /**
    * Tests document uploads reject files larger than the configured field limit.
    */
   public function testDocumentUploadRejectsFileLargerThanConfiguredLimit(): void {
