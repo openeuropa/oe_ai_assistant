@@ -37,6 +37,11 @@ abstract class DraftingPluginTestBase extends ExistingSiteBase {
   protected array $sessions = [];
 
   /**
+   * The CSRF token of the logged-in browser session, fetched on demand.
+   */
+  protected ?string $csrfToken = NULL;
+
+  /**
    * {@inheritdoc}
    */
   protected function setUp(): void {
@@ -186,6 +191,20 @@ abstract class DraftingPluginTestBase extends ExistingSiteBase {
 
     $this->loggedInUser = $account;
     $this->container->get('current_user')->setAccount($account);
+    $this->csrfToken = NULL;
+  }
+
+  /**
+   * Returns the CSRF token of the logged-in browser session.
+   */
+  protected function getCsrfToken(): string {
+    if ($this->csrfToken === NULL) {
+      /** @var \Symfony\Component\BrowserKit\AbstractBrowser $client */
+      $client = $this->getSession()->getDriver()->getClient();
+      $client->request('GET', $this->baseUrl . '/session/token');
+      $this->csrfToken = (string) $client->getResponse()->getContent();
+    }
+    return $this->csrfToken;
   }
 
   /**
@@ -207,7 +226,10 @@ abstract class DraftingPluginTestBase extends ExistingSiteBase {
       $this->baseUrl . $url,
       [],
       [],
-      ['CONTENT_TYPE' => 'application/json'],
+      [
+        'CONTENT_TYPE' => 'application/json',
+        'HTTP_X_CSRF_TOKEN' => $this->getCsrfToken(),
+      ],
       json_encode($body),
     );
     $response = $client->getResponse();

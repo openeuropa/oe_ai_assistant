@@ -129,6 +129,9 @@ class AiEditorialSessionController extends ControllerBase {
       // Drupal is installed at the domain root), guaranteeing correct paths
       // in both root and subdirectory installations.
       'apiBaseUrl' => $this->requestStack->getCurrentRequest()->getBasePath() . '/api/ai',
+      // Where the React app fetches the CSRF token it sends with every
+      // API request.
+      'csrfTokenUrl' => Url::fromRoute('system.csrftoken')->toString(),
       // Current user ID as a string, available to the React app for
       // user-specific behaviour.
       'userId' => (string) $this->currentUser()->id(),

@@ -68,6 +68,11 @@ async function start(): Promise<void> {
     }
   });
 
+  // CSRF token endpoint, mirroring the CMS one the app fetches at startup.
+  app.get("/session/token", (_req, res) => {
+    res.type("text").send("dev-csrf-token");
+  });
+
   // Mount route modules.
   app.use("/api/plugins/echo", echoRouter);
   app.use("/api/plugins/notes", notesRouter);

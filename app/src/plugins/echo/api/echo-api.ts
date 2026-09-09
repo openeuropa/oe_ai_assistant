@@ -5,6 +5,7 @@
  * Response so the caller can read the SSE stream from its body.
  */
 
+import { apiFetch } from "@/api/csrf-token";
 import { getConfig } from "@/config";
 import type { EchoRequest } from "../types";
 
@@ -15,7 +16,7 @@ import type { EchoRequest } from "../types";
  * responsible for reading and parsing the stream.
  */
 export async function postEcho(request: EchoRequest): Promise<Response> {
-  const response = await fetch(
+  const response = await apiFetch(
     `${getConfig().apiBaseUrl}/plugins/echo/stream`,
     {
       method: "POST",

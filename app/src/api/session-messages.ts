@@ -9,6 +9,7 @@
  */
 
 import { getConfig } from "@/config";
+import { apiFetch } from "./csrf-token";
 
 /** A tool call stored on a transcript message (OpenAI render shape). */
 export interface SessionToolCall {
@@ -46,12 +47,11 @@ export interface SessionMessage {
 export async function getSessionMessages(
   pluginId: string,
 ): Promise<SessionMessage[]> {
-  const response = await fetch(
+  const response = await apiFetch(
     `${getConfig().apiBaseUrl}/plugins/${pluginId}/get-messages`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      credentials: "include",
       body: JSON.stringify({ sessionId: getConfig().sessionId }),
     },
   );

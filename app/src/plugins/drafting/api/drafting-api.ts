@@ -9,6 +9,7 @@
  * in the shared `@/api/session-messages` module.
  */
 
+import { apiFetch } from "@/api/csrf-token";
 import type { components } from "@/api/schema";
 import { getConfig } from "@/config";
 import type {
@@ -37,12 +38,11 @@ type DraftingRemoveDocumentResponse =
 export async function postDraftingChat(
   request: DraftingChatRequest,
 ): Promise<Response> {
-  const response = await fetch(
+  const response = await apiFetch(
     `${getConfig().apiBaseUrl}/plugins/drafting/chat`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      credentials: "include",
       body: JSON.stringify(request),
     },
   );
@@ -54,12 +54,11 @@ export async function postDraftingChat(
 
 /** Resets the conversation for the current session. */
 export async function resetDrafting(): Promise<void> {
-  const response = await fetch(
+  const response = await apiFetch(
     `${getConfig().apiBaseUrl}/plugins/drafting/reset`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      credentials: "include",
       body: JSON.stringify({ sessionId: getConfig().sessionId }),
     },
   );
@@ -72,12 +71,11 @@ export async function resetDrafting(): Promise<void> {
 export async function setDraftingTone(
   request: DraftingSetToneRequest,
 ): Promise<DraftingSetToneResponse> {
-  const response = await fetch(
+  const response = await apiFetch(
     `${getConfig().apiBaseUrl}/plugins/drafting/set-tone`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      credentials: "include",
       // Scope the tone to the current editorial session.
       body: JSON.stringify({ ...request, sessionId: getConfig().sessionId }),
     },
@@ -96,12 +94,11 @@ export async function setDraftingTone(
 export async function saveDraftRevision(
   request: DraftingSaveRequest,
 ): Promise<DraftingSaveResponse> {
-  const response = await fetch(
+  const response = await apiFetch(
     `${getConfig().apiBaseUrl}/plugins/drafting/save`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      credentials: "include",
       // Scope the save to the current editorial session.
       body: JSON.stringify({ ...request, sessionId: getConfig().sessionId }),
     },
@@ -116,12 +113,11 @@ export async function saveDraftRevision(
 export async function setDraftingTemplate(
   request: DraftingSetTemplateRequest,
 ): Promise<DraftingSetTemplateResponse> {
-  const response = await fetch(
+  const response = await apiFetch(
     `${getConfig().apiBaseUrl}/plugins/drafting/set-template`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      credentials: "include",
       // Scope the template to the current editorial session.
       body: JSON.stringify({ ...request, sessionId: getConfig().sessionId }),
     },
@@ -149,12 +145,11 @@ export async function addDraftingDocument(
     filename: file.name,
   });
 
-  const response = await fetch(
+  const response = await apiFetch(
     `${getConfig().apiBaseUrl}/plugins/drafting/add-document?${params}`,
     {
       method: "POST",
       headers: { "Content-Type": "application/octet-stream" },
-      credentials: "include",
       body: file,
     },
   );
@@ -169,12 +164,11 @@ export async function addDraftingDocument(
 export async function listDraftingDocuments(
   category: DraftingCategory = "context",
 ): Promise<DraftingDocument[]> {
-  const response = await fetch(
+  const response = await apiFetch(
     `${getConfig().apiBaseUrl}/plugins/drafting/list-documents`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      credentials: "include",
       body: JSON.stringify({ sessionId: getConfig().sessionId, category }),
     },
   );
@@ -189,12 +183,11 @@ export async function listDraftingDocuments(
 export async function removeDraftingDocument(
   documentId: string,
 ): Promise<DraftingRemoveDocumentResponse> {
-  const response = await fetch(
+  const response = await apiFetch(
     `${getConfig().apiBaseUrl}/plugins/drafting/remove-document`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      credentials: "include",
       body: JSON.stringify({
         sessionId: getConfig().sessionId,
         documentId,

@@ -21,6 +21,7 @@
 
 import createFetchClient from "openapi-fetch";
 import createClient from "openapi-react-query";
+import { CSRF_HEADER, getCsrfToken } from "./csrf-token";
 import type { paths } from "./schema";
 
 /**
@@ -28,6 +29,15 @@ import type { paths } from "./schema";
  */
 export const fetchClient = createFetchClient<paths>({
   baseUrl: "",
+  credentials: "include",
+});
+
+// Every request carries the CSRF token the CMS requires.
+fetchClient.use({
+  async onRequest({ request }) {
+    request.headers.set(CSRF_HEADER, await getCsrfToken());
+    return request;
+  },
 });
 
 /**
