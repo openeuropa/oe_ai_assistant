@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Drupal\Tests\oe_ai_assistant\Kernel;
 
 use Drupal\file\FileInterface;
+use Drupal\file\Upload\InputStreamFileWriterInterface;
 use Drupal\field\FieldConfigInterface;
 use Drupal\media\MediaInterface;
 use Drupal\oe_ai_assistant\Controller\PluginController;
@@ -16,6 +17,7 @@ use PHPUnit\Framework\Attributes\Group;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Reference;
 use Symfony\Component\HttpFoundation\JsonResponse;
+use Symfony\Component\HttpFoundation\File\Exception\UploadException;
 use Symfony\Component\HttpFoundation\Request;
 
 /**
@@ -505,6 +507,24 @@ class DraftingPluginDocumentsTest extends AiEditorialSessionKernelTestBase {
   }
 
   /**
+   * Tests a failure while staging the raw body is reported as upload_failed.
+   *
+   * A dropped connection must produce the JSON error the client handles,
+   * not an uncaught exception.
+   */
+  public function testStreamWriterFailureIsReportedAsUploadFailed(): void {
+    $owner = $this->createUser();
+    $this->container->get('current_user')->setAccount($owner);
+    $session = $this->createSession($owner);
+
+    // Core's stream writer throws a Symfony UploadException when php://input
+    // cannot be read, for example on a dropped connection. Replace the
+    // writer with one that always fails that way. The plugin resolves the
+    // writer through its interface alias, so setting the concrete service
+    // ID is enough for the next createInstance() to pick this one up.
+    $this->container->set('file.input_stream_file_writer', new class() implements InputStreamFileWriterInterface {
+
+      /**
        * {@inheritdoc}
        */
       public function writeStreamToFile(string $stream = self::DEFAULT_STREAM, int $bytesToRead = self::DEFAULT_BYTES_TO_READ): string {

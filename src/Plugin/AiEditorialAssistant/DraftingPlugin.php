@@ -31,6 +31,7 @@ use Drupal\oe_ai_assistant\Service\PreviewRendererInterface;
 use Drupal\oe_ai_assistant\Service\ToolExecutionLoopInterface;
 use Drupal\oe_ai_assistant\Service\UiMessageStreamInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
+use Symfony\Component\HttpFoundation\File\Exception\FileException;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 
@@ -705,7 +706,21 @@ class DraftingPlugin extends AiAssistantPluginBase {
 
     // Drop any path component, as core does for Content-Disposition names.
     $filename = basename($params['filename'] ?? '');
-    $path = $this->inputStreamFileWriter->writeStreamToFile();
+    try {
+      $path = $this->inputStreamFileWriter->writeStreamToFile();
+    }
+    catch (FileException $e) {
+      // The body could not be staged, for example on a dropped connection.
+      // Report it in the same shape as the other upload failures.
+      $this->logger->error('Document upload could not be staged: @message', [
+        '@message' => $e->getMessage(),
+      ]);
+      throw new ActionException(
+        'upload_failed',
+        'The uploaded document could not be read.',
+        500,
+      );
+    }
     $upload = new InputStreamUploadedFile($filename, $filename, $path, @filesize($path));
 
     return ['document' => $repository->add($session, $upload)];
