@@ -87,9 +87,10 @@ abstract class DocumentRepositoryBase implements DocumentRepositoryInterface {
    * {@inheritdoc}
    */
   public function add(AiEditorialSessionInterface $session, UploadedFileInterface $upload): array {
+    // The file stays temporary until the media that owns it is saved: the
+    // media's file field records a usage, and that flips it to permanent.
+    // A failure before that leaves a temporary file cron reaps on its own.
     $managedFile = $this->saveUploadedFile($upload);
-    $managedFile->setPermanent();
-    $managedFile->save();
 
     $media = NULL;
     try {

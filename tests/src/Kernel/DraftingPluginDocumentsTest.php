@@ -88,6 +88,9 @@ class DraftingPluginDocumentsTest extends AiEditorialSessionKernelTestBase {
     $this->assertInstanceOf(FileInterface::class, $file);
     $this->assertStringStartsWith('private://ai-context-documents/', $file->getFileUri());
     $this->assertSame(strlen($contents), (int) $file->getSize());
+    // The repository never marks the file permanent itself: saving the media
+    // records a usage through its file field, and that is what must flip it.
+    $this->assertTrue($file->isPermanent());
 
     $sessionStorage = $this->container->get('entity_type.manager')
       ->getStorage('ai_editorial_session');
