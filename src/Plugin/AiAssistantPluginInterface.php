@@ -28,8 +28,8 @@ use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
  * Request validation:
  *   The controller calls getRequestSchemas() before dispatching. If the
  *   requested action maps to a schema name, the request body is validated
- *   against that schema (from dist/schemas.json) and a 422 response is
- *   returned on failure. Actions not listed skip validation.
+ *   against that schema (from dist/schemas.json) and a 400 Bad Request
+ *   response is returned on failure. Actions not listed skip validation.
  *
  * @see \Drupal\oe_ai_assistant\Plugin\AiAssistantPluginBase
  * @see \Drupal\oe_ai_assistant\Plugin\AiAssistantPluginManager
@@ -73,8 +73,8 @@ interface AiAssistantPluginInterface extends PluginInspectionInterface {
    * map. If a matching schema name is found, the request parameters are
    * validated against the compiled JSON Schema. The parameters are read
    * from the JSON body, or from the query string for the actions listed by
-   * getQueryActions(). A validation failure yields a 422
-   * Unprocessable Entity response with a description of the errors.
+   * getQueryActions(). A validation failure yields a 400 Bad Request
+   * response with a description of the errors.
    *
    * Actions that do not require a structured body (for example, simple GET-
    * style queries with no parameters) should be omitted from this map so
