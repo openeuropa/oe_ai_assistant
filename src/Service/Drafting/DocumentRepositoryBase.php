@@ -233,6 +233,7 @@ abstract class DocumentRepositoryBase implements DocumentRepositoryInterface {
       $directory,
       FileSystemInterface::CREATE_DIRECTORY | FileSystemInterface::MODIFY_PERMISSIONS,
     )) {
+      $this->discardUpload($upload);
       throw new ActionException(
         'upload_failed',
         'The private document directory could not be prepared.',
@@ -252,6 +253,7 @@ abstract class DocumentRepositoryBase implements DocumentRepositoryInterface {
       $this->logger->error('Document upload failed: @message', [
         '@message' => $e->getMessage(),
       ]);
+      $this->discardUpload($upload);
       throw new ActionException(
         'upload_failed',
         'The uploaded document could not be saved.',
@@ -264,6 +266,7 @@ abstract class DocumentRepositoryBase implements DocumentRepositoryInterface {
       foreach ($result->getViolations() as $violation) {
         $messages[] = (string) $violation->getMessage();
       }
+      $this->discardUpload($upload);
       throw new ActionException(
         'invalid_request',
         implode(' ', $messages),
@@ -272,6 +275,22 @@ abstract class DocumentRepositoryBase implements DocumentRepositoryInterface {
     }
 
     return $result->getFile();
+  }
+
+  /**
+   * Removes the staged copy of a rejected upload.
+   *
+   * A rejected upload never becomes a managed file, so nothing else cleans
+   * up the temporary copy the request body was staged to.
+   *
+   * @param \Drupal\file\Upload\UploadedFileInterface $upload
+   *   The rejected upload.
+   */
+  private function discardUpload(UploadedFileInterface $upload): void {
+    $path = $upload->getRealPath();
+    if ($path !== FALSE && file_exists($path)) {
+      $this->fileSystem->unlink($path);
+    }
   }
 
   /**

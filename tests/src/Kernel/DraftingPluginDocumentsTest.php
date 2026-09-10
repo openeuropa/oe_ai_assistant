@@ -469,6 +469,42 @@ class DraftingPluginDocumentsTest extends AiEditorialSessionKernelTestBase {
   }
 
   /**
+   * Tests a rejected upload leaves no staged file behind.
+   *
+   * A rejected upload never becomes a managed file, so the action itself
+   * must remove the staged copy under temporary://.
+   */
+  public function testRejectedUploadLeavesNoStagedFile(): void {
+    $owner = $this->createUser();
+    $this->container->get('current_user')->setAccount($owner);
+    $session = $this->createSession($owner);
+    $plugin = $this->container->get(AiAssistantPluginManager::class)
+      ->createInstance('drafting');
+
+    // The add-document action stages the raw request body as a file under
+    // temporary:// before the field validators run, mirroring what the
+    // stream writer does with php://input. Snapshot the directory so any
+    // file left behind by this request can be spotted afterwards.
+    $temporaryDirectory = $this->container->get('file_system')->realpath('temporary://');
+    $before = scandir($temporaryDirectory);
+
+    // An .exe is outside the extensions configured on the source field, so
+    // the upload handler reports a violation and the action rejects it.
+    try {
+      $plugin->executeAction('add-document', $this->createUploadRequest((string) $session->id(), 'context', 'rejected.exe', 'Rejected contents.'));
+      $this->fail('The upload was not rejected.');
+    }
+    catch (ActionException $e) {
+      $this->assertSame(400, $e->statusCode);
+    }
+
+    // A rejected upload never becomes a managed file, so nothing else will
+    // ever clean the staged copy up: the action itself must unlink it.
+    $leftovers = array_values(array_diff(scandir($temporaryDirectory), $before));
+    $this->assertSame([], $leftovers, 'The staged upload must be removed when the upload is rejected.');
+  }
+
+  /**
        * {@inheritdoc}
        */
       public function writeStreamToFile(string $stream = self::DEFAULT_STREAM, int $bytesToRead = self::DEFAULT_BYTES_TO_READ): string {
