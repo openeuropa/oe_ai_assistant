@@ -424,6 +424,51 @@ class DraftingPluginDocumentsTest extends AiEditorialSessionKernelTestBase {
   }
 
   /**
+   * Tests removing a document from one session keeps it for another.
+   *
+   * Only the last reference may delete the media and its file.
+   */
+  public function testRemoveKeepsDocumentSharedWithAnotherSession(): void {
+    $owner = $this->createUser();
+    $this->container->get('current_user')->setAccount($owner);
+    $session = $this->createSession($owner);
+    $otherSession = $this->createSession($owner);
+    $plugin = $this->container->get(AiAssistantPluginManager::class)
+      ->createInstance('drafting');
+
+    // Upload the document through the first session, then reference the
+    // resulting media from a second session as well. The API never creates
+    // this state itself, but context_documents is a plain multi-value
+    // entity reference, so nothing prevents it, and deleteOrphanedBy()
+    // already treats it as a case to guard against.
+    $addResponse = $plugin->executeAction('add-document', $this->createUploadRequest((string) $session->id(), 'context', 'shared.txt', 'Shared contents.'));
+    $documentId = $addResponse['document']['id'];
+    $otherSession->get('context_documents')->appendItem(['target_id' => $documentId]);
+    $otherSession->save();
+
+    // Remove the document from the first session only.
+    $removeRequest = Request::create('', 'POST', [], [], [], ['CONTENT_TYPE' => 'application/json'], json_encode([
+      'sessionId' => $session->id(),
+      'category' => 'context',
+      'documentId' => $documentId,
+    ], JSON_THROW_ON_ERROR));
+    $plugin->executeAction('remove-document', $removeRequest);
+
+    // The first session drops its reference.
+    $sessionStorage = $this->container->get('entity_type.manager')->getStorage('ai_editorial_session');
+    $sessionStorage->resetCache([$session->id(), $otherSession->id()]);
+    $this->assertTrue($sessionStorage->load($session->id())->get('context_documents')->isEmpty());
+
+    // The second session still references the document, so the media and
+    // its file must survive the removal; only the last reference may delete
+    // them. Bypass the static cache to read what is actually stored.
+    $mediaStorage = $this->container->get('entity_type.manager')->getStorage('media');
+    $mediaStorage->resetCache([$documentId]);
+    $this->assertInstanceOf(MediaInterface::class, $mediaStorage->load($documentId), 'A document still referenced by another session must not be deleted.');
+    $this->assertSame($documentId, (string) $sessionStorage->load($otherSession->id())->get('context_documents')->target_id);
+  }
+
+  /**
        * {@inheritdoc}
        */
       public function writeStreamToFile(string $stream = self::DEFAULT_STREAM, int $bytesToRead = self::DEFAULT_BYTES_TO_READ): string {

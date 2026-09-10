@@ -150,7 +150,11 @@ abstract class DocumentRepositoryBase implements DocumentRepositoryInterface {
 
     $media = $this->entityTypeManager->getStorage('media')->load($documentId);
     $session->save();
-    if ($media instanceof MediaInterface) {
+    // Only the last reference deletes the document: another session may
+    // still use the same media.
+    if ($media instanceof MediaInterface
+      && !$this->isReferencedByAnotherSession((int) $media->id(), (int) $session->id())
+    ) {
       $this->deleteDocument($media);
     }
   }
