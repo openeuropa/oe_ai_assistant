@@ -26,13 +26,19 @@ export async function getCsrfToken(): Promise<string> {
   if (!tokenRequest) {
     tokenRequest = fetch(getConfig().csrfTokenUrl, {
       credentials: "include",
-    }).then(async (response) => {
-      if (!response.ok) {
+    })
+      .then(async (response) => {
+        if (!response.ok) {
+          throw new Error(`CSRF token error: ${response.status}`);
+        }
+        return (await response.text()).trim();
+      })
+      .catch((error: unknown) => {
+        // Covers transport failures too, not only error responses, so a
+        // rejected promise is never cached.
         tokenRequest = null;
-        throw new Error(`CSRF token error: ${response.status}`);
-      }
-      return (await response.text()).trim();
-    });
+        throw error;
+      });
   }
   return tokenRequest;
 }

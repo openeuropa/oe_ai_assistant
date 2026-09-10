@@ -47,6 +47,19 @@ describe("csrf token", () => {
     );
   });
 
+  // A transport failure must not poison the cache, or every later call
+  // would fail until the page is reloaded.
+  it("retries the token fetch after a network failure", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockRejectedValueOnce(new TypeError("Failed to fetch"))
+      .mockResolvedValueOnce({ ok: true, text: async () => "csrf-42" });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(getCsrfToken()).rejects.toThrow("Failed to fetch");
+    await expect(getCsrfToken()).resolves.toBe("csrf-42");
+  });
+
   it("retries the token fetch after a failure", async () => {
     const fetchMock = vi
       .fn()
