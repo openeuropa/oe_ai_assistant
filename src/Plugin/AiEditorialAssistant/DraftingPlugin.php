@@ -202,6 +202,16 @@ class DraftingPlugin extends AiAssistantPluginBase {
   /**
    * {@inheritdoc}
    *
+   * The add-document body is the raw file, so its parameters are query
+   * string values.
+   */
+  public function getQueryActions(): array {
+    return ['add-document'];
+  }
+
+  /**
+   * {@inheritdoc}
+   *
    * Provides the drafting scope (entity type and bundle) and the composer
    * panels. Each panel is gated by an 'enabled' flag so the host controls
    * which tabs appear. Tone options come from the tone vocabulary; template

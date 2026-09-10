@@ -380,6 +380,83 @@ class DraftingPluginDocumentsTest extends AiEditorialSessionKernelTestBase {
   }
 
   /**
+   * Tests the controller validates the JSON body whatever the Content-Type.
+   *
+   * The list action reads the JSON body, so that is what must be validated,
+   * whatever Content-Type the client sends.
+   */
+  public function testControllerValidatesJsonBodyRegardlessOfContentType(): void {
+    $owner = $this->createUser();
+    $this->container->get('current_user')->setAccount($owner);
+    $session = $this->createSession($owner);
+    $controller = $this->createPluginController();
+
+    // A text/plain Content-Type, a query string that satisfies
+    // DraftingListDocumentsRequest, and a body where category is an integer
+    // instead of the string the schema demands.
+    $query = http_build_query([
+      'sessionId' => (string) $session->id(),
+      'category' => 'context',
+    ]);
+    $request = Request::create('?' . $query, 'POST', [], [], [], [
+      'CONTENT_TYPE' => 'text/plain',
+    ], json_encode([
+      'sessionId' => (string) $session->id(),
+      'category' => 1,
+    ], JSON_THROW_ON_ERROR));
+
+    try {
+      $response = $controller->dispatch('drafting', 'list-documents', $request);
+    }
+    catch (\TypeError $e) {
+      // The integer category reached resolveDocumentRepository(), which is
+      // typed to accept a string: the body was handed to the action without
+      // being validated.
+      $this->fail('The JSON body reached the action without validation: ' . $e->getMessage());
+    }
+
+    // The body is what the action reads, so the body is what must have been
+    // validated: the integer category is rejected before the action runs.
+    $this->assertInstanceOf(JsonResponse::class, $response);
+    $this->assertSame(400, $response->getStatusCode());
+    $payload = json_decode($response->getContent(), TRUE, 512, JSON_THROW_ON_ERROR);
+    $this->assertSame('bad_request', $payload['code']);
+  }
+
+  /**
+       * {@inheritdoc}
+       */
+      public function writeStreamToFile(string $stream = self::DEFAULT_STREAM, int $bytesToRead = self::DEFAULT_BYTES_TO_READ): string {
+        throw new UploadException('Input file data could not be read');
+      }
+
+    });
+    $controller = $this->createPluginController();
+
+    // A well-formed upload request: the failure must come from staging the
+    // body, not from validation.
+    $query = http_build_query([
+      'sessionId' => (string) $session->id(),
+      'category' => 'context',
+      'filename' => 'brief.txt',
+    ]);
+    $request = Request::create('?' . $query, 'POST', [], [], [], [
+      'CONTENT_TYPE' => 'application/octet-stream',
+    ], 'Context document contents.');
+
+    $response = $controller->dispatch('drafting', 'add-document', $request);
+
+    // The repository already maps upload handler failures to an ActionException
+    // with the upload_failed code; a staging failure is the same kind of
+    // problem and must reach the client in the same JSON error shape rather
+    // than as an uncaught exception.
+    $this->assertInstanceOf(JsonResponse::class, $response);
+    $this->assertSame(500, $response->getStatusCode());
+    $payload = json_decode($response->getContent(), TRUE, 512, JSON_THROW_ON_ERROR);
+    $this->assertSame('upload_failed', $payload['code']);
+  }
+
+  /**
    * Creates a request for a document action.
    */
   private function createDocumentActionRequest(string $action, string $sessionId, string $category = 'context'): Request {

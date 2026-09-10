@@ -125,6 +125,13 @@ abstract class AiAssistantPluginBase extends PluginBase implements AiAssistantPl
 
   /**
    * {@inheritdoc}
+   */
+  public function getQueryActions(): array {
+    return [];
+  }
+
+  /**
+   * {@inheritdoc}
    *
    * Most plugins need no bootstrap configuration; plugins that do override
    * this method.

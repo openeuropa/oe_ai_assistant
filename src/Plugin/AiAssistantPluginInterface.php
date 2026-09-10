@@ -71,9 +71,9 @@ interface AiAssistantPluginInterface extends PluginInspectionInterface {
    * Maps action names to schema identifiers from dist/schemas.json. Before
    * the controller dispatches a request, it looks up the action name in this
    * map. If a matching schema name is found, the request parameters are
-   * validated against the compiled JSON Schema: the JSON body for JSON
-   * requests, or the query string for any other content type, such as a raw
-   * file upload. A validation failure yields a 422
+   * validated against the compiled JSON Schema. The parameters are read
+   * from the JSON body, or from the query string for the actions listed by
+   * getQueryActions(). A validation failure yields a 422
    * Unprocessable Entity response with a description of the errors.
    *
    * Actions that do not require a structured body (for example, simple GET-
@@ -94,6 +94,20 @@ interface AiAssistantPluginInterface extends PluginInspectionInterface {
    *   as top-level keys inside dist/schemas.json).
    */
   public function getRequestSchemas(): array;
+
+  /**
+   * Returns the actions whose parameters travel in the query string.
+   *
+   * Most actions take their parameters from the JSON body. An action whose
+   * body carries something else, such as a raw file upload, takes them
+   * from the query string instead, and the controller validates that
+   * against the schema from getRequestSchemas(). The action itself reads
+   * the same source, so the validated input is the input it uses.
+   *
+   * @return string[]
+   *   Action names whose parameters are read from the query string.
+   */
+  public function getQueryActions(): array;
 
   /**
    * Returns the plugin's portion of the frontend bootstrap configuration.
