@@ -18,4 +18,4 @@ dependencies:
   - drupal:text
   - key:key
   - drupal:taxonomy
-  - drupal:workflows
+  - state_machine:state_machine

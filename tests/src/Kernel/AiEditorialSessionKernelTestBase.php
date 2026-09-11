@@ -40,6 +40,7 @@ abstract class AiEditorialSessionKernelTestBase extends KernelTestBase {
     'key',
     'workflows',
     'serialization',
+    'state_machine',
   ];
 
   /**
