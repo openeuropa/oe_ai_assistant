@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace Drupal\oe_ai_assistant\Service\Drafting;
 
 use Drupal\Core\Entity\EntityTypeManagerInterface;
+use Drupal\Core\Field\FieldItemListInterface;
 use Drupal\Core\Field\TypedData\FieldItemDataDefinition;
 use Drupal\Core\File\FileExists;
 use Drupal\Core\File\FileSystemInterface;
+use Drupal\Core\Lock\LockBackendInterface;
 use Drupal\file\FileInterface;
 use Drupal\file\Plugin\Field\FieldType\FileItem;
 use Drupal\file\Upload\FileUploadHandlerInterface;
@@ -39,6 +41,8 @@ abstract class DocumentRepositoryBase implements DocumentRepositoryInterface {
    *   The file upload handler service.
    * @param \Psr\Log\LoggerInterface $logger
    *   The logger channel.
+   * @param \Drupal\Core\Lock\LockBackendInterface $lock
+   *   The lock backend, serialising reference updates per session.
    */
   public function __construct(
     protected readonly EntityTypeManagerInterface $entityTypeManager,
@@ -46,6 +50,8 @@ abstract class DocumentRepositoryBase implements DocumentRepositoryInterface {
     protected readonly FileUploadHandlerInterface $fileUploadHandler,
     #[Autowire(service: 'logger.channel.oe_ai_assistant')]
     protected readonly LoggerInterface $logger,
+    #[Autowire(service: 'lock')]
+    protected readonly LockBackendInterface $lock,
   ) {}
 
   /**
@@ -97,10 +103,9 @@ abstract class DocumentRepositoryBase implements DocumentRepositoryInterface {
       // Name the media after the stored file: core may have renamed the
       // upload, for example to neutralise an insecure double extension.
       $media = $this->createMedia($managedFile, $managedFile->getFilename());
-      $session->get($this->getSessionField())->appendItem([
-        'target_id' => $media->id(),
-      ]);
-      $session->save();
+      $this->updateSessionDocuments($session, static function (FieldItemListInterface $documents) use ($media): void {
+        $documents->appendItem(['target_id' => $media->id()]);
+      }, 'The editorial session is busy and the document was not attached. Upload it again.');
     }
     catch (\Throwable $e) {
       if ($media instanceof MediaInterface) {
@@ -131,26 +136,21 @@ abstract class DocumentRepositoryBase implements DocumentRepositoryInterface {
    * {@inheritdoc}
    */
   public function remove(AiEditorialSessionInterface $session, string $documentId): void {
-    $field = $session->get($this->getSessionField());
-    $referenced = FALSE;
-    foreach ($field as $delta => $item) {
-      if ((string) $item->target_id === $documentId) {
-        $field->removeItem($delta);
-        $referenced = TRUE;
-        break;
+    $this->updateSessionDocuments($session, static function (FieldItemListInterface $documents) use ($documentId): void {
+      foreach ($documents as $delta => $item) {
+        if ((string) $item->target_id === $documentId) {
+          $documents->removeItem($delta);
+          return;
+        }
       }
-    }
-
-    if (!$referenced) {
       throw new ActionException(
         'invalid_request',
         'The document is not referenced by this editorial session.',
         404,
       );
-    }
+    }, 'The editorial session is busy and the document was not removed. Try again.');
 
     $media = $this->entityTypeManager->getStorage('media')->load($documentId);
-    $session->save();
     // Only the last reference deletes the document: another session may
     // still use the same media.
     if ($media instanceof MediaInterface
@@ -371,6 +371,47 @@ abstract class DocumentRepositoryBase implements DocumentRepositoryInterface {
 
     $file = $media->get($this->getSourceField())->entity;
     return $file instanceof FileInterface ? $file : NULL;
+  }
+
+  /**
+   * Changes the session's document references under a per-session lock.
+   *
+   * Concurrent requests each hold their own copy of the session, so a copy
+   * saved last would overwrite the references the others added. The change
+   * is applied to a fresh copy loaded inside the lock and saved before the
+   * next request gets its turn.
+   *
+   * @param \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $session
+   *   The session whose references change.
+   * @param callable $update
+   *   Receives the fresh session's document field and changes it in place.
+   *   It may throw to abort without saving.
+   * @param string $busyMessage
+   *   The error message when the lock cannot be acquired. Tells the user
+   *   what did not happen and what to do about it.
+   *
+   * @throws \Drupal\oe_ai_assistant\Exception\ActionException
+   *   When the lock cannot be acquired.
+   */
+  private function updateSessionDocuments(AiEditorialSessionInterface $session, callable $update, string $busyMessage): void {
+    $name = 'oe_ai_assistant_documents_' . $session->id();
+    if (!$this->lock->acquire($name)) {
+      $this->lock->wait($name);
+      if (!$this->lock->acquire($name)) {
+        throw new ActionException('busy', $busyMessage, 503);
+      }
+    }
+
+    try {
+      $storage = $this->entityTypeManager->getStorage('ai_editorial_session');
+      $storage->resetCache([$session->id()]);
+      $fresh = $storage->load($session->id());
+      $update($fresh->get($this->getSessionField()));
+      $fresh->save();
+    }
+    finally {
+      $this->lock->release($name);
+    }
   }
 
   /**
