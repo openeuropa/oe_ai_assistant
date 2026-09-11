@@ -1,0 +1,12 @@
+services:
+  _defaults:
+    autowire: true
+
+  # HTTP client for the Tika server, shared by the loader plugin and the
+  # status report.
+  Drupal\document_loader_tika\TikaClient: {}
+  Drupal\document_loader_tika\TikaClientInterface: '@Drupal\document_loader_tika\TikaClient'
+
+  # Status report entry for the server.
+  Drupal\document_loader_tika\Hook\RequirementsHooks:
+    autowire: true

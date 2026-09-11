@@ -1,0 +1,9 @@
+name: 'Document Loader Tika'
+type: module
+description: 'Document Loader plugin that extracts text from files through an Apache Tika server.'
+package: Web services
+core_version_requirement: ^10.4 || ^11
+configure: document_loader_tika.settings_form
+dependencies:
+  - document_loader:document_loader
+  - drupal:file

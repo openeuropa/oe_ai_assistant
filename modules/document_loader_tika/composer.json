@@ -1,0 +1,14 @@
+{
+    "name": "drupal/document_loader_tika",
+    "description": "Document Loader plugin that extracts text from files through an Apache Tika server.",
+    "type": "drupal-module",
+    "license": "GPL-2.0-or-later",
+    "homepage": "https://www.drupal.org/project/document_loader_tika",
+    "support": {
+        "issues": "https://www.drupal.org/project/issues/document_loader_tika",
+        "source": "https://git.drupalcode.org/project/document_loader_tika"
+    },
+    "require": {
+        "drupal/document_loader": "^2.0"
+    }
+}
