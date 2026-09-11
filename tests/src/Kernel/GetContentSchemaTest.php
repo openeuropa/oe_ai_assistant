@@ -44,6 +44,9 @@ class GetContentSchemaTest extends KernelTestBase {
     'ai',
     'ai_agents',
     'oe_ai_assistant',
+    'state_machine',
+    'document_loader',
+    'document_loader_tika',
     'oe_ai_assistant_test',
   ];
 

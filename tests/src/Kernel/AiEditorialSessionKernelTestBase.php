@@ -41,6 +41,8 @@ abstract class AiEditorialSessionKernelTestBase extends KernelTestBase {
     'workflows',
     'serialization',
     'state_machine',
+    'document_loader',
+    'document_loader_tika',
   ];
 
   /**
