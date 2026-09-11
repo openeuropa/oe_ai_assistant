@@ -11,7 +11,7 @@ import { ConfirmRemovalDialog } from "./confirm-removal-dialog";
 export interface DocumentsPanelProps {
   /** Documents attached to ground the next draft. */
   selected: DraftingDocument[];
-  /** Uploads in flight or failed, rendered as slots after the documents. */
+  /** Uploads in flight or failed, rendered as slots before the documents. */
   uploads: DocumentUpload[];
   /** Removes a document from the list. */
   onRemove: (id: string) => void | Promise<void>;
@@ -103,37 +103,13 @@ export function DocumentsPanel({
           </p>
         )}
 
-        {/* Attached documents and upload slots, two per row. */}
+        {/* Upload slots first, so failed uploads stay in view, then the
+            attached documents, two per row. The list scrolls once it grows
+            past 550px. */}
         {!isLoading &&
         !loadError &&
         (selected.length > 0 || uploads.length > 0) ? (
-          <div className="grid gap-2 md:grid-cols-2">
-            {selected.map((document) => (
-              <div
-                key={document.id}
-                className="flex items-start justify-between gap-3 rounded-md border border-blue-100 bg-blue-50 px-3 py-2"
-              >
-                <div className="min-w-0 space-y-1">
-                  <p className="truncate text-xs font-medium text-gray-900">
-                    {document.title}
-                  </p>
-                  <p className="text-xs text-gray-500">
-                    {document.meta.type.toUpperCase()} -{" "}
-                    {formatFileSize(document.meta.size)}
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  className="cursor-pointer rounded-md p-1 text-gray-400 hover:bg-white hover:text-gray-600 disabled:cursor-not-allowed disabled:opacity-50"
-                  aria-label={`Remove ${document.title}`}
-                  onClick={() => setPendingRemoval(document)}
-                  disabled={isSaving}
-                >
-                  <X size={14} />
-                </button>
-              </div>
-            ))}
-
+          <div className="grid max-h-[550px] gap-2 overflow-y-auto md:grid-cols-2">
             {/* Upload slots: progress bar while running, error when
                 failed. The remove cross only appears on failed slots. */}
             {uploads.map((upload) => (
@@ -171,6 +147,32 @@ export function DocumentsPanel({
                     <X size={14} />
                   </button>
                 )}
+              </div>
+            ))}
+
+            {selected.map((document) => (
+              <div
+                key={document.id}
+                className="flex items-start justify-between gap-3 rounded-md border border-blue-100 bg-blue-50 px-3 py-2"
+              >
+                <div className="min-w-0 space-y-1">
+                  <p className="truncate text-xs font-medium text-gray-900">
+                    {document.title}
+                  </p>
+                  <p className="text-xs text-gray-500">
+                    {document.meta.type.toUpperCase()} -{" "}
+                    {formatFileSize(document.meta.size)}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  className="cursor-pointer rounded-md p-1 text-gray-400 hover:bg-white hover:text-gray-600 disabled:cursor-not-allowed disabled:opacity-50"
+                  aria-label={`Remove ${document.title}`}
+                  onClick={() => setPendingRemoval(document)}
+                  disabled={isSaving}
+                >
+                  <X size={14} />
+                </button>
               </div>
             ))}
           </div>
