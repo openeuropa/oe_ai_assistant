@@ -31,6 +31,10 @@ services:
   Drupal\oe_ai_assistant\Service\Drafting\DocumentExtractionWorkflow: {}
   Drupal\oe_ai_assistant\Service\Drafting\DocumentExtractionWorkflowInterface: '@Drupal\oe_ai_assistant\Service\Drafting\DocumentExtractionWorkflow'
 
+  # Extracts document text through the document_loader framework.
+  Drupal\oe_ai_assistant\Service\Drafting\DocumentTextExtractor: {}
+  Drupal\oe_ai_assistant\Service\Drafting\DocumentTextExtractorInterface: '@Drupal\oe_ai_assistant\Service\Drafting\DocumentTextExtractor'
+
   # Hooks of the working-material document media.
   Drupal\oe_ai_assistant\Hook\DocumentMediaHooks:
     autowire: true

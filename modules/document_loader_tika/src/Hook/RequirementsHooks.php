@@ -27,7 +27,7 @@ final class RequirementsHooks {
   /**
    * Implements hook_runtime_requirements().
    *
-   * @return array<string, array<string, mixed>>
+   * @return array
    *   The requirement entry keyed by module name.
    */
   #[Hook('runtime_requirements')]

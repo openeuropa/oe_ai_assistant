@@ -125,7 +125,7 @@ class DocumentExtractionWorkflowTest extends AiEditorialSessionKernelTestBase {
    *
    * A fresh form display is loaded each time: widgets cache their options.
    *
-   * @return array<string, string>
+   * @return array
    *   The select options keyed by state id.
    */
   private function formOptions(MediaInterface $media): array {

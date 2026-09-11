@@ -38,7 +38,7 @@ class TikaLoaderTest extends KernelTestBase {
   /**
    * The requests the plugin sent, recorded by the Guzzle history middleware.
    *
-   * @var array<int, array{request: \Psr\Http\Message\RequestInterface}>
+   * @var array
    */
   private array $history = [];
 
