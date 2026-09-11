@@ -11,6 +11,8 @@ Drupal AI.
 - [AI module](https://www.drupal.org/project/ai) (^1.3)
 - [AI Agents](https://www.drupal.org/project/ai_agents) (^1.3)
 - Content Moderation (core)
+- [Document Loader](https://www.drupal.org/project/document_loader) (^2.0)
+- An [Apache Tika](https://tika.apache.org/) server for document text extraction
 
 ## Installation
 
@@ -92,6 +94,13 @@ React app mock workflow does not require provider credentials.
 | `ddev build-app` | Build the React app production bundle |
 | `ddev phpunit tests/src/ExistingSite/` | Run ExistingSite tests |
 | `ddev phpcs` | Run PHP CodeSniffer with Drupal standards |
+
+### Document extraction
+
+Session documents are turned into text by an Apache Tika server. In DDEV the
+server runs as the `tika` service from `.ddev/docker-compose.tika.yaml` and is
+reachable from the web container at `http://tika:9998`, the default of the
+`document_loader_tika` submodule. Check it with `ddev exec curl http://tika:9998/version`.
 
 ### Site credentials
 
