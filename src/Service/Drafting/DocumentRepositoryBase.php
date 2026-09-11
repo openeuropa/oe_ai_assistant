@@ -87,9 +87,10 @@ abstract class DocumentRepositoryBase implements DocumentRepositoryInterface {
    * {@inheritdoc}
    */
   public function add(AiEditorialSessionInterface $session, UploadedFileInterface $upload): array {
+    // The file stays temporary until the media that owns it is saved: the
+    // media's file field records a usage, and that flips it to permanent.
+    // A failure before that leaves a temporary file cron reaps on its own.
     $managedFile = $this->saveUploadedFile($upload);
-    $managedFile->setPermanent();
-    $managedFile->save();
 
     $media = NULL;
     try {
@@ -150,7 +151,11 @@ abstract class DocumentRepositoryBase implements DocumentRepositoryInterface {
 
     $media = $this->entityTypeManager->getStorage('media')->load($documentId);
     $session->save();
-    if ($media instanceof MediaInterface) {
+    // Only the last reference deletes the document: another session may
+    // still use the same media.
+    if ($media instanceof MediaInterface
+      && !$this->isReferencedByAnotherSession((int) $media->id(), (int) $session->id())
+    ) {
       $this->deleteDocument($media);
     }
   }
@@ -229,6 +234,7 @@ abstract class DocumentRepositoryBase implements DocumentRepositoryInterface {
       $directory,
       FileSystemInterface::CREATE_DIRECTORY | FileSystemInterface::MODIFY_PERMISSIONS,
     )) {
+      $this->discardUpload($upload);
       throw new ActionException(
         'upload_failed',
         'The private document directory could not be prepared.',
@@ -248,6 +254,7 @@ abstract class DocumentRepositoryBase implements DocumentRepositoryInterface {
       $this->logger->error('Document upload failed: @message', [
         '@message' => $e->getMessage(),
       ]);
+      $this->discardUpload($upload);
       throw new ActionException(
         'upload_failed',
         'The uploaded document could not be saved.',
@@ -260,6 +267,7 @@ abstract class DocumentRepositoryBase implements DocumentRepositoryInterface {
       foreach ($result->getViolations() as $violation) {
         $messages[] = (string) $violation->getMessage();
       }
+      $this->discardUpload($upload);
       throw new ActionException(
         'invalid_request',
         implode(' ', $messages),
@@ -268,6 +276,22 @@ abstract class DocumentRepositoryBase implements DocumentRepositoryInterface {
     }
 
     return $result->getFile();
+  }
+
+  /**
+   * Removes the staged copy of a rejected upload.
+   *
+   * A rejected upload never becomes a managed file, so nothing else cleans
+   * up the temporary copy the request body was staged to.
+   *
+   * @param \Drupal\file\Upload\UploadedFileInterface $upload
+   *   The rejected upload.
+   */
+  private function discardUpload(UploadedFileInterface $upload): void {
+    $path = $upload->getRealPath();
+    if ($path !== FALSE && file_exists($path)) {
+      $this->fileSystem->unlink($path);
+    }
   }
 
   /**

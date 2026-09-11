@@ -3,7 +3,8 @@
  *
  * The CMS accepts plugin requests only when they carry the session's CSRF
  * token in the X-CSRF-Token header. The token is fetched once from the URL
- * the host page announces at bootstrap and reused for the app's lifetime.
+ * the host page announces at bootstrap and reused until the CMS rejects it,
+ * which happens after a login elsewhere in the browser changes the session.
  * Every API call goes through apiFetch() or getCsrfHeaders() so the header
  * is never forgotten.
  */
@@ -26,18 +27,24 @@ export async function getCsrfToken(): Promise<string> {
   if (!tokenRequest) {
     tokenRequest = fetch(getConfig().csrfTokenUrl, {
       credentials: "include",
-    }).then(async (response) => {
-      if (!response.ok) {
+    })
+      .then(async (response) => {
+        if (!response.ok) {
+          throw new Error(`CSRF token error: ${response.status}`);
+        }
+        return (await response.text()).trim();
+      })
+      .catch((error: unknown) => {
+        // Covers transport failures too, not only error responses, so a
+        // rejected promise is never cached.
         tokenRequest = null;
-        throw new Error(`CSRF token error: ${response.status}`);
-      }
-      return (await response.text()).trim();
-    });
+        throw error;
+      });
   }
   return tokenRequest;
 }
 
-/** Forgets the cached token. Used by tests and after a session change. */
+/** Forgets the cached token so the next request fetches a new one. */
 export function resetCsrfToken(): void {
   tokenRequest = null;
 }
@@ -55,12 +62,32 @@ export type ApiRequestInit = Omit<RequestInit, "headers"> & {
 /**
  * fetch() for API calls: sends the session cookie and the CSRF token.
  *
- * Caller headers are kept as a plain object with the token added, so
- * request shapes stay easy to assert in tests.
+ * A 403 is retried once with a fresh token. The token is bound to the
+ * session, so a logout and login in another tab invalidates the cached one
+ * while the shared cookie stays valid. A genuine permission denial comes
+ * back 403 again and is returned as is.
  */
 export async function apiFetch(
   url: string,
   init: ApiRequestInit = {},
+): Promise<Response> {
+  const response = await fetchWithToken(url, init);
+  if (response.status !== 403) {
+    return response;
+  }
+  resetCsrfToken();
+  return fetchWithToken(url, init);
+}
+
+/**
+ * Sends one request with the current token.
+ *
+ * Caller headers are kept as a plain object with the token added, so
+ * request shapes stay easy to assert in tests.
+ */
+async function fetchWithToken(
+  url: string,
+  init: ApiRequestInit,
 ): Promise<Response> {
   return fetch(url, {
     credentials: "include",

@@ -106,13 +106,13 @@ class PluginController extends ControllerBase {
     // getRequestSchemas().
     $schemas = $plugin->getRequestSchemas();
     if (isset($schemas[$action])) {
-      // JSON requests carry their parameters in the body. Any other content
-      // type, such as a raw file upload, carries them in the query string.
-      // Both return an array of human-readable error strings, or an empty
-      // array when the parameters are valid.
-      $errors = $this->isJsonRequest($request)
-        ? $this->requestValidator->validateRaw($request->getContent(), $schemas[$action])
-        : $this->requestValidator->validateData($request->query->all(), $schemas[$action]);
+      // Validate the source the action reads: the query string for the
+      // actions the plugin declares, the JSON body for every other. Both
+      // return an array of human-readable error strings, or an empty array
+      // when the parameters are valid.
+      $errors = in_array($action, $plugin->getQueryActions(), TRUE)
+        ? $this->requestValidator->validateData($request->query->all(), $schemas[$action])
+        : $this->requestValidator->validateRaw($request->getContent(), $schemas[$action]);
       if (!empty($errors)) {
         // Flatten all validation error messages into a single semicolon-
         // separated string so the response remains a flat JSON object
@@ -154,23 +154,6 @@ class PluginController extends ControllerBase {
     // that produce a JSON payload), wrap the array in a JsonResponse with
     // the default 200 status code.
     return new JsonResponse($result);
-  }
-
-  /**
-   * Checks whether the request body is JSON.
-   *
-   * A request without a content type is treated as JSON, since the RPC
-   * actions accept a bare JSON body.
-   *
-   * @param \Symfony\Component\HttpFoundation\Request $request
-   *   The incoming request.
-   *
-   * @return bool
-   *   TRUE when the parameters are expected in a JSON body.
-   */
-  private function isJsonRequest(Request $request): bool {
-    return !$request->headers->has('Content-Type')
-      || $request->getContentTypeFormat() === 'json';
   }
 
 }

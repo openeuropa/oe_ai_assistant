@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Drupal\Tests\oe_ai_assistant\Kernel;
 
 use Drupal\file\FileInterface;
+use Drupal\file\Upload\InputStreamFileWriterInterface;
 use Drupal\field\FieldConfigInterface;
 use Drupal\media\MediaInterface;
 use Drupal\oe_ai_assistant\Controller\PluginController;
@@ -16,6 +17,7 @@ use PHPUnit\Framework\Attributes\Group;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Reference;
 use Symfony\Component\HttpFoundation\JsonResponse;
+use Symfony\Component\HttpFoundation\File\Exception\UploadException;
 use Symfony\Component\HttpFoundation\Request;
 
 /**
@@ -86,6 +88,9 @@ class DraftingPluginDocumentsTest extends AiEditorialSessionKernelTestBase {
     $this->assertInstanceOf(FileInterface::class, $file);
     $this->assertStringStartsWith('private://ai-context-documents/', $file->getFileUri());
     $this->assertSame(strlen($contents), (int) $file->getSize());
+    // The repository never marks the file permanent itself: saving the media
+    // records a usage through its file field, and that is what must flip it.
+    $this->assertTrue($file->isPermanent());
 
     $sessionStorage = $this->container->get('entity_type.manager')
       ->getStorage('ai_editorial_session');
@@ -390,6 +395,182 @@ class DraftingPluginDocumentsTest extends AiEditorialSessionKernelTestBase {
       'add-document' => ['add-document'],
       'list-documents' => ['list-documents'],
     ];
+  }
+
+  /**
+   * Tests the controller validates the JSON body whatever the Content-Type.
+   *
+   * The list action reads the JSON body, so that is what must be validated,
+   * whatever Content-Type the client sends.
+   */
+  public function testControllerValidatesJsonBodyRegardlessOfContentType(): void {
+    $owner = $this->createUser();
+    $this->container->get('current_user')->setAccount($owner);
+    $session = $this->createSession($owner);
+    $controller = $this->createPluginController();
+
+    // A text/plain Content-Type, a query string that satisfies
+    // DraftingListDocumentsRequest, and a body where category is an integer
+    // instead of the string the schema demands.
+    $query = http_build_query([
+      'sessionId' => (string) $session->id(),
+      'category' => 'context',
+    ]);
+    $request = Request::create('?' . $query, 'POST', [], [], [], [
+      'CONTENT_TYPE' => 'text/plain',
+    ], json_encode([
+      'sessionId' => (string) $session->id(),
+      'category' => 1,
+    ], JSON_THROW_ON_ERROR));
+
+    try {
+      $response = $controller->dispatch('drafting', 'list-documents', $request);
+    }
+    catch (\TypeError $e) {
+      // The integer category reached resolveDocumentRepository(), which is
+      // typed to accept a string: the body was handed to the action without
+      // being validated.
+      $this->fail('The JSON body reached the action without validation: ' . $e->getMessage());
+    }
+
+    // The body is what the action reads, so the body is what must have been
+    // validated: the integer category is rejected before the action runs.
+    $this->assertInstanceOf(JsonResponse::class, $response);
+    $this->assertSame(400, $response->getStatusCode());
+    $payload = json_decode($response->getContent(), TRUE, 512, JSON_THROW_ON_ERROR);
+    $this->assertSame('bad_request', $payload['code']);
+  }
+
+  /**
+   * Tests removing a document from one session keeps it for another.
+   *
+   * Only the last reference may delete the media and its file.
+   */
+  public function testRemoveKeepsDocumentSharedWithAnotherSession(): void {
+    $owner = $this->createUser();
+    $this->container->get('current_user')->setAccount($owner);
+    $session = $this->createSession($owner);
+    $otherSession = $this->createSession($owner);
+    $plugin = $this->container->get(AiAssistantPluginManager::class)
+      ->createInstance('drafting');
+
+    // Upload the document through the first session, then reference the
+    // resulting media from a second session as well. The API never creates
+    // this state itself, but context_documents is a plain multi-value
+    // entity reference, so nothing prevents it, and deleteOrphanedBy()
+    // already treats it as a case to guard against.
+    $addResponse = $plugin->executeAction('add-document', $this->createUploadRequest((string) $session->id(), 'context', 'shared.txt', 'Shared contents.'));
+    $documentId = $addResponse['document']['id'];
+    $otherSession->get('context_documents')->appendItem(['target_id' => $documentId]);
+    $otherSession->save();
+
+    // Remove the document from the first session only.
+    $removeRequest = Request::create('', 'POST', [], [], [], ['CONTENT_TYPE' => 'application/json'], json_encode([
+      'sessionId' => $session->id(),
+      'category' => 'context',
+      'documentId' => $documentId,
+    ], JSON_THROW_ON_ERROR));
+    $plugin->executeAction('remove-document', $removeRequest);
+
+    // The first session drops its reference.
+    $sessionStorage = $this->container->get('entity_type.manager')->getStorage('ai_editorial_session');
+    $sessionStorage->resetCache([$session->id(), $otherSession->id()]);
+    $this->assertTrue($sessionStorage->load($session->id())->get('context_documents')->isEmpty());
+
+    // The second session still references the document, so the media and
+    // its file must survive the removal; only the last reference may delete
+    // them. Bypass the static cache to read what is actually stored.
+    $mediaStorage = $this->container->get('entity_type.manager')->getStorage('media');
+    $mediaStorage->resetCache([$documentId]);
+    $this->assertInstanceOf(MediaInterface::class, $mediaStorage->load($documentId), 'A document still referenced by another session must not be deleted.');
+    $this->assertSame($documentId, (string) $sessionStorage->load($otherSession->id())->get('context_documents')->target_id);
+  }
+
+  /**
+   * Tests a rejected upload leaves no staged file behind.
+   *
+   * A rejected upload never becomes a managed file, so the action itself
+   * must remove the staged copy under temporary://.
+   */
+  public function testRejectedUploadLeavesNoStagedFile(): void {
+    $owner = $this->createUser();
+    $this->container->get('current_user')->setAccount($owner);
+    $session = $this->createSession($owner);
+    $plugin = $this->container->get(AiAssistantPluginManager::class)
+      ->createInstance('drafting');
+
+    // The add-document action stages the raw request body as a file under
+    // temporary:// before the field validators run, mirroring what the
+    // stream writer does with php://input. Snapshot the directory so any
+    // file left behind by this request can be spotted afterwards.
+    $temporaryDirectory = $this->container->get('file_system')->realpath('temporary://');
+    $before = scandir($temporaryDirectory);
+
+    // An .exe is outside the extensions configured on the source field, so
+    // the upload handler reports a violation and the action rejects it.
+    try {
+      $plugin->executeAction('add-document', $this->createUploadRequest((string) $session->id(), 'context', 'rejected.exe', 'Rejected contents.'));
+      $this->fail('The upload was not rejected.');
+    }
+    catch (ActionException $e) {
+      $this->assertSame(400, $e->statusCode);
+    }
+
+    // A rejected upload never becomes a managed file, so nothing else will
+    // ever clean the staged copy up: the action itself must unlink it.
+    $leftovers = array_values(array_diff(scandir($temporaryDirectory), $before));
+    $this->assertSame([], $leftovers, 'The staged upload must be removed when the upload is rejected.');
+  }
+
+  /**
+   * Tests a failure while staging the raw body is reported as upload_failed.
+   *
+   * A dropped connection must produce the JSON error the client handles,
+   * not an uncaught exception.
+   */
+  public function testStreamWriterFailureIsReportedAsUploadFailed(): void {
+    $owner = $this->createUser();
+    $this->container->get('current_user')->setAccount($owner);
+    $session = $this->createSession($owner);
+
+    // Core's stream writer throws a Symfony UploadException when php://input
+    // cannot be read, for example on a dropped connection. Replace the
+    // writer with one that always fails that way. The plugin resolves the
+    // writer through its interface alias, so setting the concrete service
+    // ID is enough for the next createInstance() to pick this one up.
+    $this->container->set('file.input_stream_file_writer', new class() implements InputStreamFileWriterInterface {
+
+      /**
+       * {@inheritdoc}
+       */
+      public function writeStreamToFile(string $stream = self::DEFAULT_STREAM, int $bytesToRead = self::DEFAULT_BYTES_TO_READ): string {
+        throw new UploadException('Input file data could not be read');
+      }
+
+    });
+    $controller = $this->createPluginController();
+
+    // A well-formed upload request: the failure must come from staging the
+    // body, not from validation.
+    $query = http_build_query([
+      'sessionId' => (string) $session->id(),
+      'category' => 'context',
+      'filename' => 'brief.txt',
+    ]);
+    $request = Request::create('?' . $query, 'POST', [], [], [], [
+      'CONTENT_TYPE' => 'application/octet-stream',
+    ], 'Context document contents.');
+
+    $response = $controller->dispatch('drafting', 'add-document', $request);
+
+    // The repository already maps upload handler failures to an ActionException
+    // with the upload_failed code; a staging failure is the same kind of
+    // problem and must reach the client in the same JSON error shape rather
+    // than as an uncaught exception.
+    $this->assertInstanceOf(JsonResponse::class, $response);
+    $this->assertSame(500, $response->getStatusCode());
+    $payload = json_decode($response->getContent(), TRUE, 512, JSON_THROW_ON_ERROR);
+    $this->assertSame('upload_failed', $payload['code']);
   }
 
   /**
