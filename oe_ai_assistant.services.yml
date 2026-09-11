@@ -31,6 +31,10 @@ services:
   Drupal\oe_ai_assistant\Service\Drafting\DocumentExtractionWorkflow: {}
   Drupal\oe_ai_assistant\Service\Drafting\DocumentExtractionWorkflowInterface: '@Drupal\oe_ai_assistant\Service\Drafting\DocumentExtractionWorkflow'
 
+  # Hooks of the working-material document media.
+  Drupal\oe_ai_assistant\Hook\DocumentMediaHooks:
+    autowire: true
+
   # Limits the extraction transitions in the media form to permitted users.
   Drupal\oe_ai_assistant\Guard\DocumentExtractionGuard:
     tags:

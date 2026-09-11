@@ -3,6 +3,7 @@ status: true
 dependencies:
   config:
     - field.field.media.ai_context_document.oe_ai_context_document
+    - field.field.media.ai_context_document.oe_ai_document_extract
     - field.field.media.ai_context_document.oe_ai_document_summary
     - field.field.media.ai_context_document.oe_ai_extraction_state
     - media.type.ai_context_document
@@ -66,4 +67,5 @@ content:
       size: 60
       placeholder: ''
     third_party_settings: {  }
-hidden: {  }
+hidden:
+  oe_ai_document_extract: true
