@@ -28,3 +28,7 @@ edit ai conversation message:
 
 delete ai conversation message:
   title: 'Delete AI conversation messages'
+
+change ai document extraction state:
+  title: 'Change the extraction state of AI documents'
+  description: 'Use the transitions of the AI document extraction workflow in the media form, for example to retry a failed extraction.'

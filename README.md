@@ -12,6 +12,7 @@ Drupal AI.
 - [AI Agents](https://www.drupal.org/project/ai_agents) (^1.3)
 - Content Moderation (core)
 - [Document Loader](https://www.drupal.org/project/document_loader) (^2.0)
+- [State Machine](https://www.drupal.org/project/state_machine) (^1.14)
 - An [Apache Tika](https://tika.apache.org/) server for document text extraction
 
 ## Installation

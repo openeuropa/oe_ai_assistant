@@ -1,0 +1,22 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - field.storage.media.oe_ai_extraction_state
+    - media.type.ai_context_document
+  module:
+    - state_machine
+id: media.ai_context_document.oe_ai_extraction_state
+field_name: oe_ai_extraction_state
+entity_type: media
+bundle: ai_context_document
+label: 'Extraction state'
+description: 'Where the document is in the text extraction and summary pipeline.'
+required: true
+translatable: false
+default_value: {  }
+default_value_callback: ''
+settings:
+  workflow: oe_ai_document_extraction
+  workflow_callback: ''
+field_type: state

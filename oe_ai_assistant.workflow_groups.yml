@@ -1,0 +1,4 @@
+# Workflow group of the AI document extraction pipeline on media entities.
+oe_ai_document:
+  label: 'AI document'
+  entity_type: media
