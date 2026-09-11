@@ -154,10 +154,29 @@ export async function addDraftingDocument(
     },
   );
   if (!response.ok) {
-    throw new Error(`Drafting add-document error: ${response.status}`);
+    throw new Error(await uploadErrorMessage(response));
   }
   const body = (await response.json()) as DraftingAddDocumentResponse;
   return body.document;
+}
+
+/**
+ * Reads the message of a rejected upload.
+ *
+ * The backend answers with the ApiError shape, whose message tells the
+ * user what to do, such as uploading the document again. A response
+ * without one falls back to the status code.
+ */
+async function uploadErrorMessage(response: Response): Promise<string> {
+  try {
+    const error = (await response.json()) as { message?: unknown };
+    if (typeof error.message === "string" && error.message !== "") {
+      return error.message;
+    }
+  } catch {
+    // Not a JSON error body; fall through to the status code.
+  }
+  return `Drafting add-document error: ${response.status}`;
 }
 
 /** Lists documents referenced by the current drafting session. */

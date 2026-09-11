@@ -164,6 +164,31 @@ describe("drafting api", () => {
     );
   });
 
+  it("surfaces the server message when an upload is rejected", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(async (url: string) =>
+        url === "/session/token"
+          ? { ok: true, text: async () => "csrf-42" }
+          : {
+              ok: false,
+              status: 503,
+              json: async () => ({
+                code: "busy",
+                message: "The session is busy. Upload it again.",
+              }),
+            },
+      ),
+    );
+
+    const file = new File(["content"], "brief.pdf", {
+      type: "application/pdf",
+    });
+    await expect(addDraftingDocument(file)).rejects.toThrow(
+      "The session is busy. Upload it again.",
+    );
+  });
+
   it("throws when set-template is rejected", async () => {
     const fetchMock = vi
       .fn()
