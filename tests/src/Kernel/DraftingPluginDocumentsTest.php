@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Drupal\Tests\oe_ai_assistant\Kernel;
 
 use Drupal\file\FileInterface;
+use Drupal\Core\Lock\LockBackendInterface;
 use Drupal\file\Upload\InputStreamFileWriterInterface;
 use Drupal\field\FieldConfigInterface;
 use Drupal\media\MediaInterface;
@@ -12,6 +13,9 @@ use Drupal\oe_ai_assistant\Controller\PluginController;
 use Drupal\oe_ai_assistant\Exception\ActionException;
 use Drupal\oe_ai_assistant\Plugin\AiAssistantPluginManager;
 use Drupal\oe_ai_assistant\Service\RequestValidator;
+use Drupal\file\Upload\InputStreamUploadedFile;
+use Drupal\file\Upload\UploadedFileInterface;
+use Drupal\oe_ai_assistant\Service\Drafting\ContextDocumentRepository;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
@@ -257,6 +261,114 @@ class DraftingPluginDocumentsTest extends AiEditorialSessionKernelTestBase {
   }
 
   /**
+   * Tests uploads from concurrent requests all stay referenced by the session.
+   *
+   * Each request loads its own copy of the session before any of them saves.
+   * Appending to a stale copy must not drop the references other requests
+   * already stored.
+   */
+  public function testConcurrentUploadsKeepEveryReference(): void {
+    $owner = $this->createUser();
+    $this->container->get('current_user')->setAccount($owner);
+    $session = $this->createSession($owner);
+    $repository = $this->container->get(ContextDocumentRepository::class);
+    $storage = $this->container->get('entity_type.manager')->getStorage('ai_editorial_session');
+
+    // Two requests load the session before either one saves it.
+    $first = $storage->load($session->id());
+    $storage->resetCache([$session->id()]);
+    $second = $storage->load($session->id());
+    $this->assertNotSame($first, $second);
+
+    $repository->add($first, $this->stageUpload('first.txt', 'First contents.'));
+    $repository->add($second, $this->stageUpload('second.txt', 'Second contents.'));
+
+    $storage->resetCache([$session->id()]);
+    $documents = $repository->list($storage->load($session->id()));
+    $this->assertSame(['first.txt', 'second.txt'], array_column($documents, 'title'));
+  }
+
+  /**
+   * Tests an upload that cannot take the session lock leaves nothing behind.
+   *
+   * The media and file created before the lock attempt are deleted, and the
+   * error tells the user to upload the document again.
+   */
+  public function testUploadBlockedByLockIsRolledBack(): void {
+    $owner = $this->createUser();
+    $this->container->get('current_user')->setAccount($owner);
+    $session = $this->createSession($owner);
+
+    // A lock that is always held elsewhere, even after waiting.
+    $lock = new class() implements LockBackendInterface {
+
+      /**
+       * {@inheritdoc}
+       */
+      public function acquire($name, $timeout = 30.0) {
+        return FALSE;
+      }
+
+      /**
+       * {@inheritdoc}
+       */
+      public function lockMayBeAvailable($name) {
+        return FALSE;
+      }
+
+      /**
+       * {@inheritdoc}
+       */
+      public function wait($name, $delay = 30) {
+        return TRUE;
+      }
+
+      /**
+       * {@inheritdoc}
+       */
+      public function release($name) {}
+
+      /**
+       * {@inheritdoc}
+       */
+      public function releaseAll($lockId = NULL) {}
+
+      /**
+       * {@inheritdoc}
+       */
+      public function getLockId() {
+        return 'test';
+      }
+
+    };
+    // The shared repository service was built with the real lock, so build
+    // one with the blocked lock instead.
+    $repository = new ContextDocumentRepository(
+      $this->container->get('entity_type.manager'),
+      $this->container->get('file_system'),
+      $this->container->get('file.upload_handler'),
+      $this->container->get('logger.channel.oe_ai_assistant'),
+      $lock,
+    );
+
+    try {
+      $repository->add($session, $this->stageUpload('blocked.txt', 'Blocked contents.'));
+      $this->fail('The upload was not rejected.');
+    }
+    catch (ActionException $e) {
+      $this->assertSame(503, $e->statusCode);
+      $this->assertStringContainsString('Upload it again', $e->getMessage());
+    }
+
+    // Neither the media nor its file survive; the media type's generic
+    // thumbnail file is unrelated and stays.
+    $entityTypeManager = $this->container->get('entity_type.manager');
+    $this->assertSame([], $entityTypeManager->getStorage('media')->loadMultiple());
+    $this->assertSame([], $entityTypeManager->getStorage('file')->loadByProperties(['filename' => 'blocked.txt']));
+    $this->assertSessionHasNoDocuments($session->id());
+  }
+
+  /**
    * Tests document uploads reject files larger than the configured field limit.
    */
   public function testDocumentUploadRejectsFileLargerThanConfiguredLimit(): void {
@@ -351,7 +463,7 @@ class DraftingPluginDocumentsTest extends AiEditorialSessionKernelTestBase {
   /**
    * Tests unsupported document categories are rejected.
    */
-  #[DataProvider('documentActionAccessProvider')]
+  #[DataProvider('categorizedDocumentActionProvider')]
   public function testUnsupportedDocumentCategoryIsRejected(string $action): void {
     $owner = $this->createUser();
     $this->container->get('current_user')->setAccount($owner);
@@ -381,6 +493,19 @@ class DraftingPluginDocumentsTest extends AiEditorialSessionKernelTestBase {
       'add-document' => ['add-document'],
       'list-documents' => ['list-documents'],
       'remove-document' => ['remove-document'],
+    ];
+  }
+
+  /**
+   * Provides document action names that require a category.
+   *
+   * @return array<string, array{0: string}>
+   *   Test cases keyed by action name.
+   */
+  public static function categorizedDocumentActionProvider(): array {
+    return [
+      'add-document' => ['add-document'],
+      'list-documents' => ['list-documents'],
     ];
   }
 
@@ -597,6 +722,27 @@ class DraftingPluginDocumentsTest extends AiEditorialSessionKernelTestBase {
     return Request::create('?' . $query, 'POST', [], [], [], [
       'CONTENT_TYPE' => 'application/octet-stream',
     ], $contents);
+  }
+
+  /**
+   * Stages contents as an upload for the repository, as the action does.
+   */
+  private function stageUpload(string $filename, string $contents): UploadedFileInterface {
+    $writer = $this->container->get('file.input_stream_file_writer');
+    $writer->setContents($contents);
+    $path = $writer->writeStreamToFile();
+
+    return new InputStreamUploadedFile($filename, $filename, $path, @filesize($path));
+  }
+
+  /**
+   * Asserts that the session references no context documents.
+   */
+  private function assertSessionHasNoDocuments(string|int $sessionId): void {
+    $storage = $this->container->get('entity_type.manager')
+      ->getStorage('ai_editorial_session');
+    $storage->resetCache([$sessionId]);
+    $this->assertTrue($storage->load($sessionId)->get('context_documents')->isEmpty());
   }
 
   /**

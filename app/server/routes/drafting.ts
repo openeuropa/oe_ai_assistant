@@ -11,6 +11,9 @@
  * POST /api/plugins/drafting/save   - Mock save
  * POST /api/plugins/drafting/set-tone - Validate selected tone
  * POST /api/plugins/drafting/set-template - Validate selected template
+ * POST /api/plugins/drafting/add-document - Mock document upload
+ * POST /api/plugins/drafting/list-documents - List mock documents
+ * POST /api/plugins/drafting/remove-document - Remove a mock document
  */
 
 import { readFileSync } from "node:fs";
@@ -21,6 +24,41 @@ import type {
   ChatOptions,
   DraftingService,
 } from "../services/drafting-service";
+
+interface MockDocument {
+  id: string;
+  title: string;
+  meta: {
+    type: string;
+    size: number;
+  };
+}
+
+const initialMockDocuments: MockDocument[] = [
+  {
+    id: "3f2504e0-4f89-41d3-9a0c-0305e82c3301",
+    title: "EU AI Act briefing note.pdf",
+    meta: { type: "pdf", size: 245760 },
+  },
+  {
+    id: "c9bf9e57-1685-4c89-bafb-ff5af830be8a",
+    title: "Stakeholder comments.docx",
+    meta: { type: "docx", size: 98304 },
+  },
+];
+
+function extensionFromFilename(filename: string): string {
+  const extension = filename.split(".").pop();
+  return extension && extension !== filename ? extension.toLowerCase() : "file";
+}
+
+async function readRequestBody(req: NodeJS.ReadableStream): Promise<Buffer> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of req) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  }
+  return Buffer.concat(chunks);
+}
 
 /**
  * Loads a content type schema fixture by bundle name.
@@ -49,6 +87,9 @@ function loadSchema(bundle: string): object | null {
  */
 export function createDraftingRouter(service: DraftingService): Router {
   const router = Router();
+  const documentsBySession = new Map<string, MockDocument[]>([
+    ["dev-session", initialMockDocuments],
+  ]);
 
   /**
    * POST /chat - Stream AI chat responses via SSE.
@@ -238,6 +279,89 @@ export function createDraftingRouter(service: DraftingService): Router {
     setTimeout(() => {
       res.json({ status: "ok" });
     }, 1000);
+  });
+
+  /**
+   * POST /add-document - Store a mock document for the current session.
+   *
+   * Mirrors the real contract: the file bytes are the raw request body and
+   * the session, category and filename travel in the query string.
+   */
+  router.post("/add-document", async (req, res) => {
+    const sessionId = String(req.query.sessionId ?? "");
+    const category = String(req.query.category ?? "");
+    const filename = String(req.query.filename ?? "");
+    const body = await readRequestBody(req);
+
+    if (!sessionId || category !== "context" || !filename) {
+      res.status(400).json({
+        code: "bad_request",
+        message: "sessionId, category, and filename are required",
+      });
+      return;
+    }
+
+    const document: MockDocument = {
+      id: `mock-document-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      title: filename,
+      meta: {
+        type: extensionFromFilename(filename),
+        size: body.length,
+      },
+    };
+    const documents = documentsBySession.get(sessionId) ?? [];
+    documentsBySession.set(sessionId, [...documents, document]);
+
+    res.json({ document });
+  });
+
+  /** POST /list-documents - Return mock documents for a session. */
+  router.post("/list-documents", (req, res) => {
+    const { sessionId, category } = req.body as {
+      sessionId?: string;
+      category?: string;
+    };
+
+    if (!sessionId || category !== "context") {
+      res.status(400).json({
+        code: "bad_request",
+        message: "sessionId and category are required",
+      });
+      return;
+    }
+
+    res.json({ documents: documentsBySession.get(sessionId) ?? [] });
+  });
+
+  /** POST /remove-document - Remove a mock document for a session. */
+  router.post("/remove-document", (req, res) => {
+    const { sessionId, documentId } = req.body as {
+      sessionId?: string;
+      documentId?: string;
+    };
+
+    if (!sessionId || !documentId) {
+      res.status(400).json({
+        code: "bad_request",
+        message: "sessionId and documentId are required",
+      });
+      return;
+    }
+
+    const documents = documentsBySession.get(sessionId) ?? [];
+    if (!documents.some((document) => document.id === documentId)) {
+      res.status(404).json({
+        code: "not_found",
+        message: "document was not found for this session",
+      });
+      return;
+    }
+
+    documentsBySession.set(
+      sessionId,
+      documents.filter((document) => document.id !== documentId),
+    );
+    res.json({ status: "ok" });
   });
 
   /**

@@ -20,6 +20,16 @@ content:
     region: content
     settings: {  }
     third_party_settings: {  }
+  context_documents:
+    type: entity_reference_autocomplete
+    weight: 3
+    region: content
+    settings:
+      match_operator: CONTAINS
+      match_limit: 10
+      size: 60
+      placeholder: ''
+    third_party_settings: {  }
   tone:
     type: options_select
     weight: 1

@@ -552,10 +552,11 @@ export function FullDraftingPreview() {
                 render: (close) => (
                   <DocumentsPanel
                     selected={documents.selected}
+                    uploads={documents.uploads}
                     onRemove={documents.removeDocument}
                     onUpload={documents.uploadFiles}
-                    onSave={async () => close()}
-                    onCancel={close}
+                    onDismissUpload={documents.dismissUpload}
+                    onClose={close}
                   />
                 ),
               },

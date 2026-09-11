@@ -45,7 +45,10 @@ class AiEditorialSessionAddForm extends ContentEntityForm {
     if (is_array($chosenType)) {
       $chosenType = $chosenType[0]['target_id'] ?? ($chosenType['target_id'] ?? NULL);
     }
-    if (is_string($chosenType) && $chosenType !== '') {
+    // The select placeholder submits '_none'; treat it as no selection so
+    // AJAX rebuilds (e.g. the context documents add-more button) do not
+    // store it on the entity as a real content type.
+    if (is_string($chosenType) && $chosenType !== '' && $chosenType !== '_none') {
       $this->entity->set('content_type', $chosenType);
       $this->entity->set('template', NULL);
     }
