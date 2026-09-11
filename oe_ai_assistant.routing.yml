@@ -14,6 +14,9 @@ oe_ai_assistant.plugin.dispatch:
   methods: [POST]
   requirements:
     _permission: 'use oe ai assistant'
+    # The React app calls this route with the session cookie, so a CSRF
+    # token header is required to stop cross-site requests.
+    _csrf_request_header_token: 'TRUE'
     plugin_id: '[a-z][a-z0-9_-]*'
     action: '[a-z][a-z0-9_-]*'
 

@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { getConfig } from "@/config";
-import { formatFileSize } from "@/lib/format-file-size";
 import { readConfigOptions } from "../config-options";
 import type { DraftingDocument } from "../types";
 
@@ -44,7 +43,10 @@ export function useDraftingDocuments() {
     const uploaded = Array.from(fileList).map((file) => ({
       id: crypto.randomUUID(),
       title: file.name,
-      meta: `${file.type || "File"} - ${formatFileSize(file.size)}`,
+      meta: {
+        type: file.type || file.name.split(".").pop()?.toLowerCase() || "file",
+        size: file.size,
+      },
     }));
     setSelected((current) => [...current, ...uploaded]);
   }

@@ -58,6 +58,7 @@
     "zustand": "^5.0.11"
   },
   "devDependencies": {
+    "@apidevtools/json-schema-ref-parser": "^16.0.1",
     "@biomejs/biome": "^2.4.6",
     "@chromatic-com/storybook": "^5.0.1",
     "@mistralai/mistralai": "^2.1.0",

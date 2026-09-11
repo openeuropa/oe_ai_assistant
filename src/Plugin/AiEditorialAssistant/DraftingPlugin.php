@@ -8,11 +8,17 @@ use Drupal\ai\OperationType\Chat\ChatMessage;
 use Drupal\ai\OperationType\Chat\ChatOutput;
 use Drupal\ai\OperationType\Chat\Tools\ToolsFunctionInput;
 use Drupal\ai_agents\PluginManager\AiAgentManager;
+use Drupal\Core\Cache\RefinableCacheableDependencyInterface;
+use Drupal\Core\Url;
+use Drupal\file\Upload\InputStreamFileWriterInterface;
+use Drupal\file\Upload\InputStreamUploadedFile;
 use Drupal\oe_ai_assistant\Annotation\AiEditorialAssistant;
 use Drupal\oe_ai_assistant\Entity\AiConversationMessageInterface;
 use Drupal\oe_ai_assistant\AiDraftingTemplateInterface;
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
 use Drupal\oe_ai_assistant\Exception\ActionException;
+use Drupal\oe_ai_assistant\Service\Drafting\ContextDocumentRepository;
+use Drupal\oe_ai_assistant\Service\Drafting\DocumentRepositoryInterface;
 use Drupal\oe_ai_assistant\Service\Drafting\DraftHistoryInterface;
 use Drupal\oe_ai_assistant\Service\Drafting\EditorialContext;
 use Drupal\oe_ai_assistant\Plugin\AiAssistantPluginBase;
@@ -25,6 +31,7 @@ use Drupal\oe_ai_assistant\Service\PreviewRendererInterface;
 use Drupal\oe_ai_assistant\Service\ToolExecutionLoopInterface;
 use Drupal\oe_ai_assistant\Service\UiMessageStreamInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
+use Symfony\Component\HttpFoundation\File\Exception\FileException;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 
@@ -108,6 +115,20 @@ class DraftingPlugin extends AiAssistantPluginBase {
   protected DraftHistoryInterface $draftHistory;
 
   /**
+   * The context document repository.
+   *
+   * @var \Drupal\oe_ai_assistant\Service\Drafting\ContextDocumentRepository
+   */
+  protected ContextDocumentRepository $contextDocumentRepository;
+
+  /**
+   * The input stream file writer, which stages raw upload bodies.
+   *
+   * @var \Drupal\file\Upload\InputStreamFileWriterInterface
+   */
+  protected InputStreamFileWriterInterface $inputStreamFileWriter;
+
+  /**
    * The draft assembler.
    *
    * @var \Drupal\oe_ai_assistant\Service\DraftAssemblerInterface
@@ -138,6 +159,8 @@ class DraftingPlugin extends AiAssistantPluginBase {
     $instance->orchestrator = $container->get(DraftingOrchestratorInterface::class);
     $instance->aiEditorialContext = $container->get(AiEditorialContextInterface::class);
     $instance->draftHistory = $container->get(DraftHistoryInterface::class);
+    $instance->contextDocumentRepository = $container->get(ContextDocumentRepository::class);
+    $instance->inputStreamFileWriter = $container->get(InputStreamFileWriterInterface::class);
     $instance->draftAssembler = $container->get(DraftAssemblerInterface::class);
     $instance->previewRenderer = $container->get(PreviewRendererInterface::class);
     return $instance;
@@ -154,6 +177,9 @@ class DraftingPlugin extends AiAssistantPluginBase {
       'save' => $this->save(...),
       'set-tone' => $this->setTone(...),
       'set-template' => $this->setTemplate(...),
+      'add-document' => $this->addDocument(...),
+      'list-documents' => $this->listDocuments(...),
+      'remove-document' => $this->removeDocument(...),
       'preview' => $this->preview(...),
     ];
   }
@@ -168,7 +194,84 @@ class DraftingPlugin extends AiAssistantPluginBase {
       'save' => 'DraftingSaveRequest',
       'set-tone' => 'DraftingSetToneRequest',
       'set-template' => 'DraftingSetTemplateRequest',
+      'add-document' => 'DraftingAddDocumentRequest',
+      'list-documents' => 'DraftingListDocumentsRequest',
+      'remove-document' => 'DraftingRemoveDocumentRequest',
     ];
+  }
+
+  /**
+   * {@inheritdoc}
+   *
+   * The add-document body is the raw file, so its parameters are query
+   * string values.
+   */
+  public function getQueryActions(): array {
+    return ['add-document'];
+  }
+
+  /**
+   * {@inheritdoc}
+   *
+   * Provides the drafting scope (entity type and bundle) and the composer
+   * panels. Each panel is gated by an 'enabled' flag so the host controls
+   * which tabs appear. Tone options come from the tone vocabulary; template
+   * options come from the enabled drafting templates for the bundle; the
+   * document options are the session's private context documents.
+   */
+  public function getAppConfig(AiEditorialSessionInterface $session, RefinableCacheableDependencyInterface $cacheability): array {
+    $context = $this->buildContext($session);
+    // The configuration embeds the drafting template list, so the page must
+    // be invalidated whenever a template is added, edited or deleted. The
+    // list cache tag covers all three operations for config entities.
+    $cacheability->addCacheTags(['config:ai_drafting_template_list']);
+
+    return [
+      'entityTypeId' => $context['entityTypeId'],
+      'bundle' => $context['bundle'],
+      'tone' => [
+        'enabled' => TRUE,
+        'options' => $this->serializeToneOptions($this->aiEditorialContext->getAvailableTones()),
+        // The tone already saved on the session, so the app can rehydrate
+        // the selector on load.
+        'selected' => (string) $session->get(static::TONE_FIELD)->target_id,
+      ],
+      'templates' => [
+        'enabled' => TRUE,
+        'options' => $this->schemaProvider->availableTemplates($context['bundle']),
+        'selected' => (string) $session->get(static::TEMPLATE_FIELD)->target_id,
+      ],
+      'documents' => [
+        'enabled' => TRUE,
+        'options' => $this->contextDocumentRepository->list($session),
+      ],
+      // Live preview iframe URL template. The app substitutes the
+      // {sessionId} and {versionId} placeholders before loading the
+      // draft preview endpoint in the artifact pane iframe.
+      'preview' => [
+        'url' => Url::fromRoute('oe_ai_assistant.drafting_preview')->toString() . '?sessionId={sessionId}&version={versionId}',
+      ],
+    ];
+  }
+
+  /**
+   * Serializes internal prompt-ready tone options for frontend bootstrap.
+   *
+   * @param array<int, array{id: string, label: string, description: string, oe_ai_prompt: string}> $options
+   *   The prompt-ready service options.
+   *
+   * @return array<int, array{id: string, label: string, description: string}>
+   *   Frontend-safe tone options.
+   */
+  private function serializeToneOptions(array $options): array {
+    return array_map(
+      static fn (array $option): array => [
+        'id' => $option['id'],
+        'label' => $option['label'],
+        'description' => $option['description'],
+      ],
+      $options,
+    );
   }
 
   /**
@@ -583,7 +686,93 @@ class DraftingPlugin extends AiAssistantPluginBase {
   }
 
   /**
-   * Attaches the versioned draft result to the draft_content tool call.
+   * Adds an uploaded document to the session document references.
+   *
+   * The file bytes form the whole request body and are staged to a
+   * temporary file the same way core's JSON:API file upload does. The
+   * session, category and filename travel in the query string, validated
+   * against the request schema before this action runs.
+   *
+   * @param \Symfony\Component\HttpFoundation\Request $request
+   *   The incoming raw upload request.
+   *
+   * @return array<string, array<string, string|array<string, string>>>
+   *   The serialized document item.
+   */
+  public function addDocument(Request $request): array {
+    $params = $request->query->all();
+    $repository = $this->resolveDocumentRepository($params['category'] ?? '');
+    $session = $this->loadSession($params);
+
+    // Drop any path component, as core does for Content-Disposition names.
+    $filename = basename($params['filename'] ?? '');
+    try {
+      $path = $this->inputStreamFileWriter->writeStreamToFile();
+    }
+    catch (FileException $e) {
+      // The body could not be staged, for example on a dropped connection.
+      // Report it in the same shape as the other upload failures.
+      $this->logger->error('Document upload could not be staged: @message', [
+        '@message' => $e->getMessage(),
+      ]);
+      throw new ActionException(
+        'upload_failed',
+        'The uploaded document could not be read.',
+        500,
+      );
+    }
+    $upload = new InputStreamUploadedFile($filename, $filename, $path, @filesize($path));
+
+    return ['document' => $repository->add($session, $upload)];
+  }
+
+  /**
+   * Lists documents referenced by the session.
+   *
+   * @param \Symfony\Component\HttpFoundation\Request $request
+   *   The incoming JSON request.
+   *
+   * @return array<string, array<int, array<string, string|array<string, string>>>>
+   *   The serialized document items.
+   */
+  public function listDocuments(Request $request): array {
+    $body = $this->decodeJsonBody($request);
+    $repository = $this->resolveDocumentRepository($body['category'] ?? '');
+    $session = $this->loadSession($body);
+
+    return ['documents' => $repository->list($session)];
+  }
+
+  /**
+   * Removes a referenced document from the session and deletes its entities.
+   *
+   * @param \Symfony\Component\HttpFoundation\Request $request
+   *   The incoming JSON request.
+   *
+   * @return array<string, string>
+   *   A confirmation response.
+   */
+  public function removeDocument(Request $request): array {
+    $body = $this->decodeJsonBody($request);
+    $repository = $this->resolveDocumentRepository($body['category'] ?? '');
+    $session = $this->loadSession($body);
+    $documentId = (string) ($body['documentId'] ?? '');
+
+    if ($documentId === '') {
+      throw new ActionException(
+        'invalid_request',
+        'A documentId is required.',
+        400,
+      );
+    }
+
+    $repository->remove($session, $documentId);
+
+    return ['status' => 'ok'];
+  }
+
+  /**
+   * Attaches the drafted fields as the result of the draft_content call.
    *
    * The result is the output of the draft_content tool, produced by the
    * orchestrator after the loop returns. Storing it on the tool call lets the
@@ -615,6 +804,27 @@ class DraftingPlugin extends AiAssistantPluginBase {
     }
     $message->setToolCalls($toolCalls);
     $message->save();
+  }
+
+  /**
+   * Resolves a document category into the repository that serves it.
+   *
+   * @param string $category
+   *   The request category.
+   *
+   * @return \Drupal\oe_ai_assistant\Service\Drafting\DocumentRepositoryInterface
+   *   The document repository for the category.
+   */
+  private function resolveDocumentRepository(string $category): DocumentRepositoryInterface {
+    if ($category === ContextDocumentRepository::CATEGORY) {
+      return $this->contextDocumentRepository;
+    }
+
+    throw new ActionException(
+      'invalid_request',
+      sprintf('Unsupported document category "%s".', $category),
+      400,
+    );
   }
 
   /**
@@ -698,6 +908,11 @@ class DraftingPlugin extends AiAssistantPluginBase {
 
   /**
    * Builds the system prompt with content type context and schema.
+   *
+   * @param string $basePrompt
+   *   The initial prompt.
+   * @param array<int,mixed> $context
+   *   The context to add to the prompt.
    */
   private function buildSystemPrompt(string $basePrompt, array $context): string {
     $prompt = $basePrompt

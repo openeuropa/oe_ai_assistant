@@ -4,9 +4,14 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\oe_ai_assistant\Kernel;
 
+use Drupal\file\Entity\File;
+use Drupal\file\FileInterface;
+use Drupal\media\Entity\Media;
+use Drupal\media\MediaInterface;
 use Drupal\oe_ai_assistant\Entity\AiConversationMessage;
 use Drupal\oe_ai_assistant\Entity\AiConversationMessageInterface;
 use Drupal\oe_ai_assistant\Entity\AiEditorialSession;
+use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
 use Drupal\Tests\oe_ai_assistant\Traits\AiConversationMessageTrait;
 use PHPUnit\Framework\Attributes\Group;
 
@@ -20,6 +25,14 @@ use PHPUnit\Framework\Attributes\Group;
 class AiEditorialSessionMessageCleanupTest extends AiEditorialSessionKernelTestBase {
 
   use AiConversationMessageTrait;
+
+  /**
+   * {@inheritdoc}
+   */
+  protected function setUp(): void {
+    parent::setUp();
+    $this->installSchema('file', ['file_usage']);
+  }
 
   /**
    * Tests that deleting a session removes the conversation it hosts.
@@ -113,6 +126,92 @@ class AiEditorialSessionMessageCleanupTest extends AiEditorialSessionKernelTestB
 
     $this->assertNull(AiEditorialSession::load($empty_session->id()));
     $this->assertNotNull($storage->loadUnchanged((int) $message->id()));
+  }
+
+  /**
+   * Tests that deleting a session removes its private context documents.
+   */
+  public function testSessionDeleteRemovesItsContextDocuments(): void {
+    $media_storage = $this->container->get('entity_type.manager')->getStorage('media');
+    $file_storage = $this->container->get('entity_type.manager')->getStorage('file');
+    $user = $this->createUser();
+    $session = $this->createSession($user);
+    [$media, $file] = $this->createContextDocument('brief.txt');
+
+    $session->get('context_documents')->appendItem([
+      'target_id' => $media->id(),
+    ]);
+    $session->save();
+
+    $session->delete();
+
+    $this->assertNull($media_storage->loadUnchanged((int) $media->id()));
+    $this->assertNull($file_storage->loadUnchanged((int) $file->id()));
+  }
+
+  /**
+   * Tests that shared context documents survive until the last session is gone.
+   */
+  public function testSharedContextDocumentSurvivesSessionDelete(): void {
+    $media_storage = $this->container->get('entity_type.manager')->getStorage('media');
+    $file_storage = $this->container->get('entity_type.manager')->getStorage('file');
+    $user = $this->createUser();
+    $session = $this->createSession($user);
+    $other_session = $this->createSession($user);
+    [$media, $file] = $this->createContextDocument('shared-brief.txt');
+
+    $this->attachContextDocument($session, $media);
+    $this->attachContextDocument($other_session, $media);
+
+    $session->delete();
+
+    $this->assertNotNull($media_storage->loadUnchanged((int) $media->id()));
+    $this->assertNotNull($file_storage->loadUnchanged((int) $file->id()));
+
+    $other_session->delete();
+
+    $this->assertNull($media_storage->loadUnchanged((int) $media->id()));
+    $this->assertNull($file_storage->loadUnchanged((int) $file->id()));
+  }
+
+  /**
+   * Creates a private context document media item.
+   *
+   * @return array{
+   *   0: \Drupal\media\MediaInterface,
+   *   1: \Drupal\file\FileInterface
+   *   }
+   *   The created media and file entities.
+   */
+  private function createContextDocument(string $filename): array {
+    $file = File::create([
+      'filename' => $filename,
+      'uri' => 'public://' . $filename,
+      'status' => FileInterface::STATUS_PERMANENT,
+    ]);
+    $file->save();
+
+    $media = Media::create([
+      'bundle' => 'ai_context_document',
+      'name' => $filename,
+      'status' => 0,
+      'oe_ai_context_document' => [
+        'target_id' => $file->id(),
+      ],
+    ]);
+    $media->save();
+
+    return [$media, $file];
+  }
+
+  /**
+   * Attaches a context document to a session.
+   */
+  private function attachContextDocument(AiEditorialSessionInterface $session, MediaInterface $media): void {
+    $session->get('context_documents')->appendItem([
+      'target_id' => $media->id(),
+    ]);
+    $session->save();
   }
 
 }

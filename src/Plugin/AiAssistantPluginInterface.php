@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Drupal\oe_ai_assistant\Plugin;
 
 use Drupal\Component\Plugin\PluginInspectionInterface;
+use Drupal\Core\Cache\RefinableCacheableDependencyInterface;
+use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
 
 /**
  * Defines the contract for all AI Assistant plugins.
@@ -26,8 +28,8 @@ use Drupal\Component\Plugin\PluginInspectionInterface;
  * Request validation:
  *   The controller calls getRequestSchemas() before dispatching. If the
  *   requested action maps to a schema name, the request body is validated
- *   against that schema (from dist/schemas.json) and a 422 response is
- *   returned on failure. Actions not listed skip validation.
+ *   against that schema (from dist/schemas.json) and a 400 Bad Request
+ *   response is returned on failure. Actions not listed skip validation.
  *
  * @see \Drupal\oe_ai_assistant\Plugin\AiAssistantPluginBase
  * @see \Drupal\oe_ai_assistant\Plugin\AiAssistantPluginManager
@@ -68,9 +70,11 @@ interface AiAssistantPluginInterface extends PluginInspectionInterface {
    *
    * Maps action names to schema identifiers from dist/schemas.json. Before
    * the controller dispatches a request, it looks up the action name in this
-   * map. If a matching schema name is found, the request body is validated
-   * against the compiled JSON Schema. A validation failure yields a 422
-   * Unprocessable Entity response with a description of the errors.
+   * map. If a matching schema name is found, the request parameters are
+   * validated against the compiled JSON Schema. The parameters are read
+   * from the JSON body, or from the query string for the actions listed by
+   * getQueryActions(). A validation failure yields a 400 Bad Request
+   * response with a description of the errors.
    *
    * Actions that do not require a structured body (for example, simple GET-
    * style queries with no parameters) should be omitted from this map so
@@ -90,5 +94,40 @@ interface AiAssistantPluginInterface extends PluginInspectionInterface {
    *   as top-level keys inside dist/schemas.json).
    */
   public function getRequestSchemas(): array;
+
+  /**
+   * Returns the actions whose parameters travel in the query string.
+   *
+   * Most actions take their parameters from the JSON body. An action whose
+   * body carries something else, such as a raw file upload, takes them
+   * from the query string instead, and the controller validates that
+   * against the schema from getRequestSchemas(). The action itself reads
+   * the same source, so the validated input is the input it uses.
+   *
+   * @return string[]
+   *   Action names whose parameters are read from the query string.
+   */
+  public function getQueryActions(): array;
+
+  /**
+   * Returns the plugin's portion of the frontend bootstrap configuration.
+   *
+   * The session page controller assembles the pluginConfig object passed to
+   * the React app by collecting this method's result from every plugin, so
+   * the controller stays plugin-agnostic. Plugins that need no bootstrap
+   * configuration return an empty array, which the controller omits.
+   *
+   * @param \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $session
+   *   The editorial session the page is built for.
+   * @param \Drupal\Core\Cache\RefinableCacheableDependencyInterface $cacheability
+   *   The page cacheability. Plugins whose configuration depends on other
+   *   data (config entities, vocabularies) must add the matching cache tags
+   *   and contexts here.
+   *
+   * @return array<string, mixed>
+   *   The plugin configuration, serialised into drupalSettings under
+   *   pluginConfig.{plugin_id}.
+   */
+  public function getAppConfig(AiEditorialSessionInterface $session, RefinableCacheableDependencyInterface $cacheability): array;
 
 }

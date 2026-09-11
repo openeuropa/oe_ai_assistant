@@ -26,7 +26,10 @@ abstract class AiEditorialSessionKernelTestBase extends KernelTestBase {
     'ai_agents',
     'content_moderation',
     'datetime',
+    'file',
     'field',
+    'image',
+    'media',
     'text',
     'node',
     'oe_ai_assistant',
@@ -53,6 +56,8 @@ abstract class AiEditorialSessionKernelTestBase extends KernelTestBase {
     $this->installSchema('system', ['sequences']);
     $this->installSchema('node', ['node_access']);
 
+    $this->installEntitySchema('file');
+    $this->installEntitySchema('media');
     $this->installEntitySchema('taxonomy_term');
     $this->installEntitySchema('user');
     $this->installEntitySchema('node');

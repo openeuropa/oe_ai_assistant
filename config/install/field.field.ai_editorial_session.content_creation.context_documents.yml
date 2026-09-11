@@ -1,0 +1,26 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - field.storage.ai_editorial_session.context_documents
+    - media.type.ai_context_document
+    - oe_ai_assistant.ai_editorial_session_type.content_creation
+  module:
+    - media
+id: ai_editorial_session.content_creation.context_documents
+field_name: context_documents
+entity_type: ai_editorial_session
+bundle: content_creation
+label: 'Context documents'
+description: 'Temporary private documents used as context for AI-assisted drafting.'
+required: false
+translatable: false
+default_value: {  }
+default_value_callback: ''
+settings:
+  handler: 'default:media'
+  handler_settings:
+    target_bundles:
+      ai_context_document: ai_context_document
+    auto_create: false
+field_type: entity_reference

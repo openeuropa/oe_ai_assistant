@@ -55,6 +55,10 @@ export default defineConfig(({ mode }) => {
           target: "http://localhost:5150",
           changeOrigin: true,
         },
+        "/session/token": {
+          target: "http://localhost:5150",
+          changeOrigin: true,
+        },
       },
     },
   };

@@ -40,7 +40,7 @@ class PluginController extends ControllerBase {
    *   (createInstance). Plugins are discovered from annotated classes under
    *   src/Plugin/AiEditorialAssistant/.
    * @param \Drupal\oe_ai_assistant\Service\RequestValidator $requestValidator
-   *   Validates raw JSON request bodies against JSON Schema definitions
+   *   Validates request bodies against JSON Schema definitions
    *   provided by each plugin. Returns an array of human-readable error
    *   strings; an empty array means the body is valid.
    */
@@ -100,15 +100,19 @@ class PluginController extends ControllerBase {
       );
     }
 
-    // Step 4: Validate the request body against the plugin's JSON Schema for
-    // this action, if one is provided. Plugins that accept no body or impose
-    // no constraints simply omit the action key from getRequestSchemas().
+    // Step 4: Validate the request parameters against the plugin's JSON
+    // Schema for this action, if one is provided. Plugins that accept no
+    // parameters or impose no constraints simply omit the action key from
+    // getRequestSchemas().
     $schemas = $plugin->getRequestSchemas();
     if (isset($schemas[$action])) {
-      // validateRaw() parses the raw body string and checks it against the
-      // JSON Schema object. It returns an array of human-readable error
-      // strings, or an empty array when the body is valid.
-      $errors = $this->requestValidator->validateRaw($request->getContent(), $schemas[$action]);
+      // Validate the source the action reads: the query string for the
+      // actions the plugin declares, the JSON body for every other. Both
+      // return an array of human-readable error strings, or an empty array
+      // when the parameters are valid.
+      $errors = in_array($action, $plugin->getQueryActions(), TRUE)
+        ? $this->requestValidator->validateData($request->query->all(), $schemas[$action])
+        : $this->requestValidator->validateRaw($request->getContent(), $schemas[$action]);
       if (!empty($errors)) {
         // Flatten all validation error messages into a single semicolon-
         // separated string so the response remains a flat JSON object

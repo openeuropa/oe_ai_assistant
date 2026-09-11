@@ -3,6 +3,7 @@ status: true
 dependencies:
   config:
     - field.field.ai_editorial_session.content_creation.content_type
+    - field.field.ai_editorial_session.content_creation.context_documents
     - field.field.ai_editorial_session.content_creation.template
     - field.field.ai_editorial_session.content_creation.tone
     - oe_ai_assistant.ai_editorial_session_type.content_creation
@@ -31,4 +32,4 @@ content:
     region: content
     settings: {  }
     third_party_settings: {  }
-hidden: {  }
+hidden: { }

@@ -18,6 +18,7 @@ import {
 } from "@assistant-ui/react";
 import { useDataStreamRuntime } from "@assistant-ui/react-data-stream";
 import { useMemo } from "react";
+import { getCsrfHeaders } from "@/api/csrf-token";
 import { getSessionMessages } from "@/api/session-messages";
 import { getConfig } from "@/config";
 import { toThreadMessages } from "../hydrate-transcript";
@@ -61,6 +62,8 @@ export function useDraftingRuntime() {
   const runtime = useDataStreamRuntime({
     api: `${getConfig().apiBaseUrl}/plugins/drafting/chat`,
     credentials: "include",
+    // The CMS requires the CSRF token on every plugin request.
+    headers: getCsrfHeaders,
     // Scope the conversation to the current editorial session.
     body: { sessionId: getConfig().sessionId },
     adapters: {

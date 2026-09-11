@@ -1,0 +1,26 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - field.storage.media.oe_ai_context_document
+    - media.type.ai_context_document
+  module:
+    - file
+id: media.ai_context_document.oe_ai_context_document
+field_name: oe_ai_context_document
+entity_type: media
+bundle: ai_context_document
+label: Document
+description: ''
+required: true
+translatable: true
+default_value: {  }
+default_value_callback: ''
+settings:
+  handler: 'default:file'
+  handler_settings: {  }
+  file_directory: 'ai-context-documents/[date:custom:Y]-[date:custom:m]'
+  file_extensions: 'txt docx pdf md'
+  max_filesize: ''
+  description_field: false
+field_type: file

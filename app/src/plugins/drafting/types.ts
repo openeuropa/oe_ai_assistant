@@ -6,6 +6,12 @@
  * our RPC-style endpoint which wraps the AG-UI controller.
  */
 
+import type { components } from "@/api/schema";
+
+export type DraftingDocumentCategory =
+  components["schemas"]["DraftingDocumentCategory"];
+export type DraftingDocument = components["schemas"]["DraftingDocument"];
+
 /** Request body for the drafting chat endpoint. */
 export interface DraftingChatRequest {
   message: string;
@@ -64,14 +70,6 @@ export interface DraftingSelectPanelConfig {
   options?: DraftingSelectOption[];
   /** The option id currently saved on the server (for rehydration). */
   selected?: string;
-}
-
-/** A reference document that can ground the next draft. */
-export interface DraftingDocument {
-  id: string;
-  title: string;
-  /** Short descriptor, e.g. "PDF - 240 KB". */
-  meta: string;
 }
 
 export interface DraftingPluginConfig {

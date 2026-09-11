@@ -16,6 +16,8 @@
 #
 # Conventions:
 # - Authentication is cookie-based (CMS session). 403 on failure.
+# - Every request carries the CSRF token in the X-CSRF-Token header,
+#   fetched once from the CMS token endpoint.
 # - Error responses use the ApiError schema: { code, message }.
 # - Streaming endpoints use Server-Sent Events (text/event-stream).
 
@@ -36,6 +38,10 @@ servers:
 # ---------------------------------------------------------------------------
 # Paths
 # ---------------------------------------------------------------------------
+
+# Cookie-authenticated requests must carry the CSRF token header.
+security:
+  - csrfToken: []
 
 paths:
 
@@ -62,6 +68,12 @@ paths:
     $ref: "plugins/drafting/paths.yaml#/setTone"
   /plugins/drafting/set-template:
     $ref: "plugins/drafting/paths.yaml#/setTemplate"
+  /plugins/drafting/add-document:
+    $ref: "plugins/drafting/paths.yaml#/addDocument"
+  /plugins/drafting/list-documents:
+    $ref: "plugins/drafting/paths.yaml#/listDocuments"
+  /plugins/drafting/remove-document:
+    $ref: "plugins/drafting/paths.yaml#/removeDocument"
   /plugins/drafting/preview:
     $ref: "plugins/drafting/paths.yaml#/preview"
 
@@ -86,6 +98,15 @@ paths:
 # ---------------------------------------------------------------------------
 
 components:
+
+  securitySchemes:
+    csrfToken:
+      type: apiKey
+      in: header
+      name: X-CSRF-Token
+      description: >
+        CSRF token of the CMS session, fetched once from the token endpoint
+        the host page announces at bootstrap.
 
   parameters:
     NodeId:
@@ -154,6 +175,22 @@ components:
       $ref: "plugins/drafting/schemas.yaml#/DraftingSetTemplateRequest"
     DraftingSetTemplateResponse:
       $ref: "plugins/drafting/schemas.yaml#/DraftingSetTemplateResponse"
+    DraftingDocumentCategory:
+      $ref: "plugins/drafting/schemas.yaml#/DraftingDocumentCategory"
+    DraftingDocument:
+      $ref: "plugins/drafting/schemas.yaml#/DraftingDocument"
+    DraftingAddDocumentRequest:
+      $ref: "plugins/drafting/schemas.yaml#/DraftingAddDocumentRequest"
+    DraftingAddDocumentResponse:
+      $ref: "plugins/drafting/schemas.yaml#/DraftingAddDocumentResponse"
+    DraftingListDocumentsRequest:
+      $ref: "plugins/drafting/schemas.yaml#/DraftingListDocumentsRequest"
+    DraftingListDocumentsResponse:
+      $ref: "plugins/drafting/schemas.yaml#/DraftingListDocumentsResponse"
+    DraftingRemoveDocumentRequest:
+      $ref: "plugins/drafting/schemas.yaml#/DraftingRemoveDocumentRequest"
+    DraftingRemoveDocumentResponse:
+      $ref: "plugins/drafting/schemas.yaml#/DraftingRemoveDocumentResponse"
 
     # -- Plugin: echo --
     EchoRequest:

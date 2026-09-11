@@ -7,9 +7,12 @@ dependencies:
   - ai:ai
   - ai_agents:ai_agents
   - drupal:content_moderation
-  - drupal:node
   - drupal:datetime
+  - drupal:file
+  - drupal:media
+  - drupal:node
   - drupal:options
   - drupal:serialization
+  - drupal:text
   - key:key
   - drupal:taxonomy

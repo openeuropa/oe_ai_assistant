@@ -1,0 +1,19 @@
+langcode: en
+status: true
+dependencies:
+  module:
+    - media
+    - oe_ai_assistant
+id: ai_editorial_session.context_documents
+field_name: context_documents
+entity_type: ai_editorial_session
+type: entity_reference
+settings:
+  target_type: media
+module: core
+locked: false
+cardinality: -1
+translatable: false
+indexes: {  }
+persist_with_no_fields: false
+custom_storage: false
