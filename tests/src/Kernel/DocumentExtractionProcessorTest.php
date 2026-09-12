@@ -214,7 +214,7 @@ class DocumentExtractionProcessorTest extends AiEditorialSessionKernelTestBase {
    * refusing backend stands in for the concurrent claimer.
    */
   public function testHeldLockPreventsClaim(): void {
-    $media = $this->createDocument();
+    // The stub must be in place before any save instantiates the processor.
     $this->container->set('lock', new class() implements LockBackendInterface {
 
       public function acquire($name, $timeout = 30.0) {
@@ -238,9 +238,65 @@ class DocumentExtractionProcessorTest extends AiEditorialSessionKernelTestBase {
       }
 
     });
+    $media = $this->createDocument();
 
     $this->assertSame(W::STATE_SCHEDULED, $this->processor()->process($media));
     $this->assertNull($this->tika->getLastRequest());
+  }
+
+  /**
+   * Tests that cron processes resting documents and reclaims stale ones.
+   */
+  public function testCronProcessesPendingDocuments(): void {
+    $scheduled = $this->createDocument('scheduled.txt');
+    $stale = $this->createDocument('stale.txt');
+    $stale->set(W::STATE_FIELD, W::STATE_EXTRACTING)->save();
+    $recent = $this->createDocument('recent.txt');
+    $recent->set(W::STATE_FIELD, W::STATE_SUMMARIZING)->save();
+    $done = $this->createDocument('done.txt');
+    $done->set(W::STATE_FIELD, W::STATE_DONE)->save();
+
+    // Age the stale document past the threshold.
+    $this->container->get('database')->update('media_field_data')
+      ->fields(['changed' => time() - 3600])
+      ->condition('mid', $stale->id())
+      ->execute();
+
+    $this->tika->append(new Response(200, [], 'One'));
+    $this->tika->append(new Response(200, [], 'Two'));
+    MockAiProvider::enqueue(new MockResponse('Summary one.'));
+    MockAiProvider::enqueue(new MockResponse('Summary two.'));
+
+    $this->container->get('module_handler')->invoke('oe_ai_assistant', 'cron');
+
+    $this->assertSame(W::STATE_DONE, $this->workflow()->getState($this->reload($scheduled)));
+    $this->assertSame(W::STATE_DONE, $this->workflow()->getState($this->reload($stale)));
+    $this->assertSame(W::STATE_SUMMARIZING, $this->workflow()->getState($this->reload($recent)));
+    $this->assertSame(W::STATE_DONE, $this->workflow()->getState($this->reload($done)));
+    $this->assertTrue(MockAiProvider::isEmpty());
+  }
+
+  /**
+   * Tests that findPending honours the limit and the stale threshold.
+   */
+  public function testFindPending(): void {
+    $first = $this->createDocument('first.txt');
+    $second = $this->createDocument('second.txt');
+    $second->set(W::STATE_FIELD, W::STATE_EXTRACTED)->save();
+    $stale = $this->createDocument('stale.txt');
+    $stale->set(W::STATE_FIELD, W::STATE_SUMMARIZING)->save();
+    $this->container->get('database')->update('media_field_data')
+      ->fields(['changed' => time() - 3600])
+      ->condition('mid', $stale->id())
+      ->execute();
+
+    $this->assertSame([
+      (int) $first->id() => FALSE,
+      (int) $second->id() => FALSE,
+      (int) $stale->id() => TRUE,
+    ], $this->workflow()->findPending(5, 600));
+    $this->assertSame([(int) $first->id() => FALSE], $this->workflow()->findPending(1, 600));
+    $this->assertArrayNotHasKey((int) $stale->id(), $this->workflow()->findPending(5, 7200));
   }
 
   /**
