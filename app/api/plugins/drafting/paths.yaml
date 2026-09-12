@@ -202,6 +202,44 @@ removeDocument:
       "403":
         $ref: "../../openapi.yaml#/components/responses/Forbidden"
 
+extractDocument:
+  post:
+    operationId: postDraftingExtractDocument
+    summary: Process a drafting context document
+    description: >
+      Runs text extraction and summarisation on a referenced document and
+      returns its resulting status. Fired by the app after a successful
+      upload and by the retry control. A document that is already being
+      processed, or done, is left alone and its current status returned.
+    tags: [Drafting]
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: "../../openapi.yaml#/components/schemas/DraftingExtractDocumentRequest"
+    responses:
+      "200":
+        description: The document status after processing
+        content:
+          application/json:
+            schema:
+              $ref: "../../openapi.yaml#/components/schemas/DraftingExtractDocumentResponse"
+      "400":
+        description: Validation error.
+        content:
+          application/json:
+            schema:
+              $ref: "../../openapi.yaml#/components/schemas/ApiError"
+      "403":
+        $ref: "../../openapi.yaml#/components/responses/Forbidden"
+      "404":
+        description: The document does not belong to the session.
+        content:
+          application/json:
+            schema:
+              $ref: "../../openapi.yaml#/components/schemas/ApiError"
+
 preview:
   get:
     operationId: getDraftingPreview

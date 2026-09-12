@@ -174,8 +174,8 @@ describe("drafting api", () => {
               ok: false,
               status: 503,
               json: async () => ({
-                code: "busy",
-                message: "The session is busy. Upload it again.",
+                code: "upload_failed",
+                message: "The uploaded document could not be saved.",
               }),
             },
       ),
@@ -185,7 +185,7 @@ describe("drafting api", () => {
       type: "application/pdf",
     });
     await expect(addDraftingDocument(file)).rejects.toThrow(
-      "The session is busy. Upload it again.",
+      "The uploaded document could not be saved.",
     );
   });
 

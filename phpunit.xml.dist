@@ -15,6 +15,7 @@
     </testsuite>
     <testsuite name="kernel">
       <directory>tests/src/Kernel</directory>
+      <directory>modules/document_loader_tika/tests/src/Kernel</directory>
     </testsuite>
     <testsuite name="functional">
       <directory>tests/src/Functional</directory>

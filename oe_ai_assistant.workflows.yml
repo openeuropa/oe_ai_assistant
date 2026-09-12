@@ -1,0 +1,49 @@
+# Text extraction and summary pipeline of session documents.
+#
+# Resting states are scheduled, extracted, done and error; extracting and
+# summarizing are in flight. A claim from scheduled or error resumes by
+# data: summarizing when an extract is stored, extracting otherwise. Every
+# transition is applied by code; the transition guard limits what editors
+# may do in the media form to users holding the transition permission.
+oe_ai_document_extraction:
+  id: oe_ai_document_extraction
+  label: 'AI document extraction'
+  group: oe_ai_document
+  states:
+    scheduled:
+      label: Scheduled
+    extracting:
+      label: Extracting
+    extracted:
+      label: Extracted
+    summarizing:
+      label: Summarizing
+    done:
+      label: Done
+    error:
+      label: Error
+  transitions:
+    claim_extract:
+      label: 'Start extraction'
+      from: [scheduled, error]
+      to: extracting
+    extracted:
+      label: 'Text extracted'
+      from: [extracting]
+      to: extracted
+    claim_summarize:
+      label: 'Start summary'
+      from: [scheduled, error, extracted]
+      to: summarizing
+    done:
+      label: 'Summary written'
+      from: [summarizing]
+      to: done
+    fail:
+      label: Fail
+      from: [extracting, summarizing]
+      to: error
+    reschedule:
+      label: Retry
+      from: [extracting, extracted, summarizing, done, error]
+      to: scheduled

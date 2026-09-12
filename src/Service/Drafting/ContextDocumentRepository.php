@@ -9,7 +9,7 @@ namespace Drupal\oe_ai_assistant\Service\Drafting;
  *
  * Context documents are private reference files an editor uploads to
  * ground the drafting conversation. They are stored as unpublished media
- * entities backed by private managed files and referenced from the
+ * entities backed by private managed files, each referencing its
  * editorial session.
  */
 final class ContextDocumentRepository extends DocumentRepositoryBase {
@@ -18,13 +18,6 @@ final class ContextDocumentRepository extends DocumentRepositoryBase {
    * The API document category served by this repository.
    */
   public const string CATEGORY = 'context';
-
-  /**
-   * {@inheritdoc}
-   */
-  protected function getSessionField(): string {
-    return 'context_documents';
-  }
 
   /**
    * {@inheritdoc}

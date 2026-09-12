@@ -11,6 +11,9 @@ Drupal AI.
 - [AI module](https://www.drupal.org/project/ai) (^1.3)
 - [AI Agents](https://www.drupal.org/project/ai_agents) (^1.3)
 - Content Moderation (core)
+- [Document Loader](https://www.drupal.org/project/document_loader) (^2.0)
+- [State Machine](https://www.drupal.org/project/state_machine) (^1.14)
+- An [Apache Tika](https://tika.apache.org/) server for document text extraction
 
 ## Installation
 
@@ -92,6 +95,31 @@ React app mock workflow does not require provider credentials.
 | `ddev build-app` | Build the React app production bundle |
 | `ddev phpunit tests/src/ExistingSite/` | Run ExistingSite tests |
 | `ddev phpcs` | Run PHP CodeSniffer with Drupal standards |
+
+### Document extraction
+
+Session documents are turned into text and summarised so the drafting prompts
+can use them. The pipeline runs server-side on the document media entity:
+
+- An Apache Tika server extracts the text through the `document_loader_tika`
+  submodule (a Document Loader plugin). In DDEV it runs as the `tika` service
+  from `.ddev/docker-compose.tika.yaml`, reachable from the web container at
+  `http://tika:9998`, the default of the submodule. Check it with
+  `ddev exec curl http://tika:9998/version`. Other environments override the
+  URL in `settings.php`:
+
+  ```php
+  $config['document_loader_tika.settings']['url'] = 'http://tika.internal:9998';
+  ```
+
+- The default chat provider writes a brief summary of the extracted text.
+- A `state_machine` workflow (`oe_ai_document_extraction`) tracks each
+  document: scheduled, extracting, extracted, summarizing, done, error. The
+  state is shown in the media form; the permission "Change the extraction
+  state of AI documents" lets editors move it by hand, for example to retry.
+- The app triggers processing right after an upload and polls the status
+  until it settles. Cron picks up scheduled documents and reclaims runs stuck
+  for more than ten minutes, five per run.
 
 ### Site credentials
 

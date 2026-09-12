@@ -88,14 +88,14 @@ final class EditorialSessionHooks {
   /**
    * Implements hook_ai_editorial_session_delete().
    *
-   * Removes private context document media that are owned only by the deleted
-   * session, together with their managed files.
+   * Removes the private context documents of the deleted session, together
+   * with their managed files.
    */
   #[Hook('ai_editorial_session_delete')]
   public function deleteSessionContextDocuments(EntityInterface $entity): void {
     assert($entity instanceof AiEditorialSessionInterface);
 
-    $this->contextDocumentRepository->deleteOrphanedBy($entity);
+    $this->contextDocumentRepository->deleteForSession($entity);
   }
 
 }

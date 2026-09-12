@@ -1,0 +1,16 @@
+# Apache Tika server used for document text extraction.
+# The web container reaches it as http://tika:9998, which is the default
+# in document_loader_tika.settings. CI runs "ddev rebuild", so the same file
+# covers the test job.
+services:
+  tika:
+    image: apache/tika:3.3.1.0
+    container_name: ddev-${DDEV_SITENAME}-tika
+    labels:
+      com.ddev.site-name: ${DDEV_SITENAME}
+      com.ddev.approot: $DDEV_APPROOT
+    expose:
+      - "9998"
+  web:
+    depends_on:
+      - tika

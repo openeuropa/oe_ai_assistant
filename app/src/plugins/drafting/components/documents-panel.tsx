@@ -1,12 +1,14 @@
-import { FileText, Loader2, Upload, X } from "lucide-react";
+import { FileText, Loader2, RotateCcw, Upload, X } from "lucide-react";
 import { useRef, useState } from "react";
 import { Pane } from "@/components/ui/pane";
 import { formatFileSize } from "@/lib/format-file-size";
-import type {
-  DocumentUpload,
-  DraftingDocument,
+import {
+  type DocumentUpload,
+  type DraftingDocument,
+  MAX_FILES_PER_SELECTION,
 } from "../hooks/use-drafting-documents";
 import { ConfirmRemovalDialog } from "./confirm-removal-dialog";
+import { DocumentStatusBadge } from "./document-status-badge";
 
 export interface DocumentsPanelProps {
   /** Documents attached to ground the next draft. */
@@ -15,6 +17,8 @@ export interface DocumentsPanelProps {
   uploads: DocumentUpload[];
   /** Removes a document from the list. */
   onRemove: (id: string) => void | Promise<void>;
+  /** Re-runs the extraction of a failed document. */
+  onRetry: (id: string) => void | Promise<void>;
   /** Handles files chosen from the upload control. */
   onUpload: (files: FileList | null) => void | Promise<void>;
   /** Drops a failed upload slot. */
@@ -26,6 +30,8 @@ export interface DocumentsPanelProps {
   isLoading?: boolean;
   /** Failure of the initial document fetch, shown instead of the list. */
   loadError?: string | null;
+  /** Why the last file selection was refused, shown under the control. */
+  selectionError?: string | null;
 }
 
 /**
@@ -39,12 +45,14 @@ export function DocumentsPanel({
   selected,
   uploads,
   onRemove,
+  onRetry,
   onUpload,
   onDismissUpload,
   onClose,
   isSaving = false,
   isLoading = false,
   loadError = null,
+  selectionError = null,
 }: DocumentsPanelProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   // Document awaiting removal confirmation; NULL keeps the dialog closed.
@@ -74,7 +82,8 @@ export function DocumentsPanel({
             Drop files here or browse your computer
           </p>
           <p className="mt-1 text-xs text-gray-500">
-            PDF, DOCX, TXT, or Markdown files
+            PDF, DOCX, TXT, or Markdown files, up to {MAX_FILES_PER_SELECTION}{" "}
+            at a time
           </p>
         </button>
         <input
@@ -88,6 +97,17 @@ export function DocumentsPanel({
             event.target.value = "";
           }}
         />
+
+        {/* A refused selection explains the limit; the next selection
+            clears it. */}
+        {selectionError && (
+          <p
+            role="alert"
+            className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800"
+          >
+            {selectionError}
+          </p>
+        )}
 
         {/* Documents are fetched after boot; block interaction until the
             list request settles, and surface its failure in place. */}
@@ -163,6 +183,22 @@ export function DocumentsPanel({
                     {document.meta.type.toUpperCase()} -{" "}
                     {formatFileSize(document.meta.size)}
                   </p>
+                  {/* Extraction progress; a failed document offers a retry. */}
+                  <div className="flex items-center gap-2">
+                    <DocumentStatusBadge status={document.status} />
+                    {document.status === "error" && (
+                      <button
+                        type="button"
+                        className="inline-flex cursor-pointer items-center gap-1 text-[11px] font-medium text-blue-700 hover:underline disabled:cursor-not-allowed disabled:opacity-50"
+                        aria-label={`Retry ${document.title}`}
+                        onClick={() => void onRetry(document.id)}
+                        disabled={isSaving}
+                      >
+                        <RotateCcw size={10} />
+                        Retry
+                      </button>
+                    )}
+                  </div>
                 </div>
                 <button
                   type="button"

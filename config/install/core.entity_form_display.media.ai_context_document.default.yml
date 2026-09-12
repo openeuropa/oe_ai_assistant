@@ -3,7 +3,10 @@ status: true
 dependencies:
   config:
     - field.field.media.ai_context_document.oe_ai_context_document
+    - field.field.media.ai_context_document.oe_ai_document_extract
     - field.field.media.ai_context_document.oe_ai_document_summary
+    - field.field.media.ai_context_document.oe_ai_extraction_state
+    - field.field.media.ai_context_document.oe_ai_session
     - media.type.ai_context_document
   module:
     - file
@@ -27,6 +30,16 @@ content:
       size: 60
       placeholder: ''
     third_party_settings: {  }
+  oe_ai_session:
+    type: entity_reference_autocomplete
+    weight: 0
+    region: content
+    settings:
+      match_operator: CONTAINS
+      match_limit: 10
+      size: 60
+      placeholder: ''
+    third_party_settings: {  }
   oe_ai_context_document:
     type: file_generic
     weight: 1
@@ -34,13 +47,27 @@ content:
     settings:
       progress_indicator: throbber
     third_party_settings: {  }
-  oe_ai_document_summary:
+  oe_ai_document_extract:
     type: text_textarea
     weight: 2
     region: content
     settings:
+      rows: 10
+      placeholder: ''
+    third_party_settings: {  }
+  oe_ai_document_summary:
+    type: text_textarea
+    weight: 3
+    region: content
+    settings:
       rows: 5
       placeholder: ''
+    third_party_settings: {  }
+  oe_ai_extraction_state:
+    type: options_select
+    weight: 4
+    region: content
+    settings: {  }
     third_party_settings: {  }
   status:
     type: boolean_checkbox

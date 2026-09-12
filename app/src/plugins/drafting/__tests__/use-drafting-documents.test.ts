@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { setConfig } from "@/config";
 import { useAppStore } from "@/store";
 import type { DocumentUpload } from "../hooks/use-drafting-documents";
@@ -10,6 +10,7 @@ const reactState = vi.hoisted(() => ({
 
 const apiMocks = vi.hoisted(() => ({
   addDraftingDocument: vi.fn(),
+  extractDraftingDocument: vi.fn(),
   listDraftingDocuments: vi.fn(),
   removeDraftingDocument: vi.fn(),
 }));
@@ -45,6 +46,7 @@ vi.mock("../api/drafting-api", () => apiMocks);
 const initialDocument: DraftingDocument = {
   id: "initial-document",
   title: "Initial brief.md",
+  status: "done",
   meta: { type: "md", size: 1 },
 };
 
@@ -52,11 +54,13 @@ const uploadedDocuments: DraftingDocument[] = [
   {
     id: "uploaded-a",
     title: "Uploaded A.txt",
+    status: "done",
     meta: { type: "txt", size: 12 },
   },
   {
     id: "uploaded-b",
     title: "Uploaded B.pdf",
+    status: "done",
     meta: { type: "pdf", size: 24 },
   },
 ];
@@ -89,6 +93,10 @@ function loadErrorState(): string | null {
   return reactState.values[4] as string | null;
 }
 
+function selectionErrorState(): string | null {
+  return reactState.values[5] as string | null;
+}
+
 /** Settles promises queued by the initial list fetch. */
 async function flushAsync(): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, 0));
@@ -100,9 +108,15 @@ function pendingDocumentsWork(): boolean {
 }
 
 describe("useDraftingDocuments", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   beforeEach(() => {
     reactState.values = [];
     apiMocks.addDraftingDocument.mockReset();
+    apiMocks.extractDraftingDocument.mockReset();
+    apiMocks.extractDraftingDocument.mockResolvedValue("extracting");
     apiMocks.listDraftingDocuments.mockReset();
     apiMocks.removeDraftingDocument.mockReset();
     apiMocks.listDraftingDocuments.mockResolvedValue([initialDocument]);
@@ -273,5 +287,167 @@ describe("useDraftingDocuments", () => {
     // Removal failures surface in the confirmation dialog and never touch
     // the upload slots.
     expect(uploadsState()).toEqual([]);
+  });
+
+  it("fires extract-document after an upload and polls until settled", async () => {
+    const scheduled = { ...uploadedDocuments[0], status: "scheduled" as const };
+    apiMocks.addDraftingDocument.mockResolvedValueOnce(scheduled);
+    apiMocks.listDraftingDocuments
+      .mockResolvedValueOnce([initialDocument])
+      .mockResolvedValueOnce([
+        initialDocument,
+        { ...scheduled, status: "extracting" },
+      ])
+      .mockResolvedValueOnce([
+        initialDocument,
+        { ...scheduled, status: "done" },
+      ]);
+    const { useDraftingDocuments, DOCUMENT_POLL_INTERVAL_MS } =
+      await loadHook();
+    const hook = useDraftingDocuments();
+    await flushAsync();
+    // Fake timers only after the initial fetch settled: flushAsync relies
+    // on a real setTimeout.
+    vi.useFakeTimers();
+
+    await hook.uploadFiles(fileList([new File(["a"], "Uploaded A.txt")]));
+    expect(apiMocks.extractDraftingDocument).toHaveBeenCalledWith(
+      "uploaded-a",
+      "context",
+    );
+    expect(selectedState()[1]?.status).toBe("scheduled");
+
+    await vi.advanceTimersByTimeAsync(DOCUMENT_POLL_INTERVAL_MS);
+    expect(apiMocks.listDraftingDocuments).toHaveBeenCalledTimes(2);
+    expect(selectedState()[1]?.status).toBe("extracting");
+
+    await vi.advanceTimersByTimeAsync(DOCUMENT_POLL_INTERVAL_MS);
+    expect(selectedState()[1]?.status).toBe("done");
+
+    // Settled: no further polling.
+    await vi.advanceTimersByTimeAsync(DOCUMENT_POLL_INTERVAL_MS * 2);
+    expect(apiMocks.listDraftingDocuments).toHaveBeenCalledTimes(3);
+  });
+
+  it("does not report the extraction trigger as pending work", async () => {
+    const scheduled = { ...uploadedDocuments[0], status: "scheduled" as const };
+    apiMocks.addDraftingDocument.mockResolvedValueOnce(scheduled);
+    apiMocks.extractDraftingDocument.mockReturnValueOnce(new Promise(() => {}));
+    const { useDraftingDocuments } = await loadHook();
+    const hook = useDraftingDocuments();
+    await flushAsync();
+
+    await hook.uploadFiles(fileList([new File(["a"], "Uploaded A.txt")]));
+
+    // The upload settled even though the extraction never answers.
+    expect(pendingDocumentsWork()).toBe(false);
+  });
+
+  it("retries a failed document and resumes polling", async () => {
+    const failed = { ...initialDocument, status: "error" as const };
+    // The action never answers here: the state must come from polling.
+    apiMocks.extractDraftingDocument.mockReturnValue(new Promise(() => {}));
+    apiMocks.listDraftingDocuments
+      .mockResolvedValueOnce([failed])
+      .mockResolvedValueOnce([{ ...failed, status: "extracting" }])
+      .mockResolvedValueOnce([{ ...failed, status: "done" }]);
+    const { useDraftingDocuments, DOCUMENT_POLL_INTERVAL_MS } =
+      await loadHook();
+    const hook = useDraftingDocuments();
+    await flushAsync();
+    vi.useFakeTimers();
+
+    await hook.retryDocument("initial-document");
+    expect(apiMocks.extractDraftingDocument).toHaveBeenCalledWith(
+      "initial-document",
+      "context",
+    );
+    // Shown as extracting at once, without waiting for the server.
+    expect(selectedState()[0]?.status).toBe("extracting");
+
+    await vi.advanceTimersByTimeAsync(DOCUMENT_POLL_INTERVAL_MS);
+    expect(selectedState()[0]?.status).toBe("extracting");
+    await vi.advanceTimersByTimeAsync(DOCUMENT_POLL_INTERVAL_MS);
+    expect(selectedState()[0]?.status).toBe("done");
+  });
+
+  it("applies the retry answer as soon as the action returns", async () => {
+    const failed = { ...initialDocument, status: "error" as const };
+    apiMocks.listDraftingDocuments.mockResolvedValue([failed]);
+    apiMocks.extractDraftingDocument.mockResolvedValue("done");
+    const { useDraftingDocuments } = await loadHook();
+    const hook = useDraftingDocuments();
+    await flushAsync();
+
+    await hook.retryDocument("initial-document");
+    await flushAsync();
+
+    expect(selectedState()[0]?.status).toBe("done");
+  });
+
+  it("polls after boot when a persisted document is still unsettled", async () => {
+    apiMocks.listDraftingDocuments
+      .mockResolvedValueOnce([{ ...initialDocument, status: "summarizing" }])
+      .mockResolvedValueOnce([initialDocument]);
+    const { useDraftingDocuments, DOCUMENT_POLL_INTERVAL_MS } =
+      await loadHook();
+    // The boot fetch itself schedules the first poll, so the timers must
+    // be fake before the hook runs; the fetch is flushed through them.
+    vi.useFakeTimers();
+    useDraftingDocuments();
+    await vi.advanceTimersByTimeAsync(0);
+
+    await vi.advanceTimersByTimeAsync(DOCUMENT_POLL_INTERVAL_MS);
+    expect(selectedState()[0]?.status).toBe("done");
+    await vi.advanceTimersByTimeAsync(DOCUMENT_POLL_INTERVAL_MS * 2);
+    expect(apiMocks.listDraftingDocuments).toHaveBeenCalledTimes(2);
+  });
+
+  it("refuses a selection above the per-selection limit", async () => {
+    const { useDraftingDocuments, MAX_FILES_PER_SELECTION } = await loadHook();
+    const hook = useDraftingDocuments();
+    await flushAsync();
+    const files = Array.from(
+      { length: MAX_FILES_PER_SELECTION + 1 },
+      (_, index) => new File(["a"], `file-${index}.txt`),
+    );
+
+    await hook.uploadFiles(fileList(files));
+
+    expect(apiMocks.addDraftingDocument).not.toHaveBeenCalled();
+    expect(uploadsState()).toEqual([]);
+    expect(selectionErrorState()).toContain(String(MAX_FILES_PER_SELECTION));
+  });
+
+  it("accepts a selection at the limit and clears the message", async () => {
+    apiMocks.addDraftingDocument.mockResolvedValue(uploadedDocuments[0]);
+    const { useDraftingDocuments, MAX_FILES_PER_SELECTION } = await loadHook();
+    const hook = useDraftingDocuments();
+    await flushAsync();
+    const files = Array.from(
+      { length: MAX_FILES_PER_SELECTION },
+      (_, index) => new File(["a"], `file-${index}.txt`),
+    );
+
+    await hook.uploadFiles(fileList([...files, new File(["b"], "extra.txt")]));
+    expect(selectionErrorState()).not.toBeNull();
+
+    await hook.uploadFiles(fileList(files));
+
+    expect(apiMocks.addDraftingDocument).toHaveBeenCalledTimes(
+      MAX_FILES_PER_SELECTION,
+    );
+    expect(selectionErrorState()).toBeNull();
+  });
+
+  it("does not poll when every document is settled", async () => {
+    const { useDraftingDocuments, DOCUMENT_POLL_INTERVAL_MS } =
+      await loadHook();
+    useDraftingDocuments();
+    await flushAsync();
+    vi.useFakeTimers();
+
+    await vi.advanceTimersByTimeAsync(DOCUMENT_POLL_INTERVAL_MS * 3);
+    expect(apiMocks.listDraftingDocuments).toHaveBeenCalledTimes(1);
   });
 });

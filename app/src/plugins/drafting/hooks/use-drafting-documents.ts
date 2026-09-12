@@ -3,12 +3,81 @@ import { getConfig } from "@/config";
 import { useAppStore } from "@/store";
 import {
   addDraftingDocument,
+  extractDraftingDocument,
   listDraftingDocuments,
   removeDraftingDocument,
 } from "../api/drafting-api";
+import { countUnsettled, isDocumentSettled } from "../document-status";
 import type { DraftingDocument, DraftingDocumentCategory } from "../types";
 
 export type { DraftingDocument } from "../types";
+
+/** Interval between document list refreshes while a document is unsettled. */
+export const DOCUMENT_POLL_INTERVAL_MS = 5000;
+
+/**
+ * Files accepted in one selection.
+ *
+ * A frontend-only guard against a selection of hundreds of files hitting
+ * the backend at once; larger batches are simply selected in several
+ * rounds.
+ */
+export const MAX_FILES_PER_SELECTION = 10;
+
+/**
+ * Pending refresh timer, module-level like the request counter: the hook
+ * has a single consumer and the timer must survive re-renders.
+ */
+let pollTimer: ReturnType<typeof setTimeout> | null = null;
+
+/** Cancels a scheduled refresh, if any. */
+function stopPolling(): void {
+  if (pollTimer) {
+    clearTimeout(pollTimer);
+    pollTimer = null;
+  }
+}
+
+/**
+ * Refreshes the list every interval until no document is in flight.
+ *
+ * Polling is read-only: it never triggers processing. A refresh that
+ * fails is retried on the next tick. Module-level so the boot effect can
+ * call it without listing it as a dependency.
+ */
+function pollUntilSettled(
+  documents: DraftingDocument[],
+  category: DraftingDocumentCategory,
+  setSelected: (documents: DraftingDocument[]) => void,
+): void {
+  stopPolling();
+  if (!documents.some((document) => !isDocumentSettled(document.status))) {
+    return;
+  }
+  pollTimer = setTimeout(async () => {
+    pollTimer = null;
+    let next = documents;
+    try {
+      next = await listDraftingDocuments(category);
+      setSelected(next);
+    } catch {
+      // Keep the current list; the next tick tries again.
+    }
+    pollUntilSettled(next, category, setSelected);
+  }, DOCUMENT_POLL_INTERVAL_MS);
+}
+
+/**
+ * Fires processing for a document without blocking the caller.
+ *
+ * Not reported as pending work: cron finishes an abandoned document.
+ */
+function triggerExtraction(
+  id: string,
+  category: DraftingDocumentCategory,
+): void {
+  void extractDraftingDocument(id, category).catch(() => {});
+}
 
 /**
  * In-flight document requests, counted across concurrent operations.
@@ -56,6 +125,10 @@ export interface DocumentUpload {
  * removals are persisted immediately through the drafting document
  * endpoints. Uploads run concurrently: each file gets its own slot,
  * so more files can be added while earlier uploads still run.
+ *
+ * After an upload the server-side extraction is fired without waiting,
+ * and the list is refreshed every few seconds until every document has
+ * settled, so the status badges follow the pipeline.
  */
 export function useDraftingDocuments(
   category: DraftingDocumentCategory = "context",
@@ -73,6 +146,8 @@ export function useDraftingDocuments(
   const [isLoading, setIsLoading] = useState(enabled);
   // Failure of the initial list request, shown instead of the list.
   const [loadError, setLoadError] = useState<string | null>(null);
+  // Why the last file selection was refused, cleared by the next one.
+  const [selectionError, setSelectionError] = useState<string | null>(null);
 
   // Fetch the persisted documents once after boot.
   useEffect(() => {
@@ -84,6 +159,7 @@ export function useDraftingDocuments(
       .then((documents) => {
         if (!cancelled) {
           setSelected(documents);
+          pollUntilSettled(documents, category, setSelected);
         }
       })
       .catch((exception: unknown) => {
@@ -103,8 +179,39 @@ export function useDraftingDocuments(
 
     return () => {
       cancelled = true;
+      stopPolling();
     };
   }, [enabled, category]);
+
+  /**
+   * Re-runs processing on a failed document and watches its progress.
+   *
+   * The document is shown as extracting right away: a refetch at this
+   * point could still see the failed state, and failed counts as settled,
+   * so polling would never start. Polling then follows the run, and the
+   * action's own answer shortens the wait when it arrives first.
+   */
+  async function retryDocument(id: string) {
+    setSelected((current) =>
+      current.map((item) =>
+        item.id === id ? { ...item, status: "extracting" } : item,
+      ),
+    );
+    void extractDraftingDocument(id, category)
+      .then((status) => {
+        setSelected((current) =>
+          current.map((item) => (item.id === id ? { ...item, status } : item)),
+        );
+      })
+      .catch(() => {});
+    // Polling only needs to know that something is unsettled; each tick
+    // fetches the full list anyway.
+    pollUntilSettled(
+      [{ id, title: "", status: "extracting", meta: { type: "", size: 0 } }],
+      category,
+      setSelected,
+    );
+  }
 
   /**
    * Removes a document from the persisted list.
@@ -127,6 +234,8 @@ export function useDraftingDocuments(
   /**
    * Uploads every chosen file concurrently, one slot per file.
    *
+   * Selections above MAX_FILES_PER_SELECTION are refused as a whole.
+   *
    * Each file gets an uploading slot immediately. On success the slot is
    * replaced by the server-returned document; on failure it switches to
    * an error slot the user can dismiss.
@@ -135,6 +244,15 @@ export function useDraftingDocuments(
     if (!fileList) {
       return;
     }
+    // Refuse the whole selection above the limit rather than uploading a
+    // silent subset: the editor sees the message and selects again.
+    if (fileList.length > MAX_FILES_PER_SELECTION) {
+      setSelectionError(
+        `Select up to ${MAX_FILES_PER_SELECTION} files at a time. Larger sets can be added in several rounds.`,
+      );
+      return;
+    }
+    setSelectionError(null);
     const entries = Array.from(fileList).map((file) => ({
       file,
       slot: {
@@ -158,6 +276,8 @@ export function useDraftingDocuments(
           setUploads((current) =>
             current.filter((upload) => upload.id !== slot.id),
           );
+          triggerExtraction(document.id, category);
+          pollUntilSettled([document], category, setSelected);
         } catch (exception) {
           setUploads((current) =>
             current.map((upload) =>
@@ -190,10 +310,13 @@ export function useDraftingDocuments(
     selected,
     uploads,
     count: selected.length,
+    processingCount: countUnsettled(selected),
     isSaving,
     isLoading,
     loadError,
+    selectionError,
     removeDocument,
+    retryDocument,
     uploadFiles,
     dismissUpload,
   };
