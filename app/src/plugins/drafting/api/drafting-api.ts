@@ -30,6 +30,8 @@ type DraftingListDocumentsResponse =
   components["schemas"]["DraftingListDocumentsResponse"];
 type DraftingRemoveDocumentResponse =
   components["schemas"]["DraftingRemoveDocumentResponse"];
+type DraftingExtractDocumentResponse =
+  components["schemas"]["DraftingExtractDocumentResponse"];
 
 /**
  * Sends a chat message and returns the raw Response for SSE
@@ -196,6 +198,35 @@ export async function listDraftingDocuments(
   }
   const body = (await response.json()) as DraftingListDocumentsResponse;
   return body.documents;
+}
+
+/**
+ * Asks the backend to process a document and returns its new status.
+ *
+ * Processing is synchronous on the server, so the call lasts as long as
+ * the extraction and the summary; callers fire it without waiting.
+ */
+export async function extractDraftingDocument(
+  documentId: string,
+  category: DraftingCategory = "context",
+): Promise<DraftingExtractDocumentResponse["status"]> {
+  const response = await apiFetch(
+    `${getConfig().apiBaseUrl}/plugins/drafting/extract-document`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        sessionId: getConfig().sessionId,
+        category,
+        documentId,
+      }),
+    },
+  );
+  if (!response.ok) {
+    throw new Error(`Drafting extract-document error: ${response.status}`);
+  }
+  const body = (await response.json()) as DraftingExtractDocumentResponse;
+  return body.status;
 }
 
 /** Removes a document from the current drafting session. */
