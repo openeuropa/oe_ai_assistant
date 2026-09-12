@@ -11,6 +11,8 @@ use Drupal\media\MediaInterface;
 use Drupal\oe_ai_assistant\Hook\DocumentMediaHooks;
 use Drupal\oe_ai_assistant\Service\Drafting\DocumentExtractionProcessorInterface;
 use Drupal\oe_ai_assistant\Service\Drafting\DocumentExtractionWorkflowInterface as W;
+use Drupal\oe_ai_assistant_test\Plugin\AiProvider\MockAiProvider;
+use Drupal\oe_ai_assistant_test\Plugin\AiProvider\MockResponse;
 use GuzzleHttp\Handler\MockHandler;
 use GuzzleHttp\Psr7\Response;
 use PHPUnit\Framework\Attributes\Group;
@@ -35,7 +37,15 @@ class DocumentExtractionProcessorTest extends AiEditorialSessionKernelTestBase {
     parent::setUp();
     $this->installConfig(['document_loader_tika']);
     $this->installSchema('file', ['file_usage']);
+    // The mock provider plugin only needs the ai module at runtime; the
+    // test module's install hook is not run and not needed here. Enabling
+    // rebuilds the container, so the Tika mock is installed afterwards.
+    $this->enableModules(['oe_ai_assistant_test']);
     $this->tika = $this->mockTika();
+    $this->config('ai.settings')
+      ->set('default_providers', ['chat' => ['provider_id' => 'mock_ai', 'model_id' => 'mock-model']])
+      ->save();
+    MockAiProvider::reset();
   }
 
   /**
@@ -79,23 +89,66 @@ class DocumentExtractionProcessorTest extends AiEditorialSessionKernelTestBase {
   }
 
   /**
-   * Tests that a run stores the extract and passes through extracted.
+   * Tests that a full run stores the extract and the summary.
    */
-  public function testExtractionStepStoresText(): void {
+  public function testFullRunEndsInDone(): void {
     $this->tika->append(new Response(200, [], 'Full text'));
+    MockAiProvider::enqueue(new MockResponse('A brief summary.'));
     $media = $this->createDocument();
     $revisions = $this->countRevisions($media);
 
     $state = $this->processor()->process($media);
 
-    // The summary step is not implemented yet, so the run ends in error
-    // with the extract kept; the next task changes this to done.
+    $this->assertSame(W::STATE_DONE, $state);
+    $fresh = $this->reload($media);
+    $this->assertSame(W::STATE_DONE, $this->workflow()->getState($fresh));
+    $this->assertSame('Full text', $fresh->get(DocumentMediaHooks::EXTRACT_FIELD)->value);
+    $this->assertSame('A brief summary.', $fresh->get(DocumentMediaHooks::SUMMARY_FIELD)->value);
+    $this->assertSame($revisions, $this->countRevisions($media));
+
+    $log = MockAiProvider::getCallLog();
+    $this->assertCount(1, $log);
+    $this->assertStringContainsString('Full text', $log[0]['messages'][0]['text']);
+    $this->assertStringContainsString('summary', strtolower($log[0]['system_prompt']));
+  }
+
+  /**
+   * Tests that a provider failure keeps the extract and ends in error.
+   */
+  public function testProviderFailureKeepsExtract(): void {
+    $this->tika->append(new Response(200, [], 'Full text'));
+    MockAiProvider::enqueue(new MockResponse(error: new \RuntimeException('Provider down.')));
+    $media = $this->createDocument();
+
+    $state = $this->processor()->process($media);
+
     $this->assertSame(W::STATE_ERROR, $state);
     $fresh = $this->reload($media);
-    $this->assertSame(W::STATE_ERROR, $this->workflow()->getState($fresh));
     $this->assertSame('Full text', $fresh->get(DocumentMediaHooks::EXTRACT_FIELD)->value);
     $this->assertTrue($fresh->get(DocumentMediaHooks::SUMMARY_FIELD)->isEmpty());
-    $this->assertSame($revisions, $this->countRevisions($media));
+  }
+
+  /**
+   * Tests that an empty summary counts as a failure.
+   */
+  public function testEmptySummaryEndsInError(): void {
+    $this->tika->append(new Response(200, [], 'Full text'));
+    MockAiProvider::enqueue(new MockResponse('   '));
+    $media = $this->createDocument();
+
+    $this->assertSame(W::STATE_ERROR, $this->processor()->process($media));
+  }
+
+  /**
+   * Tests that no configured provider ends in error without a call.
+   */
+  public function testMissingProviderEndsInError(): void {
+    $this->config('ai.settings')->set('default_providers', [])->save();
+    $this->tika->append(new Response(200, [], 'Full text'));
+    $media = $this->createDocument();
+
+    $this->assertSame(W::STATE_ERROR, $this->processor()->process($media));
+    $this->assertCount(0, MockAiProvider::getCallLog());
   }
 
   /**
@@ -129,10 +182,11 @@ class DocumentExtractionProcessorTest extends AiEditorialSessionKernelTestBase {
    */
   public function testReclaimRestartsInFlightDocument(): void {
     $this->tika->append(new Response(200, [], 'Again'));
+    MockAiProvider::enqueue(new MockResponse('Summary again.'));
     $media = $this->createDocument();
     $media->set(W::STATE_FIELD, W::STATE_EXTRACTING)->save();
 
-    $this->processor()->process($media, TRUE);
+    $this->assertSame(W::STATE_DONE, $this->processor()->process($media, TRUE));
 
     $this->assertSame('Again', $this->reload($media)->get(DocumentMediaHooks::EXTRACT_FIELD)->value);
   }
@@ -143,11 +197,14 @@ class DocumentExtractionProcessorTest extends AiEditorialSessionKernelTestBase {
   public function testRetryWithExtractSkipsLoader(): void {
     $media = $this->createDocument();
     $media->set(DocumentMediaHooks::EXTRACT_FIELD, 'Kept')->set(W::STATE_FIELD, W::STATE_ERROR)->save();
+    MockAiProvider::enqueue(new MockResponse('Summary of kept.'));
 
-    $this->processor()->process($media);
+    $this->assertSame(W::STATE_DONE, $this->processor()->process($media));
 
     $this->assertNull($this->tika->getLastRequest());
-    $this->assertSame('Kept', $this->reload($media)->get(DocumentMediaHooks::EXTRACT_FIELD)->value);
+    $fresh = $this->reload($media);
+    $this->assertSame('Kept', $fresh->get(DocumentMediaHooks::EXTRACT_FIELD)->value);
+    $this->assertSame('Summary of kept.', $fresh->get(DocumentMediaHooks::SUMMARY_FIELD)->value);
   }
 
   /**
