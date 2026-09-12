@@ -521,7 +521,7 @@ export interface components {
             documents: components["schemas"]["DraftingDocument"][];
         };
         DraftingRemoveDocumentRequest: {
-            /** @description The editorial session that references the document. */
+            /** @description The editorial session the document belongs to. */
             sessionId: string;
             category: components["schemas"]["DraftingDocumentCategory"];
             /** @description Server-assigned document ID to remove. */
@@ -532,7 +532,7 @@ export interface components {
             status: "ok";
         };
         DraftingExtractDocumentRequest: {
-            /** @description The editorial session that references the document. */
+            /** @description The editorial session the document belongs to. */
             sessionId: string;
             category: components["schemas"]["DraftingDocumentCategory"];
             /** @description Server-assigned document ID to process. */
@@ -1031,7 +1031,7 @@ export interface operations {
                 };
             };
             403: components["responses"]["Forbidden"];
-            /** @description The document is not referenced by the session. */
+            /** @description The document does not belong to the session. */
             404: {
                 headers: {
                     [name: string]: unknown;

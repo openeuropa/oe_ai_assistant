@@ -5,11 +5,9 @@ declare(strict_types=1);
 namespace Drupal\oe_ai_assistant\Service\Drafting;
 
 use Drupal\Core\Entity\EntityTypeManagerInterface;
-use Drupal\Core\Field\FieldItemListInterface;
 use Drupal\Core\Field\TypedData\FieldItemDataDefinition;
 use Drupal\Core\File\FileExists;
 use Drupal\Core\File\FileSystemInterface;
-use Drupal\Core\Lock\LockBackendInterface;
 use Drupal\file\FileInterface;
 use Drupal\file\Plugin\Field\FieldType\FileItem;
 use Drupal\file\Upload\FileUploadHandlerInterface;
@@ -23,12 +21,19 @@ use Symfony\Component\DependencyInjection\Attribute\Autowire;
 /**
  * Base implementation of the session document lifecycle.
  *
- * Implements the add, list, remove and orphan cleanup operations once.
- * Concrete repositories only declare the storage details of their document
- * category (media bundle, source field, session reference field, upload
- * directory), keeping those details out of the rest of the codebase.
+ * A document is a media entity that references its editorial session, the
+ * way a conversation message references its host. Adding a document only
+ * creates a media entity and removing one only deletes it, so concurrent
+ * uploads never write the same row and need no lock. Concrete repositories
+ * only declare the storage details of their document category (media
+ * bundle, source field, category name).
  */
 abstract class DocumentRepositoryBase implements DocumentRepositoryInterface {
+
+  /**
+   * The media field referencing the owning editorial session.
+   */
+  public const string SESSION_FIELD = 'oe_ai_session';
 
   /**
    * Constructs the repository.
@@ -41,8 +46,6 @@ abstract class DocumentRepositoryBase implements DocumentRepositoryInterface {
    *   The file upload handler service.
    * @param \Psr\Log\LoggerInterface $logger
    *   The logger channel.
-   * @param \Drupal\Core\Lock\LockBackendInterface $lock
-   *   The lock backend, serialising reference updates per session.
    * @param \Drupal\oe_ai_assistant\Service\Drafting\DocumentExtractionWorkflowInterface $workflow
    *   The extraction workflow reader, for the document status.
    * @param \Drupal\oe_ai_assistant\Service\Drafting\DocumentExtractionProcessorInterface $processor
@@ -54,16 +57,9 @@ abstract class DocumentRepositoryBase implements DocumentRepositoryInterface {
     protected readonly FileUploadHandlerInterface $fileUploadHandler,
     #[Autowire(service: 'logger.channel.oe_ai_assistant')]
     protected readonly LoggerInterface $logger,
-    #[Autowire(service: 'lock')]
-    protected readonly LockBackendInterface $lock,
     protected readonly DocumentExtractionWorkflowInterface $workflow,
     protected readonly DocumentExtractionProcessorInterface $processor,
   ) {}
-
-  /**
-   * Gets the session field that references documents of this category.
-   */
-  abstract protected function getSessionField(): string;
 
   /**
    * Gets the media bundle used for documents of this category.
@@ -104,19 +100,12 @@ abstract class DocumentRepositoryBase implements DocumentRepositoryInterface {
     // A failure before that leaves a temporary file cron reaps on its own.
     $managedFile = $this->saveUploadedFile($upload);
 
-    $media = NULL;
     try {
       // Name the media after the stored file: core may have renamed the
       // upload, for example to neutralise an insecure double extension.
-      $media = $this->createMedia($managedFile, $managedFile->getFilename());
-      $this->updateSessionDocuments($session, static function (FieldItemListInterface $documents) use ($media): void {
-        $documents->appendItem(['target_id' => $media->id()]);
-      }, 'The editorial session is busy and the document was not attached. Upload it again.');
+      $media = $this->createMedia($session, $managedFile, $managedFile->getFilename());
     }
     catch (\Throwable $e) {
-      if ($media instanceof MediaInterface) {
-        $media->delete();
-      }
       $managedFile->delete();
       throw $e;
     }
@@ -128,90 +117,75 @@ abstract class DocumentRepositoryBase implements DocumentRepositoryInterface {
    * {@inheritdoc}
    */
   public function list(AiEditorialSessionInterface $session): array {
-    $documents = [];
-    foreach ($session->get($this->getSessionField())->referencedEntities() as $media) {
-      if ($media instanceof MediaInterface) {
-        $documents[] = $this->serialize($media);
-      }
-    }
-
-    return $documents;
+    return array_map($this->serialize(...), $this->loadAll($session));
   }
 
   /**
    * {@inheritdoc}
    */
   public function remove(AiEditorialSessionInterface $session, string $documentId): void {
-    $this->updateSessionDocuments($session, static function (FieldItemListInterface $documents) use ($documentId): void {
-      foreach ($documents as $delta => $item) {
-        if ((string) $item->target_id === $documentId) {
-          $documents->removeItem($delta);
-          return;
-        }
-      }
-      throw new ActionException(
-        'invalid_request',
-        'The document is not referenced by this editorial session.',
-        404,
-      );
-    }, 'The editorial session is busy and the document was not removed. Try again.');
-
-    $media = $this->entityTypeManager->getStorage('media')->load($documentId);
-    // Only the last reference deletes the document: another session may
-    // still use the same media.
-    if ($media instanceof MediaInterface
-      && !$this->isReferencedByAnotherSession((int) $media->id(), (int) $session->id())
-    ) {
-      $this->deleteDocument($media);
-    }
+    $this->deleteDocument($this->loadOwned($session, $documentId));
   }
 
   /**
    * {@inheritdoc}
    */
   public function extract(AiEditorialSessionInterface $session, string $documentId): string {
-    foreach ($session->get($this->getSessionField())->referencedEntities() as $media) {
-      if ($media instanceof MediaInterface && (string) $media->id() === $documentId) {
-        return $this->processor->process($media);
-      }
-    }
-    throw new ActionException(
-      'invalid_request',
-      'The document is not referenced by this editorial session.',
-      404,
-    );
+    return $this->processor->process($this->loadOwned($session, $documentId));
   }
 
   /**
    * {@inheritdoc}
    */
-  public function deleteOrphanedBy(AiEditorialSessionInterface $session): void {
-    if (!$session->hasField($this->getSessionField())) {
-      return;
-    }
-
-    $document_ids = [];
-    foreach ($session->get($this->getSessionField()) as $item) {
-      if ($item->target_id !== NULL) {
-        $document_ids[] = (int) $item->target_id;
-      }
-    }
-    $document_ids = array_values(array_unique($document_ids));
-    if ($document_ids === []) {
-      return;
-    }
-
-    $media_storage = $this->entityTypeManager->getStorage('media');
-    foreach ($media_storage->loadMultiple($document_ids) as $media) {
-      if (!$media instanceof MediaInterface
-        || $media->bundle() !== $this->getMediaBundle()
-        || $this->isReferencedByAnotherSession((int) $media->id(), (int) $session->id())
-      ) {
-        continue;
-      }
-
+  public function deleteForSession(AiEditorialSessionInterface $session): void {
+    foreach ($this->loadAll($session) as $media) {
       $this->deleteDocument($media);
     }
+  }
+
+  /**
+   * Loads the documents of a session in upload order.
+   *
+   * @return \Drupal\media\MediaInterface[]
+   *   The document media entities.
+   */
+  private function loadAll(AiEditorialSessionInterface $session): array {
+    if ($session->isNew()) {
+      return [];
+    }
+    $storage = $this->entityTypeManager->getStorage('media');
+    $ids = $storage->getQuery()
+      ->accessCheck(FALSE)
+      ->condition('bundle', $this->getMediaBundle())
+      ->condition(self::SESSION_FIELD, (int) $session->id())
+      ->sort('mid')
+      ->execute();
+
+    return array_values(array_filter(
+      $storage->loadMultiple($ids),
+      static fn($media) => $media instanceof MediaInterface,
+    ));
+  }
+
+  /**
+   * Loads a document only when it belongs to the session.
+   *
+   * @throws \Drupal\oe_ai_assistant\Exception\ActionException
+   *   When the document does not exist or belongs elsewhere.
+   */
+  private function loadOwned(AiEditorialSessionInterface $session, string $documentId): MediaInterface {
+    $media = $this->entityTypeManager->getStorage('media')->load($documentId);
+    if ($media instanceof MediaInterface
+      && $media->bundle() === $this->getMediaBundle()
+      && (string) $media->get(self::SESSION_FIELD)->target_id === (string) $session->id()
+    ) {
+      return $media;
+    }
+    throw new ActionException(
+      'invalid_request',
+      'The document does not belong to this editorial session.',
+      404,
+    );
   }
 
   /**
@@ -220,7 +194,7 @@ abstract class DocumentRepositoryBase implements DocumentRepositoryInterface {
    * @param \Drupal\media\MediaInterface $media
    *   The document media entity.
    *
-   * @return array<string, string|array<string, string|int>>
+   * @return array
    *   The serialized document item.
    */
   protected function serialize(MediaInterface $media): array {
@@ -320,6 +294,8 @@ abstract class DocumentRepositoryBase implements DocumentRepositoryInterface {
   /**
    * Creates the document media entity for a managed file.
    *
+   * @param \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $session
+   *   The session that owns the document.
    * @param \Drupal\file\FileInterface $file
    *   The managed file entity.
    * @param string $name
@@ -328,11 +304,12 @@ abstract class DocumentRepositoryBase implements DocumentRepositoryInterface {
    * @return \Drupal\media\MediaInterface
    *   The saved media entity.
    */
-  private function createMedia(FileInterface $file, string $name): MediaInterface {
+  private function createMedia(AiEditorialSessionInterface $session, FileInterface $file, string $name): MediaInterface {
     $media = $this->entityTypeManager->getStorage('media')->create([
       'bundle' => $this->getMediaBundle(),
       'name' => $name,
       'status' => 0,
+      self::SESSION_FIELD => ['target_id' => $session->id()],
       $this->getSourceField() => [
         'target_id' => $file->id(),
         'entity' => $file,
@@ -394,71 +371,6 @@ abstract class DocumentRepositoryBase implements DocumentRepositoryInterface {
 
     $file = $media->get($this->getSourceField())->entity;
     return $file instanceof FileInterface ? $file : NULL;
-  }
-
-  /**
-   * Changes the session's document references under a per-session lock.
-   *
-   * Concurrent requests each hold their own copy of the session, so a copy
-   * saved last would overwrite the references the others added. The change
-   * is applied to a fresh copy loaded inside the lock and saved before the
-   * next request gets its turn.
-   *
-   * @param \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $session
-   *   The session whose references change.
-   * @param callable $update
-   *   Receives the fresh session's document field and changes it in place.
-   *   It may throw to abort without saving.
-   * @param string $busyMessage
-   *   The error message when the lock cannot be acquired. Tells the user
-   *   what did not happen and what to do about it.
-   *
-   * @throws \Drupal\oe_ai_assistant\Exception\ActionException
-   *   When the lock cannot be acquired.
-   */
-  private function updateSessionDocuments(AiEditorialSessionInterface $session, callable $update, string $busyMessage): void {
-    $name = 'oe_ai_assistant_documents_' . $session->id();
-    if (!$this->lock->acquire($name)) {
-      $this->lock->wait($name);
-      if (!$this->lock->acquire($name)) {
-        throw new ActionException('busy', $busyMessage, 503);
-      }
-    }
-
-    try {
-      $storage = $this->entityTypeManager->getStorage('ai_editorial_session');
-      $storage->resetCache([$session->id()]);
-      $fresh = $storage->load($session->id());
-      $update($fresh->get($this->getSessionField()));
-      $fresh->save();
-    }
-    finally {
-      $this->lock->release($name);
-    }
-  }
-
-  /**
-   * Checks whether a document is still attached to another session.
-   *
-   * @param int $document_id
-   *   The media entity ID of the document.
-   * @param int $session_id
-   *   The session to exclude from the check.
-   *
-   * @return bool
-   *   TRUE when another session references the document.
-   */
-  private function isReferencedByAnotherSession(int $document_id, int $session_id): bool {
-    $ids = $this->entityTypeManager
-      ->getStorage('ai_editorial_session')
-      ->getQuery()
-      ->accessCheck(FALSE)
-      ->condition($this->getSessionField() . '.target_id', $document_id)
-      ->condition('id', $session_id, '<>')
-      ->range(0, 1)
-      ->execute();
-
-    return $ids !== [];
   }
 
 }

@@ -225,7 +225,7 @@ DraftingRemoveDocumentRequest:
   properties:
     sessionId:
       type: string
-      description: The editorial session that references the document.
+      description: The editorial session the document belongs to.
     category:
       $ref: "../../openapi.yaml#/components/schemas/DraftingDocumentCategory"
     documentId:
@@ -250,7 +250,7 @@ DraftingExtractDocumentRequest:
   properties:
     sessionId:
       type: string
-      description: The editorial session that references the document.
+      description: The editorial session the document belongs to.
     category:
       $ref: "../../openapi.yaml#/components/schemas/DraftingDocumentCategory"
     documentId:

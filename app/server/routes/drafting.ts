@@ -385,7 +385,7 @@ export function createDraftingRouter(service: DraftingService): Router {
     if (!document) {
       res.status(404).json({
         code: "invalid_request",
-        message: "The document is not referenced by this editorial session.",
+        message: "The document does not belong to this editorial session.",
       });
       return;
     }

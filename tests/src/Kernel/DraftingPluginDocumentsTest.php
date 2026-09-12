@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Drupal\Tests\oe_ai_assistant\Kernel;
 
 use Drupal\file\FileInterface;
-use Drupal\Core\Lock\LockBackendInterface;
 use Drupal\file\Upload\InputStreamFileWriterInterface;
 use Drupal\field\FieldConfigInterface;
 use Drupal\media\MediaInterface;
@@ -16,8 +15,6 @@ use Drupal\oe_ai_assistant\Service\RequestValidator;
 use Drupal\file\Upload\InputStreamUploadedFile;
 use Drupal\file\Upload\UploadedFileInterface;
 use Drupal\oe_ai_assistant\Service\Drafting\ContextDocumentRepository;
-use Drupal\oe_ai_assistant\Service\Drafting\DocumentExtractionProcessorInterface;
-use Drupal\oe_ai_assistant\Service\Drafting\DocumentExtractionWorkflowInterface;
 use Drupal\oe_ai_assistant_test\Plugin\AiProvider\MockAiProvider;
 use Drupal\oe_ai_assistant_test\Plugin\AiProvider\MockResponse;
 use GuzzleHttp\Psr7\Response;
@@ -109,11 +106,7 @@ class DraftingPluginDocumentsTest extends AiEditorialSessionKernelTestBase {
     // records a usage through its file field, and that is what must flip it.
     $this->assertTrue($file->isPermanent());
 
-    $sessionStorage = $this->container->get('entity_type.manager')
-      ->getStorage('ai_editorial_session');
-    $sessionStorage->resetCache([$session->id()]);
-    $reloadedSession = $sessionStorage->load($session->id());
-    $this->assertSame($documentId, (string) $reloadedSession->get('context_documents')->target_id);
+    $this->assertSame((string) $session->id(), (string) $media->get('oe_ai_session')->target_id);
 
     $listRequest = Request::create('', 'POST', [], [], [], ['CONTENT_TYPE' => 'application/json'], json_encode([
       'sessionId' => $session->id(),
@@ -132,9 +125,7 @@ class DraftingPluginDocumentsTest extends AiEditorialSessionKernelTestBase {
     $removeResponse = $plugin->executeAction('remove-document', $removeRequest);
 
     $this->assertSame(['status' => 'ok'], $removeResponse);
-    $sessionStorage->resetCache([$session->id()]);
-    $reloadedSession = $sessionStorage->load($session->id());
-    $this->assertTrue($reloadedSession->get('context_documents')->isEmpty());
+    $this->assertSessionHasNoDocuments($session->id());
     $this->assertNull($this->container->get('entity_type.manager')->getStorage('media')->load($documentId));
     $this->assertNull($this->container->get('entity_type.manager')->getStorage('file')->load($file->id()));
   }
@@ -181,13 +172,7 @@ class DraftingPluginDocumentsTest extends AiEditorialSessionKernelTestBase {
     $removePayload = json_decode($removeResponse->getContent(), TRUE, 512, JSON_THROW_ON_ERROR);
 
     $this->assertSame(['status' => 'ok'], $removePayload);
-    $this->container->get('entity_type.manager')
-      ->getStorage('ai_editorial_session')
-      ->resetCache([$session->id()]);
-    $reloadedSession = $this->container->get('entity_type.manager')
-      ->getStorage('ai_editorial_session')
-      ->load($session->id());
-    $this->assertTrue($reloadedSession->get('context_documents')->isEmpty());
+    $this->assertSessionHasNoDocuments($session->id());
     $this->assertNull($this->container->get('entity_type.manager')->getStorage('media')->load($documentId));
   }
 
@@ -222,13 +207,7 @@ class DraftingPluginDocumentsTest extends AiEditorialSessionKernelTestBase {
     $this->assertSame('bad_request', $payload['code']);
     $this->assertStringContainsString($field . ':', $payload['message']);
 
-    $this->container->get('entity_type.manager')
-      ->getStorage('ai_editorial_session')
-      ->resetCache([$session->id()]);
-    $reloadedSession = $this->container->get('entity_type.manager')
-      ->getStorage('ai_editorial_session')
-      ->load($session->id());
-    $this->assertTrue($reloadedSession->get('context_documents')->isEmpty());
+    $this->assertSessionHasNoDocuments($session->id());
   }
 
   /**
@@ -274,11 +253,10 @@ class DraftingPluginDocumentsTest extends AiEditorialSessionKernelTestBase {
   }
 
   /**
-   * Tests uploads from concurrent requests all stay referenced by the session.
+   * Tests uploads from concurrent requests all belong to the session.
    *
-   * Each request loads its own copy of the session before any of them saves.
-   * Appending to a stale copy must not drop the references other requests
-   * already stored.
+   * Each request holds its own copy of the session; since a document only
+   * references the session and never writes it, stale copies are harmless.
    */
   public function testConcurrentUploadsKeepEveryReference(): void {
     $owner = $this->createUser();
@@ -299,88 +277,6 @@ class DraftingPluginDocumentsTest extends AiEditorialSessionKernelTestBase {
     $storage->resetCache([$session->id()]);
     $documents = $repository->list($storage->load($session->id()));
     $this->assertSame(['first.txt', 'second.txt'], array_column($documents, 'title'));
-  }
-
-  /**
-   * Tests an upload that cannot take the session lock leaves nothing behind.
-   *
-   * The media and file created before the lock attempt are deleted, and the
-   * error tells the user to upload the document again.
-   */
-  public function testUploadBlockedByLockIsRolledBack(): void {
-    $owner = $this->createUser();
-    $this->container->get('current_user')->setAccount($owner);
-    $session = $this->createSession($owner);
-
-    // A lock that is always held elsewhere, even after waiting.
-    $lock = new class() implements LockBackendInterface {
-
-      /**
-       * {@inheritdoc}
-       */
-      public function acquire($name, $timeout = 30.0) {
-        return FALSE;
-      }
-
-      /**
-       * {@inheritdoc}
-       */
-      public function lockMayBeAvailable($name) {
-        return FALSE;
-      }
-
-      /**
-       * {@inheritdoc}
-       */
-      public function wait($name, $delay = 30) {
-        return TRUE;
-      }
-
-      /**
-       * {@inheritdoc}
-       */
-      public function release($name) {}
-
-      /**
-       * {@inheritdoc}
-       */
-      public function releaseAll($lockId = NULL) {}
-
-      /**
-       * {@inheritdoc}
-       */
-      public function getLockId() {
-        return 'test';
-      }
-
-    };
-    // The shared repository service was built with the real lock, so build
-    // one with the blocked lock instead.
-    $repository = new ContextDocumentRepository(
-      $this->container->get('entity_type.manager'),
-      $this->container->get('file_system'),
-      $this->container->get('file.upload_handler'),
-      $this->container->get('logger.channel.oe_ai_assistant'),
-      $lock,
-      $this->container->get(DocumentExtractionWorkflowInterface::class),
-      $this->container->get(DocumentExtractionProcessorInterface::class),
-    );
-
-    try {
-      $repository->add($session, $this->stageUpload('blocked.txt', 'Blocked contents.'));
-      $this->fail('The upload was not rejected.');
-    }
-    catch (ActionException $e) {
-      $this->assertSame(503, $e->statusCode);
-      $this->assertStringContainsString('Upload it again', $e->getMessage());
-    }
-
-    // Neither the media nor its file survive; the media type's generic
-    // thumbnail file is unrelated and stays.
-    $entityTypeManager = $this->container->get('entity_type.manager');
-    $this->assertSame([], $entityTypeManager->getStorage('media')->loadMultiple());
-    $this->assertSame([], $entityTypeManager->getStorage('file')->loadByProperties(['filename' => 'blocked.txt']));
-    $this->assertSessionHasNoDocuments($session->id());
   }
 
   /**
@@ -413,13 +309,7 @@ class DraftingPluginDocumentsTest extends AiEditorialSessionKernelTestBase {
       $this->assertStringContainsString('exceeding the maximum file size', $e->getMessage());
     }
 
-    $this->container->get('entity_type.manager')
-      ->getStorage('ai_editorial_session')
-      ->resetCache([$session->id()]);
-    $reloadedSession = $this->container->get('entity_type.manager')
-      ->getStorage('ai_editorial_session')
-      ->load($session->id());
-    $this->assertTrue($reloadedSession->get('context_documents')->isEmpty());
+    $this->assertSessionHasNoDocuments($session->id());
   }
 
   /**
@@ -444,13 +334,7 @@ class DraftingPluginDocumentsTest extends AiEditorialSessionKernelTestBase {
       $this->assertStringContainsString('Only files with the following extensions are allowed:', $e->getMessage());
     }
 
-    $this->container->get('entity_type.manager')
-      ->getStorage('ai_editorial_session')
-      ->resetCache([$session->id()]);
-    $reloadedSession = $this->container->get('entity_type.manager')
-      ->getStorage('ai_editorial_session')
-      ->load($session->id());
-    $this->assertTrue($reloadedSession->get('context_documents')->isEmpty());
+    $this->assertSessionHasNoDocuments($session->id());
   }
 
   /**
@@ -624,11 +508,12 @@ class DraftingPluginDocumentsTest extends AiEditorialSessionKernelTestBase {
   }
 
   /**
-   * Tests removing a document from one session keeps it for another.
+   * Tests that a document of another session cannot be removed.
    *
-   * Only the last reference may delete the media and its file.
+   * Documents belong to exactly one session; the id alone never grants
+   * access to a document uploaded elsewhere.
    */
-  public function testRemoveKeepsDocumentSharedWithAnotherSession(): void {
+  public function testRemoveRejectsDocumentOfAnotherSession(): void {
     $owner = $this->createUser();
     $this->container->get('current_user')->setAccount($owner);
     $session = $this->createSession($owner);
@@ -636,36 +521,25 @@ class DraftingPluginDocumentsTest extends AiEditorialSessionKernelTestBase {
     $plugin = $this->container->get(AiAssistantPluginManager::class)
       ->createInstance('drafting');
 
-    // Upload the document through the first session, then reference the
-    // resulting media from a second session as well. The API never creates
-    // this state itself, but context_documents is a plain multi-value
-    // entity reference, so nothing prevents it, and deleteOrphanedBy()
-    // already treats it as a case to guard against.
-    $addResponse = $plugin->executeAction('add-document', $this->createUploadRequest((string) $session->id(), 'context', 'shared.txt', 'Shared contents.'));
+    $addResponse = $plugin->executeAction('add-document', $this->createUploadRequest((string) $otherSession->id(), 'context', 'other.txt', 'Other contents.'));
     $documentId = $addResponse['document']['id'];
-    $otherSession->get('context_documents')->appendItem(['target_id' => $documentId]);
-    $otherSession->save();
 
-    // Remove the document from the first session only.
     $removeRequest = Request::create('', 'POST', [], [], [], ['CONTENT_TYPE' => 'application/json'], json_encode([
-      'sessionId' => $session->id(),
+      'sessionId' => (string) $session->id(),
       'category' => 'context',
       'documentId' => $documentId,
     ], JSON_THROW_ON_ERROR));
-    $plugin->executeAction('remove-document', $removeRequest);
+    try {
+      $plugin->executeAction('remove-document', $removeRequest);
+      $this->fail('A document of another session must not be removable.');
+    }
+    catch (ActionException $e) {
+      $this->assertSame(404, $e->statusCode);
+    }
 
-    // The first session drops its reference.
-    $sessionStorage = $this->container->get('entity_type.manager')->getStorage('ai_editorial_session');
-    $sessionStorage->resetCache([$session->id(), $otherSession->id()]);
-    $this->assertTrue($sessionStorage->load($session->id())->get('context_documents')->isEmpty());
-
-    // The second session still references the document, so the media and
-    // its file must survive the removal; only the last reference may delete
-    // them. Bypass the static cache to read what is actually stored.
     $mediaStorage = $this->container->get('entity_type.manager')->getStorage('media');
     $mediaStorage->resetCache([$documentId]);
-    $this->assertInstanceOf(MediaInterface::class, $mediaStorage->load($documentId), 'A document still referenced by another session must not be deleted.');
-    $this->assertSame($documentId, (string) $sessionStorage->load($otherSession->id())->get('context_documents')->target_id);
+    $this->assertInstanceOf(MediaInterface::class, $mediaStorage->load($documentId));
   }
 
   /**
@@ -813,13 +687,16 @@ class DraftingPluginDocumentsTest extends AiEditorialSessionKernelTestBase {
   }
 
   /**
-   * Asserts that the session references no context documents.
+   * Asserts that no context document references the session.
    */
   private function assertSessionHasNoDocuments(string|int $sessionId): void {
-    $storage = $this->container->get('entity_type.manager')
-      ->getStorage('ai_editorial_session');
-    $storage->resetCache([$sessionId]);
-    $this->assertTrue($storage->load($sessionId)->get('context_documents')->isEmpty());
+    $count = $this->container->get('entity_type.manager')->getStorage('media')->getQuery()
+      ->accessCheck(FALSE)
+      ->condition('bundle', 'ai_context_document')
+      ->condition('oe_ai_session', (int) $sessionId)
+      ->count()
+      ->execute();
+    $this->assertSame(0, (int) $count);
   }
 
   /**

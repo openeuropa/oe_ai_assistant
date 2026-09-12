@@ -6,6 +6,7 @@ dependencies:
     - field.field.media.ai_context_document.oe_ai_document_extract
     - field.field.media.ai_context_document.oe_ai_document_summary
     - field.field.media.ai_context_document.oe_ai_extraction_state
+    - field.field.media.ai_context_document.oe_ai_session
     - image.style.thumbnail
     - media.type.ai_context_document
   module:
@@ -74,3 +75,4 @@ hidden:
   name: true
   oe_ai_document_extract: true
   oe_ai_extraction_state: true
+  oe_ai_session: true
