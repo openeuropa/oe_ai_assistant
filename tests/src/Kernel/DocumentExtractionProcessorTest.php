@@ -217,22 +217,40 @@ class DocumentExtractionProcessorTest extends AiEditorialSessionKernelTestBase {
     // The stub must be in place before any save instantiates the processor.
     $this->container->set('lock', new class() implements LockBackendInterface {
 
+      /**
+       * {@inheritdoc}
+       */
       public function acquire($name, $timeout = 30.0) {
         return FALSE;
       }
 
+      /**
+       * {@inheritdoc}
+       */
       public function lockMayBeAvailable($name) {
         return FALSE;
       }
 
+      /**
+       * {@inheritdoc}
+       */
       public function wait($name, $delay = 30) {
         return TRUE;
       }
 
+      /**
+       * {@inheritdoc}
+       */
       public function release($name) {}
 
+      /**
+       * {@inheritdoc}
+       */
       public function releaseAll($lockId = NULL) {}
 
+      /**
+       * {@inheritdoc}
+       */
       public function getLockId() {
         return 'test';
       }
