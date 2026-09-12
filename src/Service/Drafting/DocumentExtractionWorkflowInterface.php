@@ -84,4 +84,20 @@ interface DocumentExtractionWorkflowInterface {
    */
   public function isSettled(string $state): bool;
 
+  /**
+   * Finds documents that need a processing run.
+   *
+   * Resting documents in scheduled or extracted come first, then in-flight
+   * documents unchanged for longer than the threshold.
+   *
+   * @param int $limit
+   *   Maximum number of documents.
+   * @param int $staleAfterSeconds
+   *   Age after which an in-flight document counts as abandoned.
+   *
+   * @return array
+   *   Media ids mapped to TRUE when the document must be reclaimed.
+   */
+  public function findPending(int $limit, int $staleAfterSeconds): array;
+
 }

@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace Drupal\oe_ai_assistant\Hook;
 
 use Drupal\Core\DependencyInjection\AutowireTrait;
+use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Hook\Attribute\Hook;
 use Drupal\media\MediaInterface;
+use Drupal\oe_ai_assistant\Service\Drafting\DocumentExtractionProcessorInterface;
 use Drupal\oe_ai_assistant\Service\Drafting\DocumentExtractionWorkflowInterface;
 
 /**
@@ -26,9 +28,38 @@ final class DocumentMediaHooks {
    */
   public const string SUMMARY_FIELD = 'oe_ai_document_summary';
 
+  /**
+   * Documents processed per cron run.
+   */
+  private const int CRON_BATCH = 5;
+
+  /**
+   * Seconds after which an in-flight document counts as abandoned.
+   */
+  private const int STALE_AFTER = 600;
+
   public function __construct(
     private readonly DocumentExtractionWorkflowInterface $workflow,
+    private readonly DocumentExtractionProcessorInterface $processor,
+    private readonly EntityTypeManagerInterface $entityTypeManager,
   ) {}
+
+  /**
+   * Implements hook_cron().
+   *
+   * Safety net for documents the app never triggered, lost requests and
+   * crashed runs. Each picked document is driven to done or error.
+   */
+  #[Hook('cron')]
+  public function processPendingDocuments(): void {
+    $storage = $this->entityTypeManager->getStorage('media');
+    foreach ($this->workflow->findPending(self::CRON_BATCH, self::STALE_AFTER) as $id => $reclaim) {
+      $media = $storage->load($id);
+      if ($media instanceof MediaInterface) {
+        $this->processor->process($media, $reclaim);
+      }
+    }
+  }
 
   /**
    * Implements hook_media_presave().
