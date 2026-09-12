@@ -62,6 +62,20 @@ interface DocumentRepositoryInterface {
   public function remove(AiEditorialSessionInterface $session, string $documentId): void;
 
   /**
+   * Describes the documents of a session for prompt injection.
+   *
+   * Each descriptor carries the serialized item plus the category, the
+   * summary and the extracted text (NULL until the pipeline stored one).
+   *
+   * @param \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $session
+   *   The session whose documents are described.
+   *
+   * @return array
+   *   The document descriptors.
+   */
+  public function describe(AiEditorialSessionInterface $session): array;
+
+  /**
    * Runs the extraction pipeline on a document of the session.
    *
    * A no-op that reports the state when the document is in flight or done.

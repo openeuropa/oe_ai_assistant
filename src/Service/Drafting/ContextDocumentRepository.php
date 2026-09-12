@@ -33,4 +33,11 @@ final class ContextDocumentRepository extends DocumentRepositoryBase {
     return 'oe_ai_context_document';
   }
 
+  /**
+   * {@inheritdoc}
+   */
+  protected function getCategory(): string {
+    return self::CATEGORY;
+  }
+
 }

@@ -15,6 +15,7 @@ use Drupal\file\Upload\UploadedFileInterface;
 use Drupal\media\MediaInterface;
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
 use Drupal\oe_ai_assistant\Exception\ActionException;
+use Drupal\oe_ai_assistant\Hook\DocumentMediaHooks;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 
@@ -72,6 +73,11 @@ abstract class DocumentRepositoryBase implements DocumentRepositoryInterface {
   abstract protected function getSourceField(): string;
 
   /**
+   * Gets the API document category served by the repository.
+   */
+  abstract protected function getCategory(): string;
+
+  /**
    * Builds a bare source field item to read upload settings from.
    *
    * The file field type encapsulates the upload destination
@@ -125,6 +131,23 @@ abstract class DocumentRepositoryBase implements DocumentRepositoryInterface {
    */
   public function remove(AiEditorialSessionInterface $session, string $documentId): void {
     $this->deleteDocument($this->loadOwned($session, $documentId));
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function describe(AiEditorialSessionInterface $session): array {
+    $documents = [];
+    foreach ($this->loadAll($session) as $media) {
+      $extract = trim((string) ($media->get(DocumentMediaHooks::EXTRACT_FIELD)->value ?? ''));
+      $documents[] = $this->serialize($media) + [
+        'category' => $this->getCategory(),
+        'summary' => trim((string) ($media->get(DocumentMediaHooks::SUMMARY_FIELD)->value ?? '')),
+        'extract' => $extract === '' ? NULL : $extract,
+      ];
+    }
+
+    return $documents;
   }
 
   /**
