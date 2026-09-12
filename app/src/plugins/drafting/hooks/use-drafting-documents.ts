@@ -16,6 +16,15 @@ export type { DraftingDocument } from "../types";
 export const DOCUMENT_POLL_INTERVAL_MS = 5000;
 
 /**
+ * Files accepted in one selection.
+ *
+ * A frontend-only guard against a selection of hundreds of files hitting
+ * the backend at once; larger batches are simply selected in several
+ * rounds.
+ */
+export const MAX_FILES_PER_SELECTION = 10;
+
+/**
  * Pending refresh timer, module-level like the request counter: the hook
  * has a single consumer and the timer must survive re-renders.
  */
@@ -137,6 +146,8 @@ export function useDraftingDocuments(
   const [isLoading, setIsLoading] = useState(enabled);
   // Failure of the initial list request, shown instead of the list.
   const [loadError, setLoadError] = useState<string | null>(null);
+  // Why the last file selection was refused, cleared by the next one.
+  const [selectionError, setSelectionError] = useState<string | null>(null);
 
   // Fetch the persisted documents once after boot.
   useEffect(() => {
@@ -210,6 +221,8 @@ export function useDraftingDocuments(
   /**
    * Uploads every chosen file concurrently, one slot per file.
    *
+   * Selections above MAX_FILES_PER_SELECTION are refused as a whole.
+   *
    * Each file gets an uploading slot immediately. On success the slot is
    * replaced by the server-returned document; on failure it switches to
    * an error slot the user can dismiss.
@@ -218,6 +231,15 @@ export function useDraftingDocuments(
     if (!fileList) {
       return;
     }
+    // Refuse the whole selection above the limit rather than uploading a
+    // silent subset: the editor sees the message and selects again.
+    if (fileList.length > MAX_FILES_PER_SELECTION) {
+      setSelectionError(
+        `Select up to ${MAX_FILES_PER_SELECTION} files at a time. Larger sets can be added in several rounds.`,
+      );
+      return;
+    }
+    setSelectionError(null);
     const entries = Array.from(fileList).map((file) => ({
       file,
       slot: {
@@ -279,6 +301,7 @@ export function useDraftingDocuments(
     isSaving,
     isLoading,
     loadError,
+    selectionError,
     removeDocument,
     retryDocument,
     uploadFiles,
