@@ -6,6 +6,7 @@ dependencies:
     - field.field.media.ai_context_document.oe_ai_document_extract
     - field.field.media.ai_context_document.oe_ai_document_summary
     - field.field.media.ai_context_document.oe_ai_extraction_state
+    - field.field.media.ai_context_document.oe_ai_session
     - media.type.ai_context_document
   module:
     - file
@@ -26,6 +27,16 @@ content:
     weight: -5
     region: content
     settings:
+      size: 60
+      placeholder: ''
+    third_party_settings: {  }
+  oe_ai_session:
+    type: entity_reference_autocomplete
+    weight: 0
+    region: content
+    settings:
+      match_operator: CONTAINS
+      match_limit: 10
       size: 60
       placeholder: ''
     third_party_settings: {  }

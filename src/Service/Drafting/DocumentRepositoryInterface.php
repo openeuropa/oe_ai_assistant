@@ -11,18 +11,18 @@ use Drupal\file\Upload\UploadedFileInterface;
  * Manages the documents of one category attached to editorial sessions.
  *
  * A repository owns every storage detail of its document category (media
- * bundle, source field, session reference field, upload directory) and is
- * the only component allowed to know them. Callers deal exclusively in
- * sessions, uploads and serialized document items.
+ * bundle, source field, upload directory) and is the only component allowed
+ * to know them. A document references the session it belongs to. Callers
+ * deal exclusively in sessions, uploads and serialized document items.
  */
 interface DocumentRepositoryInterface {
 
   /**
    * Stores an uploaded file and attaches it to a session as a document.
    *
-   * Saves the upload as a managed file, wraps it in a media entity and
-   * appends a reference to the session. If any step fails, the entities
-   * created so far are deleted before the failure is rethrown.
+   * Saves the upload as a managed file and wraps it in a media entity that
+   * references the session. If any step fails, the entities created so far
+   * are deleted before the failure is rethrown.
    *
    * @param \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $session
    *   The session receiving the document.
@@ -38,7 +38,7 @@ interface DocumentRepositoryInterface {
   public function add(AiEditorialSessionInterface $session, UploadedFileInterface $upload): array;
 
   /**
-   * Lists the documents referenced by a session.
+   * Lists the documents of a session in upload order.
    *
    * @param \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $session
    *   The session whose documents should be listed.
@@ -49,15 +49,15 @@ interface DocumentRepositoryInterface {
   public function list(AiEditorialSessionInterface $session): array;
 
   /**
-   * Detaches a document from a session and deletes its entities.
+   * Deletes a document of the session together with its file.
    *
    * @param \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $session
-   *   The session that references the document.
+   *   The session the document belongs to.
    * @param string $documentId
    *   The media entity ID of the document to remove.
    *
    * @throws \Drupal\oe_ai_assistant\Exception\ActionException
-   *   When the document is not referenced by the session.
+   *   When the document does not belong to the session.
    */
   public function remove(AiEditorialSessionInterface $session, string $documentId): void;
 
@@ -67,7 +67,7 @@ interface DocumentRepositoryInterface {
    * A no-op that reports the state when the document is in flight or done.
    *
    * @param \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $session
-   *   The session that references the document.
+   *   The session the document belongs to.
    * @param string $documentId
    *   The media entity ID of the document.
    *
@@ -75,19 +75,16 @@ interface DocumentRepositoryInterface {
    *   The document state after the call.
    *
    * @throws \Drupal\oe_ai_assistant\Exception\ActionException
-   *   When the document is not referenced by the session.
+   *   When the document does not belong to the session.
    */
   public function extract(AiEditorialSessionInterface $session, string $documentId): string;
 
   /**
-   * Deletes the documents orphaned by a session deletion.
-   *
-   * Removes the media entities and managed files of documents referenced
-   * by the given session, unless another session still references them.
+   * Deletes every document of a session, with their managed files.
    *
    * @param \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $session
    *   The session being deleted.
    */
-  public function deleteOrphanedBy(AiEditorialSessionInterface $session): void;
+  public function deleteForSession(AiEditorialSessionInterface $session): void;
 
 }

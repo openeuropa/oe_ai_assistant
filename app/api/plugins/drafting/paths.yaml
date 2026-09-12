@@ -234,7 +234,7 @@ extractDocument:
       "403":
         $ref: "../../openapi.yaml#/components/responses/Forbidden"
       "404":
-        description: The document is not referenced by the session.
+        description: The document does not belong to the session.
         content:
           application/json:
             schema:

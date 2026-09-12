@@ -730,7 +730,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
   }
 
   /**
-   * Lists documents referenced by the session.
+   * Lists the documents of the session.
    *
    * @param \Symfony\Component\HttpFoundation\Request $request
    *   The incoming JSON request.
@@ -747,7 +747,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
   }
 
   /**
-   * Removes a referenced document from the session and deletes its entities.
+   * Removes a document of the session and deletes its entities.
    *
    * @param \Symfony\Component\HttpFoundation\Request $request
    *   The incoming JSON request.
