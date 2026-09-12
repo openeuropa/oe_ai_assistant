@@ -93,6 +93,10 @@ function loadErrorState(): string | null {
   return reactState.values[4] as string | null;
 }
 
+function selectionErrorState(): string | null {
+  return reactState.values[5] as string | null;
+}
+
 /** Settles promises queued by the initial list fetch. */
 async function flushAsync(): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, 0));
@@ -378,6 +382,43 @@ describe("useDraftingDocuments", () => {
     expect(selectedState()[0]?.status).toBe("done");
     await vi.advanceTimersByTimeAsync(DOCUMENT_POLL_INTERVAL_MS * 2);
     expect(apiMocks.listDraftingDocuments).toHaveBeenCalledTimes(2);
+  });
+
+  it("refuses a selection above the per-selection limit", async () => {
+    const { useDraftingDocuments, MAX_FILES_PER_SELECTION } = await loadHook();
+    const hook = useDraftingDocuments();
+    await flushAsync();
+    const files = Array.from(
+      { length: MAX_FILES_PER_SELECTION + 1 },
+      (_, index) => new File(["a"], `file-${index}.txt`),
+    );
+
+    await hook.uploadFiles(fileList(files));
+
+    expect(apiMocks.addDraftingDocument).not.toHaveBeenCalled();
+    expect(uploadsState()).toEqual([]);
+    expect(selectionErrorState()).toContain(String(MAX_FILES_PER_SELECTION));
+  });
+
+  it("accepts a selection at the limit and clears the message", async () => {
+    apiMocks.addDraftingDocument.mockResolvedValue(uploadedDocuments[0]);
+    const { useDraftingDocuments, MAX_FILES_PER_SELECTION } = await loadHook();
+    const hook = useDraftingDocuments();
+    await flushAsync();
+    const files = Array.from(
+      { length: MAX_FILES_PER_SELECTION },
+      (_, index) => new File(["a"], `file-${index}.txt`),
+    );
+
+    await hook.uploadFiles(fileList([...files, new File(["b"], "extra.txt")]));
+    expect(selectionErrorState()).not.toBeNull();
+
+    await hook.uploadFiles(fileList(files));
+
+    expect(apiMocks.addDraftingDocument).toHaveBeenCalledTimes(
+      MAX_FILES_PER_SELECTION,
+    );
+    expect(selectionErrorState()).toBeNull();
   });
 
   it("does not poll when every document is settled", async () => {

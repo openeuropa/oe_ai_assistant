@@ -263,6 +263,7 @@ function DraftingChat() {
           isSaving={documents.isSaving}
           isLoading={documents.isLoading}
           loadError={documents.loadError}
+          selectionError={documents.selectionError}
         />
       ),
     });
