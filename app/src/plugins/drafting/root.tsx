@@ -11,7 +11,7 @@
  */
 
 import { AssistantRuntimeProvider } from "@assistant-ui/react";
-import { FileText, LayoutTemplate, Megaphone } from "lucide-react";
+import { FileText, LayoutTemplate, Loader2, Megaphone } from "lucide-react";
 import { type ReactNode, useCallback } from "react";
 import { CardSelectPane } from "@/components/ui/card-select-pane";
 import type { PaneTabItem } from "@/components/ui/pane-tabs";
@@ -237,16 +237,26 @@ function DraftingChat() {
       id: "documents",
       icon: <FileText size={20} />,
       title: "Context documents",
-      summary: documents.isLoading
-        ? "Loading"
-        : documents.count === 1
-          ? "1 document"
-          : `${documents.count} documents`,
+      summary: documents.isLoading ? (
+        "Loading"
+      ) : documents.processingCount > 0 ? (
+        // The pipeline still owns some documents: say so even while the
+        // pane is closed.
+        <span className="inline-flex items-center gap-1">
+          <Loader2 size={12} className="animate-spin" />
+          Processing {documents.processingCount} of {documents.count}
+        </span>
+      ) : documents.count === 1 ? (
+        "1 document"
+      ) : (
+        `${documents.count} documents`
+      ),
       render: (close) => (
         <DocumentsPanel
           selected={documents.selected}
           uploads={documents.uploads}
           onRemove={documents.removeDocument}
+          onRetry={documents.retryDocument}
           onUpload={documents.uploadFiles}
           onDismissUpload={documents.dismissUpload}
           onClose={close}

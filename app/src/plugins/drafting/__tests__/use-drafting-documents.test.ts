@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { setConfig } from "@/config";
 import { useAppStore } from "@/store";
 import type { DocumentUpload } from "../hooks/use-drafting-documents";
@@ -10,6 +10,7 @@ const reactState = vi.hoisted(() => ({
 
 const apiMocks = vi.hoisted(() => ({
   addDraftingDocument: vi.fn(),
+  extractDraftingDocument: vi.fn(),
   listDraftingDocuments: vi.fn(),
   removeDraftingDocument: vi.fn(),
 }));
@@ -103,9 +104,15 @@ function pendingDocumentsWork(): boolean {
 }
 
 describe("useDraftingDocuments", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   beforeEach(() => {
     reactState.values = [];
     apiMocks.addDraftingDocument.mockReset();
+    apiMocks.extractDraftingDocument.mockReset();
+    apiMocks.extractDraftingDocument.mockResolvedValue("extracting");
     apiMocks.listDraftingDocuments.mockReset();
     apiMocks.removeDraftingDocument.mockReset();
     apiMocks.listDraftingDocuments.mockResolvedValue([initialDocument]);
@@ -276,5 +283,111 @@ describe("useDraftingDocuments", () => {
     // Removal failures surface in the confirmation dialog and never touch
     // the upload slots.
     expect(uploadsState()).toEqual([]);
+  });
+
+  it("fires extract-document after an upload and polls until settled", async () => {
+    const scheduled = { ...uploadedDocuments[0], status: "scheduled" as const };
+    apiMocks.addDraftingDocument.mockResolvedValueOnce(scheduled);
+    apiMocks.listDraftingDocuments
+      .mockResolvedValueOnce([initialDocument])
+      .mockResolvedValueOnce([
+        initialDocument,
+        { ...scheduled, status: "extracting" },
+      ])
+      .mockResolvedValueOnce([
+        initialDocument,
+        { ...scheduled, status: "done" },
+      ]);
+    const { useDraftingDocuments, DOCUMENT_POLL_INTERVAL_MS } =
+      await loadHook();
+    const hook = useDraftingDocuments();
+    await flushAsync();
+    // Fake timers only after the initial fetch settled: flushAsync relies
+    // on a real setTimeout.
+    vi.useFakeTimers();
+
+    await hook.uploadFiles(fileList([new File(["a"], "Uploaded A.txt")]));
+    expect(apiMocks.extractDraftingDocument).toHaveBeenCalledWith(
+      "uploaded-a",
+      "context",
+    );
+    expect(selectedState()[1]?.status).toBe("scheduled");
+
+    await vi.advanceTimersByTimeAsync(DOCUMENT_POLL_INTERVAL_MS);
+    expect(apiMocks.listDraftingDocuments).toHaveBeenCalledTimes(2);
+    expect(selectedState()[1]?.status).toBe("extracting");
+
+    await vi.advanceTimersByTimeAsync(DOCUMENT_POLL_INTERVAL_MS);
+    expect(selectedState()[1]?.status).toBe("done");
+
+    // Settled: no further polling.
+    await vi.advanceTimersByTimeAsync(DOCUMENT_POLL_INTERVAL_MS * 2);
+    expect(apiMocks.listDraftingDocuments).toHaveBeenCalledTimes(3);
+  });
+
+  it("does not report the extraction trigger as pending work", async () => {
+    const scheduled = { ...uploadedDocuments[0], status: "scheduled" as const };
+    apiMocks.addDraftingDocument.mockResolvedValueOnce(scheduled);
+    apiMocks.extractDraftingDocument.mockReturnValueOnce(new Promise(() => {}));
+    const { useDraftingDocuments } = await loadHook();
+    const hook = useDraftingDocuments();
+    await flushAsync();
+
+    await hook.uploadFiles(fileList([new File(["a"], "Uploaded A.txt")]));
+
+    // The upload settled even though the extraction never answers.
+    expect(pendingDocumentsWork()).toBe(false);
+  });
+
+  it("retries a failed document and resumes polling", async () => {
+    const failed = { ...initialDocument, status: "error" as const };
+    apiMocks.listDraftingDocuments
+      .mockResolvedValueOnce([failed])
+      .mockResolvedValueOnce([{ ...failed, status: "extracting" }])
+      .mockResolvedValueOnce([{ ...failed, status: "done" }]);
+    const { useDraftingDocuments, DOCUMENT_POLL_INTERVAL_MS } =
+      await loadHook();
+    const hook = useDraftingDocuments();
+    await flushAsync();
+    vi.useFakeTimers();
+
+    await hook.retryDocument("initial-document");
+    expect(apiMocks.extractDraftingDocument).toHaveBeenCalledWith(
+      "initial-document",
+      "context",
+    );
+    expect(selectedState()[0]?.status).toBe("extracting");
+
+    await vi.advanceTimersByTimeAsync(DOCUMENT_POLL_INTERVAL_MS);
+    expect(selectedState()[0]?.status).toBe("done");
+  });
+
+  it("polls after boot when a persisted document is still unsettled", async () => {
+    apiMocks.listDraftingDocuments
+      .mockResolvedValueOnce([{ ...initialDocument, status: "summarizing" }])
+      .mockResolvedValueOnce([initialDocument]);
+    const { useDraftingDocuments, DOCUMENT_POLL_INTERVAL_MS } =
+      await loadHook();
+    // The boot fetch itself schedules the first poll, so the timers must
+    // be fake before the hook runs; the fetch is flushed through them.
+    vi.useFakeTimers();
+    useDraftingDocuments();
+    await vi.advanceTimersByTimeAsync(0);
+
+    await vi.advanceTimersByTimeAsync(DOCUMENT_POLL_INTERVAL_MS);
+    expect(selectedState()[0]?.status).toBe("done");
+    await vi.advanceTimersByTimeAsync(DOCUMENT_POLL_INTERVAL_MS * 2);
+    expect(apiMocks.listDraftingDocuments).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not poll when every document is settled", async () => {
+    const { useDraftingDocuments, DOCUMENT_POLL_INTERVAL_MS } =
+      await loadHook();
+    useDraftingDocuments();
+    await flushAsync();
+    vi.useFakeTimers();
+
+    await vi.advanceTimersByTimeAsync(DOCUMENT_POLL_INTERVAL_MS * 3);
+    expect(apiMocks.listDraftingDocuments).toHaveBeenCalledTimes(1);
   });
 });

@@ -13,6 +13,7 @@
  * POST /api/plugins/drafting/set-template - Validate selected template
  * POST /api/plugins/drafting/add-document - Mock document upload
  * POST /api/plugins/drafting/list-documents - List mock documents
+ * POST /api/plugins/drafting/extract-document - Fake extraction progression
  * POST /api/plugins/drafting/remove-document - Remove a mock document
  */
 
@@ -25,20 +26,52 @@ import type {
   DraftingService,
 } from "../services/drafting-service";
 
+type MockDocumentStatus =
+  | "scheduled"
+  | "extracting"
+  | "extracted"
+  | "summarizing"
+  | "done"
+  | "error";
+
 interface MockDocument {
   id: string;
   title: string;
-  status:
-    | "scheduled"
-    | "extracting"
-    | "extracted"
-    | "summarizing"
-    | "done"
-    | "error";
+  status: MockDocumentStatus;
   meta: {
     type: string;
     size: number;
   };
+}
+
+/**
+ * Fakes the extraction pipeline: the status advances every two seconds
+ * until done. A filename containing "fail" stops at error after the
+ * extraction step, so the retry control can be exercised.
+ */
+const MOCK_PROGRESSION: MockDocumentStatus[] = [
+  "extracting",
+  "extracted",
+  "summarizing",
+  "done",
+];
+
+function startMockExtraction(document: MockDocument): void {
+  const fails = document.title.toLowerCase().includes("fail");
+  MOCK_PROGRESSION.forEach((status, index) => {
+    setTimeout(
+      () => {
+        if (fails && status === "extracted") {
+          document.status = "error";
+          return;
+        }
+        if (document.status !== "error") {
+          document.status = status;
+        }
+      },
+      (index + 1) * 2000,
+    );
+  });
 }
 
 const initialMockDocuments: MockDocument[] = [
@@ -323,6 +356,46 @@ export function createDraftingRouter(service: DraftingService): Router {
     documentsBySession.set(sessionId, [...documents, document]);
 
     res.json({ document });
+  });
+
+  /**
+   * POST /extract-document - Start (or restart) the fake extraction.
+   *
+   * Mirrors the real action: in-flight and done documents are left alone
+   * and the current status is returned.
+   */
+  router.post("/extract-document", (req, res) => {
+    const { sessionId, category, documentId } = req.body as {
+      sessionId?: string;
+      category?: string;
+      documentId?: string;
+    };
+
+    if (!sessionId || category !== "context" || !documentId) {
+      res.status(400).json({
+        code: "bad_request",
+        message: "sessionId, category, and documentId are required",
+      });
+      return;
+    }
+
+    const document = (documentsBySession.get(sessionId) ?? []).find(
+      (item) => item.id === documentId,
+    );
+    if (!document) {
+      res.status(404).json({
+        code: "invalid_request",
+        message: "The document is not referenced by this editorial session.",
+      });
+      return;
+    }
+
+    if (document.status === "scheduled" || document.status === "error") {
+      document.status = "extracting";
+      startMockExtraction(document);
+    }
+
+    res.json({ status: document.status });
   });
 
   /** POST /list-documents - Return mock documents for a session. */

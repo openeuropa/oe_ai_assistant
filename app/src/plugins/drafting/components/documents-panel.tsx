@@ -1,4 +1,4 @@
-import { FileText, Loader2, Upload, X } from "lucide-react";
+import { FileText, Loader2, RotateCcw, Upload, X } from "lucide-react";
 import { useRef, useState } from "react";
 import { Pane } from "@/components/ui/pane";
 import { formatFileSize } from "@/lib/format-file-size";
@@ -7,6 +7,7 @@ import type {
   DraftingDocument,
 } from "../hooks/use-drafting-documents";
 import { ConfirmRemovalDialog } from "./confirm-removal-dialog";
+import { DocumentStatusBadge } from "./document-status-badge";
 
 export interface DocumentsPanelProps {
   /** Documents attached to ground the next draft. */
@@ -15,6 +16,8 @@ export interface DocumentsPanelProps {
   uploads: DocumentUpload[];
   /** Removes a document from the list. */
   onRemove: (id: string) => void | Promise<void>;
+  /** Re-runs the extraction of a failed document. */
+  onRetry: (id: string) => void | Promise<void>;
   /** Handles files chosen from the upload control. */
   onUpload: (files: FileList | null) => void | Promise<void>;
   /** Drops a failed upload slot. */
@@ -39,6 +42,7 @@ export function DocumentsPanel({
   selected,
   uploads,
   onRemove,
+  onRetry,
   onUpload,
   onDismissUpload,
   onClose,
@@ -163,6 +167,22 @@ export function DocumentsPanel({
                     {document.meta.type.toUpperCase()} -{" "}
                     {formatFileSize(document.meta.size)}
                   </p>
+                  {/* Extraction progress; a failed document offers a retry. */}
+                  <div className="flex items-center gap-2">
+                    <DocumentStatusBadge status={document.status} />
+                    {document.status === "error" && (
+                      <button
+                        type="button"
+                        className="inline-flex cursor-pointer items-center gap-1 text-[11px] font-medium text-blue-700 hover:underline disabled:cursor-not-allowed disabled:opacity-50"
+                        aria-label={`Retry ${document.title}`}
+                        onClick={() => void onRetry(document.id)}
+                        disabled={isSaving}
+                      >
+                        <RotateCcw size={10} />
+                        Retry
+                      </button>
+                    )}
+                  </div>
                 </div>
                 <button
                   type="button"

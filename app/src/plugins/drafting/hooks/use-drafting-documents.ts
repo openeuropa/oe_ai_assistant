@@ -3,12 +3,31 @@ import { getConfig } from "@/config";
 import { useAppStore } from "@/store";
 import {
   addDraftingDocument,
+  extractDraftingDocument,
   listDraftingDocuments,
   removeDraftingDocument,
 } from "../api/drafting-api";
+import { countUnsettled, isDocumentSettled } from "../document-status";
 import type { DraftingDocument, DraftingDocumentCategory } from "../types";
 
 export type { DraftingDocument } from "../types";
+
+/** Interval between document list refreshes while a document is unsettled. */
+export const DOCUMENT_POLL_INTERVAL_MS = 5000;
+
+/**
+ * Pending refresh timer, module-level like the request counter: the hook
+ * has a single consumer and the timer must survive re-renders.
+ */
+let pollTimer: ReturnType<typeof setTimeout> | null = null;
+
+/** Cancels a scheduled refresh, if any. */
+function stopPolling(): void {
+  if (pollTimer) {
+    clearTimeout(pollTimer);
+    pollTimer = null;
+  }
+}
 
 /**
  * In-flight document requests, counted across concurrent operations.
@@ -56,6 +75,10 @@ export interface DocumentUpload {
  * removals are persisted immediately through the drafting document
  * endpoints. Uploads run concurrently: each file gets its own slot,
  * so more files can be added while earlier uploads still run.
+ *
+ * After an upload the server-side extraction is fired without waiting,
+ * and the list is refreshed every few seconds until every document has
+ * settled, so the status badges follow the pipeline.
  */
 export function useDraftingDocuments(
   category: DraftingDocumentCategory = "context",
@@ -84,6 +107,7 @@ export function useDraftingDocuments(
       .then((documents) => {
         if (!cancelled) {
           setSelected(documents);
+          pollUntilSettled(documents);
         }
       })
       .catch((exception: unknown) => {
@@ -103,8 +127,59 @@ export function useDraftingDocuments(
 
     return () => {
       cancelled = true;
+      stopPolling();
     };
   }, [enabled, category]);
+
+  /**
+   * Refreshes the list every interval until no document is in flight.
+   *
+   * Polling is read-only: it never triggers processing. A refresh that
+   * fails is retried on the next tick.
+   */
+  function pollUntilSettled(documents: DraftingDocument[]) {
+    stopPolling();
+    if (!documents.some((document) => !isDocumentSettled(document.status))) {
+      return;
+    }
+    pollTimer = setTimeout(async () => {
+      pollTimer = null;
+      let next = documents;
+      try {
+        next = await listDraftingDocuments(category);
+        setSelected(next);
+      } catch {
+        // Keep the current list; the next tick tries again.
+      }
+      pollUntilSettled(next);
+    }, DOCUMENT_POLL_INTERVAL_MS);
+  }
+
+  /**
+   * Fires processing for a document without blocking the caller.
+   *
+   * Not reported as pending work: cron finishes an abandoned document.
+   */
+  function triggerExtraction(id: string) {
+    void extractDraftingDocument(id, category).catch(() => {});
+  }
+
+  /**
+   * Re-runs processing on a failed document and watches its progress.
+   *
+   * The refreshed list shows the new state right away; polling then
+   * follows the run to its end.
+   */
+  async function retryDocument(id: string) {
+    triggerExtraction(id);
+    try {
+      const documents = await listDraftingDocuments(category);
+      setSelected(documents);
+      pollUntilSettled(documents);
+    } catch {
+      // The next poll or reload shows the outcome.
+    }
+  }
 
   /**
    * Removes a document from the persisted list.
@@ -158,6 +233,8 @@ export function useDraftingDocuments(
           setUploads((current) =>
             current.filter((upload) => upload.id !== slot.id),
           );
+          triggerExtraction(document.id);
+          pollUntilSettled([document]);
         } catch (exception) {
           setUploads((current) =>
             current.map((upload) =>
@@ -190,10 +267,12 @@ export function useDraftingDocuments(
     selected,
     uploads,
     count: selected.length,
+    processingCount: countUnsettled(selected),
     isSaving,
     isLoading,
     loadError,
     removeDocument,
+    retryDocument,
     uploadFiles,
     dismissUpload,
   };
