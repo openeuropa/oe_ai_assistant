@@ -98,10 +98,28 @@ React app mock workflow does not require provider credentials.
 
 ### Document extraction
 
-Session documents are turned into text by an Apache Tika server. In DDEV the
-server runs as the `tika` service from `.ddev/docker-compose.tika.yaml` and is
-reachable from the web container at `http://tika:9998`, the default of the
-`document_loader_tika` submodule. Check it with `ddev exec curl http://tika:9998/version`.
+Session documents are turned into text and summarised so the drafting prompts
+can use them. The pipeline runs server-side on the document media entity:
+
+- An Apache Tika server extracts the text through the `document_loader_tika`
+  submodule (a Document Loader plugin). In DDEV it runs as the `tika` service
+  from `.ddev/docker-compose.tika.yaml`, reachable from the web container at
+  `http://tika:9998`, the default of the submodule. Check it with
+  `ddev exec curl http://tika:9998/version`. Other environments override the
+  URL in `settings.php`:
+
+  ```php
+  $config['document_loader_tika.settings']['url'] = 'http://tika.internal:9998';
+  ```
+
+- The default chat provider writes a brief summary of the extracted text.
+- A `state_machine` workflow (`oe_ai_document_extraction`) tracks each
+  document: scheduled, extracting, extracted, summarizing, done, error. The
+  state is shown in the media form; the permission "Change the extraction
+  state of AI documents" lets editors move it by hand, for example to retry.
+- The app triggers processing right after an upload and polls the status
+  until it settles. Cron picks up scheduled documents and reclaims runs stuck
+  for more than ten minutes, five per run.
 
 ### Site credentials
 

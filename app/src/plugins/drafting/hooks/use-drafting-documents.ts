@@ -30,6 +30,47 @@ function stopPolling(): void {
 }
 
 /**
+ * Refreshes the list every interval until no document is in flight.
+ *
+ * Polling is read-only: it never triggers processing. A refresh that
+ * fails is retried on the next tick. Module-level so the boot effect can
+ * call it without listing it as a dependency.
+ */
+function pollUntilSettled(
+  documents: DraftingDocument[],
+  category: DraftingDocumentCategory,
+  setSelected: (documents: DraftingDocument[]) => void,
+): void {
+  stopPolling();
+  if (!documents.some((document) => !isDocumentSettled(document.status))) {
+    return;
+  }
+  pollTimer = setTimeout(async () => {
+    pollTimer = null;
+    let next = documents;
+    try {
+      next = await listDraftingDocuments(category);
+      setSelected(next);
+    } catch {
+      // Keep the current list; the next tick tries again.
+    }
+    pollUntilSettled(next, category, setSelected);
+  }, DOCUMENT_POLL_INTERVAL_MS);
+}
+
+/**
+ * Fires processing for a document without blocking the caller.
+ *
+ * Not reported as pending work: cron finishes an abandoned document.
+ */
+function triggerExtraction(
+  id: string,
+  category: DraftingDocumentCategory,
+): void {
+  void extractDraftingDocument(id, category).catch(() => {});
+}
+
+/**
  * In-flight document requests, counted across concurrent operations.
  *
  * Module-level so parallel uploads and removals share one counter: the
@@ -107,7 +148,7 @@ export function useDraftingDocuments(
       .then((documents) => {
         if (!cancelled) {
           setSelected(documents);
-          pollUntilSettled(documents);
+          pollUntilSettled(documents, category, setSelected);
         }
       })
       .catch((exception: unknown) => {
@@ -132,50 +173,17 @@ export function useDraftingDocuments(
   }, [enabled, category]);
 
   /**
-   * Refreshes the list every interval until no document is in flight.
-   *
-   * Polling is read-only: it never triggers processing. A refresh that
-   * fails is retried on the next tick.
-   */
-  function pollUntilSettled(documents: DraftingDocument[]) {
-    stopPolling();
-    if (!documents.some((document) => !isDocumentSettled(document.status))) {
-      return;
-    }
-    pollTimer = setTimeout(async () => {
-      pollTimer = null;
-      let next = documents;
-      try {
-        next = await listDraftingDocuments(category);
-        setSelected(next);
-      } catch {
-        // Keep the current list; the next tick tries again.
-      }
-      pollUntilSettled(next);
-    }, DOCUMENT_POLL_INTERVAL_MS);
-  }
-
-  /**
-   * Fires processing for a document without blocking the caller.
-   *
-   * Not reported as pending work: cron finishes an abandoned document.
-   */
-  function triggerExtraction(id: string) {
-    void extractDraftingDocument(id, category).catch(() => {});
-  }
-
-  /**
    * Re-runs processing on a failed document and watches its progress.
    *
    * The refreshed list shows the new state right away; polling then
    * follows the run to its end.
    */
   async function retryDocument(id: string) {
-    triggerExtraction(id);
+    triggerExtraction(id, category);
     try {
       const documents = await listDraftingDocuments(category);
       setSelected(documents);
-      pollUntilSettled(documents);
+      pollUntilSettled(documents, category, setSelected);
     } catch {
       // The next poll or reload shows the outcome.
     }
@@ -233,8 +241,8 @@ export function useDraftingDocuments(
           setUploads((current) =>
             current.filter((upload) => upload.id !== slot.id),
           );
-          triggerExtraction(document.id);
-          pollUntilSettled([document]);
+          triggerExtraction(document.id, category);
+          pollUntilSettled([document], category, setSelected);
         } catch (exception) {
           setUploads((current) =>
             current.map((upload) =>
