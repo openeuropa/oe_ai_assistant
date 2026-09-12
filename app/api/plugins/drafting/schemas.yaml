@@ -129,11 +129,20 @@ DraftingDocumentCategory:
     Document category. The backend derives the session field, media bundle,
     and storage details from this category.
 
+DraftingDocumentStatus:
+  type: string
+  description: >
+    Extraction state of a document. Scheduled, extracting, extracted and
+    summarizing are transient; done and error are final. Error can be
+    retried with extract-document.
+  enum: [scheduled, extracting, extracted, summarizing, done, error]
+
 DraftingDocument:
   type: object
   required:
     - id
     - title
+    - status
     - meta
   properties:
     id:
@@ -142,6 +151,8 @@ DraftingDocument:
     title:
       type: string
       description: Document title or original filename.
+    status:
+      $ref: "../../openapi.yaml#/components/schemas/DraftingDocumentStatus"
     meta:
       type: object
       required:
@@ -229,3 +240,27 @@ DraftingRemoveDocumentResponse:
     status:
       type: string
       enum: [ok]
+
+DraftingExtractDocumentRequest:
+  type: object
+  required:
+    - sessionId
+    - category
+    - documentId
+  properties:
+    sessionId:
+      type: string
+      description: The editorial session that references the document.
+    category:
+      $ref: "../../openapi.yaml#/components/schemas/DraftingDocumentCategory"
+    documentId:
+      type: string
+      description: Server-assigned document ID to process.
+
+DraftingExtractDocumentResponse:
+  type: object
+  required:
+    - status
+  properties:
+    status:
+      $ref: "../../openapi.yaml#/components/schemas/DraftingDocumentStatus"

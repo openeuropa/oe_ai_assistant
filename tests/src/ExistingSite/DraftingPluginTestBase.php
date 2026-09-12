@@ -240,6 +240,38 @@ abstract class DraftingPluginTestBase extends ExistingSiteBase {
   }
 
   /**
+   * Sends a raw-body POST request, as the document upload does.
+   *
+   * @param string $url
+   *   The URL to request, including any query string.
+   * @param string $body
+   *   The raw request body.
+   *
+   * @return array
+   *   An array with 'status' (int) and 'body' (raw string) keys.
+   */
+  protected function httpPostRaw(string $url, string $body): array {
+    /** @var \Symfony\Component\BrowserKit\AbstractBrowser $client */
+    $client = $this->getSession()->getDriver()->getClient();
+    $client->request(
+      'POST',
+      $this->baseUrl . $url,
+      [],
+      [],
+      [
+        'CONTENT_TYPE' => 'application/octet-stream',
+        'HTTP_X_CSRF_TOKEN' => $this->getCsrfToken(),
+      ],
+      $body,
+    );
+    $response = $client->getResponse();
+    return [
+      'status' => $response->getStatusCode(),
+      'body' => $response->getContent(),
+    ];
+  }
+
+  /**
    * Sends a GET request with query parameters using the BrowserKit client.
    *
    * @param string $url

@@ -215,6 +215,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/plugins/drafting/extract-document": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Process a drafting context document
+         * @description Runs text extraction and summarisation on a referenced document and returns its resulting status. Fired by the app after a successful upload and by the retry control. A document that is already being processed, or done, is left alone and its current status returned.
+         */
+        post: operations["postDraftingExtractDocument"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/plugins/drafting/preview": {
         parameters: {
             query?: never;
@@ -463,11 +483,17 @@ export interface components {
          * @enum {string}
          */
         DraftingDocumentCategory: "context";
+        /**
+         * @description Extraction state of a document. Scheduled, extracting, extracted and summarizing are transient; done and error are final. Error can be retried with extract-document.
+         * @enum {string}
+         */
+        DraftingDocumentStatus: "scheduled" | "extracting" | "extracted" | "summarizing" | "done" | "error";
         DraftingDocument: {
             /** @description Server-assigned media entity ID. */
             id: string;
             /** @description Document title or original filename. */
             title: string;
+            status: components["schemas"]["DraftingDocumentStatus"];
             meta: {
                 /** @description Lowercase file extension or generic file type. */
                 type: string;
@@ -504,6 +530,16 @@ export interface components {
         DraftingRemoveDocumentResponse: {
             /** @enum {string} */
             status: "ok";
+        };
+        DraftingExtractDocumentRequest: {
+            /** @description The editorial session that references the document. */
+            sessionId: string;
+            category: components["schemas"]["DraftingDocumentCategory"];
+            /** @description Server-assigned document ID to process. */
+            documentId: string;
+        };
+        DraftingExtractDocumentResponse: {
+            status: components["schemas"]["DraftingDocumentStatus"];
         };
         /** @description Request body for the echo stream endpoint. */
         EchoRequest: {
@@ -961,6 +997,49 @@ export interface operations {
                 };
             };
             403: components["responses"]["Forbidden"];
+        };
+    };
+    postDraftingExtractDocument: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DraftingExtractDocumentRequest"];
+            };
+        };
+        responses: {
+            /** @description The document status after processing */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DraftingExtractDocumentResponse"];
+                };
+            };
+            /** @description Validation error. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            403: components["responses"]["Forbidden"];
+            /** @description The document is not referenced by the session. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
         };
     };
     getDraftingPreview: {

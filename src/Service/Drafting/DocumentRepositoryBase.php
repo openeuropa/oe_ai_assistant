@@ -43,6 +43,10 @@ abstract class DocumentRepositoryBase implements DocumentRepositoryInterface {
    *   The logger channel.
    * @param \Drupal\Core\Lock\LockBackendInterface $lock
    *   The lock backend, serialising reference updates per session.
+   * @param \Drupal\oe_ai_assistant\Service\Drafting\DocumentExtractionWorkflowInterface $workflow
+   *   The extraction workflow reader, for the document status.
+   * @param \Drupal\oe_ai_assistant\Service\Drafting\DocumentExtractionProcessorInterface $processor
+   *   The extraction processor behind the extract action.
    */
   public function __construct(
     protected readonly EntityTypeManagerInterface $entityTypeManager,
@@ -52,6 +56,8 @@ abstract class DocumentRepositoryBase implements DocumentRepositoryInterface {
     protected readonly LoggerInterface $logger,
     #[Autowire(service: 'lock')]
     protected readonly LockBackendInterface $lock,
+    protected readonly DocumentExtractionWorkflowInterface $workflow,
+    protected readonly DocumentExtractionProcessorInterface $processor,
   ) {}
 
   /**
@@ -163,6 +169,22 @@ abstract class DocumentRepositoryBase implements DocumentRepositoryInterface {
   /**
    * {@inheritdoc}
    */
+  public function extract(AiEditorialSessionInterface $session, string $documentId): string {
+    foreach ($session->get($this->getSessionField())->referencedEntities() as $media) {
+      if ($media instanceof MediaInterface && (string) $media->id() === $documentId) {
+        return $this->processor->process($media);
+      }
+    }
+    throw new ActionException(
+      'invalid_request',
+      'The document is not referenced by this editorial session.',
+      404,
+    );
+  }
+
+  /**
+   * {@inheritdoc}
+   */
   public function deleteOrphanedBy(AiEditorialSessionInterface $session): void {
     if (!$session->hasField($this->getSessionField())) {
       return;
@@ -209,6 +231,7 @@ abstract class DocumentRepositoryBase implements DocumentRepositoryInterface {
     return [
       'id' => (string) $media->id(),
       'title' => (string) ($media->label() ?: $filename),
+      'status' => $this->workflow->getState($media),
       'meta' => [
         'type' => $extension !== '' ? strtolower($extension) : 'file',
         'size' => $file instanceof FileInterface ? (int) $file->getSize() : 0,

@@ -16,6 +16,11 @@ use Drupal\oe_ai_assistant\Service\RequestValidator;
 use Drupal\file\Upload\InputStreamUploadedFile;
 use Drupal\file\Upload\UploadedFileInterface;
 use Drupal\oe_ai_assistant\Service\Drafting\ContextDocumentRepository;
+use Drupal\oe_ai_assistant\Service\Drafting\DocumentExtractionProcessorInterface;
+use Drupal\oe_ai_assistant\Service\Drafting\DocumentExtractionWorkflowInterface;
+use Drupal\oe_ai_assistant_test\Plugin\AiProvider\MockAiProvider;
+use Drupal\oe_ai_assistant_test\Plugin\AiProvider\MockResponse;
+use GuzzleHttp\Psr7\Response;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
@@ -29,6 +34,8 @@ use Symfony\Component\HttpFoundation\Request;
  */
 #[Group('oe_ai_assistant')]
 class DraftingPluginDocumentsTest extends AiEditorialSessionKernelTestBase {
+
+  use TikaMockTrait;
 
   /**
    * {@inheritdoc}
@@ -58,6 +65,12 @@ class DraftingPluginDocumentsTest extends AiEditorialSessionKernelTestBase {
   protected function setUp(): void {
     parent::setUp();
     $this->installSchema('file', ['file_usage']);
+    $this->installConfig(['document_loader_tika']);
+    $this->enableModules(['oe_ai_assistant_test']);
+    $this->config('ai.settings')
+      ->set('default_providers', ['chat' => ['provider_id' => 'mock_ai', 'model_id' => 'mock-model']])
+      ->save();
+    MockAiProvider::reset();
   }
 
   /**
@@ -349,6 +362,8 @@ class DraftingPluginDocumentsTest extends AiEditorialSessionKernelTestBase {
       $this->container->get('file.upload_handler'),
       $this->container->get('logger.channel.oe_ai_assistant'),
       $lock,
+      $this->container->get(DocumentExtractionWorkflowInterface::class),
+      $this->container->get(DocumentExtractionProcessorInterface::class),
     );
 
     try {
@@ -439,6 +454,59 @@ class DraftingPluginDocumentsTest extends AiEditorialSessionKernelTestBase {
   }
 
   /**
+   * Tests that add and list report the status and extract-document runs it.
+   */
+  public function testExtractDocumentAction(): void {
+    $tika = $this->mockTika();
+    $tika->append(new Response(200, [], 'Brief text'));
+    MockAiProvider::enqueue(new MockResponse('Brief summary.'));
+    $owner = $this->createUser();
+    $this->container->get('current_user')->setAccount($owner);
+    $session = $this->createSession($owner);
+    $plugin = $this->container->get(AiAssistantPluginManager::class)->createInstance('drafting');
+
+    $upload = $this->createUploadRequest((string) $session->id(), 'context', 'brief.txt', 'Brief text');
+    $added = $plugin->executeAction('add-document', $upload);
+    $this->assertSame('scheduled', $added['document']['status']);
+
+    $body = ['sessionId' => (string) $session->id(), 'category' => 'context', 'documentId' => $added['document']['id']];
+    $this->assertSame(['status' => 'done'], $plugin->executeAction('extract-document', $this->createJsonRequest($body)));
+
+    $listRequest = $this->createDocumentActionRequest('list-documents', (string) $session->id());
+    $listed = $plugin->executeAction('list-documents', $listRequest);
+    $this->assertSame('done', $listed['documents'][0]['status']);
+
+    // A second call is a no-op that reports the state.
+    $this->assertSame(['status' => 'done'], $plugin->executeAction('extract-document', $this->createJsonRequest($body)));
+    $this->assertCount(1, MockAiProvider::getCallLog());
+  }
+
+  /**
+   * Tests that a document of another session cannot be processed.
+   */
+  public function testExtractDocumentRejectsForeignDocument(): void {
+    $owner = $this->createUser();
+    $this->container->get('current_user')->setAccount($owner);
+    $session = $this->createSession($owner);
+    $other = $this->createSession($owner);
+    $plugin = $this->container->get(AiAssistantPluginManager::class)->createInstance('drafting');
+    $upload = $this->createUploadRequest((string) $other->id(), 'context', 'brief.txt', 'x');
+    $added = $plugin->executeAction('add-document', $upload);
+
+    try {
+      $plugin->executeAction('extract-document', $this->createJsonRequest([
+        'sessionId' => (string) $session->id(),
+        'category' => 'context',
+        'documentId' => $added['document']['id'],
+      ]));
+      $this->fail('A foreign document must be rejected.');
+    }
+    catch (ActionException $e) {
+      $this->assertSame(404, $e->statusCode);
+    }
+  }
+
+  /**
    * Tests document actions deny users without session access.
    */
   #[DataProvider('documentActionAccessProvider')]
@@ -493,6 +561,7 @@ class DraftingPluginDocumentsTest extends AiEditorialSessionKernelTestBase {
       'add-document' => ['add-document'],
       'list-documents' => ['list-documents'],
       'remove-document' => ['remove-document'],
+      'extract-document' => ['extract-document'],
     ];
   }
 
@@ -506,6 +575,7 @@ class DraftingPluginDocumentsTest extends AiEditorialSessionKernelTestBase {
     return [
       'add-document' => ['add-document'],
       'list-documents' => ['list-documents'],
+      'extract-document' => ['extract-document'],
     ];
   }
 
@@ -697,7 +767,7 @@ class DraftingPluginDocumentsTest extends AiEditorialSessionKernelTestBase {
       'sessionId' => $sessionId,
       'category' => $category,
     ];
-    if ($action === 'remove-document') {
+    if ($action === 'remove-document' || $action === 'extract-document') {
       $body['documentId'] = '1';
     }
 
@@ -722,6 +792,13 @@ class DraftingPluginDocumentsTest extends AiEditorialSessionKernelTestBase {
     return Request::create('?' . $query, 'POST', [], [], [], [
       'CONTENT_TYPE' => 'application/octet-stream',
     ], $contents);
+  }
+
+  /**
+   * Builds a JSON action request.
+   */
+  private function createJsonRequest(array $body): Request {
+    return Request::create('', 'POST', [], [], [], ['CONTENT_TYPE' => 'application/json'], json_encode($body));
   }
 
   /**
