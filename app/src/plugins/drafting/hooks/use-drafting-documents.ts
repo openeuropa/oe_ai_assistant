@@ -186,18 +186,31 @@ export function useDraftingDocuments(
   /**
    * Re-runs processing on a failed document and watches its progress.
    *
-   * The refreshed list shows the new state right away; polling then
-   * follows the run to its end.
+   * The document is shown as extracting right away: a refetch at this
+   * point could still see the failed state, and failed counts as settled,
+   * so polling would never start. Polling then follows the run, and the
+   * action's own answer shortens the wait when it arrives first.
    */
   async function retryDocument(id: string) {
-    triggerExtraction(id, category);
-    try {
-      const documents = await listDraftingDocuments(category);
-      setSelected(documents);
-      pollUntilSettled(documents, category, setSelected);
-    } catch {
-      // The next poll or reload shows the outcome.
-    }
+    setSelected((current) =>
+      current.map((item) =>
+        item.id === id ? { ...item, status: "extracting" } : item,
+      ),
+    );
+    void extractDraftingDocument(id, category)
+      .then((status) => {
+        setSelected((current) =>
+          current.map((item) => (item.id === id ? { ...item, status } : item)),
+        );
+      })
+      .catch(() => {});
+    // Polling only needs to know that something is unsettled; each tick
+    // fetches the full list anyway.
+    pollUntilSettled(
+      [{ id, title: "", status: "extracting", meta: { type: "", size: 0 } }],
+      category,
+      setSelected,
+    );
   }
 
   /**

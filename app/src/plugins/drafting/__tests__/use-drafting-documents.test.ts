@@ -345,6 +345,8 @@ describe("useDraftingDocuments", () => {
 
   it("retries a failed document and resumes polling", async () => {
     const failed = { ...initialDocument, status: "error" as const };
+    // The action never answers here: the state must come from polling.
+    apiMocks.extractDraftingDocument.mockReturnValue(new Promise(() => {}));
     apiMocks.listDraftingDocuments
       .mockResolvedValueOnce([failed])
       .mockResolvedValueOnce([{ ...failed, status: "extracting" }])
@@ -360,9 +362,26 @@ describe("useDraftingDocuments", () => {
       "initial-document",
       "context",
     );
+    // Shown as extracting at once, without waiting for the server.
     expect(selectedState()[0]?.status).toBe("extracting");
 
     await vi.advanceTimersByTimeAsync(DOCUMENT_POLL_INTERVAL_MS);
+    expect(selectedState()[0]?.status).toBe("extracting");
+    await vi.advanceTimersByTimeAsync(DOCUMENT_POLL_INTERVAL_MS);
+    expect(selectedState()[0]?.status).toBe("done");
+  });
+
+  it("applies the retry answer as soon as the action returns", async () => {
+    const failed = { ...initialDocument, status: "error" as const };
+    apiMocks.listDraftingDocuments.mockResolvedValue([failed]);
+    apiMocks.extractDraftingDocument.mockResolvedValue("done");
+    const { useDraftingDocuments } = await loadHook();
+    const hook = useDraftingDocuments();
+    await flushAsync();
+
+    await hook.retryDocument("initial-document");
+    await flushAsync();
+
     expect(selectedState()[0]?.status).toBe("done");
   });
 
