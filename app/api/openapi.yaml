@@ -74,6 +74,8 @@ paths:
     $ref: "plugins/drafting/paths.yaml#/listDocuments"
   /plugins/drafting/remove-document:
     $ref: "plugins/drafting/paths.yaml#/removeDocument"
+  /plugins/drafting/extract-document:
+    $ref: "plugins/drafting/paths.yaml#/extractDocument"
   /plugins/drafting/preview:
     $ref: "plugins/drafting/paths.yaml#/preview"
 
@@ -177,6 +179,8 @@ components:
       $ref: "plugins/drafting/schemas.yaml#/DraftingSetTemplateResponse"
     DraftingDocumentCategory:
       $ref: "plugins/drafting/schemas.yaml#/DraftingDocumentCategory"
+    DraftingDocumentStatus:
+      $ref: "plugins/drafting/schemas.yaml#/DraftingDocumentStatus"
     DraftingDocument:
       $ref: "plugins/drafting/schemas.yaml#/DraftingDocument"
     DraftingAddDocumentRequest:
@@ -191,6 +195,10 @@ components:
       $ref: "plugins/drafting/schemas.yaml#/DraftingRemoveDocumentRequest"
     DraftingRemoveDocumentResponse:
       $ref: "plugins/drafting/schemas.yaml#/DraftingRemoveDocumentResponse"
+    DraftingExtractDocumentRequest:
+      $ref: "plugins/drafting/schemas.yaml#/DraftingExtractDocumentRequest"
+    DraftingExtractDocumentResponse:
+      $ref: "plugins/drafting/schemas.yaml#/DraftingExtractDocumentResponse"
 
     # -- Plugin: echo --
     EchoRequest:

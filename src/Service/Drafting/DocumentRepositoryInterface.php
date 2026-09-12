@@ -62,6 +62,24 @@ interface DocumentRepositoryInterface {
   public function remove(AiEditorialSessionInterface $session, string $documentId): void;
 
   /**
+   * Runs the extraction pipeline on a document of the session.
+   *
+   * A no-op that reports the state when the document is in flight or done.
+   *
+   * @param \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $session
+   *   The session that references the document.
+   * @param string $documentId
+   *   The media entity ID of the document.
+   *
+   * @return string
+   *   The document state after the call.
+   *
+   * @throws \Drupal\oe_ai_assistant\Exception\ActionException
+   *   When the document is not referenced by the session.
+   */
+  public function extract(AiEditorialSessionInterface $session, string $documentId): string;
+
+  /**
    * Deletes the documents orphaned by a session deletion.
    *
    * Removes the media entities and managed files of documents referenced

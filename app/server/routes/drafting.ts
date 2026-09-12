@@ -28,6 +28,13 @@ import type {
 interface MockDocument {
   id: string;
   title: string;
+  status:
+    | "scheduled"
+    | "extracting"
+    | "extracted"
+    | "summarizing"
+    | "done"
+    | "error";
   meta: {
     type: string;
     size: number;
@@ -38,11 +45,13 @@ const initialMockDocuments: MockDocument[] = [
   {
     id: "3f2504e0-4f89-41d3-9a0c-0305e82c3301",
     title: "EU AI Act briefing note.pdf",
+    status: "done",
     meta: { type: "pdf", size: 245760 },
   },
   {
     id: "c9bf9e57-1685-4c89-bafb-ff5af830be8a",
     title: "Stakeholder comments.docx",
+    status: "done",
     meta: { type: "docx", size: 98304 },
   },
 ];
@@ -304,6 +313,7 @@ export function createDraftingRouter(service: DraftingService): Router {
     const document: MockDocument = {
       id: `mock-document-${Date.now()}-${Math.random().toString(36).slice(2)}`,
       title: filename,
+      status: "scheduled",
       meta: {
         type: extensionFromFilename(filename),
         size: body.length,

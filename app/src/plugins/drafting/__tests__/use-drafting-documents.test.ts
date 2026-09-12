@@ -45,6 +45,7 @@ vi.mock("../api/drafting-api", () => apiMocks);
 const initialDocument: DraftingDocument = {
   id: "initial-document",
   title: "Initial brief.md",
+  status: "done",
   meta: { type: "md", size: 1 },
 };
 
@@ -52,11 +53,13 @@ const uploadedDocuments: DraftingDocument[] = [
   {
     id: "uploaded-a",
     title: "Uploaded A.txt",
+    status: "done",
     meta: { type: "txt", size: 12 },
   },
   {
     id: "uploaded-b",
     title: "Uploaded B.pdf",
+    status: "done",
     meta: { type: "pdf", size: 24 },
   },
 ];
