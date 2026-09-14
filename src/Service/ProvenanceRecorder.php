@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\oe_ai_assistant\Service;
 
+use Drupal\Core\Entity\EntityStorageException;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Entity\FieldableEntityInterface;
 use Drupal\Core\Entity\RevisionableInterface;
@@ -86,7 +87,7 @@ class ProvenanceRecorder implements ProvenanceRecorderInterface {
       $record->save();
       return $record;
     }
-    catch (\Throwable $e) {
+    catch (EntityStorageException $e) {
       $this->logger->error('Failed to record AI provenance for @type @id revision @vid: @e', [
         '@type' => $entity->getEntityTypeId(),
         '@id' => $entity->id(),
