@@ -19,6 +19,7 @@
         "justinrainbow/json-schema": "^5.0 || ^6.0"
     },
     "require-dev": {
+        "drupal/entity_version": "^1.5",
         "openeuropa/oe_ai_provider_gpt_at_ec": "^1.0.0-alpha",
         "composer/installers": "^2.0",
         "drupal/ai_provider_openai": "^1.2",

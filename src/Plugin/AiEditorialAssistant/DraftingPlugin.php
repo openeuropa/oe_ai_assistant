@@ -283,7 +283,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
           // Record the drafted fields as the result of the draft_content call
           // so the transcript keeps a trace that can repopulate the artifact.
           if ($lastAssistant !== NULL) {
-            $this->attachDraftResult($lastAssistant, $drafted);
+            $this->attachDraftResult($lastAssistant, $drafted, $context['template']);
           }
           // Stream and record a confirmation so it survives a reload.
           if ($drafted) {
@@ -335,10 +335,58 @@ class DraftingPlugin extends AiAssistantPluginBase {
    */
   public function save(Request $request): array {
     $body = $this->decodeJsonBody($request);
+    $session = $this->loadSession($body);
+    $message = $this->resolveDraftMessage($session, isset($body['draftVersion']) ? (int) $body['draftVersion'] : NULL);
     return $this->draftSaver->save(
       $body['bundle'] ?? '',
       $body['fields'] ?? [],
+      $session,
+      $message,
     );
+  }
+
+  /**
+   * Resolves the assistant message that triggered drafting.
+   *
+   * @param \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $session
+   *   The editorial session whose transcript should be scanned.
+   * @param int|null $draftVersion
+   *   Optional 1-based draft version selector.
+   *
+   * @return \Drupal\oe_ai_assistant\Entity\AiConversationMessageInterface
+   *   The assistant message that called draft_content.
+   *
+   * @throws \Drupal\oe_ai_assistant\Exception\ActionException
+   *   Thrown when no draft turn exists or the requested version is missing.
+   */
+  private function resolveDraftMessage(AiEditorialSessionInterface $session, ?int $draftVersion = NULL): AiConversationMessageInterface {
+    $storage = $this->entityTypeManager->getStorage('ai_conversation_message');
+    $candidates = [];
+
+    foreach ($storage->loadTranscript($session) as $message) {
+      if ($message->getRole() !== AiConversationMessageInterface::ROLE_ASSISTANT) {
+        continue;
+      }
+      foreach ($message->getToolCalls() as $call) {
+        if (($call['function']['name'] ?? '') === 'draft_content') {
+          $candidates[] = $message;
+          break;
+        }
+      }
+    }
+
+    if ($candidates === []) {
+      throw new ActionException('invalid_request', 'No draft_content turn was found for the session.', 400);
+    }
+
+    if ($draftVersion !== NULL) {
+      if ($draftVersion < 1 || !isset($candidates[$draftVersion - 1])) {
+        throw new ActionException('invalid_request', 'The requested draftVersion was not found.', 400);
+      }
+      return $candidates[$draftVersion - 1];
+    }
+
+    return $candidates[array_key_last($candidates)];
   }
 
   /**
@@ -424,8 +472,12 @@ class DraftingPlugin extends AiAssistantPluginBase {
    *   The assistant turn that triggered drafting.
    * @param array $drafted
    *   The consolidated drafted field values.
+   * @param string|null $templateId
+   *   The drafting template id resolved for this turn, stamped on the message
+   *   so provenance can attribute the saved revision to the template that
+   *   produced it even if the session's template later changes.
    */
-  private function attachDraftResult(AiConversationMessageInterface $message, array $drafted): void {
+  private function attachDraftResult(AiConversationMessageInterface $message, array $drafted, ?string $templateId = NULL): void {
     $toolCalls = $message->getToolCalls();
     $found = FALSE;
     foreach ($toolCalls as &$call) {
@@ -445,6 +497,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
       ];
     }
     $message->setToolCalls($toolCalls);
+    $message->setDraftTemplateId($templateId);
     $message->save();
   }
 
