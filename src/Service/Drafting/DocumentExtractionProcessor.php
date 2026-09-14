@@ -33,7 +33,7 @@ final class DocumentExtractionProcessor implements DocumentExtractionProcessorIn
    * System prompt of the summary call.
    */
   private const string SUMMARY_PROMPT = 'You summarise briefing documents for editors. '
-    . 'Write a brief summary of the document, three to five sentences, in the language of the document: '
+    . 'Write a brief summary of the document in English, three to five sentences: '
     . 'what it is and its key points. Return only the summary.';
 
   public function __construct(
@@ -52,9 +52,6 @@ final class DocumentExtractionProcessor implements DocumentExtractionProcessorIn
    * {@inheritdoc}
    */
   public function process(MediaInterface $media, bool $reclaimInFlight = FALSE): string {
-    if (!$media->hasField(self::STATE_FIELD)) {
-      return self::STATE_SCHEDULED;
-    }
     $claimed = $this->claim($media, $reclaimInFlight);
     if ($claimed === NULL) {
       return $this->getState($this->reload($media));
