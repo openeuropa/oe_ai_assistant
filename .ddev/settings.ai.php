@@ -16,40 +16,43 @@
 
 // Skip AI provider overrides during automated tests. When
 // OE_AI_SKIP_PROVIDER_OVERRIDE is set, tests control the provider
-// via config API instead.
+// via config API instead. Toggling it in .ddev/.env requires a
+// ddev restart.
 // @see .ddev/docker-compose.phpunit.yaml
-if (!getenv('OE_AI_SKIP_PROVIDER_OVERRIDE')) {
-  // Read provider and model from environment variables,
-  // falling back to GPT@EC as the default.
-  $ai_provider = getenv('AI_PROVIDER') ?: 'gpt_at_ec';
-  $ai_model = getenv('AI_MODEL') ?: 'gpt-5.1';
-  $ai_embed_model = getenv('AI_EMBED_MODEL') ?: 'gpt-5.1';
-
-  // Set the default provider for all AI operation types.
-  $config['ai.settings']['default_providers'] = [
-    'chat' => [
-      'provider_id' => $ai_provider,
-      'model_id' => $ai_model,
-    ],
-    'chat_with_complex_json' => [
-      'provider_id' => $ai_provider,
-      'model_id' => $ai_model,
-    ],
-    'chat_with_image_vision' => [
-      'provider_id' => $ai_provider,
-      'model_id' => $ai_model,
-    ],
-    'chat_with_structured_response' => [
-      'provider_id' => $ai_provider,
-      'model_id' => $ai_model,
-    ],
-    'chat_with_tools' => [
-      'provider_id' => $ai_provider,
-      'model_id' => $ai_model,
-    ],
-    'embeddings' => [
-      'provider_id' => $ai_provider,
-      'model_id' => $ai_embed_model,
-    ],
-  ];
+if (getenv('OE_AI_SKIP_PROVIDER_OVERRIDE')) {
+  return;
 }
+
+// Read provider and model from environment variables,
+// falling back to GPT@EC as the default.
+$ai_provider = getenv('AI_PROVIDER') ?: 'gpt_at_ec';
+$ai_model = getenv('AI_MODEL') ?: 'gpt-5.1';
+$ai_embed_model = getenv('AI_EMBED_MODEL') ?: 'gpt-5.1';
+
+// Set the default provider for all AI operation types.
+$config['ai.settings']['default_providers'] = [
+  'chat' => [
+    'provider_id' => $ai_provider,
+    'model_id' => $ai_model,
+  ],
+  'chat_with_complex_json' => [
+    'provider_id' => $ai_provider,
+    'model_id' => $ai_model,
+  ],
+  'chat_with_image_vision' => [
+    'provider_id' => $ai_provider,
+    'model_id' => $ai_model,
+  ],
+  'chat_with_structured_response' => [
+    'provider_id' => $ai_provider,
+    'model_id' => $ai_model,
+  ],
+  'chat_with_tools' => [
+    'provider_id' => $ai_provider,
+    'model_id' => $ai_model,
+  ],
+  'embeddings' => [
+    'provider_id' => $ai_provider,
+    'model_id' => $ai_embed_model,
+  ],
+];
