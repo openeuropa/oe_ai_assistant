@@ -1,0 +1,21 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - field.storage.media.oe_ai_document_extract
+    - media.type.ai_context_document
+  module:
+    - text
+id: media.ai_context_document.oe_ai_document_extract
+field_name: oe_ai_document_extract
+entity_type: media
+bundle: ai_context_document
+label: 'Document extract'
+description: 'Full text extracted from the document, used as drafting context.'
+required: false
+translatable: false
+default_value: {  }
+default_value_callback: ''
+settings:
+  allowed_formats: {  }
+field_type: text_long

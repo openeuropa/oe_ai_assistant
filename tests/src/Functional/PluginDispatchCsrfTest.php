@@ -123,13 +123,16 @@ class PluginDispatchCsrfTest extends AiEditorialSessionBrowserTestBase {
   }
 
   /**
-   * Asserts that the session references no context documents.
+   * Asserts that no context document references the session.
    */
   private function assertSessionHasNoDocuments(string $sessionId): void {
-    $storage = $this->container->get('entity_type.manager')
-      ->getStorage('ai_editorial_session');
-    $storage->resetCache([$sessionId]);
-    $this->assertTrue($storage->load($sessionId)->get('context_documents')->isEmpty());
+    $count = $this->container->get('entity_type.manager')->getStorage('media')->getQuery()
+      ->accessCheck(FALSE)
+      ->condition('bundle', 'ai_context_document')
+      ->condition('oe_ai_session', (int) $sessionId)
+      ->count()
+      ->execute();
+    $this->assertSame(0, (int) $count);
   }
 
 }

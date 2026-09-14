@@ -1,0 +1,18 @@
+langcode: en
+status: true
+dependencies:
+  module:
+    - media
+    - state_machine
+id: media.oe_ai_extraction_state
+field_name: oe_ai_extraction_state
+entity_type: media
+type: state
+settings: {  }
+module: state_machine
+locked: true
+cardinality: 1
+translatable: false
+indexes: {  }
+persist_with_no_fields: false
+custom_storage: false

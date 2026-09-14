@@ -8,6 +8,8 @@ dependencies:
   - ai_agents:ai_agents
   - drupal:content_moderation
   - drupal:datetime
+  - document_loader:document_loader
+  - document_loader_tika:document_loader_tika
   - drupal:file
   - drupal:media
   - drupal:node
@@ -16,3 +18,4 @@ dependencies:
   - drupal:text
   - key:key
   - drupal:taxonomy
+  - state_machine:state_machine

@@ -4,15 +4,15 @@ dependencies:
   module:
     - media
     - oe_ai_assistant
-id: ai_editorial_session.context_documents
-field_name: context_documents
-entity_type: ai_editorial_session
+id: media.oe_ai_session
+field_name: oe_ai_session
+entity_type: media
 type: entity_reference
 settings:
-  target_type: media
+  target_type: ai_editorial_session
 module: core
-locked: false
-cardinality: -1
+locked: true
+cardinality: 1
 translatable: false
 indexes: {  }
 persist_with_no_fields: false

@@ -180,6 +180,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
       'add-document' => $this->addDocument(...),
       'list-documents' => $this->listDocuments(...),
       'remove-document' => $this->removeDocument(...),
+      'extract-document' => $this->extractDocument(...),
       'preview' => $this->preview(...),
     ];
   }
@@ -197,6 +198,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
       'add-document' => 'DraftingAddDocumentRequest',
       'list-documents' => 'DraftingListDocumentsRequest',
       'remove-document' => 'DraftingRemoveDocumentRequest',
+      'extract-document' => 'DraftingExtractDocumentRequest',
     ];
   }
 
@@ -728,7 +730,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
   }
 
   /**
-   * Lists documents referenced by the session.
+   * Lists the documents of the session.
    *
    * @param \Symfony\Component\HttpFoundation\Request $request
    *   The incoming JSON request.
@@ -745,7 +747,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
   }
 
   /**
-   * Removes a referenced document from the session and deletes its entities.
+   * Removes a document of the session and deletes its entities.
    *
    * @param \Symfony\Component\HttpFoundation\Request $request
    *   The incoming JSON request.
@@ -770,6 +772,35 @@ class DraftingPlugin extends AiAssistantPluginBase {
     $repository->remove($session, $documentId);
 
     return ['status' => 'ok'];
+  }
+
+  /**
+   * Runs text extraction and summarisation on a referenced document.
+   *
+   * Fired by the app after a successful upload; also the retry entry point.
+   * Processing is synchronous; the response carries the resulting state.
+   *
+   * @param \Symfony\Component\HttpFoundation\Request $request
+   *   The incoming JSON request.
+   *
+   * @return array<string, string>
+   *   The document state.
+   */
+  public function extractDocument(Request $request): array {
+    $body = $this->decodeJsonBody($request);
+    $repository = $this->resolveDocumentRepository($body['category'] ?? '');
+    $session = $this->loadSession($body);
+    $documentId = (string) ($body['documentId'] ?? '');
+
+    if ($documentId === '') {
+      throw new ActionException(
+        'invalid_request',
+        'A documentId is required.',
+        400,
+      );
+    }
+
+    return ['status' => $repository->extract($session, $documentId)];
   }
 
   /**
