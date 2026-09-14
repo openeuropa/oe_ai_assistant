@@ -447,7 +447,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
           // transcript keeps a provenance trace that can repopulate the
           // artifact.
           if ($lastAssistant !== NULL) {
-            $this->attachDraftResult($lastAssistant, $draftResult);
+            $this->attachDraftResult($lastAssistant, $draftResult, $context['template']);
           }
           // Stream and record a confirmation so it survives a reload. The
           // draft name in the text is how the version reaches the model on
@@ -843,8 +843,11 @@ class DraftingPlugin extends AiAssistantPluginBase {
    *   The assistant turn that triggered drafting.
    * @param array $result
    *   The versioned draft result: {version, context, fields}.
+   * @param string|null $templateId
+   *   The template used to produce the draft, stamped on the message for
+   *   stable provenance after a later session template change.
    */
-  private function attachDraftResult(AiConversationMessageInterface $message, array $result): void {
+  private function attachDraftResult(AiConversationMessageInterface $message, array $result, ?string $templateId = NULL): void {
     $toolCalls = $message->getToolCalls();
     $found = FALSE;
     foreach ($toolCalls as &$call) {
@@ -864,6 +867,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
       ];
     }
     $message->setToolCalls($toolCalls);
+    $message->setDraftTemplateId($templateId);
     $message->save();
   }
 
