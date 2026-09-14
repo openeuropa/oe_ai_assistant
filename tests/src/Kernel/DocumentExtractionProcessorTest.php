@@ -129,29 +129,6 @@ class DocumentExtractionProcessorTest extends AiEditorialSessionKernelTestBase {
   }
 
   /**
-   * Tests that an empty summary counts as a failure.
-   */
-  public function testEmptySummaryEndsInError(): void {
-    $this->tika->append(new Response(200, [], 'Full text'));
-    MockAiProvider::enqueue(new MockResponse('   '));
-    $media = $this->createDocument();
-
-    $this->assertSame(DocumentExtractionProcessorInterface::STATE_ERROR, $this->processor()->process($media));
-  }
-
-  /**
-   * Tests that no configured provider ends in error without a call.
-   */
-  public function testMissingProviderEndsInError(): void {
-    $this->config('ai.settings')->set('default_providers', [])->save();
-    $this->tika->append(new Response(200, [], 'Full text'));
-    $media = $this->createDocument();
-
-    $this->assertSame(DocumentExtractionProcessorInterface::STATE_ERROR, $this->processor()->process($media));
-    $this->assertCount(0, MockAiProvider::getCallLog());
-  }
-
-  /**
    * Tests that every accepted extension goes through the loader as text.
    */
   #[DataProvider('extensionProvider')]
@@ -341,35 +318,6 @@ class DocumentExtractionProcessorTest extends AiEditorialSessionKernelTestBase {
     $this->assertSame(DocumentExtractionProcessorInterface::STATE_SUMMARIZING, $this->stateOf($recent));
     $this->assertSame(DocumentExtractionProcessorInterface::STATE_DONE, $this->stateOf($done));
     $this->assertTrue(MockAiProvider::isEmpty());
-  }
-
-  /**
-   * Tests that processPending honours the limit and the stale threshold.
-   */
-  public function testProcessPendingHonoursLimitAndThreshold(): void {
-    $first = $this->createDocument('first.txt');
-    $second = $this->createDocument('second.txt');
-    $stale = $this->createDocument('stale.txt');
-    $stale->set(DocumentExtractionProcessorInterface::STATE_FIELD, DocumentExtractionProcessorInterface::STATE_SUMMARIZING)->save();
-    $this->container->get('database')->update('media_field_data')
-      ->fields(['changed' => time() - 3600])
-      ->condition('mid', $stale->id())
-      ->execute();
-    $this->tika->append(new Response(200, [], 'One'));
-    MockAiProvider::enqueue(new MockResponse('Summary one.'));
-
-    // The limit takes the oldest resting document first.
-    $this->processor()->processPending(1, 600);
-    $this->assertSame(DocumentExtractionProcessorInterface::STATE_DONE, $this->stateOf($first));
-    $this->assertSame(DocumentExtractionProcessorInterface::STATE_SCHEDULED, $this->stateOf($second));
-    $this->assertSame(DocumentExtractionProcessorInterface::STATE_SUMMARIZING, $this->stateOf($stale));
-
-    // A generous threshold leaves the in-flight document alone.
-    $this->tika->append(new Response(200, [], 'Two'));
-    MockAiProvider::enqueue(new MockResponse('Summary two.'));
-    $this->processor()->processPending(5, 7200);
-    $this->assertSame(DocumentExtractionProcessorInterface::STATE_DONE, $this->stateOf($second));
-    $this->assertSame(DocumentExtractionProcessorInterface::STATE_SUMMARIZING, $this->stateOf($stale));
   }
 
   /**

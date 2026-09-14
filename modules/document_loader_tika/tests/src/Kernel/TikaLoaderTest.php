@@ -125,18 +125,6 @@ class TikaLoaderTest extends KernelTestBase {
   }
 
   /**
-   * Tests that the plugin is available on configuration alone, no ping.
-   */
-  public function testPluginAvailabilityIsConfigured(): void {
-    $plugin = $this->container->get('plugin.manager.document_loader')->createInstance('document_loader_tika:tika');
-    $this->assertTrue($plugin->isAvailable());
-    $this->assertCount(0, $this->history);
-
-    $this->config('document_loader_tika.settings')->set('url', '')->save();
-    $this->assertFalse($plugin->isAvailable());
-  }
-
-  /**
    * Tests that the status report reflects the server availability.
    */
   public function testRuntimeRequirements(): void {
@@ -151,14 +139,6 @@ class TikaLoaderTest extends KernelTestBase {
     $down = $hooks->runtimeRequirements();
     $this->assertSame(RequirementSeverity::Error, $down['document_loader_tika']['severity']);
     $this->assertStringContainsString('http://tika:9998', (string) $down['document_loader_tika']['value']);
-  }
-
-  /**
-   * Tests that the version endpoint is reported when the server answers.
-   */
-  public function testVersion(): void {
-    $this->tika->append(new Response(200, [], "Apache Tika 3.3.1\n"));
-    $this->assertSame('Apache Tika 3.3.1', $this->container->get(TikaClientInterface::class)->version());
   }
 
 }

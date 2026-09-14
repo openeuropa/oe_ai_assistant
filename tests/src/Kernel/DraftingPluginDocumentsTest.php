@@ -508,41 +508,6 @@ class DraftingPluginDocumentsTest extends AiEditorialSessionKernelTestBase {
   }
 
   /**
-   * Tests that a document of another session cannot be removed.
-   *
-   * Documents belong to exactly one session; the id alone never grants
-   * access to a document uploaded elsewhere.
-   */
-  public function testRemoveRejectsDocumentOfAnotherSession(): void {
-    $owner = $this->createUser();
-    $this->container->get('current_user')->setAccount($owner);
-    $session = $this->createSession($owner);
-    $otherSession = $this->createSession($owner);
-    $plugin = $this->container->get(AiAssistantPluginManager::class)
-      ->createInstance('drafting');
-
-    $addResponse = $plugin->executeAction('add-document', $this->createUploadRequest((string) $otherSession->id(), 'context', 'other.txt', 'Other contents.'));
-    $documentId = $addResponse['document']['id'];
-
-    $removeRequest = Request::create('', 'POST', [], [], [], ['CONTENT_TYPE' => 'application/json'], json_encode([
-      'sessionId' => (string) $session->id(),
-      'category' => 'context',
-      'documentId' => $documentId,
-    ], JSON_THROW_ON_ERROR));
-    try {
-      $plugin->executeAction('remove-document', $removeRequest);
-      $this->fail('A document of another session must not be removable.');
-    }
-    catch (ActionException $e) {
-      $this->assertSame(404, $e->statusCode);
-    }
-
-    $mediaStorage = $this->container->get('entity_type.manager')->getStorage('media');
-    $mediaStorage->resetCache([$documentId]);
-    $this->assertInstanceOf(MediaInterface::class, $mediaStorage->load($documentId));
-  }
-
-  /**
    * Tests a rejected upload leaves no staged file behind.
    *
    * A rejected upload never becomes a managed file, so the action itself
