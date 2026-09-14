@@ -283,7 +283,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
           // Record the drafted fields as the result of the draft_content call
           // so the transcript keeps a trace that can repopulate the artifact.
           if ($lastAssistant !== NULL) {
-            $this->attachDraftResult($lastAssistant, $drafted);
+            $this->attachDraftResult($lastAssistant, $drafted, $context['template']);
           }
           // Stream and record a confirmation so it survives a reload.
           if ($drafted) {
@@ -472,8 +472,12 @@ class DraftingPlugin extends AiAssistantPluginBase {
    *   The assistant turn that triggered drafting.
    * @param array $drafted
    *   The consolidated drafted field values.
+   * @param string|null $templateId
+   *   The drafting template id resolved for this turn, stamped on the message
+   *   so provenance can attribute the saved revision to the template that
+   *   produced it even if the session's template later changes.
    */
-  private function attachDraftResult(AiConversationMessageInterface $message, array $drafted): void {
+  private function attachDraftResult(AiConversationMessageInterface $message, array $drafted, ?string $templateId = NULL): void {
     $toolCalls = $message->getToolCalls();
     $found = FALSE;
     foreach ($toolCalls as &$call) {
@@ -493,6 +497,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
       ];
     }
     $message->setToolCalls($toolCalls);
+    $message->setDraftTemplateId($templateId);
     $message->save();
   }
 

@@ -59,6 +59,13 @@ class ProvenanceRecorder implements ProvenanceRecorderInterface {
       $tokens = $this->sumTokenUsage($session, $message);
       $version = $this->snapshotVersion($entity);
 
+      // Prefer the template stamped on the drafting turn so an older draft
+      // keeps the template that produced it, even if the session's template
+      // was changed afterwards. Fall back to the session's current template
+      // for turns recorded before stamping was introduced.
+      $template = $message->getDraftTemplateId()
+        ?? ($session->get('template')->target_id ?: NULL);
+
       $record = $storage->create([
         'entity_type' => $entity->getEntityTypeId(),
         'entity_id' => (int) $entity->id(),
@@ -66,7 +73,7 @@ class ProvenanceRecorder implements ProvenanceRecorderInterface {
         'uid' => (int) $this->currentUser->id(),
         'session' => $session->id(),
         'message' => $message->id(),
-        'template' => $session->get('template')->target_id ?: NULL,
+        'template' => $template,
         'tokens_input' => $tokens['input'],
         'tokens_output' => $tokens['output'],
         'tokens_total' => $tokens['total'],

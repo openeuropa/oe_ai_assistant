@@ -486,6 +486,10 @@ class DraftingPluginSaveTest extends ExistingSiteBase {
       ],
     ]);
     $assistant->setTokenUsage(['input' => 1, 'output' => 1, 'total' => 2]);
+    // Stamp the template that produced this turn, as the drafting flow does
+    // via DraftingPlugin::attachDraftResult(). Provenance reads this back so a
+    // saved draft keeps the template it was drafted with.
+    $assistant->setDraftTemplateId($template->id());
     $assistant->save();
 
     $child = \Drupal::entityTypeManager()->getStorage('ai_conversation_message')->create([

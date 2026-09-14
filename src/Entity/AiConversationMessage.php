@@ -179,6 +179,29 @@ class AiConversationMessage extends ContentEntityBase implements AiConversationM
   }
 
   /**
+   * {@inheritdoc}
+   */
+  public function getDraftTemplateId(): ?string {
+    $metadata = $this->getMetadata();
+    $id = $metadata['draft_template'] ?? NULL;
+    return ($id === NULL || $id === '') ? NULL : (string) $id;
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function setDraftTemplateId(?string $template_id): static {
+    $metadata = $this->getMetadata();
+    if ($template_id === NULL || $template_id === '') {
+      unset($metadata['draft_template']);
+    }
+    else {
+      $metadata['draft_template'] = $template_id;
+    }
+    return $this->setMetadata($metadata);
+  }
+
+  /**
    * Decodes a JSON-backed field to an array.
    *
    * @param string $field
