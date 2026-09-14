@@ -10,6 +10,12 @@ use Drupal\ai\OperationType\Chat\ChatMessage;
 use Drupal\Component\Datetime\TimeInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Lock\LockBackendInterface;
+use Drupal\Core\Session\AccountProxyInterface;
+use Drupal\document_loader\DocumentLoaderType\Input\MarkdownInput;
+use Drupal\document_loader\DocumentLoaderType\Input\PdfInput;
+use Drupal\document_loader\DocumentLoaderType\Input\TextInput;
+use Drupal\document_loader\DocumentLoaderType\Input\WordInput;
+use Drupal\document_loader\Service\DocumentLoaderManager;
 use Drupal\file\FileInterface;
 use Drupal\media\MediaInterface;
 use Drupal\oe_ai_assistant\Exception\DocumentExtractionException;
@@ -20,9 +26,29 @@ use Symfony\Component\DependencyInjection\Attribute\Autowire;
 /**
  * Processor persisting every step on the media entity.
  *
+ * Text comes from the document_loader framework, which picks the loader
+ * for the document type (Tika through document_loader_tika on this site).
  * Saves never create a revision: the pipeline is not editorial history.
  */
 final class DocumentExtractionProcessor implements DocumentExtractionProcessorInterface {
+
+  /**
+   * Accepted extensions mapped to their document_loader type and input class.
+   *
+   * @var array
+   */
+  private const array TYPES = [
+    'txt' => ['text', TextInput::class],
+    'md' => ['markdown', MarkdownInput::class],
+    'docx' => ['word', WordInput::class],
+    'doc' => ['word', WordInput::class],
+    'pdf' => ['pdf', PdfInput::class],
+  ];
+
+  /**
+   * Word bookmark markers Tika leaves in plain text, such as [bookmark: _Toc0].
+   */
+  private const string BOOKMARK_PATTERN = '/\[bookmark: [^\]]*\]/';
 
   /**
    * Upper bound of extract characters sent to the model.
@@ -37,7 +63,9 @@ final class DocumentExtractionProcessor implements DocumentExtractionProcessorIn
     . 'what it is and its key points. Return only the summary.';
 
   public function __construct(
-    private readonly DocumentTextExtractorInterface $extractor,
+    #[Autowire(service: 'document_loader.manager')]
+    private readonly DocumentLoaderManager $loader,
+    private readonly AccountProxyInterface $currentUser,
     #[Autowire(service: 'ai.provider')]
     private readonly AiProviderPluginManager $aiProviderManager,
     private readonly EntityTypeManagerInterface $entityTypeManager,
@@ -162,7 +190,7 @@ final class DocumentExtractionProcessor implements DocumentExtractionProcessorIn
   private function run(MediaInterface $media): string {
     try {
       if ($this->getState($media) === self::STATE_EXTRACTING) {
-        $text = $this->extractor->extract($this->getSourceFile($media));
+        $text = $this->extractText($this->getSourceFile($media));
         $media->set(DocumentMediaHooks::EXTRACT_FIELD, $text);
         $this->saveState($media, self::STATE_EXTRACTED);
         $this->saveState($media, self::STATE_SUMMARIZING);
@@ -183,6 +211,43 @@ final class DocumentExtractionProcessor implements DocumentExtractionProcessorIn
 
       return self::STATE_ERROR;
     }
+  }
+
+  /**
+   * Extracts the plain text of a document file through document_loader.
+   *
+   * The typed input skips the framework's file access check, which the
+   * anonymous cron user would fail on a private file.
+   *
+   * @throws \Drupal\oe_ai_assistant\Exception\DocumentExtractionException
+   *   When the extension is unsupported, the loader fails, or no text
+   *   comes back.
+   */
+  private function extractText(FileInterface $file): string {
+    $extension = strtolower(pathinfo((string) $file->getFilename(), PATHINFO_EXTENSION));
+    if (!isset(self::TYPES[$extension])) {
+      throw new DocumentExtractionException(sprintf('Unsupported document extension "%s".', $extension));
+    }
+    [$type, $inputClass] = self::TYPES[$extension];
+
+    try {
+      $result = $this->loader->loadFromInput(
+        'document_loader_type:' . $type,
+        new $inputClass((string) $file->getFileUri()),
+        $this->currentUser,
+        'text',
+      );
+    }
+    catch (\Throwable $e) {
+      throw new DocumentExtractionException('Text extraction failed: ' . $e->getMessage(), 0, $e);
+    }
+
+    $text = trim((string) preg_replace(self::BOOKMARK_PATTERN, '', $result->content));
+    if ($text === '') {
+      throw new DocumentExtractionException('Text extraction returned no text.');
+    }
+
+    return $text;
   }
 
   /**

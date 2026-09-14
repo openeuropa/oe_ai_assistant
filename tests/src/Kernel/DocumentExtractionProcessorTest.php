@@ -14,6 +14,7 @@ use Drupal\oe_ai_assistant_test\Plugin\AiProvider\MockAiProvider;
 use Drupal\oe_ai_assistant_test\Plugin\AiProvider\MockResponse;
 use GuzzleHttp\Handler\MockHandler;
 use GuzzleHttp\Psr7\Response;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
 
 /**
@@ -148,6 +149,50 @@ class DocumentExtractionProcessorTest extends AiEditorialSessionKernelTestBase {
 
     $this->assertSame(DocumentExtractionProcessorInterface::STATE_ERROR, $this->processor()->process($media));
     $this->assertCount(0, MockAiProvider::getCallLog());
+  }
+
+  /**
+   * Tests that every accepted extension goes through the loader as text.
+   */
+  #[DataProvider('extensionProvider')]
+  public function testExtractsAcceptedExtensions(string $name): void {
+    $this->tika->append(new Response(200, [], "Extracted\n"));
+    MockAiProvider::enqueue(new MockResponse('Summary.'));
+    $media = $this->createDocument($name);
+
+    $this->assertSame(DocumentExtractionProcessorInterface::STATE_DONE, $this->processor()->process($media));
+    $this->assertSame('Extracted', $this->reload($media)->get(DocumentMediaHooks::EXTRACT_FIELD)->value);
+    $this->assertSame('text/plain', $this->tika->getLastRequest()->getHeaderLine('Accept'));
+  }
+
+  /**
+   * The accepted source field extensions.
+   */
+  public static function extensionProvider(): array {
+    return [['brief.txt'], ['brief.md'], ['brief.docx'], ['brief.pdf']];
+  }
+
+  /**
+   * Tests that Word bookmark markers are stripped from the text.
+   */
+  public function testStripsBookmarkMarkers(): void {
+    $this->tika->append(new Response(200, [], "[bookmark: _Toc0]Title\nBody [bookmark: _abc] text"));
+    MockAiProvider::enqueue(new MockResponse('Summary.'));
+    $media = $this->createDocument('brief.docx');
+
+    $this->processor()->process($media);
+
+    $this->assertSame("Title\nBody  text", $this->reload($media)->get(DocumentMediaHooks::EXTRACT_FIELD)->value);
+  }
+
+  /**
+   * Tests that an unsupported extension fails before any request.
+   */
+  public function testUnsupportedExtensionEndsInError(): void {
+    $media = $this->createDocument('brief.zip');
+
+    $this->assertSame(DocumentExtractionProcessorInterface::STATE_ERROR, $this->processor()->process($media));
+    $this->assertNull($this->tika->getLastRequest());
   }
 
   /**
