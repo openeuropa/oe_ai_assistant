@@ -10,7 +10,6 @@ use Drupal\media\Entity\Media;
 use Drupal\media\MediaInterface;
 use Drupal\oe_ai_assistant\Hook\DocumentMediaHooks;
 use Drupal\oe_ai_assistant\Service\Drafting\DocumentExtractionProcessorInterface;
-use Drupal\oe_ai_assistant\Service\Drafting\DocumentExtractionWorkflowInterface as W;
 use Drupal\oe_ai_assistant_test\Plugin\AiProvider\MockAiProvider;
 use Drupal\oe_ai_assistant_test\Plugin\AiProvider\MockResponse;
 use GuzzleHttp\Handler\MockHandler;
@@ -82,10 +81,10 @@ class DocumentExtractionProcessorTest extends AiEditorialSessionKernelTestBase {
   }
 
   /**
-   * The workflow service.
+   * Reads the stored state of a document.
    */
-  private function workflow(): W {
-    return $this->container->get(W::class);
+  private function stateOf(MediaInterface $media): string {
+    return (string) $this->reload($media)->get(DocumentExtractionProcessorInterface::STATE_FIELD)->value;
   }
 
   /**
@@ -99,9 +98,9 @@ class DocumentExtractionProcessorTest extends AiEditorialSessionKernelTestBase {
 
     $state = $this->processor()->process($media);
 
-    $this->assertSame(W::STATE_DONE, $state);
+    $this->assertSame(DocumentExtractionProcessorInterface::STATE_DONE, $state);
     $fresh = $this->reload($media);
-    $this->assertSame(W::STATE_DONE, $this->workflow()->getState($fresh));
+    $this->assertSame(DocumentExtractionProcessorInterface::STATE_DONE, $this->stateOf($fresh));
     $this->assertSame('Full text', $fresh->get(DocumentMediaHooks::EXTRACT_FIELD)->value);
     $this->assertSame('A brief summary.', $fresh->get(DocumentMediaHooks::SUMMARY_FIELD)->value);
     $this->assertSame($revisions, $this->countRevisions($media));
@@ -122,7 +121,7 @@ class DocumentExtractionProcessorTest extends AiEditorialSessionKernelTestBase {
 
     $state = $this->processor()->process($media);
 
-    $this->assertSame(W::STATE_ERROR, $state);
+    $this->assertSame(DocumentExtractionProcessorInterface::STATE_ERROR, $state);
     $fresh = $this->reload($media);
     $this->assertSame('Full text', $fresh->get(DocumentMediaHooks::EXTRACT_FIELD)->value);
     $this->assertTrue($fresh->get(DocumentMediaHooks::SUMMARY_FIELD)->isEmpty());
@@ -136,7 +135,7 @@ class DocumentExtractionProcessorTest extends AiEditorialSessionKernelTestBase {
     MockAiProvider::enqueue(new MockResponse('   '));
     $media = $this->createDocument();
 
-    $this->assertSame(W::STATE_ERROR, $this->processor()->process($media));
+    $this->assertSame(DocumentExtractionProcessorInterface::STATE_ERROR, $this->processor()->process($media));
   }
 
   /**
@@ -147,7 +146,7 @@ class DocumentExtractionProcessorTest extends AiEditorialSessionKernelTestBase {
     $this->tika->append(new Response(200, [], 'Full text'));
     $media = $this->createDocument();
 
-    $this->assertSame(W::STATE_ERROR, $this->processor()->process($media));
+    $this->assertSame(DocumentExtractionProcessorInterface::STATE_ERROR, $this->processor()->process($media));
     $this->assertCount(0, MockAiProvider::getCallLog());
   }
 
@@ -160,7 +159,7 @@ class DocumentExtractionProcessorTest extends AiEditorialSessionKernelTestBase {
 
     $state = $this->processor()->process($media);
 
-    $this->assertSame(W::STATE_ERROR, $state);
+    $this->assertSame(DocumentExtractionProcessorInterface::STATE_ERROR, $state);
     $this->assertTrue($this->reload($media)->get(DocumentMediaHooks::EXTRACT_FIELD)->isEmpty());
   }
 
@@ -168,9 +167,14 @@ class DocumentExtractionProcessorTest extends AiEditorialSessionKernelTestBase {
    * Tests that in-flight and done documents are not claimed.
    */
   public function testInFlightAndDoneAreNoOps(): void {
-    foreach ([W::STATE_EXTRACTING, W::STATE_SUMMARIZING, W::STATE_DONE] as $state) {
+    $states = [
+      DocumentExtractionProcessorInterface::STATE_EXTRACTING,
+      DocumentExtractionProcessorInterface::STATE_SUMMARIZING,
+      DocumentExtractionProcessorInterface::STATE_DONE,
+    ];
+    foreach ($states as $state) {
       $media = $this->createDocument($state . '.txt');
-      $media->set(W::STATE_FIELD, $state)->save();
+      $media->set(DocumentExtractionProcessorInterface::STATE_FIELD, $state)->save();
 
       $this->assertSame($state, $this->processor()->process($media));
       $this->assertNull($this->tika->getLastRequest());
@@ -184,9 +188,9 @@ class DocumentExtractionProcessorTest extends AiEditorialSessionKernelTestBase {
     $this->tika->append(new Response(200, [], 'Again'));
     MockAiProvider::enqueue(new MockResponse('Summary again.'));
     $media = $this->createDocument();
-    $media->set(W::STATE_FIELD, W::STATE_EXTRACTING)->save();
+    $media->set(DocumentExtractionProcessorInterface::STATE_FIELD, DocumentExtractionProcessorInterface::STATE_EXTRACTING)->save();
 
-    $this->assertSame(W::STATE_DONE, $this->processor()->process($media, TRUE));
+    $this->assertSame(DocumentExtractionProcessorInterface::STATE_DONE, $this->processor()->process($media, TRUE));
 
     $this->assertSame('Again', $this->reload($media)->get(DocumentMediaHooks::EXTRACT_FIELD)->value);
   }
@@ -196,10 +200,10 @@ class DocumentExtractionProcessorTest extends AiEditorialSessionKernelTestBase {
    */
   public function testRetryWithExtractSkipsLoader(): void {
     $media = $this->createDocument();
-    $media->set(DocumentMediaHooks::EXTRACT_FIELD, 'Kept')->set(W::STATE_FIELD, W::STATE_ERROR)->save();
+    $media->set(DocumentMediaHooks::EXTRACT_FIELD, 'Kept')->set(DocumentExtractionProcessorInterface::STATE_FIELD, DocumentExtractionProcessorInterface::STATE_ERROR)->save();
     MockAiProvider::enqueue(new MockResponse('Summary of kept.'));
 
-    $this->assertSame(W::STATE_DONE, $this->processor()->process($media));
+    $this->assertSame(DocumentExtractionProcessorInterface::STATE_DONE, $this->processor()->process($media));
 
     $this->assertNull($this->tika->getLastRequest());
     $fresh = $this->reload($media);
@@ -258,7 +262,7 @@ class DocumentExtractionProcessorTest extends AiEditorialSessionKernelTestBase {
     });
     $media = $this->createDocument();
 
-    $this->assertSame(W::STATE_SCHEDULED, $this->processor()->process($media));
+    $this->assertSame(DocumentExtractionProcessorInterface::STATE_SCHEDULED, $this->processor()->process($media));
     $this->assertNull($this->tika->getLastRequest());
   }
 
@@ -268,11 +272,11 @@ class DocumentExtractionProcessorTest extends AiEditorialSessionKernelTestBase {
   public function testCronProcessesPendingDocuments(): void {
     $scheduled = $this->createDocument('scheduled.txt');
     $stale = $this->createDocument('stale.txt');
-    $stale->set(W::STATE_FIELD, W::STATE_EXTRACTING)->save();
+    $stale->set(DocumentExtractionProcessorInterface::STATE_FIELD, DocumentExtractionProcessorInterface::STATE_EXTRACTING)->save();
     $recent = $this->createDocument('recent.txt');
-    $recent->set(W::STATE_FIELD, W::STATE_SUMMARIZING)->save();
+    $recent->set(DocumentExtractionProcessorInterface::STATE_FIELD, DocumentExtractionProcessorInterface::STATE_SUMMARIZING)->save();
     $done = $this->createDocument('done.txt');
-    $done->set(W::STATE_FIELD, W::STATE_DONE)->save();
+    $done->set(DocumentExtractionProcessorInterface::STATE_FIELD, DocumentExtractionProcessorInterface::STATE_DONE)->save();
 
     // Age the stale document past the threshold.
     $this->container->get('database')->update('media_field_data')
@@ -287,34 +291,40 @@ class DocumentExtractionProcessorTest extends AiEditorialSessionKernelTestBase {
 
     $this->container->get('module_handler')->invoke('oe_ai_assistant', 'cron');
 
-    $this->assertSame(W::STATE_DONE, $this->workflow()->getState($this->reload($scheduled)));
-    $this->assertSame(W::STATE_DONE, $this->workflow()->getState($this->reload($stale)));
-    $this->assertSame(W::STATE_SUMMARIZING, $this->workflow()->getState($this->reload($recent)));
-    $this->assertSame(W::STATE_DONE, $this->workflow()->getState($this->reload($done)));
+    $this->assertSame(DocumentExtractionProcessorInterface::STATE_DONE, $this->stateOf($scheduled));
+    $this->assertSame(DocumentExtractionProcessorInterface::STATE_DONE, $this->stateOf($stale));
+    $this->assertSame(DocumentExtractionProcessorInterface::STATE_SUMMARIZING, $this->stateOf($recent));
+    $this->assertSame(DocumentExtractionProcessorInterface::STATE_DONE, $this->stateOf($done));
     $this->assertTrue(MockAiProvider::isEmpty());
   }
 
   /**
-   * Tests that findPending honours the limit and the stale threshold.
+   * Tests that processPending honours the limit and the stale threshold.
    */
-  public function testFindPending(): void {
+  public function testProcessPendingHonoursLimitAndThreshold(): void {
     $first = $this->createDocument('first.txt');
     $second = $this->createDocument('second.txt');
-    $second->set(W::STATE_FIELD, W::STATE_EXTRACTED)->save();
     $stale = $this->createDocument('stale.txt');
-    $stale->set(W::STATE_FIELD, W::STATE_SUMMARIZING)->save();
+    $stale->set(DocumentExtractionProcessorInterface::STATE_FIELD, DocumentExtractionProcessorInterface::STATE_SUMMARIZING)->save();
     $this->container->get('database')->update('media_field_data')
       ->fields(['changed' => time() - 3600])
       ->condition('mid', $stale->id())
       ->execute();
+    $this->tika->append(new Response(200, [], 'One'));
+    MockAiProvider::enqueue(new MockResponse('Summary one.'));
 
-    $this->assertSame([
-      (int) $first->id() => FALSE,
-      (int) $second->id() => FALSE,
-      (int) $stale->id() => TRUE,
-    ], $this->workflow()->findPending(5, 600));
-    $this->assertSame([(int) $first->id() => FALSE], $this->workflow()->findPending(1, 600));
-    $this->assertArrayNotHasKey((int) $stale->id(), $this->workflow()->findPending(5, 7200));
+    // The limit takes the oldest resting document first.
+    $this->processor()->processPending(1, 600);
+    $this->assertSame(DocumentExtractionProcessorInterface::STATE_DONE, $this->stateOf($first));
+    $this->assertSame(DocumentExtractionProcessorInterface::STATE_SCHEDULED, $this->stateOf($second));
+    $this->assertSame(DocumentExtractionProcessorInterface::STATE_SUMMARIZING, $this->stateOf($stale));
+
+    // A generous threshold leaves the in-flight document alone.
+    $this->tika->append(new Response(200, [], 'Two'));
+    MockAiProvider::enqueue(new MockResponse('Summary two.'));
+    $this->processor()->processPending(5, 7200);
+    $this->assertSame(DocumentExtractionProcessorInterface::STATE_DONE, $this->stateOf($second));
+    $this->assertSame(DocumentExtractionProcessorInterface::STATE_SUMMARIZING, $this->stateOf($stale));
   }
 
   /**

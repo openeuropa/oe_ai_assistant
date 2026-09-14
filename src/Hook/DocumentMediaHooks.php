@@ -5,11 +5,9 @@ declare(strict_types=1);
 namespace Drupal\oe_ai_assistant\Hook;
 
 use Drupal\Core\DependencyInjection\AutowireTrait;
-use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Hook\Attribute\Hook;
 use Drupal\media\MediaInterface;
 use Drupal\oe_ai_assistant\Service\Drafting\DocumentExtractionProcessorInterface;
-use Drupal\oe_ai_assistant\Service\Drafting\DocumentExtractionWorkflowInterface;
 
 /**
  * Hooks for working-material document media entities.
@@ -39,9 +37,7 @@ final class DocumentMediaHooks {
   private const int STALE_AFTER = 600;
 
   public function __construct(
-    private readonly DocumentExtractionWorkflowInterface $workflow,
     private readonly DocumentExtractionProcessorInterface $processor,
-    private readonly EntityTypeManagerInterface $entityTypeManager,
   ) {}
 
   /**
@@ -52,13 +48,7 @@ final class DocumentMediaHooks {
    */
   #[Hook('cron')]
   public function processPendingDocuments(): void {
-    $storage = $this->entityTypeManager->getStorage('media');
-    foreach ($this->workflow->findPending(self::CRON_BATCH, self::STALE_AFTER) as $id => $reclaim) {
-      $media = $storage->load($id);
-      if ($media instanceof MediaInterface) {
-        $this->processor->process($media, $reclaim);
-      }
-    }
+    $this->processor->processPending(self::CRON_BATCH, self::STALE_AFTER);
   }
 
   /**
@@ -69,7 +59,7 @@ final class DocumentMediaHooks {
    */
   #[Hook('media_presave')]
   public function scheduleExtraction(MediaInterface $media): void {
-    if (!$this->workflow->appliesTo($media)) {
+    if (!$media->hasField(DocumentExtractionProcessorInterface::STATE_FIELD)) {
       return;
     }
     if (!$media->isNew() && !$this->sourceFileChanged($media)) {
@@ -78,7 +68,10 @@ final class DocumentMediaHooks {
 
     $media->set(self::EXTRACT_FIELD, NULL);
     $media->set(self::SUMMARY_FIELD, NULL);
-    $media->set(DocumentExtractionWorkflowInterface::STATE_FIELD, DocumentExtractionWorkflowInterface::STATE_SCHEDULED);
+    $media->set(
+      DocumentExtractionProcessorInterface::STATE_FIELD,
+      DocumentExtractionProcessorInterface::STATE_SCHEDULED,
+    );
   }
 
   /**

@@ -115,8 +115,7 @@ can use them. The pipeline runs server-side on the document media entity:
 - The default chat provider writes a brief summary of the extracted text.
 - A `state_machine` workflow (`oe_ai_document_extraction`) tracks each
   document: scheduled, extracting, extracted, summarizing, done, error. The
-  state is shown in the media form; the permission "Change the extraction
-  state of AI documents" lets editors move it by hand, for example to retry.
+  media form shows the state and only offers the transitions valid from it.
 - The app triggers processing right after an upload and polls the status
   until it settles. Cron picks up scheduled documents and reclaims runs stuck
   for more than ten minutes, five per run.

@@ -7,6 +7,7 @@ namespace Drupal\oe_ai_assistant\Service\Drafting;
 use Drupal\ai\AiProviderPluginManager;
 use Drupal\ai\OperationType\Chat\ChatInput;
 use Drupal\ai\OperationType\Chat\ChatMessage;
+use Drupal\Component\Datetime\TimeInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Lock\LockBackendInterface;
 use Drupal\file\FileInterface;
@@ -36,7 +37,6 @@ final class DocumentExtractionProcessor implements DocumentExtractionProcessorIn
     . 'what it is and its key points. Return only the summary.';
 
   public function __construct(
-    private readonly DocumentExtractionWorkflowInterface $workflow,
     private readonly DocumentTextExtractorInterface $extractor,
     #[Autowire(service: 'ai.provider')]
     private readonly AiProviderPluginManager $aiProviderManager,
@@ -45,21 +45,82 @@ final class DocumentExtractionProcessor implements DocumentExtractionProcessorIn
     private readonly LockBackendInterface $lock,
     #[Autowire(service: 'logger.channel.oe_ai_assistant')]
     private readonly LoggerInterface $logger,
+    private readonly TimeInterface $time,
   ) {}
 
   /**
    * {@inheritdoc}
    */
   public function process(MediaInterface $media, bool $reclaimInFlight = FALSE): string {
-    if (!$this->workflow->appliesTo($media)) {
-      return $this->workflow->getState($media);
+    if (!$media->hasField(self::STATE_FIELD)) {
+      return self::STATE_SCHEDULED;
     }
     $claimed = $this->claim($media, $reclaimInFlight);
     if ($claimed === NULL) {
-      return $this->workflow->getState($this->reload($media));
+      return $this->getState($this->reload($media));
     }
 
     return $this->run($claimed);
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function processPending(int $limit, int $staleAfterSeconds): void {
+    $storage = $this->entityTypeManager->getStorage('media');
+    $pending = [];
+    foreach ($this->findInStates([self::STATE_SCHEDULED, self::STATE_EXTRACTED], $limit) as $id) {
+      $pending[$id] = FALSE;
+    }
+    $remaining = $limit - count($pending);
+    if ($remaining > 0) {
+      $threshold = $this->time->getRequestTime() - $staleAfterSeconds;
+      foreach ($this->findInStates([self::STATE_EXTRACTING, self::STATE_SUMMARIZING], $remaining, $threshold) as $id) {
+        $pending[$id] = TRUE;
+      }
+    }
+    foreach ($pending as $id => $reclaim) {
+      $media = $storage->load($id);
+      if ($media instanceof MediaInterface) {
+        $this->process($media, $reclaim);
+      }
+    }
+  }
+
+  /**
+   * Returns the ids of documents in the given states, oldest first.
+   *
+   * Only working-material bundles carry the state field, so the state
+   * condition alone selects the right media.
+   *
+   * @param string[] $states
+   *   The states to match.
+   * @param int $limit
+   *   Maximum number of ids.
+   * @param int|null $changedBefore
+   *   When set, only documents last changed before this timestamp.
+   *
+   * @return string[]
+   *   The media ids.
+   */
+  private function findInStates(array $states, int $limit, ?int $changedBefore = NULL): array {
+    $query = $this->entityTypeManager->getStorage('media')->getQuery()
+      ->accessCheck(FALSE)
+      ->condition(self::STATE_FIELD, $states, 'IN')
+      ->sort('mid')
+      ->range(0, $limit);
+    if ($changedBefore !== NULL) {
+      $query->condition('changed', $changedBefore, '<');
+    }
+
+    return array_values($query->execute());
+  }
+
+  /**
+   * Reads the state of a document, scheduled when none is stored yet.
+   */
+  private function getState(MediaInterface $media): string {
+    return (string) ($media->get(self::STATE_FIELD)->value ?? '') ?: self::STATE_SCHEDULED;
   }
 
   /**
@@ -78,17 +139,17 @@ final class DocumentExtractionProcessor implements DocumentExtractionProcessorIn
     }
     try {
       $fresh = $this->reload($media);
-      $state = $this->workflow->getState($fresh);
+      $state = $this->getState($fresh);
       $inFlight = in_array($state, [
-        DocumentExtractionWorkflowInterface::STATE_EXTRACTING,
-        DocumentExtractionWorkflowInterface::STATE_SUMMARIZING,
+        self::STATE_EXTRACTING,
+        self::STATE_SUMMARIZING,
       ], TRUE);
-      if ($state === DocumentExtractionWorkflowInterface::STATE_DONE || ($inFlight && !$reclaimInFlight)) {
+      if ($state === self::STATE_DONE || ($inFlight && !$reclaimInFlight)) {
         return NULL;
       }
       $next = $fresh->get(DocumentMediaHooks::EXTRACT_FIELD)->isEmpty()
-        ? DocumentExtractionWorkflowInterface::STATE_EXTRACTING
-        : DocumentExtractionWorkflowInterface::STATE_SUMMARIZING;
+        ? self::STATE_EXTRACTING
+        : self::STATE_SUMMARIZING;
       $this->saveState($fresh, $next);
 
       return $fresh;
@@ -103,27 +164,27 @@ final class DocumentExtractionProcessor implements DocumentExtractionProcessorIn
    */
   private function run(MediaInterface $media): string {
     try {
-      if ($this->workflow->getState($media) === DocumentExtractionWorkflowInterface::STATE_EXTRACTING) {
+      if ($this->getState($media) === self::STATE_EXTRACTING) {
         $text = $this->extractor->extract($this->getSourceFile($media));
         $media->set(DocumentMediaHooks::EXTRACT_FIELD, $text);
-        $this->saveState($media, DocumentExtractionWorkflowInterface::STATE_EXTRACTED);
-        $this->saveState($media, DocumentExtractionWorkflowInterface::STATE_SUMMARIZING);
+        $this->saveState($media, self::STATE_EXTRACTED);
+        $this->saveState($media, self::STATE_SUMMARIZING);
       }
 
       $summary = $this->summarize((string) $media->get(DocumentMediaHooks::EXTRACT_FIELD)->value);
       $media->set(DocumentMediaHooks::SUMMARY_FIELD, ['value' => $summary]);
-      $this->saveState($media, DocumentExtractionWorkflowInterface::STATE_DONE);
+      $this->saveState($media, self::STATE_DONE);
 
-      return DocumentExtractionWorkflowInterface::STATE_DONE;
+      return self::STATE_DONE;
     }
     catch (\Throwable $e) {
       $this->logger->error('Document @id extraction failed: @message', [
         '@id' => $media->id(),
         '@message' => $e->getMessage(),
       ]);
-      $this->saveState($media, DocumentExtractionWorkflowInterface::STATE_ERROR);
+      $this->saveState($media, self::STATE_ERROR);
 
-      return DocumentExtractionWorkflowInterface::STATE_ERROR;
+      return self::STATE_ERROR;
     }
   }
 
@@ -156,7 +217,7 @@ final class DocumentExtractionProcessor implements DocumentExtractionProcessorIn
    * Sets a state and saves without creating a revision.
    */
   private function saveState(MediaInterface $media, string $state): void {
-    $media->set(DocumentExtractionWorkflowInterface::STATE_FIELD, $state);
+    $media->set(self::STATE_FIELD, $state);
     $media->setNewRevision(FALSE);
     $media->save();
   }
