@@ -21,6 +21,33 @@ composer require openeuropa/oe_ai_assistant
 drush en oe_ai_assistant
 ```
 
+A plain `composer require` gets git source only. The `react-app` library's JS/CSS
+is built from `app/` into `dist/`, which is gitignored and not committed. It won't
+exist until you also build the app yourself or pull the pre-built release artifact:
+
+- **For local/DDEV development**, use `ddev build-app` / `npm run build` as described
+  in [React app](#react-app) below -- no extra setup needed.
+- **For production**, require
+  [`openeuropa/composer-artifacts`](https://github.com/openeuropa/composer-artifacts)
+  in the consuming site and map the release zip published for each tagged version:
+
+  ```json
+  "require": {
+      "openeuropa/composer-artifacts": "^2",
+      "openeuropa/oe_ai_assistant": "^1.0"
+  },
+  "extra": {
+      "artifacts": {
+          "openeuropa/oe_ai_assistant": {
+              "dist": {
+                  "url": "https://github.com/{name}/releases/download/{pretty-version}/{project-name}-{pretty-version}.zip",
+                  "type": "zip"
+              }
+          }
+      }
+  }
+  ```
+
 ## Features
 
 - **Plugin system** -- extensible architecture for AI-powered editorial tools
@@ -92,6 +119,27 @@ React app mock workflow does not require provider credentials.
 | `ddev build-app` | Build the React app production bundle |
 | `ddev phpunit tests/src/ExistingSite/` | Run ExistingSite tests |
 | `ddev phpcs` | Run PHP CodeSniffer with Drupal standards |
+| `ddev dev-tag` | Print a dev release tag inferred from the current branch |
+
+### Releases
+
+Pushing a tag matching `MAJOR.MINOR.PATCH` triggers the release workflow, which
+builds the React app and publishes a zip with `dist/` as a GitHub release asset.
+
+For testing a branch, use a dev tag: `0.TICKET.YYYYMMDDHHMM`, for example
+`0.5001.202609111602`. Generate one with:
+
+```bash
+ddev dev-tag
+```
+
+The ticket number is inferred from the branch name (`OEL-1234`, `OEL-1234_foo`,
+`OEL-1234-foo`). If none is found, the tag falls back to `0.0.YYYYMMDDHHMM`.
+Then tag and push:
+
+```bash
+git tag "$(ddev dev-tag)" && git push origin --tags
+```
 
 ### Site credentials
 
@@ -121,14 +169,14 @@ ddev phpunit tests/src/ExistingSite/
 ### React app
 
 The React frontend lives in `app/` and produces an IIFE bundle consumed by the Drupal module. The Drupal library
-definition points directly to `app/dist/`.
+definition points directly to the module root's `dist/`.
 
 ```bash
 cd app
 npm install
 npm run dev          # Vite + Express mock API (standalone, no Drupal or API key needed)
 npm run dev:integration # Vite + Express API with real Mistral drafting
-npm run build        # Production IIFE bundle -> app/dist/
+npm run build        # Production IIFE bundle -> dist/ (module root)
 npm run lint         # Biome check
 npm run typecheck    # TypeScript strict
 npm run test:e2e     # Playwright end-to-end tests
