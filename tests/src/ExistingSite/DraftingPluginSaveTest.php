@@ -509,4 +509,141 @@ class DraftingPluginSaveTest extends ExistingSiteBase {
     ];
   }
 
+  /**
+   * Tests that an older draft version keeps its original template provenance.
+   */
+  public function testSaveOlderDraftVersionAfterSessionTemplateChanged(): void {
+    $user = $this->createUser([
+      'use oe ai assistant',
+      'create oe_news content',
+    ]);
+    $this->drupalLogin($user);
+
+    $context = $this->prepareDraftContext($user);
+    $second_template = \Drupal::entityTypeManager()->getStorage('ai_drafting_template')->create([
+      'id' => 'save_provenance_second_' . uniqid(),
+      'label' => 'Save provenance second',
+      'content_type' => 'oe_news',
+      'fields' => ['title' => ['prompt' => 'x']],
+    ]);
+    $second_template->save();
+    $this->markEntityForCleanup($second_template);
+
+    $session = $context['session'];
+    $session->set('template', $second_template->id());
+    $session->save();
+
+    $second_assistant = \Drupal::entityTypeManager()->getStorage('ai_conversation_message')->create([
+      'host_entity_type' => 'ai_editorial_session',
+      'host_entity_id' => (int) $session->id(),
+      'role' => 'assistant',
+      'agent_id' => 'orchestrator',
+      'content' => 'Draft ready again.',
+      'provider' => 'mock',
+      'model' => 'mock-model',
+    ]);
+    $second_assistant->setToolCalls([
+      [
+        'type' => 'function',
+        'function' => ['name' => 'draft_content', 'arguments' => '{}'],
+      ],
+    ]);
+    // The second turn was drafted under the second template.
+    $second_assistant->setDraftTemplateId($second_template->id());
+    $second_assistant->save();
+
+    $result = $this->httpPost('/api/ai/plugins/drafting/save', [
+      'entityTypeId' => 'node',
+      'bundle' => 'oe_news',
+      'sessionId' => $session->id(),
+      'draftVersion' => 1,
+      'fields' => [
+        'title' => [['value' => 'Version one after template change']],
+      ],
+    ]);
+
+    $this->assertEquals(200, $result['status'], 'Expected 200 response. Body: ' . json_encode($result['body']));
+    $node = \Drupal::entityTypeManager()->getStorage('node')->load($result['body']['nodeId']);
+    $provenance = \Drupal::entityTypeManager()->getStorage('ai_content_provenance')->loadByProperties([
+      'entity_type' => 'node',
+      'entity_id' => $result['body']['nodeId'],
+      'revision_id' => $node->getRevisionId(),
+    ]);
+    $this->assertNotEmpty($provenance);
+    $provenance = reset($provenance);
+    $this->assertSame((int) $context['assistant']->id(), (int) $provenance->getMessage()?->id());
+    $this->assertSame($context['template']->id(), $provenance->getTemplateId());
+  }
+
+  /**
+   * Tests that a turn without a stamped template falls back to the session.
+   *
+   * Turns recorded before per-turn template stamping was introduced have no
+   * stamped template id. Provenance must then fall back to the session's
+   * current template rather than recording NULL.
+   */
+  public function testSaveFallsBackToSessionTemplateWhenTurnHasNoStamp(): void {
+    $user = $this->createUser([
+      'use oe ai assistant',
+      'create oe_news content',
+    ]);
+    $this->drupalLogin($user);
+
+    $template = \Drupal::entityTypeManager()->getStorage('ai_drafting_template')->create([
+      'id' => 'save_provenance_fallback_' . uniqid(),
+      'label' => 'Save provenance fallback',
+      'content_type' => 'oe_news',
+      'fields' => ['title' => ['prompt' => 'x']],
+    ]);
+    $template->save();
+    $this->markEntityForCleanup($template);
+
+    $session = \Drupal::entityTypeManager()->getStorage('ai_editorial_session')->create([
+      'type' => 'content_creation',
+      'uid' => $user->id(),
+      'content_type' => 'oe_news',
+      'template' => $template->id(),
+    ]);
+    $session->save();
+
+    // A drafting turn with no stamped template (legacy turn).
+    $assistant = \Drupal::entityTypeManager()->getStorage('ai_conversation_message')->create([
+      'host_entity_type' => 'ai_editorial_session',
+      'host_entity_id' => (int) $session->id(),
+      'role' => 'assistant',
+      'agent_id' => 'orchestrator',
+      'content' => 'Draft ready.',
+      'provider' => 'mock',
+      'model' => 'mock-model',
+    ]);
+    $assistant->setToolCalls([
+      [
+        'type' => 'function',
+        'function' => ['name' => 'draft_content', 'arguments' => '{}'],
+      ],
+    ]);
+    $assistant->save();
+    $this->assertNull($assistant->getDraftTemplateId(), 'Turn has no stamped template.');
+
+    $result = $this->httpPost('/api/ai/plugins/drafting/save', [
+      'entityTypeId' => 'node',
+      'bundle' => 'oe_news',
+      'sessionId' => $session->id(),
+      'fields' => [
+        'title' => [['value' => 'Fallback to session template']],
+      ],
+    ]);
+
+    $this->assertEquals(200, $result['status'], 'Expected 200 response. Body: ' . json_encode($result['body']));
+    $node = \Drupal::entityTypeManager()->getStorage('node')->load($result['body']['nodeId']);
+    $provenance = \Drupal::entityTypeManager()->getStorage('ai_content_provenance')->loadByProperties([
+      'entity_type' => 'node',
+      'entity_id' => $result['body']['nodeId'],
+      'revision_id' => $node->getRevisionId(),
+    ]);
+    $this->assertNotEmpty($provenance);
+    $provenance = reset($provenance);
+    $this->assertSame($template->id(), $provenance->getTemplateId());
+  }
+
 }
