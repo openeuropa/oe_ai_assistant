@@ -8,11 +8,11 @@ use Drupal\Core\Form\FormState;
 use Drupal\file\Entity\File;
 use Drupal\media\Entity\Media;
 use Drupal\media\MediaInterface;
-use Drupal\oe_ai_assistant\Service\Drafting\DocumentExtractionWorkflowInterface as W;
+use Drupal\oe_ai_assistant\Service\Drafting\DocumentExtractionProcessorInterface;
 use PHPUnit\Framework\Attributes\Group;
 
 /**
- * Kernel tests for the document extraction workflow and its guards.
+ * Kernel tests for the document extraction workflow configuration.
  */
 #[Group('oe_ai_assistant')]
 class DocumentExtractionWorkflowTest extends AiEditorialSessionKernelTestBase {
@@ -58,33 +58,20 @@ class DocumentExtractionWorkflowTest extends AiEditorialSessionKernelTestBase {
    *   The state field violations.
    */
   private function stateViolations(MediaInterface $media) {
-    return $media->validate()->getByField(W::STATE_FIELD);
+    return $media->validate()->getByField(DocumentExtractionProcessorInterface::STATE_FIELD);
   }
 
   /**
-   * The workflow service.
-   */
-  private function workflow(): W {
-    return $this->container->get(W::class);
-  }
-
-  /**
-   * Tests bundle discovery, the initial state and the settled states.
+   * Tests the initial state of a new document.
    */
   public function testWorkflowReads(): void {
-    $this->assertSame(['ai_context_document'], $this->workflow()->getBundles());
-
     $media = $this->createDocument();
-    $this->assertTrue($this->workflow()->appliesTo($media));
-    $this->assertSame(W::STATE_SCHEDULED, $this->workflow()->getState($media));
+    $this->assertSame(DocumentExtractionProcessorInterface::STATE_SCHEDULED, $media->get(DocumentExtractionProcessorInterface::STATE_FIELD)->value);
     $this->assertFalse($media->isPublished());
-    $this->assertTrue($this->workflow()->isSettled(W::STATE_DONE));
-    $this->assertTrue($this->workflow()->isSettled(W::STATE_ERROR));
-    $this->assertFalse($this->workflow()->isSettled(W::STATE_EXTRACTING));
   }
 
   /**
-   * Tests that validated saves follow transitions and the permission.
+   * Tests that validated saves follow the workflow transitions.
    */
   public function testValidationGuardsTransitions(): void {
     $media = $this->createDocument();
@@ -92,32 +79,26 @@ class DocumentExtractionWorkflowTest extends AiEditorialSessionKernelTestBase {
 
     // No transition links scheduled and done.
     $media = $this->reload($media);
-    $media->set(W::STATE_FIELD, W::STATE_DONE);
+    $media->set(DocumentExtractionProcessorInterface::STATE_FIELD, DocumentExtractionProcessorInterface::STATE_DONE);
     $this->assertCount(1, $this->stateViolations($media));
 
-    // A transition exists but the editor lacks the permission.
+    // An existing transition passes; staying put always does.
     $media = $this->reload($media);
-    $media->set(W::STATE_FIELD, W::STATE_EXTRACTING);
-    $this->assertCount(1, $this->stateViolations($media));
-
-    // With the permission the transition passes; staying put always does.
-    $this->container->get('current_user')->setAccount($this->createUser([W::TRANSITION_PERMISSION]));
-    $media = $this->reload($media);
-    $media->set(W::STATE_FIELD, W::STATE_EXTRACTING);
+    $media->set(DocumentExtractionProcessorInterface::STATE_FIELD, DocumentExtractionProcessorInterface::STATE_EXTRACTING);
     $this->assertCount(0, $this->stateViolations($media));
     $media = $this->reload($media);
     $this->assertCount(0, $this->stateViolations($media));
 
     // Unknown states are rejected outright.
     $media = $this->reload($media);
-    $media->set(W::STATE_FIELD, 'bogus');
+    $media->set(DocumentExtractionProcessorInterface::STATE_FIELD, 'bogus');
     $this->assertCount(1, $this->stateViolations($media));
 
     // Code saves without validation and is not constrained.
     $media = $this->reload($media);
-    $media->set(W::STATE_FIELD, W::STATE_DONE);
+    $media->set(DocumentExtractionProcessorInterface::STATE_FIELD, DocumentExtractionProcessorInterface::STATE_DONE);
     $media->save();
-    $this->assertSame(W::STATE_DONE, $this->workflow()->getState($this->reload($media)));
+    $this->assertSame(DocumentExtractionProcessorInterface::STATE_DONE, $this->reload($media)->get(DocumentExtractionProcessorInterface::STATE_FIELD)->value);
   }
 
   /**
@@ -135,7 +116,7 @@ class DocumentExtractionWorkflowTest extends AiEditorialSessionKernelTestBase {
     $form = [];
     $display->buildForm($this->reload($media), $form, new FormState());
 
-    return array_map('strval', $form[W::STATE_FIELD]['widget']['#options']);
+    return array_map('strval', $form[DocumentExtractionProcessorInterface::STATE_FIELD]['widget']['#options']);
   }
 
   /**
@@ -143,27 +124,15 @@ class DocumentExtractionWorkflowTest extends AiEditorialSessionKernelTestBase {
    */
   public function testFormOffersReachableStates(): void {
     $media = $this->createDocument();
-    $media->set(W::STATE_FIELD, W::STATE_ERROR)->save();
-
-    // Without the permission only the current state remains.
+    $media->set(DocumentExtractionProcessorInterface::STATE_FIELD, DocumentExtractionProcessorInterface::STATE_ERROR)->save();
     $this->container->get('current_user')->setAccount($this->createUser());
-    $this->assertSame([W::STATE_ERROR => 'Error'], $this->formOptions($media));
 
-    $this->container->get('current_user')->setAccount($this->createUser([W::TRANSITION_PERMISSION]));
     $this->assertSame([
-      W::STATE_ERROR => 'Error',
-      W::STATE_EXTRACTING => 'Extracting',
-      W::STATE_SUMMARIZING => 'Summarizing',
-      W::STATE_SCHEDULED => 'Scheduled',
+      DocumentExtractionProcessorInterface::STATE_ERROR => 'Error',
+      DocumentExtractionProcessorInterface::STATE_EXTRACTING => 'Extracting',
+      DocumentExtractionProcessorInterface::STATE_SUMMARIZING => 'Summarizing',
+      DocumentExtractionProcessorInterface::STATE_SCHEDULED => 'Scheduled',
     ], $this->formOptions($media));
-  }
-
-  /**
-   * Tests that the transition permission exists.
-   */
-  public function testTransitionPermission(): void {
-    $permissions = $this->container->get('user.permissions')->getPermissions();
-    $this->assertArrayHasKey(W::TRANSITION_PERMISSION, $permissions);
   }
 
 }

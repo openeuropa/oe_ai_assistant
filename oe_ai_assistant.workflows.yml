@@ -3,8 +3,8 @@
 # Resting states are scheduled, extracted, done and error; extracting and
 # summarizing are in flight. A claim from scheduled or error resumes by
 # data: summarizing when an extract is stored, extracting otherwise. Every
-# transition is applied by code; the transition guard limits what editors
-# may do in the media form to users holding the transition permission.
+# transition is applied by code; the media form only offers the transitions
+# valid from the current state to whoever may edit the media.
 oe_ai_document_extraction:
   id: oe_ai_document_extraction
   label: 'AI document extraction'

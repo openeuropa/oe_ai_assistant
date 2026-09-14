@@ -7,7 +7,7 @@ namespace Drupal\Tests\oe_ai_assistant\Kernel;
 use Drupal\file\Entity\File;
 use Drupal\media\Entity\Media;
 use Drupal\oe_ai_assistant\Hook\DocumentMediaHooks;
-use Drupal\oe_ai_assistant\Service\Drafting\DocumentExtractionWorkflowInterface as W;
+use Drupal\oe_ai_assistant\Service\Drafting\DocumentExtractionProcessorInterface;
 use PHPUnit\Framework\Attributes\Group;
 
 /**
@@ -50,24 +50,23 @@ class DocumentMediaHooksTest extends AiEditorialSessionKernelTestBase {
       'oe_ai_context_document' => ['target_id' => $first->id()],
     ]);
     $media->save();
-    $workflow = $this->container->get(W::class);
-    $this->assertSame(W::STATE_SCHEDULED, $workflow->getState($media));
+    $this->assertSame(DocumentExtractionProcessorInterface::STATE_SCHEDULED, $media->get(DocumentExtractionProcessorInterface::STATE_FIELD)->value);
 
     // Simulate a finished run, then a save without file change keeps it.
     $media->set(DocumentMediaHooks::EXTRACT_FIELD, 'extract');
     $media->set(DocumentMediaHooks::SUMMARY_FIELD, 'summary');
-    $media->set(W::STATE_FIELD, W::STATE_DONE);
+    $media->set(DocumentExtractionProcessorInterface::STATE_FIELD, DocumentExtractionProcessorInterface::STATE_DONE);
     $media->save();
     $media->set('name', 'renamed.txt');
     $media->save();
-    $this->assertSame(W::STATE_DONE, $workflow->getState($media));
+    $this->assertSame(DocumentExtractionProcessorInterface::STATE_DONE, $media->get(DocumentExtractionProcessorInterface::STATE_FIELD)->value);
     $this->assertSame('extract', $media->get(DocumentMediaHooks::EXTRACT_FIELD)->value);
 
     // Replacing the file resets everything.
     $second = $this->createFile('two.txt', 'two');
     $media->set('oe_ai_context_document', ['target_id' => $second->id()]);
     $media->save();
-    $this->assertSame(W::STATE_SCHEDULED, $workflow->getState($media));
+    $this->assertSame(DocumentExtractionProcessorInterface::STATE_SCHEDULED, $media->get(DocumentExtractionProcessorInterface::STATE_FIELD)->value);
     $this->assertTrue($media->get(DocumentMediaHooks::EXTRACT_FIELD)->isEmpty());
     $this->assertTrue($media->get(DocumentMediaHooks::SUMMARY_FIELD)->isEmpty());
   }

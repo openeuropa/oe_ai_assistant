@@ -46,8 +46,6 @@ abstract class DocumentRepositoryBase implements DocumentRepositoryInterface {
    *   The file upload handler service.
    * @param \Psr\Log\LoggerInterface $logger
    *   The logger channel.
-   * @param \Drupal\oe_ai_assistant\Service\Drafting\DocumentExtractionWorkflowInterface $workflow
-   *   The extraction workflow reader, for the document status.
    * @param \Drupal\oe_ai_assistant\Service\Drafting\DocumentExtractionProcessorInterface $processor
    *   The extraction processor behind the extract action.
    */
@@ -57,7 +55,6 @@ abstract class DocumentRepositoryBase implements DocumentRepositoryInterface {
     protected readonly FileUploadHandlerInterface $fileUploadHandler,
     #[Autowire(service: 'logger.channel.oe_ai_assistant')]
     protected readonly LoggerInterface $logger,
-    protected readonly DocumentExtractionWorkflowInterface $workflow,
     protected readonly DocumentExtractionProcessorInterface $processor,
   ) {}
 
@@ -205,7 +202,8 @@ abstract class DocumentRepositoryBase implements DocumentRepositoryInterface {
     return [
       'id' => (string) $media->id(),
       'title' => (string) ($media->label() ?: $filename),
-      'status' => $this->workflow->getState($media),
+      'status' => (string) ($media->get(DocumentExtractionProcessorInterface::STATE_FIELD)->value ?? '')
+        ?: DocumentExtractionProcessorInterface::STATE_SCHEDULED,
       'meta' => [
         'type' => $extension !== '' ? strtolower($extension) : 'file',
         'size' => $file instanceof FileInterface ? (int) $file->getSize() : 0,
