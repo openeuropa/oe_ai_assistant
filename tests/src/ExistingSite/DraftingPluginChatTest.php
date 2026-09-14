@@ -361,6 +361,87 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
   }
 
   /**
+   * Tests that document extracts reach the router and the sub-agents.
+   *
+   * One document is processed through the real Tika service, one is left
+   * scheduled: the prompts must carry the extracted text of the first and
+   * announce the second as not available yet.
+   */
+  public function testDocumentExtractsReachRouterAndSubAgents(): void {
+    $user = $this->createUser(['use oe ai assistant']);
+    $this->loginUser($user);
+    $session = $this->createSession($user);
+
+    [$processedId, $processedTitle] = $this->uploadDocument($session, 'briefing.txt', 'Alpha briefing content for the draft.');
+    [, $pendingTitle] = $this->uploadDocument($session, 'pending.txt', 'Not processed.');
+    MockAiProvider::enqueue(new MockResponse(text: 'Briefing summary.'));
+    $result = $this->httpPost('/api/ai/plugins/drafting/extract-document', [
+      'sessionId' => $session->id(),
+      'category' => 'context',
+      'documentId' => $processedId,
+    ]);
+    $this->assertSame(['status' => 'done'], json_decode($result['body'], TRUE));
+    MockAiProvider::reset();
+
+    // Router signals draft_content, then one response per schema group.
+    MockAiProvider::enqueue(new MockResponse(
+      toolCalls: [
+        [
+          'id' => 'call_1',
+          'type' => 'function',
+          'function' => ['name' => 'draft_content', 'arguments' => '{}'],
+        ],
+      ],
+    ));
+    MockAiProvider::enqueue(new MockResponse(
+      text: '{"title": [{"value": "Test Title"}], "field_body": [{"value": "<p>Body</p>", "format": "full_html"}]}',
+    ));
+    MockAiProvider::enqueue(new MockResponse(text: '{"field_contacts": []}'));
+    MockAiProvider::enqueue(new MockResponse(text: '{"field_content_paragraphs": []}'));
+
+    $result = $this->httpPost('/api/ai/plugins/drafting/chat', [
+      'message' => 'Generate the draft now.',
+      'sessionId' => $session->id(),
+    ]);
+    $this->assertEquals(200, $result['status'], 'Expected 200. Body: ' . substr($result['body'], 0, 500));
+
+    \Drupal::state()->resetCache();
+    $log = MockAiProvider::getCallLog();
+    $router = $log[0]['system_prompt'];
+    $this->assertStringContainsString("### $processedTitle\nAlpha briefing content for the draft.", $router);
+    $this->assertStringContainsString("### $pendingTitle\nNot processed yet", $router);
+    $this->assertStringContainsString('wait a moment', $router);
+
+    // Every sub-agent call after the router carries the same block.
+    $this->assertGreaterThan(1, count($log));
+    foreach (array_slice($log, 1) as $call) {
+      $this->assertStringContainsString('Alpha briefing content for the draft.', $call['system_prompt']);
+      $this->assertStringContainsString('Not processed yet', $call['system_prompt']);
+    }
+  }
+
+  /**
+   * Uploads a context document and returns its id and stored title.
+   *
+   * The title is read back because core renames an upload whose file name
+   * already exists in the private directory.
+   *
+   * @return array
+   *   The document id and title.
+   */
+  private function uploadDocument($session, string $filename, string $contents): array {
+    $query = http_build_query(['sessionId' => $session->id(), 'category' => 'context', 'filename' => $filename]);
+    $added = $this->httpPostRaw('/api/ai/plugins/drafting/add-document?' . $query, $contents);
+    $this->assertSame(200, $added['status'], $added['body']);
+    $document = json_decode($added['body'], TRUE)['document'];
+    $media = \Drupal::entityTypeManager()->getStorage('media')->load($document['id']);
+    $this->markEntityForCleanup($media);
+    $this->markEntityForCleanup($media->get('oe_ai_context_document')->entity);
+
+    return [(string) $document['id'], (string) $document['title']];
+  }
+
+  /**
    * Tests that an empty message returns a 400 error.
    */
   public function testEmptyMessageReturns400(): void {
