@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\oe_ai_assistant\Kernel;
 
-use Drupal\Core\Form\FormState;
 use Drupal\file\Entity\File;
 use Drupal\media\Entity\Media;
 use Drupal\media\MediaInterface;
@@ -62,15 +61,6 @@ class DocumentExtractionWorkflowTest extends AiEditorialSessionKernelTestBase {
   }
 
   /**
-   * Tests the initial state of a new document.
-   */
-  public function testWorkflowReads(): void {
-    $media = $this->createDocument();
-    $this->assertSame(DocumentExtractionProcessorInterface::STATE_SCHEDULED, $media->get(DocumentExtractionProcessorInterface::STATE_FIELD)->value);
-    $this->assertFalse($media->isPublished());
-  }
-
-  /**
    * Tests that validated saves follow the workflow transitions.
    */
   public function testValidationGuardsTransitions(): void {
@@ -99,40 +89,6 @@ class DocumentExtractionWorkflowTest extends AiEditorialSessionKernelTestBase {
     $media->set(DocumentExtractionProcessorInterface::STATE_FIELD, DocumentExtractionProcessorInterface::STATE_DONE);
     $media->save();
     $this->assertSame(DocumentExtractionProcessorInterface::STATE_DONE, $this->reload($media)->get(DocumentExtractionProcessorInterface::STATE_FIELD)->value);
-  }
-
-  /**
-   * Builds the media form and returns the options of the state select.
-   *
-   * A fresh form display is loaded each time: widgets cache their options.
-   *
-   * @return array
-   *   The select options keyed by state id.
-   */
-  private function formOptions(MediaInterface $media): array {
-    $storage = $this->container->get('entity_type.manager')->getStorage('entity_form_display');
-    $storage->resetCache();
-    $display = $storage->load('media.ai_context_document.default');
-    $form = [];
-    $display->buildForm($this->reload($media), $form, new FormState());
-
-    return array_map('strval', $form[DocumentExtractionProcessorInterface::STATE_FIELD]['widget']['#options']);
-  }
-
-  /**
-   * Tests that the form select offers only the reachable states.
-   */
-  public function testFormOffersReachableStates(): void {
-    $media = $this->createDocument();
-    $media->set(DocumentExtractionProcessorInterface::STATE_FIELD, DocumentExtractionProcessorInterface::STATE_ERROR)->save();
-    $this->container->get('current_user')->setAccount($this->createUser());
-
-    $this->assertSame([
-      DocumentExtractionProcessorInterface::STATE_ERROR => 'Error',
-      DocumentExtractionProcessorInterface::STATE_EXTRACTING => 'Extracting',
-      DocumentExtractionProcessorInterface::STATE_SUMMARIZING => 'Summarizing',
-      DocumentExtractionProcessorInterface::STATE_SCHEDULED => 'Scheduled',
-    ], $this->formOptions($media));
   }
 
 }

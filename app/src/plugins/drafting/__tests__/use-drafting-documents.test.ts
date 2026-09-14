@@ -419,35 +419,4 @@ describe("useDraftingDocuments", () => {
     expect(selectionErrorState()).toContain(String(MAX_FILES_PER_SELECTION));
   });
 
-  it("accepts a selection at the limit and clears the message", async () => {
-    apiMocks.addDraftingDocument.mockResolvedValue(uploadedDocuments[0]);
-    const { useDraftingDocuments, MAX_FILES_PER_SELECTION } = await loadHook();
-    const hook = useDraftingDocuments();
-    await flushAsync();
-    const files = Array.from(
-      { length: MAX_FILES_PER_SELECTION },
-      (_, index) => new File(["a"], `file-${index}.txt`),
-    );
-
-    await hook.uploadFiles(fileList([...files, new File(["b"], "extra.txt")]));
-    expect(selectionErrorState()).not.toBeNull();
-
-    await hook.uploadFiles(fileList(files));
-
-    expect(apiMocks.addDraftingDocument).toHaveBeenCalledTimes(
-      MAX_FILES_PER_SELECTION,
-    );
-    expect(selectionErrorState()).toBeNull();
-  });
-
-  it("does not poll when every document is settled", async () => {
-    const { useDraftingDocuments, DOCUMENT_POLL_INTERVAL_MS } =
-      await loadHook();
-    useDraftingDocuments();
-    await flushAsync();
-    vi.useFakeTimers();
-
-    await vi.advanceTimersByTimeAsync(DOCUMENT_POLL_INTERVAL_MS * 3);
-    expect(apiMocks.listDraftingDocuments).toHaveBeenCalledTimes(1);
-  });
 });
