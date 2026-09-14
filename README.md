@@ -22,8 +22,8 @@ drush en oe_ai_assistant
 ```
 
 A plain `composer require` gets git source only. The `react-app` library's JS/CSS
-(built from `app/`, gitignored, not committed) won't exist until you also build the
-app yourself or pull the pre-built release artifact:
+is built from `app/` into `dist/`, which is gitignored and not committed. It won't
+exist until you also build the app yourself or pull the pre-built release artifact:
 
 - **For local/DDEV development**, use `ddev build-app` / `npm run build` as described
   in [React app](#react-app) below -- no extra setup needed.
