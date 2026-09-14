@@ -122,6 +122,27 @@ React app mock workflow does not require provider credentials.
 | `ddev build-app` | Build the React app production bundle |
 | `ddev phpunit tests/src/ExistingSite/` | Run ExistingSite tests |
 | `ddev phpcs` | Run PHP CodeSniffer with Drupal standards |
+| `ddev dev-tag` | Print a dev release tag inferred from the current branch |
+
+### Releases
+
+Pushing a tag matching `MAJOR.MINOR.PATCH` triggers the release workflow, which
+builds the React app and publishes a zip with `dist/` as a GitHub release asset.
+
+For testing a branch, use a dev tag: `0.TICKET.YYYYMMDDHHMM`, for example
+`0.5001.202609111602`. Generate one with:
+
+```bash
+ddev dev-tag
+```
+
+The ticket number is inferred from the branch name (`OEL-1234`, `OEL-1234_foo`,
+`OEL-1234-foo`). If none is found, the tag falls back to `0.0.YYYYMMDDHHMM`.
+Then tag and push:
+
+```bash
+git tag "$(ddev dev-tag)" && git push origin --tags
+```
 
 ### Document extraction
 
