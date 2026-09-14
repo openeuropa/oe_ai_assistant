@@ -418,5 +418,4 @@ describe("useDraftingDocuments", () => {
     expect(uploadsState()).toEqual([]);
     expect(selectionErrorState()).toContain(String(MAX_FILES_PER_SELECTION));
   });
-
 });
