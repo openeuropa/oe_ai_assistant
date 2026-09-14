@@ -1,0 +1,1178 @@
+diff --git a/.cspell-project-words.txt b/.cspell-project-words.txt
+index c32946fb9a81237ad19129d87c03992708be19de..aa1ed2b12992bdfeb784249955e59d5a903bb3fe 100644
+--- a/.cspell-project-words.txt
++++ b/.cspell-project-words.txt
+@@ -240,6 +240,7 @@ Radisson
+ rangesets
+ Recogniztion
+ Renederer
++reencode
+ reparses
+ replayable
+ refinable
+diff --git a/docs/developers/hostname_filter.md b/docs/developers/hostname_filter.md
+index fb7245d6bc19e984738226bec23fcb80716d62b1..80d1779c62ef55c0112766a04b4a061aca305743 100644
+--- a/docs/developers/hostname_filter.md
++++ b/docs/developers/hostname_filter.md
+@@ -92,6 +92,32 @@ The following are always allowed regardless of domain settings:
+ - Mailto links: `mailto:user@example.com`
+ - Protocol-relative URLs: `//example.com/page`
+ 
++## JSON and Structured Output
++
++JSON payloads are detected automatically and filtered without corrupting their structure. This covers responses requested with a structured output schema (`ChatInput::setChatStructuredJsonSchema()`), prompt-engineered JSON, and JSON documents inside tool call arguments. Two payload shapes are recognized:
++
++- Text that is wholly a JSON object or array (surrounding whitespace allowed).
++- A single fenced code block (```` ```json ```` with optional surrounding prose, or a bare ```` ``` ```` fence surrounded only by whitespace) whose content is a JSON object or array.
++
++Instead of pushing the whole payload through the HTML pipeline — which would entity-encode it beyond decoding — every string value (and object key) is filtered individually with the same Markdown and HTML rules. If nothing in the payload violates the allowlist, the payload is returned byte-for-byte. If a violation is found, the offending values are filtered and the payload is re-encoded; formatting and whitespace inside the JSON are not preserved in that case, but the result always decodes with `json_decode()`.
++
++Filtering precedence is: full trust mode, then plain text mode, then JSON detection, then the regular Markdown/HTML pipeline. Bare URLs in JSON string values follow the same policy as bare URLs in prose: they are only stripped in plain text mode.
++
++### JSON Mode
++
++When a chat response is requested with a structured output schema, the provider proxy additionally puts the filter in JSON mode for that response. In JSON mode a payload that fails to decode (malformed or truncated JSON) is filtered as plain text instead of as HTML, so its structure is never entity-encoded. You can control this per request:
++
++```php
++use Drupal\ai\Dto\HostnameFilterDto;
++
++$input = new ChatInput([...]);
++// Force JSON mode (or pass jsonMode: FALSE to suppress the automatic
++// enabling for structured output responses).
++$input->setHostnameFilter(new HostnameFilterDto(jsonMode: TRUE));
++```
++
++Streamed structured output responses are filtered chunk by chunk in plain text mode, because partial JSON fragments cannot be decoded.
++
+ ## Images
+ 
+ Images with disallowed domains are always completely removed (the entire `<img>` tag or `![alt](url)` markdown). Rewrite mode only affects links, not images.
+diff --git a/src/Dto/HostnameFilterDto.php b/src/Dto/HostnameFilterDto.php
+index 44a0007fd2267284779871369884d8a991da32c4..707ed757452f3dde440be882b80711dc1bc0fd18 100644
+--- a/src/Dto/HostnameFilterDto.php
++++ b/src/Dto/HostnameFilterDto.php
+@@ -34,12 +34,23 @@ class HostnameFilterDto {
+    *   white list, regardless of HTML/Markdown markup. This is more secure
+    *   but may cause issues with formatting or remove features.
+    *   Default: FALSE (format-aware filtering).
++   * @param bool|null $jsonMode
++   *   Whether the filtered text is known to be a JSON payload.
++   *   Decodable JSON payloads (objects or arrays, bare or inside a single
++   *   fenced code block) are auto-detected regardless of this flag and
++   *   filtered value-by-value so their structure is preserved. When TRUE,
++   *   a payload that fails to decode (malformed or truncated JSON) is
++   *   additionally filtered as plain text instead of as HTML, so its
++   *   structure is never entity-encoded. Set automatically for chat
++   *   responses requested with a structured output schema.
++   *   Default: NULL (auto-detection only).
+    */
+   public function __construct(
+     public ?array $allowedDomainNames = NULL,
+     public ?bool $rewriteLinks = NULL,
+     public ?bool $fullTrust = NULL,
+     public ?bool $plainTextMode = NULL,
++    public ?bool $jsonMode = NULL,
+   ) {
+   }
+ 
+diff --git a/src/OperationType/Chat/StreamedChatMessageIterator.php b/src/OperationType/Chat/StreamedChatMessageIterator.php
+index 3686361a2ba265230987fc81b617dd11256ad81b..d7cea5f8c795351f0835d98cb2ee49c587a62b47 100644
+--- a/src/OperationType/Chat/StreamedChatMessageIterator.php
++++ b/src/OperationType/Chat/StreamedChatMessageIterator.php
+@@ -912,7 +912,25 @@ abstract class StreamedChatMessageIterator implements StreamedChatMessageIterato
+     $raw = $this->buffer;
+     $this->buffer = '';
+ 
+-    return $this->getHostnameFilterService()->filterText($raw);
++    $service = $this->getHostnameFilterService();
++
++    // A structured output stream carries partial JSON in each flush; the
++    // Markdown/HTML pipeline would mangle the fragments (issue #3586677).
++    // Plain text URL filtering still enforces the allowlist but leaves the
++    // JSON structure intact. Scoped via snapshot/restore because the
++    // filter service is a request-wide singleton.
++    if ($this->input instanceof ChatInput && $this->input->getChatStructuredJsonSchema() !== []) {
++      $snapshot = $service->snapshotSettings();
++      $service->setPlainTextMode(TRUE);
++      try {
++        return $service->filterText($raw);
++      }
++      finally {
++        $service->restoreSettings($snapshot);
++      }
++    }
++
++    return $service->filterText($raw);
+   }
+ 
+   /**
+diff --git a/src/Plugin/ProviderProxy.php b/src/Plugin/ProviderProxy.php
+index 9954f163eaa383b837d3ad7e47d9d80cc65cc671..a082c69608da8de2ec94e8f0c469a56f43454e93 100644
+--- a/src/Plugin/ProviderProxy.php
++++ b/src/Plugin/ProviderProxy.php
+@@ -371,9 +371,28 @@ class ProviderProxy {
+       // If the output is a none-streamed ChatOutput we apply host validation.
+       // The DTO (if any) is already applied on the singleton at this point.
+       if ($response instanceof ChatOutput && $response->getNormalized() instanceof ChatMessage) {
+-        // Filter the content.
+-        $new_text = $this->hostnameFilterService->filterText($response->getNormalized()->getText());
+-        $response->getNormalized()->setText($new_text);
++        // When a structured output schema was requested the response is a
++        // JSON payload; put the filter in JSON mode so even a malformed
++        // payload is never pushed through the HTML round trip. An explicit
++        // jsonMode on the caller's DTO wins over this auto-enable. Scoped
++        // to this call only via snapshot/restore.
++        $json_snapshot = NULL;
++        if ($arguments[0] instanceof ChatInput
++          && $arguments[0]->getChatStructuredJsonSchema() !== []
++          && ($arguments[0]->getHostnameFilter()?->jsonMode) === NULL) {
++          $json_snapshot = $this->hostnameFilterService->snapshotSettings();
++          $this->hostnameFilterService->setJsonMode(TRUE);
++        }
++        try {
++          // Filter the content.
++          $new_text = $this->hostnameFilterService->filterText($response->getNormalized()->getText());
++          $response->getNormalized()->setText($new_text);
++        }
++        finally {
++          if ($json_snapshot !== NULL) {
++            $this->hostnameFilterService->restoreSettings($json_snapshot);
++          }
++        }
+       }
+       $this->eventDispatcher->dispatch($post_generate_event, PostGenerateResponseEvent::EVENT_NAME);
+       // Get a potential new response from the event.
+diff --git a/src/Service/HostnameFilter.php b/src/Service/HostnameFilter.php
+index 79eb3020f84688835c438b3e463ff4da5d8d20dd..7dddfea3ab1b413023ace429e6b6ce3154c5b93f 100644
+--- a/src/Service/HostnameFilter.php
++++ b/src/Service/HostnameFilter.php
+@@ -44,6 +44,18 @@ class HostnameFilter {
+    */
+   protected ?bool $plainTextMode = NULL;
+ 
++  /**
++   * Whether the filtered text is known to be a JSON payload.
++   *
++   * JSON payloads are auto-detected regardless of this flag; setting it
++   * additionally guarantees that a payload that fails to decode (malformed
++   * or truncated JSON) is filtered as plain text instead of being pushed
++   * through the HTML round trip, which would corrupt its structure.
++   *
++   * @var bool|null
++   */
++  protected ?bool $jsonMode = NULL;
++
+   /**
+    * HTML5 parser instance.
+    *
+@@ -122,6 +134,22 @@ class HostnameFilter {
+       return $this->filterUrlsInPlainText($text);
+     }
+ 
++    // JSON payloads (structured output, prompt-engineered JSON, JSON tool
++    // arguments) must keep their structure: filter their string values
++    // individually instead of pushing the whole payload through the HTML5
++    // round trip below, which would entity-encode it beyond decoding.
++    $json_result = $this->filterJsonText($text);
++    if ($json_result !== NULL) {
++      return $json_result;
++    }
++
++    // The caller declared the text a JSON payload but it did not decode
++    // (malformed or truncated). Never run the HTML round trip on it; plain
++    // text URL filtering preserves whatever structure it has.
++    if ($this->jsonMode) {
++      return $this->filterUrlsInPlainText($text);
++    }
++
+     // Filter Markdown syntax first.
+     $text = $this->filterMarkdownLinks($text);
+ 
+@@ -179,6 +207,18 @@ class HostnameFilter {
+     $this->plainTextMode = $plain_text_mode;
+   }
+ 
++  /**
++   * Set whether the filtered text is known to be a JSON payload.
++   *
++   * @param bool $json_mode
++   *   TRUE to treat undecodable payloads as plain text instead of HTML,
++   *   FALSE to use the regular pipeline for them. Decodable JSON payloads
++   *   are auto-detected and structure-preserved regardless of this flag.
++   */
++  public function setJsonMode(bool $json_mode): void {
++    $this->jsonMode = $json_mode;
++  }
++
+   /**
+    * Apply settings from a HostnameFilterDto.
+    *
+@@ -200,6 +240,9 @@ class HostnameFilter {
+     if ($dto->plainTextMode !== NULL) {
+       $this->setPlainTextMode($dto->plainTextMode);
+     }
++    if ($dto->jsonMode !== NULL) {
++      $this->setJsonMode($dto->jsonMode);
++    }
+   }
+ 
+   /**
+@@ -219,6 +262,7 @@ class HostnameFilter {
+       'rewriteLinks' => $this->rewriteLinks,
+       'fullTrust' => $this->fullTrust,
+       'plainTextMode' => $this->plainTextMode,
++      'jsonMode' => $this->jsonMode,
+     ];
+   }
+ 
+@@ -233,6 +277,7 @@ class HostnameFilter {
+     $this->rewriteLinks = $snapshot['rewriteLinks'] ?? NULL;
+     $this->fullTrust = $snapshot['fullTrust'] ?? NULL;
+     $this->plainTextMode = $snapshot['plainTextMode'] ?? NULL;
++    $this->jsonMode = $snapshot['jsonMode'] ?? NULL;
+   }
+ 
+   /**
+@@ -369,8 +414,13 @@ class HostnameFilter {
+    *
+    * @param \DOMNode $node
+    *   The DOM node to process.
++   *
++   * @return bool
++   *   TRUE if this node or any descendant was removed or rewritten, FALSE
++   *   if the tree passed through untouched.
+    */
+-  protected function filterHtmlLinks(\DOMNode $node): void {
++  protected function filterHtmlLinks(\DOMNode $node): bool {
++    $modified = FALSE;
+     if ($node instanceof \DOMElement) {
+       $tag = strtolower($node->tagName);
+ 
+@@ -378,7 +428,7 @@ class HostnameFilter {
+       // code assistant, you will have to opt out of filtering specifically.
+       if (in_array($tag, ['script', 'iframe', 'embed', 'object', 'style'], TRUE)) {
+         $node->parentNode?->removeChild($node);
+-        return;
++        return TRUE;
+       }
+ 
+       // Strip event handler attributes (on* attributes).
+@@ -390,6 +440,7 @@ class HostnameFilter {
+       }
+       foreach ($attrsToRemove as $attrName) {
+         $node->removeAttribute($attrName);
++        $modified = TRUE;
+       }
+ 
+       // Meta refresh redirects encode the destination as "<delay>;url=<url>"
+@@ -407,6 +458,7 @@ class HostnameFilter {
+               ['@url' => $refreshUrl]
+             );
+             $node->removeAttribute('content');
++            $modified = TRUE;
+           }
+         }
+       }
+@@ -427,6 +479,7 @@ class HostnameFilter {
+                 ['@attr' => $attr, '@url' => $url]
+               );
+               $node->removeAttribute($attr);
++              $modified = TRUE;
+             }
+             continue;
+           }
+@@ -446,6 +499,7 @@ class HostnameFilter {
+               );
+               $node->removeAttribute($attr);
+             }
++            $modified = TRUE;
+           }
+         }
+       }
+@@ -455,12 +509,14 @@ class HostnameFilter {
+         $bgUrl = $node->getAttribute('background');
+         if (!$this->isUrlAllowed($bgUrl)) {
+           $node->removeAttribute('background');
++          $modified = TRUE;
+         }
+       }
+ 
+       // Strip inline CSS url().
+       if ($node->hasAttribute('style') && stripos($node->getAttribute('style'), 'url(') !== FALSE) {
+         $node->removeAttribute('style');
++        $modified = TRUE;
+       }
+     }
+ 
+@@ -471,8 +527,11 @@ class HostnameFilter {
+     }
+ 
+     foreach ($children as $child) {
+-      $this->filterHtmlLinks($child);
++      // The recursive call must run first so || cannot short-circuit it.
++      $modified = $this->filterHtmlLinks($child) || $modified;
+     }
++
++    return $modified;
+   }
+ 
+   /**
+@@ -533,6 +592,263 @@ class HostnameFilter {
+     }
+   }
+ 
++  /**
++   * Filter a JSON payload without corrupting its structure.
++   *
++   * Structured output responses (and prompt-engineered JSON) must never be
++   * pushed through the HTML5 round trip in ::filterText(): the serializer
++   * entity-encodes characters that are meaningful in JSON and the payload
++   * stops being decodable. Instead, decode the payload, filter every string
++   * value (and key) individually, and re-encode only when a violation was
++   * actually found — a clean payload is returned byte-for-byte.
++   *
++   * Two payload shapes are recognized: text that is wholly a JSON object or
++   * array (surrounding whitespace allowed), and a single fenced code block
++   * (```json with optional surrounding prose, or a bare ``` fence surrounded
++   * only by whitespace) whose content is a JSON object or array.
++   *
++   * @param string $text
++   *   The text that may be a JSON payload.
++   * @param int $depth
++   *   Current recursion depth for nested JSON-in-string values.
++   *
++   * @return string|null
++   *   The filtered text, or NULL when the text is not a recognizable JSON
++   *   payload and the caller should fall through to the regular pipeline.
++   */
++  protected function filterJsonText(string $text, int $depth = 0): ?string {
++    if ($depth > 8) {
++      return NULL;
++    }
++
++    $trimmed = trim($text);
++    if ($trimmed === '') {
++      return NULL;
++    }
++
++    // Whole-payload JSON object or array. Scalar payloads ("text", 5, true)
++    // are deliberately not treated as JSON: they are indistinguishable from
++    // prose and carry no structure to preserve.
++    if ($trimmed[0] === '{' || $trimmed[0] === '[') {
++      // Decode without assoc so stdClass keeps the {} vs [] distinction
++      // through the re-encode; \Drupal\Component\Serialization\Json::decode()
++      // would collapse an empty object to an empty array, which breaks
++      // strict structured output schemas.
++      $decoded = json_decode($trimmed);
++      if (is_array($decoded) || is_object($decoded)) {
++        $modified = FALSE;
++        $this->filterJsonStructure($decoded, $depth, $modified);
++        if (!$modified) {
++          return $text;
++        }
++        $encoded = json_encode($decoded, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION);
++        if ($encoded === FALSE) {
++          // A violation was found but the structure cannot be re-encoded;
++          // fail closed with structure-preserving plain text filtering
++          // rather than returning unfiltered content.
++          return $this->filterUrlsInPlainText($text);
++        }
++        // Keep the whitespace around the payload so only the JSON itself
++        // is rewritten.
++        $leading = substr($text, 0, strlen($text) - strlen(ltrim($text)));
++        $trailing = substr($text, strlen(rtrim($text)));
++        return $leading . $encoded . $trailing;
++      }
++    }
++
++    return $this->filterFencedJsonText($text, $depth);
++  }
++
++  /**
++   * Filter a single fenced code block containing a JSON payload.
++   *
++   * @param string $text
++   *   The text that may contain a fenced JSON payload.
++   * @param int $depth
++   *   Current recursion depth for nested JSON-in-string values.
++   *
++   * @return string|null
++   *   The filtered text, or NULL when no fenced JSON payload was found.
++   */
++  protected function filterFencedJsonText(string $text, int $depth): ?string {
++    $fence_pattern = '/^(?<prefix>.*?)(?<open>```(?<lang>json)?[ \t]*\R)(?<payload>.*?)(?<close>\R[ \t]*```)(?<suffix>.*)$/s';
++    if (!preg_match($fence_pattern, $text, $fence)) {
++      return NULL;
++    }
++
++    // A bare ``` fence is only trusted as a JSON container when nothing but
++    // whitespace surrounds it; with prose around it the language tag is
++    // required. Multiple fences fall through to the regular pipeline.
++    if ($fence['lang'] === '' && (trim($fence['prefix']) !== '' || trim($fence['suffix']) !== '')) {
++      return NULL;
++    }
++    if (str_contains($fence['suffix'], '```')) {
++      return NULL;
++    }
++
++    $payload = trim($fence['payload']);
++    if ($payload === '' || ($payload[0] !== '{' && $payload[0] !== '[')) {
++      return NULL;
++    }
++    $decoded = json_decode($payload);
++    if (!is_array($decoded) && !is_object($decoded)) {
++      return NULL;
++    }
++
++    $modified = FALSE;
++    $this->filterJsonStructure($decoded, $depth, $modified);
++    $prefix_modified = FALSE;
++    $prefix = $this->filterScalarString($fence['prefix'], $prefix_modified);
++    $suffix_modified = FALSE;
++    $suffix = $this->filterScalarString($fence['suffix'], $suffix_modified);
++
++    if (!$modified && !$prefix_modified && !$suffix_modified) {
++      return $text;
++    }
++
++    $encoded = $fence['payload'];
++    if ($modified) {
++      $encoded = json_encode($decoded, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION);
++      if ($encoded === FALSE) {
++        // Same fail-closed strategy as in ::filterJsonText().
++        return $this->filterUrlsInPlainText($text);
++      }
++    }
++
++    return $prefix . $fence['open'] . $encoded . $fence['close'] . $suffix;
++  }
++
++  /**
++   * Recursively filter the string values and keys of a decoded JSON payload.
++   *
++   * @param array|object $data
++   *   The decoded JSON structure, modified in place.
++   * @param int $depth
++   *   Current recursion depth for nested JSON-in-string values.
++   * @param bool $modified
++   *   Set to TRUE when any value or key was changed by filtering.
++   */
++  protected function filterJsonStructure(array|object &$data, int $depth, bool &$modified): void {
++    if (is_object($data)) {
++      foreach (get_object_vars($data) as $key => $value) {
++        $new_key = $this->filterJsonKey((string) $key, $modified);
++        $this->filterJsonValue($value, $depth, $modified);
++        if ($new_key !== (string) $key) {
++          unset($data->{$key});
++          $data->{$new_key} = $value;
++        }
++        else {
++          $data->{$key} = $value;
++        }
++      }
++      return;
++    }
++
++    $rebuilt = [];
++    foreach ($data as $key => $value) {
++      $new_key = is_string($key) ? $this->filterJsonKey($key, $modified) : $key;
++      $this->filterJsonValue($value, $depth, $modified);
++      $rebuilt[$new_key] = $value;
++    }
++    $data = $rebuilt;
++  }
++
++  /**
++   * Filter a single decoded JSON value in place.
++   *
++   * @param mixed $value
++   *   The value to filter, modified in place.
++   * @param int $depth
++   *   Current recursion depth for nested JSON-in-string values.
++   * @param bool $modified
++   *   Set to TRUE when the value was changed by filtering.
++   */
++  protected function filterJsonValue(mixed &$value, int $depth, bool &$modified): void {
++    if (is_array($value) || is_object($value)) {
++      $this->filterJsonStructure($value, $depth, $modified);
++      return;
++    }
++    if (!is_string($value)) {
++      return;
++    }
++    // A string value can itself be a serialized JSON document (tool
++    // arguments commonly are); preserve its structure too.
++    $nested = $this->filterJsonText($value, $depth + 1);
++    if ($nested !== NULL) {
++      if ($nested !== $value) {
++        $value = $nested;
++        $modified = TRUE;
++      }
++      return;
++    }
++    $value_modified = FALSE;
++    $filtered = $this->filterScalarString($value, $value_modified);
++    if ($value_modified) {
++      $value = $filtered;
++      $modified = TRUE;
++    }
++  }
++
++  /**
++   * Filter a JSON object key.
++   *
++   * @param string $key
++   *   The key to filter.
++   * @param bool $modified
++   *   Set to TRUE when the key was changed by filtering.
++   *
++   * @return string
++   *   The filtered key.
++   */
++  protected function filterJsonKey(string $key, bool &$modified): string {
++    $key_modified = FALSE;
++    $filtered = $this->filterScalarString($key, $key_modified);
++    if ($key_modified) {
++      $modified = TRUE;
++      return $filtered;
++    }
++    return $key;
++  }
++
++  /**
++   * Filter a single plain string through the Markdown and HTML pipelines.
++   *
++   * Unlike ::filterText(), the input is only rewritten when a disallowed
++   * URL or dangerous construct was actually found: the HTML5 serializer
++   * output is used only when the DOM walk reported a modification, so
++   * benign strings (including ones with stray "<" or "&") pass through
++   * byte-for-byte instead of being entity-encoded by the round trip.
++   *
++   * @param string $value
++   *   The string to filter.
++   * @param bool $modified
++   *   Set to TRUE when filtering changed the string, FALSE otherwise.
++   *
++   * @return string
++   *   The filtered string, or the original string when nothing was found.
++   */
++  protected function filterScalarString(string $value, bool &$modified): string {
++    $modified = FALSE;
++    $filtered = $this->filterMarkdownLinks($value);
++    // The Markdown callbacks return the match untouched when the URL is
++    // allowed, so a difference here always means a violation was handled.
++    $md_modified = ($filtered !== $value);
++
++    // Without "<" the HTML5 fragment contains no elements, so the DOM
++    // filter cannot find anything; skip the expensive parse.
++    $html_modified = FALSE;
++    if (str_contains($filtered, '<')) {
++      $dom = $this->html5->loadHTMLFragment($filtered);
++      $html_modified = $this->filterHtmlLinks($dom);
++      if ($html_modified) {
++        $filtered = $this->html5->saveHTML($dom);
++      }
++    }
++
++    $modified = $md_modified || $html_modified;
++    return $modified ? $filtered : $value;
++  }
++
+   /**
+    * Filter Markdown links and images.
+    *
+diff --git a/tests/modules/ai_test/tests/resources/ai_test/requests/chat/StructuredJsonFilterCleanTrigger.yml b/tests/modules/ai_test/tests/resources/ai_test/requests/chat/StructuredJsonFilterCleanTrigger.yml
+new file mode 100644
+index 0000000000000000000000000000000000000000..1361fa56220a2a191c8614d553b6c44685ac6c75
+--- /dev/null
++++ b/tests/modules/ai_test/tests/resources/ai_test/requests/chat/StructuredJsonFilterCleanTrigger.yml
+@@ -0,0 +1,39 @@
++request:
++  messages:
++  - role: user
++    text: "structured-json-filter-test-trigger"
++    images: []
++    tools: null
++    tool_id: null
++  debug_data: {}
++  chat_tools: null
++  chat_structured_json_schema:
++    name: content_item
++    description: null
++    strict: false
++    schema:
++      type: object
++      properties:
++        title:
++          type: string
++        body:
++          type: string
++      required:
++        - title
++        - body
++  chat_strict_schema: false
++response:
++  normalized:
++    role: assistant
++    text: '{"title":"Hello","body":"<p>Text <a href=\"https://example.com/a\">ok</a> &amp; x < y</p>","count":5,"empty":{}}'
++    images: []
++    tools: null
++    tool_id: null
++  rawOutput: []
++  metadata: {}
++  tokenUsage:
++    input: null
++    output: null
++    total: null
++    reasoning: null
++    cached: null
+diff --git a/tests/modules/ai_test/tests/resources/ai_test/requests/chat/StructuredJsonFilterEvilTrigger.yml b/tests/modules/ai_test/tests/resources/ai_test/requests/chat/StructuredJsonFilterEvilTrigger.yml
+new file mode 100644
+index 0000000000000000000000000000000000000000..d60a5cb4b349006542f3dfe1c681e56a10afc855
+--- /dev/null
++++ b/tests/modules/ai_test/tests/resources/ai_test/requests/chat/StructuredJsonFilterEvilTrigger.yml
+@@ -0,0 +1,39 @@
++request:
++  messages:
++  - role: user
++    text: "structured-json-filter-evil-test-trigger"
++    images: []
++    tools: null
++    tool_id: null
++  debug_data: {}
++  chat_tools: null
++  chat_structured_json_schema:
++    name: content_item
++    description: null
++    strict: false
++    schema:
++      type: object
++      properties:
++        title:
++          type: string
++        body:
++          type: string
++      required:
++        - title
++        - body
++  chat_strict_schema: false
++response:
++  normalized:
++    role: assistant
++    text: '{"title":"T","body":"<p><a href=\"https://evil.com/x\">click</a></p>","empty":{}}'
++    images: []
++    tools: null
++    tool_id: null
++  rawOutput: []
++  metadata: {}
++  tokenUsage:
++    input: null
++    output: null
++    total: null
++    reasoning: null
++    cached: null
+diff --git a/tests/src/Kernel/OperationType/Chat/Tools/ToolsPropertyResultSetValueTest.php b/tests/src/Kernel/OperationType/Chat/Tools/ToolsPropertyResultSetValueTest.php
+index e9dc209b10d69946ffccdfb4aac6dceeb10948b1..f4f442053fa5ac3f9c007f125cae4a192a570ef3 100644
+--- a/tests/src/Kernel/OperationType/Chat/Tools/ToolsPropertyResultSetValueTest.php
++++ b/tests/src/Kernel/OperationType/Chat/Tools/ToolsPropertyResultSetValueTest.php
+@@ -1616,4 +1616,31 @@ HTML;
+     $this->assertTrue($result->getValue());
+   }
+ 
++  /**
++   * Test that a clean JSON string argument is preserved byte-for-byte.
++   *
++   * Tool arguments are commonly serialized JSON documents; the filter's
++   * JSON auto-detection must keep them decodable instead of pushing them
++   * through the HTML round trip (issue #3586677).
++   */
++  public function testJsonStringValueWithBenignHtmlPreservedVerbatim(): void {
++    $json = '{"body":"<p>Text <a href=\"https://example.com/a\">ok</a> &amp; x < y</p>","empty":{}}';
++    $result = $this->createResultWithValue($json);
++    $this->assertSame($json, $result->getValue());
++  }
++
++  /**
++   * Test that a JSON string argument with a violation stays decodable.
++   */
++  public function testJsonStringValueWithEvilUrlFilteredButDecodable(): void {
++    $json = '{"body":"<a href=\"https://evil.com/x\">click</a>","empty":{}}';
++    $result = $this->createResultWithValue($json);
++    $value = $result->getValue();
++    $this->assertStringNotContainsString('evil.com', $value);
++    $decoded = json_decode($value, TRUE);
++    $this->assertIsArray($decoded);
++    $this->assertStringContainsString('click', $decoded['body']);
++    $this->assertStringContainsString('"empty":{}', $value);
++  }
++
+ }
+diff --git a/tests/src/Kernel/Plugin/ProviderProxyStructuredJsonFilterTest.php b/tests/src/Kernel/Plugin/ProviderProxyStructuredJsonFilterTest.php
+new file mode 100644
+index 0000000000000000000000000000000000000000..bbf97e9244d31f6f64f4d9dcf0584ef66d025acc
+--- /dev/null
++++ b/tests/src/Kernel/Plugin/ProviderProxyStructuredJsonFilterTest.php
+@@ -0,0 +1,122 @@
++<?php
++
++declare(strict_types=1);
++
++namespace Drupal\Tests\ai\Kernel\Plugin;
++
++use Drupal\KernelTests\KernelTestBase;
++use Drupal\ai\OperationType\Chat\ChatInput;
++use Drupal\ai\OperationType\Chat\ChatMessage;
++use Drupal\ai\OperationType\Chat\ChatOutput;
++use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
++
++/**
++ * Tests that structured output responses survive the hostname filter.
++ *
++ * Regression test for issue #3586677: a chat response requested with a
++ * structured output schema is a JSON payload, and pushing it through the
++ * HTML5 round trip in HostnameFilter entity-encoded it beyond decoding —
++ * even when every URL in it was on the allowlist. ProviderProxy now puts
++ * the filter in JSON mode for such responses, and the filter itself
++ * detects JSON payloads and filters their string values individually.
++ *
++ * @group ai
++ */
++#[RunTestsInSeparateProcesses]
++class ProviderProxyStructuredJsonFilterTest extends KernelTestBase {
++
++  /**
++   * {@inheritdoc}
++   */
++  protected static $modules = [
++    'ai',
++    'ai_test',
++    'key',
++    'file',
++    'user',
++    'field',
++    'system',
++  ];
++
++  /**
++   * The hostname filter service.
++   *
++   * @var \Drupal\ai\Service\HostnameFilter
++   */
++  protected $hostnameFilter;
++
++  /**
++   * {@inheritdoc}
++   */
++  protected function setUp(): void {
++    parent::setUp();
++    $this->installEntitySchema('user');
++    $this->installEntitySchema('file');
++    $this->installSchema('file', ['file_usage']);
++    $this->installConfig(['ai', 'ai_test']);
++    $this->installEntitySchema('ai_mock_provider_result');
++
++    // Pin the singleton to a known starting state.
++    $this->hostnameFilter = $this->container->get('ai.hostname_filter_service');
++    $this->hostnameFilter->setAllowedDomains(['example.com']);
++  }
++
++  /**
++   * Build a ChatInput with the structured schema the YAML fixtures match.
++   */
++  protected function buildStructuredInput(string $trigger): ChatInput {
++    $input = new ChatInput([
++      new ChatMessage('user', $trigger),
++    ]);
++    $input->setChatStructuredJsonSchema([
++      'name' => 'content_item',
++      'schema' => [
++        'type' => 'object',
++        'properties' => [
++          'title' => ['type' => 'string'],
++          'body' => ['type' => 'string'],
++        ],
++        'required' => ['title', 'body'],
++      ],
++    ]);
++    return $input;
++  }
++
++  /**
++   * A clean structured payload passes through byte-for-byte and decodes.
++   */
++  public function testCleanStructuredJsonResponseIsNotCorrupted(): void {
++    $provider = $this->container->get('ai.provider')->createInstance('echoai');
++    $output = $provider->chat($this->buildStructuredInput('structured-json-filter-test-trigger'), 'gpt-test');
++
++    $this->assertInstanceOf(ChatOutput::class, $output);
++    $text = $output->getNormalized()->getText();
++    $expected = '{"title":"Hello","body":"<p>Text <a href=\"https://example.com/a\">ok</a> &amp; x < y</p>","count":5,"empty":{}}';
++    $this->assertSame($expected, $text);
++
++    $decoded = json_decode($text, TRUE);
++    $this->assertIsArray($decoded);
++    $this->assertSame('Hello', $decoded['title']);
++    $this->assertSame(5, $decoded['count']);
++  }
++
++  /**
++   * A disallowed URL in a structured payload is filtered, JSON preserved.
++   */
++  public function testEvilUrlInStructuredJsonResponseIsFilteredButDecodable(): void {
++    $provider = $this->container->get('ai.provider')->createInstance('echoai');
++    $output = $provider->chat($this->buildStructuredInput('structured-json-filter-evil-test-trigger'), 'gpt-test');
++
++    $this->assertInstanceOf(ChatOutput::class, $output);
++    $text = $output->getNormalized()->getText();
++    $this->assertStringNotContainsString('evil.com', $text);
++
++    $decoded = json_decode($text, TRUE);
++    $this->assertIsArray($decoded);
++    $this->assertSame('T', $decoded['title']);
++    $this->assertStringContainsString('click', $decoded['body']);
++    // The empty object shape survives the re-encode.
++    $this->assertStringContainsString('"empty":{}', $text);
++  }
++
++}
+diff --git a/tests/src/Unit/Service/HostnameFilterTest.php b/tests/src/Unit/Service/HostnameFilterTest.php
+index 6968e922db151e3d575b2bf8146858daaf5919c5..4042668dcd5fc4d1f202a51145044a47230e504c 100644
+--- a/tests/src/Unit/Service/HostnameFilterTest.php
++++ b/tests/src/Unit/Service/HostnameFilterTest.php
+@@ -615,6 +615,7 @@ HTML;
+       'rewriteLinks' => TRUE,
+       'fullTrust' => FALSE,
+       'plainTextMode' => FALSE,
++      'jsonMode' => TRUE,
+     ];
+ 
+     $dto = HostnameFilterDto::create($data);
+@@ -622,6 +623,7 @@ HTML;
+     $this->assertTrue($dto->rewriteLinks);
+     $this->assertFalse($dto->fullTrust);
+     $this->assertFalse($dto->plainTextMode);
++    $this->assertTrue($dto->jsonMode);
+ 
+     $array = $dto->toArray();
+     $this->assertEquals($data, $array);
+@@ -1925,4 +1927,320 @@ TEXT;
+     ];
+   }
+ 
++  /**
++   * Test that a clean JSON payload with an HTML value passes byte-for-byte.
++   *
++   * This is the core regression test for issue #3586677: the HTML5 round
++   * trip used for prose responses entity-encodes JSON payloads beyond
++   * decoding, even when every URL in them is allowed.
++   */
++  public function testJsonWithHtmlValueIsPreservedByteForByteWhenClean(): void {
++    $this->hostnameFilter->setAllowedDomains(['example.com']);
++    $json = '{"title":"Hello","body":"<p>Text <a href=\"https://example.com/a\">ok</a> &amp; x < y</p>","count":5,"empty":{}}';
++    $this->assertSame($json, $this->hostnameFilter->filterText($json));
++  }
++
++  /**
++   * Test that benign angle brackets and ampersands in values are preserved.
++   */
++  public function testJsonValueWithBenignAngleBracketsPreserved(): void {
++    $this->hostnameFilter->setAllowedDomains(['example.com']);
++    $json = '{"note":"a < b && \"q\" > c","other":"5 & 6"}';
++    $this->assertSame($json, $this->hostnameFilter->filterText($json));
++  }
++
++  /**
++   * Test that whitespace-padded JSON is still detected and preserved.
++   */
++  public function testWhitespacePaddedJsonIsDetected(): void {
++    $this->hostnameFilter->setAllowedDomains(['example.com']);
++    $json = "\n  {\"a\": \"<p>fine</p>\"}\n";
++    $this->assertSame($json, $this->hostnameFilter->filterText($json));
++  }
++
++  /**
++   * Test that a disallowed HTML link inside a JSON value is filtered.
++   */
++  public function testJsonWithDisallowedHtmlLinkInValueIsFilteredAndDecodable(): void {
++    $this->hostnameFilter->setAllowedDomains(['example.com']);
++    $json = '{"body":"<p><a href=\"https://evil.com/x\">click</a></p>","safe":"<p>Hi</p>"}';
++    $result = $this->hostnameFilter->filterText($json);
++    $decoded = json_decode($result, TRUE);
++    $this->assertIsArray($decoded);
++    $this->assertStringNotContainsString('evil.com', $result);
++    $this->assertStringContainsString('click', $decoded['body']);
++    // Values without violations are untouched.
++    $this->assertSame('<p>Hi</p>', $decoded['safe']);
++  }
++
++  /**
++   * Test that a disallowed Markdown link inside a JSON value is filtered.
++   */
++  public function testJsonWithDisallowedMarkdownLinkInValueIsFiltered(): void {
++    $this->hostnameFilter->setAllowedDomains(['example.com']);
++    $json = '{"summary":"See [docs](https://evil.com/docs) for details"}';
++    $result = $this->hostnameFilter->filterText($json);
++    $decoded = json_decode($result, TRUE);
++    $this->assertIsArray($decoded);
++    $this->assertStringNotContainsString('evil.com', $result);
++    $this->assertSame('See docs for details', $decoded['summary']);
++  }
++
++  /**
++   * Test that a script tag inside a JSON value is removed.
++   */
++  public function testJsonScriptTagInValueIsRemoved(): void {
++    $this->hostnameFilter->setAllowedDomains(['example.com']);
++    $json = '{"body":"before<script src=\"https://evil.com/x.js\"></script>after"}';
++    $result = $this->hostnameFilter->filterText($json);
++    $decoded = json_decode($result, TRUE);
++    $this->assertIsArray($decoded);
++    $this->assertStringNotContainsString('script', $result);
++    $this->assertStringNotContainsString('evil.com', $result);
++    $this->assertStringContainsString('before', $decoded['body']);
++    $this->assertStringContainsString('after', $decoded['body']);
++  }
++
++  /**
++   * Test that link rewriting works inside JSON values and stays decodable.
++   */
++  public function testJsonRewriteLinksRewritesInsideValues(): void {
++    $this->hostnameFilter->setAllowedDomains(['example.com']);
++    $this->hostnameFilter->setRewriteLinks(TRUE);
++    $json = '{"body":"<a href=\"https://evil.com/x\">click</a>"}';
++    $result = $this->hostnameFilter->filterText($json);
++    $decoded = json_decode($result, TRUE);
++    $this->assertIsArray($decoded);
++    // The link text is rewritten to the URL itself.
++    $this->assertStringContainsString('https://evil.com/x</a>', $decoded['body']);
++  }
++
++  /**
++   * Test that a violation in a JSON object key is filtered.
++   */
++  public function testJsonWithViolationInObjectKeyIsFiltered(): void {
++    $this->hostnameFilter->setAllowedDomains(['example.com']);
++    $json = '{"[x](https://evil.com/k)":"value"}';
++    $result = $this->hostnameFilter->filterText($json);
++    $decoded = json_decode($result, TRUE);
++    $this->assertIsArray($decoded);
++    $this->assertStringNotContainsString('evil.com', $result);
++    $this->assertSame(['x' => 'value'], $decoded);
++  }
++
++  /**
++   * Test that a JSON document nested in a string value is filtered.
++   */
++  public function testNestedJsonStringValueWithViolationIsFiltered(): void {
++    $this->hostnameFilter->setAllowedDomains(['example.com']);
++    $inner = json_encode(['desc' => '<a href="https://evil.com/x">c</a>', 'keep' => 'plain']);
++    $json = json_encode(['args' => $inner]);
++    $result = $this->hostnameFilter->filterText($json);
++    $decoded = json_decode($result, TRUE);
++    $this->assertIsArray($decoded);
++    $inner_decoded = json_decode($decoded['args'], TRUE);
++    $this->assertIsArray($inner_decoded);
++    $this->assertStringNotContainsString('evil.com', $result);
++    $this->assertSame('plain', $inner_decoded['keep']);
++  }
++
++  /**
++   * Test that empty object and array shapes survive the re-encode.
++   */
++  public function testJsonEmptyObjectAndEmptyArrayShapesSurviveReencode(): void {
++    $this->hostnameFilter->setAllowedDomains(['example.com']);
++    $json = '{"o":{},"a":[],"evil":"<a href=\"https://evil.com/x\">x</a>"}';
++    $result = $this->hostnameFilter->filterText($json);
++    $this->assertStringNotContainsString('evil.com', $result);
++    $this->assertStringContainsString('"o":{}', $result);
++    $this->assertStringContainsString('"a":[]', $result);
++  }
++
++  /**
++   * Test that scalar JSON values survive the re-encode with their types.
++   */
++  public function testJsonScalarValuesSurviveReencode(): void {
++    $this->hostnameFilter->setAllowedDomains(['example.com']);
++    $json = '{"i":5,"f":1.5,"z":1.0,"b":true,"n":null,"evil":"<a href=\"https://evil.com/x\">x</a>"}';
++    $result = $this->hostnameFilter->filterText($json);
++    $decoded = json_decode($result, TRUE);
++    $this->assertIsArray($decoded);
++    $this->assertSame(5, $decoded['i']);
++    $this->assertSame(1.5, $decoded['f']);
++    $this->assertSame(1.0, $decoded['z']);
++    $this->assertTrue($decoded['b']);
++    $this->assertNull($decoded['n']);
++    // JSON_PRESERVE_ZERO_FRACTION keeps 1.0 a float in the serialized form.
++    $this->assertStringContainsString('"z":1.0', $result);
++  }
++
++  /**
++   * Test that unicode survives the re-encode unescaped.
++   */
++  public function testJsonUnicodeAndEmojiSurviveReencodeUnescaped(): void {
++    $this->hostnameFilter->setAllowedDomains(['example.com']);
++    $json = '{"text":"café 😀 naïve","evil":"<a href=\"https://evil.com/x\">x</a>"}';
++    $result = $this->hostnameFilter->filterText($json);
++    $this->assertStringNotContainsString('evil.com', $result);
++    $this->assertStringContainsString('café 😀 naïve', $result);
++  }
++
++  /**
++   * Test that violations deep in a nested structure are filtered.
++   */
++  public function testJsonDeeplyNestedStructureFiltered(): void {
++    $this->hostnameFilter->setAllowedDomains(['example.com']);
++    $json = json_encode([
++      'level1' => [
++        'level2' => [
++          ['body' => '<a href="https://evil.com/deep">x</a>'],
++          ['body' => '<a href="https://example.com/ok">y</a>'],
++        ],
++      ],
++    ]);
++    $result = $this->hostnameFilter->filterText($json);
++    $decoded = json_decode($result, TRUE);
++    $this->assertIsArray($decoded);
++    $this->assertStringNotContainsString('evil.com', $result);
++    $this->assertStringContainsString('https://example.com/ok', $result);
++  }
++
++  /**
++   * Test that top-level scalar JSON takes the regular prose path.
++   */
++  public function testTopLevelScalarJsonTakesNormalPath(): void {
++    $this->hostnameFilter->setAllowedDomains(['example.com']);
++    $this->assertSame('"Hello world."', $this->hostnameFilter->filterText('"Hello world."'));
++    $this->assertSame('123', $this->hostnameFilter->filterText('123'));
++  }
++
++  /**
++   * Test that non-JSON text starting with a bracket is still filtered.
++   */
++  public function testNonJsonTextStartingWithBracketTakesNormalPath(): void {
++    $this->hostnameFilter->setAllowedDomains(['example.com']);
++    $result = $this->hostnameFilter->filterText('[click](https://evil.com/page) more text');
++    $this->assertStringNotContainsString('evil.com', $result);
++    $this->assertStringContainsString('click', $result);
++    $this->assertStringContainsString('more text', $result);
++  }
++
++  /**
++   * Test that a clean fenced JSON block passes byte-for-byte.
++   */
++  public function testFencedJsonBlockCleanIsPreserved(): void {
++    $this->hostnameFilter->setAllowedDomains(['example.com']);
++    $text = "Here is the result:\n```json\n{\"body\": \"<p>ok & fine</p>\"}\n```\nDone.";
++    $this->assertSame($text, $this->hostnameFilter->filterText($text));
++  }
++
++  /**
++   * Test that a bare fenced block surrounded by whitespace is preserved.
++   */
++  public function testBareFencedJsonBlockCleanIsPreserved(): void {
++    $this->hostnameFilter->setAllowedDomains(['example.com']);
++    $text = "```\n{\"a\": \"x < y\"}\n```";
++    $this->assertSame($text, $this->hostnameFilter->filterText($text));
++  }
++
++  /**
++   * Test that a violation inside a fenced JSON block is filtered.
++   */
++  public function testFencedJsonBlockWithViolationIsFilteredAndFenceRetained(): void {
++    $this->hostnameFilter->setAllowedDomains(['example.com']);
++    $text = "Result:\n```json\n{\"body\": \"<a href=\\\"https://evil.com/x\\\">c</a>\"}\n```";
++    $result = $this->hostnameFilter->filterText($text);
++    $this->assertStringNotContainsString('evil.com', $result);
++    $this->assertStringContainsString('```json', $result);
++    $this->assertMatchesRegularExpression('/```json\s*\n(.*)\n\s*```/s', $result);
++    preg_match('/```json\s*\n(.*)\n\s*```/s', $result, $matches);
++    $this->assertIsArray(json_decode($matches[1], TRUE));
++  }
++
++  /**
++   * Test that prose around a fenced JSON block is filtered independently.
++   */
++  public function testFencedJsonWithViolationInSurroundingProse(): void {
++    $this->hostnameFilter->setAllowedDomains(['example.com']);
++    $payload = '{"a": "clean"}';
++    $text = "See [here](https://evil.com/x):\n```json\n$payload\n```";
++    $result = $this->hostnameFilter->filterText($text);
++    $this->assertStringNotContainsString('evil.com', $result);
++    // The payload itself is untouched.
++    $this->assertStringContainsString($payload, $result);
++  }
++
++  /**
++   * Test that JSON mode falls back to plain text for malformed JSON.
++   *
++   * A truncated structured output payload must not be entity-encoded by the
++   * HTML round trip; only the disallowed URL is removed.
++   */
++  public function testJsonModeFallsBackToPlainTextOnMalformedJson(): void {
++    $this->hostnameFilter->setAllowedDomains(['example.com']);
++    $this->hostnameFilter->setJsonMode(TRUE);
++    $malformed = '{"a": "see https://evil.com/x for details"';
++    $result = $this->hostnameFilter->filterText($malformed);
++    $this->assertStringNotContainsString('evil.com', $result);
++    $this->assertStringStartsWith('{"a": ', $result);
++    $this->assertStringNotContainsString('&quot;', $result);
++    $this->assertStringNotContainsString('&amp;', $result);
++  }
++
++  /**
++   * Test that JSON mode does not change handling of decodable payloads.
++   */
++  public function testJsonModeDecodablePayloadMatchesAutoDetection(): void {
++    $this->hostnameFilter->setAllowedDomains(['example.com']);
++    $json = '{"body":"<p>ok</p>"}';
++    $auto = $this->hostnameFilter->filterText($json);
++    $this->hostnameFilter->setJsonMode(TRUE);
++    $this->assertSame($auto, $this->hostnameFilter->filterText($json));
++    $this->assertSame($json, $auto);
++  }
++
++  /**
++   * Test that plain text mode takes precedence over JSON detection.
++   */
++  public function testPlainTextModeTakesPrecedenceOverJsonDetection(): void {
++    $this->hostnameFilter->setAllowedDomains(['example.com']);
++    $this->hostnameFilter->setPlainTextMode(TRUE);
++    $json = '{"url": "https://evil.com/x"}';
++    $result = $this->hostnameFilter->filterText($json);
++    // Plain text filtering removes the URL but performs no HTML encoding.
++    $this->assertStringNotContainsString('evil.com', $result);
++    $this->assertStringNotContainsString('&quot;', $result);
++  }
++
++  /**
++   * Test that full trust bypasses JSON handling entirely.
++   */
++  public function testFullTrustBypassesJsonHandling(): void {
++    $this->hostnameFilter->setAllowedDomains(['example.com']);
++    $this->hostnameFilter->setFullTrust(TRUE);
++    $json = '{"url": "<a href=\"https://evil.com/x\">x</a>"}';
++    $this->assertSame($json, $this->hostnameFilter->filterText($json));
++  }
++
++  /**
++   * Test that jsonMode round-trips through applySettings and snapshots.
++   */
++  public function testApplySettingsAndSnapshotRestoreRoundTripJsonMode(): void {
++    $this->hostnameFilter->setAllowedDomains(['example.com']);
++    $snapshot = $this->hostnameFilter->snapshotSettings();
++    $this->assertArrayHasKey('jsonMode', $snapshot);
++    $this->assertNull($snapshot['jsonMode']);
++
++    $dto = new HostnameFilterDto(jsonMode: TRUE);
++    $this->hostnameFilter->applySettings($dto);
++    // With jsonMode applied, malformed JSON is not HTML-encoded.
++    $malformed = '{"a": "x < y"';
++    $this->assertSame($malformed, $this->hostnameFilter->filterText($malformed));
++
++    // Restoring reverts to the regular pipeline, which mangles the
++    // malformed payload again — proving the flag was actually restored.
++    $this->hostnameFilter->restoreSettings($snapshot);
++    $this->assertNotSame($malformed, $this->hostnameFilter->filterText($malformed));
++  }
++
+ }
