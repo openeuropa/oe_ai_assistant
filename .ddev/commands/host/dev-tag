@@ -1,0 +1,19 @@
+#!/bin/bash
+
+## Description: Print a dev release tag (0.TICKET.YYYYMMDDHHMM) inferred from the current branch
+## Usage: dev-tag
+## Example: ddev dev-tag
+
+set -e
+
+# Dev tags use 0 as major version, the ticket number as minor and the
+# current datetime as patch, e.g. 0.5001.202609111602. Pushing such a
+# tag triggers the release workflow.
+branch=$(git -C "$DDEV_APPROOT" rev-parse --abbrev-ref HEAD)
+
+# Ticket refs look like OEL-1234, possibly followed by a suffix such as
+# OEL-1234_foo or OEL-1234-foo. The prefix may vary, so match any run of
+# capital letters, a dash, and digits, and keep only the digits.
+ticket=$(echo "$branch" | grep -oE '[A-Z]+-[0-9]+' | head -n 1 | sed -E 's/^[A-Z]+-//')
+
+echo "0.${ticket:-0}.$(date +%Y%m%d%H%M)"
