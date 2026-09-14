@@ -44,6 +44,9 @@
         "patches": {
             "drupal/ai_agents": {
                 "Keep setUserInterface extra tags on the entity wrapper (getExtraTags)": "patches/ai-agents-agent-wrapper-extra-tags.patch"
+            },
+            "drupal/ai": {
+                "HostnameFilter breaks HTML in JSON (@see https://git.drupalcode.org/project/ai/-/work_items/3586677)": "patches/ai-hostname-filter-handling-of-html-in-json.patch"
             }
         },
         "installer-paths": {
