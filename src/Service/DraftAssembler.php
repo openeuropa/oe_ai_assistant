@@ -7,6 +7,7 @@ namespace Drupal\oe_ai_assistant\Service;
 use Drupal\Core\Entity\ContentEntityInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Session\AccountProxyInterface;
+use Drupal\oe_ai_assistant\AiDraftingTemplateInterface;
 use Drupal\oe_ai_assistant\Exception\ActionException;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
@@ -52,6 +53,7 @@ class DraftAssembler implements DraftAssemblerInterface {
     }
 
     $mergedFields = $fields;
+    $template = NULL;
     if ($templateId !== NULL && $templateId !== '') {
       try {
         $template = $this->schemaProvider->resolveTemplate('node', $bundle, $templateId);
@@ -77,6 +79,9 @@ class DraftAssembler implements DraftAssemblerInterface {
     }
 
     try {
+      if ($template !== NULL) {
+        $mergedFields = $this->mergeItemDefaults($template->getFields(), $mergedFields, $template);
+      }
       $built = $this->draftEntityBuilder->fromLlmFields('node', $bundle, $mergedFields);
     }
     catch (\Throwable $e) {
@@ -111,6 +116,86 @@ class DraftAssembler implements DraftAssemblerInterface {
       $existingNode->set($fieldName, $values);
     }
     return $existingNode;
+  }
+
+  /**
+   * Merges each template item's defaults into its matching LLM output item.
+   *
+   * Walks each field's template item declarations alongside the LLM's
+   * actual output items for that field, pairing them by array index. A
+   * pair only merges when the LLM item's actual bundle (read via its
+   * bundle-discriminator key, the same shape InlineEntityHydrator reads)
+   * matches the template item's declared bundle; a mismatched or missing
+   * pairing is left unmerged, not an error — required-field coverage is
+   * enforced at template-validation time, not here. Recurses into each
+   * matched item's own nested items.
+   *
+   * @param array<string, mixed> $templateFields
+   *   The template's field definitions
+   *   (AiDraftingTemplateInterface::getFields() shape, or an item's own
+   *   'fields' shape when called recursively).
+   * @param array<string, mixed> $llmFields
+   *   The merged LLM/defaults fields map to merge item defaults into.
+   * @param \Drupal\oe_ai_assistant\AiDraftingTemplateInterface $template
+   *   The template, for resolveItemDefaults() calls.
+   *
+   * @return array<string, mixed>
+   *   The fields map with item-level defaults merged in.
+   */
+  private function mergeItemDefaults(array $templateFields, array $llmFields, AiDraftingTemplateInterface $template): array {
+    foreach ($templateFields as $fieldName => $fieldConfig) {
+      if (
+        empty($fieldConfig['items']) ||
+        !is_array($fieldConfig['items']) ||
+        !isset($llmFields[$fieldName]) ||
+        !is_array($llmFields[$fieldName])
+      ) {
+        continue;
+      }
+
+      $templateItems = $fieldConfig['items'];
+      $llmItems = $llmFields[$fieldName];
+      $pairCount = min(count($templateItems), count($llmItems));
+
+      for ($i = 0; $i < $pairCount; $i++) {
+        $templateItem = $templateItems[$i];
+        $llmItem = $llmItems[$i];
+
+        if (!is_array($templateItem) || !is_array($llmItem)) {
+          continue;
+        }
+
+        $itemEntityTypeId = $templateItem['entity_type'] ?? NULL;
+        $itemBundle = $templateItem['bundle'] ?? NULL;
+        if (!$itemEntityTypeId || !$itemBundle) {
+          continue;
+        }
+
+        $bundleKey = $this->entityTypeManager->getDefinition($itemEntityTypeId)->getKey('bundle');
+        $llmItemBundle = $llmItem[$bundleKey][0]['target_id'] ?? NULL;
+        if ($llmItemBundle !== $itemBundle) {
+          continue;
+        }
+
+        if (!empty($templateItem['defaults']) && is_array($templateItem['defaults'])) {
+          $resolvedItemDefaults = array_map(
+            static fn (array $default) => $default['default_value'],
+            $template->resolveItemDefaults($templateItem['defaults'], $itemEntityTypeId, $itemBundle),
+          );
+          $llmItem = $resolvedItemDefaults + $llmItem;
+        }
+
+        if (!empty($templateItem['fields']) && is_array($templateItem['fields'])) {
+          $llmItem = $this->mergeItemDefaults($templateItem['fields'], $llmItem, $template);
+        }
+
+        $llmItems[$i] = $llmItem;
+      }
+
+      $llmFields[$fieldName] = $llmItems;
+    }
+
+    return $llmFields;
   }
 
 }

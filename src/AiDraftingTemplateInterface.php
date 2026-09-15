@@ -32,6 +32,25 @@ interface AiDraftingTemplateInterface extends ConfigEntityInterface {
   public function resolveDefaults(): array;
 
   /**
+   * Resolves an item's own defaults map, for an arbitrary entity type/bundle.
+   *
+   * Same token (__NOW__) and target_uuid -> target_id resolution as
+   * resolveDefaults(), parameterized for a reference/paragraph item's own
+   * entity type and bundle rather than this template's node content type.
+   *
+   * @param array<string, mixed> $rawDefaults
+   *   The item's raw defaults map (the item's 'defaults' key, or []).
+   * @param string $entityTypeId
+   *   The item's entity type ID (e.g. 'paragraph', 'node').
+   * @param string $bundle
+   *   The item's bundle.
+   *
+   * @return array<string, mixed>
+   *   The mapping with tokens and target_uuid resolved.
+   */
+  public function resolveItemDefaults(array $rawDefaults, string $entityTypeId, string $bundle): array;
+
+  /**
    * Returns the human-readable description.
    */
   public function getDescription(): string;
