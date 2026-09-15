@@ -39,7 +39,7 @@ jobs:
           fi
 
       - name: Check coding standards
-        run: ddev phpcs .
+        run: ddev phpcs
 
   drupal-test:
     name: Drupal Test
