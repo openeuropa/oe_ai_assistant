@@ -1,0 +1,25 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - field.storage.node.field_contact_manager
+    - node.type.oe_contact
+id: node.oe_contact.field_contact_manager
+field_name: field_contact_manager
+entity_type: node
+bundle: oe_contact
+label: 'Contact manager'
+description: 'Test-only self-referencing field for exercising target_uuid resolution on item-level template defaults.'
+required: false
+translatable: true
+default_value: {  }
+default_value_callback: ''
+settings:
+  handler: 'default:node'
+  handler_settings:
+    target_bundles:
+      oe_contact: oe_contact
+    sort:
+      field: _none
+    auto_create: false
+field_type: entity_reference
