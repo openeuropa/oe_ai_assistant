@@ -20,6 +20,24 @@ jobs:
           export PROJECT_FILES=$(ls -A)
           ddev symlink-project
 
+      - name: Check Drupal core package versions
+        run: |
+          installed=$(ddev composer show --format=json)
+          versions=""
+          for package in drupal/core drupal/core-recommended drupal/core-dev drupal/core-composer-scaffold; do
+            version=$(echo "$installed" | jq -r --arg name "$package" '.installed[] | select(.name == $name) | .version')
+            if [ -z "$version" ]; then
+              echo "::error::$package is not installed."
+              exit 1
+            fi
+            echo "$package: $version"
+            versions+="$version"$'\n'
+          done
+          if [ "$(printf '%s' "$versions" | sort -u | wc -l)" -ne 1 ]; then
+            echo "::error::Drupal core packages are installed with different versions."
+            exit 1
+          fi
+
       - name: Check coding standards
         run: ddev phpcs .
 
