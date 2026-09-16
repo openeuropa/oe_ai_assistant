@@ -340,11 +340,12 @@ class EntityJsonSchemaComposerTest extends KernelTestBase {
     // composed schema with `type` constrained to the bundle name.
     $this->assertSame('paragraph', $items['x-targetType']);
     $this->assertArrayHasKey('oneOf', $items);
-    $this->assertCount(2, $items['oneOf'], 'One variant per allowed bundle.');
+    $this->assertCount(3, $items['oneOf'], 'One variant per allowed bundle.');
 
-    // Find the text_block variant by its constrained type.
+    // Find each variant by its constrained type.
     $textBlockVariant = NULL;
     $quoteBlockVariant = NULL;
+    $heroVariant = NULL;
     foreach ($items['oneOf'] as $variant) {
       $bundleConst = $variant['properties']['type']['items']['properties']['target_id']['const'] ?? NULL;
       if ($bundleConst === 'text_block') {
@@ -353,14 +354,19 @@ class EntityJsonSchemaComposerTest extends KernelTestBase {
       if ($bundleConst === 'quote_block') {
         $quoteBlockVariant = $variant;
       }
+      if ($bundleConst === 'hero') {
+        $heroVariant = $variant;
+      }
     }
     $this->assertNotNull($textBlockVariant, 'oneOf includes a text_block variant.');
     $this->assertNotNull($quoteBlockVariant, 'oneOf includes a quote_block variant.');
+    $this->assertNotNull($heroVariant, 'oneOf includes a hero variant.');
 
     // Each variant carries the bundle's editorially meaningful fields.
     $this->assertArrayHasKey('field_text_body', $textBlockVariant['properties']);
     $this->assertArrayHasKey('field_quote_text', $quoteBlockVariant['properties']);
     $this->assertArrayHasKey('field_quote_attribution', $quoteBlockVariant['properties']);
+    $this->assertArrayHasKey('field_hero_image', $heroVariant['properties']);
   }
 
   /**
