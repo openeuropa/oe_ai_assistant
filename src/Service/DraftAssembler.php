@@ -109,12 +109,15 @@ class DraftAssembler implements DraftAssemblerInterface {
   /**
    * Merges each template item's defaults into its matching LLM output item.
    *
-   * Walks each field's template item declarations alongside the LLM's
-   * actual output items for that field, pairing them by array index. A
-   * pair only merges when the LLM item's actual bundle (read via its
-   * bundle-discriminator key, the same shape InlineEntityHydrator reads)
-   * matches the template item's declared bundle; a mismatched or missing
-   * pairing is left unmerged, not an error — required-field coverage is
+   * Walks each field's template item declarations against the LLM's actual
+   * output items for that field, matching each template item to the first
+   * not-yet-matched LLM item sharing its bundle (read via the bundle
+   * discriminator, the same shape InlineEntityHydrator reads) — not by array
+   * position. The LLM is not guaranteed, and in practice does not reliably,
+   * emit items in the order the template declares them; matching by bundle
+   * instead of index means a defaulted item's value still lands on the
+   * right item wherever the LLM placed it. A template item with no matching
+   * LLM item is left unmerged, not an error — required-field coverage is
    * enforced at template-validation time, not here. Recurses into each
    * matched item's own nested items.
    *
@@ -141,15 +144,11 @@ class DraftAssembler implements DraftAssemblerInterface {
         continue;
       }
 
-      $templateItems = $fieldConfig['items'];
       $llmItems = $llmFields[$fieldName];
-      $pairCount = min(count($templateItems), count($llmItems));
+      $usedIndexes = [];
 
-      for ($i = 0; $i < $pairCount; $i++) {
-        $templateItem = $templateItems[$i];
-        $llmItem = $llmItems[$i];
-
-        if (!is_array($templateItem) || !is_array($llmItem)) {
+      foreach ($fieldConfig['items'] as $templateItem) {
+        if (!is_array($templateItem)) {
           continue;
         }
 
@@ -160,10 +159,22 @@ class DraftAssembler implements DraftAssemblerInterface {
         }
 
         $bundleKey = $this->entityTypeManager->getDefinition($itemEntityTypeId)->getKey('bundle');
-        $llmItemBundle = $llmItem[$bundleKey][0]['target_id'] ?? NULL;
-        if ($llmItemBundle !== $itemBundle) {
+
+        $matchedIndex = NULL;
+        foreach ($llmItems as $index => $llmItem) {
+          if (isset($usedIndexes[$index]) || !is_array($llmItem)) {
+            continue;
+          }
+          if (($llmItem[$bundleKey][0]['target_id'] ?? NULL) === $itemBundle) {
+            $matchedIndex = $index;
+            break;
+          }
+        }
+        if ($matchedIndex === NULL) {
           continue;
         }
+        $usedIndexes[$matchedIndex] = TRUE;
+        $llmItem = $llmItems[$matchedIndex];
 
         if (!empty($templateItem['defaults']) && is_array($templateItem['defaults'])) {
           $resolvedItemDefaults = array_map(
@@ -177,7 +188,7 @@ class DraftAssembler implements DraftAssemblerInterface {
           $llmItem = $this->mergeItemDefaults($templateItem['fields'], $llmItem, $template);
         }
 
-        $llmItems[$i] = $llmItem;
+        $llmItems[$matchedIndex] = $llmItem;
       }
 
       $llmFields[$fieldName] = $llmItems;
