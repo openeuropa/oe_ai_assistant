@@ -143,7 +143,16 @@ class TemplateSchemaFilter implements TemplateSchemaFilterInterface {
     }
 
     // The same bundle may appear in multiple items; union their field names.
+    // A field covered by an item-level default is tracked separately and
+    // always excluded below, whether or not 'fields' also restricts the
+    // bundle: DraftAssembler's merge replaces that field with the default
+    // wholesale once a matching item exists, so asking the LLM to draft it
+    // would be pointless at best (its answer is discarded) and misleading
+    // at worst (e.g. a reference field's target_id, which it cannot fill
+    // validly anyway).
     $allowedFields = [];
+    $defaultedFields = [];
+    $bundlePrompts = [];
     foreach ($templateField['items'] as $item) {
       $bundle = $item['bundle'] ?? NULL;
       if ($bundle === NULL) {
@@ -153,6 +162,13 @@ class TemplateSchemaFilter implements TemplateSchemaFilterInterface {
         $allowedFields[$bundle] ?? [],
         array_keys($item['fields'] ?? []),
       );
+      $defaultedFields[$bundle] = array_merge(
+        $defaultedFields[$bundle] ?? [],
+        array_keys($item['defaults'] ?? []),
+      );
+      if (!empty($item['prompt'])) {
+        $bundlePrompts[$bundle][] = $item['prompt'];
+      }
     }
 
     // Multiple allowed bundles: prune the oneOf to the template's bundles.
@@ -163,7 +179,13 @@ class TemplateSchemaFilter implements TemplateSchemaFilterInterface {
         if ($bundle === NULL || !array_key_exists($bundle, $allowedFields)) {
           continue;
         }
-        $variants[] = $this->pruneVariant($variant, $bundleKey, $allowedFields[$bundle]);
+        $variants[] = $this->pruneVariant(
+          $variant,
+          $bundleKey,
+          $allowedFields[$bundle],
+          $defaultedFields[$bundle] ?? [],
+          implode(' ', $bundlePrompts[$bundle] ?? []),
+        );
       }
       // No variant matched a template bundle: keep the field whole rather than
       // emit an empty oneOf.
@@ -183,7 +205,13 @@ class TemplateSchemaFilter implements TemplateSchemaFilterInterface {
     if ($bundle === NULL || !array_key_exists($bundle, $allowedFields)) {
       return $fieldSchema;
     }
-    $fieldSchema['items'] = $this->pruneVariant($items, $bundleKey, $allowedFields[$bundle]);
+    $fieldSchema['items'] = $this->pruneVariant(
+      $items,
+      $bundleKey,
+      $allowedFields[$bundle],
+      $defaultedFields[$bundle] ?? [],
+      implode(' ', $bundlePrompts[$bundle] ?? []),
+    );
 
     return $fieldSchema;
   }
@@ -196,20 +224,55 @@ class TemplateSchemaFilter implements TemplateSchemaFilterInterface {
    * @param string $bundleKey
    *   The discriminator property name (the target type's bundle key).
    * @param string[] $allowedFields
-   *   The nested field names the template keeps for this bundle.
+   *   The nested field names the template keeps for this bundle. An empty
+   *   list means the template did not explicitly restrict this bundle's
+   *   fields (as opposed to explicitly listing zero of them), so every real
+   *   field is kept except $defaultedFields.
+   * @param string[] $defaultedFields
+   *   Field names covered by an item-level default for this bundle. Always
+   *   excluded, regardless of $allowedFields: DraftAssembler's merge
+   *   replaces them wholesale, so showing them to the LLM is pointless.
+   * @param string $description
+   *   The template item's own 'prompt' text for this bundle (items sharing a
+   *   bundle have their prompts joined). The LLM otherwise has no authored
+   *   guidance about what a bundle represents or when to use it - only the
+   *   bare discriminator value (e.g. "hero"). Empty string when the item
+   *   declared no prompt, in which case the variant is left without one.
    *
    * @return array
    *   The pruned variant.
    */
-  private function pruneVariant(array $variant, string $bundleKey, array $allowedFields): array {
-    // A bundle listed with no nested fields keeps the whole variant.
+  private function pruneVariant(array $variant, string $bundleKey, array $allowedFields, array $defaultedFields = [], string $description = ''): array {
+    if ($description !== '') {
+      $variant['description'] = $description;
+    }
+
+    // No explicit restriction: keep every field except anything covered by
+    // a default (the discriminator is never defaulted, so it's kept too).
     // @todo Revisit whether to restrict to leaf fields instead, once we have
     //   observed how this behaves on large content types.
     if ($allowedFields === []) {
+      $properties = [];
+      foreach ($variant['properties'] ?? [] as $name => $propSchema) {
+        if (!in_array($name, $defaultedFields, TRUE)) {
+          $properties[$name] = $propSchema;
+        }
+      }
+      $variant['properties'] = $properties;
+      $required = array_values(array_diff($variant['required'] ?? [], $defaultedFields));
+      if ($required !== []) {
+        $variant['required'] = $required;
+      }
+      else {
+        unset($variant['required']);
+      }
       return $variant;
     }
 
-    $keep = array_fill_keys(array_merge($allowedFields, [$bundleKey]), TRUE);
+    $keep = array_fill_keys(
+      array_merge(array_diff($allowedFields, $defaultedFields), [$bundleKey]),
+      TRUE,
+    );
     $properties = [];
     foreach ($variant['properties'] ?? [] as $name => $propSchema) {
       if (isset($keep[$name])) {
