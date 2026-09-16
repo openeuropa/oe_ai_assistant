@@ -183,6 +183,8 @@ components:
       $ref: "plugins/drafting/schemas.yaml#/DraftingDocumentStatus"
     DraftingDocument:
       $ref: "plugins/drafting/schemas.yaml#/DraftingDocument"
+    DraftingDocumentSnapshot:
+      $ref: "plugins/drafting/schemas.yaml#/DraftingDocumentSnapshot"
     DraftingAddDocumentRequest:
       $ref: "plugins/drafting/schemas.yaml#/DraftingAddDocumentRequest"
     DraftingAddDocumentResponse:
