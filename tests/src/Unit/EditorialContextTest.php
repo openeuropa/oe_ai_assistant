@@ -10,9 +10,8 @@ use Drupal\Tests\UnitTestCase;
 /**
  * Tests the EditorialContext value object and its provenance snapshot.
  *
- * The populated-documents case uses fixture descriptors of both categories
- * (context and publishable) to ensure snapshot wiring is proven before the
- * documents backend is fully implemented.
+ * The populated case uses fixture context document descriptors to prove
+ * the snapshot wiring.
  *
  * @coversDefaultClass \Drupal\oe_ai_assistant\Service\Drafting\EditorialContext
  */
@@ -32,10 +31,10 @@ class EditorialContextTest extends UnitTestCase {
       ],
       [
         'id' => '15',
-        'title' => 'Hero image',
-        'category' => 'publishable',
-        'summary' => 'Wind turbines at sunset.',
-        'meta' => ['mime' => 'image/png'],
+        'title' => 'Programme factsheet',
+        'category' => 'context',
+        'summary' => 'Funding lines and deadlines.',
+        'meta' => ['mime' => 'application/pdf'],
       ],
     ];
     $context = new EditorialContext(
@@ -44,7 +43,7 @@ class EditorialContextTest extends UnitTestCase {
       tonePrompt: 'Use professional, institutional language.',
       templateId: 'news_default',
       templateLabel: 'News default',
-      documents: $documents,
+      contextDocuments: $documents,
     );
 
     $snapshot = $context->toSnapshot();
@@ -105,7 +104,7 @@ class EditorialContextTest extends UnitTestCase {
   public function testToPromptWithEmptyContext(): void {
     $context = new EditorialContext(NULL, NULL, NULL, NULL, NULL);
     $this->assertSame('', $context->toPrompt());
-    $this->assertSame('', $context->toDocumentsPrompt());
+    $this->assertSame('', $context->toContextDocumentsPrompt());
   }
 
   /**
@@ -117,6 +116,7 @@ class EditorialContextTest extends UnitTestCase {
       'title' => 'Document ' . $id,
       'category' => 'context',
       'status' => $status,
+      'filename' => 'doc-' . $id . '.pdf',
       'summary' => $summary,
       'meta' => ['type' => 'pdf', 'size' => 10],
       'extract' => $extract,
@@ -125,16 +125,19 @@ class EditorialContextTest extends UnitTestCase {
 
   /**
    * Tests that processed documents are injected as titled text blocks.
+   *
+   * The heading carries the file name so the agents can tell documents
+   * apart when the editor refers to one by name.
    */
   public function testDocumentsPromptInjectsExtracts(): void {
     $context = new EditorialContext(NULL, NULL, NULL, NULL, NULL, [
       self::document('1', 'done', 'Full text of one.', 'Summary one.'),
     ]);
 
-    $prompt = $context->toDocumentsPrompt();
+    $prompt = $context->toContextDocumentsPrompt();
 
-    $this->assertStringContainsString('Reference documents', $prompt);
-    $this->assertStringContainsString("### Document 1
+    $this->assertStringContainsString('Context documents', $prompt);
+    $this->assertStringContainsString("### Document 1 (file: doc-1.pdf)
 Full text of one.", $prompt);
     $this->assertStringNotContainsString('Summary one.', $prompt);
     $this->assertStringContainsString('background only', $prompt);
@@ -153,13 +156,13 @@ Full text of one.", $prompt);
       self::document('3', 'error', 'Kept text.'),
     ]);
 
-    $prompt = $context->toDocumentsPrompt();
+    $prompt = $context->toContextDocumentsPrompt();
 
-    $this->assertStringContainsString("### Document 1
+    $this->assertStringContainsString("### Document 1 (file: doc-1.pdf)
 Not processed yet", $prompt);
-    $this->assertStringContainsString("### Document 2
+    $this->assertStringContainsString("### Document 2 (file: doc-2.pdf)
 Processing failed", $prompt);
-    $this->assertStringContainsString("### Document 3
+    $this->assertStringContainsString("### Document 3 (file: doc-3.pdf)
 Kept text.", $prompt);
     $this->assertStringContainsString('wait a moment', $prompt);
   }
@@ -172,7 +175,7 @@ Kept text.", $prompt);
     $context = new EditorialContext(NULL, NULL, NULL, NULL, NULL, [
       self::document('1', 'done', $long),
     ]);
-    $prompt = $context->toDocumentsPrompt();
+    $prompt = $context->toContextDocumentsPrompt();
     $this->assertStringContainsString(str_repeat('a', EditorialContext::MAX_DOCUMENT_CHARS) . "
 [truncated]", $prompt);
     $this->assertStringNotContainsString(str_repeat('a', EditorialContext::MAX_DOCUMENT_CHARS + 1), $prompt);
@@ -183,10 +186,10 @@ Kept text.", $prompt);
     for ($i = 1; $i <= $count; $i++) {
       $documents[] = self::document((string) $i, 'done', str_repeat('b', EditorialContext::MAX_DOCUMENT_CHARS), 'Summary ' . $i);
     }
-    $prompt = (new EditorialContext(NULL, NULL, NULL, NULL, NULL, $documents))->toDocumentsPrompt();
-    $this->assertStringContainsString("### Document $count
+    $prompt = (new EditorialContext(NULL, NULL, NULL, NULL, NULL, $documents))->toContextDocumentsPrompt();
+    $this->assertStringContainsString("### Document $count (file: doc-$count.pdf)
 Summary only: Summary $count", $prompt);
-    $this->assertStringContainsString("### Document 1
+    $this->assertStringContainsString("### Document 1 (file: doc-1.pdf)
 bbb", $prompt);
 
     // A document that does not fit in the remaining budget also falls back
@@ -195,8 +198,8 @@ bbb", $prompt);
     for ($i = 1; $i <= $count; $i++) {
       $documents[] = self::document((string) $i, 'done', str_repeat('x', EditorialContext::MAX_DOCUMENT_CHARS - 1), 'Summary ' . $i);
     }
-    $prompt = (new EditorialContext(NULL, NULL, NULL, NULL, NULL, $documents))->toDocumentsPrompt();
-    $this->assertStringContainsString("### Document $count
+    $prompt = (new EditorialContext(NULL, NULL, NULL, NULL, NULL, $documents))->toContextDocumentsPrompt();
+    $this->assertStringContainsString("### Document $count (file: doc-$count.pdf)
 Summary only: Summary $count", $prompt);
     $this->assertLessThanOrEqual(EditorialContext::MAX_TOTAL_CHARS, substr_count($prompt, 'x'));
   }
@@ -210,12 +213,12 @@ Summary only: Summary $count", $prompt);
     ]);
     $prompt = $context->toPrompt();
     $this->assertStringContainsString('- Tone: Formal', $prompt);
-    $this->assertStringContainsString("### Document 1
+    $this->assertStringContainsString("### Document 1 (file: doc-1.pdf)
 Text.", $prompt);
   }
 
   /**
-   * Tests that the snapshot never carries the extracted text.
+   * Tests that the snapshot never carries the file name or extracted text.
    */
   public function testSnapshotStripsExtracts(): void {
     $context = new EditorialContext(NULL, NULL, NULL, NULL, NULL, [
@@ -223,6 +226,7 @@ Text.", $prompt);
     ]);
     $snapshot = $context->toSnapshot();
     $this->assertArrayNotHasKey('extract', $snapshot['documents'][0]);
+    $this->assertArrayNotHasKey('filename', $snapshot['documents'][0]);
     $this->assertSame('Summary.', $snapshot['documents'][0]['summary']);
     $this->assertSame('done', $snapshot['documents'][0]['status']);
   }

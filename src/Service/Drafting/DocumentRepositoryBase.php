@@ -139,6 +139,7 @@ abstract class DocumentRepositoryBase implements DocumentRepositoryInterface {
       $extract = trim((string) ($media->get(DocumentMediaHooks::EXTRACT_FIELD)->value ?? ''));
       $documents[] = $this->serialize($media) + [
         'category' => $this->getCategory(),
+        'filename' => $this->getFilename($media),
         'summary' => trim((string) ($media->get(DocumentMediaHooks::SUMMARY_FIELD)->value ?? '')),
         'extract' => $extract === '' ? NULL : $extract,
       ];
@@ -219,7 +220,7 @@ abstract class DocumentRepositoryBase implements DocumentRepositoryInterface {
    */
   protected function serialize(MediaInterface $media): array {
     $file = $this->getFile($media);
-    $filename = $file?->getFilename() ?: $media->label();
+    $filename = $this->getFilename($media);
     $extension = pathinfo($filename, PATHINFO_EXTENSION);
 
     return [
@@ -374,6 +375,19 @@ abstract class DocumentRepositoryBase implements DocumentRepositoryInterface {
     $file = $this->getFile($media);
     $media->delete();
     $file?->delete();
+  }
+
+  /**
+   * Gets the stored file name of a document, falling back to its label.
+   *
+   * @param \Drupal\media\MediaInterface $media
+   *   The document media entity.
+   *
+   * @return string
+   *   The file name.
+   */
+  private function getFilename(MediaInterface $media): string {
+    return (string) ($this->getFile($media)?->getFilename() ?: $media->label());
   }
 
   /**

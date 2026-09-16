@@ -336,15 +336,15 @@ class DraftingPlugin extends AiAssistantPluginBase {
     $router = $this->aiAgentManager->createInstance('oe_drafting_router');
 
     // Build the system prompt with schema groups appended, then the
-    // reference documents: the router needs them to answer questions about
+    // context documents: the router needs them to answer questions about
     // the material and to warn about documents still being processed. The
     // tone stays out of the router prompt; it only steers the sub-agents.
     $systemPrompt = $this->buildSystemPrompt(
       $router->getSystemPrompt(), $context
     );
-    $documentsPrompt = $editorialContext->toDocumentsPrompt();
-    if ($documentsPrompt !== '') {
-      $systemPrompt .= "\n\n" . $documentsPrompt . "\n";
+    $contextDocumentsPrompt = $editorialContext->toContextDocumentsPrompt();
+    if ($contextDocumentsPrompt !== '') {
+      $systemPrompt .= "\n\n" . $contextDocumentsPrompt . "\n";
     }
 
     // Collect tools: get_content_schema from agent config +
@@ -910,9 +910,9 @@ class DraftingPlugin extends AiAssistantPluginBase {
    * The tone is resolved through AiEditorialContext, which stays the single
    * source of tone wording; an invalid stored tone is a 400 exactly as the
    * former router prompt injection made it. Labels are captured at request
-   * time so the provenance snapshot survives later renames. Documents come
-   * from the context repository with their extracts, so the prompts reflect
-   * the latest state on every call.
+   * time so the provenance snapshot survives later renames. Context
+   * documents come from their repository with their extracts, so the
+   * prompts reflect the latest state on every call.
    *
    * @param \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $session
    *   The session hosting the conversation.
@@ -942,7 +942,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
       tonePrompt: $tone['prompt'] ?? NULL,
       templateId: $template?->id(),
       templateLabel: $template?->label(),
-      documents: $this->contextDocumentRepository->describe($session),
+      contextDocuments: $this->contextDocumentRepository->describe($session),
     );
   }
 
