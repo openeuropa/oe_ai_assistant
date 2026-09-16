@@ -408,8 +408,8 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
     \Drupal::state()->resetCache();
     $log = MockAiProvider::getCallLog();
     $router = $log[0]['system_prompt'];
-    $this->assertStringContainsString("### $processedTitle\nAlpha briefing content for the draft.", $router);
-    $this->assertStringContainsString("### $pendingTitle\nNot processed yet", $router);
+    $this->assertStringContainsString("### $processedTitle (file: $processedTitle)\nAlpha briefing content for the draft.", $router);
+    $this->assertStringContainsString("### $pendingTitle (file: $pendingTitle)\nNot processed yet", $router);
     $this->assertStringContainsString('wait a moment', $router);
 
     // Every sub-agent call after the router carries the same block.
