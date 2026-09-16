@@ -756,19 +756,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
    *   A confirmation response.
    */
   public function removeDocument(Request $request): array {
-    $body = $this->decodeJsonBody($request);
-    $repository = $this->resolveDocumentRepository($body['category'] ?? '');
-    $session = $this->loadSession($body);
-    $documentId = (string) ($body['documentId'] ?? '');
-
-    if ($documentId === '') {
-      throw new ActionException(
-        'invalid_request',
-        'A documentId is required.',
-        400,
-      );
-    }
-
+    [$repository, $session, $documentId] = $this->resolveDocumentRequest($request);
     $repository->remove($session, $documentId);
 
     return ['status' => 'ok'];
@@ -787,18 +775,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
    *   The document state.
    */
   public function extractDocument(Request $request): array {
-    $body = $this->decodeJsonBody($request);
-    $repository = $this->resolveDocumentRepository($body['category'] ?? '');
-    $session = $this->loadSession($body);
-    $documentId = (string) ($body['documentId'] ?? '');
-
-    if ($documentId === '') {
-      throw new ActionException(
-        'invalid_request',
-        'A documentId is required.',
-        400,
-      );
-    }
+    [$repository, $session, $documentId] = $this->resolveDocumentRequest($request);
 
     return ['status' => $repository->extract($session, $documentId)];
   }
@@ -836,6 +813,37 @@ class DraftingPlugin extends AiAssistantPluginBase {
     }
     $message->setToolCalls($toolCalls);
     $message->save();
+  }
+
+  /**
+   * Resolves the repository, session and document id of a document request.
+   *
+   * Shared by the actions that target one existing document.
+   *
+   * @param \Symfony\Component\HttpFoundation\Request $request
+   *   The incoming JSON request.
+   *
+   * @return array
+   *   The document repository, the session and the document id.
+   *
+   * @throws \Drupal\oe_ai_assistant\Exception\ActionException
+   *   When the document id is missing.
+   */
+  private function resolveDocumentRequest(Request $request): array {
+    $body = $this->decodeJsonBody($request);
+    $repository = $this->resolveDocumentRepository($body['category'] ?? '');
+    $session = $this->loadSession($body);
+    $documentId = (string) ($body['documentId'] ?? '');
+
+    if ($documentId === '') {
+      throw new ActionException(
+        'invalid_request',
+        'A documentId is required.',
+        400,
+      );
+    }
+
+    return [$repository, $session, $documentId];
   }
 
   /**
