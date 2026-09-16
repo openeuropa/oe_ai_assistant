@@ -2,18 +2,14 @@
 <ruleset name="oe_ai_assistant">
   <description>PHP CodeSniffer configuration for oe_ai_assistant.</description>
 
-  <arg name="extensions" value="php,module,install,inc,theme,info,yml"/>
-  <arg name="colors"/>
-  <arg value="sp"/>
-
-  <file>.</file>
   <rule ref="Drupal"/>
   <rule ref="DrupalPractice"/>
 
-  <exclude-pattern>.ddev</exclude-pattern>
-  <exclude-pattern>.sink</exclude-pattern>
-  <exclude-pattern>vendor</exclude-pattern>
-  <exclude-pattern>web</exclude-pattern>
-  <exclude-pattern>dist</exclude-pattern>
-  <exclude-pattern>node_modules</exclude-pattern>
+  <arg name="extensions" value="engine,inc,info,install,module,php,profile,test,theme,yml"/>
+  <arg name="colors"/>
+  <arg value="sp"/>
+
+  <exclude-pattern>*/.sink/*</exclude-pattern>
+  <exclude-pattern>*/dist/*</exclude-pattern>
+  <exclude-pattern>*/node_modules/*</exclude-pattern>
 </ruleset>
