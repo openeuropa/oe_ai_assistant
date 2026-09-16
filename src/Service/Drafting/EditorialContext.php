@@ -18,15 +18,15 @@ namespace Drupal\oe_ai_assistant\Service\Drafting;
 final class EditorialContext {
 
   /**
-   * Characters of one document extract injected into a prompt.
+   * Characters of one context document extract injected into a prompt.
    */
   public const int MAX_DOCUMENT_CHARS = 20000;
 
   /**
-   * Characters of extracted text injected into a prompt over all documents.
+   * Characters of extracted text injected over all context documents.
    *
-   * A document whose text does not fit in the remaining budget contributes
-   * its summary instead.
+   * A context document whose text does not fit in the remaining budget
+   * contributes its summary instead.
    */
   public const int MAX_TOTAL_CHARS = 60000;
 
@@ -43,11 +43,13 @@ final class EditorialContext {
    *   The resolved drafting template id, or NULL without a template.
    * @param string|null $templateLabel
    *   The template label at resolution time.
-   * @param array $documents
-   *   Document descriptors, each {id, title, category, status, summary, meta,
-   *   extract} with category either "context" or "publishable". The extract
-   *   is the full text when the pipeline produced one, NULL otherwise; it
-   *   feeds the prompts and never the snapshot.
+   * @param array $contextDocuments
+   *   Context document descriptors, each {id, title, category, status,
+   *   filename, summary, meta, extract}. Only documents of the "context"
+   *   category are injected into the prompts; publishable assets stay out of
+   *   the context for now. The extract is the full text when the pipeline
+   *   produced one, NULL otherwise. The filename and the extract feed the
+   *   prompts and never the snapshot.
    */
   public function __construct(
     public readonly ?string $toneId,
@@ -55,7 +57,7 @@ final class EditorialContext {
     public readonly ?string $tonePrompt,
     public readonly ?string $templateId,
     public readonly ?string $templateLabel,
-    public readonly array $documents = [],
+    public readonly array $contextDocuments = [],
   ) {}
 
   /**
@@ -63,8 +65,8 @@ final class EditorialContext {
    *
    * @return array
    *   An array with tone ({id, label, prompt} or NULL), template ({id, label}
-   *   or NULL) and documents (the descriptor list without the extracted
-   *   text, possibly empty).
+   *   or NULL) and documents (the context document descriptors without the
+   *   file name and the extracted text, possibly empty).
    */
   public function toSnapshot(): array {
     return [
@@ -75,9 +77,9 @@ final class EditorialContext {
         ? ['id' => $this->templateId, 'label' => (string) $this->templateLabel]
         : NULL,
       'documents' => array_map(static function (array $document): array {
-        unset($document['extract']);
+        unset($document['filename'], $document['extract']);
         return $document;
-      }, $this->documents),
+      }, $this->contextDocuments),
     ];
   }
 
@@ -86,7 +88,7 @@ final class EditorialContext {
    *
    * One crafted block gathers every piece of editorial context that must
    * steer generation, so all injection sites share the same wording: the
-   * tone guidelines and the reference documents.
+   * tone guidelines and the context documents.
    *
    * @return string
    *   The prompt block, or an empty string when there is no context.
@@ -102,38 +104,42 @@ final class EditorialContext {
         'Follow the tone guidelines in every piece of text you generate.',
       ]);
     }
-    $documents = $this->toDocumentsPrompt();
-    if ($documents !== '') {
-      $blocks[] = $documents;
+    $contextDocuments = $this->toContextDocumentsPrompt();
+    if ($contextDocuments !== '') {
+      $blocks[] = $contextDocuments;
     }
 
     return implode("\n\n", $blocks);
   }
 
   /**
-   * Builds the reference documents block of the prompts.
+   * Builds the context documents block of the prompts.
    *
-   * Every attached document appears under its title: the extracted text
-   * when the pipeline produced one, otherwise a note that the content is
-   * not available yet. The router and the sub-agents share this block, so
-   * the assistant can warn the editor about pending material. Text is
+   * Every attached context document appears under its title and file name,
+   * so the agents can tell which document the editor refers to: the
+   * extracted text when the pipeline produced one, otherwise a note that
+   * the content is not available yet. The router and the sub-agents share
+   * this block,
+   * so the assistant can warn the editor about pending material. Text is
    * capped per document and over all documents; a document whose text does
    * not fit in the remaining budget contributes its summary instead.
    *
    * @return string
-   *   The prompt block, or an empty string without documents.
+   *   The prompt block, or an empty string without context documents.
    */
-  public function toDocumentsPrompt(): string {
-    if ($this->documents === []) {
+  public function toContextDocumentsPrompt(): string {
+    if ($this->contextDocuments === []) {
       return '';
     }
 
-    $lines = ['Reference documents attached by the editor as background for this draft:'];
+    $lines = ['Context documents attached by the editor as background for this draft:'];
     $budget = self::MAX_TOTAL_CHARS;
     $pending = FALSE;
-    foreach ($this->documents as $document) {
+    foreach ($this->contextDocuments as $document) {
       $lines[] = '';
-      $lines[] = '### ' . (string) ($document['title'] ?? $document['id'] ?? 'Document');
+      $heading = '### ' . (string) ($document['title'] ?? $document['id'] ?? 'Document');
+      $filename = trim((string) ($document['filename'] ?? ''));
+      $lines[] = $filename === '' ? $heading : sprintf('%s (file: %s)', $heading, $filename);
       $extract = trim((string) ($document['extract'] ?? ''));
       if ($extract === '') {
         $pending = TRUE;
@@ -154,7 +160,7 @@ final class EditorialContext {
     }
 
     $lines[] = '';
-    $lines[] = 'Use the reference documents as background only: never reproduce them verbatim and do not mention '
+    $lines[] = 'Use the context documents as background only: never reproduce them verbatim and do not mention '
       . 'them unless the editor asks.';
     if ($pending) {
       $lines[] = 'Some documents are not available yet. Tell the editor to wait a moment for the full context, '

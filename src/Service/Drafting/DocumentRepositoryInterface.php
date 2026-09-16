@@ -65,7 +65,8 @@ interface DocumentRepositoryInterface {
    * Describes the documents of a session for prompt injection.
    *
    * Each descriptor carries the serialized item plus the category, the
-   * summary and the extracted text (NULL until the pipeline stored one).
+   * stored file name, the summary and the extracted text (NULL until the
+   * pipeline stored one).
    *
    * @param \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $session
    *   The session whose documents are described.
