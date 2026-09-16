@@ -188,6 +188,17 @@ Kept text.", $prompt);
 Summary only: Summary $count", $prompt);
     $this->assertStringContainsString("### Document 1
 bbb", $prompt);
+
+    // A document that does not fit in the remaining budget also falls back
+    // to summary, so the total never exceeds the budget.
+    $documents = [];
+    for ($i = 1; $i <= $count; $i++) {
+      $documents[] = self::document((string) $i, 'done', str_repeat('x', EditorialContext::MAX_DOCUMENT_CHARS - 1), 'Summary ' . $i);
+    }
+    $prompt = (new EditorialContext(NULL, NULL, NULL, NULL, NULL, $documents))->toDocumentsPrompt();
+    $this->assertStringContainsString("### Document $count
+Summary only: Summary $count", $prompt);
+    $this->assertLessThanOrEqual(EditorialContext::MAX_TOTAL_CHARS, substr_count($prompt, 'x'));
   }
 
   /**

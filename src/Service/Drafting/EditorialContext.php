@@ -25,7 +25,8 @@ final class EditorialContext {
   /**
    * Characters of extracted text injected into a prompt over all documents.
    *
-   * Beyond this budget the remaining documents contribute their summary.
+   * A document whose text does not fit in the remaining budget contributes
+   * its summary instead.
    */
   public const int MAX_TOTAL_CHARS = 60000;
 
@@ -116,8 +117,8 @@ final class EditorialContext {
    * when the pipeline produced one, otherwise a note that the content is
    * not available yet. The router and the sub-agents share this block, so
    * the assistant can warn the editor about pending material. Text is
-   * capped per document and over all documents; past the total budget the
-   * remaining documents contribute their summary instead.
+   * capped per document and over all documents; a document whose text does
+   * not fit in the remaining budget contributes its summary instead.
    *
    * @return string
    *   The prompt block, or an empty string without documents.
@@ -141,12 +142,12 @@ final class EditorialContext {
           : 'Not processed yet; its content is not available.';
         continue;
       }
-      if ($budget <= 0) {
-        $lines[] = 'Summary only: ' . trim((string) ($document['summary'] ?? ''));
-        continue;
-      }
       if (mb_strlen($extract) > self::MAX_DOCUMENT_CHARS) {
         $extract = mb_substr($extract, 0, self::MAX_DOCUMENT_CHARS) . "\n[truncated]";
+      }
+      if (mb_strlen($extract) > $budget) {
+        $lines[] = 'Summary only: ' . trim((string) ($document['summary'] ?? ''));
+        continue;
       }
       $budget -= mb_strlen($extract);
       $lines[] = $extract;
