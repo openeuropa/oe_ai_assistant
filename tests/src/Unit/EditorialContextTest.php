@@ -25,16 +25,18 @@ class EditorialContextTest extends UnitTestCase {
       [
         'id' => '12',
         'title' => 'Climate briefing note',
+        'status' => 'done',
+        'meta' => ['type' => 'pdf', 'size' => 1024],
         'category' => 'context',
         'summary' => 'Key figures on EU emissions.',
-        'meta' => ['mime' => 'application/pdf'],
       ],
       [
         'id' => '15',
         'title' => 'Programme factsheet',
+        'status' => 'done',
+        'meta' => ['type' => 'docx', 'size' => 2048],
         'category' => 'context',
         'summary' => 'Funding lines and deadlines.',
-        'meta' => ['mime' => 'application/pdf'],
       ],
     ];
     $context = new EditorialContext(

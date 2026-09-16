@@ -692,8 +692,8 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
   /**
    * Tests that get_draft_history returns the drafts of the pinned session.
    *
-   * The history is seeded directly, including a populated documents fixture
-   * of both categories, so the test does not depend on the drafting flow.
+   * The history is seeded directly, including a populated context documents
+   * fixture, so the test does not depend on the drafting flow.
    * The mock router calls the tool with a bogus session id to prove the
    * fixed tool context pins the real one.
    */
@@ -707,16 +707,18 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
       [
         'id' => '12',
         'title' => 'Climate briefing note',
+        'status' => 'done',
+        'meta' => ['type' => 'pdf', 'size' => 1024],
         'category' => 'context',
         'summary' => 'Key figures on EU emissions.',
-        'meta' => ['mime' => 'application/pdf'],
       ],
       [
         'id' => '15',
-        'title' => 'Hero image',
-        'category' => 'publishable',
-        'summary' => 'Wind turbines at sunset.',
-        'meta' => ['mime' => 'image/png'],
+        'title' => 'Programme factsheet',
+        'status' => 'done',
+        'meta' => ['type' => 'docx', 'size' => 2048],
+        'category' => 'context',
+        'summary' => 'Funding lines and deadlines.',
       ],
     ];
     $this->seedMessage($session, 'assistant', '', [
