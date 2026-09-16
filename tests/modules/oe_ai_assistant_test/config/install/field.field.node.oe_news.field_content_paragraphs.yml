@@ -4,6 +4,7 @@ dependencies:
   config:
     - field.storage.node.field_content_paragraphs
     - node.type.oe_news
+    - paragraphs.paragraphs_type.hero
     - paragraphs.paragraphs_type.quote_block
     - paragraphs.paragraphs_type.text_block
 id: node.oe_news.field_content_paragraphs
@@ -22,6 +23,7 @@ settings:
     target_bundles:
       text_block: text_block
       quote_block: quote_block
+      hero: hero
     negate: 0
     target_bundles_drag_drop:
       text_block:
@@ -30,4 +32,7 @@ settings:
       quote_block:
         enabled: true
         weight: 1
+      hero:
+        enabled: true
+        weight: 2
 field_type: entity_reference_revisions
