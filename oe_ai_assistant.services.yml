@@ -31,10 +31,6 @@ services:
   Drupal\oe_ai_assistant\Service\Drafting\DocumentExtractionProcessor: {}
   Drupal\oe_ai_assistant\Service\Drafting\DocumentExtractionProcessorInterface: '@Drupal\oe_ai_assistant\Service\Drafting\DocumentExtractionProcessor'
 
-  # Hooks of the working-material document media.
-  Drupal\oe_ai_assistant\Hook\DocumentMediaHooks:
-    autowire: true
-
   Drupal\oe_ai_assistant\Service\InlineEntityHydrator: {}
 
   Drupal\oe_ai_assistant\Service\DraftEntityBuilder: {}
