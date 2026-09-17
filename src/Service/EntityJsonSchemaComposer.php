@@ -581,6 +581,10 @@ class EntityJsonSchemaComposer {
           ],
           'maxItems' => 1,
         ];
+        // Without this, the discriminator is optional per the schema: the
+        // LLM may omit it, and InlineEntityHydrator::buildInlineEntities()
+        // has no bundle to route the item to.
+        $bundleSchema['required'][] = $bundleKey;
         $variants[] = $bundleSchema;
       }
       // Include `type: object` alongside `oneOf` so the field-level invariant
@@ -628,6 +632,10 @@ class EntityJsonSchemaComposer {
             ],
             'maxItems' => 1,
           ];
+          // Without this, the discriminator is optional per the schema: the
+          // LLM may omit it, and InlineEntityHydrator::buildInlineEntities()
+          // has no bundle to route the item to.
+          $bundleSchema['required'][] = $bundleKey;
         }
         $variants[] = $bundleSchema;
       }
