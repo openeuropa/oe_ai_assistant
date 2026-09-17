@@ -18,7 +18,7 @@ const apiMocks = vi.hoisted(() => ({
 
 vi.mock("react", () => ({
   useCallback: vi.fn((callback: unknown) => callback),
-  useEffect: vi.fn((effect: () => void | (() => void)) => {
+  useEffect: vi.fn((effect: () => undefined | (() => void)) => {
     const cleanup = effect();
     if (typeof cleanup === "function") {
       reactState.cleanups.push(cleanup);
