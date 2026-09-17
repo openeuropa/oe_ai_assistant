@@ -66,9 +66,12 @@ class EntityJsonSchemaComposer {
    *
    * These are NOT entity-type keys (so they're not caught by SKIP_KEY_ROLES)
    * but Drupal manages their values on save. Including them in the schema
-   * risks the LLM emitting hallucinated timestamps that would flow through
-   * `$serializer->deserialize()` into the entity unchanged, bypassing
-   * Drupal's revision tracking.
+   * risks the LLM emitting a value that flows through
+   * `$serializer->deserialize()` into the entity unchanged: for 'created'/
+   * 'changed' that means hallucinated timestamps bypassing Drupal's revision
+   * tracking; for paragraphs' 'behavior_settings' (a string_long field whose
+   * value column Drupal's serializer treats as a serialize column) any
+   * string value at all makes the generic FieldItemNormalizer throw.
    *
    * @todo Replace with class-hierarchy detection
    * // phpcs:ignore Drupal.Files.LineLength.TooLong
@@ -80,6 +83,7 @@ class EntityJsonSchemaComposer {
   private const AUTO_MANAGED_FIELD_NAMES = [
     'created',
     'changed',
+    'behavior_settings',
   ];
 
   /**

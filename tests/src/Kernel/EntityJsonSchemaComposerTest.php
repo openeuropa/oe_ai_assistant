@@ -407,6 +407,14 @@ class EntityJsonSchemaComposerTest extends KernelTestBase {
       'created is excluded from the schema.');
     $this->assertArrayNotHasKey('changed', $schema['properties'],
       'changed is excluded from the schema.');
+
+    // behavior_settings is paragraphs' internal behavior-plugin config. Its
+    // value column is a serialize column, so any string the LLM emits for
+    // it makes the generic FieldItemNormalizer throw a LogicException on
+    // hydration.
+    $paragraphSchema = $this->composer()->compose('paragraph', 'text_block');
+    $this->assertArrayNotHasKey('behavior_settings', $paragraphSchema['properties'],
+      'behavior_settings is excluded from the schema.');
   }
 
   /**
