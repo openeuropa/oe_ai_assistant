@@ -350,7 +350,7 @@ class TemplateSchemaFilterTest extends KernelTestBase {
 
     $items = $filtered['properties']['field_content_paragraphs']['items'];
     $this->assertNotSame([], $items['oneOf'], 'oneOf must not be empty.');
-    $this->assertCount(2, $items['oneOf'], 'Both composed variants survive.');
+    $this->assertCount(3, $items['oneOf'], 'All composed variants survive.');
   }
 
   /**
