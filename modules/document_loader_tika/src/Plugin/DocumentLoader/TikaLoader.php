@@ -42,17 +42,25 @@ use Symfony\Component\DependencyInjection\ContainerInterface;
 )]
 final class TikaLoader extends DocumentLoaderBase {
 
-  public function __construct(
-    array $configuration,
-    string $plugin_id,
-    mixed $plugin_definition,
-    private readonly TikaClientInterface $client,
-    private readonly FileSystemInterface $fileSystem,
-    private readonly DocumentLoaderTypeFactory $typeFactory,
-    private readonly ConfigFactoryInterface $configFactory,
-  ) {
-    parent::__construct($configuration, $plugin_id, $plugin_definition);
-  }
+  /**
+   * The Tika client.
+   */
+  private TikaClientInterface $client;
+
+  /**
+   * The file system, resolving stream URIs to paths.
+   */
+  private FileSystemInterface $fileSystem;
+
+  /**
+   * The output factory.
+   */
+  private DocumentLoaderTypeFactory $typeFactory;
+
+  /**
+   * The config factory, for the availability check.
+   */
+  private ConfigFactoryInterface $configFactory;
 
   /**
    * {@inheritdoc}
@@ -63,15 +71,15 @@ final class TikaLoader extends DocumentLoaderBase {
     $plugin_id,
     mixed $plugin_definition,
   ): static {
-    return new static(
-      $configuration,
-      $plugin_id,
-      $plugin_definition,
-      $container->get(TikaClientInterface::class),
-      $container->get('file_system'),
-      $container->get('document_loader.type_factory'),
-      $container->get('config.factory'),
-    );
+    // The parent builds the instance, so this class never depends on the
+    // parent constructor signature.
+    $instance = parent::create($container, $configuration, $plugin_id, $plugin_definition);
+    $instance->client = $container->get(TikaClientInterface::class);
+    $instance->fileSystem = $container->get(FileSystemInterface::class);
+    $instance->typeFactory = $container->get('document_loader.type_factory');
+    $instance->configFactory = $container->get(ConfigFactoryInterface::class);
+
+    return $instance;
   }
 
   /**
