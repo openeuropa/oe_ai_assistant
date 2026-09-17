@@ -415,6 +415,17 @@ class EntityJsonSchemaComposerTest extends KernelTestBase {
     $paragraphSchema = $this->composer()->compose('paragraph', 'text_block');
     $this->assertArrayNotHasKey('behavior_settings', $paragraphSchema['properties'],
       'behavior_settings is excluded from the schema.');
+
+    // parent_id/parent_type/parent_field_name are populated by
+    // EntityReferenceRevisionsItem::postSave() once the host entity is
+    // saved. A drafted value makes Paragraph::getParentEntity() reference
+    // an undefined $parent when previewing the unsaved draft tree.
+    $this->assertArrayNotHasKey('parent_id', $paragraphSchema['properties'],
+      'parent_id is excluded from the schema.');
+    $this->assertArrayNotHasKey('parent_type', $paragraphSchema['properties'],
+      'parent_type is excluded from the schema.');
+    $this->assertArrayNotHasKey('parent_field_name', $paragraphSchema['properties'],
+      'parent_field_name is excluded from the schema.');
   }
 
   /**

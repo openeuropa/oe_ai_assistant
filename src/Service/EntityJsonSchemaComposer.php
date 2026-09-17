@@ -72,7 +72,11 @@ class EntityJsonSchemaComposer {
    * 'changed' that means hallucinated timestamps bypassing Drupal's revision
    * tracking; for paragraphs' 'behavior_settings' (a string_long field whose
    * value column Drupal's serializer treats as a serialize column) any
-   * string value at all makes the generic FieldItemNormalizer throw.
+   * string value at all makes the generic FieldItemNormalizer throw; for
+   * paragraphs' 'parent_id'/'parent_type'/'parent_field_name' (populated by
+   * EntityReferenceRevisionsItem::postSave() once the host entity is saved)
+   * any drafted value makes Paragraph::getParentEntity() reference an
+   * undefined $parent when previewing the unsaved draft tree.
    *
    * @todo Replace with class-hierarchy detection
    * // phpcs:ignore Drupal.Files.LineLength.TooLong
@@ -85,6 +89,9 @@ class EntityJsonSchemaComposer {
     'created',
     'changed',
     'behavior_settings',
+    'parent_id',
+    'parent_type',
+    'parent_field_name',
   ];
 
   /**
