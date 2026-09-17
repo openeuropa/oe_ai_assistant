@@ -15,7 +15,6 @@ use Drupal\file\Upload\UploadedFileInterface;
 use Drupal\media\MediaInterface;
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
 use Drupal\oe_ai_assistant\Exception\ActionException;
-use Drupal\oe_ai_assistant\Hook\DocumentMediaHooks;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 
@@ -136,11 +135,11 @@ abstract class DocumentRepositoryBase implements DocumentRepositoryInterface {
   public function describe(AiEditorialSessionInterface $session): array {
     $documents = [];
     foreach ($this->loadAll($session) as $media) {
-      $extract = trim((string) ($media->get(DocumentMediaHooks::EXTRACT_FIELD)->value ?? ''));
+      $extract = trim((string) ($media->get(DocumentExtractionProcessorInterface::EXTRACT_FIELD)->value ?? ''));
       $documents[] = $this->serialize($media) + [
         'category' => $this->getCategory(),
         'filename' => $this->getFilename($media),
-        'summary' => trim((string) ($media->get(DocumentMediaHooks::SUMMARY_FIELD)->value ?? '')),
+        'summary' => trim((string) ($media->get(DocumentExtractionProcessorInterface::SUMMARY_FIELD)->value ?? '')),
         'extract' => $extract === '' ? NULL : $extract,
       ];
     }
