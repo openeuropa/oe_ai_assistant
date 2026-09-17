@@ -188,7 +188,7 @@ class AiEditorialSessionDashboardTest extends AiEditorialSessionBrowserTestBase 
 
     $this->assertSession()->statusCodeEquals(200);
     $this->assertSession()->responseContains('"tone":{"enabled":true,"options":[]');
-    $this->assertSession()->responseContains('"documents":{"enabled":true}');
+    $this->assertSession()->responseContains('"documents":{"enabled":true,"extensions":["txt","doc","docx","pdf","md"]}');
     $this->assertSession()->responseNotContains('oe_ai_prompt');
   }
 
@@ -321,7 +321,7 @@ class AiEditorialSessionDashboardTest extends AiEditorialSessionBrowserTestBase 
     ]));
     $this->assertSession()->responseContains('"label":"Formal"');
     $this->assertSession()->responseContains('"description":"A professional and neutral tone suitable for official or institutional communication."');
-    $this->assertSession()->responseContains('"documents":{"enabled":true}');
+    $this->assertSession()->responseContains('"documents":{"enabled":true,"extensions":["txt","doc","docx","pdf","md"]}');
     $this->assertSession()->responseNotContains('"name":"Formal"');
     $this->assertSession()->responseNotContains('oe_ai_prompt');
   }
