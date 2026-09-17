@@ -281,10 +281,10 @@ class TemplateSchemaFilter implements TemplateSchemaFilterInterface {
     }
     $variant['properties'] = $properties;
 
-    // Recompute required against kept fields; never list the discriminator.
-    $required = array_values(array_diff(
-      array_intersect($variant['required'] ?? [], array_keys($properties)),
-      [$bundleKey],
+    // Recompute required against kept fields. Keep the discriminator required:
+    // InlineEntityHydrator needs it to select the target bundle.
+    $required = array_values(array_intersect(
+      $variant['required'] ?? [], array_keys($properties),
     ));
     if ($required !== []) {
       $variant['required'] = $required;
