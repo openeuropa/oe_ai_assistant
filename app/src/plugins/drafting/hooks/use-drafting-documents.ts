@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { getConfig } from "@/config";
 import { useAppStore } from "@/store";
 import {
@@ -23,49 +23,6 @@ export const DOCUMENT_POLL_INTERVAL_MS = 5000;
  * rounds.
  */
 export const MAX_FILES_PER_SELECTION = 10;
-
-/**
- * Pending refresh timer, module-level like the request counter: the hook
- * has a single consumer and the timer must survive re-renders.
- */
-let pollTimer: ReturnType<typeof setTimeout> | null = null;
-
-/** Cancels a scheduled refresh, if any. */
-function stopPolling(): void {
-  if (pollTimer) {
-    clearTimeout(pollTimer);
-    pollTimer = null;
-  }
-}
-
-/**
- * Refreshes the list every interval until no document is in flight.
- *
- * Polling is read-only: it never triggers processing. A refresh that
- * fails is retried on the next tick. Module-level so the boot effect can
- * call it without listing it as a dependency.
- */
-function pollUntilSettled(
-  documents: DraftingDocument[],
-  category: DraftingDocumentCategory,
-  setSelected: (documents: DraftingDocument[]) => void,
-): void {
-  stopPolling();
-  if (!documents.some((document) => !isDocumentSettled(document.status))) {
-    return;
-  }
-  pollTimer = setTimeout(async () => {
-    pollTimer = null;
-    let next = documents;
-    try {
-      next = await listDraftingDocuments(category);
-      setSelected(next);
-    } catch {
-      // Keep the current list; the next tick tries again.
-    }
-    pollUntilSettled(next, category, setSelected);
-  }, DOCUMENT_POLL_INTERVAL_MS);
-}
 
 /**
  * Fires processing for a document without blocking the caller.
@@ -140,7 +97,15 @@ export function useDraftingDocuments(
   const enabled = documentsConfig?.enabled ?? false;
   // File extensions the backend accepts, driving the upload control.
   const extensions = documentsConfig?.extensions ?? [];
-  const [selected, setSelected] = useState<DraftingDocument[]>([]);
+  const [selected, setSelectedState] = useState<DraftingDocument[]>([]);
+  // Mirror of the selected list for code running outside a render: the
+  // refresh and request callbacks read the latest documents from here.
+  const selectedRef = useRef<DraftingDocument[]>([]);
+  // Pending refresh timer and the generation of the current polling run.
+  // Every restart bumps the generation, so a refresh started under an
+  // older one discards its answer instead of overwriting newer state.
+  const pollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pollGeneration = useRef(0);
   const [uploads, setUploads] = useState<DocumentUpload[]>([]);
   const [isSaving, setIsSaving] = useState(false);
   // TRUE until the initial list request settles; the panel blocks
@@ -150,6 +115,57 @@ export function useDraftingDocuments(
   const [loadError, setLoadError] = useState<string | null>(null);
   // Why the last file selection was refused, cleared by the next one.
   const [selectionError, setSelectionError] = useState<string | null>(null);
+
+  /** Writes the selected list, keeping the mirror in sync. */
+  const setSelected = useCallback((documents: DraftingDocument[]) => {
+    selectedRef.current = documents;
+    setSelectedState(documents);
+  }, []);
+
+  /**
+   * Ends the current polling run.
+   *
+   * Bumping the generation also silences a refresh already in flight: its
+   * answer is dropped when it arrives.
+   */
+  const stopPolling = useCallback(() => {
+    pollGeneration.current += 1;
+    if (pollTimer.current) {
+      clearTimeout(pollTimer.current);
+      pollTimer.current = null;
+    }
+  }, []);
+
+  /**
+   * Starts a polling run that refreshes the list until nothing is in flight.
+   *
+   * Polling is read-only: it never triggers processing. A refresh that
+   * fails is retried on the next tick. Called after every local change to
+   * the list, so a stale refresh started before the change is discarded.
+   */
+  const pollUntilSettled = useCallback(() => {
+    stopPolling();
+    if (countUnsettled(selectedRef.current) === 0) {
+      return;
+    }
+    const generation = pollGeneration.current;
+    pollTimer.current = setTimeout(async () => {
+      pollTimer.current = null;
+      try {
+        const documents = await listDraftingDocuments(category);
+        if (generation !== pollGeneration.current) {
+          return;
+        }
+        setSelected(documents);
+      } catch {
+        // Keep the current list; the next tick tries again.
+        if (generation !== pollGeneration.current) {
+          return;
+        }
+      }
+      pollUntilSettled();
+    }, DOCUMENT_POLL_INTERVAL_MS);
+  }, [category, setSelected, stopPolling]);
 
   // Fetch the persisted documents once after boot.
   useEffect(() => {
@@ -161,7 +177,7 @@ export function useDraftingDocuments(
       .then((documents) => {
         if (!cancelled) {
           setSelected(documents);
-          pollUntilSettled(documents, category, setSelected);
+          pollUntilSettled();
         }
       })
       .catch((exception: unknown) => {
@@ -183,7 +199,7 @@ export function useDraftingDocuments(
       cancelled = true;
       stopPolling();
     };
-  }, [enabled, category]);
+  }, [enabled, category, setSelected, pollUntilSettled, stopPolling]);
 
   /**
    * Re-runs processing on a failed document and watches its progress.
@@ -191,28 +207,28 @@ export function useDraftingDocuments(
    * The document is shown as extracting right away: a refetch at this
    * point could still see the failed state, and failed counts as settled,
    * so polling would never start. Polling then follows the run, and the
-   * action's own answer shortens the wait when it arrives first.
+   * action's own answer shortens the wait when it arrives first. An answer
+   * arriving after polling saw the document settle is ignored: it is older
+   * than what the list already shows.
    */
   async function retryDocument(id: string) {
-    setSelected((current) =>
-      current.map((item) =>
+    setSelected(
+      selectedRef.current.map((item) =>
         item.id === id ? { ...item, status: "extracting" } : item,
       ),
     );
     void extractDraftingDocument(id, category)
       .then((status) => {
-        setSelected((current) =>
-          current.map((item) => (item.id === id ? { ...item, status } : item)),
+        setSelected(
+          selectedRef.current.map((item) =>
+            item.id === id && !isDocumentSettled(item.status)
+              ? { ...item, status }
+              : item,
+          ),
         );
       })
       .catch(() => {});
-    // Polling only needs to know that something is unsettled; each tick
-    // fetches the full list anyway.
-    pollUntilSettled(
-      [{ id, title: "", status: "extracting", meta: { type: "", size: 0 } }],
-      category,
-      setSelected,
-    );
+    pollUntilSettled();
   }
 
   /**
@@ -226,7 +242,10 @@ export function useDraftingDocuments(
     beginDocumentWork();
     try {
       await removeDraftingDocument(id, category);
-      setSelected((current) => current.filter((item) => item.id !== id));
+      setSelected(selectedRef.current.filter((item) => item.id !== id));
+      // Restart so a refresh started before the removal cannot bring the
+      // document back.
+      pollUntilSettled();
     } finally {
       setIsSaving(false);
       endDocumentWork();
@@ -274,12 +293,16 @@ export function useDraftingDocuments(
         beginDocumentWork();
         try {
           const document = await addDraftingDocument(file, category);
-          setSelected((current) => [...current, document]);
+          // A refresh may have listed the document already, with a newer
+          // state than the upload response carries; keep that entry.
+          if (!selectedRef.current.some((item) => item.id === document.id)) {
+            setSelected([...selectedRef.current, document]);
+          }
           setUploads((current) =>
             current.filter((upload) => upload.id !== slot.id),
           );
           triggerExtraction(document.id, category);
-          pollUntilSettled([document], category, setSelected);
+          pollUntilSettled();
         } catch (exception) {
           setUploads((current) =>
             current.map((upload) =>
