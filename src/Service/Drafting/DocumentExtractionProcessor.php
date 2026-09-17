@@ -189,7 +189,7 @@ final class DocumentExtractionProcessor implements DocumentExtractionProcessorIn
       // A stale in-flight document goes back to scheduled first, since
       // the claim transitions only leave a resting state.
       if ($inFlight) {
-        $this->stateItem($fresh)->applyTransitionById('reschedule');
+        $this->transition($fresh, 'reschedule');
       }
       // Resume by data: a stored extract only needs the summary step.
       $this->transition($fresh, $fresh->get(self::EXTRACT_FIELD)->isEmpty() ? 'claim_extract' : 'claim_summarize');
@@ -215,9 +215,7 @@ final class DocumentExtractionProcessor implements DocumentExtractionProcessorIn
           return self::STATE_EXTRACTING;
         }
         $media->set(self::EXTRACT_FIELD, $text);
-        // The extracted state only passes through in memory: the stored
-        // extract is what a later run resumes on, not the state.
-        $this->stateItem($media)->applyTransitionById('extracted');
+        $this->transition($media, 'extracted');
         $this->transition($media, 'claim_summarize');
       }
 
