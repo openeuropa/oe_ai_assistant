@@ -28,8 +28,8 @@ services:
   Drupal\oe_ai_assistant\Service\Drafting\ContextDocumentRepository: {}
 
   # Drives a document through extraction and summarisation.
-  Drupal\oe_ai_assistant\Service\Drafting\DocumentExtractionProcessor: {}
-  Drupal\oe_ai_assistant\Service\Drafting\DocumentExtractionProcessorInterface: '@Drupal\oe_ai_assistant\Service\Drafting\DocumentExtractionProcessor'
+  Drupal\oe_ai_assistant\Service\Drafting\DocumentExtractionProcessorInterface:
+    class: Drupal\oe_ai_assistant\Service\Drafting\DocumentExtractionProcessor
 
   Drupal\oe_ai_assistant\Service\InlineEntityHydrator: {}
 
