@@ -11,6 +11,7 @@ use Drupal\document_loader\Attribute\DocumentLoader;
 use Drupal\document_loader\DocumentLoaderType\DocumentLoaderInputInterface;
 use Drupal\document_loader\DocumentLoaderType\DocumentLoaderOutputInterface;
 use Drupal\document_loader\DocumentLoaderType\DocumentLoaderTypeFactory;
+use Drupal\document_loader\DocumentLoaderType\Input\FileInput;
 use Drupal\document_loader\Exception\DocumentLoaderException;
 use Drupal\document_loader\Plugin\DocumentLoaderBase;
 use Drupal\document_loader_tika\Exception\TikaException;
@@ -109,7 +110,7 @@ final class TikaLoader extends DocumentLoaderBase {
     DocumentLoaderInputInterface $input,
     string $output_format = 'text',
   ): DocumentLoaderOutputInterface {
-    $uri = method_exists($input, 'getFileUri') ? $input->getFileUri() : $input->getContent();
+    $uri = $input instanceof FileInput ? $input->getFileUri() : $input->getContent();
     $path = $this->fileSystem->realpath($uri);
     if ($path === FALSE || !is_file($path)) {
       throw new DocumentLoaderException(sprintf('The file %s cannot be resolved to a local path.', $uri));
