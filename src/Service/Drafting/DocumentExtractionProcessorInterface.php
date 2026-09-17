@@ -85,7 +85,8 @@ interface DocumentExtractionProcessorInterface {
    * @param \Drupal\media\MediaInterface $media
    *   The document media.
    * @param bool $reclaimInFlight
-   *   TRUE to take over a document stuck in an in-flight state (cron only).
+   *   TRUE to take over a document stuck in an in-flight state, for callers
+   *   that sweep abandoned runs.
    *
    * @return string
    *   The state after the call: unchanged when nothing was claimed.
@@ -97,8 +98,8 @@ interface DocumentExtractionProcessorInterface {
    *
    * Resting documents in scheduled or extracted come first, then in-flight
    * documents unchanged for longer than the threshold, which are reclaimed.
-   * The cron safety net for documents the app never triggered, lost
-   * requests and crashed runs.
+   * The safety net for documents the app never triggered, lost requests
+   * and crashed runs.
    *
    * @param int $limit
    *   Maximum number of documents.
