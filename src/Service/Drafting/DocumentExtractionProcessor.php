@@ -19,7 +19,6 @@ use Drupal\document_loader\Service\DocumentLoaderManager;
 use Drupal\file\FileInterface;
 use Drupal\media\MediaInterface;
 use Drupal\oe_ai_assistant\Exception\DocumentExtractionException;
-use Drupal\oe_ai_assistant\Hook\DocumentMediaHooks;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 
@@ -75,6 +74,15 @@ final class DocumentExtractionProcessor implements DocumentExtractionProcessorIn
     private readonly LoggerInterface $logger,
     private readonly TimeInterface $time,
   ) {}
+
+  /**
+   * {@inheritdoc}
+   */
+  public function schedule(MediaInterface $media): void {
+    $media->set(self::EXTRACT_FIELD, NULL);
+    $media->set(self::SUMMARY_FIELD, NULL);
+    $media->set(self::STATE_FIELD, self::STATE_SCHEDULED);
+  }
 
   /**
    * {@inheritdoc}
@@ -172,7 +180,7 @@ final class DocumentExtractionProcessor implements DocumentExtractionProcessorIn
       if ($state === self::STATE_DONE || ($inFlight && !$reclaimInFlight)) {
         return NULL;
       }
-      $next = $fresh->get(DocumentMediaHooks::EXTRACT_FIELD)->isEmpty()
+      $next = $fresh->get(self::EXTRACT_FIELD)->isEmpty()
         ? self::STATE_EXTRACTING
         : self::STATE_SUMMARIZING;
       $this->saveState($fresh, $next);
@@ -191,13 +199,13 @@ final class DocumentExtractionProcessor implements DocumentExtractionProcessorIn
     try {
       if ($this->getState($media) === self::STATE_EXTRACTING) {
         $text = $this->extractText($this->getSourceFile($media));
-        $media->set(DocumentMediaHooks::EXTRACT_FIELD, $text);
+        $media->set(self::EXTRACT_FIELD, $text);
         $this->saveState($media, self::STATE_EXTRACTED);
         $this->saveState($media, self::STATE_SUMMARIZING);
       }
 
-      $summary = $this->summarize((string) $media->get(DocumentMediaHooks::EXTRACT_FIELD)->value);
-      $media->set(DocumentMediaHooks::SUMMARY_FIELD, ['value' => $summary]);
+      $summary = $this->summarize((string) $media->get(self::EXTRACT_FIELD)->value);
+      $media->set(self::SUMMARY_FIELD, ['value' => $summary]);
       $this->saveState($media, self::STATE_DONE);
 
       return self::STATE_DONE;

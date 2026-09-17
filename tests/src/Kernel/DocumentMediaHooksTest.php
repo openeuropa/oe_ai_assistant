@@ -6,7 +6,6 @@ namespace Drupal\Tests\oe_ai_assistant\Kernel;
 
 use Drupal\file\Entity\File;
 use Drupal\media\Entity\Media;
-use Drupal\oe_ai_assistant\Hook\DocumentMediaHooks;
 use Drupal\oe_ai_assistant\Service\Drafting\DocumentExtractionProcessorInterface;
 use PHPUnit\Framework\Attributes\Group;
 
@@ -40,7 +39,7 @@ class DocumentMediaHooksTest extends AiEditorialSessionKernelTestBase {
   public function testExtractFieldAndPresaveReset(): void {
     $definitions = $this->container->get('entity_field.manager')
       ->getFieldDefinitions('media', 'ai_context_document');
-    $this->assertArrayHasKey(DocumentMediaHooks::EXTRACT_FIELD, $definitions);
+    $this->assertArrayHasKey(DocumentExtractionProcessorInterface::EXTRACT_FIELD, $definitions);
 
     $first = $this->createFile('one.txt', 'one');
     $media = Media::create([
@@ -53,22 +52,22 @@ class DocumentMediaHooksTest extends AiEditorialSessionKernelTestBase {
     $this->assertSame(DocumentExtractionProcessorInterface::STATE_SCHEDULED, $media->get(DocumentExtractionProcessorInterface::STATE_FIELD)->value);
 
     // Simulate a finished run, then a save without file change keeps it.
-    $media->set(DocumentMediaHooks::EXTRACT_FIELD, 'extract');
-    $media->set(DocumentMediaHooks::SUMMARY_FIELD, 'summary');
+    $media->set(DocumentExtractionProcessorInterface::EXTRACT_FIELD, 'extract');
+    $media->set(DocumentExtractionProcessorInterface::SUMMARY_FIELD, 'summary');
     $media->set(DocumentExtractionProcessorInterface::STATE_FIELD, DocumentExtractionProcessorInterface::STATE_DONE);
     $media->save();
     $media->set('name', 'renamed.txt');
     $media->save();
     $this->assertSame(DocumentExtractionProcessorInterface::STATE_DONE, $media->get(DocumentExtractionProcessorInterface::STATE_FIELD)->value);
-    $this->assertSame('extract', $media->get(DocumentMediaHooks::EXTRACT_FIELD)->value);
+    $this->assertSame('extract', $media->get(DocumentExtractionProcessorInterface::EXTRACT_FIELD)->value);
 
     // Replacing the file resets everything.
     $second = $this->createFile('two.txt', 'two');
     $media->set('oe_ai_context_document', ['target_id' => $second->id()]);
     $media->save();
     $this->assertSame(DocumentExtractionProcessorInterface::STATE_SCHEDULED, $media->get(DocumentExtractionProcessorInterface::STATE_FIELD)->value);
-    $this->assertTrue($media->get(DocumentMediaHooks::EXTRACT_FIELD)->isEmpty());
-    $this->assertTrue($media->get(DocumentMediaHooks::SUMMARY_FIELD)->isEmpty());
+    $this->assertTrue($media->get(DocumentExtractionProcessorInterface::EXTRACT_FIELD)->isEmpty());
+    $this->assertTrue($media->get(DocumentExtractionProcessorInterface::SUMMARY_FIELD)->isEmpty());
   }
 
 }

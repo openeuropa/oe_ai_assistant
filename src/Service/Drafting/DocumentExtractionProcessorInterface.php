@@ -21,6 +21,16 @@ interface DocumentExtractionProcessorInterface {
   public const string STATE_FIELD = 'oe_ai_extraction_state';
 
   /**
+   * The media field holding the full extracted text.
+   */
+  public const string EXTRACT_FIELD = 'oe_ai_document_extract';
+
+  /**
+   * The media field holding the brief summary.
+   */
+  public const string SUMMARY_FIELD = 'oe_ai_document_summary';
+
+  /**
    * Resting state of a new or reset document.
    */
   public const string STATE_SCHEDULED = 'scheduled';
@@ -49,6 +59,18 @@ interface DocumentExtractionProcessorInterface {
    * Final state after a failed step.
    */
   public const string STATE_ERROR = 'error';
+
+  /**
+   * Resets a document so the pipeline runs again from the start.
+   *
+   * Clears the stored extract and summary and puts the document in the
+   * scheduled state. Nothing is saved: the caller owns the save, typically
+   * a presave hook on a new document or one whose file was replaced.
+   *
+   * @param \Drupal\media\MediaInterface $media
+   *   The document media entity.
+   */
+  public function schedule(MediaInterface $media): void;
 
   /**
    * Processes a document as far as it can go and returns its final state.

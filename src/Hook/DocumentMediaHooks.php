@@ -17,16 +17,6 @@ final class DocumentMediaHooks {
   use AutowireTrait;
 
   /**
-   * The field holding the full extracted text.
-   */
-  public const string EXTRACT_FIELD = 'oe_ai_document_extract';
-
-  /**
-   * The field holding the brief summary.
-   */
-  public const string SUMMARY_FIELD = 'oe_ai_document_summary';
-
-  /**
    * Documents processed per cron run.
    */
   private const int CRON_BATCH = 5;
@@ -54,8 +44,8 @@ final class DocumentMediaHooks {
   /**
    * Implements hook_media_presave().
    *
-   * A new document, or one whose file was replaced, goes back to scheduled
-   * with its extract and summary cleared, so the pipeline runs again.
+   * A new document, or one whose file was replaced, is handed back to the
+   * processor for a fresh run; the processor owns the reset itself.
    */
   #[Hook('media_presave')]
   public function scheduleExtraction(MediaInterface $media): void {
@@ -66,12 +56,7 @@ final class DocumentMediaHooks {
       return;
     }
 
-    $media->set(self::EXTRACT_FIELD, NULL);
-    $media->set(self::SUMMARY_FIELD, NULL);
-    $media->set(
-      DocumentExtractionProcessorInterface::STATE_FIELD,
-      DocumentExtractionProcessorInterface::STATE_SCHEDULED,
-    );
+    $this->processor->schedule($media);
   }
 
   /**
