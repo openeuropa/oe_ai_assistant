@@ -19,15 +19,16 @@ use Drupal\document_loader\Service\DocumentLoaderManager;
 use Drupal\file\FileInterface;
 use Drupal\media\MediaInterface;
 use Drupal\oe_ai_assistant\Exception\DocumentExtractionException;
+use Drupal\state_machine\Plugin\Field\FieldType\StateItemInterface;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 
 /**
  * Processor persisting every step on the media entity.
  *
- * Text comes from the document_loader framework, which picks the loader
- * for the document type (Tika through document_loader_tika on this site).
- * Saves never create a revision: the pipeline is not editorial history.
+ * State changes go through the transitions of the oe_ai_document_extraction
+ * workflow, so state_machine guards every move. Text comes from the
+ * document_loader framework; saves never create a revision.
  */
 final class DocumentExtractionProcessor implements DocumentExtractionProcessorInterface {
 
@@ -81,7 +82,11 @@ final class DocumentExtractionProcessor implements DocumentExtractionProcessorIn
   public function schedule(MediaInterface $media): void {
     $media->set(self::EXTRACT_FIELD, NULL);
     $media->set(self::SUMMARY_FIELD, NULL);
-    $media->set(self::STATE_FIELD, self::STATE_SCHEDULED);
+    $state = $this->stateItem($media);
+    // A document already at rest in scheduled needs no transition.
+    if ($state->getId() !== self::STATE_SCHEDULED) {
+      $state->applyTransitionById('reschedule');
+    }
   }
 
   /**
@@ -101,10 +106,15 @@ final class DocumentExtractionProcessor implements DocumentExtractionProcessorIn
    */
   public function processPending(int $limit, int $staleAfterSeconds): void {
     $storage = $this->entityTypeManager->getStorage('media');
+    // Resting documents first: they are waiting for a step and are never
+    // owned by another run. The flag says whether the claim may take over
+    // an in-flight document.
     $pending = [];
     foreach ($this->findInStates([self::STATE_SCHEDULED, self::STATE_EXTRACTED], $limit) as $id) {
       $pending[$id] = FALSE;
     }
+    // Fill the rest of the batch with in-flight documents nobody touched
+    // for a while: their run crashed or was killed, so they are reclaimed.
     $remaining = $limit - count($pending);
     if ($remaining > 0) {
       $threshold = $this->time->getRequestTime() - $staleAfterSeconds;
@@ -122,9 +132,6 @@ final class DocumentExtractionProcessor implements DocumentExtractionProcessorIn
 
   /**
    * Returns the ids of documents in the given states, oldest first.
-   *
-   * Only working-material bundles carry the state field, so the state
-   * condition alone selects the right media.
    *
    * @param string[] $states
    *   The states to match.
@@ -157,15 +164,14 @@ final class DocumentExtractionProcessor implements DocumentExtractionProcessorIn
   }
 
   /**
-   * Moves a resting document into the in-flight state of its next step.
-   *
-   * The check and the transition happen on a fresh copy inside a lock, so
-   * two callers never both claim the same document.
+   * Moves a document into the in-flight state of its next step.
    *
    * @return \Drupal\media\MediaInterface|null
    *   The claimed document, or NULL when nothing was claimed.
    */
   private function claim(MediaInterface $media, bool $reclaimInFlight): ?MediaInterface {
+    // The check and the transition run on a fresh copy under a lock, so two
+    // callers never both claim the same document.
     $name = 'oe_ai_assistant_extraction_' . $media->id();
     if (!$this->lock->acquire($name)) {
       return NULL;
@@ -180,10 +186,13 @@ final class DocumentExtractionProcessor implements DocumentExtractionProcessorIn
       if ($state === self::STATE_DONE || ($inFlight && !$reclaimInFlight)) {
         return NULL;
       }
-      $next = $fresh->get(self::EXTRACT_FIELD)->isEmpty()
-        ? self::STATE_EXTRACTING
-        : self::STATE_SUMMARIZING;
-      $this->saveState($fresh, $next);
+      // A stale in-flight document goes back to scheduled first, since
+      // the claim transitions only leave a resting state.
+      if ($inFlight) {
+        $this->stateItem($fresh)->applyTransitionById('reschedule');
+      }
+      // Resume by data: a stored extract only needs the summary step.
+      $this->transition($fresh, $fresh->get(self::EXTRACT_FIELD)->isEmpty() ? 'claim_extract' : 'claim_summarize');
 
       return $fresh;
     }
@@ -194,12 +203,11 @@ final class DocumentExtractionProcessor implements DocumentExtractionProcessorIn
 
   /**
    * Runs the remaining steps of a claimed document.
-   *
-   * The editor can delete the document while a step runs. Every write is
-   * preceded by an existence check, and a deleted document ends the run
-   * quietly with the state it had reached.
    */
   private function run(MediaInterface $media): string {
+    // The editor can delete the document while a step runs, so every write
+    // is preceded by an existence check and a deleted document ends the
+    // run quietly with the state it had reached.
     try {
       if ($this->getState($media) === self::STATE_EXTRACTING) {
         $text = $this->extractText($this->getSourceFile($media));
@@ -207,8 +215,10 @@ final class DocumentExtractionProcessor implements DocumentExtractionProcessorIn
           return self::STATE_EXTRACTING;
         }
         $media->set(self::EXTRACT_FIELD, $text);
-        $this->saveState($media, self::STATE_EXTRACTED);
-        $this->saveState($media, self::STATE_SUMMARIZING);
+        // The extracted state only passes through in memory: the stored
+        // extract is what a later run resumes on, not the state.
+        $this->stateItem($media)->applyTransitionById('extracted');
+        $this->transition($media, 'claim_summarize');
       }
 
       $summary = $this->summarize((string) $media->get(self::EXTRACT_FIELD)->value);
@@ -216,7 +226,7 @@ final class DocumentExtractionProcessor implements DocumentExtractionProcessorIn
         return self::STATE_SUMMARIZING;
       }
       $media->set(self::SUMMARY_FIELD, ['value' => $summary]);
-      $this->saveState($media, self::STATE_DONE);
+      $this->transition($media, 'done');
 
       return self::STATE_DONE;
     }
@@ -228,9 +238,13 @@ final class DocumentExtractionProcessor implements DocumentExtractionProcessorIn
         '@id' => $media->id(),
         '@message' => $e->getMessage(),
       ]);
-      $this->saveState($media, self::STATE_ERROR);
+      // Only the in-flight states can fail; a failure between two saves
+      // leaves the document at rest for the next run.
+      if ($this->stateItem($media)->isTransitionAllowed('fail')) {
+        $this->transition($media, 'fail');
+      }
 
-      return self::STATE_ERROR;
+      return $this->getState($media);
     }
   }
 
@@ -297,12 +311,24 @@ final class DocumentExtractionProcessor implements DocumentExtractionProcessorIn
   }
 
   /**
-   * Sets a state and saves without creating a revision.
+   * Applies a workflow transition and saves without creating a revision.
    */
-  private function saveState(MediaInterface $media, string $state): void {
-    $media->set(self::STATE_FIELD, $state);
+  private function transition(MediaInterface $media, string $transitionId): void {
+    $this->stateItem($media)->applyTransitionById($transitionId);
     $media->setNewRevision(FALSE);
     $media->save();
+  }
+
+  /**
+   * Returns the state field item, created in scheduled when still empty.
+   */
+  private function stateItem(MediaInterface $media): StateItemInterface {
+    $field = $media->get(self::STATE_FIELD);
+    if ($field->isEmpty()) {
+      $field->setValue(self::STATE_SCHEDULED);
+    }
+
+    return $field->first();
   }
 
   /**
