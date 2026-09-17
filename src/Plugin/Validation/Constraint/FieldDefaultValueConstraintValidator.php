@@ -9,8 +9,9 @@ use Drupal\Core\DependencyInjection\AutowireTrait;
 use Drupal\Core\DependencyInjection\ContainerInjectionInterface;
 use Drupal\Core\Entity\EntityFieldManagerInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
+use Drupal\Core\Entity\FieldableEntityInterface;
+use Drupal\Core\Entity\Plugin\Validation\Constraint\ReferenceAccessConstraint;
 use Drupal\Core\Field\FieldDefinitionInterface;
-use Drupal\Core\TypedData\TypedDataManagerInterface;
 use Symfony\Component\Validator\Constraint;
 use Symfony\Component\Validator\ConstraintValidator;
 use Symfony\Component\Validator\Exception\UnexpectedTypeException;
@@ -24,7 +25,6 @@ class FieldDefaultValueConstraintValidator extends ConstraintValidator implement
 
   public function __construct(
     private readonly EntityFieldManagerInterface $entityFieldManager,
-    private readonly TypedDataManagerInterface $typedDataManager,
     private readonly EntityTypeManagerInterface $entityTypeManager,
   ) {}
 
@@ -63,15 +63,33 @@ class FieldDefaultValueConstraintValidator extends ConstraintValidator implement
       return;
     }
 
+    $bundleKey = $this->entityTypeManager->getDefinition($entity_type_id)->getKey('bundle');
+    $scratch = $bundleKey
+      ? $this->entityTypeManager->getStorage($entity_type_id)->create([$bundleKey => $bundle])
+      : $this->entityTypeManager->getStorage($entity_type_id)->create();
+
     try {
       $default_value = $this->resolveEntityReferenceDefaultValue(
-        $default_value, $field_definition, $entity_type_id, $bundle,
+        $default_value, $field_definition, $scratch,
       );
 
-      $field = $this->typedDataManager->create($field_definition, $default_value);
+      // Validate against a real (unsaved) scratch entity, not a standalone
+      // typed-data object: file/image fields declare a 'ReferenceAccess'
+      // item constraint that unconditionally calls FieldItemList::getEntity(),
+      // which crashes without a parent entity to unwrap.
+      $scratch->set($field_name, $default_value);
+      $field = $scratch->get($field_name);
       $violations = $field->validate();
 
       foreach ($violations as $violation) {
+        // Skip the referencing-user's view-access check: it tests the
+        // session saving this template against the default's target, not
+        // the (different, not-yet-known) user who will later draft content
+        // from it. Irrelevant to whether the default value is well-formed.
+        if ($violation->getConstraint() instanceof ReferenceAccessConstraint) {
+          continue;
+        }
+
         $this->context->buildViolation($constraint->message)
           ->setParameter('@field_name', $field_name)
           ->setParameter('@reason', (string) $violation->getMessage())
@@ -103,10 +121,8 @@ class FieldDefaultValueConstraintValidator extends ConstraintValidator implement
    *   The raw default_value sequence.
    * @param \Drupal\Core\Field\FieldDefinitionInterface $fieldDefinition
    *   The real field definition the default applies to.
-   * @param string $entityTypeId
-   *   The entity type ID that owns the field.
-   * @param string $bundle
-   *   The bundle that owns the field.
+   * @param \Drupal\Core\Entity\FieldableEntityInterface $scratch
+   *   An unsaved scratch entity of the field's own entity type/bundle.
    *
    * @return array
    *   The default_value sequence with target_uuid resolved to target_id.
@@ -114,7 +130,7 @@ class FieldDefaultValueConstraintValidator extends ConstraintValidator implement
    * @throws \RuntimeException
    *   If a target_uuid does not resolve to an existing entity.
    */
-  private function resolveEntityReferenceDefaultValue(array $rawValue, FieldDefinitionInterface $fieldDefinition, string $entityTypeId, string $bundle): array {
+  private function resolveEntityReferenceDefaultValue(array $rawValue, FieldDefinitionInterface $fieldDefinition, FieldableEntityInterface $scratch): array {
     $hasUuidReference = FALSE;
     foreach ($rawValue as $item) {
       if (is_array($item) && array_key_exists('target_uuid', $item)) {
@@ -125,11 +141,6 @@ class FieldDefaultValueConstraintValidator extends ConstraintValidator implement
     if (!$hasUuidReference) {
       return $rawValue;
     }
-
-    $bundleKey = $this->entityTypeManager->getDefinition($entityTypeId)->getKey('bundle');
-    $scratch = $bundleKey
-      ? $this->entityTypeManager->getStorage($entityTypeId)->create([$bundleKey => $bundle])
-      : $this->entityTypeManager->getStorage($entityTypeId)->create();
 
     $fieldItemListClass = $fieldDefinition->getClass();
     $resolved = $fieldItemListClass::processDefaultValue($rawValue, $scratch, $fieldDefinition);

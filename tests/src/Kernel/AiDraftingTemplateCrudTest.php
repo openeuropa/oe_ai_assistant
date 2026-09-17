@@ -6,6 +6,8 @@ namespace Drupal\Tests\oe_ai_assistant\Kernel;
 
 use Drupal\Core\Session\AccountInterface;
 use Drupal\field\Entity\FieldConfig;
+use Drupal\file\Entity\File;
+use Drupal\file\FileInterface;
 use Drupal\KernelTests\KernelTestBase;
 use Drupal\node\Entity\Node;
 use Drupal\node\NodeInterface;
@@ -963,6 +965,75 @@ class AiDraftingTemplateCrudTest extends KernelTestBase {
   }
 
   /**
+   * Tests that an item-level default on an image field resolves target_uuid.
+   *
+   * Regression test: file/image field types declare a 'ReferenceAccess'
+   * constraint (unlike the plain node entity_reference field used in the
+   * field_contact_manager cases above), whose validator calls
+   * FieldItemList::getEntity(). Validating the default via a standalone,
+   * parentless field item list crashes there ("Call to a member function
+   * getValue() on null"); FieldDefaultValueConstraintValidator now
+   * validates against a real scratch entity so this passes instead.
+   */
+  public function testItemLevelDefaultOnImageFieldWithTargetUuidIsValid(): void {
+    $image = $this->createImageFile();
+
+    $template = $this->buildTemplate('oe_news', [
+      'title' => ['prompt' => 'Headline.'],
+      'field_content_paragraphs' => [
+        'type' => 'entity_reference_revisions',
+        'items' => [[
+          'entity_type' => 'paragraph',
+          'bundle' => 'hero',
+          'prompt' => 'Hero banner.',
+          'defaults' => [
+            'field_hero_image' => [
+              'default_value' => [
+                ['target_uuid' => $image->uuid(), 'alt' => 'Default hero image'],
+              ],
+            ],
+          ],
+        ],
+        ],
+      ],
+    ]);
+    $result = $template->validate();
+
+    $this->assertCount(0, $result, implode(', ', $this->violationMessages($result)));
+  }
+
+  /**
+   * Tests that an unresolvable target_uuid on an image field is invalid.
+   */
+  public function testItemLevelDefaultOnImageFieldWithUnresolvableTargetUuidIsInvalid(): void {
+    $template = $this->buildTemplate('oe_news', [
+      'title' => ['prompt' => 'Headline.'],
+      'field_content_paragraphs' => [
+        'type' => 'entity_reference_revisions',
+        'items' => [[
+          'entity_type' => 'paragraph',
+          'bundle' => 'hero',
+          'prompt' => 'Hero banner.',
+          'defaults' => [
+            'field_hero_image' => [
+              'default_value' => [
+                ['target_uuid' => '00000000-0000-0000-0000-000000000000'],
+              ],
+            ],
+          ],
+        ],
+        ],
+      ],
+    ]);
+    $result = $template->validate();
+
+    $this->assertErrorMatches(
+      "/Default value for field 'field_hero_image' is invalid/",
+      $this->violationMessages($result)
+    );
+  }
+
+  /**
    * Tests that field type metadata cannot be an empty string.
    */
   public function testNodeFieldTypeCannotBeEmptyString(): void {
@@ -1461,6 +1532,23 @@ class AiDraftingTemplateCrudTest extends KernelTestBase {
     ]);
     $node->save();
     return $node;
+  }
+
+  /**
+   * Creates and saves a File entity, for target_uuid resolution tests.
+   *
+   * Used against image/file-type fields specifically, unlike
+   * createContactNode() above.
+   */
+  private function createImageFile(): FileInterface {
+    $file = File::create([
+      'uri' => 'public://test-image.jpg',
+      'filename' => 'test-image.jpg',
+      'filemime' => 'image/jpeg',
+      'status' => FileInterface::STATUS_PERMANENT,
+    ]);
+    $file->save();
+    return $file;
   }
 
   /**
