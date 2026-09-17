@@ -78,7 +78,9 @@ interface DocumentExtractionProcessorInterface {
    * Claims the document atomically, then runs the steps it still needs:
    * extraction when no extract is stored, summarisation afterwards. Each
    * step persists before the next starts. Failures land the document in
-   * the error state and are logged; nothing is thrown.
+   * the error state and are logged; nothing is thrown. A document deleted
+   * while a step runs is left alone, and the state it had reached is
+   * returned.
    *
    * @param \Drupal\media\MediaInterface $media
    *   The document media.

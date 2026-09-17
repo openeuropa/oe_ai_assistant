@@ -194,23 +194,36 @@ final class DocumentExtractionProcessor implements DocumentExtractionProcessorIn
 
   /**
    * Runs the remaining steps of a claimed document.
+   *
+   * The editor can delete the document while a step runs. Every write is
+   * preceded by an existence check, and a deleted document ends the run
+   * quietly with the state it had reached.
    */
   private function run(MediaInterface $media): string {
     try {
       if ($this->getState($media) === self::STATE_EXTRACTING) {
         $text = $this->extractText($this->getSourceFile($media));
+        if ($this->isDeleted($media)) {
+          return self::STATE_EXTRACTING;
+        }
         $media->set(self::EXTRACT_FIELD, $text);
         $this->saveState($media, self::STATE_EXTRACTED);
         $this->saveState($media, self::STATE_SUMMARIZING);
       }
 
       $summary = $this->summarize((string) $media->get(self::EXTRACT_FIELD)->value);
+      if ($this->isDeleted($media)) {
+        return self::STATE_SUMMARIZING;
+      }
       $media->set(self::SUMMARY_FIELD, ['value' => $summary]);
       $this->saveState($media, self::STATE_DONE);
 
       return self::STATE_DONE;
     }
     catch (\Throwable $e) {
+      if ($this->isDeleted($media)) {
+        return $this->getState($media);
+      }
       $this->logger->error('Document @id extraction failed: @message', [
         '@id' => $media->id(),
         '@message' => $e->getMessage(),
@@ -303,6 +316,16 @@ final class DocumentExtractionProcessor implements DocumentExtractionProcessorIn
     }
 
     return $file;
+  }
+
+  /**
+   * Checks whether the document was deleted since it was loaded.
+   */
+  private function isDeleted(MediaInterface $media): bool {
+    $storage = $this->entityTypeManager->getStorage('media');
+    $storage->resetCache([$media->id()]);
+
+    return $storage->load($media->id()) === NULL;
   }
 
   /**

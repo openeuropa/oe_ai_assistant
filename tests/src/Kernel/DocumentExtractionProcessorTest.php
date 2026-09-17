@@ -320,6 +320,33 @@ class DocumentExtractionProcessorTest extends AiEditorialSessionKernelTestBase {
   }
 
   /**
+   * Tests that a document deleted during a run is left alone.
+   *
+   * The editor can remove a document while its extraction is running. The
+   * run must not write to the gone entity, call the model for it, or log
+   * a failure.
+   */
+  public function testDeletedDocumentStopsTheRunQuietly(): void {
+    $media = $this->createDocument();
+    $id = $media->id();
+    $storage = $this->container->get('entity_type.manager')->getStorage('media');
+    // The Tika call is where a slow run spends its time: delete the
+    // document while it is in flight.
+    $this->tika->append(function () use ($storage, $id) {
+      $storage->load($id)->delete();
+      return new Response(200, [], 'Full text');
+    });
+    MockAiProvider::enqueue(new MockResponse('A brief summary.'));
+
+    $this->processor()->process($media);
+
+    $storage->resetCache([$id]);
+    $this->assertNull($storage->load($id), 'The document stays deleted.');
+    $this->assertSame(0, $this->countRevisions($media), 'No revision row is written for a deleted document.');
+    $this->assertCount(0, MockAiProvider::getCallLog(), 'The model is not called for a deleted document.');
+  }
+
+  /**
    * Counts the revisions of a media entity.
    */
   private function countRevisions(MediaInterface $media): int {
