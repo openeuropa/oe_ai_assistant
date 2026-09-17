@@ -148,6 +148,21 @@ describe("useDraftingDocuments", () => {
     expect(loadErrorState()).toBeNull();
   });
 
+  it("exposes the accepted extensions from the host config", async () => {
+    setConfig({
+      userId: "editor",
+      sessionId: "session-42",
+      pluginConfig: {
+        drafting: {
+          documents: { enabled: true, extensions: ["pdf", "docx"] },
+        },
+      },
+    });
+    const { useDraftingDocuments } = await loadHook();
+
+    expect(useDraftingDocuments().extensions).toEqual(["pdf", "docx"]);
+  });
+
   it("surfaces initial list failures instead of the document list", async () => {
     apiMocks.listDraftingDocuments.mockRejectedValue(
       new Error("Drafting list-documents error: 500"),

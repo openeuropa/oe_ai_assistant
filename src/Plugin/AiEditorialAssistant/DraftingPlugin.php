@@ -219,7 +219,8 @@ class DraftingPlugin extends AiAssistantPluginBase {
    * panels. Each panel is gated by an 'enabled' flag so the host controls
    * which tabs appear. Tone options come from the tone vocabulary; template
    * options come from the enabled drafting templates for the bundle; the
-   * document list is fetched by the app through the list-documents action.
+   * document list is fetched by the app through the list-documents action,
+   * and the accepted file extensions come from the document source field.
    */
   public function getAppConfig(AiEditorialSessionInterface $session, RefinableCacheableDependencyInterface $cacheability): array {
     $context = $this->buildContext($session);
@@ -227,6 +228,9 @@ class DraftingPlugin extends AiAssistantPluginBase {
     // be invalidated whenever a template is added, edited or deleted. The
     // list cache tag covers all three operations for config entities.
     $cacheability->addCacheTags(['config:ai_drafting_template_list']);
+    // The accepted extensions come from the document source field, so a
+    // field settings change must invalidate the page as well.
+    $cacheability->addCacheTags(['config:field_config_list']);
 
     return [
       'entityTypeId' => $context['entityTypeId'],
@@ -244,9 +248,11 @@ class DraftingPlugin extends AiAssistantPluginBase {
         'selected' => (string) $session->get(static::TEMPLATE_FIELD)->target_id,
       ],
       'documents' => [
-        // Only the gate ships with the bootstrap; the app fetches the
-        // document list through the list-documents action after boot.
+        // The app fetches the document list through the list-documents
+        // action after boot; the bootstrap only carries the gate and the
+        // extensions the upload control offers.
         'enabled' => TRUE,
+        'extensions' => $this->contextDocumentRepository->getAllowedExtensions(),
       ],
       // Live preview iframe URL template. The app substitutes the
       // {sessionId} and {versionId} placeholders before loading the

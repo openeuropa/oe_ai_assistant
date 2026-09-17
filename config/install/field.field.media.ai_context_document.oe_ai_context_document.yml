@@ -20,7 +20,7 @@ settings:
   handler: 'default:file'
   handler_settings: {  }
   file_directory: 'ai-context-documents/[date:custom:Y]-[date:custom:m]'
-  file_extensions: 'txt docx pdf md'
+  file_extensions: 'txt doc docx pdf md'
   max_filesize: ''
   description_field: false
 field_type: file

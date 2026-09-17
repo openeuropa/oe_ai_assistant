@@ -135,9 +135,11 @@ export function useDraftingDocuments(
 ) {
   const draftingConfig = getConfig().pluginConfig.drafting ?? {};
   const documentsConfig = draftingConfig.documents as
-    | { enabled?: boolean }
+    | { enabled?: boolean; extensions?: string[] }
     | undefined;
   const enabled = documentsConfig?.enabled ?? false;
+  // File extensions the backend accepts, driving the upload control.
+  const extensions = documentsConfig?.extensions ?? [];
   const [selected, setSelected] = useState<DraftingDocument[]>([]);
   const [uploads, setUploads] = useState<DocumentUpload[]>([]);
   const [isSaving, setIsSaving] = useState(false);
@@ -307,6 +309,7 @@ export function useDraftingDocuments(
 
   return {
     enabled,
+    extensions,
     selected,
     uploads,
     count: selected.length,

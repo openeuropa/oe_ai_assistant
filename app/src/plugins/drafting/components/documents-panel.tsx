@@ -13,6 +13,8 @@ import { DocumentStatusBadge } from "./document-status-badge";
 export interface DocumentsPanelProps {
   /** Documents attached to ground the next draft. */
   selected: DraftingDocument[];
+  /** File extensions the backend accepts, without a leading dot. */
+  extensions: string[];
   /** Uploads in flight or failed, rendered as slots before the documents. */
   uploads: DocumentUpload[];
   /** Removes a document from the list. */
@@ -35,6 +37,21 @@ export interface DocumentsPanelProps {
 }
 
 /**
+ * Lists the accepted extensions for the upload hint, e.g. "PDF or TXT files, ".
+ *
+ * Returns an empty string when the backend sent no list, so the hint only
+ * mentions the file count.
+ */
+function formatExtensions(extensions: string[]): string {
+  if (extensions.length === 0) {
+    return "";
+  }
+  const labels = extensions.map((extension) => extension.toUpperCase());
+  const last = labels.pop();
+  return `${labels.length > 0 ? `${labels.join(", ")} or ${last}` : last} files, `;
+}
+
+/**
  * Reference documents pane.
  *
  * Composes the shared Pane chrome with an upload control and the list of
@@ -43,6 +60,7 @@ export interface DocumentsPanelProps {
  */
 export function DocumentsPanel({
   selected,
+  extensions,
   uploads,
   onRemove,
   onRetry,
@@ -82,7 +100,7 @@ export function DocumentsPanel({
             Drop files here or browse your computer
           </p>
           <p className="mt-1 text-xs text-gray-500">
-            PDF, DOCX, TXT, or Markdown files, up to {MAX_FILES_PER_SELECTION}{" "}
+            {formatExtensions(extensions)}up to {MAX_FILES_PER_SELECTION} files
             at a time
           </p>
         </button>
@@ -91,7 +109,7 @@ export function DocumentsPanel({
           type="file"
           multiple
           className="sr-only"
-          accept=".pdf,.doc,.docx,.txt,.md,text/plain,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+          accept={extensions.map((extension) => `.${extension}`).join(",")}
           onChange={(event) => {
             void Promise.resolve(onUpload(event.target.files)).catch(() => {});
             event.target.value = "";

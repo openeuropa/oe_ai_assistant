@@ -87,4 +87,15 @@ interface DocumentRepositoryInterface {
    */
   public function deleteForSession(AiEditorialSessionInterface $session): void;
 
+  /**
+   * Returns the file extensions the source field accepts.
+   *
+   * Read from the field configuration, so the app offers exactly what the
+   * upload validators allow.
+   *
+   * @return string[]
+   *   Lowercase extensions without a leading dot.
+   */
+  public function getAllowedExtensions(): array;
+
 }

@@ -141,6 +141,15 @@ abstract class DocumentRepositoryBase implements DocumentRepositoryInterface {
   }
 
   /**
+   * {@inheritdoc}
+   */
+  public function getAllowedExtensions(): array {
+    $extensions = (string) $this->getSourceFieldItem()->getFieldDefinition()->getSetting('file_extensions');
+
+    return array_values(array_filter(preg_split('/\s+/', strtolower($extensions)) ?: []));
+  }
+
+  /**
    * Loads the documents of a session in upload order.
    *
    * @return \Drupal\media\MediaInterface[]
