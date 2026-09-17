@@ -21,9 +21,9 @@ use Symfony\Component\DependencyInjection\ContainerInterface;
 /**
  * Extracts file content through an Apache Tika server.
  *
- * Tika reads every declared type, so the plugin only resolves the file
- * path, picks the Accept header for the requested output and hands the
- * response to the type factory.
+ * The plugin sends the file to the Tika server and returns the text or
+ * HTML in the response as the loader output. Tika does the parsing for
+ * every supported document type, so there is no per-type logic here.
  */
 #[DocumentLoader(
   id: 'document_loader_tika:tika',
