@@ -45,22 +45,22 @@ final class TikaLoader extends DocumentLoaderBase {
   /**
    * The Tika client.
    */
-  private TikaClientInterface $client;
+  protected TikaClientInterface $client;
 
   /**
    * The file system, resolving stream URIs to paths.
    */
-  private FileSystemInterface $fileSystem;
+  protected FileSystemInterface $fileSystem;
 
   /**
    * The output factory.
    */
-  private DocumentLoaderTypeFactory $typeFactory;
+  protected DocumentLoaderTypeFactory $typeFactory;
 
   /**
    * The config factory, for the availability check.
    */
-  private ConfigFactoryInterface $configFactory;
+  protected ConfigFactoryInterface $configFactory;
 
   /**
    * {@inheritdoc}
