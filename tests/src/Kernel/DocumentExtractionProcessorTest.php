@@ -145,7 +145,13 @@ class DocumentExtractionProcessorTest extends AiEditorialSessionKernelTestBase {
    * The accepted source field extensions.
    */
   public static function extensionProvider(): array {
-    return [['brief.txt'], ['brief.md'], ['brief.docx'], ['brief.pdf']];
+    return [
+      'plain text' => ['brief.txt'],
+      'markdown' => ['brief.md'],
+      'legacy word' => ['brief.doc'],
+      'word' => ['brief.docx'],
+      'pdf' => ['brief.pdf'],
+    ];
   }
 
   /**
