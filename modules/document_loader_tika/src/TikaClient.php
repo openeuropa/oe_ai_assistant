@@ -14,14 +14,6 @@ use GuzzleHttp\Exception\GuzzleException;
  */
 final class TikaClient implements TikaClientInterface {
 
-  /**
-   * Constructs the client.
-   *
-   * @param \GuzzleHttp\ClientInterface $httpClient
-   *   The core HTTP client.
-   * @param \Drupal\Core\Config\ConfigFactoryInterface $configFactory
-   *   The config factory, for the server URL and timeout.
-   */
   public function __construct(
     private readonly ClientInterface $httpClient,
     private readonly ConfigFactoryInterface $configFactory,

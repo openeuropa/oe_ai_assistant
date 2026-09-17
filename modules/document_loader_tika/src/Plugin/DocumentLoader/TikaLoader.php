@@ -42,24 +42,6 @@ use Symfony\Component\DependencyInjection\ContainerInterface;
 )]
 final class TikaLoader extends DocumentLoaderBase {
 
-  /**
-   * Constructs the plugin.
-   *
-   * @param array $configuration
-   *   The plugin configuration.
-   * @param string $plugin_id
-   *   The plugin ID.
-   * @param mixed $plugin_definition
-   *   The plugin definition.
-   * @param \Drupal\document_loader_tika\TikaClientInterface $client
-   *   The Tika client.
-   * @param \Drupal\Core\File\FileSystemInterface $fileSystem
-   *   The file system, resolving stream URIs to paths.
-   * @param \Drupal\document_loader\DocumentLoaderType\DocumentLoaderTypeFactory $typeFactory
-   *   The output factory.
-   * @param \Drupal\Core\Config\ConfigFactoryInterface $configFactory
-   *   The config factory, for the availability check.
-   */
   public function __construct(
     array $configuration,
     string $plugin_id,
