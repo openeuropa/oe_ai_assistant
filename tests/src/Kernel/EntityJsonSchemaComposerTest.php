@@ -367,6 +367,15 @@ class EntityJsonSchemaComposerTest extends KernelTestBase {
     $this->assertArrayHasKey('field_quote_text', $quoteBlockVariant['properties']);
     $this->assertArrayHasKey('field_quote_attribution', $quoteBlockVariant['properties']);
     $this->assertArrayHasKey('field_hero_image', $heroVariant['properties']);
+
+    // The bundle discriminator must be required, or the LLM may omit it and
+    // InlineEntityHydrator::buildInlineEntities() has no bundle to route to.
+    $this->assertContains('type', $textBlockVariant['required'] ?? [],
+      'text_block variant requires the type discriminator.');
+    $this->assertContains('type', $quoteBlockVariant['required'] ?? [],
+      'quote_block variant requires the type discriminator.');
+    $this->assertContains('type', $heroVariant['required'] ?? [],
+      'hero variant requires the type discriminator.');
   }
 
   /**
