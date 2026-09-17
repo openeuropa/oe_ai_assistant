@@ -28,6 +28,9 @@ interface TikaClientInterface {
 
   /**
    * Returns the server version string, or NULL when it cannot be reached.
+   *
+   * A quick probe with a short fixed timeout, independent of the configured
+   * extraction timeout.
    */
   public function version(): ?string;
 

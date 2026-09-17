@@ -14,6 +14,14 @@ use GuzzleHttp\Exception\GuzzleException;
  */
 final class TikaClient implements TikaClientInterface {
 
+  /**
+   * Seconds allowed for the version probe.
+   *
+   * The status report and the availability check call it, so it must not
+   * wait the full extraction timeout on a server that is down.
+   */
+  private const float VERSION_TIMEOUT = 2.0;
+
   public function __construct(
     private readonly ClientInterface $httpClient,
     private readonly ConfigFactoryInterface $configFactory,
@@ -59,7 +67,7 @@ final class TikaClient implements TikaClientInterface {
   public function version(): ?string {
     try {
       $response = $this->httpClient->request('GET', $this->url('/version'), [
-        'timeout' => $this->timeout(),
+        'timeout' => self::VERSION_TIMEOUT,
         'http_errors' => FALSE,
       ]);
     }

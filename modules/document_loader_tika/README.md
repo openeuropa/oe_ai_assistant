@@ -32,7 +32,8 @@ $config['document_loader_tika.settings']['url'] = 'http://tika.internal:9998';
 $config['document_loader_tika.settings']['timeout'] = 60;
 ```
 
-The status report shows whether the server answers and which version it runs.
+The status report shows whether the server answers and which version it runs. That check uses a fixed timeout of
+two seconds, so a server that is down never stalls the status report for the full request timeout.
 
 ## Usage
 
