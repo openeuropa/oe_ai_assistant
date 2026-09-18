@@ -167,6 +167,21 @@ Processing failed", $prompt);
     $this->assertStringContainsString("### Document 3 (file: doc-3.pdf)
 Kept text.", $prompt);
     $this->assertStringContainsString('wait a moment', $prompt);
+    $this->assertStringContainsString('retry them', $prompt);
+
+    // Waiting never helps a failed document: alone, it only asks for a retry.
+    $prompt = (new EditorialContext(NULL, NULL, NULL, NULL, NULL, [
+      self::document('1', 'error', NULL),
+    ]))->toContextDocumentsPrompt();
+    $this->assertStringContainsString('retry them', $prompt);
+    $this->assertStringNotContainsString('wait a moment', $prompt);
+
+    // A pending document alone never asks for a retry.
+    $prompt = (new EditorialContext(NULL, NULL, NULL, NULL, NULL, [
+      self::document('1', 'scheduled', NULL),
+    ]))->toContextDocumentsPrompt();
+    $this->assertStringContainsString('wait a moment', $prompt);
+    $this->assertStringNotContainsString('retry them', $prompt);
   }
 
   /**

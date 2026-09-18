@@ -117,11 +117,11 @@ final class EditorialContext {
    * Every attached context document appears under its title and file name,
    * so the agents can tell which document the editor refers to: the
    * extracted text when the pipeline produced one, otherwise a note that
-   * the content is not available yet. The router and the sub-agents share
-   * this block,
-   * so the assistant can warn the editor about pending material. Text is
-   * capped per document and over all documents; a document whose text does
-   * not fit in the remaining budget contributes its summary instead.
+   * the content is not available. The router and the sub-agents share this
+   * block, so the assistant can ask the editor to wait for pending material
+   * or to retry failed material. Text is capped per document and over all
+   * documents; a document whose text does not fit in the remaining budget
+   * contributes its summary instead.
    *
    * @return string
    *   The prompt block, or an empty string without context documents.
@@ -134,6 +134,7 @@ final class EditorialContext {
     $lines = ['Context documents attached by the editor as background for this draft:'];
     $budget = self::MAX_TOTAL_CHARS;
     $pending = FALSE;
+    $failed = FALSE;
     foreach ($this->contextDocuments as $document) {
       $lines[] = '';
       $heading = '### ' . (string) ($document['title'] ?? $document['id'] ?? 'Document');
@@ -141,10 +142,16 @@ final class EditorialContext {
       $lines[] = $filename === '' ? $heading : sprintf('%s (file: %s)', $heading, $filename);
       $extract = trim((string) ($document['extract'] ?? ''));
       if ($extract === '') {
-        $pending = TRUE;
-        $lines[] = ($document['status'] ?? '') === 'error'
-          ? 'Processing failed; its content is not available.'
-          : 'Not processed yet; its content is not available.';
+        // Waiting only helps a document still in the pipeline; a failed one
+        // stays unavailable until the editor retries it.
+        if (($document['status'] ?? '') === DocumentExtractionProcessorInterface::STATE_ERROR) {
+          $failed = TRUE;
+          $lines[] = 'Processing failed; its content is not available.';
+        }
+        else {
+          $pending = TRUE;
+          $lines[] = 'Not processed yet; its content is not available.';
+        }
         continue;
       }
       if (mb_strlen($extract) > self::MAX_DOCUMENT_CHARS) {
@@ -164,6 +171,10 @@ final class EditorialContext {
     if ($pending) {
       $lines[] = 'Some documents are not available yet. Tell the editor to wait a moment for the full context, '
         . 'or warn that a draft produced now may miss part of the briefing material.';
+    }
+    if ($failed) {
+      $lines[] = 'Some documents could not be processed. Tell the editor to retry them or to remove them, '
+        . 'and warn that a draft produced now ignores their content.';
     }
 
     return implode("\n", $lines);
