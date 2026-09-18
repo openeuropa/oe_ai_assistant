@@ -4,10 +4,16 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\oe_ai_assistant\Kernel;
 
+use Drupal\Core\Session\AccountInterface;
 use Drupal\field\Entity\FieldConfig;
+use Drupal\file\Entity\File;
+use Drupal\file\FileInterface;
 use Drupal\KernelTests\KernelTestBase;
+use Drupal\node\Entity\Node;
+use Drupal\node\NodeInterface;
 use Drupal\oe_ai_assistant\Entity\AiDraftingTemplate;
 use Drupal\oe_ai_assistant\Exception\TemplateValidationException;
+use Drupal\oe_ai_assistant\Service\DraftAssemblerInterface;
 use Drupal\paragraphs\Entity\ParagraphsType;
 use Symfony\Component\Validator\ConstraintViolationListInterface;
 
@@ -69,7 +75,7 @@ class AiDraftingTemplateCrudTest extends KernelTestBase {
     $this->installEntitySchema('content_moderation_state');
     $this->installEntitySchema('file');
     $this->installEntitySchema('taxonomy_term');
-    $this->installConfig(['oe_ai_assistant_test']);
+    $this->installConfig(['filter', 'oe_ai_assistant_test']);
     $this->container->get('config.typed')->clearCachedDefinitions();
   }
 
@@ -87,6 +93,7 @@ class AiDraftingTemplateCrudTest extends KernelTestBase {
       'test_field_strip',
       'test_default_strip',
       'test_bundle_strip',
+      'test_item_defaults_assemble',
     ];
     foreach ($ids as $id) {
       $template = AiDraftingTemplate::load($id);
@@ -451,9 +458,39 @@ class AiDraftingTemplateCrudTest extends KernelTestBase {
   }
 
   /**
-   * Tests that referenced items do not support nested defaults.
+   * Tests that an item-level default validates against the item's bundle.
    */
-  public function testNestedDefaultsOnReferenceItemAreInvalid(): void {
+  public function testItemLevelDefaultIsValid(): void {
+    $template = $this->buildTemplate('oe_news', [
+      'title' => ['prompt' => 'Headline.'],
+      'field_contacts' => [
+        'type' => 'entity_reference',
+        'items' => [[
+          'entity_type' => 'node',
+          'bundle' => 'oe_contact',
+          'prompt' => 'Contact.',
+          'fields' => [
+            'title' => ['prompt' => 'Contact title.'],
+            'field_contact_name' => ['prompt' => 'Name.'],
+          ],
+          'defaults' => [
+            'field_contact_role' => [
+              'default_value' => [['value' => 'Press officer']],
+            ],
+          ],
+        ],
+        ],
+      ],
+    ]);
+    $result = $template->validate();
+
+    $this->assertCount(0, $result, implode(', ', $this->violationMessages($result)));
+  }
+
+  /**
+   * Tests that an item-level default violating field constraints is invalid.
+   */
+  public function testItemLevelDefaultViolatingFieldConstraintsIsInvalid(): void {
     $template = $this->buildTemplate('oe_news', [
       'title' => ['prompt' => 'Headline.'],
       'field_contacts' => [
@@ -466,8 +503,8 @@ class AiDraftingTemplateCrudTest extends KernelTestBase {
             'field_contact_name' => ['prompt' => 'Name.'],
           ],
           'defaults' => [
-            'title' => [
-              'default_value' => [['value' => 'Contact title']],
+            'field_contact_role' => [
+              'default_value' => [['value' => str_repeat('a', 256)]],
             ],
           ],
         ],
@@ -477,9 +514,38 @@ class AiDraftingTemplateCrudTest extends KernelTestBase {
     $result = $template->validate();
 
     $this->assertErrorMatches(
-      "/'defaults' is not a supported key./",
+      "/Default value for field 'field_contact_role' is invalid/",
       $this->violationMessages($result)
     );
+  }
+
+  /**
+   * Tests that a required item field can be satisfied by an item default.
+   */
+  public function testRequiredSubFieldCanBeSatisfiedByItemDefault(): void {
+    $template = $this->buildTemplate('oe_news', [
+      'title' => ['prompt' => 'Headline.'],
+      'field_contacts' => [
+        'type' => 'entity_reference',
+        'items' => [[
+          'entity_type' => 'node',
+          'bundle' => 'oe_contact',
+          'prompt' => 'Contact.',
+          'defaults' => [
+            'title' => [
+              'default_value' => [['value' => 'Default contact title']],
+            ],
+            'field_contact_name' => [
+              'default_value' => [['value' => 'Pinned contact name']],
+            ],
+          ],
+        ],
+        ],
+      ],
+    ]);
+    $result = $template->validate();
+
+    $this->assertCount(0, $result, implode(', ', $this->violationMessages($result)));
   }
 
   /**
@@ -774,6 +840,198 @@ class AiDraftingTemplateCrudTest extends KernelTestBase {
   }
 
   /**
+   * Tests that a top-level default resolves target_uuid to target_id.
+   */
+  public function testTopLevelDefaultWithTargetUuidIsValid(): void {
+    $contact = $this->createContactNode();
+
+    $template = $this->buildTemplate('oe_news', [
+      'title' => ['prompt' => 'Headline.'],
+    ], [
+      'field_contacts' => [
+        'default_value' => [
+          ['target_uuid' => $contact->uuid()],
+        ],
+      ],
+    ]);
+    $result = $template->validate();
+
+    $this->assertCount(0, $result, implode(', ', $this->violationMessages($result)));
+  }
+
+  /**
+   * Tests that an item-level default resolves target_uuid to target_id.
+   */
+  public function testItemLevelDefaultWithTargetUuidIsValid(): void {
+    $manager = $this->createContactNode('Contact Manager');
+
+    $template = $this->buildTemplate('oe_news', [
+      'title' => ['prompt' => 'Headline.'],
+      'field_contacts' => [
+        'type' => 'entity_reference',
+        'items' => [[
+          'entity_type' => 'node',
+          'bundle' => 'oe_contact',
+          'prompt' => 'Contact.',
+          'fields' => [
+            'title' => ['prompt' => 'Contact title.'],
+            'field_contact_name' => ['prompt' => 'Name.'],
+          ],
+          'defaults' => [
+            'field_contact_manager' => [
+              'default_value' => [
+                ['target_uuid' => $manager->uuid()],
+              ],
+            ],
+          ],
+        ],
+        ],
+      ],
+    ]);
+    $result = $template->validate();
+
+    $this->assertCount(0, $result, implode(', ', $this->violationMessages($result)));
+  }
+
+  /**
+   * Tests that an unresolvable target_uuid on an item default is invalid.
+   */
+  public function testItemLevelDefaultWithUnresolvableTargetUuidIsInvalid(): void {
+    $template = $this->buildTemplate('oe_news', [
+      'title' => ['prompt' => 'Headline.'],
+      'field_contacts' => [
+        'type' => 'entity_reference',
+        'items' => [[
+          'entity_type' => 'node',
+          'bundle' => 'oe_contact',
+          'prompt' => 'Contact.',
+          'fields' => [
+            'title' => ['prompt' => 'Contact title.'],
+            'field_contact_name' => ['prompt' => 'Name.'],
+          ],
+          'defaults' => [
+            'field_contact_manager' => [
+              'default_value' => [
+                ['target_uuid' => '00000000-0000-0000-0000-000000000000'],
+              ],
+            ],
+          ],
+        ],
+        ],
+      ],
+    ]);
+    $result = $template->validate();
+
+    $this->assertErrorMatches(
+      "/Default value for field 'field_contact_manager' is invalid/",
+      $this->violationMessages($result)
+    );
+  }
+
+  /**
+   * Tests that target_id still works unchanged on an item default.
+   */
+  public function testItemLevelDefaultWithTargetIdIsValid(): void {
+    $manager = $this->createContactNode('Contact Manager');
+
+    $template = $this->buildTemplate('oe_news', [
+      'title' => ['prompt' => 'Headline.'],
+      'field_contacts' => [
+        'type' => 'entity_reference',
+        'items' => [[
+          'entity_type' => 'node',
+          'bundle' => 'oe_contact',
+          'prompt' => 'Contact.',
+          'fields' => [
+            'title' => ['prompt' => 'Contact title.'],
+            'field_contact_name' => ['prompt' => 'Name.'],
+          ],
+          'defaults' => [
+            'field_contact_manager' => [
+              'default_value' => [
+                ['target_id' => (int) $manager->id()],
+              ],
+            ],
+          ],
+        ],
+        ],
+      ],
+    ]);
+    $result = $template->validate();
+
+    $this->assertCount(0, $result, implode(', ', $this->violationMessages($result)));
+  }
+
+  /**
+   * Tests that an item-level default on an image field resolves target_uuid.
+   *
+   * Regression test: file/image field types declare a 'ReferenceAccess'
+   * constraint (unlike the plain node entity_reference field used in the
+   * field_contact_manager cases above), whose validator calls
+   * FieldItemList::getEntity(). Validating the default via a standalone,
+   * parentless field item list crashes there ("Call to a member function
+   * getValue() on null"); FieldDefaultValueConstraintValidator now
+   * validates against a real scratch entity so this passes instead.
+   */
+  public function testItemLevelDefaultOnImageFieldWithTargetUuidIsValid(): void {
+    $image = $this->createImageFile();
+
+    $template = $this->buildTemplate('oe_news', [
+      'title' => ['prompt' => 'Headline.'],
+      'field_content_paragraphs' => [
+        'type' => 'entity_reference_revisions',
+        'items' => [[
+          'entity_type' => 'paragraph',
+          'bundle' => 'hero',
+          'prompt' => 'Hero banner.',
+          'defaults' => [
+            'field_hero_image' => [
+              'default_value' => [
+                ['target_uuid' => $image->uuid(), 'alt' => 'Default hero image'],
+              ],
+            ],
+          ],
+        ],
+        ],
+      ],
+    ]);
+    $result = $template->validate();
+
+    $this->assertCount(0, $result, implode(', ', $this->violationMessages($result)));
+  }
+
+  /**
+   * Tests that an unresolvable target_uuid on an image field is invalid.
+   */
+  public function testItemLevelDefaultOnImageFieldWithUnresolvableTargetUuidIsInvalid(): void {
+    $template = $this->buildTemplate('oe_news', [
+      'title' => ['prompt' => 'Headline.'],
+      'field_content_paragraphs' => [
+        'type' => 'entity_reference_revisions',
+        'items' => [[
+          'entity_type' => 'paragraph',
+          'bundle' => 'hero',
+          'prompt' => 'Hero banner.',
+          'defaults' => [
+            'field_hero_image' => [
+              'default_value' => [
+                ['target_uuid' => '00000000-0000-0000-0000-000000000000'],
+              ],
+            ],
+          ],
+        ],
+        ],
+      ],
+    ]);
+    $result = $template->validate();
+
+    $this->assertErrorMatches(
+      "/Default value for field 'field_hero_image' is invalid/",
+      $this->violationMessages($result)
+    );
+  }
+
+  /**
    * Tests that field type metadata cannot be an empty string.
    */
   public function testNodeFieldTypeCannotBeEmptyString(): void {
@@ -822,6 +1080,66 @@ class AiDraftingTemplateCrudTest extends KernelTestBase {
     ];
     $template = $this->buildTemplate('oe_news', [], $defaults);
     $this->assertSame($defaults, $template->resolveDefaults());
+  }
+
+  /**
+   * Tests that resolveDefaults() resolves a top-level target_uuid.
+   */
+  public function testResolveDefaultsResolvesTopLevelTargetUuid(): void {
+    $contact = $this->createContactNode();
+
+    $template = $this->buildTemplate('oe_news', [], [
+      'field_contacts' => [
+        'default_value' => [
+          ['target_uuid' => $contact->uuid()],
+        ],
+      ],
+    ]);
+
+    $resolved = $template->resolveDefaults();
+
+    $this->assertSame(
+      (int) $contact->id(),
+      $resolved['field_contacts']['default_value'][0]['target_id']
+    );
+    $this->assertArrayNotHasKey('target_uuid', $resolved['field_contacts']['default_value'][0]);
+  }
+
+  /**
+   * Tests that resolveItemDefaults() resolves an item-level target_uuid.
+   */
+  public function testResolveItemDefaultsResolvesTargetUuid(): void {
+    $manager = $this->createContactNode('Contact Manager');
+
+    $template = $this->buildTemplate('oe_news', []);
+    $resolved = $template->resolveItemDefaults([
+      'field_contact_manager' => [
+        'default_value' => [
+          ['target_uuid' => $manager->uuid()],
+        ],
+      ],
+    ], 'node', 'oe_contact');
+
+    $this->assertSame(
+      (int) $manager->id(),
+      $resolved['field_contact_manager']['default_value'][0]['target_id']
+    );
+  }
+
+  /**
+   * Tests that resolveItemDefaults() passes target_id values through.
+   */
+  public function testResolveItemDefaultsPassthroughForTargetId(): void {
+    $template = $this->buildTemplate('oe_news', []);
+    $defaults = [
+      'field_contact_manager' => [
+        'default_value' => [
+          ['target_id' => 42],
+        ],
+      ],
+    ];
+
+    $this->assertSame($defaults, $template->resolveItemDefaults($defaults, 'node', 'oe_contact'));
   }
 
   /**
@@ -1034,6 +1352,62 @@ class AiDraftingTemplateCrudTest extends KernelTestBase {
   }
 
   /**
+   * Tests that an item-level default lands on the built paragraph entity.
+   */
+  public function testItemLevelDefaultAppliesToBuiltParagraph(): void {
+    AiDraftingTemplate::create([
+      'id' => 'test_item_defaults_assemble',
+      'label' => 'Item defaults assemble test',
+      'status' => TRUE,
+      'content_type' => 'oe_news',
+      'fields' => [
+        'title' => ['prompt' => 'Headline.'],
+        'field_content_paragraphs' => [
+          'type' => 'entity_reference_revisions',
+          'items' => [[
+            'entity_type' => 'paragraph',
+            'bundle' => 'text_block',
+            'prompt' => 'Intro.',
+            'defaults' => [
+              'field_text_body' => [
+                'default_value' => [['value' => 'Pinned intro text.']],
+              ],
+            ],
+          ],
+          ],
+        ],
+      ],
+      'defaults' => [
+        'langcode' => ['default_value' => [['value' => 'en']]],
+      ],
+    ])->save();
+
+    // assemble() gates on hasPermission() before building the draft; a mock
+    // clears that gate without the cost of a real Role/User entity, since
+    // permissions aren't what this test is verifying. id() is also stubbed
+    // because Node's 'uid' base field defaults from current_user's id().
+    $account = $this->createMock(AccountInterface::class);
+    $account->method('hasPermission')->willReturn(TRUE);
+    $account->method('id')->willReturn(1);
+    $this->container->get('current_user')->setAccount($account);
+
+    /** @var \Drupal\oe_ai_assistant\Service\DraftAssemblerInterface $assembler */
+    $assembler = $this->container->get(DraftAssemblerInterface::class);
+    $node = $assembler->assemble('oe_news', [
+      'title' => [['value' => 'Drafted title']],
+      'field_content_paragraphs' => [
+        [
+          'type' => [['target_id' => 'text_block']],
+        ],
+      ],
+    ], 'test_item_defaults_assemble');
+
+    $paragraphs = $node->get('field_content_paragraphs')->referencedEntities();
+    $this->assertCount(1, $paragraphs);
+    $this->assertSame('Pinned intro text.', $paragraphs[0]->get('field_text_body')->value);
+  }
+
+  /**
    * Builds an unsaved in-memory template for validation testing.
    *
    * @param string $contentType
@@ -1054,6 +1428,36 @@ class AiDraftingTemplateCrudTest extends KernelTestBase {
       'defaults' => $defaults,
     ]);
     return $template;
+  }
+
+  /**
+   * Creates and saves an oe_contact node, for target_uuid resolution tests.
+   */
+  private function createContactNode(string $name = 'Jane Doe'): NodeInterface {
+    $node = Node::create([
+      'type' => 'oe_contact',
+      'title' => 'Contact node',
+      'field_contact_name' => $name,
+    ]);
+    $node->save();
+    return $node;
+  }
+
+  /**
+   * Creates and saves a File entity, for target_uuid resolution tests.
+   *
+   * Used against image/file-type fields specifically, unlike
+   * createContactNode() above.
+   */
+  private function createImageFile(): FileInterface {
+    $file = File::create([
+      'uri' => 'public://test-image.jpg',
+      'filename' => 'test-image.jpg',
+      'filemime' => 'image/jpeg',
+      'status' => FileInterface::STATUS_PERMANENT,
+    ]);
+    $file->save();
+    return $file;
   }
 
   /**

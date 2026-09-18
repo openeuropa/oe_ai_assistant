@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace Drupal\oe_ai_assistant\Service;
 
 use Drupal\Core\Entity\ContentEntityInterface;
+use Drupal\Core\Entity\EntityFieldManagerInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Session\AccountProxyInterface;
+use Drupal\oe_ai_assistant\AiDraftingTemplateInterface;
 use Drupal\oe_ai_assistant\Exception\ActionException;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
@@ -18,6 +20,7 @@ class DraftAssembler implements DraftAssemblerInterface {
 
   public function __construct(
     private readonly EntityTypeManagerInterface $entityTypeManager,
+    private readonly EntityFieldManagerInterface $entityFieldManager,
     private readonly AccountProxyInterface $currentUser,
     private readonly DraftingSchemaProviderInterface $schemaProvider,
     private readonly DraftEntityBuilder $draftEntityBuilder,
@@ -52,6 +55,7 @@ class DraftAssembler implements DraftAssemblerInterface {
     }
 
     $mergedFields = $fields;
+    $template = NULL;
     if ($templateId !== NULL && $templateId !== '') {
       try {
         $template = $this->schemaProvider->resolveTemplate('node', $bundle, $templateId);
@@ -77,6 +81,10 @@ class DraftAssembler implements DraftAssemblerInterface {
     }
 
     try {
+      if ($template !== NULL) {
+        $itemDefaults = $this->collectItemDefaults($template->getFields(), $template);
+        $mergedFields = $this->applyItemDefaults($mergedFields, 'node', $bundle, $itemDefaults);
+      }
       $built = $this->draftEntityBuilder->fromLlmFields('node', $bundle, $mergedFields);
     }
     catch (\Throwable $e) {
@@ -99,6 +107,59 @@ class DraftAssembler implements DraftAssemblerInterface {
       $existingNode->set($fieldName, $built->get($fieldName)->getValue());
     }
     return $existingNode;
+  }
+
+  /**
+   * Collects item defaults declared anywhere in the template, keyed by bundle.
+   *
+   * @return array<string, array<string, mixed>>
+   *   Field name => value list maps keyed by "entity_type:bundle".
+   */
+  private function collectItemDefaults(array $templateFields, AiDraftingTemplateInterface $template): array {
+    $defaults = [];
+    foreach ($templateFields as $fieldConfig) {
+      foreach ($fieldConfig['items'] ?? [] as $item) {
+        $key = $item['entity_type'] . ':' . $item['bundle'];
+        if (!empty($item['defaults'])) {
+          $defaults[$key] = ($defaults[$key] ?? []) + array_map(
+            static fn (array $default) => $default['default_value'],
+            $template->resolveItemDefaults($item['defaults'], $item['entity_type'], $item['bundle']),
+          );
+        }
+        $defaults += $this->collectItemDefaults($item['fields'] ?? [], $template);
+      }
+    }
+    return $defaults;
+  }
+
+  /**
+   * Applies item defaults to every inline entity of a defaulted bundle.
+   *
+   * Walks the LLM output through the entity reference fields of each bundle,
+   * so a default declared once for a bundle lands on all its items at any
+   * depth. Defaults win on collision, as node-level defaults do.
+   */
+  private function applyItemDefaults(array $fields, string $entityTypeId, string $bundle, array $itemDefaults): array {
+    if ($itemDefaults === []) {
+      return $fields;
+    }
+    $definitions = $this->entityFieldManager->getFieldDefinitions($entityTypeId, $bundle);
+    foreach ($fields as $fieldName => &$items) {
+      $targetType = isset($definitions[$fieldName]) ? $definitions[$fieldName]->getSetting('target_type') : NULL;
+      if ($targetType === NULL || !is_array($items)) {
+        continue;
+      }
+      $bundleKey = $this->entityTypeManager->getDefinition($targetType)->getKey('bundle');
+      foreach ($items as &$item) {
+        $itemBundle = $bundleKey && is_array($item) ? ($item[$bundleKey][0]['target_id'] ?? NULL) : NULL;
+        if ($itemBundle === NULL) {
+          continue;
+        }
+        $item = ($itemDefaults["$targetType:$itemBundle"] ?? []) + $item;
+        $item = $this->applyItemDefaults($item, $targetType, $itemBundle, $itemDefaults);
+      }
+    }
+    return $fields;
   }
 
 }

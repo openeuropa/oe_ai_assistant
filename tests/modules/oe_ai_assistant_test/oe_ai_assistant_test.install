@@ -7,6 +7,10 @@
 
 declare(strict_types=1);
 
+use Drupal\Core\File\FileExists;
+use Drupal\file\Entity\File;
+use Drupal\file\FileInterface;
+use Drupal\oe_ai_assistant\Entity\AiDraftingTemplate;
 use Drupal\taxonomy\Entity\Term;
 
 /**
@@ -55,6 +59,137 @@ function oe_ai_assistant_test_install(): void {
     ->save();
 
   oe_ai_assistant_test_install_editorial_taxonomy_terms();
+
+  $heroImage = oe_ai_assistant_test_install_default_hero_image();
+  oe_ai_assistant_test_install_news_with_hero_template($heroImage);
+}
+
+/**
+ * Installs the default hero image.
+ *
+ * Copies the module's bundled placeholder image into the public files
+ * directory and creates a permanent File entity for it.
+ *
+ * Done in code rather than as config/install content, and ahead of the
+ * 'news_with_hero' template it feeds: config entities in /install are
+ * validated and saved before hook_install() runs, so a template shipped as
+ * YAML could never resolve a target_uuid pointing at this file - the file
+ * wouldn't exist yet.
+ *
+ * @return \Drupal\file\FileInterface
+ *   The saved default hero image file.
+ */
+function oe_ai_assistant_test_install_default_hero_image(): FileInterface {
+  $fileSystem = \Drupal::service('file_system');
+  $moduleHandler = \Drupal::service('module_handler');
+
+  $source = $moduleHandler->getModule('oe_ai_assistant_test')->getPath() . '/assets/hero-default.jpg';
+  $destinationDirectory = 'public://oe_ai_assistant_test';
+  $fileSystem->prepareDirectory($destinationDirectory, $fileSystem::CREATE_DIRECTORY);
+
+  $destination = $fileSystem->copy($source, $destinationDirectory . '/hero-default.jpg', FileExists::Replace);
+
+  $file = File::create([
+    'uri' => $destination,
+    'filename' => 'hero-default.jpg',
+    'filemime' => 'image/jpeg',
+    'status' => FileInterface::STATUS_PERMANENT,
+  ]);
+  $file->save();
+
+  return $file;
+}
+
+/**
+ * Installs the 'news_with_hero' drafting template.
+ *
+ * Pins the given file as the hero paragraph's image via an item-level
+ * default (target_uuid resolution), so drafting an oe_news article with
+ * this template shows the hero paragraph with its image already in place
+ * whenever the LLM adds one. text_block and quote_block are also offered
+ * so the LLM has real content to draft alongside it.
+ *
+ * @param \Drupal\file\FileInterface $heroImage
+ *   The default hero image, as saved by
+ *   oe_ai_assistant_test_install_default_hero_image().
+ */
+function oe_ai_assistant_test_install_news_with_hero_template(FileInterface $heroImage): void {
+  AiDraftingTemplate::create([
+    'id' => 'news_with_hero',
+    'label' => 'News article with hero image',
+    'status' => TRUE,
+    'description' => 'News article with a hero paragraph whose image defaults to the bundled placeholder, demonstrating item-level template defaults.',
+    'content_type' => 'oe_news',
+    'fields' => [
+      'title' => ['prompt' => 'News headline, max 80 characters.'],
+      'field_teaser' => ['prompt' => 'One-sentence teaser for the article.'],
+      'field_content_paragraphs' => [
+        'type' => 'entity_reference_revisions',
+        'items' => [
+          [
+            'entity_type' => 'paragraph',
+            'bundle' => 'hero',
+            'prompt' => 'Hero banner for the article. Always place this as the first paragraph, before any other content.',
+            'defaults' => [
+              'field_hero_image' => [
+                'default_value' => [
+                  [
+                    'target_uuid' => $heroImage->uuid(),
+                    'alt' => 'Default hero image',
+                  ],
+                ],
+              ],
+            ],
+          ],
+          [
+            'entity_type' => 'paragraph',
+            'bundle' => 'text_block',
+            'prompt' => 'Introductory text, 1-2 paragraphs.',
+            'fields' => [
+              'field_text_body' => ['prompt' => 'Introduction body text.'],
+            ],
+          ],
+          [
+            'entity_type' => 'paragraph',
+            'bundle' => 'quote_block',
+            'prompt' => 'A relevant quote from a key stakeholder.',
+            'fields' => [
+              'field_quote_text' => ['prompt' => 'The quote text.'],
+              'field_quote_attribution' => ['prompt' => 'Full name and title of the person being quoted.'],
+            ],
+          ],
+          [
+            'entity_type' => 'paragraph',
+            'bundle' => 'section',
+            'prompt' => 'A closing section with its own hero banner and text.',
+            'fields' => [
+              'field_section_paragraphs' => [
+                'type' => 'entity_reference_revisions',
+                'items' => [
+                  [
+                    'entity_type' => 'paragraph',
+                    'bundle' => 'hero',
+                    'prompt' => 'Hero banner for the section.',
+                  ],
+                  [
+                    'entity_type' => 'paragraph',
+                    'bundle' => 'text_block',
+                    'prompt' => 'Section text, one paragraph.',
+                    'fields' => [
+                      'field_text_body' => ['prompt' => 'Section body text.'],
+                    ],
+                  ],
+                ],
+              ],
+            ],
+          ],
+        ],
+      ],
+    ],
+    'defaults' => [
+      'langcode' => ['default_value' => [['value' => 'en']]],
+    ],
+  ])->save();
 }
 
 /**

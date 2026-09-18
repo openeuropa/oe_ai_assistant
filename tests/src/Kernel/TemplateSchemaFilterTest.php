@@ -175,8 +175,8 @@ class TemplateSchemaFilterTest extends KernelTestBase {
    * A variant's required list is recomputed against the kept fields.
    *
    * The fixture marks field_quote_text as required. Kept, it stays in the
-   * variant's required list (and the discriminator is never added); dropped,
-   * the required key is removed rather than left as an empty list.
+   * variant's required list alongside the bundle discriminator; dropped, the
+   * discriminator remains required so inline entities can be routed.
    */
   public function testVariantRequiredRecomputedAgainstKeptFields(): void {
     $schema = $this->composer()->compose('node', 'oe_news');
@@ -186,7 +186,7 @@ class TemplateSchemaFilterTest extends KernelTestBase {
     $byBundle = $this->variantsByBundle(
       $filtered['properties']['field_content_paragraphs']['items']['oneOf'],
     );
-    $this->assertSame(['field_quote_text'], $byBundle['quote_block']['required']);
+    $this->assertSame(['field_quote_text', 'type'], $byBundle['quote_block']['required']);
 
     // An unsaved template keeping only the attribution drops the required
     // field, so the variant must not keep a stale or empty required list.
@@ -214,7 +214,7 @@ class TemplateSchemaFilterTest extends KernelTestBase {
     $byBundle = $this->variantsByBundle(
       $filtered['properties']['field_content_paragraphs']['items']['oneOf'],
     );
-    $this->assertArrayNotHasKey('required', $byBundle['quote_block']);
+    $this->assertSame(['type'], $byBundle['quote_block']['required']);
   }
 
   /**
@@ -350,7 +350,7 @@ class TemplateSchemaFilterTest extends KernelTestBase {
 
     $items = $filtered['properties']['field_content_paragraphs']['items'];
     $this->assertNotSame([], $items['oneOf'], 'oneOf must not be empty.');
-    $this->assertCount(2, $items['oneOf'], 'Both composed variants survive.');
+    $this->assertCount(3, $items['oneOf'], 'All composed variants survive.');
   }
 
   /**
