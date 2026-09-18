@@ -294,6 +294,17 @@ class DocumentExtractionProcessorTest extends AiEditorialSessionKernelTestBase {
   }
 
   /**
+   * Tests that a document already deleted is not claimed.
+   */
+  public function testDeletedDocumentIsNotClaimed(): void {
+    $media = $this->createDocument();
+    $media->delete();
+
+    $this->assertSame(DocumentExtractionProcessorInterface::STATE_SCHEDULED, $this->processor()->process($media));
+    $this->assertNull($this->tika->getLastRequest());
+  }
+
+  /**
    * Tests that cron processes resting documents and reclaims stale ones.
    */
   public function testCronProcessesPendingDocuments(): void {

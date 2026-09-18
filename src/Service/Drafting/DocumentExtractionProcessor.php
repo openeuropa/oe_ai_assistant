@@ -95,7 +95,7 @@ final class DocumentExtractionProcessor implements DocumentExtractionProcessorIn
   public function process(MediaInterface $media, bool $reclaimInFlight = FALSE): string {
     $claimed = $this->claim($media, $reclaimInFlight);
     if ($claimed === NULL) {
-      return $this->getState($this->reload($media));
+      return $this->getState($this->reload($media) ?? $media);
     }
 
     return $this->run($claimed);
@@ -178,6 +178,9 @@ final class DocumentExtractionProcessor implements DocumentExtractionProcessorIn
     }
     try {
       $fresh = $this->reload($media);
+      if ($fresh === NULL) {
+        return NULL;
+      }
       $state = $this->getState($fresh);
       $inFlight = in_array($state, [
         self::STATE_EXTRACTING,
@@ -195,6 +198,14 @@ final class DocumentExtractionProcessor implements DocumentExtractionProcessorIn
       $this->transition($fresh, $fresh->get(self::EXTRACT_FIELD)->isEmpty() ? 'claim_extract' : 'claim_summarize');
 
       return $fresh;
+    }
+    catch (\Throwable $e) {
+      // Removal can land after the reload but before the transition saves:
+      // leave the gone document alone instead of aborting the batch.
+      if ($this->isDeleted($media)) {
+        return NULL;
+      }
+      throw $e;
     }
     finally {
       $this->lock->release($name);
@@ -346,21 +357,18 @@ final class DocumentExtractionProcessor implements DocumentExtractionProcessorIn
    * Checks whether the document was deleted since it was loaded.
    */
   private function isDeleted(MediaInterface $media): bool {
-    $storage = $this->entityTypeManager->getStorage('media');
-    $storage->resetCache([$media->id()]);
-
-    return $storage->load($media->id()) === NULL;
+    return $this->reload($media) === NULL;
   }
 
   /**
-   * Loads a fresh copy of the media entity.
+   * Loads a fresh copy of the media entity, NULL when it no longer exists.
    */
-  private function reload(MediaInterface $media): MediaInterface {
+  private function reload(MediaInterface $media): ?MediaInterface {
     $storage = $this->entityTypeManager->getStorage('media');
     $storage->resetCache([$media->id()]);
     $fresh = $storage->load($media->id());
 
-    return $fresh instanceof MediaInterface ? $fresh : $media;
+    return $fresh instanceof MediaInterface ? $fresh : NULL;
   }
 
 }
