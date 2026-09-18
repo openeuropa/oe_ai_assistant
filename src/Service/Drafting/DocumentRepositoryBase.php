@@ -69,6 +69,11 @@ abstract class DocumentRepositoryBase implements DocumentRepositoryInterface {
   abstract protected function getSourceField(): string;
 
   /**
+   * Gets the API document category served by the repository.
+   */
+  abstract protected function getCategory(): string;
+
+  /**
    * Builds a bare source field item to read upload settings from.
    *
    * The file field type encapsulates the upload destination
@@ -122,6 +127,24 @@ abstract class DocumentRepositoryBase implements DocumentRepositoryInterface {
    */
   public function remove(AiEditorialSessionInterface $session, string $documentId): void {
     $this->deleteDocument($this->loadOwned($session, $documentId));
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function describe(AiEditorialSessionInterface $session): array {
+    $documents = [];
+    foreach ($this->loadAll($session) as $media) {
+      $extract = trim((string) ($media->get(DocumentExtractionProcessorInterface::EXTRACT_FIELD)->value ?? ''));
+      $documents[] = $this->serialize($media) + [
+        'category' => $this->getCategory(),
+        'filename' => $this->getFilename($media),
+        'summary' => trim((string) ($media->get(DocumentExtractionProcessorInterface::SUMMARY_FIELD)->value ?? '')),
+        'extract' => $extract === '' ? NULL : $extract,
+      ];
+    }
+
+    return $documents;
   }
 
   /**
@@ -205,7 +228,7 @@ abstract class DocumentRepositoryBase implements DocumentRepositoryInterface {
    */
   protected function serialize(MediaInterface $media): array {
     $file = $this->getFile($media);
-    $filename = $file?->getFilename() ?: $media->label();
+    $filename = $this->getFilename($media);
     $extension = pathinfo($filename, PATHINFO_EXTENSION);
 
     return [
@@ -360,6 +383,19 @@ abstract class DocumentRepositoryBase implements DocumentRepositoryInterface {
     $file = $this->getFile($media);
     $media->delete();
     $file?->delete();
+  }
+
+  /**
+   * Gets the stored file name of a document, falling back to its label.
+   *
+   * @param \Drupal\media\MediaInterface $media
+   *   The document media entity.
+   *
+   * @return string
+   *   The file name.
+   */
+  private function getFilename(MediaInterface $media): string {
+    return (string) ($this->getFile($media)?->getFilename() ?: $media->label());
   }
 
   /**
