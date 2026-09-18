@@ -36,6 +36,14 @@ class DraftingPluginSaveTest extends ExistingSiteBase {
   }
 
   /**
+   * {@inheritdoc}
+   */
+  public function tearDown(): void {
+    $this->deleteTestEntities();
+    parent::tearDown();
+  }
+
+  /**
    * Tests that save creates a node with simple fields in the new payload shape.
    */
   public function testSaveCreatesNodeWithSimpleFields(): void {

@@ -32,7 +32,6 @@ delete ai conversation message:
 administer ai content provenance:
   title: 'Administer AI content provenance'
   description: 'View, edit, and delete any AI content provenance record.'
-  restrict access: true
 
 view ai content provenance:
   title: 'View AI content provenance'

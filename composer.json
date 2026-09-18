@@ -18,10 +18,10 @@
         "drupal/ai_agents": "^1.3@beta",
         "drupal/document_loader": "^2.0",
         "drupal/state_machine": "^1.14",
-        "drupal/entity_version": "^1.5",
         "justinrainbow/json-schema": "^6.0"
     },
     "require-dev": {
+        "drupal/entity_version": "^1.5",
         "openeuropa/oe_ai_provider_gpt_at_ec": "^1.0.0-alpha",
         "drupal/ai_provider_openai": "^1.2",
         "drupal/entity_reference_revisions": "^1.0",
