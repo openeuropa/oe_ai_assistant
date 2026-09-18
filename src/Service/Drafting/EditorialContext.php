@@ -121,7 +121,8 @@ final class EditorialContext {
    * block, so the assistant can ask the editor to wait for pending material
    * or to retry failed material. Text is capped per document and over all
    * documents; a document whose text does not fit in the remaining budget
-   * contributes its summary instead.
+   * contributes its summary instead, and counts as not available while it
+   * has none.
    *
    * @return string
    *   The prompt block, or an empty string without context documents.
@@ -141,28 +142,29 @@ final class EditorialContext {
       $filename = trim((string) ($document['filename'] ?? ''));
       $lines[] = $filename === '' ? $heading : sprintf('%s (file: %s)', $heading, $filename);
       $extract = trim((string) ($document['extract'] ?? ''));
-      if ($extract === '') {
-        // Waiting only helps a document still in the pipeline; a failed one
-        // stays unavailable until the editor retries it.
-        if (($document['status'] ?? '') === DocumentExtractionProcessorInterface::STATE_ERROR) {
-          $failed = TRUE;
-          $lines[] = 'Processing failed; its content is not available.';
-        }
-        else {
-          $pending = TRUE;
-          $lines[] = 'Not processed yet; its content is not available.';
-        }
-        continue;
-      }
       if (mb_strlen($extract) > self::MAX_DOCUMENT_CHARS) {
         $extract = mb_substr($extract, 0, self::MAX_DOCUMENT_CHARS) . "\n[truncated]";
       }
-      if (mb_strlen($extract) > $budget) {
-        $lines[] = 'Summary only: ' . trim((string) ($document['summary'] ?? ''));
-        continue;
+      $summary = trim((string) ($document['summary'] ?? ''));
+      if ($extract !== '' && mb_strlen($extract) <= $budget) {
+        $budget -= mb_strlen($extract);
+        $lines[] = $extract;
       }
-      $budget -= mb_strlen($extract);
-      $lines[] = $extract;
+      elseif ($summary !== '') {
+        $lines[] = 'Summary only: ' . $summary;
+      }
+      // The document has nothing to contribute: no text yet, or text that
+      // does not fit and no summary to stand in for it. Waiting only helps a
+      // document still in the pipeline; a failed one stays unavailable until
+      // the editor retries it.
+      elseif (($document['status'] ?? '') === DocumentExtractionProcessorInterface::STATE_ERROR) {
+        $failed = TRUE;
+        $lines[] = 'Processing failed; its content is not available.';
+      }
+      else {
+        $pending = TRUE;
+        $lines[] = 'Not processed yet; its content is not available.';
+      }
     }
 
     $lines[] = '';

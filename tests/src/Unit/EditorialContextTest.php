@@ -222,6 +222,70 @@ Summary only: Summary $count", $prompt);
   }
 
   /**
+   * Tests over-budget documents that have no summary to fall back on.
+   */
+  public function testDocumentsPromptWithoutSummaryToFallBackOn(): void {
+    // The summary only exists once the pipeline is done, so a document that
+    // is extracted, being summarized, or failed while summarizing has text
+    // but no summary yet.
+    // Prepare a series of documents that fill the whole context budget.
+    $filler = [];
+    $documentCount = intdiv(EditorialContext::MAX_TOTAL_CHARS, EditorialContext::MAX_DOCUMENT_CHARS);
+    for ($i = 1; $i <= $documentCount; $i++) {
+      $filler[] = self::document((string) $i, 'done', str_repeat('b', EditorialContext::MAX_DOCUMENT_CHARS), 'Summary ' . $i);
+    }
+    $last = $documentCount + 1;
+
+    // Test the scenario where an additional document is still in the pipeline
+    // and its summary is not there yet.
+    foreach (['extracted', 'summarizing'] as $status) {
+      $prompt = (new EditorialContext(NULL, NULL, NULL, NULL, NULL, [
+        ...$filler,
+        // An extra document with defined content but empty summary.
+        self::document((string) $last, $status, 'Overflow text.'),
+      ]))->toContextDocumentsPrompt();
+      // The document is still announced under its heading.
+      $this->assertStringContainsString("### Document $last (file: doc-$last.pdf)", $prompt, $status);
+      // Its text does not fit and there is no summary to replace it, so no
+      // summary line is printed. The filler documents all fit, so none of
+      // them prints one either.
+      $this->assertStringNotContainsString('Summary only:', $prompt, $status);
+      // The budget is spent: the text stays out.
+      $this->assertStringNotContainsString('Overflow text.', $prompt, $status);
+      // The summary is on its way, so the editor is asked to wait, not to
+      // retry.
+      $this->assertStringContainsString('wait a moment', $prompt, $status);
+      $this->assertStringNotContainsString('retry them', $prompt, $status);
+    }
+
+    // Test the scenario where the additional document failed while being
+    // summarized, so its summary never comes without a retry.
+    $prompt = (new EditorialContext(NULL, NULL, NULL, NULL, NULL, [
+      ...$filler,
+      // An extra document with defined content, empty summary and error status.
+      self::document((string) $last, 'error', 'Overflow text.'),
+    ]))->toContextDocumentsPrompt();
+    // Same as above: announced, no summary line, text left out.
+    $this->assertStringContainsString("### Document $last (file: doc-$last.pdf)", $prompt);
+    $this->assertStringNotContainsString('Summary only:', $prompt);
+    $this->assertStringNotContainsString('Overflow text.', $prompt);
+    // Waiting does not help here, so the editor is asked to retry instead.
+    $this->assertStringContainsString('retry them', $prompt);
+    $this->assertStringNotContainsString('wait a moment', $prompt);
+
+    // Test the scenario where the same failed document is alone, so the
+    // budget is free and its text fits.
+    $prompt = (new EditorialContext(NULL, NULL, NULL, NULL, NULL, [
+      self::document('1', 'error', 'Overflow text.'),
+    ]))->toContextDocumentsPrompt();
+    // The text is injected despite the error status.
+    $this->assertStringContainsString("### Document 1 (file: doc-1.pdf)
+Overflow text.", $prompt);
+    // Its content is available, so there is nothing to retry.
+    $this->assertStringNotContainsString('retry them', $prompt);
+  }
+
+  /**
    * Tests that the tone block and the documents block are both in toPrompt.
    */
   public function testToPromptCombinesToneAndDocuments(): void {
