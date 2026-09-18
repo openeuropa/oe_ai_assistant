@@ -48,8 +48,7 @@ final class EditorialContext {
    *   filename, summary, meta, extract}. Only documents of the "context"
    *   category are injected into the prompts; publishable assets stay out of
    *   the context for now. The extract is the full text when the pipeline
-   *   produced one, NULL otherwise. The filename and the extract feed the
-   *   prompts and never the snapshot.
+   *   produced one, NULL otherwise.
    */
   public function __construct(
     public readonly ?string $toneId,
