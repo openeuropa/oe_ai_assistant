@@ -270,6 +270,7 @@ test.describe("Drafting text streaming", () => {
     const uploadedDocument = {
       id: "uploaded-context-document",
       title: "Reload memo.txt",
+      status: "done",
       meta: { type: "txt", size: 11 },
     };
     let resolveRemoval!: () => void;

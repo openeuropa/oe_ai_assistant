@@ -1,0 +1,22 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - field.storage.media.oe_ai_session
+    - media.type.ai_context_document
+id: media.ai_context_document.oe_ai_session
+field_name: oe_ai_session
+entity_type: media
+bundle: ai_context_document
+label: 'Editorial session'
+description: 'The editorial session this document belongs to.'
+required: true
+translatable: false
+default_value: {  }
+default_value_callback: ''
+settings:
+  handler: 'default:ai_editorial_session'
+  handler_settings:
+    target_bundles: null
+    auto_create: false
+field_type: entity_reference

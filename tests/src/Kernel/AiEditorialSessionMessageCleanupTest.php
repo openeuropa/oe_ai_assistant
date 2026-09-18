@@ -7,7 +7,6 @@ namespace Drupal\Tests\oe_ai_assistant\Kernel;
 use Drupal\file\Entity\File;
 use Drupal\file\FileInterface;
 use Drupal\media\Entity\Media;
-use Drupal\media\MediaInterface;
 use Drupal\oe_ai_assistant\Entity\AiConversationMessage;
 use Drupal\oe_ai_assistant\Entity\AiConversationMessageInterface;
 use Drupal\oe_ai_assistant\Entity\AiEditorialSession;
@@ -136,12 +135,7 @@ class AiEditorialSessionMessageCleanupTest extends AiEditorialSessionKernelTestB
     $file_storage = $this->container->get('entity_type.manager')->getStorage('file');
     $user = $this->createUser();
     $session = $this->createSession($user);
-    [$media, $file] = $this->createContextDocument('brief.txt');
-
-    $session->get('context_documents')->appendItem([
-      'target_id' => $media->id(),
-    ]);
-    $session->save();
+    [$media, $file] = $this->createContextDocument('brief.txt', $session);
 
     $session->delete();
 
@@ -150,32 +144,32 @@ class AiEditorialSessionMessageCleanupTest extends AiEditorialSessionKernelTestB
   }
 
   /**
-   * Tests that shared context documents survive until the last session is gone.
+   * Tests that deleting a session leaves the documents of other sessions.
    */
-  public function testSharedContextDocumentSurvivesSessionDelete(): void {
+  public function testSessionDeleteLeavesOtherSessionsDocuments(): void {
     $media_storage = $this->container->get('entity_type.manager')->getStorage('media');
     $file_storage = $this->container->get('entity_type.manager')->getStorage('file');
     $user = $this->createUser();
     $session = $this->createSession($user);
     $other_session = $this->createSession($user);
-    [$media, $file] = $this->createContextDocument('shared-brief.txt');
+    [$media, $file] = $this->createContextDocument('mine.txt', $session);
+    [$other_media, $other_file] = $this->createContextDocument('theirs.txt', $other_session);
 
-    $this->attachContextDocument($session, $media);
-    $this->attachContextDocument($other_session, $media);
-
-    $session->delete();
+    $other_session->delete();
 
     $this->assertNotNull($media_storage->loadUnchanged((int) $media->id()));
     $this->assertNotNull($file_storage->loadUnchanged((int) $file->id()));
+    $this->assertNull($media_storage->loadUnchanged((int) $other_media->id()));
+    $this->assertNull($file_storage->loadUnchanged((int) $other_file->id()));
 
-    $other_session->delete();
+    $session->delete();
 
     $this->assertNull($media_storage->loadUnchanged((int) $media->id()));
     $this->assertNull($file_storage->loadUnchanged((int) $file->id()));
   }
 
   /**
-   * Creates a private context document media item.
+   * Creates a private context document media item owned by a session.
    *
    * @return array{
    *   0: \Drupal\media\MediaInterface,
@@ -183,7 +177,7 @@ class AiEditorialSessionMessageCleanupTest extends AiEditorialSessionKernelTestB
    *   }
    *   The created media and file entities.
    */
-  private function createContextDocument(string $filename): array {
+  private function createContextDocument(string $filename, AiEditorialSessionInterface $session): array {
     $file = File::create([
       'filename' => $filename,
       'uri' => 'public://' . $filename,
@@ -195,6 +189,7 @@ class AiEditorialSessionMessageCleanupTest extends AiEditorialSessionKernelTestB
       'bundle' => 'ai_context_document',
       'name' => $filename,
       'status' => 0,
+      'oe_ai_session' => ['target_id' => $session->id()],
       'oe_ai_context_document' => [
         'target_id' => $file->id(),
       ],
@@ -202,16 +197,6 @@ class AiEditorialSessionMessageCleanupTest extends AiEditorialSessionKernelTestB
     $media->save();
 
     return [$media, $file];
-  }
-
-  /**
-   * Attaches a context document to a session.
-   */
-  private function attachContextDocument(AiEditorialSessionInterface $session, MediaInterface $media): void {
-    $session->get('context_documents')->appendItem([
-      'target_id' => $media->id(),
-    ]);
-    $session->save();
   }
 
 }

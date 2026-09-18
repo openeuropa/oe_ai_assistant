@@ -11,6 +11,8 @@ import type { components } from "@/api/schema";
 export type DraftingDocumentCategory =
   components["schemas"]["DraftingDocumentCategory"];
 export type DraftingDocument = components["schemas"]["DraftingDocument"];
+export type DraftingDocumentStatus =
+  components["schemas"]["DraftingDocumentStatus"];
 
 /** Request body for the drafting chat endpoint. */
 export interface DraftingChatRequest {

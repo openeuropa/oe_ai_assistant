@@ -1,0 +1,75 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Drupal\oe_ai_assistant\Hook;
+
+use Drupal\Core\DependencyInjection\AutowireTrait;
+use Drupal\Core\Hook\Attribute\Hook;
+use Drupal\media\MediaInterface;
+use Drupal\oe_ai_assistant\Service\Drafting\DocumentExtractionProcessorInterface;
+
+/**
+ * Hooks for working-material document media entities.
+ */
+final class DocumentMediaHooks {
+
+  use AutowireTrait;
+
+  /**
+   * Documents processed per cron run.
+   */
+  private const int CRON_BATCH = 5;
+
+  /**
+   * Seconds after which an in-flight document counts as abandoned.
+   */
+  private const int STALE_AFTER = 600;
+
+  public function __construct(
+    private readonly DocumentExtractionProcessorInterface $processor,
+  ) {}
+
+  /**
+   * Implements hook_cron().
+   *
+   * Safety net for documents the app never triggered, lost requests and
+   * crashed runs. Each picked document is driven to done or error.
+   */
+  #[Hook('cron')]
+  public function processPendingDocuments(): void {
+    $this->processor->processPending(self::CRON_BATCH, self::STALE_AFTER);
+  }
+
+  /**
+   * Implements hook_media_presave().
+   *
+   * A new document, or one whose file was replaced, is handed back to the
+   * processor for a fresh run; the processor owns the reset itself.
+   */
+  #[Hook('media_presave')]
+  public function scheduleExtraction(MediaInterface $media): void {
+    if (!$media->hasField(DocumentExtractionProcessorInterface::STATE_FIELD)) {
+      return;
+    }
+    if (!$media->isNew() && !$this->sourceFileChanged($media)) {
+      return;
+    }
+
+    $this->processor->schedule($media);
+  }
+
+  /**
+   * Checks whether the media source file target changed since the last save.
+   */
+  private function sourceFileChanged(MediaInterface $media): bool {
+    $sourceField = $media->getSource()->getConfiguration()['source_field'] ?? '';
+    $original = $media->getOriginal();
+    if ($sourceField === '' || !$original instanceof MediaInterface || !$original->hasField($sourceField)) {
+      return TRUE;
+    }
+
+    return (string) $original->get($sourceField)->target_id !== (string) $media->get($sourceField)->target_id;
+  }
+
+}

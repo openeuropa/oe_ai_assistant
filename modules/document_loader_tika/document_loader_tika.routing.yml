@@ -1,0 +1,7 @@
+document_loader_tika.settings_form:
+  path: '/admin/config/media/document-loader/tika'
+  defaults:
+    _form: '\Drupal\document_loader_tika\Form\TikaSettingsForm'
+    _title: 'Apache Tika server'
+  requirements:
+    _permission: 'document_loader.administer'

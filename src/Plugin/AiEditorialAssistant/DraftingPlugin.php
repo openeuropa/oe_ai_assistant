@@ -180,6 +180,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
       'add-document' => $this->addDocument(...),
       'list-documents' => $this->listDocuments(...),
       'remove-document' => $this->removeDocument(...),
+      'extract-document' => $this->extractDocument(...),
       'preview' => $this->preview(...),
     ];
   }
@@ -197,6 +198,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
       'add-document' => 'DraftingAddDocumentRequest',
       'list-documents' => 'DraftingListDocumentsRequest',
       'remove-document' => 'DraftingRemoveDocumentRequest',
+      'extract-document' => 'DraftingExtractDocumentRequest',
     ];
   }
 
@@ -217,7 +219,8 @@ class DraftingPlugin extends AiAssistantPluginBase {
    * panels. Each panel is gated by an 'enabled' flag so the host controls
    * which tabs appear. Tone options come from the tone vocabulary; template
    * options come from the enabled drafting templates for the bundle; the
-   * document list is fetched by the app through the list-documents action.
+   * document list is fetched by the app through the list-documents action,
+   * and the accepted file extensions come from the document source field.
    */
   public function getAppConfig(AiEditorialSessionInterface $session, RefinableCacheableDependencyInterface $cacheability): array {
     $context = $this->buildContext($session);
@@ -225,6 +228,9 @@ class DraftingPlugin extends AiAssistantPluginBase {
     // be invalidated whenever a template is added, edited or deleted. The
     // list cache tag covers all three operations for config entities.
     $cacheability->addCacheTags(['config:ai_drafting_template_list']);
+    // The accepted extensions come from the document source field, so a
+    // field settings change must invalidate the page as well.
+    $cacheability->addCacheTags(['config:field_config_list']);
 
     return [
       'entityTypeId' => $context['entityTypeId'],
@@ -242,9 +248,11 @@ class DraftingPlugin extends AiAssistantPluginBase {
         'selected' => (string) $session->get(static::TEMPLATE_FIELD)->target_id,
       ],
       'documents' => [
-        // Only the gate ships with the bootstrap; the app fetches the
-        // document list through the list-documents action after boot.
+        // The app fetches the document list through the list-documents
+        // action after boot; the bootstrap only carries the gate and the
+        // extensions the upload control offers.
         'enabled' => TRUE,
+        'extensions' => $this->contextDocumentRepository->getAllowedExtensions(),
       ],
       // Live preview iframe URL template. The app substitutes the
       // {sessionId} and {versionId} placeholders before loading the
@@ -728,7 +736,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
   }
 
   /**
-   * Lists documents referenced by the session.
+   * Lists the documents of the session.
    *
    * @param \Symfony\Component\HttpFoundation\Request $request
    *   The incoming JSON request.
@@ -745,7 +753,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
   }
 
   /**
-   * Removes a referenced document from the session and deletes its entities.
+   * Removes a document of the session and deletes its entities.
    *
    * @param \Symfony\Component\HttpFoundation\Request $request
    *   The incoming JSON request.
@@ -754,22 +762,28 @@ class DraftingPlugin extends AiAssistantPluginBase {
    *   A confirmation response.
    */
   public function removeDocument(Request $request): array {
-    $body = $this->decodeJsonBody($request);
-    $repository = $this->resolveDocumentRepository($body['category'] ?? '');
-    $session = $this->loadSession($body);
-    $documentId = (string) ($body['documentId'] ?? '');
-
-    if ($documentId === '') {
-      throw new ActionException(
-        'invalid_request',
-        'A documentId is required.',
-        400,
-      );
-    }
-
+    [$repository, $session, $documentId] = $this->resolveDocumentRequest($request);
     $repository->remove($session, $documentId);
 
     return ['status' => 'ok'];
+  }
+
+  /**
+   * Runs text extraction and summarisation on a referenced document.
+   *
+   * Fired by the app after a successful upload; also the retry entry point.
+   * Processing is synchronous; the response carries the resulting state.
+   *
+   * @param \Symfony\Component\HttpFoundation\Request $request
+   *   The incoming JSON request.
+   *
+   * @return array<string, string>
+   *   The document state.
+   */
+  public function extractDocument(Request $request): array {
+    [$repository, $session, $documentId] = $this->resolveDocumentRequest($request);
+
+    return ['status' => $repository->extract($session, $documentId)];
   }
 
   /**
@@ -805,6 +819,37 @@ class DraftingPlugin extends AiAssistantPluginBase {
     }
     $message->setToolCalls($toolCalls);
     $message->save();
+  }
+
+  /**
+   * Resolves the repository, session and document id of a document request.
+   *
+   * Shared by the actions that target one existing document.
+   *
+   * @param \Symfony\Component\HttpFoundation\Request $request
+   *   The incoming JSON request.
+   *
+   * @return array
+   *   The document repository, the session and the document id.
+   *
+   * @throws \Drupal\oe_ai_assistant\Exception\ActionException
+   *   When the document id is missing.
+   */
+  private function resolveDocumentRequest(Request $request): array {
+    $body = $this->decodeJsonBody($request);
+    $repository = $this->resolveDocumentRepository($body['category'] ?? '');
+    $session = $this->loadSession($body);
+    $documentId = (string) ($body['documentId'] ?? '');
+
+    if ($documentId === '') {
+      throw new ActionException(
+        'invalid_request',
+        'A documentId is required.',
+        400,
+      );
+    }
+
+    return [$repository, $session, $documentId];
   }
 
   /**

@@ -1,0 +1,10 @@
+document_loader_tika.settings:
+  type: config_object
+  label: 'Document Loader Tika settings'
+  mapping:
+    url:
+      type: uri
+      label: 'Tika server URL'
+    timeout:
+      type: integer
+      label: 'Request timeout in seconds'
