@@ -149,14 +149,50 @@ class DraftAssembler implements DraftAssemblerInterface {
     foreach ($templateFields as $fieldName => $fieldConfig) {
       if (
         empty($fieldConfig['items']) ||
-        !is_array($fieldConfig['items']) ||
-        !isset($llmFields[$fieldName]) ||
-        !is_array($llmFields[$fieldName])
+        !is_array($fieldConfig['items'])
       ) {
         continue;
       }
 
-      $llmItems = $llmFields[$fieldName];
+      $llmItems = isset($llmFields[$fieldName]) && is_array($llmFields[$fieldName])
+        ? $llmFields[$fieldName]
+        : [];
+
+      // A provider may omit the bundle discriminator from an inline item,
+      // even though it is required by the generated schema. Infer it only
+      // when this field has exactly one defaulted template item; guessing
+      // among multiple defaulted bundles could assign the wrong paragraph
+      // type.
+      $defaultedBundles = [];
+      foreach ($fieldConfig['items'] as $templateItem) {
+        if (
+          is_array($templateItem)
+          && !empty($templateItem['defaults'])
+          && !empty($templateItem['entity_type'])
+          && !empty($templateItem['bundle'])
+        ) {
+          $defaultedBundles[$templateItem['entity_type'] . ':' . $templateItem['bundle']] = [
+            $templateItem['entity_type'],
+            $templateItem['bundle'],
+          ];
+        }
+      }
+      if (count($defaultedBundles) === 1) {
+        [$defaultedEntityTypeId, $defaultedBundle] = reset($defaultedBundles);
+        $defaultedBundleKey = $this->entityTypeManager
+          ->getDefinition($defaultedEntityTypeId)
+          ->getKey('bundle');
+        foreach ($llmItems as &$llmItem) {
+          if (
+            is_array($llmItem)
+            && !isset($llmItem[$defaultedBundleKey][0]['target_id'])
+          ) {
+            $llmItem[$defaultedBundleKey] = [['target_id' => $defaultedBundle]];
+          }
+        }
+        unset($llmItem);
+      }
+
       $usedIndexes = [];
 
       foreach ($fieldConfig['items'] as $templateItem) {
@@ -182,25 +218,42 @@ class DraftAssembler implements DraftAssemblerInterface {
             break;
           }
         }
-        if ($matchedIndex === NULL) {
-          continue;
-        }
-        $usedIndexes[$matchedIndex] = TRUE;
-        $llmItem = $llmItems[$matchedIndex];
-
+        $itemDefaults = [];
         if (!empty($templateItem['defaults']) && is_array($templateItem['defaults'])) {
           $resolvedItemDefaults = array_map(
             static fn (array $default) => $default['default_value'],
             $template->resolveItemDefaults($templateItem['defaults'], $itemEntityTypeId, $itemBundle),
           );
-          $llmItem = $resolvedItemDefaults + $llmItem;
+          $itemDefaults = $resolvedItemDefaults;
         }
+
+        if ($matchedIndex === NULL) {
+          if ($itemDefaults === []) {
+            continue;
+          }
+          $llmItem = [
+            $bundleKey => [['target_id' => $itemBundle]],
+          ];
+        }
+        else {
+          $usedIndexes[$matchedIndex] = TRUE;
+          $llmItem = $llmItems[$matchedIndex];
+        }
+
+        // Template defaults win on collision, including for an item emitted
+        // by the LLM.
+        $llmItem = $itemDefaults + $llmItem;
 
         if (!empty($templateItem['fields']) && is_array($templateItem['fields'])) {
           $llmItem = $this->mergeItemDefaults($templateItem['fields'], $llmItem, $template);
         }
 
-        $llmItems[$matchedIndex] = $llmItem;
+        if ($matchedIndex === NULL) {
+          $llmItems[] = $llmItem;
+        }
+        else {
+          $llmItems[$matchedIndex] = $llmItem;
+        }
       }
 
       $llmFields[$fieldName] = $llmItems;
