@@ -75,7 +75,7 @@ class AiDraftingTemplateCrudTest extends KernelTestBase {
     $this->installEntitySchema('content_moderation_state');
     $this->installEntitySchema('file');
     $this->installEntitySchema('taxonomy_term');
-    $this->installConfig(['oe_ai_assistant_test']);
+    $this->installConfig(['filter', 'oe_ai_assistant_test']);
     $this->container->get('config.typed')->clearCachedDefinitions();
   }
 
