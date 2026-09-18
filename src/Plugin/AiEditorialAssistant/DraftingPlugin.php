@@ -979,7 +979,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
         $context['entityTypeId'], $context['bundle'], $context['template']
       );
       $prompt .= "\nAvailable field groups:\n"
-        . json_encode($groups, JSON_PRETTY_PRINT) . "\n";
+        . json_encode($groups) . "\n";
     }
 
     return $prompt;

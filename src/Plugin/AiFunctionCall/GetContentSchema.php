@@ -123,7 +123,7 @@ class GetContentSchema extends FunctionCallBase implements StructuredExecutableF
    * {@inheritdoc}
    */
   public function getReadableOutput(): string {
-    return json_encode($this->output, JSON_PRETTY_PRINT);
+    return json_encode($this->output);
   }
 
   /**

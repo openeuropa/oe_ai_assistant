@@ -98,6 +98,20 @@ class GetContentSchemaTest extends KernelTestBase {
   }
 
   /**
+   * Tests that the readable output is compact JSON.
+   */
+  public function testReadableOutputIsCompactJson(): void {
+    $plugin = $this->container->get('plugin.manager.ai.function_calls')
+      ->createInstance('oe_ai_assistant:get_content_schema');
+    $plugin->setContextValue('entity_type_id', 'node');
+    $plugin->setContextValue('bundle', 'oe_news');
+    $plugin->setContextValue('template', 'news_default');
+    $plugin->execute();
+
+    $this->assertSame(json_encode($plugin->getStructuredOutput()), $plugin->getReadableOutput());
+  }
+
+  /**
    * An explicit template context restricts the tool output to its fields.
    */
   public function testExecuteWithTemplateUsesThatTemplate(): void {

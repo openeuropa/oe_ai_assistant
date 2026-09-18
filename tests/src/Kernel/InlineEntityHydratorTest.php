@@ -193,12 +193,12 @@ class InlineEntityHydratorTest extends KernelTestBase {
    * Instead, this test exercises the structural pre-condition for that
    * recursion: splitInlineEntityFields() must, when invoked on a paragraph
    * bundle, correctly identify any entity_reference_revisions fields. Today
-   * the only test paragraph types (text_block, quote_block) carry no
-   * paragraph-typed fields, so the call returns an empty inlineEntityFields
-   * slot and leaves all input keys in the parent slot. The assertion locks
-   * in this contract: if a future fixture adds a nested paragraph field on
-   * one of these bundles the second slot will populate and this test will
-   * fail with a clear diff, prompting an upgrade to a real recursive case.
+   * text_block carries no paragraph-typed fields, so the call returns an
+   * empty inlineEntityFields slot and leaves all input keys in the parent
+   * slot. The assertion locks in this contract: if a future fixture adds a
+   * nested paragraph field on this bundle the second slot will populate and
+   * this test will fail with a clear diff, prompting an upgrade to a real
+   * recursive case.
    */
   public function testRecursionCallPathInspectsParagraphBundleDefinitions(): void {
     // Synthetic paragraph item: pretend a text_block carries a (non-existent)
@@ -244,6 +244,23 @@ class InlineEntityHydratorTest extends KernelTestBase {
     $this->assertCount(1, $entities);
     $this->assertInstanceOf(Paragraph::class, $entities[0]);
     $this->assertTrue($entities[0]->isNew());
+  }
+
+  /**
+   * Resolves a missing format on a hydrated child's formatted-text field.
+   *
+   * Proves this call site invokes the resolver too; the resolver's own
+   * permission and ordering logic is covered by DraftEntityBuilderTest.
+   */
+  public function testResolvesMissingFormatOnHydratedChild(): void {
+    $entities = $this->hydrator()->buildInlineEntities([
+      [
+        'type' => [['target_id' => 'text_block']],
+        'field_text_body' => [['value' => '<p>Hydrated body.</p>']],
+      ],
+    ], 'paragraph');
+
+    $this->assertSame('plain_text', $entities[0]->get('field_text_body')->format);
   }
 
   /**

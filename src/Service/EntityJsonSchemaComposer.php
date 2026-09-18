@@ -9,6 +9,7 @@ use Drupal\Core\Entity\EntityFieldManagerInterface;
 use Drupal\Core\Entity\EntityTypeBundleInfoInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Field\FieldDefinitionInterface;
+use Drupal\Core\Field\FieldItemInterface;
 use Drupal\Core\Field\FieldItemListInterface;
 use Drupal\Core\Field\FieldStorageDefinitionInterface;
 use Drupal\Core\Field\Plugin\Field\FieldType\EntityReferenceItem;
@@ -65,9 +66,16 @@ class EntityJsonSchemaComposer {
    *
    * These are NOT entity-type keys (so they're not caught by SKIP_KEY_ROLES)
    * but Drupal manages their values on save. Including them in the schema
-   * risks the LLM emitting hallucinated timestamps that would flow through
-   * `$serializer->deserialize()` into the entity unchanged, bypassing
-   * Drupal's revision tracking.
+   * risks the LLM emitting a value that flows through
+   * `$serializer->deserialize()` into the entity unchanged: for 'created'/
+   * 'changed' that means hallucinated timestamps bypassing Drupal's revision
+   * tracking; for paragraphs' 'parent_id'/'parent_type'/'parent_field_name'
+   * (populated by EntityReferenceRevisionsItem::postSave() once the host
+   * entity is saved) any drafted value makes Paragraph::getParentEntity()
+   * reference an undefined $parent when previewing the unsaved draft tree.
+   *
+   * Paragraphs' 'behavior_settings' is deliberately absent: it's already
+   * excluded structurally by hasSerializedColumn().
    *
    * @todo Replace with class-hierarchy detection
    * // phpcs:ignore Drupal.Files.LineLength.TooLong
@@ -79,6 +87,9 @@ class EntityJsonSchemaComposer {
   private const AUTO_MANAGED_FIELD_NAMES = [
     'created',
     'changed',
+    'parent_id',
+    'parent_type',
+    'parent_field_name',
   ];
 
   /**
@@ -190,7 +201,7 @@ class EntityJsonSchemaComposer {
       $schemaProperties = [];
       $required = [];
       foreach ($properties as $fieldName => $fieldItemList) {
-        if (isset($skip[$fieldName])) {
+        if (isset($skip[$fieldName]) || $this->hasSerializedColumn($entityType, $fieldItemList)) {
           continue;
         }
         $schemaProperties[$fieldName] = $this->composeField($fieldItemList, $depth);
@@ -251,6 +262,62 @@ class EntityJsonSchemaComposer {
     }
 
     return $skip;
+  }
+
+  /**
+   * Checks whether a field's exposable properties are all serialized.
+   *
+   * Detection mirrors core's
+   * `SerializedColumnNormalizerTrait::getSerializedPropertyNames()`: a
+   * property is serialized either via the entity type's
+   * 'serialized_field_property_names' override (e.g. paragraphs'
+   * `behavior_settings`) or via a `serialize: true` flag on its storage
+   * schema column. Core's FieldItemNormalizer refuses to denormalize a
+   * string value for such a property, so exposing it would let the LLM
+   * emit a value core then rejects.
+   *
+   * Only fields left with NO non-serialized property (e.g. `behavior_settings`,
+   * whose sole property is serialized) are skipped outright. A field with a
+   * mix (e.g. link's `options` alongside plain `uri`/`title`) keeps its
+   * usable properties; composeItem() already omits computed/internal ones
+   * the same way.
+   *
+   * @param \Drupal\Core\Entity\ContentEntityTypeInterface $entityType
+   *   The entity type the field belongs to.
+   * @param \Drupal\Core\Field\FieldItemListInterface $fieldItemList
+   *   The field item list to introspect.
+   *
+   * @return bool
+   *   TRUE if every exposable property of the field is serialized.
+   */
+  private function hasSerializedColumn(ContentEntityTypeInterface $entityType, FieldItemListInterface $fieldItemList): bool {
+    $fieldDef = $fieldItemList->getFieldDefinition();
+    $storageDefinition = $fieldDef->getFieldStorageDefinition();
+
+    $itemClass = $fieldItemList->getItemDefinition()->getClass();
+    if (!is_a($itemClass, FieldItemInterface::class, TRUE)) {
+      return FALSE;
+    }
+
+    $serializedNames = $entityType->get('serialized_field_property_names')[$fieldDef->getName()] ?? [];
+    $columns = $itemClass::schema($storageDefinition)['columns'] ?? [];
+    foreach ($columns as $columnName => $column) {
+      if (($column['serialize'] ?? FALSE) === TRUE) {
+        $serializedNames[] = $columnName;
+      }
+    }
+    if ($serializedNames === []) {
+      return FALSE;
+    }
+
+    $exposedNames = [];
+    foreach ($itemClass::propertyDefinitions($storageDefinition) as $propName => $propDef) {
+      if (!$propDef->isComputed() && !$propDef->isInternal()) {
+        $exposedNames[] = $propName;
+      }
+    }
+
+    return array_diff($exposedNames, $serializedNames) === [];
   }
 
   /**
@@ -495,6 +562,10 @@ class EntityJsonSchemaComposer {
           ],
           'maxItems' => 1,
         ];
+        // Without this, the discriminator is optional per the schema: the
+        // LLM may omit it, and InlineEntityHydrator::buildInlineEntities()
+        // has no bundle to route the item to.
+        $bundleSchema['required'][] = $bundleKey;
         $variants[] = $bundleSchema;
       }
       // Include `type: object` alongside `oneOf` so the field-level invariant
@@ -542,6 +613,10 @@ class EntityJsonSchemaComposer {
             ],
             'maxItems' => 1,
           ];
+          // Without this, the discriminator is optional per the schema: the
+          // LLM may omit it, and InlineEntityHydrator::buildInlineEntities()
+          // has no bundle to route the item to.
+          $bundleSchema['required'][] = $bundleKey;
         }
         $variants[] = $bundleSchema;
       }

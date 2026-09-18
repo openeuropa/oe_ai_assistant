@@ -265,6 +265,74 @@ class DraftingPluginSaveTest extends DraftingPluginTestBase {
   }
 
   /**
+   * Tests that a missing inline bundle discriminator is inferred safely.
+   */
+  public function testSaveInfersDefaultedParagraphBundle(): void {
+    $user = $this->createUser([
+      'use oe ai assistant',
+      'create oe_news content',
+    ]);
+    $this->loginUser($user);
+    $session = $this->createSession($user);
+
+    $this->seedDraft($session, 1, [
+      'title' => [['value' => 'Inferred hero round-trip']],
+      'field_content_paragraphs' => [
+        [],
+      ],
+    ], 'news_with_hero');
+
+    $result = $this->httpPost('/api/ai/plugins/drafting/save', [
+      'sessionId' => $session->id(),
+      'version' => 1,
+    ]);
+
+    $this->assertEquals(200, $result['status'],
+      'Expected 200 response. Body: ' . substr($result['body'], 0, 500));
+    $body = json_decode($result['body'], TRUE);
+    $node = \Drupal::entityTypeManager()->getStorage('node')->load($body['nodeId']);
+    $this->assertNotNull($node, 'Saved node exists.');
+
+    $paragraphs = $node->get('field_content_paragraphs')->referencedEntities();
+    $this->assertCount(1, $paragraphs);
+    $this->assertSame('hero', $paragraphs[0]->bundle());
+    $this->assertNotEmpty($paragraphs[0]->get('field_hero_image')->target_id);
+    $this->assertSame('Default hero image', $paragraphs[0]->get('field_hero_image')->alt);
+  }
+
+  /**
+   * Tests that a defaulted paragraph is materialized when omitted entirely.
+   */
+  public function testSaveCreatesParagraphFromTemplateDefaults(): void {
+    $user = $this->createUser([
+      'use oe ai assistant',
+      'create oe_news content',
+    ]);
+    $this->loginUser($user);
+    $session = $this->createSession($user);
+
+    $this->seedDraft($session, 1, [
+      'title' => [['value' => 'Default hero round-trip']],
+    ], 'news_with_hero');
+
+    $result = $this->httpPost('/api/ai/plugins/drafting/save', [
+      'sessionId' => $session->id(),
+      'version' => 1,
+    ]);
+
+    $this->assertEquals(200, $result['status'],
+      'Expected 200 response. Body: ' . substr($result['body'], 0, 500));
+    $body = json_decode($result['body'], TRUE);
+    $node = \Drupal::entityTypeManager()->getStorage('node')->load($body['nodeId']);
+    $this->assertNotNull($node, 'Saved node exists.');
+
+    $paragraphs = $node->get('field_content_paragraphs')->referencedEntities();
+    $this->assertCount(1, $paragraphs);
+    $this->assertSame('hero', $paragraphs[0]->bundle());
+    $this->assertNotEmpty($paragraphs[0]->get('field_hero_image')->target_id);
+  }
+
+  /**
    * Tests that saving a version the session never produced returns 400.
    */
   public function testSaveUnknownVersionReturns400(): void {
