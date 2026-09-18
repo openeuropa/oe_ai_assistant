@@ -249,9 +249,18 @@ class AiEditorialSessionDashboardTest extends AiEditorialSessionBrowserTestBase 
   }
 
   /**
-   * Tests the add form only lists content types the user can create.
+   * Tests that content types without create access are not offered.
    */
   public function testAddSessionContentTypeOptionsRespectCreateAccess(): void {
+    $this->container->get('entity_type.manager')
+      ->getStorage('ai_drafting_template')
+      ->create([
+        'id' => 'contact_default',
+        'label' => 'Contact (default)',
+        'content_type' => 'oe_contact',
+        'fields' => ['title' => ['prompt' => 'Headline.']],
+      ])->save();
+
     $user = $this->drupalCreateUser([
       'create oe_news content',
     ]);
@@ -262,8 +271,47 @@ class AiEditorialSessionDashboardTest extends AiEditorialSessionBrowserTestBase 
     ]));
 
     $this->assertSession()->statusCodeEquals(200);
-    $this->assertSession()->elementExists('css', 'select[name="content_type"] option[value="oe_news"]');
-    $this->assertSession()->elementNotExists('css', 'select[name="content_type"] option[value="oe_contact"]');
+    $this->assertSame(['oe_news'], $this->contentTypeOptionValues());
+  }
+
+  /**
+   * Tests that only content types with an enabled template are offered.
+   */
+  public function testAddSessionContentTypeOptionsRespectDraftingTemplates(): void {
+    $user = $this->drupalCreateUser([
+      'create oe_news content',
+      'create oe_contact content',
+    ]);
+    $this->drupalLogin($user);
+
+    $this->drupalGet(Url::fromRoute('entity.ai_editorial_session.add_form', [
+      'ai_editorial_session_type' => 'content_creation',
+    ]));
+
+    $this->assertSession()->statusCodeEquals(200);
+    $this->assertSame(['oe_news'], $this->contentTypeOptionValues());
+  }
+
+  /**
+   * Returns the add form's content_type select option values, sorted.
+   *
+   * Excludes the '_none' placeholder option.
+   *
+   * @return string[]
+   *   The option values.
+   */
+  private function contentTypeOptionValues(): array {
+    $options = $this->getSession()->getPage()->findAll('css', 'select[name="content_type"] option');
+    $values = [];
+    foreach ($options as $option) {
+      $value = $option->getAttribute('value');
+      if ($value !== '_none') {
+        $values[] = $value;
+      }
+    }
+    sort($values);
+
+    return $values;
   }
 
   /**
