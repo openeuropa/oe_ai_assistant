@@ -96,6 +96,7 @@ class AiDraftingTemplateCrudTest extends KernelTestBase {
       'test_bundle_strip',
       'test_item_defaults_assemble',
       'test_bundle_strip_siblings',
+      'test_item_default_strip',
     ];
     foreach ($ids as $id) {
       $template = AiDraftingTemplate::load($id);
@@ -1285,6 +1286,55 @@ class AiDraftingTemplateCrudTest extends KernelTestBase {
     $items = $loaded->getFields()['field_content_paragraphs']['items'];
     $this->assertCount(1, $items);
     $this->assertSame('text_block', $items[0]['bundle']);
+  }
+
+  /**
+   * Tests that deleting a field pinned by an item default strips the default.
+   *
+   * The hero item declares only defaults, the text item only fields: both
+   * survive, with the deleted field gone from the hero defaults.
+   */
+  public function testFieldDeletionStripsItemDefaultFromTemplate(): void {
+    $file = $this->createImageFile();
+    AiDraftingTemplate::create([
+      'id' => 'test_item_default_strip',
+      'label' => 'Item default strip',
+      'status' => TRUE,
+      'content_type' => 'oe_news',
+      'fields' => [
+        'title' => ['prompt' => 'Headline.'],
+        'field_content_paragraphs' => [
+          'type' => 'entity_reference_revisions',
+          'items' => [
+            [
+              'entity_type' => 'paragraph',
+              'bundle' => 'hero',
+              'prompt' => 'Hero.',
+              'defaults' => [
+                'field_hero_image' => [
+                  'default_value' => [['target_uuid' => $file->uuid(), 'alt' => 'Default']],
+                ],
+              ],
+            ],
+            [
+              'entity_type' => 'paragraph',
+              'bundle' => 'text_block',
+              'prompt' => 'Text.',
+              'fields' => ['field_text_body' => ['prompt' => 'Body.']],
+            ],
+          ],
+        ],
+      ],
+    ])->save();
+
+    FieldConfig::loadByName('paragraph', 'hero', 'field_hero_image')->delete();
+
+    $loaded = AiDraftingTemplate::load('test_item_default_strip');
+    $this->assertNotNull($loaded, 'The template survives the deletion.');
+    $items = $loaded->getFields()['field_content_paragraphs']['items'];
+    $this->assertCount(2, $items);
+    $this->assertArrayNotHasKey('field_hero_image', $items[0]['defaults']);
+    $this->assertSame(['field_text_body' => ['prompt' => 'Body.']], $items[1]['fields']);
   }
 
   /**
