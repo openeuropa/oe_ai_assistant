@@ -133,38 +133,12 @@ final class AiDraftingTemplate extends ConfigEntityBase implements AiDraftingTem
    */
   public function getDefaultsByBundle(): array {
     $byBundle = [];
-    if ($this->defaults !== []) {
-      $byBundle['node'][$this->content_type] = $this->defaults;
-    }
-    $this->collectItemDefaults($this->fields, $byBundle);
+    $this->walk(function (string $entityTypeId, string $bundle, array $fields, array $defaults) use (&$byBundle): void {
+      if ($defaults !== []) {
+        $byBundle[$entityTypeId][$bundle] = ($byBundle[$entityTypeId][$bundle] ?? []) + $defaults;
+      }
+    });
     return $byBundle;
-  }
-
-  /**
-   * Adds the defaults of every reference item below the given fields.
-   *
-   * @param array $fields
-   *   A fields map of the template, at any depth.
-   * @param array $byBundle
-   *   The map being built, keyed by entity type ID and bundle. A field
-   *   already present for a bundle is kept.
-   */
-  private function collectItemDefaults(array $fields, array &$byBundle): void {
-    foreach ($fields as $fieldConfig) {
-      if (!is_array($fieldConfig) || !is_array($fieldConfig['items'] ?? NULL)) {
-        continue;
-      }
-      foreach ($fieldConfig['items'] as $item) {
-        if (!is_array($item) || empty($item['entity_type']) || empty($item['bundle'])) {
-          continue;
-        }
-        if (!empty($item['defaults'])) {
-          $byBundle[$item['entity_type']][$item['bundle']] =
-            ($byBundle[$item['entity_type']][$item['bundle']] ?? []) + $item['defaults'];
-        }
-        $this->collectItemDefaults($item['fields'] ?? [], $byBundle);
-      }
-    }
   }
 
   /**
@@ -172,118 +146,44 @@ final class AiDraftingTemplate extends ConfigEntityBase implements AiDraftingTem
    */
   public function validate(): ConstraintViolationListInterface {
     $violations = $this->getTypedData()->validate();
+    $entityFieldManager = \Drupal::service(EntityFieldManagerInterface::class);
 
-    $this->validateRequiredFields(
-      $violations,
-      'node',
-      $this->content_type,
-      $this->fields,
-      $this->defaults,
-    );
+    $this->walk(function (string $entityTypeId, string $bundle, array $fields, array $defaults, string $path) use ($violations, $entityFieldManager): void {
+      $covered = array_unique([...array_keys($fields), ...array_keys($defaults)]);
+
+      foreach ($entityFieldManager->getFieldDefinitions($entityTypeId, $bundle) as $fieldName => $definition) {
+        if (
+          !$definition->isRequired() ||
+          $definition->isComputed() ||
+          $definition->isReadOnly() ||
+          !$definition->isDisplayConfigurable('form') ||
+          $definition->getDefaultValueLiteral() !== [] ||
+          $definition->getDefaultValueCallback() ||
+          in_array($fieldName, $covered, TRUE)
+        ) {
+          continue;
+        }
+
+        $fieldPath = $path === '' ? $fieldName : "$path > fields > $fieldName";
+        $violations->add(new ConstraintViolation(
+          sprintf(
+            "Required field '%s' is missing from template fields or defaults on content type '%s'",
+            $fieldPath,
+            $bundle,
+          ),
+          "Required field '@field' is missing from template fields or defaults on content type '@bundle'",
+          [
+            '@field' => $fieldPath,
+            '@bundle' => $bundle,
+          ],
+          $this,
+          $path === '' ? "fields.$fieldName" : "$path.fields.$fieldName",
+          NULL,
+        ));
+      }
+    });
 
     return $violations;
-  }
-
-  /**
-   * Validates that required fields are covered by fields or defaults.
-   *
-   * @param \Symfony\Component\Validator\ConstraintViolationListInterface $violations
-   *   The validation violation list.
-   * @param string $entity_type_id
-   *   The entity type ID.
-   * @param string $bundle
-   *   The bundle ID.
-   * @param array<string, mixed> $fields
-   *   The template field definitions.
-   * @param array<string, mixed> $defaults
-   *   The template default definitions.
-   * @param string $path_prefix
-   *   The nested property path prefix.
-   */
-  private function validateRequiredFields(
-    ConstraintViolationListInterface $violations,
-    string $entity_type_id,
-    string $bundle,
-    array $fields,
-    array $defaults,
-    string $path_prefix = '',
-  ): void {
-    $entity_field_manager = \Drupal::service(EntityFieldManagerInterface::class);
-
-    $field_definitions = $entity_field_manager
-      ->getFieldDefinitions($entity_type_id, $bundle);
-
-    $defined_field_names = array_unique([
-      ...array_keys($fields),
-      ...array_keys($defaults),
-    ]);
-
-    foreach ($field_definitions as $field_name => $field_definition) {
-      if (
-        !$field_definition->isRequired() ||
-        $field_definition->isComputed() ||
-        $field_definition->isReadOnly() ||
-        !$field_definition->isDisplayConfigurable('form') ||
-        $field_definition->getDefaultValueLiteral() !== [] ||
-        $field_definition->getDefaultValueCallback() ||
-        in_array($field_name, $defined_field_names, TRUE)
-      ) {
-        continue;
-      }
-
-      $field_path = $path_prefix === ''
-        ? $field_name
-        : "$path_prefix > fields > $field_name";
-
-      $violations->add(new ConstraintViolation(
-        sprintf(
-          "Required field '%s' is missing from template fields or defaults on content type '%s'",
-          $field_path,
-          $bundle,
-        ),
-        "Required field '@field' is missing from template fields or defaults on content type '@bundle'",
-        [
-          '@field' => $field_path,
-          '@bundle' => $bundle,
-        ],
-        $this,
-        $path_prefix === '' ? "fields.$field_name" : "$path_prefix.fields.$field_name",
-        NULL,
-      ));
-    }
-
-    foreach ($fields as $field_name => $field_config) {
-      if (
-        empty($field_config['items']) ||
-        !is_array($field_config['items'])
-      ) {
-        continue;
-      }
-
-      foreach ($field_config['items'] as $delta => $item) {
-        if (!is_array($item)) {
-          continue;
-        }
-
-        $target_entity_type_id = $item['entity_type'] ?? NULL;
-        $target_bundle = $item['bundle'] ?? NULL;
-
-        if (!$target_entity_type_id || !$target_bundle) {
-          continue;
-        }
-
-        $this->validateRequiredFields(
-          $violations,
-          $target_entity_type_id,
-          $target_bundle,
-          $item['fields'] ?? [],
-          $item['defaults'] ?? [],
-          $path_prefix === ''
-            ? "$field_name.items[$delta]"
-            : "$path_prefix > fields > $field_name.items[$delta]",
-        );
-      }
-    }
   }
 
   /**
@@ -341,233 +241,132 @@ final class AiDraftingTemplate extends ConfigEntityBase implements AiDraftingTem
    */
   public function calculateDependencies() {
     parent::calculateDependencies();
+    $entityFieldManager = \Drupal::service(EntityFieldManagerInterface::class);
 
-    $storage = $this->entityTypeManager()->getStorage('node_type');
-    $content_type = $storage->load($this->content_type);
-    $name = $content_type->getConfigDependencyName();
+    $this->walk(function (string $entityTypeId, string $bundle, array $fields, array $defaults) use ($entityFieldManager): void {
+      $bundleEntityTypeId = $this->entityTypeManager()->getDefinition($entityTypeId)->getBundleEntityType();
+      $bundleEntity = $bundleEntityTypeId
+        ? $this->entityTypeManager()->getStorage($bundleEntityTypeId)->load($bundle)
+        : NULL;
+      if ($bundleEntity) {
+        $this->addDependency('config', $bundleEntity->getConfigDependencyName());
+      }
 
-    $this->addDependency('config', $name);
-
-    $this->addFieldDependencies('node', $this->content_type, $this->fields, $this->defaults);
+      $fieldDefinitions = $entityFieldManager->getFieldDefinitions($entityTypeId, $bundle);
+      foreach (array_unique([...array_keys($fields), ...array_keys($defaults)]) as $fieldName) {
+        $definition = $fieldDefinitions[$fieldName] ?? NULL;
+        if ($definition instanceof FieldConfigInterface) {
+          $this->addDependency('config', $definition->getConfigDependencyName());
+        }
+      }
+    });
 
     return $this;
   }
 
   /**
-   * Recursively adds config dependencies for referenced fields and bundles.
-   *
-   * @param string $entity_type_id
-   *   The entity type ID.
-   * @param string $bundle
-   *   The bundle ID.
-   * @param array<string, mixed> $fields
-   *   The template field definitions.
-   * @param array<string, mixed> $defaults
-   *   The template default definitions.
-   */
-  private function addFieldDependencies(
-    string $entity_type_id,
-    string $bundle,
-    array $fields,
-    array $defaults,
-  ): void {
-    $entity_field_manager = \Drupal::service(EntityFieldManagerInterface::class);
-    $field_definitions = $entity_field_manager->getFieldDefinitions($entity_type_id, $bundle);
-
-    $defined_field_names = array_unique([
-      ...array_keys($fields),
-      ...array_keys($defaults),
-    ]);
-
-    foreach ($defined_field_names as $field_name) {
-      $field_definition = $field_definitions[$field_name] ?? NULL;
-      if ($field_definition instanceof FieldConfigInterface) {
-        $this->addDependency('config', $field_definition->getConfigDependencyName());
-      }
-    }
-
-    foreach ($fields as $field_config) {
-      if (empty($field_config['items']) || !is_array($field_config['items'])) {
-        continue;
-      }
-
-      foreach ($field_config['items'] as $item) {
-        if (!is_array($item)) {
-          continue;
-        }
-
-        $target_entity_type_id = $item['entity_type'] ?? NULL;
-        $target_bundle = $item['bundle'] ?? NULL;
-
-        if (!$target_entity_type_id || !$target_bundle) {
-          continue;
-        }
-
-        $bundle_entity_type_id = $this->entityTypeManager()
-          ->getDefinition($target_entity_type_id)
-          ->getBundleEntityType();
-
-        if ($bundle_entity_type_id) {
-          $bundle_entity = $this->entityTypeManager()
-            ->getStorage($bundle_entity_type_id)
-            ->load($target_bundle);
-          if ($bundle_entity) {
-            $this->addDependency('config', $bundle_entity->getConfigDependencyName());
-          }
-        }
-
-        $this->addFieldDependencies(
-          $target_entity_type_id,
-          $target_bundle,
-          $item['fields'] ?? [],
-          $item['defaults'] ?? [],
-        );
-      }
-    }
-  }
-
-  /**
    * {@inheritdoc}
    *
-   * Removes references to deleted fields and bundles from the template.
+   * Removes deleted fields from every level's fields and defaults, and
+   * reference items whose bundle was deleted.
    */
   public function onDependencyRemoval(array $dependencies): bool {
     $changed = parent::onDependencyRemoval($dependencies);
 
+    $removedFields = [];
+    $removedBundles = [];
     foreach ($dependencies['config'] ?? [] as $entity) {
       if ($entity instanceof FieldConfigInterface) {
-        $changed = $this->stripField(
-          $this->fields,
-          $this->defaults,
-          'node',
-          $this->content_type,
-          $entity->getTargetEntityTypeId(),
-          $entity->getTargetBundle(),
-          $entity->getName(),
-        ) || $changed;
-        continue;
+        $removedFields[$entity->getTargetEntityTypeId()][$entity->getTargetBundle()][] = $entity->getName();
       }
-      if ($entity instanceof ConfigEntityInterface) {
-        $bundle_of = $entity->getEntityType()->getBundleOf();
-        if ($bundle_of !== NULL) {
-          $changed = $this->stripItemsOfBundle($this->fields, $bundle_of, (string) $entity->id()) || $changed;
-        }
+      elseif ($entity instanceof ConfigEntityInterface && $entity->getEntityType()->getBundleOf() !== NULL) {
+        $removedBundles[$entity->getEntityType()->getBundleOf()][] = (string) $entity->id();
       }
     }
+    if ($removedFields === [] && $removedBundles === []) {
+      return $changed;
+    }
+
+    $this->walk(function (string $entityTypeId, string $bundle, array &$fields, array &$defaults) use ($removedFields, $removedBundles, &$changed): void {
+      foreach ($removedFields[$entityTypeId][$bundle] ?? [] as $fieldName) {
+        if (array_key_exists($fieldName, $fields)) {
+          unset($fields[$fieldName]);
+          $changed = TRUE;
+        }
+        if (array_key_exists($fieldName, $defaults)) {
+          unset($defaults[$fieldName]);
+          $changed = TRUE;
+        }
+      }
+
+      foreach ($fields as &$fieldConfig) {
+        if (!is_array($fieldConfig) || !is_array($fieldConfig['items'] ?? NULL)) {
+          continue;
+        }
+        $kept = array_values(array_filter(
+          $fieldConfig['items'],
+          static fn ($item) => !is_array($item)
+            || !in_array($item['bundle'] ?? NULL, $removedBundles[$item['entity_type'] ?? ''] ?? [], TRUE),
+        ));
+        if (count($kept) !== count($fieldConfig['items'])) {
+          $fieldConfig['items'] = $kept;
+          $changed = TRUE;
+        }
+      }
+      unset($fieldConfig);
+    });
 
     return $changed;
   }
 
   /**
-   * Recursively removes a field from a fields/defaults definition pair.
+   * Calls a visitor on every entity level of the template, the node first.
    *
-   * @param array<string, mixed> $fields
-   *   The field definitions of the current level, altered by reference.
-   * @param array<string, mixed> $defaults
-   *   The default definitions of the current level, altered by reference.
-   * @param string $host_entity_type_id
-   *   The entity type the current level describes.
-   * @param string $host_bundle
-   *   The bundle the current level describes.
-   * @param string $target_entity_type_id
-   *   The entity type of the deleted field.
-   * @param string $target_bundle
-   *   The bundle of the deleted field.
-   * @param string $field_name
-   *   The deleted field name.
+   * Levels are visited depth first, in document order. A level's reference
+   * items are read after the visitor ran, so items it removes are skipped.
    *
-   * @return bool
-   *   TRUE if anything was removed.
+   * @param callable $visit
+   *   Receives the level's entity type ID, bundle, fields map, defaults map
+   *   and property path. Declare the maps by reference to alter them.
    */
-  private function stripField(
-    array &$fields,
-    array &$defaults,
-    string $host_entity_type_id,
-    string $host_bundle,
-    string $target_entity_type_id,
-    string $target_bundle,
-    string $field_name,
-  ): bool {
-    $changed = FALSE;
+  private function walk(callable $visit): void {
+    $this->walkLevel($visit, 'node', $this->content_type, $this->fields, $this->defaults, '');
+  }
 
-    if ($host_entity_type_id === $target_entity_type_id && $host_bundle === $target_bundle) {
-      if (array_key_exists($field_name, $fields)) {
-        unset($fields[$field_name]);
-        $changed = TRUE;
-      }
-      if (array_key_exists($field_name, $defaults)) {
-        unset($defaults[$field_name]);
-        $changed = TRUE;
-      }
-    }
+  /**
+   * Visits one level and recurses into its reference items.
+   */
+  private function walkLevel(callable $visit, string $entityTypeId, string $bundle, array &$fields, array &$defaults, string $path): void {
+    $visit($entityTypeId, $bundle, $fields, $defaults, $path);
 
-    foreach ($fields as &$field_config) {
-      if (!is_array($field_config) || empty($field_config['items']) || !is_array($field_config['items'])) {
+    foreach ($fields as $fieldName => &$fieldConfig) {
+      if (!is_array($fieldConfig) || !is_array($fieldConfig['items'] ?? NULL)) {
         continue;
       }
-      foreach ($field_config['items'] as &$item) {
-        if (!is_array($item) || empty($item['entity_type']) || empty($item['bundle']) || !is_array($item['fields'] ?? NULL)) {
+      foreach ($fieldConfig['items'] as $delta => &$item) {
+        if (!is_array($item) || empty($item['entity_type']) || empty($item['bundle'])) {
           continue;
         }
-        $item_defaults = [];
-        $changed = $this->stripField(
-          $item['fields'],
-          $item_defaults,
+        $itemFields = is_array($item['fields'] ?? NULL) ? $item['fields'] : [];
+        $itemDefaults = is_array($item['defaults'] ?? NULL) ? $item['defaults'] : [];
+        $this->walkLevel(
+          $visit,
           $item['entity_type'],
           $item['bundle'],
-          $target_entity_type_id,
-          $target_bundle,
-          $field_name,
-        ) || $changed;
-      }
-    }
-
-    return $changed;
-  }
-
-  /**
-   * Recursively removes reference items targeting a deleted bundle.
-   *
-   * @param array<string, mixed> $fields
-   *   The field definitions of the current level, altered by reference.
-   * @param string $entity_type_id
-   *   The entity type of the deleted bundle.
-   * @param string $bundle
-   *   The deleted bundle machine name.
-   *
-   * @return bool
-   *   TRUE if anything was removed.
-   */
-  private function stripItemsOfBundle(array &$fields, string $entity_type_id, string $bundle): bool {
-    $changed = FALSE;
-
-    foreach ($fields as &$field_config) {
-      if (!is_array($field_config) || empty($field_config['items']) || !is_array($field_config['items'])) {
-        continue;
-      }
-
-      $kept = [];
-      foreach ($field_config['items'] as $item) {
-        if (
-          is_array($item) &&
-          ($item['entity_type'] ?? NULL) === $entity_type_id &&
-          ($item['bundle'] ?? NULL) === $bundle
-        ) {
-          $changed = TRUE;
-          continue;
+          $itemFields,
+          $itemDefaults,
+          $path === '' ? "$fieldName.items[$delta]" : "$path > fields > $fieldName.items[$delta]",
+        );
+        if (is_array($item['fields'] ?? NULL)) {
+          $item['fields'] = $itemFields;
         }
-        $kept[] = $item;
-      }
-      $field_config['items'] = $kept;
-
-      foreach ($field_config['items'] as &$item) {
-        if (is_array($item) && is_array($item['fields'] ?? NULL)) {
-          $changed = $this->stripItemsOfBundle($item['fields'], $entity_type_id, $bundle) || $changed;
+        if (is_array($item['defaults'] ?? NULL)) {
+          $item['defaults'] = $itemDefaults;
         }
       }
+      unset($item);
     }
-
-    return $changed;
+    unset($fieldConfig);
   }
 
 }
