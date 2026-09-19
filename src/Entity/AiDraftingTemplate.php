@@ -4,15 +4,12 @@ declare(strict_types=1);
 
 namespace Drupal\oe_ai_assistant\Entity;
 
-use Drupal\Component\Datetime\TimeInterface;
 use Drupal\Core\Config\Entity\ConfigEntityBase;
 use Drupal\Core\Config\Entity\ConfigEntityInterface;
 use Drupal\Core\Entity\Attribute\ConfigEntityType;
 use Drupal\Core\Entity\EntityDeleteForm;
 use Drupal\Core\Entity\EntityFieldManagerInterface;
 use Drupal\Core\Entity\EntityStorageInterface;
-use Drupal\Core\Entity\EntityTypeManagerInterface;
-use Drupal\Core\Field\FieldDefinitionInterface;
 use Drupal\Core\StringTranslation\TranslatableMarkup;
 use Drupal\field\FieldConfigInterface;
 use Drupal\oe_ai_assistant\AiDraftingTemplateInterface;
@@ -141,113 +138,40 @@ final class AiDraftingTemplate extends ConfigEntityBase implements AiDraftingTem
   /**
    * {@inheritdoc}
    */
-  public function resolveDefaults(): array {
-    $time = \Drupal::service(TimeInterface::class);
-    $resolved = $this->resolveDefaultTokens($this->defaults, $time->getRequestTime());
-
-    return $this->resolveDefaultsFor($resolved, 'node', $this->content_type);
+  public function getDefaultsByBundle(): array {
+    $byBundle = [];
+    if ($this->defaults !== []) {
+      $byBundle['node'][$this->content_type] = $this->defaults;
+    }
+    $this->collectItemDefaults($this->fields, $byBundle);
+    return $byBundle;
   }
 
   /**
-   * {@inheritdoc}
-   */
-  public function resolveItemDefaults(array $rawDefaults, string $entityTypeId, string $bundle): array {
-    $time = \Drupal::service(TimeInterface::class);
-    $resolved = $this->resolveDefaultTokens($rawDefaults, $time->getRequestTime());
-
-    return $this->resolveDefaultsFor($resolved, $entityTypeId, $bundle);
-  }
-
-  /**
-   * Resolves target_uuid entries to target_id across a defaults map.
+   * Adds the defaults of every reference item below the given fields.
    *
-   * @param array<string, mixed> $defaults
-   *   A defaults map, token-resolved, shaped {field_name: {default_value:
-   *   [...]}}.
-   * @param string $entityTypeId
-   *   The entity type ID that owns these fields.
-   * @param string $bundle
-   *   The bundle that owns these fields.
-   *
-   * @return array<string, mixed>
-   *   The defaults map with target_uuid resolved to target_id.
+   * @param array $fields
+   *   A fields map of the template, at any depth.
+   * @param array $byBundle
+   *   The map being built, keyed by entity type ID and bundle. A field
+   *   already present for a bundle is kept.
    */
-  private function resolveDefaultsFor(array $defaults, string $entityTypeId, string $bundle): array {
-    $entityFieldManager = \Drupal::service(EntityFieldManagerInterface::class);
-    $fieldDefinitions = $entityFieldManager->getFieldDefinitions($entityTypeId, $bundle);
-
-    foreach ($defaults as $fieldName => &$default) {
-      if (
-        !isset($fieldDefinitions[$fieldName]) ||
-        !isset($default['default_value']) ||
-        !is_array($default['default_value'])
-      ) {
+  private function collectItemDefaults(array $fields, array &$byBundle): void {
+    foreach ($fields as $fieldConfig) {
+      if (!is_array($fieldConfig) || !is_array($fieldConfig['items'] ?? NULL)) {
         continue;
       }
-
-      $default['default_value'] = $this->resolveEntityReferenceDefaultValue(
-        $default['default_value'],
-        $fieldDefinitions[$fieldName],
-        $entityTypeId,
-        $bundle,
-      );
-    }
-
-    return $defaults;
-  }
-
-  /**
-   * Resolves target_uuid entries to target_id via core's own mechanism.
-   *
-   * Mirrors FieldDefaultValueConstraintValidator's identical helper: reuses
-   * core's field-config-default resolution path
-   * ($itemClass::processDefaultValue()) rather than reimplementing UUID
-   * lookup. Duplicated deliberately rather than shared, per design decision.
-   *
-   * @param array $rawValue
-   *   The raw default_value sequence.
-   * @param \Drupal\Core\Field\FieldDefinitionInterface $fieldDefinition
-   *   The real field definition the default applies to.
-   * @param string $entityTypeId
-   *   The entity type ID that owns the field.
-   * @param string $bundle
-   *   The bundle that owns the field.
-   *
-   * @return array
-   *   The default_value sequence with target_uuid resolved to target_id.
-   *
-   * @throws \RuntimeException
-   *   If a target_uuid does not resolve to an existing entity.
-   */
-  private function resolveEntityReferenceDefaultValue(array $rawValue, FieldDefinitionInterface $fieldDefinition, string $entityTypeId, string $bundle): array {
-    $hasUuidReference = FALSE;
-    foreach ($rawValue as $item) {
-      if (is_array($item) && array_key_exists('target_uuid', $item)) {
-        $hasUuidReference = TRUE;
-        break;
+      foreach ($fieldConfig['items'] as $item) {
+        if (!is_array($item) || empty($item['entity_type']) || empty($item['bundle'])) {
+          continue;
+        }
+        if (!empty($item['defaults'])) {
+          $byBundle[$item['entity_type']][$item['bundle']] =
+            ($byBundle[$item['entity_type']][$item['bundle']] ?? []) + $item['defaults'];
+        }
+        $this->collectItemDefaults($item['fields'] ?? [], $byBundle);
       }
     }
-    if (!$hasUuidReference) {
-      return $rawValue;
-    }
-
-    $entityTypeManager = \Drupal::service(EntityTypeManagerInterface::class);
-    $bundleKey = $entityTypeManager->getDefinition($entityTypeId)->getKey('bundle');
-    $scratch = $bundleKey
-      ? $entityTypeManager->getStorage($entityTypeId)->create([$bundleKey => $bundle])
-      : $entityTypeManager->getStorage($entityTypeId)->create();
-
-    $fieldItemListClass = $fieldDefinition->getClass();
-    $resolved = $fieldItemListClass::processDefaultValue($rawValue, $scratch, $fieldDefinition);
-
-    if (count($resolved) < count($rawValue)) {
-      throw new \RuntimeException(sprintf(
-        "One or more target_uuid values for field '%s' do not reference an existing entity.",
-        $fieldDefinition->getName(),
-      ));
-    }
-
-    return $resolved;
   }
 
   /**
@@ -419,30 +343,6 @@ final class AiDraftingTemplate extends ConfigEntityBase implements AiDraftingTem
         '%outcome' => $outcome,
         '%errors' => implode("\n- ", $errors),
       ],
-    );
-  }
-
-  /**
-   * Recursively replaces supported token strings in default values.
-   *
-   * @param mixed $value
-   *   The default value or nested value.
-   * @param int $now
-   *   The Unix timestamp to use for __NOW__.
-   *
-   * @return mixed
-   *   The value with tokens resolved.
-   */
-  private function resolveDefaultTokens(mixed $value, int $now): mixed {
-    if ($value === '__NOW__') {
-      return $now;
-    }
-    if (!is_array($value)) {
-      return $value;
-    }
-    return array_map(
-      fn(mixed $item): mixed => $this->resolveDefaultTokens($item, $now),
-      $value,
     );
   }
 

@@ -24,6 +24,7 @@ class DraftAssembler implements DraftAssemblerInterface {
     private readonly AccountProxyInterface $currentUser,
     private readonly DraftingSchemaProviderInterface $schemaProvider,
     private readonly DraftEntityBuilder $draftEntityBuilder,
+    private readonly TemplateDefaultsResolverInterface $defaultsResolver,
     #[Autowire(service: 'logger.channel.oe_ai_assistant')]
     private readonly LoggerInterface $logger,
   ) {}
@@ -54,7 +55,6 @@ class DraftAssembler implements DraftAssemblerInterface {
       );
     }
 
-    $mergedFields = $fields;
     $template = NULL;
     if ($templateId !== NULL && $templateId !== '') {
       try {
@@ -63,27 +63,17 @@ class DraftAssembler implements DraftAssemblerInterface {
       catch (\InvalidArgumentException $e) {
         throw new ActionException('invalid_request', $e->getMessage(), 400);
       }
-      if ($template !== NULL) {
-        // resolveDefaults() mirrors the raw config shape defined by
-        // oe_ai_assistant.ai_drafting_template_default in
-        // config/schema/oe_ai_assistant.schema.yml: each field's value list
-        // is wrapped in a 'default_value' key. Unwrap it here so the merged
-        // map is a flat field-name => value-list map, the shape
-        // fromLlmFields() expects.
-        $resolvedDefaults = array_map(
-          static fn (array $default) => $default['default_value'],
-          $template->resolveDefaults(),
-        );
-        // Template defaults win on collision, so editors keep control over
-        // the values a template pins regardless of what the LLM produced.
-        $mergedFields = $resolvedDefaults + $fields;
-      }
     }
 
+    $mergedFields = $fields;
     try {
       if ($template !== NULL) {
-        $itemDefaults = $this->collectItemDefaults($template->getFields(), $template);
-        $mergedFields = $this->applyItemDefaults($mergedFields, 'node', $bundle, $itemDefaults);
+        $mergedFields = $this->applyDefaults(
+          $fields,
+          'node',
+          $bundle,
+          $this->resolveDefaultsByBundle($template),
+        );
       }
       $built = $this->draftEntityBuilder->fromLlmFields('node', $bundle, $mergedFields);
     }
@@ -122,39 +112,51 @@ class DraftAssembler implements DraftAssemblerInterface {
   }
 
   /**
-   * Collects item defaults declared anywhere in the template, keyed by bundle.
+   * Resolves all template defaults, keyed by entity type and bundle.
    *
-   * @return array<string, array<string, mixed>>
-   *   Field name => value list maps keyed by "entity_type:bundle".
+   * @return array
+   *   Resolved value lists keyed by entity type ID, bundle and field name, in
+   *   the shape DraftEntityBuilder::fromLlmFields() takes.
    */
-  private function collectItemDefaults(array $templateFields, AiDraftingTemplateInterface $template): array {
-    $defaults = [];
-    foreach ($templateFields as $fieldConfig) {
-      foreach ($fieldConfig['items'] ?? [] as $item) {
-        $key = $item['entity_type'] . ':' . $item['bundle'];
-        if (!empty($item['defaults'])) {
-          $defaults[$key] = ($defaults[$key] ?? []) + array_map(
-            static fn (array $default) => $default['default_value'],
-            $template->resolveItemDefaults($item['defaults'], $item['entity_type'], $item['bundle']),
-          );
-        }
-        $defaults += $this->collectItemDefaults($item['fields'] ?? [], $template);
+  private function resolveDefaultsByBundle(AiDraftingTemplateInterface $template): array {
+    $resolved = [];
+    foreach ($template->getDefaultsByBundle() as $entityTypeId => $bundles) {
+      foreach ($bundles as $bundle => $defaults) {
+        $resolved[$entityTypeId][$bundle] = array_map(
+          static fn (array $default) => $default['default_value'],
+          $this->defaultsResolver->resolve($defaults, $entityTypeId, $bundle),
+        );
       }
     }
-    return $defaults;
+    return $resolved;
   }
 
   /**
-   * Applies item defaults to every inline entity of a defaulted bundle.
+   * Merges defaults into the fields and into every inline entity below them.
    *
-   * Walks the LLM output through the entity reference fields of each bundle,
-   * so a default declared once for a bundle lands on all its items at any
-   * depth. Defaults win on collision, as node-level defaults do.
+   * A default wins over a drafted value for the same field, so editors keep
+   * control over the values a template pins. Inline entities are matched by
+   * bundle, so a default declared once applies to every item of that bundle
+   * at any depth.
+   *
+   * @param array $fields
+   *   A fields map in the serialization shape of the given bundle.
+   * @param string $entityTypeId
+   *   The entity type the fields belong to.
+   * @param string $bundle
+   *   The bundle the fields belong to.
+   * @param array $defaultsByBundle
+   *   Resolved value lists keyed by entity type ID, bundle and field name.
+   *
+   * @return array
+   *   The fields map with defaults merged in.
    */
-  private function applyItemDefaults(array $fields, string $entityTypeId, string $bundle, array $itemDefaults): array {
-    if ($itemDefaults === []) {
+  private function applyDefaults(array $fields, string $entityTypeId, string $bundle, array $defaultsByBundle): array {
+    if ($defaultsByBundle === []) {
       return $fields;
     }
+    $fields = ($defaultsByBundle[$entityTypeId][$bundle] ?? []) + $fields;
+
     $definitions = $this->entityFieldManager->getFieldDefinitions($entityTypeId, $bundle);
     foreach ($fields as $fieldName => &$items) {
       $targetType = isset($definitions[$fieldName]) ? $definitions[$fieldName]->getSetting('target_type') : NULL;
@@ -162,13 +164,15 @@ class DraftAssembler implements DraftAssemblerInterface {
         continue;
       }
       $bundleKey = $this->entityTypeManager->getDefinition($targetType)->getKey('bundle');
+      if (!$bundleKey) {
+        continue;
+      }
       foreach ($items as &$item) {
-        $itemBundle = $bundleKey && is_array($item) ? ($item[$bundleKey][0]['target_id'] ?? NULL) : NULL;
+        $itemBundle = is_array($item) ? ($item[$bundleKey][0]['target_id'] ?? NULL) : NULL;
         if ($itemBundle === NULL) {
           continue;
         }
-        $item = ($itemDefaults["$targetType:$itemBundle"] ?? []) + $item;
-        $item = $this->applyItemDefaults($item, $targetType, $itemBundle, $itemDefaults);
+        $item = $this->applyDefaults($item, $targetType, $itemBundle, $defaultsByBundle);
       }
     }
     return $fields;

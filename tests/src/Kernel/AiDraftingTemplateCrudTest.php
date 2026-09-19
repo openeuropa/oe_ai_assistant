@@ -1052,99 +1052,6 @@ class AiDraftingTemplateCrudTest extends KernelTestBase {
   }
 
   /**
-   * Tests that __NOW__ in defaults is replaced with the current Unix timestamp.
-   */
-  public function testResolveDefaultsNowTokenIsReplaced(): void {
-    $expectedTime = $this->container->get('datetime.time')->getRequestTime();
-
-    $template = $this->buildTemplate('oe_news', [], [
-      'created' => [
-        'default_value' => [['value' => '__NOW__']],
-      ],
-      'langcode' => [
-        'default_value' => [['value' => 'en']],
-      ],
-    ]);
-    $resolved = $template->resolveDefaults();
-
-    $this->assertSame($expectedTime, $resolved['created']['default_value'][0]['value']);
-    $this->assertSame('en', $resolved['langcode']['default_value'][0]['value']);
-  }
-
-  /**
-   * Tests that defaults without tokens are returned unchanged.
-   */
-  public function testResolveDefaultsNoTokensIsPassthrough(): void {
-    $defaults = [
-      'langcode' => [
-        'default_value' => [['value' => 'en']],
-      ],
-    ];
-    $template = $this->buildTemplate('oe_news', [], $defaults);
-    $this->assertSame($defaults, $template->resolveDefaults());
-  }
-
-  /**
-   * Tests that resolveDefaults() resolves a top-level target_uuid.
-   */
-  public function testResolveDefaultsResolvesTopLevelTargetUuid(): void {
-    $contact = $this->createContactNode();
-
-    $template = $this->buildTemplate('oe_news', [], [
-      'field_contacts' => [
-        'default_value' => [
-          ['target_uuid' => $contact->uuid()],
-        ],
-      ],
-    ]);
-
-    $resolved = $template->resolveDefaults();
-
-    $this->assertSame(
-      (int) $contact->id(),
-      $resolved['field_contacts']['default_value'][0]['target_id']
-    );
-    $this->assertArrayNotHasKey('target_uuid', $resolved['field_contacts']['default_value'][0]);
-  }
-
-  /**
-   * Tests that resolveItemDefaults() resolves an item-level target_uuid.
-   */
-  public function testResolveItemDefaultsResolvesTargetUuid(): void {
-    $manager = $this->createContactNode('Contact Manager');
-
-    $template = $this->buildTemplate('oe_news', []);
-    $resolved = $template->resolveItemDefaults([
-      'field_contact_manager' => [
-        'default_value' => [
-          ['target_uuid' => $manager->uuid()],
-        ],
-      ],
-    ], 'node', 'oe_contact');
-
-    $this->assertSame(
-      (int) $manager->id(),
-      $resolved['field_contact_manager']['default_value'][0]['target_id']
-    );
-  }
-
-  /**
-   * Tests that resolveItemDefaults() passes target_id values through.
-   */
-  public function testResolveItemDefaultsPassthroughForTargetId(): void {
-    $template = $this->buildTemplate('oe_news', []);
-    $defaults = [
-      'field_contact_manager' => [
-        'default_value' => [
-          ['target_id' => 42],
-        ],
-      ],
-    ];
-
-    $this->assertSame($defaults, $template->resolveItemDefaults($defaults, 'node', 'oe_contact'));
-  }
-
-  /**
    * Tests that saving a template with an invalid field throws an exception.
    */
   public function testSavingInvalidTemplateThrowsTemplateValidationException(): void {
@@ -1496,6 +1403,78 @@ class AiDraftingTemplateCrudTest extends KernelTestBase {
     $this->assertSame($contacts, $fields['field_contacts']);
     $this->assertCount(1, $fields['field_content_paragraphs']['items']);
     $this->assertSame('text_block', $fields['field_content_paragraphs']['items'][0]['bundle']);
+  }
+
+  /**
+   * Tests that defaults are collected per bundle, the node included.
+   *
+   * A bundle declared in several items keeps the first declaration of each
+   * field, whatever the depth.
+   */
+  public function testGetDefaultsByBundleCollectsNodeAndItemDefaults(): void {
+    $nested = [
+      'entity_type' => 'paragraph',
+      'bundle' => 'hero',
+      'prompt' => 'Nested hero.',
+      'defaults' => [
+        'field_hero_image' => ['default_value' => [['target_id' => 2]]],
+      ],
+    ];
+    $template = $this->buildTemplate('oe_news', [
+      'title' => ['prompt' => 'Headline.'],
+      'field_content_paragraphs' => [
+        'type' => 'entity_reference_revisions',
+        'items' => [
+          [
+            'entity_type' => 'paragraph',
+            'bundle' => 'hero',
+            'prompt' => 'Hero.',
+            'defaults' => [
+              'field_hero_image' => ['default_value' => [['target_id' => 1]]],
+            ],
+          ],
+          [
+            'entity_type' => 'paragraph',
+            'bundle' => 'section',
+            'prompt' => 'Section.',
+            'fields' => [
+              'field_section_paragraphs' => [
+                'type' => 'entity_reference_revisions',
+                'items' => [
+                  $nested,
+                  [
+                    'entity_type' => 'paragraph',
+                    'bundle' => 'text_block',
+                    'prompt' => 'Text.',
+                    'defaults' => [
+                      'field_text_body' => ['default_value' => [['value' => 'Pinned.']]],
+                    ],
+                  ],
+                ],
+              ],
+            ],
+          ],
+        ],
+      ],
+    ], [
+      'langcode' => ['default_value' => [['value' => 'en']]],
+    ]);
+
+    $this->assertSame([
+      'node' => [
+        'oe_news' => [
+          'langcode' => ['default_value' => [['value' => 'en']]],
+        ],
+      ],
+      'paragraph' => [
+        'hero' => [
+          'field_hero_image' => ['default_value' => [['target_id' => 1]]],
+        ],
+        'text_block' => [
+          'field_text_body' => ['default_value' => [['value' => 'Pinned.']]],
+        ],
+      ],
+    ], $template->getDefaultsByBundle());
   }
 
   /**
