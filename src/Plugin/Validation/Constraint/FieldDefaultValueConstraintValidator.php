@@ -9,9 +9,8 @@ use Drupal\Core\DependencyInjection\AutowireTrait;
 use Drupal\Core\DependencyInjection\ContainerInjectionInterface;
 use Drupal\Core\Entity\EntityFieldManagerInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
-use Drupal\Core\Entity\FieldableEntityInterface;
 use Drupal\Core\Entity\Plugin\Validation\Constraint\ReferenceAccessConstraint;
-use Drupal\Core\Field\FieldDefinitionInterface;
+use Drupal\oe_ai_assistant\Service\TemplateDefaultsResolverInterface;
 use Symfony\Component\Validator\Constraint;
 use Symfony\Component\Validator\ConstraintValidator;
 use Symfony\Component\Validator\Exception\UnexpectedTypeException;
@@ -26,6 +25,7 @@ class FieldDefaultValueConstraintValidator extends ConstraintValidator implement
   public function __construct(
     private readonly EntityFieldManagerInterface $entityFieldManager,
     private readonly EntityTypeManagerInterface $entityTypeManager,
+    private readonly TemplateDefaultsResolverInterface $defaultsResolver,
   ) {}
 
   /**
@@ -69,14 +69,13 @@ class FieldDefaultValueConstraintValidator extends ConstraintValidator implement
       : $this->entityTypeManager->getStorage($entity_type_id)->create();
 
     try {
-      $default_value = $this->resolveEntityReferenceDefaultValue(
-        $default_value, $field_definition, $scratch,
+      $default_value = $this->defaultsResolver->resolveFieldDefaultValue(
+        $default_value, $field_definition, $entity_type_id, $bundle,
       );
 
-      // Validate against a real (unsaved) scratch entity, not a standalone
-      // typed-data object: file/image fields declare a 'ReferenceAccess'
-      // item constraint that unconditionally calls FieldItemList::getEntity(),
-      // which crashes without a parent entity to unwrap.
+      // File and image fields carry a ReferenceAccess constraint that reads
+      // the item's host entity, so the value is validated on an unsaved
+      // entity of the bundle.
       $scratch->set($field_name, $default_value);
       $field = $scratch->get($field_name);
       $violations = $field->validate();
@@ -104,55 +103,6 @@ class FieldDefaultValueConstraintValidator extends ConstraintValidator implement
         ->atPath('default_value')
         ->addViolation();
     }
-  }
-
-  /**
-   * Resolves target_uuid entries to target_id via core's own mechanism.
-   *
-   * Reuses core's field-config-default resolution path:
-   * FieldConfigBase::getDefaultValue() calls
-   * $itemClass::processDefaultValue($default_value, $entity, $definition);
-   * EntityReferenceItem's override converts target_uuid to target_id via
-   * entity.repository, dropping entries whose UUID does not resolve. A
-   * default with no target_uuid entries (including entirely non-reference
-   * fields) is returned unchanged without touching the entity type manager.
-   *
-   * @param array $rawValue
-   *   The raw default_value sequence.
-   * @param \Drupal\Core\Field\FieldDefinitionInterface $fieldDefinition
-   *   The real field definition the default applies to.
-   * @param \Drupal\Core\Entity\FieldableEntityInterface $scratch
-   *   An unsaved scratch entity of the field's own entity type/bundle.
-   *
-   * @return array
-   *   The default_value sequence with target_uuid resolved to target_id.
-   *
-   * @throws \RuntimeException
-   *   If a target_uuid does not resolve to an existing entity.
-   */
-  private function resolveEntityReferenceDefaultValue(array $rawValue, FieldDefinitionInterface $fieldDefinition, FieldableEntityInterface $scratch): array {
-    $hasUuidReference = FALSE;
-    foreach ($rawValue as $item) {
-      if (is_array($item) && array_key_exists('target_uuid', $item)) {
-        $hasUuidReference = TRUE;
-        break;
-      }
-    }
-    if (!$hasUuidReference) {
-      return $rawValue;
-    }
-
-    $fieldItemListClass = $fieldDefinition->getClass();
-    $resolved = $fieldItemListClass::processDefaultValue($rawValue, $scratch, $fieldDefinition);
-
-    if (count($resolved) < count($rawValue)) {
-      throw new \RuntimeException(sprintf(
-        "One or more target_uuid values for field '%s' do not reference an existing entity.",
-        $fieldDefinition->getName(),
-      ));
-    }
-
-    return $resolved;
   }
 
 }
