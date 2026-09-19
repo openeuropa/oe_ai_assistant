@@ -123,11 +123,15 @@ React app mock workflow does not require provider credentials.
 | `ddev phpunit tests/src/ExistingSite/` | Run ExistingSite tests |
 | `ddev phpcs` | Run PHP CodeSniffer with Drupal standards |
 | `ddev dev-tag` | Print a dev release tag inferred from the current branch |
+| `ddev package` | Build the app and zip the module as a release artifact into the project root |
 
 ### Releases
 
 Pushing a tag matching `MAJOR.MINOR.PATCH` triggers the release workflow, which
 builds the React app and publishes a zip with `dist/` as a GitHub release asset.
+To try the same zip on another site without a release, run `ddev package`: it
+writes `oe_ai_assistant-<dev tag>.zip` to the project root, gitignored, from
+the committed HEAD plus a fresh app build.
 
 For testing a branch, use a dev tag: `0.TICKET.YYYYMMDDHHMM`, for example
 `0.5001.202609111602`. Generate one with:
