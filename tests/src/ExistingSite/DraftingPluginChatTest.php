@@ -156,7 +156,7 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
     // Sub-agent responses: one per group (main_fields,
     // field_contacts, field_content_paragraphs).
     MockAiProvider::enqueue(new MockResponse(
-      text: '{"title": [{"value": "Test Title"}], "field_body": [{"value": "<p>Body</p>", "format": "full_html"}]}',
+      text: '{"title": [{"value": "Test Title"}], "field_teaser": [{"value": "Test teaser."}]}',
     ));
     MockAiProvider::enqueue(new MockResponse(
       text: '{"field_contacts": []}',
@@ -314,7 +314,7 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
       ],
     ));
     MockAiProvider::enqueue(new MockResponse(
-      text: '{"title": [{"value": "Test Title"}], "field_body": [{"value": "<p>Body</p>", "format": "full_html"}]}',
+      text: '{"title": [{"value": "Test Title"}], "field_teaser": [{"value": "Test teaser."}]}',
     ));
     MockAiProvider::enqueue(new MockResponse(text: '{"field_contacts": []}'));
     MockAiProvider::enqueue(new MockResponse(text: '{"field_content_paragraphs": []}'));
@@ -780,7 +780,7 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
       ],
     ));
     MockAiProvider::enqueue(new MockResponse(
-      text: '{"title": [{"value": "Test Title"}], "field_body": [{"value": "<p>Body</p>", "format": "full_html"}]}',
+      text: '{"title": [{"value": "Test Title"}], "field_teaser": [{"value": "Test teaser."}]}',
     ));
     MockAiProvider::enqueue(new MockResponse(text: '{"field_contacts": []}'));
     MockAiProvider::enqueue(new MockResponse(text: '{"field_content_paragraphs": []}'));

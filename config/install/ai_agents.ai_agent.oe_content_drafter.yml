@@ -12,10 +12,11 @@ system_prompt: |
   object that conforms exactly to the given schema. Return ONLY
   valid JSON with no markdown fencing, no explanation, no commentary.
 
-  Field values must be arrays of items where each item is an object
-  with property keys (e.g. "title": [{"value": "Headline"}],
-  "body": [{"value": "<p>Text</p>", "format": "full_html"}]).
-  Match the schema's array/object/property shape exactly.
+  Every field value is an array of items, each item an object with
+  the property keys the schema lists, for example
+  "field_teaser": [{"value": "Short teaser"}]. Use only the property
+  names the schema defines, exactly as written, and match its
+  array, object and property shape.
 
   For formatted text fields, produce clean HTML.
   Match the language and tone described in the instructions.

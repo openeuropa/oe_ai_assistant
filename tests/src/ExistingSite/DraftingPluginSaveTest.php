@@ -105,16 +105,12 @@ class DraftingPluginSaveTest extends DraftingPluginTestBase {
   }
 
   /**
-   * Tests that a draft with a field unknown to the bundle can still be saved.
+   * Tests that an answer with a key unknown to the bundle is corrected.
    *
-   * The drafter sub-agent is only steered towards the template's field names
-   * through the structured output schema. When the model ignores it and
-   * answers with a key the bundle does not have (here "body" instead of
-   * "field_body", which is exactly what the drafter's own system prompt uses
-   * as an example), the orchestrator must not record that key as part of the
-   * draft. Otherwise the draft looks fine in the UI and the save fails with an
-   * opaque 400 because the entity builder cannot deserialize the unknown
-   * field.
+   * When the model answers with "body" instead of "field_body", the drafter
+   * rejects the answer against the schema and asks again with the violations.
+   * The recorded draft only carries the template's fields, so the save does
+   * not fail on a field the entity builder cannot deserialize.
    */
   public function testSaveSurvivesDraftWithFieldUnknownToBundle(): void {
     $user = $this->createUser([
@@ -139,9 +135,13 @@ class DraftingPluginSaveTest extends DraftingPluginTestBase {
         ],
       ],
     ));
-    // The main_fields sub-agent ignores the schema and answers with "body".
+    // The main_fields drafter ignores the schema and answers with "body",
+    // then answers correctly once told what was wrong.
     MockAiProvider::enqueue(new MockResponse(
       text: '{"title": [{"value": "Stray key title"}], "body": [{"value": "<p>Text</p>", "format": "full_html"}]}',
+    ));
+    MockAiProvider::enqueue(new MockResponse(
+      text: '{"title": [{"value": "Stray key title"}], "field_teaser": [{"value": "Teaser."}], "field_body": [{"value": "<p>Text</p>", "format": "full_html"}]}',
     ));
 
     $chat = $this->httpPost('/api/ai/plugins/drafting/chat', [
