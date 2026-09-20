@@ -113,8 +113,6 @@ final class DrupalAiProvider implements AIProviderInterface {
       return $this->toMessage($output);
     }
 
-    // A small buffer makes text deltas arrive in small chunks.
-    $normalized->setMaxBufferSize(5);
     foreach ($normalized as $chunk) {
       $text = $chunk->getText();
       if ($text !== '') {

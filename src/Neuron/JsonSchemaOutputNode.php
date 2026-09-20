@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\oe_ai_assistant\Neuron;
 
+use JsonSchema\Constraints\BaseConstraint;
 use JsonSchema\Validator;
 use NeuronAI\Agent\AgentState;
 use NeuronAI\Agent\ChatHistoryHelper;
@@ -43,6 +44,11 @@ final class JsonSchemaOutputNode extends InferenceNode {
   private readonly array $schema;
 
   /**
+   * The same schema as the object tree the validator reads.
+   */
+  private readonly object $schemaObject;
+
+  /**
    * JsonSchemaOutputNode constructor.
    *
    * @param \NeuronAI\Providers\AIProviderInterface $provider
@@ -68,6 +74,7 @@ final class JsonSchemaOutputNode extends InferenceNode {
       'required' => array_keys($schema['properties'] ?? []),
       'additionalProperties' => FALSE,
     ];
+    $this->schemaObject = BaseConstraint::arrayToObjectRecursive($this->schema);
   }
 
   /**
@@ -135,9 +142,8 @@ final class JsonSchemaOutputNode extends InferenceNode {
    */
   private function violations(string $json): array {
     $data = json_decode($json);
-    $schema = json_decode(json_encode($this->schema));
     $validator = new Validator();
-    $validator->validate($data, $schema);
+    $validator->validate($data, $this->schemaObject);
     return array_map(
       static fn (array $error): string => trim(($error['property'] !== '' ? $error['property'] . ': ' : '') . $error['message']),
       $validator->getErrors(),

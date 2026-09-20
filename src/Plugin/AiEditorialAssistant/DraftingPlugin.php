@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Drupal\oe_ai_assistant\Plugin\AiEditorialAssistant;
 
-use Drupal\ai_agents\PluginManager\AiAgentManager;
 use Drupal\Core\Cache\RefinableCacheableDependencyInterface;
 use Drupal\Core\Url;
 use Drupal\file\Upload\InputStreamFileWriterInterface;
@@ -67,13 +66,6 @@ class DraftingPlugin extends AiAssistantPluginBase {
    * The session field that stores the selected drafting template.
    */
   private const string TEMPLATE_FIELD = 'template';
-
-  /**
-   * The AI agent plugin manager.
-   *
-   * @var \Drupal\ai_agents\PluginManager\AiAgentManager
-   */
-  protected AiAgentManager $aiAgentManager;
 
   /**
    * The drafting schema provider.
@@ -148,7 +140,6 @@ class DraftingPlugin extends AiAssistantPluginBase {
     $plugin_definition,
   ): static {
     $instance = parent::create($container, $configuration, $plugin_id, $plugin_definition);
-    $instance->aiAgentManager = $container->get('plugin.manager.ai_agents');
     $instance->schemaProvider = $container->get(DraftingSchemaProviderInterface::class);
     $instance->draftSaver = $container->get(DraftSaverInterface::class);
     $instance->agentFactory = $container->get(AgentFactory::class);
@@ -322,10 +313,10 @@ class DraftingPlugin extends AiAssistantPluginBase {
     // injection and it becomes the provenance snapshot of the produced draft.
     $editorialContext = $this->buildEditorialContext($session, $template);
 
-    $systemPrompt = $this->buildSystemPrompt(
-      $this->aiAgentManager->createInstance('oe_drafting_router')->getSystemPrompt(),
-      $context,
+    $groups = $this->schemaProvider->groups(
+      $context['entityTypeId'], $context['bundle'], $context['template']
     );
+    $routerContext = $this->buildRouterContext($context, $groups);
 
     // The schema tool is pinned to the entity type and bundle of the current
     // editorial context, and the history tool to the session, so the model
@@ -341,20 +332,17 @@ class DraftingPlugin extends AiAssistantPluginBase {
         'session_id' => (string) $session->id(),
       ],
     ];
-    $groups = $this->schemaProvider->groups(
-      $context['entityTypeId'], $context['bundle'], $context['template']
-    );
 
     return $this->uiMessageStream->respond(
       function (UiMessageStreamInterface $stream) use (
-        $message, $systemPrompt, $fixedToolContexts, $groups,
+        $message, $routerContext, $fixedToolContexts, $groups,
         $session, $editorialContext,
       ): void {
         $stream->start();
 
         // The router's history is the persisted transcript: it replays the
         // earlier turns to the model and stores every new turn as a row.
-        $router = $this->agentFactory->router($session, $systemPrompt, $fixedToolContexts, $stream);
+        $router = $this->agentFactory->router($session, $routerContext, $fixedToolContexts, $stream);
         $contextPrompt = $editorialContext->toPrompt();
         $turn = $this->agentFactory->draftingTurn(
           $router,
@@ -885,25 +873,21 @@ class DraftingPlugin extends AiAssistantPluginBase {
   }
 
   /**
-   * Builds the system prompt with content type context and schema.
+   * Renders the content type context and the field groups for the router.
    *
-   * @param string $basePrompt
-   *   The initial prompt.
-   * @param array<int,mixed> $context
-   *   The context to add to the prompt.
+   * @param array $context
+   *   The session context with the entity type id, bundle and template.
+   * @param array $groups
+   *   The schema groups available for drafting.
    */
-  private function buildSystemPrompt(string $basePrompt, array $context): string {
-    $prompt = $basePrompt
-      . "\n\nContent type context:\n"
+  private function buildRouterContext(array $context, array $groups): string {
+    $prompt = "Content type context:\n"
       . "bundle: " . $context['bundle'] . "\n"
       . "entity_type_id: " . $context['entityTypeId'] . "\n";
 
     if (!empty($context['bundle'])) {
-      $groups = $this->schemaProvider->groups(
-        $context['entityTypeId'], $context['bundle'], $context['template']
-      );
       $prompt .= "\nAvailable field groups:\n"
-        . json_encode($groups, JSON_PRETTY_PRINT) . "\n";
+        . json_encode($groups, JSON_PRETTY_PRINT);
     }
 
     return $prompt;

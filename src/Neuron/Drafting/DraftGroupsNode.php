@@ -18,12 +18,12 @@ final class DraftGroupsNode extends Node {
   /**
    * DraftGroupsNode constructor.
    *
-   * @param callable $draftGroup
+   * @param \Closure $draftGroup
    *   Drafts one group, called with the step id, the schema slice, the task
    *   prompt and the parent turn, and returning the decoded field values.
    */
   public function __construct(
-    private readonly mixed $draftGroup,
+    private readonly \Closure $draftGroup,
   ) {}
 
   /**
@@ -59,7 +59,6 @@ final class DraftGroupsNode extends Node {
       }
     }
 
-    $state->set(DraftingTurnWorkflow::PLAN, $plan);
     $state->set(DraftingTurnWorkflow::RESULTS, $results);
 
     return new ConsolidateEvent();

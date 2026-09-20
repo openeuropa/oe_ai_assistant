@@ -22,19 +22,16 @@ class DrupalLogObserver implements ObserverInterface {
    *
    * @param \Psr\Log\LoggerInterface $logger
    *   The logger channel.
-   * @param string $level
-   *   The PSR-3 level every event is logged at.
    */
   public function __construct(
     protected readonly LoggerInterface $logger,
-    protected readonly string $level = LogLevel::DEBUG,
   ) {}
 
   /**
    * {@inheritdoc}
    */
   public function onEvent(string $event, object $source, mixed $data = NULL, ?string $branchId = NULL): void {
-    $this->logger->log($this->level, 'Neuron @event from @source: @data', [
+    $this->logger->log(LogLevel::DEBUG, 'Neuron @event from @source: @data', [
       '@event' => $event,
       '@source' => $source::class,
       '@data' => (string) json_encode($data, JSON_PARTIAL_OUTPUT_ON_ERROR | JSON_UNESCAPED_UNICODE),

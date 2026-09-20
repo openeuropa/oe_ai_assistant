@@ -21,6 +21,11 @@ use Psr\Log\LoggerInterface;
 final class TranscriptObserver extends DrupalLogObserver {
 
   /**
+   * Whether the system prompt row has been recorded for this run.
+   */
+  private bool $systemRecorded = FALSE;
+
+  /**
    * TranscriptObserver constructor.
    *
    * @param \Psr\Log\LoggerInterface $logger
@@ -34,7 +39,7 @@ final class TranscriptObserver extends DrupalLogObserver {
    * @param \Drupal\oe_ai_assistant\Entity\AiConversationMessageInterface|null $parent
    *   The turn the recorded rows nest under, or NULL for top-level turns.
    * @param string|null $systemPrompt
-   *   When given, recorded as a system row before every inference.
+   *   When given, recorded as a system row before the first inference.
    * @param \Drupal\oe_ai_assistant\Service\UiMessageStreamInterface|null $stream
    *   When given, every inference is framed as a step on the stream.
    */
@@ -65,11 +70,12 @@ final class TranscriptObserver extends DrupalLogObserver {
   }
 
   /**
-   * Records the system prompt and opens the step before a model call.
+   * Records the system prompt once and opens the step before a model call.
    */
   private function onInferenceStart(): void {
-    if ($this->systemPrompt !== NULL) {
+    if ($this->systemPrompt !== NULL && !$this->systemRecorded) {
       $this->recorder->recordSystem($this->host, $this->systemPrompt, $this->agentId, $this->parent);
+      $this->systemRecorded = TRUE;
     }
     $this->stream?->startStep($this->agentId);
   }

@@ -37,8 +37,8 @@ final class ContentDrafterAgent extends Agent {
   /**
    * Runs one inference and returns the JSON object matching the schema.
    *
-   * @param \NeuronAI\Chat\Messages\Message|\NeuronAI\Chat\Messages\Message[] $messages
-   *   The task messages.
+   * @param \NeuronAI\Chat\Messages\Message $message
+   *   The task message.
    * @param string $name
    *   The schema name sent to the provider.
    * @param array $schema
@@ -50,8 +50,8 @@ final class ContentDrafterAgent extends Agent {
    * @throws \Throwable
    *   When the provider call fails or the response holds no JSON object.
    */
-  public function draft(Message|array $messages, string $name, array $schema): array {
-    $this->resolveStartEvent()->setMessages(...(is_array($messages) ? $messages : [$messages]));
+  public function draft(Message $message, string $name, array $schema): array {
+    $this->resolveStartEvent()->setMessages($message);
     $this->compose(new JsonSchemaOutputNode($this->resolveProvider(), $name, $schema));
     $state = $this->init()->run();
     return $state->get(JsonSchemaOutputNode::OUTPUT_KEY) ?? [];

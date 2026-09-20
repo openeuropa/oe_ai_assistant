@@ -25,7 +25,6 @@ final class DraftingTurnWorkflow extends Workflow {
   public const PLAN = 'plan';
   public const RESULTS = 'results';
   public const FIELDS = 'fields';
-  public const RESULT = 'result';
 
   /**
    * DraftingTurnWorkflow constructor.
@@ -36,22 +35,22 @@ final class DraftingTurnWorkflow extends Workflow {
    *   The user's message for this turn.
    * @param array $groups
    *   The schema groups, each with groupId, label, fieldNames and schemaSlice.
-   * @param callable $draftGroup
+   * @param \Closure $draftGroup
    *   Drafts one group, called with the step id, the schema slice, the task
    *   prompt and the parent turn, and returning the decoded field values.
-   * @param callable $versionDraft
+   * @param \Closure $versionDraft
    *   Versions and stores the fields, called with the consolidated fields and
    *   the parent turn, returning the result shaped {version, context, fields}.
-   * @param callable $recordConfirmation
+   * @param \Closure $recordConfirmation
    *   Persists the confirmation text, called with that text.
    */
   public function __construct(
     private readonly RouterAgent $router,
     private readonly string $message,
     private readonly array $groups,
-    private readonly mixed $draftGroup,
-    private readonly mixed $versionDraft,
-    private readonly mixed $recordConfirmation,
+    private readonly \Closure $draftGroup,
+    private readonly \Closure $versionDraft,
+    private readonly \Closure $recordConfirmation,
   ) {
     parent::__construct();
   }

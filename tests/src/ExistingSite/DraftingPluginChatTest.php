@@ -197,8 +197,8 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
     $this->assertArrayHasKey('title', $fields,
       'Consolidated fields should include title.');
 
-    // The sub-agent transcript is recorded: the draft_content turn has system
-    // and assistant sub-agent rows nested under it, one pair per group.
+    // The sub-agent transcript is recorded: the draft_content turn has one
+    // system row per group nested under it, followed by the assistant rows.
     $storage = \Drupal::entityTypeManager()
       ->getStorage('ai_conversation_message');
     $storage->resetCache();
@@ -223,14 +223,19 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
     );
     $this->assertGreaterThan(0, $systemCount,
       'Sub-agent system prompts are recorded under the draft turn.');
-    $this->assertSame($systemCount, $assistantCount,
-      'Each sub-agent records both a system and an assistant row.');
+    $this->assertGreaterThanOrEqual($systemCount, $assistantCount,
+      'Each sub-agent records its system row and at least one answer.');
 
-    // Each sub-agent row carries the agent id (the schema group id).
+    // Each sub-agent row carries the agent id (the schema group id), and
+    // each group records its system prompt exactly once.
+    $agentIds = [];
     foreach ($draftNode['children'] as $child) {
-      $this->assertNotEmpty($child['message']->get('agent_id')->value,
-        'Sub-agent rows carry an agent id.');
+      $agentId = $child['message']->get('agent_id')->value;
+      $this->assertNotEmpty($agentId, 'Sub-agent rows carry an agent id.');
+      $agentIds[$agentId] = TRUE;
     }
+    $this->assertCount($systemCount, $agentIds,
+      'One system row is recorded per sub-agent run.');
   }
 
   /**

@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Drupal\oe_ai_assistant\Plugin;
 
-use Drupal\ai\AiProviderPluginManager;
 use Drupal\Component\Plugin\Exception\PluginException;
 use Drupal\Core\Cache\RefinableCacheableDependencyInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
@@ -32,13 +31,6 @@ use Symfony\Component\HttpFoundation\Response;
  * @see \Drupal\oe_ai_assistant\Plugin\AiAssistantPluginManager
  */
 abstract class AiAssistantPluginBase extends PluginBase implements AiAssistantPluginInterface, ContainerFactoryPluginInterface {
-
-  /**
-   * The AI provider plugin manager.
-   *
-   * @var \Drupal\ai\AiProviderPluginManager
-   */
-  protected AiProviderPluginManager $aiProviderManager;
 
   /**
    * The UI message stream service.
@@ -85,7 +77,6 @@ abstract class AiAssistantPluginBase extends PluginBase implements AiAssistantPl
     $plugin_definition,
   ): static {
     $instance = new static($configuration, $plugin_id, $plugin_definition);
-    $instance->aiProviderManager = $container->get('ai.provider');
     $instance->uiMessageStream = $container->get(UiMessageStreamInterface::class);
     $instance->entityTypeManager = $container->get('entity_type.manager');
     $instance->currentUser = $container->get('current_user');

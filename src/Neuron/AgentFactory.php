@@ -50,17 +50,17 @@ final class AgentFactory {
    *
    * @param \Drupal\Core\Entity\EntityInterface $host
    *   The entity hosting the conversation.
-   * @param string $systemPrompt
-   *   The complete router instructions.
+   * @param string $contextPrompt
+   *   Content type context appended to the router's instructions, or empty.
    * @param array $fixedToolContexts
    *   Context values forced on the tools, keyed by tool name then context.
    * @param \Drupal\oe_ai_assistant\Service\UiMessageStreamInterface $stream
    *   The stream on which every inference is framed as a step.
    */
-  public function router(EntityInterface $host, string $systemPrompt, array $fixedToolContexts, UiMessageStreamInterface $stream): RouterAgent {
+  public function router(EntityInterface $host, string $contextPrompt, array $fixedToolContexts, UiMessageStreamInterface $stream): RouterAgent {
+    $routerAgent = $this->agentManager->createInstance('oe_drafting_router');
     $tools = [];
-    $functions = $this->agentManager->createInstance('oe_drafting_router')->getFunctions();
-    foreach ($functions['normalized'] ?? [] as $definition) {
+    foreach ($routerAgent->getFunctions()['normalized'] ?? [] as $definition) {
       $fixed = $fixedToolContexts[$definition->getName()] ?? [];
       // The model must not supply, or be steered into supplying, a value the
       // caller pins.
@@ -72,7 +72,7 @@ final class AgentFactory {
     $tools[] = new DraftContentTool();
 
     [$provider, $providerId, $modelId] = $this->provider('chat_with_tools', ['drafting']);
-    $agent = new RouterAgent($provider, $systemPrompt, $tools, [DraftContentTool::NAME]);
+    $agent = new RouterAgent($provider, $this->withContext($routerAgent->getSystemPrompt(), $contextPrompt), $tools, [DraftContentTool::NAME]);
     $agent->setChatHistory(new ConversationChatHistory(
       $this->messageRecorder,
       $this->entityTypeManager->getStorage('ai_conversation_message'),
@@ -100,10 +100,7 @@ final class AgentFactory {
    *   Editorial context appended to the drafter's instructions, or empty.
    */
   public function drafter(EntityInterface $host, ?AiConversationMessageInterface $parent, string $groupId, string $contextPrompt): ContentDrafterAgent {
-    $systemPrompt = $this->agentManager->createInstance('oe_content_drafter')->getSystemPrompt();
-    if ($contextPrompt !== '') {
-      $systemPrompt .= "\n\n" . $contextPrompt . "\n";
-    }
+    $systemPrompt = $this->withContext($this->agentManager->createInstance('oe_content_drafter')->getSystemPrompt(), $contextPrompt);
 
     [$provider, $providerId, $modelId] = $this->provider('chat', ['drafting', $groupId]);
     $agent = new ContentDrafterAgent($provider, $systemPrompt);
@@ -132,19 +129,26 @@ final class AgentFactory {
    *   The user's message for this turn.
    * @param array $groups
    *   The schema groups to draft when the router asks for a draft.
-   * @param callable $draftGroup
+   * @param \Closure $draftGroup
    *   Drafts one group, called with the step id, the schema slice, the task
    *   prompt and the parent turn, and returning the decoded field values.
-   * @param callable $versionDraft
+   * @param \Closure $versionDraft
    *   Versions and stores the fields, called with the consolidated fields and
    *   the parent turn, returning the result shaped {version, context, fields}.
-   * @param callable $recordConfirmation
+   * @param \Closure $recordConfirmation
    *   Persists the confirmation text, called with that text.
    */
-  public function draftingTurn(RouterAgent $router, string $message, array $groups, callable $draftGroup, callable $versionDraft, callable $recordConfirmation): DraftingTurnWorkflow {
+  public function draftingTurn(RouterAgent $router, string $message, array $groups, \Closure $draftGroup, \Closure $versionDraft, \Closure $recordConfirmation): DraftingTurnWorkflow {
     $workflow = new DraftingTurnWorkflow($router, $message, $groups, $draftGroup, $versionDraft, $recordConfirmation);
     $workflow->observe(new DrupalLogObserver($this->logger));
     return $workflow;
+  }
+
+  /**
+   * Appends the context of the turn to an agent's own instructions.
+   */
+  private function withContext(string $systemPrompt, string $contextPrompt): string {
+    return $contextPrompt === '' ? $systemPrompt : $systemPrompt . "\n\n" . $contextPrompt . "\n";
   }
 
   /**

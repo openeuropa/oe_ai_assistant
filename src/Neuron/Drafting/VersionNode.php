@@ -20,15 +20,15 @@ final class VersionNode extends Node {
   /**
    * VersionNode constructor.
    *
-   * @param callable $versionDraft
+   * @param \Closure $versionDraft
    *   Versions and stores the fields, called with the consolidated fields and
    *   the parent turn, returning the result shaped {version, context, fields}.
-   * @param callable $recordConfirmation
+   * @param \Closure $recordConfirmation
    *   Persists the confirmation text, called with that text.
    */
   public function __construct(
-    private readonly mixed $versionDraft,
-    private readonly mixed $recordConfirmation,
+    private readonly \Closure $versionDraft,
+    private readonly \Closure $recordConfirmation,
   ) {}
 
   /**
@@ -37,7 +37,6 @@ final class VersionNode extends Node {
   public function __invoke(VersionEvent $event, WorkflowState $state): \Generator {
     $fields = $state->get(DraftingTurnWorkflow::FIELDS, []);
     $result = ($this->versionDraft)($fields, $state->get(DraftingTurnWorkflow::PARENT));
-    $state->set(DraftingTurnWorkflow::RESULT, $result);
     yield new DraftResultChunk($result);
 
     if ($fields !== []) {

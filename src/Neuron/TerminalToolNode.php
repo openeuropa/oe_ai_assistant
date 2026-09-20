@@ -33,8 +33,8 @@ final class TerminalToolNode extends ToolNode {
    */
   public function __construct(
     private readonly array $terminalToolNames,
-    int $maxRuns = 10,
-    ?callable $errorHandler = NULL,
+    int $maxRuns,
+    ?callable $errorHandler,
   ) {
     parent::__construct($maxRuns, $errorHandler);
   }
