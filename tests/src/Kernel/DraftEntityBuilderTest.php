@@ -125,6 +125,36 @@ class DraftEntityBuilderTest extends KernelTestBase {
   }
 
   /**
+   * Replaces formats the current user cannot use, at every depth.
+   *
+   * The model invents "full_html"; the Kernel user may only use the fallback
+   * format, so every formatted text item ends up on plain_text, and a
+   * missing format is filled in the same way.
+   */
+  public function testResolvesTextFormatsTheUserCannotUse(): void {
+    $node = $this->builder()->fromLlmFields('node', 'oe_news', [
+      'title' => [['value' => 'Formats']],
+      'field_body' => [['value' => '<p>Body</p>', 'format' => 'full_html']],
+      'field_content_paragraphs' => [
+        [
+          'type' => [['target_id' => 'text_block']],
+          'field_text_body' => [['value' => '<p>Inline</p>', 'format' => 'no_such_format']],
+        ],
+        [
+          'type' => [['target_id' => 'quote_block']],
+          'field_quote_text' => [['value' => 'Quote']],
+        ],
+      ],
+    ]);
+
+    $this->assertSame('plain_text', $node->get('field_body')->format);
+    $paragraphs = $node->get('field_content_paragraphs');
+    $this->assertSame('plain_text', $paragraphs->get(0)->entity->get('field_text_body')->format);
+    $this->assertSame('plain_text', $paragraphs->get(1)->entity->get('field_quote_text')->format);
+    $this->assertSame('<p>Body</p>', $node->get('field_body')->value);
+  }
+
+  /**
    * Rejects unknown entity types with a clear error.
    */
   public function testThrowsOnUnknownEntityType(): void {

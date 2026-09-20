@@ -41,6 +41,7 @@ class InlineEntityHydrator {
     private readonly SerializerInterface $serializer,
     private readonly EntityFieldManagerInterface $entityFieldManager,
     private readonly EntityTypeManagerInterface $entityTypeManager,
+    private readonly TextFormatResolverInterface $textFormatResolver,
   ) {}
 
   /**
@@ -165,6 +166,7 @@ class InlineEntityHydrator {
         }
       }
 
+      $this->textFormatResolver->resolveEntityFormats($entity);
       $entities[] = $entity;
     }
     return $entities;

@@ -28,6 +28,7 @@ class DraftEntityBuilder {
     private readonly SerializerInterface $serializer,
     private readonly EntityTypeManagerInterface $entityTypeManager,
     private readonly InlineEntityHydrator $inlineEntityHydrator,
+    private readonly TextFormatResolverInterface $textFormatResolver,
   ) {}
 
   /**
@@ -98,6 +99,8 @@ class DraftEntityBuilder {
         $entity->get($fieldName)->appendItem($child);
       }
     }
+
+    $this->textFormatResolver->resolveEntityFormats($entity);
 
     return $entity;
   }
