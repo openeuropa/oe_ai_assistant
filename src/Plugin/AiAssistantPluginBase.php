@@ -5,14 +5,12 @@ declare(strict_types=1);
 namespace Drupal\oe_ai_assistant\Plugin;
 
 use Drupal\ai\AiProviderPluginManager;
-use Drupal\ai\OperationType\Chat\ChatMessage;
 use Drupal\Component\Plugin\Exception\PluginException;
 use Drupal\Core\Cache\RefinableCacheableDependencyInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Plugin\ContainerFactoryPluginInterface;
 use Drupal\Core\Plugin\PluginBase;
 use Drupal\Core\Session\AccountInterface;
-use Drupal\oe_ai_assistant\Entity\AiConversationMessageInterface;
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
 use Drupal\oe_ai_assistant\Exception\ActionException;
 use Drupal\oe_ai_assistant\Service\MessageRecorderInterface;
@@ -34,11 +32,6 @@ use Symfony\Component\HttpFoundation\Response;
  * @see \Drupal\oe_ai_assistant\Plugin\AiAssistantPluginManager
  */
 abstract class AiAssistantPluginBase extends PluginBase implements AiAssistantPluginInterface, ContainerFactoryPluginInterface {
-
-  /**
-   * Maximum top-level turns replayed to the model as history.
-   */
-  protected const MAX_HISTORY = 40;
 
   /**
    * The AI provider plugin manager.
@@ -324,43 +317,6 @@ abstract class AiAssistantPluginBase extends PluginBase implements AiAssistantPl
       throw new ActionException('forbidden', 'Access to the editorial session is denied.', 403);
     }
     return $session;
-  }
-
-  /**
-   * Loads the persisted transcript as chat history for the model.
-   *
-   * @param \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $session
-   *   The session hosting the conversation.
-   *
-   * @return \Drupal\ai\OperationType\Chat\ChatMessage[]
-   *   The capped top-level transcript as ChatMessage objects.
-   */
-  protected function buildHistory(AiEditorialSessionInterface $session): array {
-    $storage = $this->entityTypeManager->getStorage('ai_conversation_message');
-    // Skip persisted tool results: a bare chat message cannot re-link
-    // them to the assistant call that produced them, and providers
-    // reject unpaired tool messages. The assistant's follow-up text
-    // already carries the outcome.
-    $entities = array_filter(
-      $storage->loadTranscript($session),
-      fn(AiConversationMessageInterface $message): bool => $message->getRole() !== AiConversationMessageInterface::ROLE_TOOL,
-    );
-    // Slice AFTER filtering so tool rows do not consume history slots.
-    $entities = array_slice($entities, -static::MAX_HISTORY);
-    return array_map(
-      function (AiConversationMessageInterface $message): ChatMessage {
-        $content = (string) $message->get('content')->value;
-        // Editorial events enter the history as compact notes.
-        // The user role is used because mid-history system messages are
-        // provider-dependent, and the bracket prefix marks the note as
-        // non-conversational.
-        if ($message->getRole() === AiConversationMessageInterface::ROLE_EVENT) {
-          return new ChatMessage('user', '[Editorial change] ' . $content);
-        }
-        return new ChatMessage($message->getRole(), $content);
-      },
-      $entities,
-    );
   }
 
 }

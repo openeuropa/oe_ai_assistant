@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\oe_ai_assistant\Unit\Streaming;
 
-use Drupal\ai\Service\PromptCodeBlockExtractor\PromptCodeBlockExtractor;
 use Drupal\oe_ai_assistant\Service\UiMessageStream;
 use Drupal\oe_ai_assistant\Service\UiMessageStreamInterface;
 use PHPUnit\Framework\TestCase;
@@ -30,71 +29,7 @@ class UiMessageStreamTest extends TestCase {
    */
   protected function setUp(): void {
     parent::setUp();
-    $this->stream = new UiMessageStream(
-      new PromptCodeBlockExtractor(),
-      new NullLogger(),
-    );
-  }
-
-  /**
-   * Tests extractJson with raw JSON input.
-   *
-   * @covers ::extractJson
-   */
-  public function testExtractJsonRaw(): void {
-    $result = $this->stream->extractJson('{"title": "Hello", "summary": "World"}');
-    $this->assertEquals(['title' => 'Hello', 'summary' => 'World'], $result);
-  }
-
-  /**
-   * Tests extractJson with markdown-fenced JSON.
-   *
-   * @covers ::extractJson
-   */
-  public function testExtractJsonMarkdownFenced(): void {
-    $input = "```json\n{\"title\": \"Hello\", \"summary\": \"World\"}\n```";
-    $result = $this->stream->extractJson($input);
-    $this->assertEquals(['title' => 'Hello', 'summary' => 'World'], $result);
-  }
-
-  /**
-   * Tests extractJson with markdown fencing and extra whitespace.
-   *
-   * @covers ::extractJson
-   */
-  public function testExtractJsonMarkdownFencedWithWhitespace(): void {
-    $input = "  ```json\n  {\"type\": \"hero\", \"heading\": \"Test\"}\n  ```  ";
-    $result = $this->stream->extractJson($input);
-    $this->assertEquals(['type' => 'hero', 'heading' => 'Test'], $result);
-  }
-
-  /**
-   * Tests extractJson with empty input returns NULL.
-   *
-   * @covers ::extractJson
-   */
-  public function testExtractJsonEmpty(): void {
-    $this->assertNull($this->stream->extractJson(''));
-    $this->assertNull($this->stream->extractJson('   '));
-  }
-
-  /**
-   * Tests extractJson with invalid JSON returns NULL.
-   *
-   * @covers ::extractJson
-   */
-  public function testExtractJsonInvalid(): void {
-    $this->assertNull($this->stream->extractJson('not json at all'));
-    $this->assertNull($this->stream->extractJson('{broken json'));
-  }
-
-  /**
-   * Tests extractJson with plain text containing no JSON returns NULL.
-   *
-   * @covers ::extractJson
-   */
-  public function testExtractJsonPlainText(): void {
-    $this->assertNull($this->stream->extractJson('Here is some content about climate.'));
+    $this->stream = new UiMessageStream(new NullLogger());
   }
 
   /**
@@ -196,7 +131,7 @@ class UiMessageStreamTest extends TestCase {
         ['@message' => 'Provider refused: quota exceeded'],
       );
 
-    $stream = new UiMessageStream(new PromptCodeBlockExtractor(), $logger);
+    $stream = new UiMessageStream($logger);
     $response = $stream->respond(
       function (UiMessageStreamInterface $stream): void {
         throw new \RuntimeException('Provider refused: quota exceeded');

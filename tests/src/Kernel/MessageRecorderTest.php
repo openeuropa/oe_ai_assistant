@@ -5,10 +5,6 @@ declare(strict_types=1);
 namespace Drupal\Tests\oe_ai_assistant\Kernel;
 
 use Drupal\KernelTests\KernelTestBase;
-use Drupal\ai\Dto\TokenUsageDto;
-use Drupal\ai\OperationType\Chat\ChatMessage;
-use Drupal\ai\OperationType\Chat\ChatOutput;
-use Drupal\ai\OperationType\Chat\StreamedChatMessageIteratorInterface;
 use Drupal\oe_ai_assistant\Entity\AiConversationMessageInterface;
 use Drupal\oe_ai_assistant\Service\MessageRecorderInterface;
 use Drupal\user\Entity\User;
@@ -18,7 +14,7 @@ use Drupal\user\Entity\User;
  *
  * Covers recording user, assistant, tool, and error turns as
  * ai_conversation_message rows hosted by an entity, with token usage
- * normalized from the ChatOutput and the parent linkage for sub-agent turns.
+ * stored in columns and the parent linkage for drafter turns.
  *
  * @group oe_ai_assistant
  */
@@ -101,18 +97,15 @@ class MessageRecorderTest extends KernelTestBase {
   }
 
   /**
-   * Tests recording an assistant turn with normalized token usage.
+   * Tests recording an assistant turn with token usage in columns.
    */
-  public function testRecordAssistant(): void {
-    $output = new ChatOutput(
-      new ChatMessage('assistant', 'Here is the plan.'),
-      [],
-      [],
-      new TokenUsageDto(10, 5, 15)
-    );
-    $assistant = $this->recorder->recordAssistant(
+  public function testRecordAssistantTurn(): void {
+    $assistant = $this->recorder->recordAssistantTurn(
       $this->host,
-      $output,
+      'Here is the plan.',
+      [],
+      ['input' => 10, 'output' => 5, 'total' => 15],
+      'stop',
       'orchestrator',
       'mistral',
       'mistral-large-latest'
@@ -123,9 +116,11 @@ class MessageRecorderTest extends KernelTestBase {
     $this->assertSame('orchestrator', $assistant->get('agent_id')->value);
     $this->assertSame('mistral', $assistant->get('provider')->value);
     $this->assertSame('mistral-large-latest', $assistant->get('model')->value);
+    $this->assertSame('stop', $assistant->get('finish_reason')->value);
     $this->assertNull($assistant->getParentId());
+    $this->assertSame([], $assistant->getToolCalls());
 
-    // The token usage is normalized from the DTO into the discrete columns.
+    // Missing token counts stay NULL rather than becoming zero.
     $this->assertSame(
       ['input' => 10, 'output' => 5, 'total' => 15, 'reasoning' => NULL, 'cached' => NULL],
       $assistant->getTokenUsage()
@@ -136,38 +131,23 @@ class MessageRecorderTest extends KernelTestBase {
   }
 
   /**
-   * Tests that a streamed output records the reconstructed text and tokens.
-   *
-   * For a streamed response the token usage and final text live on the
-   * reconstructed output, not the original one handed to the recorder.
+   * Tests that a turn requesting tools keeps the calls on the row.
    */
-  public function testRecordAssistantFromStreamedOutput(): void {
-    // The reconstructed output carries the final text and token usage.
-    $reconstructed = new ChatOutput(
-      new ChatMessage('assistant', 'Streamed answer.'),
-      [],
-      [],
-      new TokenUsageDto(20, 8, 28)
-    );
-    // The streamed iterator reconstructs into that output. The original
-    // output the callback receives has an empty token usage.
-    $iterator = $this->createMock(StreamedChatMessageIteratorInterface::class);
-    $iterator->method('reconstructChatOutput')->willReturn($reconstructed);
-    $streamed = new ChatOutput($iterator, [], []);
-
-    $assistant = $this->recorder->recordAssistant(
-      $this->host,
-      $streamed,
-      'orchestrator',
-      'mistral',
-      'mistral-large-latest'
+  public function testRecordAssistantTurnWithToolCalls(): void {
+    $calls = [
+      [
+        'id' => 'call_1',
+        'type' => 'function',
+        'function' => ['name' => 'draft_content', 'arguments' => '{}'],
+      ],
+    ];
+    $assistant = $this->recorder->recordAssistantTurn(
+      $this->host, '', $calls, [], 'tool_calls', 'orchestrator', 'mistral', 'mistral-large-latest'
     );
 
-    $this->assertSame('Streamed answer.', $assistant->get('content')->value);
-    $this->assertSame(
-      ['input' => 20, 'output' => 8, 'total' => 28, 'reasoning' => NULL, 'cached' => NULL],
-      $assistant->getTokenUsage()
-    );
+    $this->assertSame('', (string) $assistant->get('content')->value);
+    $this->assertSame($calls, $assistant->getToolCalls());
+    $this->assertSame('tool_calls', $assistant->get('finish_reason')->value);
   }
 
   /**

@@ -4,10 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\oe_ai_assistant\Service;
 
-use Drupal\ai\OperationType\Chat\ChatOutput;
-use Drupal\ai\OperationType\Chat\StreamedChatMessageIteratorInterface;
 use Drupal\ai\Response\AiStreamedResponse;
-use Drupal\ai\Service\PromptCodeBlockExtractor\PromptCodeBlockExtractorInterface;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Component\HttpFoundation\Response;
@@ -37,17 +34,7 @@ use Symfony\Component\HttpFoundation\Response;
  */
 class UiMessageStream implements UiMessageStreamInterface {
 
-  /**
-   * Constructs a UiMessageStream.
-   *
-   * @param \Drupal\ai\Service\PromptCodeBlockExtractor\PromptCodeBlockExtractorInterface $codeBlockExtractor
-   *   The code block extractor service.
-   * @param \Psr\Log\LoggerInterface $logger
-   *   The logger channel.
-   */
   public function __construct(
-    #[Autowire(service: 'ai.prompt_code_block_extractor')]
-    protected readonly PromptCodeBlockExtractorInterface $codeBlockExtractor,
     #[Autowire(service: 'logger.channel.oe_ai_assistant')]
     protected readonly LoggerInterface $logger,
   ) {}
@@ -166,59 +153,6 @@ class UiMessageStream implements UiMessageStreamInterface {
     ]);
     echo "data: [DONE]\n\n";
     flush();
-  }
-
-  /**
-   * {@inheritdoc}
-   */
-  public function streamChatOutput(ChatOutput $chatOutput, string $stepId = ''): array {
-    $this->startStep($stepId);
-
-    $normalized = $chatOutput->getNormalized();
-    if ($normalized instanceof StreamedChatMessageIteratorInterface) {
-      // Reduce the buffer so text-delta events arrive in small
-      // chunks rather than 100-char batches.
-      $normalized->setMaxBufferSize(5);
-      foreach ($normalized as $chunk) {
-        $this->textDelta($chunk->getText() ?? '');
-      }
-      $toolCalls = $normalized->getTools();
-    }
-    else {
-      $this->textDelta($normalized->getText() ?? '');
-      $toolCalls = $normalized->getTools() ?? [];
-    }
-
-    $this->finishStep($stepId);
-
-    return $toolCalls;
-  }
-
-  /**
-   * {@inheritdoc}
-   */
-  public function extractJson(string $text): ?array {
-    $text = trim($text);
-    if ($text === '') {
-      return NULL;
-    }
-
-    // Try raw JSON first.
-    $parsed = json_decode($text, TRUE);
-    if (is_array($parsed)) {
-      return $parsed;
-    }
-
-    // Use PromptCodeBlockExtractor to strip markdown fencing.
-    $extracted = $this->codeBlockExtractor->extract($text, 'json');
-    if (is_string($extracted) && $extracted !== $text) {
-      $parsed = json_decode(trim($extracted), TRUE);
-      if (is_array($parsed)) {
-        return $parsed;
-      }
-    }
-
-    return NULL;
   }
 
   /**

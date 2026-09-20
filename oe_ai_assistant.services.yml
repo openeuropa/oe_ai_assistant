@@ -47,18 +47,8 @@ services:
   Drupal\oe_ai_assistant\Service\MessageRecorder: {}
   Drupal\oe_ai_assistant\Service\MessageRecorderInterface: '@Drupal\oe_ai_assistant\Service\MessageRecorder'
 
-  # Records drafting sub-agent turns from the ai_agents response event. Tagged
-  # as an event subscriber automatically via autoconfigure.
-  Drupal\oe_ai_assistant\EventSubscriber\SubAgentMessageSubscriber: {}
-
-  Drupal\oe_ai_assistant\Service\ToolExecutor: {}
-  Drupal\oe_ai_assistant\Service\ToolExecutorInterface: '@Drupal\oe_ai_assistant\Service\ToolExecutor'
-
-  Drupal\oe_ai_assistant\Service\ToolExecutionLoop: {}
-  Drupal\oe_ai_assistant\Service\ToolExecutionLoopInterface: '@Drupal\oe_ai_assistant\Service\ToolExecutionLoop'
-
-  Drupal\oe_ai_assistant\Service\DraftingOrchestrator: {}
-  Drupal\oe_ai_assistant\Service\DraftingOrchestratorInterface: '@Drupal\oe_ai_assistant\Service\DraftingOrchestrator'
+  # Builds the Neuron agents and workflows on top of drupal/ai.
+  Drupal\oe_ai_assistant\Neuron\AgentFactory: {}
 
   Drupal\oe_ai_assistant\Service\Drafting\DraftHistory: {}
   Drupal\oe_ai_assistant\Service\Drafting\DraftHistoryInterface: '@Drupal\oe_ai_assistant\Service\Drafting\DraftHistory'

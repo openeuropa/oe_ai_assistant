@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Drupal\oe_ai_assistant\Service;
 
-use Drupal\ai\OperationType\Chat\ChatOutput;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
@@ -102,35 +101,5 @@ interface UiMessageStreamInterface {
    *   The reason for finishing (e.g. 'stop', 'tool_calls').
    */
   public function finish(string $finishReason = 'stop'): void;
-
-  /**
-   * Streams a ChatOutput, emitting text-delta events for each chunk.
-   *
-   * Handles both streamed and non-streamed responses. Emits
-   * start-step/finish-step around the streaming. Returns any tool
-   * calls found in the response.
-   *
-   * @param \Drupal\ai\OperationType\Chat\ChatOutput $chatOutput
-   *   The LLM response to stream.
-   * @param string $stepId
-   *   Optional step identifier.
-   *
-   * @return \Drupal\ai\OperationType\Chat\Tools\ToolsFunctionOutputInterface[]
-   *   Tool calls found in the response (empty array if none).
-   */
-  public function streamChatOutput(ChatOutput $chatOutput, string $stepId = ''): array;
-
-  /**
-   * Extracts a JSON object from LLM text output.
-   *
-   * Handles both raw JSON and markdown-fenced JSON.
-   *
-   * @param string $text
-   *   The raw LLM output text.
-   *
-   * @return array|null
-   *   Decoded JSON as array, or NULL on parse failure.
-   */
-  public function extractJson(string $text): ?array;
 
 }
