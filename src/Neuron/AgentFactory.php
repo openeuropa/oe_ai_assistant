@@ -11,7 +11,7 @@ use Drupal\Core\Entity\EntityInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Session\AccountInterface;
 use Drupal\oe_ai_assistant\Entity\AiConversationMessageInterface;
-use Drupal\oe_ai_assistant\Neuron\Drafting\DraftingWorkflow;
+use Drupal\oe_ai_assistant\Neuron\Drafting\DraftingTurnWorkflow;
 use Drupal\oe_ai_assistant\Service\MessageRecorderInterface;
 use Drupal\oe_ai_assistant\Service\UiMessageStreamInterface;
 use NeuronAI\Observability\EventBus;
@@ -124,18 +124,25 @@ final class AgentFactory {
   }
 
   /**
-   * Builds the workflow that drafts every group and consolidates the fields.
+   * Builds the workflow that runs one chat turn, from the message to the draft.
    *
+   * @param \Drupal\oe_ai_assistant\Neuron\RouterAgent $router
+   *   The router agent, with its conversation history attached.
+   * @param string $message
+   *   The user's message for this turn.
    * @param array $groups
-   *   The schema groups to draft.
-   * @param string $conversationContext
-   *   The conversation so far, as role-prefixed lines.
+   *   The schema groups to draft when the router asks for a draft.
    * @param callable $draftGroup
-   *   Drafts one group, called with the step id, the schema slice and the
-   *   task prompt, and returning the decoded field values.
+   *   Drafts one group, called with the step id, the schema slice, the task
+   *   prompt and the parent turn, and returning the decoded field values.
+   * @param callable $versionDraft
+   *   Versions and stores the fields, called with the consolidated fields and
+   *   the parent turn, returning the result shaped {version, context, fields}.
+   * @param callable $recordConfirmation
+   *   Persists the confirmation text, called with that text.
    */
-  public function draftingWorkflow(array $groups, string $conversationContext, callable $draftGroup): DraftingWorkflow {
-    $workflow = new DraftingWorkflow($groups, $conversationContext, $draftGroup);
+  public function draftingTurn(RouterAgent $router, string $message, array $groups, callable $draftGroup, callable $versionDraft, callable $recordConfirmation): DraftingTurnWorkflow {
+    $workflow = new DraftingTurnWorkflow($router, $message, $groups, $draftGroup, $versionDraft, $recordConfirmation);
     $workflow->observe(new DrupalLogObserver($this->logger));
     return $workflow;
   }

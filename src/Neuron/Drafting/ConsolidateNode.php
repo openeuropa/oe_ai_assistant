@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Drupal\oe_ai_assistant\Neuron\Drafting;
 
-use NeuronAI\Workflow\Events\StopEvent;
 use NeuronAI\Workflow\Node;
 use NeuronAI\Workflow\WorkflowState;
 
@@ -20,10 +19,10 @@ final class ConsolidateNode extends Node {
    * {@inheritdoc}
    */
   public function __invoke(ConsolidateEvent $event, WorkflowState $state): \Generator {
-    $results = $state->get(DraftingWorkflow::RESULTS, []);
+    $results = $state->get(DraftingTurnWorkflow::RESULTS, []);
     $fields = [];
 
-    foreach ($state->get(DraftingWorkflow::GROUPS, []) as $group) {
+    foreach ($state->get(DraftingTurnWorkflow::GROUPS, []) as $group) {
       $stepId = $group['groupId'];
       if (!isset($results[$stepId])) {
         continue;
@@ -45,10 +44,10 @@ final class ConsolidateNode extends Node {
       }
     }
 
-    $state->set(DraftingWorkflow::FIELDS, $fields);
+    $state->set(DraftingTurnWorkflow::FIELDS, $fields);
     yield new DraftedFieldsChunk($fields);
 
-    return new StopEvent();
+    return new VersionEvent();
   }
 
 }

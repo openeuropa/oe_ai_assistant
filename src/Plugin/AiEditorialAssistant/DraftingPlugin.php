@@ -16,7 +16,9 @@ use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
 use Drupal\oe_ai_assistant\Exception\ActionException;
 use Drupal\oe_ai_assistant\Neuron\AgentFactory;
 use Drupal\oe_ai_assistant\Neuron\DraftContentTool;
+use Drupal\oe_ai_assistant\Neuron\Drafting\ConfirmationChunk;
 use Drupal\oe_ai_assistant\Neuron\Drafting\DraftedFieldsChunk;
+use Drupal\oe_ai_assistant\Neuron\Drafting\DraftResultChunk;
 use Drupal\oe_ai_assistant\Neuron\Drafting\GroupErrorChunk;
 use Drupal\oe_ai_assistant\Neuron\Drafting\PlanChunk;
 use Drupal\oe_ai_assistant\Service\Drafting\ContextDocumentRepository;
@@ -40,8 +42,9 @@ use Symfony\Component\HttpFoundation\Response;
 /**
  * Drafting plugin: AI-powered content drafting with SSE streaming.
  *
- * The router agent converses until it calls draft_content; the drafting
- * workflow then produces every field group and consolidates the result.
+ * Each chat turn runs as one Neuron workflow: the router agent converses
+ * until it calls draft_content, then every field group is drafted,
+ * consolidated and versioned on the transcript.
  *
  * The conversation is scoped by an editorial session: the session hosts the
  * persisted ai_conversation_message rows, and its target content type drives
@@ -278,10 +281,10 @@ class DraftingPlugin extends AiAssistantPluginBase {
   /**
    * Streams an AI chat response via SSE.
    *
-   * The router agent answers, calls tools, or signals draft_content. On that
-   * signal the drafting workflow runs every field group and the consolidated
-   * draft is versioned on the transcript. History and every turn are scoped
-   * to the editorial session named by the request.
+   * The turn workflow routes the message, drafts on the router's signal and
+   * versions the result; this action only maps its chunks onto the stream.
+   * History and every turn are scoped to the editorial session named by the
+   * request.
    *
    * @param \Symfony\Component\HttpFoundation\Request $request
    *   The incoming request with a chat message body.
@@ -302,8 +305,8 @@ class DraftingPlugin extends AiAssistantPluginBase {
     $session = $this->loadSession($body);
     $context = $this->buildContext($session);
 
-    // Resolve the session's template and pin its id for the prompt, tool, and
-    // drafting workflow. An invalid stored template is a 400.
+    // Resolve the session's template and pin its id for the prompt, the
+    // schema tool and the groups. An invalid stored template is a 400.
     try {
       $template = $this->schemaProvider->resolveTemplate(
         $context['entityTypeId'], $context['bundle'], $context['template']
@@ -338,10 +341,13 @@ class DraftingPlugin extends AiAssistantPluginBase {
         'session_id' => (string) $session->id(),
       ],
     ];
+    $groups = $this->schemaProvider->groups(
+      $context['entityTypeId'], $context['bundle'], $context['template']
+    );
 
     return $this->uiMessageStream->respond(
       function (UiMessageStreamInterface $stream) use (
-        $message, $context, $systemPrompt, $fixedToolContexts,
+        $message, $systemPrompt, $fixedToolContexts, $groups,
         $session, $editorialContext,
       ): void {
         $stream->start();
@@ -349,120 +355,74 @@ class DraftingPlugin extends AiAssistantPluginBase {
         // The router's history is the persisted transcript: it replays the
         // earlier turns to the model and stores every new turn as a row.
         $router = $this->agentFactory->router($session, $systemPrompt, $fixedToolContexts, $stream);
-        $conversation = $this->conversationContext($router->conversation()->getMessages(), $message);
-        foreach ($router->stream(new UserMessage($message))->events() as $chunk) {
-          if ($chunk instanceof TextChunk) {
-            $stream->textDelta($chunk->content);
-          }
+        $contextPrompt = $editorialContext->toPrompt();
+        $turn = $this->agentFactory->draftingTurn(
+          $router,
+          $message,
+          $groups,
+          fn (string $stepId, array $schemaSlice, string $task, ?AiConversationMessageInterface $parent): array => $this->agentFactory
+            ->drafter($session, $parent, $stepId, $contextPrompt)
+            ->draft(new UserMessage($task), $stepId, $schemaSlice),
+          fn (array $fields, ?AiConversationMessageInterface $parent): array => $this->versionDraft($session, $editorialContext, $fields, $parent),
+          fn (string $text) => $this->messageRecorder->recordAssistantText($session, $text, 'orchestrator'),
+        );
+
+        foreach ($turn->init()->events() as $chunk) {
+          match (TRUE) {
+            $chunk instanceof TextChunk => $stream->textDelta($chunk->content),
+            $chunk instanceof PlanChunk => $stream->customEvent('data-plan', $chunk->plan),
+            $chunk instanceof GroupErrorChunk => $stream->error($chunk->message, $chunk->stepId),
+            $chunk instanceof DraftedFieldsChunk => $stream->customEvent('data-drafted-fields', $chunk->fields),
+            // The card appears live, matching what a reload rehydrates.
+            $chunk instanceof DraftResultChunk => $stream->toolCall(DraftContentTool::NAME, [], $chunk->result),
+            $chunk instanceof ConfirmationChunk => $this->streamConfirmation($stream, $chunk->text),
+            default => NULL,
+          };
         }
 
-        if ($router->terminalTool() !== DraftContentTool::NAME) {
-          $stream->finish('stop');
-          return;
-        }
-
-        $drafted = $this->draft($stream, $conversation, $context, $session, $router->conversation()->lastAssistant(), $editorialContext);
-
-        // Version the draft and snapshot the context that produced it.
-        // Prior drafts already carry a result; the current draft_content
-        // call does not yet, so the count is the number of earlier drafts.
-        $version = $this->draftHistory->countDrafts($session) + 1;
-        $draftResult = [
-          'version' => $version,
-          'context' => $editorialContext->toSnapshot(),
-          'fields' => $drafted,
-        ];
-        // Emit the draft_content tool call with its result so the card
-        // appears live, matching what a reload rehydrates.
-        $stream->toolCall(DraftContentTool::NAME, [], $draftResult);
-        // Record the versioned result on the draft_content call so the
-        // transcript keeps a provenance trace that can repopulate the
-        // artifact.
-        $lastAssistant = $router->conversation()->lastAssistant();
-        if ($lastAssistant !== NULL) {
-          $this->attachDraftResult($lastAssistant, $draftResult);
-        }
-        // Stream and record a confirmation so it survives a reload. The
-        // draft name in the text is how the version reaches the model on
-        // later turns (the reconstructed history carries text rows only).
-        if ($drafted) {
-          $confirmation = sprintf(
-            'Draft %d generated with %d fields. Review the content on the right.',
-            $version,
-            count($drafted)
-          );
-          $stream->startStep('confirmation');
-          $stream->textDelta($confirmation);
-          $stream->finishStep('confirmation');
-          $this->messageRecorder->recordAssistantText(
-            $session, $confirmation, 'orchestrator'
-          );
-        }
-
-        $stream->finish('tool_calls');
+        $stream->finish($turn->finishReason());
       }
     );
   }
 
   /**
-   * Renders the conversation as role-prefixed lines for the drafters.
-   *
-   * @param \NeuronAI\Chat\Messages\Message[] $history
-   *   The replayed transcript.
-   * @param string $message
-   *   The current user message.
+   * Streams the confirmation as its own step.
    */
-  private function conversationContext(array $history, string $message): string {
-    $lines = [];
-    foreach ($history as $item) {
-      foreach ($item->getTextBlocks() as $block) {
-        $lines[] = $item->getRole() . ': ' . $block->content;
-      }
-    }
-    $lines[] = 'user: ' . $message;
-    return implode("\n", $lines) . "\n";
+  private function streamConfirmation(UiMessageStreamInterface $stream, string $text): void {
+    $stream->startStep('confirmation');
+    $stream->textDelta($text);
+    $stream->finishStep('confirmation');
   }
 
   /**
-   * Runs the drafting workflow and streams its progress.
+   * Versions the drafted fields and stores the result on the draft turn.
    *
-   * @param \Drupal\oe_ai_assistant\Service\UiMessageStreamInterface $stream
-   *   The response stream.
-   * @param string $conversation
-   *   The conversation so far, as role-prefixed lines.
-   * @param array $context
-   *   The drafting context with entityTypeId, bundle and template.
+   * Prior drafts already carry a result; the current draft_content call does
+   * not yet, so the count is the number of earlier drafts. The snapshot keeps
+   * the context that produced the draft.
+   *
    * @param \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $session
    *   The session hosting the conversation.
-   * @param \Drupal\oe_ai_assistant\Entity\AiConversationMessageInterface|null $parent
-   *   The draft_content turn the drafter rows nest under, or NULL to leave
-   *   them unrecorded.
    * @param \Drupal\oe_ai_assistant\Service\Drafting\EditorialContext $editorialContext
-   *   The editorial context injected into every drafter.
+   *   The editorial context of the turn.
+   * @param array $fields
+   *   The consolidated field values.
+   * @param \Drupal\oe_ai_assistant\Entity\AiConversationMessageInterface|null $parent
+   *   The draft_content turn, or NULL when it was not recorded.
    *
    * @return array
-   *   The consolidated field values.
+   *   The result shaped {version, context, fields}.
    */
-  private function draft(UiMessageStreamInterface $stream, string $conversation, array $context, AiEditorialSessionInterface $session, ?AiConversationMessageInterface $parent, EditorialContext $editorialContext): array {
-    $groups = $this->schemaProvider->groups(
-      $context['entityTypeId'], $context['bundle'], $context['template']
-    );
-    $contextPrompt = $editorialContext->toPrompt();
-    $draftGroup = fn (string $stepId, array $schemaSlice, string $task): array => $this->agentFactory
-      ->drafter($session, $parent, $stepId, $contextPrompt)
-      ->draft(new UserMessage($task), $stepId, $schemaSlice);
-
-    $workflow = $this->agentFactory->draftingWorkflow($groups, $conversation, $draftGroup);
-    foreach ($workflow->init()->events() as $chunk) {
-      match (TRUE) {
-        $chunk instanceof PlanChunk => $stream->customEvent('data-plan', $chunk->plan),
-        $chunk instanceof GroupErrorChunk => $stream->error($chunk->message, $chunk->stepId),
-        $chunk instanceof DraftedFieldsChunk => $stream->customEvent('data-drafted-fields', $chunk->fields),
-        $chunk instanceof TextChunk => $stream->textDelta($chunk->content),
-        default => NULL,
-      };
+  private function versionDraft(AiEditorialSessionInterface $session, EditorialContext $editorialContext, array $fields, ?AiConversationMessageInterface $parent): array {
+    $result = [
+      'version' => $this->draftHistory->countDrafts($session) + 1,
+      'context' => $editorialContext->toSnapshot(),
+      'fields' => $fields,
+    ];
+    if ($parent !== NULL) {
+      $this->attachDraftResult($parent, $result);
     }
-    return $workflow->fields();
+    return $result;
   }
 
   /**

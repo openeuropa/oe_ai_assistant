@@ -19,8 +19,8 @@ final class DraftGroupsNode extends Node {
    * DraftGroupsNode constructor.
    *
    * @param callable $draftGroup
-   *   Drafts one group, called with the step id, the schema slice and the
-   *   task prompt, and returning the decoded field values.
+   *   Drafts one group, called with the step id, the schema slice, the task
+   *   prompt and the parent turn, and returning the decoded field values.
    */
   public function __construct(
     private readonly mixed $draftGroup,
@@ -30,11 +30,11 @@ final class DraftGroupsNode extends Node {
    * {@inheritdoc}
    */
   public function __invoke(DraftGroupsEvent $event, WorkflowState $state): \Generator {
-    $plan = $state->get(DraftingWorkflow::PLAN, []);
+    $plan = $state->get(DraftingTurnWorkflow::PLAN, []);
     $results = [];
     $mainFieldsResult = '';
 
-    foreach ($state->get(DraftingWorkflow::GROUPS, []) as $index => $group) {
+    foreach ($state->get(DraftingTurnWorkflow::GROUPS, []) as $index => $group) {
       $stepId = $group['groupId'];
       $plan[$index]['status'] = 'in_progress';
       yield new PlanChunk($plan);
@@ -43,7 +43,8 @@ final class DraftGroupsNode extends Node {
         $results[$stepId] = ($this->draftGroup)(
           $stepId,
           $group['schemaSlice'],
-          $this->task($stepId, $state->get(DraftingWorkflow::CONTEXT, ''), $mainFieldsResult),
+          $this->task($stepId, $state->get(DraftingTurnWorkflow::CONTEXT, ''), $mainFieldsResult),
+          $state->get(DraftingTurnWorkflow::PARENT),
         );
         if ($stepId === 'main_fields') {
           $mainFieldsResult = json_encode($results[$stepId]);
@@ -58,8 +59,8 @@ final class DraftGroupsNode extends Node {
       }
     }
 
-    $state->set(DraftingWorkflow::PLAN, $plan);
-    $state->set(DraftingWorkflow::RESULTS, $results);
+    $state->set(DraftingTurnWorkflow::PLAN, $plan);
+    $state->set(DraftingTurnWorkflow::RESULTS, $results);
 
     return new ConsolidateEvent();
   }
