@@ -134,6 +134,26 @@ class AiEditorialSessionControllerTest extends AiEditorialSessionKernelTestBase 
   }
 
   /**
+   * The configured transparency notice is exposed after sanitization.
+   */
+  public function testViewExposesTransparencyNotice(): void {
+    $notice = '<strong>AI-generated content</strong>. <a href="https://example.com">Read more</a>.<script>unsafe</script>';
+    $this->config('oe_ai_assistant.settings')
+      ->set('transparency_notice', $notice)
+      ->save();
+    $session = $this->createSession($this->createUser());
+
+    $build = $this->controller()->view($session);
+    $disclaimer = $build['#attached']['drupalSettings']['oeAiAssistant']['disclaimer'];
+
+    $this->assertSame(
+      '<strong>AI-generated content</strong>. <a href="https://example.com">Read more</a>.unsafe',
+      $disclaimer
+    );
+    $this->assertContains('config:oe_ai_assistant.settings', $build['#cache']['tags'] ?? []);
+  }
+
+  /**
    * The page varies per user because drupalSettings embeds the user id.
    */
   public function testViewVariesByUser(): void {
