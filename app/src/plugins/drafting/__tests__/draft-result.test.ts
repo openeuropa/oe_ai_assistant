@@ -19,14 +19,18 @@ describe("parseDraftResult", () => {
           {
             id: "doc-1",
             title: "Briefing",
+            status: "done",
+            meta: { type: "pdf", size: 1024 },
             category: "context",
             summary: "A summary.",
-            meta: { pages: 3 },
           },
           {
             id: "doc-2",
             title: "Press release",
-            category: "publishable",
+            status: "scheduled",
+            meta: { type: "docx", size: 2048 },
+            category: "context",
+            summary: "",
           },
         ],
       },
@@ -47,18 +51,7 @@ describe("parseDraftResult", () => {
       label: "News Article",
     });
     expect(result.context?.documents).toHaveLength(2);
-    expect(result.context?.documents[0]).toEqual({
-      id: "doc-1",
-      title: "Briefing",
-      category: "context",
-      summary: "A summary.",
-      meta: { pages: 3 },
-    });
-    expect(result.context?.documents[1]).toEqual({
-      id: "doc-2",
-      title: "Press release",
-      category: "publishable",
-    });
+    expect(result.context?.documents).toEqual(raw.context.documents);
     expect(result.fields).toEqual(raw.fields);
   });
 

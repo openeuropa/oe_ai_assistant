@@ -501,6 +501,12 @@ export interface components {
                 size: number;
             };
         };
+        /** @description A document as captured in the provenance snapshot of a draft, stored under context.documents of the draft_content tool result. Extends the listed document with its category and the summary produced by the extraction pipeline, so a draft records the material that steered it even after the document is removed from the session. */
+        DraftingDocumentSnapshot: components["schemas"]["DraftingDocument"] & {
+            category: components["schemas"]["DraftingDocumentCategory"];
+            /** @description Summary produced by the extraction pipeline; empty until available. */
+            summary: string;
+        };
         /** @description Query parameters of the add-document upload. The file bytes form the raw request body, so these fields travel in the query string. */
         DraftingAddDocumentRequest: {
             /** @description The editorial session receiving the uploaded document. */

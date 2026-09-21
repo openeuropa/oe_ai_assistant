@@ -166,6 +166,26 @@ DraftingDocument:
           type: integer
           description: File size in bytes.
 
+DraftingDocumentSnapshot:
+  description: >
+    A document as captured in the provenance snapshot of a draft, stored
+    under context.documents of the draft_content tool result. Extends the
+    listed document with its category and the summary produced by the
+    extraction pipeline, so a draft records the material that steered it
+    even after the document is removed from the session.
+  allOf:
+    - $ref: "../../openapi.yaml#/components/schemas/DraftingDocument"
+    - type: object
+      required:
+        - category
+        - summary
+      properties:
+        category:
+          $ref: "../../openapi.yaml#/components/schemas/DraftingDocumentCategory"
+        summary:
+          type: string
+          description: Summary produced by the extraction pipeline; empty until available.
+
 DraftingAddDocumentRequest:
   type: object
   description: >

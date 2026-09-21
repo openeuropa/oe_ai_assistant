@@ -11,6 +11,8 @@
  *     the fields map.
  */
 
+import type { components } from "@/api/schema";
+
 /** Tone snapshot stored on a draft: id, label, and the raw guidelines. */
 export interface DraftToneSnapshot {
   id: string;
@@ -25,29 +27,9 @@ export interface DraftTemplateSnapshot {
   label: string;
 }
 
-/** Downloadable file behind a document descriptor. */
-export interface DraftDocumentFile {
-  /** Absolute or site-relative URL serving the file. */
-  url: string;
-  /** The file name shown on the download control. */
-  name: string;
-  /** Mime type, e.g. "application/pdf"; drives kind icons and type labels. */
-  mime?: string;
-  /** File size in bytes. */
-  size?: number;
-}
-
-/** Document descriptor snapshot stored on a draft. */
-export interface DraftDocumentSnapshot {
-  id: string;
-  title: string;
-  /** "context" (briefing material) or "publishable" (asset placed into content). */
-  category: string;
-  summary?: string;
-  meta?: unknown;
-  /** Download details, once the documents backend provides them. */
-  file?: DraftDocumentFile;
-}
+/** Document descriptor snapshot stored on a draft, as the API contract defines it. */
+export type DraftDocumentSnapshot =
+  components["schemas"]["DraftingDocumentSnapshot"];
 
 /** The editorial context captured when a draft was generated. */
 export interface DraftContext {

@@ -546,6 +546,74 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
   }
 
   /**
+   * Tests that document extracts reach the router and the sub-agents.
+   *
+   * One document is processed through the real Tika service, one is left
+   * scheduled: the prompts must carry the extracted text of the first and
+   * announce the second as not available yet.
+   */
+  public function testDocumentExtractsReachRouterAndSubAgents(): void {
+    $user = $this->createUser(['use oe ai assistant']);
+    $this->loginUser($user);
+    $session = $this->createSession($user);
+
+    [$processedId, $processedTitle] = $this->uploadDocument($session, 'briefing.txt', 'Alpha briefing content for the draft.');
+    [, $pendingTitle] = $this->uploadDocument($session, 'pending.txt', 'Not processed.');
+    MockAiProvider::enqueue(new MockResponse(text: 'Briefing summary.'));
+    $result = $this->httpPost('/api/ai/plugins/drafting/extract-document', [
+      'sessionId' => $session->id(),
+      'category' => 'context',
+      'documentId' => $processedId,
+    ]);
+    $this->assertSame(['status' => 'done'], json_decode($result['body'], TRUE));
+    MockAiProvider::reset();
+
+    // The agent drafts every group, then closes with a text answer.
+    $this->enqueueDraftFlow();
+
+    $result = $this->httpPost('/api/ai/plugins/drafting/chat', [
+      'message' => 'Generate the draft now.',
+      'sessionId' => $session->id(),
+    ]);
+    $this->assertEquals(200, $result['status'], 'Expected 200. Body: ' . substr($result['body'], 0, 500));
+
+    \Drupal::state()->resetCache();
+    $log = MockAiProvider::getCallLog();
+    $agentPrompt = $log[0]['system_prompt'];
+    $this->assertStringContainsString("### $processedTitle (file: $processedTitle)\nAlpha briefing content for the draft.", $agentPrompt);
+    $this->assertStringContainsString("### $pendingTitle (file: $pendingTitle)\nNot processed yet", $agentPrompt);
+    $this->assertStringContainsString('wait a moment', $agentPrompt);
+
+    // Every call after the first carries the same block.
+    $this->assertGreaterThan(1, count($log));
+    foreach (array_slice($log, 1) as $call) {
+      $this->assertStringContainsString('Alpha briefing content for the draft.', $call['system_prompt']);
+      $this->assertStringContainsString('Not processed yet', $call['system_prompt']);
+    }
+  }
+
+  /**
+   * Uploads a context document and returns its id and stored title.
+   *
+   * The title is read back because core renames an upload whose file name
+   * already exists in the private directory.
+   *
+   * @return array
+   *   The document id and title.
+   */
+  private function uploadDocument($session, string $filename, string $contents): array {
+    $query = http_build_query(['sessionId' => $session->id(), 'category' => 'context', 'filename' => $filename]);
+    $added = $this->httpPostRaw('/api/ai/plugins/drafting/add-document?' . $query, $contents);
+    $this->assertSame(200, $added['status'], $added['body']);
+    $document = json_decode($added['body'], TRUE)['document'];
+    $media = \Drupal::entityTypeManager()->getStorage('media')->load($document['id']);
+    $this->markEntityForCleanup($media);
+    $this->markEntityForCleanup($media->get('oe_ai_context_document')->entity);
+
+    return [(string) $document['id'], (string) $document['title']];
+  }
+
+  /**
    * Tests that an empty message returns a 400 error.
    */
   public function testEmptyMessageReturns400(): void {
@@ -796,8 +864,8 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
   /**
    * Tests that get_draft_history returns the drafts of the pinned session.
    *
-   * The history is seeded directly, including a populated documents fixture
-   * of both categories, so the test does not depend on the drafting flow.
+   * The history is seeded directly, including a populated context documents
+   * fixture, so the test does not depend on the drafting flow.
    * The mock router calls the tool with a bogus session id to prove the
    * fixed tool context pins the real one.
    */
@@ -811,16 +879,18 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
       [
         'id' => '12',
         'title' => 'Climate briefing note',
+        'status' => 'done',
+        'meta' => ['type' => 'pdf', 'size' => 1024],
         'category' => 'context',
         'summary' => 'Key figures on EU emissions.',
-        'meta' => ['mime' => 'application/pdf'],
       ],
       [
         'id' => '15',
-        'title' => 'Hero image',
-        'category' => 'publishable',
-        'summary' => 'Wind turbines at sunset.',
-        'meta' => ['mime' => 'image/png'],
+        'title' => 'Programme factsheet',
+        'status' => 'done',
+        'meta' => ['type' => 'docx', 'size' => 2048],
+        'category' => 'context',
+        'summary' => 'Funding lines and deadlines.',
       ],
     ];
     $this->seedMessage($session, 'assistant', '', [
