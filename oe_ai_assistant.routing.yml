@@ -7,6 +7,14 @@ oe_ai_assistant.admin_settings:
   requirements:
     _permission: 'administer ai editorial sessions'
 
+oe_ai_assistant.transparency_notice_settings:
+  path: /admin/config/ai-editorial/settings
+  defaults:
+    _form: '\Drupal\oe_ai_assistant\Form\AiEditorialSettingsForm'
+    _title: 'AI transparency notice'
+  requirements:
+    _permission: 'administer ai editorial sessions'
+
 oe_ai_assistant.plugin.dispatch:
   path: /api/ai/plugins/{plugin_id}/{action}
   defaults:
