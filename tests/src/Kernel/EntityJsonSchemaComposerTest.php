@@ -442,6 +442,22 @@ class EntityJsonSchemaComposerTest extends KernelTestBase {
   }
 
   /**
+   * Asserts a serialized property is omitted from an otherwise exposed field.
+   */
+  public function testSerializedPropertyOfMixedFieldExcluded(): void {
+    // The link item mixes plain properties (uri, title) with the serialized
+    // `options` column, so the field stays in the schema but `options` must
+    // not: core's SerializedColumnNormalizerTrait raises `\LogicException` on
+    // denormalizing a string for it.
+    $schema = $this->composer()->compose('node', 'oe_news');
+    $properties = $schema['properties']['field_news_link']['items']['properties'];
+
+    $this->assertArrayHasKey('uri', $properties);
+    $this->assertArrayNotHasKey('options', $properties,
+      'The serialized options property is excluded from the schema.');
+  }
+
+  /**
    * Taxonomy term references exercise the bundle-info enumeration fallback.
    *
    * The field_news_tags field has no target_bundles set in handler_settings,
