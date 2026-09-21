@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\oe_ai_assistant\Neuron\Agent;
 
-use Drupal\Core\Entity\EntityInterface;
+use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
 use Drupal\oe_ai_assistant\Neuron\Chat\History\ConversationChatHistory;
 use Drupal\oe_ai_assistant\Neuron\Tools\DraftCollector;
 use Drupal\oe_ai_assistant\Neuron\Tools\DraftGroupTool;
@@ -71,7 +71,7 @@ final class DraftingAgent extends Agent {
    *   The provider to call.
    * @param string $contextPrompt
    *   Content type context appended to the instructions.
-   * @param \Drupal\Core\Entity\EntityInterface $session
+   * @param \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $session
    *   The editorial session whose drafts the history tool lists.
    * @param \Drupal\oe_ai_assistant\Service\Drafting\DraftHistoryInterface $draftHistory
    *   The draft history reader.
@@ -84,7 +84,7 @@ final class DraftingAgent extends Agent {
   public function __construct(
     private readonly AIProviderInterface $aiProvider,
     private readonly string $contextPrompt,
-    private readonly EntityInterface $session,
+    private readonly AiEditorialSessionInterface $session,
     private readonly DraftHistoryInterface $draftHistory,
     private readonly DraftCollector $collector,
     private readonly \Closure $drafter,
@@ -127,7 +127,7 @@ final class DraftingAgent extends Agent {
   /**
    * Returns the conversation history the run reads and writes.
    */
-  public function conversation(): ConversationChatHistory {
+  private function conversation(): ConversationChatHistory {
     $history = $this->getChatHistory();
     assert($history instanceof ConversationChatHistory);
     return $history;

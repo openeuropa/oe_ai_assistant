@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace Drupal\oe_ai_assistant\Neuron\Observability;
 
-use Drupal\Core\Entity\EntityInterface;
 use Drupal\oe_ai_assistant\Entity\AiConversationMessageInterface;
+use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
 use Drupal\oe_ai_assistant\Neuron\Chat\History\ConversationChatHistory;
 use Drupal\oe_ai_assistant\Neuron\Chat\Messages\Stream\Chunks\AgentEventChunk;
 use Drupal\oe_ai_assistant\Service\MessageRecorderInterface;
@@ -35,8 +35,8 @@ final class TranscriptObserver extends DrupalLogObserver {
    *   The logger channel every event is written to.
    * @param \Drupal\oe_ai_assistant\Service\MessageRecorderInterface $recorder
    *   The message recorder.
-   * @param \Drupal\Core\Entity\EntityInterface $host
-   *   The entity hosting the conversation.
+   * @param \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $session
+   *   The session hosting the conversation.
    * @param string $agentId
    *   The agent id stored on every recorded row.
    * @param \Drupal\oe_ai_assistant\Neuron\Observability\AgentEventQueue $events
@@ -51,7 +51,7 @@ final class TranscriptObserver extends DrupalLogObserver {
   public function __construct(
     LoggerInterface $logger,
     private readonly MessageRecorderInterface $recorder,
-    private readonly EntityInterface $host,
+    private readonly AiEditorialSessionInterface $session,
     private readonly string $agentId,
     private readonly AgentEventQueue $events,
     private readonly ?AiConversationMessageInterface $parent = NULL,
@@ -68,7 +68,7 @@ final class TranscriptObserver extends DrupalLogObserver {
     parent::onEvent($event, $source, $data, $branchId);
 
     if ($event === 'inference-start' && $this->systemPrompt !== NULL && !$this->systemRecorded) {
-      $this->recorder->recordSystem($this->host, $this->systemPrompt, $this->agentId, $this->parent);
+      $this->recorder->recordSystem($this->session, $this->systemPrompt, $this->agentId, $this->parent);
       $this->systemRecorded = TRUE;
     }
     if ($event === 'error' && $data instanceof AgentError) {
@@ -79,7 +79,7 @@ final class TranscriptObserver extends DrupalLogObserver {
     }
 
     $summary = AgentEventSummary::describe($event, $data);
-    $this->recorder->recordEvent($this->host, $summary, [
+    $this->recorder->recordEvent($this->session, $summary, [
       'type' => 'agent',
       'event' => $event,
       'agent' => $this->agentId,
@@ -101,7 +101,7 @@ final class TranscriptObserver extends DrupalLogObserver {
       '@trace' => $exception->getTraceAsString(),
     ]);
     if ($this->parent !== NULL) {
-      $this->recorder->recordError($this->host, $exception->getMessage(), $this->agentId, $this->parent);
+      $this->recorder->recordError($this->session, $exception->getMessage(), $this->agentId, $this->parent);
     }
   }
 

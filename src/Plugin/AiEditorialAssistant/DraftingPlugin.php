@@ -325,8 +325,8 @@ class DraftingPlugin extends AiAssistantPluginBase {
       $routerContext,
       new DraftCollector($groups, fn (array $fields): array => $this->versionDraft($session, $editorialContext, $fields)),
       fn (string $groupId, array $schemaSlice, string $task, ?AiConversationMessageInterface $parent): array => $this->agentFactory
-        ->drafter($session, $parent, $groupId, $contextPrompt, $events)
-        ->draft(new UserMessage($task), $groupId, $schemaSlice),
+        ->fieldGroupAgent($session, $parent, $groupId, $schemaSlice, $contextPrompt, $events)
+        ->structured(new UserMessage($task)),
       $events,
     );
 

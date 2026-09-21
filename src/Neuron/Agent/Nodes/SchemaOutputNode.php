@@ -21,7 +21,7 @@ use NeuronAI\StructuredOutput\JsonExtractor;
 use NeuronAI\Workflow\Events\StopEvent;
 
 /**
- * Inference node that asks for JSON matching a schema given at runtime.
+ * Structured output node for a JSON schema given at runtime.
  *
  * Neuron's own structured output derives the schema from a PHP class. The
  * drafting schemas are composed per bundle and template, so this node
@@ -29,7 +29,7 @@ use NeuronAI\Workflow\Events\StopEvent;
  * validates the answer against it and retries with the violations. The
  * decoded object ends up in the state.
  */
-final class JsonSchemaOutputNode extends InferenceNode {
+final class SchemaOutputNode extends InferenceNode {
 
   use ChatHistoryHelper;
 
@@ -49,7 +49,7 @@ final class JsonSchemaOutputNode extends InferenceNode {
   private readonly object $schemaObject;
 
   /**
-   * JsonSchemaOutputNode constructor.
+   * SchemaOutputNode constructor.
    *
    * @param \NeuronAI\Providers\AIProviderInterface $provider
    *   The provider to call.

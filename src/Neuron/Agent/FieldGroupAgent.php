@@ -4,15 +4,20 @@ declare(strict_types=1);
 
 namespace Drupal\oe_ai_assistant\Neuron\Agent;
 
-use Drupal\oe_ai_assistant\Neuron\Agent\Nodes\JsonSchemaOutputNode;
+use Drupal\oe_ai_assistant\Neuron\Agent\Nodes\SchemaOutputNode;
 use NeuronAI\Agent\Agent;
 use NeuronAI\Chat\Messages\Message;
 use NeuronAI\Providers\AIProviderInterface;
+use NeuronAI\Workflow\Interrupt\InterruptRequest;
 
 /**
- * Agent that produces the field values of one schema group.
+ * Agent that produces the field values of one field group.
+ *
+ * One run drafts one group, with no tools: the group's schema is fixed at
+ * construction, so structured() answers against it instead of deriving a
+ * schema from a PHP class.
  */
-final class ContentDrafterAgent extends Agent {
+final class FieldGroupAgent extends Agent {
 
   /**
    * The instructions every run starts from.
@@ -34,16 +39,22 @@ final class ContentDrafterAgent extends Agent {
     PROMPT;
 
   /**
-   * ContentDrafterAgent constructor.
+   * FieldGroupAgent constructor.
    *
    * @param \NeuronAI\Providers\AIProviderInterface $aiProvider
    *   The provider to call.
    * @param string $contextPrompt
    *   Editorial context appended to the instructions, or empty.
+   * @param string $name
+   *   The schema name sent to the provider.
+   * @param array $schema
+   *   The JSON schema every answer must match.
    */
   public function __construct(
     private readonly AIProviderInterface $aiProvider,
     private readonly string $contextPrompt,
+    private readonly string $name,
+    private readonly array $schema,
   ) {
     parent::__construct();
   }
@@ -65,26 +76,18 @@ final class ContentDrafterAgent extends Agent {
   }
 
   /**
-   * Runs one inference and returns the JSON object matching the schema.
+   * {@inheritdoc}
    *
-   * @param \NeuronAI\Chat\Messages\Message $message
-   *   The task message.
-   * @param string $name
-   *   The schema name sent to the provider.
-   * @param array $schema
-   *   The JSON schema the response must match.
-   *
-   * @return array
-   *   The decoded response.
+   * The class is ignored: the answer is validated against the schema given
+   * at construction and returned decoded.
    *
    * @throws \Throwable
-   *   When the provider call fails or the response holds no JSON object.
+   *   When the provider call fails or no answer matches the schema.
    */
-  public function draft(Message $message, string $name, array $schema): array {
-    $this->resolveStartEvent()->setMessages($message);
-    $this->compose(new JsonSchemaOutputNode($this->resolveProvider(), $name, $schema));
-    $state = $this->init()->run();
-    return $state->get(JsonSchemaOutputNode::OUTPUT_KEY) ?? [];
+  public function structured(Message|array $messages = [], ?string $class = NULL, int $maxRetries = 1, ?InterruptRequest $interrupt = NULL): mixed {
+    $this->resolveStartEvent()->setMessages(...(is_array($messages) ? $messages : [$messages]));
+    $this->compose(new SchemaOutputNode($this->resolveProvider(), $this->name, $this->schema, $maxRetries));
+    return $this->init($interrupt)->run()->get(SchemaOutputNode::OUTPUT_KEY) ?? [];
   }
 
 }

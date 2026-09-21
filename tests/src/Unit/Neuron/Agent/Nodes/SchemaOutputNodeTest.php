@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\oe_ai_assistant\Unit\Neuron\Agent\Nodes;
 
-use Drupal\oe_ai_assistant\Neuron\Agent\Nodes\JsonSchemaOutputNode;
+use Drupal\oe_ai_assistant\Neuron\Agent\Nodes\SchemaOutputNode;
 use NeuronAI\Agent\AgentState;
 use NeuronAI\Agent\Events\AIInferenceEvent;
 use NeuronAI\Chat\Messages\AssistantMessage;
@@ -17,9 +17,9 @@ use PHPUnit\Framework\TestCase;
 /**
  * Unit tests for the node that asks for JSON against a runtime schema.
  *
- * @coversDefaultClass \Drupal\oe_ai_assistant\Neuron\Agent\Nodes\JsonSchemaOutputNode
+ * @coversDefaultClass \Drupal\oe_ai_assistant\Neuron\Agent\Nodes\SchemaOutputNode
  */
-class JsonSchemaOutputNodeTest extends TestCase {
+class SchemaOutputNodeTest extends TestCase {
 
   /**
    * A main fields slice as the schema composer produces it.
@@ -44,7 +44,7 @@ class JsonSchemaOutputNodeTest extends TestCase {
   private function runNode(FakeAIProvider $provider, int $maxRetries = 1): AgentState {
     $state = new AgentState();
     $state->set('__workflowId', 'test');
-    $node = new JsonSchemaOutputNode($provider, 'main_fields', self::SCHEMA, $maxRetries);
+    $node = new SchemaOutputNode($provider, 'main_fields', self::SCHEMA, $maxRetries);
     $event = new AIInferenceEvent('Draft the fields.', []);
     $event->setMessages(new UserMessage('Write about broadband.'));
     $node->setWorkflowContext($state, $event);
@@ -61,7 +61,7 @@ class JsonSchemaOutputNodeTest extends TestCase {
 
     $state = $this->runNode($provider);
 
-    $this->assertSame(['title' => [['value' => 'T']], 'field_teaser' => [['value' => 'S']]], $state->get(JsonSchemaOutputNode::OUTPUT_KEY));
+    $this->assertSame(['title' => [['value' => 'T']], 'field_teaser' => [['value' => 'S']]], $state->get(SchemaOutputNode::OUTPUT_KEY));
     $provider->assertCallCount(1);
     $record = $provider->getRecorded()[0];
     $this->assertSame(['title', 'field_teaser'], $record->structuredSchema['required']);
@@ -81,7 +81,7 @@ class JsonSchemaOutputNodeTest extends TestCase {
 
     $state = $this->runNode($provider);
 
-    $this->assertArrayHasKey('field_teaser', $state->get(JsonSchemaOutputNode::OUTPUT_KEY));
+    $this->assertArrayHasKey('field_teaser', $state->get(SchemaOutputNode::OUTPUT_KEY));
     $provider->assertCallCount(2);
     $messages = $provider->getRecorded()[1]->messages;
     $correction = end($messages);

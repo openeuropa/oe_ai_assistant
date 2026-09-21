@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\oe_ai_assistant\Neuron\Tools;
 
-use Drupal\Core\Entity\EntityInterface;
+use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
 use Drupal\oe_ai_assistant\Service\Drafting\DraftHistoryInterface;
 use NeuronAI\Tools\Tool;
 
@@ -24,12 +24,12 @@ final class GetDraftHistoryTool extends Tool {
    *
    * @param \Drupal\oe_ai_assistant\Service\Drafting\DraftHistoryInterface $draftHistory
    *   The draft history reader.
-   * @param \Drupal\Core\Entity\EntityInterface $session
+   * @param \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $session
    *   The editorial session whose drafts are listed.
    */
   public function __construct(
     private readonly DraftHistoryInterface $draftHistory,
-    private readonly EntityInterface $session,
+    private readonly AiEditorialSessionInterface $session,
   ) {
     parent::__construct(
       self::NAME,

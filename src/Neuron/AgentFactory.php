@@ -5,11 +5,11 @@ declare(strict_types=1);
 namespace Drupal\oe_ai_assistant\Neuron;
 
 use Drupal\ai\AiProviderPluginManager;
-use Drupal\Core\Entity\EntityInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Session\AccountInterface;
 use Drupal\oe_ai_assistant\Entity\AiConversationMessageInterface;
-use Drupal\oe_ai_assistant\Neuron\Agent\ContentDrafterAgent;
+use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
+use Drupal\oe_ai_assistant\Neuron\Agent\FieldGroupAgent;
 use Drupal\oe_ai_assistant\Neuron\Agent\DraftingAgent;
 use Drupal\oe_ai_assistant\Neuron\Chat\History\ConversationChatHistory;
 use Drupal\oe_ai_assistant\Neuron\Observability\AgentEventQueue;
@@ -55,8 +55,8 @@ final class AgentFactory {
   /**
    * Builds the drafting agent for one chat turn.
    *
-   * @param \Drupal\Core\Entity\EntityInterface $host
-   *   The entity hosting the conversation.
+   * @param \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $session
+   *   The session hosting the conversation.
    * @param string $contextPrompt
    *   Content type context appended to the agent's instructions.
    * @param \Drupal\oe_ai_assistant\Neuron\Tools\DraftCollector $collector
@@ -67,45 +67,47 @@ final class AgentFactory {
    * @param \Drupal\oe_ai_assistant\Neuron\Observability\AgentEventQueue $events
    *   The queue receiving every event of the run.
    */
-  public function draftingAgent(EntityInterface $host, string $contextPrompt, DraftCollector $collector, \Closure $drafter, AgentEventQueue $events): DraftingAgent {
+  public function draftingAgent(AiEditorialSessionInterface $session, string $contextPrompt, DraftCollector $collector, \Closure $drafter, AgentEventQueue $events): DraftingAgent {
     [$provider, $providerId, $modelId] = $this->provider('chat_with_tools', ['drafting']);
-    $agent = new DraftingAgent($provider, $contextPrompt, $host, $this->draftHistory, $collector, $drafter);
+    $agent = new DraftingAgent($provider, $contextPrompt, $session, $this->draftHistory, $collector, $drafter);
     $history = new ConversationChatHistory(
       $this->messageRecorder,
       $this->entityTypeManager->getStorage('ai_conversation_message'),
-      $host,
+      $session,
       self::DRAFTING_AGENT_ID,
       $providerId,
       $modelId,
       authorId: (int) $this->currentUser->id(),
     );
     $agent->setChatHistory($history);
-    $agent->observe(new TranscriptObserver($this->logger, $this->messageRecorder, $host, self::DRAFTING_AGENT_ID, $events, history: $history));
+    $agent->observe(new TranscriptObserver($this->logger, $this->messageRecorder, $session, self::DRAFTING_AGENT_ID, $events, history: $history));
     return $agent;
   }
 
   /**
-   * Builds the drafter agent for one schema group.
+   * Builds the agent that drafts one field group.
    *
-   * @param \Drupal\Core\Entity\EntityInterface $host
-   *   The entity hosting the conversation.
+   * @param \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $session
+   *   The session hosting the conversation.
    * @param \Drupal\oe_ai_assistant\Entity\AiConversationMessageInterface|null $parent
    *   The turn the drafter's rows nest under, or NULL to leave them unrecorded.
    * @param string $groupId
    *   The schema group id, stored as the agent id of the recorded rows.
+   * @param array $schema
+   *   The JSON schema of the group, which every answer must match.
    * @param string $contextPrompt
    *   Editorial context appended to the drafter's instructions, or empty.
    * @param \Drupal\oe_ai_assistant\Neuron\Observability\AgentEventQueue $events
    *   The queue receiving every event of the run.
    */
-  public function drafter(EntityInterface $host, ?AiConversationMessageInterface $parent, string $groupId, string $contextPrompt, AgentEventQueue $events): ContentDrafterAgent {
+  public function fieldGroupAgent(AiEditorialSessionInterface $session, ?AiConversationMessageInterface $parent, string $groupId, array $schema, string $contextPrompt, AgentEventQueue $events): FieldGroupAgent {
     [$provider, $providerId, $modelId] = $this->provider('chat', ['drafting', $groupId]);
-    $agent = new ContentDrafterAgent($provider, $contextPrompt);
+    $agent = new FieldGroupAgent($provider, $contextPrompt, $groupId, $schema);
     if ($parent !== NULL) {
       $agent->setChatHistory(new ConversationChatHistory(
         $this->messageRecorder,
         $this->entityTypeManager->getStorage('ai_conversation_message'),
-        $host,
+        $session,
         $groupId,
         $providerId,
         $modelId,
@@ -113,7 +115,7 @@ final class AgentFactory {
         load: FALSE,
       ));
     }
-    $agent->observe(new TranscriptObserver($this->logger, $this->messageRecorder, $host, $groupId, $events, $parent, $agent->resolveInstructions()));
+    $agent->observe(new TranscriptObserver($this->logger, $this->messageRecorder, $session, $groupId, $events, $parent, $agent->resolveInstructions()));
     return $agent;
   }
 
