@@ -9,8 +9,14 @@ use Drupal\Core\Entity\EntityInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Session\AccountInterface;
 use Drupal\oe_ai_assistant\Entity\AiConversationMessageInterface;
-use Drupal\oe_ai_assistant\Neuron\Drafting\DraftingTurnWorkflow;
+use Drupal\oe_ai_assistant\Neuron\Agent\ContentDrafterAgent;
+use Drupal\oe_ai_assistant\Neuron\Agent\RouterAgent;
+use Drupal\oe_ai_assistant\Neuron\Chat\History\ConversationChatHistory;
+use Drupal\oe_ai_assistant\Neuron\Observability\DrupalLogObserver;
+use Drupal\oe_ai_assistant\Neuron\Observability\TranscriptObserver;
+use Drupal\oe_ai_assistant\Neuron\Providers\DrupalAi\DrupalAiProvider;
 use Drupal\oe_ai_assistant\Neuron\Tools\DraftContentTool;
+use Drupal\oe_ai_assistant\Neuron\Workflow\Drafting\DraftingTurnWorkflow;
 use Drupal\oe_ai_assistant\Service\MessageRecorderInterface;
 use Drupal\oe_ai_assistant\Service\UiMessageStreamInterface;
 use NeuronAI\Observability\EventBus;
@@ -102,7 +108,7 @@ final class AgentFactory {
   /**
    * Builds the workflow that runs one chat turn, from the message to the draft.
    *
-   * @param \Drupal\oe_ai_assistant\Neuron\RouterAgent $router
+   * @param \Drupal\oe_ai_assistant\Neuron\Agent\RouterAgent $router
    *   The router agent, with its conversation history attached.
    * @param string $message
    *   The user's message for this turn.

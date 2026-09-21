@@ -6,7 +6,7 @@ namespace Drupal\Tests\oe_ai_assistant\Kernel;
 
 use Drupal\KernelTests\KernelTestBase;
 use Drupal\oe_ai_assistant\Entity\AiConversationMessageInterface;
-use Drupal\oe_ai_assistant\Neuron\ConversationChatHistory;
+use Drupal\oe_ai_assistant\Neuron\Chat\History\ConversationChatHistory;
 use Drupal\oe_ai_assistant\Service\MessageRecorderInterface;
 use Drupal\user\Entity\User;
 use NeuronAI\Chat\Messages\AssistantMessage;
