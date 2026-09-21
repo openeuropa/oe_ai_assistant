@@ -16,7 +16,7 @@ use Drupal\oe_ai_assistant\Neuron\Observability\AgentEventQueue;
 use Drupal\oe_ai_assistant\Neuron\Observability\DrupalLogObserver;
 use Drupal\oe_ai_assistant\Neuron\Observability\TranscriptObserver;
 use Drupal\oe_ai_assistant\Neuron\Providers\DrupalAi\DrupalAiProvider;
-use Drupal\oe_ai_assistant\Neuron\Tools\DraftCollector;
+use Drupal\oe_ai_assistant\Service\Drafting\DraftCollector;
 use Drupal\oe_ai_assistant\Service\Drafting\DraftHistoryInterface;
 use Drupal\oe_ai_assistant\Service\MessageRecorderInterface;
 use NeuronAI\Observability\EventBus;
@@ -59,7 +59,7 @@ final class AgentFactory {
    *   The session hosting the conversation.
    * @param string $contextPrompt
    *   Content type context appended to the agent's instructions.
-   * @param \Drupal\oe_ai_assistant\Neuron\Tools\DraftCollector $collector
+   * @param \Drupal\oe_ai_assistant\Service\Drafting\DraftCollector $collector
    *   The collector of this turn's group results.
    * @param \Closure $drafter
    *   Drafts one group, called with the group id, the schema slice, the task

@@ -20,11 +20,12 @@ final class GetContentSchemaTool extends Tool {
   /**
    * GetContentSchemaTool constructor.
    *
-   * @param \Drupal\oe_ai_assistant\Neuron\Tools\DraftCollector $collector
-   *   The collector holding the groups of this turn.
+   * @param array $groups
+   *   The schema groups of this turn, each with groupId, label, fieldNames
+   *   and schemaSlice.
    */
   public function __construct(
-    private readonly DraftCollector $collector,
+    private readonly array $groups,
   ) {
     parent::__construct(
       self::NAME,
@@ -38,7 +39,7 @@ final class GetContentSchemaTool extends Tool {
    * Returns the field groups as JSON.
    */
   public function __invoke(): string {
-    return json_encode($this->collector->groups());
+    return json_encode($this->groups);
   }
 
 }

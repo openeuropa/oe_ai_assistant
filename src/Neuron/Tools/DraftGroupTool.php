@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Drupal\oe_ai_assistant\Neuron\Tools;
 
 use Drupal\oe_ai_assistant\Neuron\Chat\History\ConversationChatHistory;
+use Drupal\oe_ai_assistant\Service\Drafting\DraftCollector;
 use NeuronAI\Tools\HasRunKey;
 use NeuronAI\Tools\PropertyType;
 use NeuronAI\Tools\Tool;
@@ -25,7 +26,7 @@ final class DraftGroupTool extends Tool implements HasRunKey {
   /**
    * DraftGroupTool constructor.
    *
-   * @param \Drupal\oe_ai_assistant\Neuron\Tools\DraftCollector $collector
+   * @param \Drupal\oe_ai_assistant\Service\Drafting\DraftCollector $collector
    *   The collector of this turn's group results.
    * @param \Drupal\oe_ai_assistant\Neuron\Chat\History\ConversationChatHistory $conversation
    *   The conversation the drafters take their context from.

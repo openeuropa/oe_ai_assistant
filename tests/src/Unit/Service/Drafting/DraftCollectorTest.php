@@ -2,15 +2,15 @@
 
 declare(strict_types=1);
 
-namespace Drupal\Tests\oe_ai_assistant\Unit\Neuron\Tools;
+namespace Drupal\Tests\oe_ai_assistant\Unit\Service\Drafting;
 
-use Drupal\oe_ai_assistant\Neuron\Tools\DraftCollector;
+use Drupal\oe_ai_assistant\Service\Drafting\DraftCollector;
 use PHPUnit\Framework\TestCase;
 
 /**
  * Unit tests for the draft collector.
  *
- * @coversDefaultClass \Drupal\oe_ai_assistant\Neuron\Tools\DraftCollector
+ * @coversDefaultClass \Drupal\oe_ai_assistant\Service\Drafting\DraftCollector
  */
 class DraftCollectorTest extends TestCase {
 

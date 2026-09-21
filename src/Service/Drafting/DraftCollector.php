@@ -2,10 +2,15 @@
 
 declare(strict_types=1);
 
-namespace Drupal\oe_ai_assistant\Neuron\Tools;
+namespace Drupal\oe_ai_assistant\Service\Drafting;
 
 /**
  * Gathers the group results of one drafting turn and versions the draft.
+ *
+ * One instance per turn, shared by the agent that reads the groups and the
+ * tool that drafts them. The results live here rather than on that tool
+ * because Neuron hands every tool call a clone of the registered tool:
+ * only a shared object carries state from one call to the next.
  *
  * Main fields merge flat, restricted to the group's own fields. A reference
  * group is read by field name; a bare item list is accepted as that field.

@@ -6,10 +6,10 @@ namespace Drupal\oe_ai_assistant\Neuron\Agent;
 
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
 use Drupal\oe_ai_assistant\Neuron\Chat\History\ConversationChatHistory;
-use Drupal\oe_ai_assistant\Neuron\Tools\DraftCollector;
 use Drupal\oe_ai_assistant\Neuron\Tools\DraftGroupTool;
 use Drupal\oe_ai_assistant\Neuron\Tools\GetContentSchemaTool;
 use Drupal\oe_ai_assistant\Neuron\Tools\GetDraftHistoryTool;
+use Drupal\oe_ai_assistant\Service\Drafting\DraftCollector;
 use Drupal\oe_ai_assistant\Service\Drafting\DraftHistoryInterface;
 use NeuronAI\Agent\Agent;
 use NeuronAI\Providers\AIProviderInterface;
@@ -75,7 +75,7 @@ final class DraftingAgent extends Agent {
    *   The editorial session whose drafts the history tool lists.
    * @param \Drupal\oe_ai_assistant\Service\Drafting\DraftHistoryInterface $draftHistory
    *   The draft history reader.
-   * @param \Drupal\oe_ai_assistant\Neuron\Tools\DraftCollector $collector
+   * @param \Drupal\oe_ai_assistant\Service\Drafting\DraftCollector $collector
    *   The collector of this turn's group results.
    * @param \Closure $drafter
    *   Drafts one group, called with the group id, the schema slice, the task
@@ -111,7 +111,7 @@ final class DraftingAgent extends Agent {
    */
   protected function tools(): array {
     return $this->declaredTools ??= [
-      new GetContentSchemaTool($this->collector),
+      new GetContentSchemaTool($this->collector->groups()),
       new GetDraftHistoryTool($this->draftHistory, $this->session),
       new DraftGroupTool($this->collector, $this->conversation(), $this->drafter),
     ];

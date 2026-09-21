@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Drupal\Tests\oe_ai_assistant\Kernel;
 
 use Drupal\KernelTests\KernelTestBase;
-use Drupal\oe_ai_assistant\Neuron\Tools\DraftCollector;
 use Drupal\oe_ai_assistant\Neuron\Tools\GetContentSchemaTool;
 use Drupal\oe_ai_assistant\Service\DraftingSchemaProviderInterface;
 use Drupal\oe_ai_assistant\Service\EntityJsonSchemaComposer;
@@ -89,7 +88,7 @@ class GetContentSchemaTest extends KernelTestBase {
    */
   private function runTool(string $entityTypeId, string $bundle, ?string $templateId = NULL): array {
     $groups = $this->container->get(DraftingSchemaProviderInterface::class)->groups($entityTypeId, $bundle, $templateId);
-    $tool = new GetContentSchemaTool(new DraftCollector($groups, static fn (array $fields): array => []));
+    $tool = new GetContentSchemaTool($groups);
     return json_decode($tool(), TRUE);
   }
 
