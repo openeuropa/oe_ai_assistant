@@ -4,12 +4,13 @@ declare(strict_types=1);
 
 namespace Drupal\oe_ai_assistant\Form;
 
+use Drupal\Component\Serialization\Exception\InvalidDataTypeException;
+use Drupal\Component\Serialization\Yaml as DrupalYaml;
 use Drupal\Core\Entity\EntityForm;
 use Drupal\Core\Entity\EntityTypeBundleInfoInterface;
 use Drupal\Core\Form\FormStateInterface;
 use Drupal\oe_ai_assistant\Entity\AiDraftingTemplate;
 use Symfony\Component\DependencyInjection\ContainerInterface;
-use Symfony\Component\Yaml\Exception\ParseException;
 use Symfony\Component\Yaml\Yaml;
 
 /**
@@ -22,7 +23,7 @@ use Symfony\Component\Yaml\Yaml;
 final class AiDraftingTemplateForm extends EntityForm {
 
   public function __construct(
-    private readonly EntityTypeBundleInfoInterface $entityTypeBundleInfo,
+    protected EntityTypeBundleInfoInterface $entityTypeBundleInfo,
   ) {}
 
   /**
@@ -200,9 +201,9 @@ final class AiDraftingTemplateForm extends EntityForm {
       return [];
     }
     try {
-      $parsed = Yaml::parse($raw);
+      $parsed = DrupalYaml::decode($raw);
     }
-    catch (ParseException $e) {
+    catch (InvalidDataTypeException $e) {
       $form_state->setErrorByName($element, $this->t('@label: invalid YAML — @message', [
         '@label' => $label,
         '@message' => $e->getMessage(),

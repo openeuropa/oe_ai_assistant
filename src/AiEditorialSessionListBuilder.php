@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Drupal\oe_ai_assistant;
 
 use Drupal\content_moderation\ModerationInformationInterface;
+use Drupal\Core\Cache\CacheableMetadata;
 use Drupal\Core\Datetime\DateFormatterInterface;
 use Drupal\Core\Entity\EntityInterface;
 use Drupal\Core\Entity\EntityListBuilder;
@@ -189,7 +190,7 @@ class AiEditorialSessionListBuilder extends EntityListBuilder {
   /**
    * {@inheritdoc}
    */
-  protected function getDefaultOperations(EntityInterface $entity): array {
+  protected function getDefaultOperations(EntityInterface $entity, ?CacheableMetadata $cacheability = NULL): array {
     $operations = parent::getDefaultOperations($entity);
     unset($operations['view']);
 

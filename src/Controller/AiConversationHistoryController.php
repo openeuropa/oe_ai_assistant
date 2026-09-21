@@ -8,6 +8,7 @@ use Drupal\Core\Cache\CacheableMetadata;
 use Drupal\Core\Controller\ControllerBase;
 use Drupal\Core\Datetime\DateFormatterInterface;
 use Drupal\Core\Datetime\DrupalDateTime;
+use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\StringTranslation\TranslatableMarkup;
 use Drupal\datetime\Plugin\Field\FieldType\DateTimeItemInterface;
 use Drupal\oe_ai_assistant\Entity\AiConversationMessageInterface;
@@ -37,13 +38,13 @@ class AiConversationHistoryController extends ControllerBase {
   /**
    * Constructs the controller.
    *
-   * @param \Drupal\oe_ai_assistant\Entity\Storage\AiConversationMessageStorageInterface $messageStorage
-   *   The conversation message storage handler.
+   * @param \Drupal\Core\Entity\EntityTypeManagerInterface $entityTypeManager
+   *   The entity type manager.
    * @param \Drupal\Core\Datetime\DateFormatterInterface $dateFormatter
    *   The date formatter.
    */
   public function __construct(
-    private readonly AiConversationMessageStorageInterface $messageStorage,
+    private readonly EntityTypeManagerInterface $entityTypeManager,
     private readonly DateFormatterInterface $dateFormatter,
   ) {}
 
@@ -51,9 +52,10 @@ class AiConversationHistoryController extends ControllerBase {
    * {@inheritdoc}
    */
   public static function create(ContainerInterface $container): static {
-    $storage = $container->get('entity_type.manager')->getStorage('ai_conversation_message');
-    assert($storage instanceof AiConversationMessageStorageInterface);
-    return new static($storage, $container->get('date.formatter'));
+    return new static(
+      $container->get('entity_type.manager'),
+      $container->get('date.formatter'),
+    );
   }
 
   /**
@@ -80,14 +82,16 @@ class AiConversationHistoryController extends ControllerBase {
    *   sub-agent messages indented under their parent turn.
    */
   public function view(AiEditorialSessionInterface $ai_editorial_session): array {
-    $tree = $this->messageStorage->loadTree($ai_editorial_session);
+    $message_storage = $this->entityTypeManager->getStorage('ai_conversation_message');
+    assert($message_storage instanceof AiConversationMessageStorageInterface);
+    $tree = $message_storage->loadTree($ai_editorial_session);
 
     $build = [];
 
     // Invalidate when the session changes or any message is written.
     CacheableMetadata::createFromObject($ai_editorial_session)
-      ->addCacheContexts($this->messageStorage->getEntityType()->getListCacheContexts())
-      ->addCacheTags($this->messageStorage->getEntityType()->getListCacheTags())
+      ->addCacheContexts($message_storage->getEntityType()->getListCacheContexts())
+      ->addCacheTags($message_storage->getEntityType()->getListCacheTags())
       ->applyTo($build);
 
     if ($tree === []) {

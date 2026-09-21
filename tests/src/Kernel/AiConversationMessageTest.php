@@ -56,13 +56,6 @@ class AiConversationMessageTest extends KernelTestBase {
   ];
 
   /**
-   * The conversation message storage.
-   *
-   * @var \Drupal\Core\Entity\EntityStorageInterface
-   */
-  protected $storage;
-
-  /**
    * {@inheritdoc}
    */
   protected function setUp(): void {
@@ -71,8 +64,6 @@ class AiConversationMessageTest extends KernelTestBase {
     $this->installEntitySchema('user');
     $this->installEntitySchema('ai_conversation_message');
 
-    $this->storage = $this->container->get('entity_type.manager')
-      ->getStorage('ai_conversation_message');
   }
 
   /**
@@ -93,7 +84,9 @@ class AiConversationMessageTest extends KernelTestBase {
     $message->save();
 
     /** @var \Drupal\oe_ai_assistant\Entity\AiConversationMessageInterface $loaded */
-    $loaded = $this->storage->loadUnchanged($message->id());
+    $loaded = $this->container->get('entity_type.manager')
+      ->getStorage('ai_conversation_message')
+      ->loadUnchanged($message->id());
 
     $this->assertSame('ai_editorial_session', $loaded->getHostEntityType());
     $this->assertSame(42, $loaded->getHostEntityId());
@@ -207,7 +200,9 @@ class AiConversationMessageTest extends KernelTestBase {
     ])->save();
 
     // The whole conversation is the set of rows sharing the host.
-    $conversation = $this->storage->getQuery()
+    $conversation = $this->container->get('entity_type.manager')
+      ->getStorage('ai_conversation_message')
+      ->getQuery()
       ->accessCheck(FALSE)
       ->condition('host_entity_type', 'ai_editorial_session')
       ->condition('host_entity_id', 42)
@@ -217,7 +212,9 @@ class AiConversationMessageTest extends KernelTestBase {
     $this->assertCount(3, $conversation);
 
     // The top-level transcript is the host rows with no parent.
-    $top_level = $this->storage->getQuery()
+    $top_level = $this->container->get('entity_type.manager')
+      ->getStorage('ai_conversation_message')
+      ->getQuery()
       ->accessCheck(FALSE)
       ->condition('host_entity_id', 42)
       ->condition('parent', NULL, 'IS NULL')
@@ -225,7 +222,9 @@ class AiConversationMessageTest extends KernelTestBase {
     $this->assertSame([(string) $parent_id], array_values($top_level));
 
     // A message's sub-agent calls are its children by parent.
-    $children = $this->storage->getQuery()
+    $children = $this->container->get('entity_type.manager')
+      ->getStorage('ai_conversation_message')
+      ->getQuery()
       ->accessCheck(FALSE)
       ->condition('parent', $parent_id)
       ->execute();
