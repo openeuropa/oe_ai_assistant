@@ -13,8 +13,6 @@ import {
   CircleCheck,
   CircleDashed,
   FileText,
-  Film,
-  Image,
   LayoutTemplate,
   Megaphone,
   PenLine,
@@ -50,29 +48,6 @@ export interface DraftCardProps {
  */
 function draftTitle(version: number | null): string {
   return version !== null ? `Draft ${version}` : "Draft";
-}
-
-/**
- * Picks the media-kind icon for a document link.
- *
- * The kind is inferred from the mime type in the descriptor's meta when one
- * is present: images and videos get their own icon, everything else shows as
- * a generic document. The exact type is never spelled out in the UI.
- */
-function documentKindIcon(doc: DraftDocumentSnapshot): typeof FileText {
-  const meta = doc.meta;
-  const mime =
-    doc.file?.mime ??
-    (typeof meta === "object" && meta !== null && "mime" in meta
-      ? String((meta as Record<string, unknown>).mime)
-      : "");
-  if (mime.startsWith("image/")) {
-    return Image;
-  }
-  if (mime.startsWith("video/")) {
-    return Film;
-  }
-  return FileText;
 }
 
 /**
@@ -123,44 +98,30 @@ export function DraftCard({
   const tone = context?.tone ?? null;
   const template = context?.template ?? null;
 
-  // Group the document snapshots by their category so the table shows one
-  // row per kind instead of a badge after every name. Anything that is not
-  // a publishable asset counts as briefing material so no document is ever
-  // silently dropped.
-  const publishableAssets = documents.filter(
-    (d) => d.category === "publishable",
-  );
-  const briefingDocuments = documents.filter(
-    (d) => d.category !== "publishable",
-  );
   const hasProvenance =
     createdAt !== null ||
     tone !== null ||
     template !== null ||
-    briefingDocuments.length > 0 ||
-    publishableAssets.length > 0;
+    documents.length > 0;
 
-  /** Renders the wrapped link list for one document group. */
+  /** Renders the wrapped link list of the context documents. */
   const documentLinks = (group: DraftDocumentSnapshot[]) => (
     <span className="flex flex-wrap gap-x-2 gap-y-0.5">
-      {group.map((doc) => {
-        const KindIcon = documentKindIcon(doc);
-        return (
-          <button
-            key={doc.id}
-            type="button"
-            className="relative z-10 inline-flex cursor-pointer items-center gap-1 text-blue-600 underline-offset-2 hover:underline"
-            onClick={() => setSelectedDocument(doc)}
-          >
-            <KindIcon
-              size={12}
-              className="shrink-0 text-gray-400"
-              aria-hidden="true"
-            />
-            {doc.title}
-          </button>
-        );
-      })}
+      {group.map((doc) => (
+        <button
+          key={doc.id}
+          type="button"
+          className="relative z-10 inline-flex cursor-pointer items-center gap-1 text-blue-600 underline-offset-2 hover:underline"
+          onClick={() => setSelectedDocument(doc)}
+        >
+          <FileText
+            size={12}
+            className="shrink-0 text-gray-400"
+            aria-hidden="true"
+          />
+          {doc.title}
+        </button>
+      ))}
     </span>
   );
 
@@ -227,14 +188,9 @@ export function DraftCard({
                     {template.label}
                   </ProvenanceRow>
                 )}
-                {briefingDocuments.length > 0 && (
-                  <ProvenanceRow icon={FileText} label="Briefing documents">
-                    {documentLinks(briefingDocuments)}
-                  </ProvenanceRow>
-                )}
-                {publishableAssets.length > 0 && (
-                  <ProvenanceRow icon={Image} label="Publishable assets">
-                    {documentLinks(publishableAssets)}
+                {documents.length > 0 && (
+                  <ProvenanceRow icon={FileText} label="Context documents">
+                    {documentLinks(documents)}
                   </ProvenanceRow>
                 )}
               </div>

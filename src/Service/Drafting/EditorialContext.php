@@ -18,6 +18,19 @@ namespace Drupal\oe_ai_assistant\Service\Drafting;
 final class EditorialContext {
 
   /**
+   * Characters of one context document extract injected into a prompt.
+   */
+  public const int MAX_DOCUMENT_CHARS = 20000;
+
+  /**
+   * Characters of extracted text injected over all context documents.
+   *
+   * A context document whose text does not fit in the remaining budget
+   * contributes its summary instead.
+   */
+  public const int MAX_TOTAL_CHARS = 60000;
+
+  /**
    * Constructs the editorial context.
    *
    * @param string|null $toneId
@@ -30,10 +43,12 @@ final class EditorialContext {
    *   The resolved drafting template id, or NULL without a template.
    * @param string|null $templateLabel
    *   The template label at resolution time.
-   * @param array $documents
-   *   Document descriptors, each {id, title, category, summary, meta} with
-   *   category either "context" or "publishable". Always empty until the
-   *   documents backend lands.
+   * @param array $contextDocuments
+   *   Context document descriptors, each {id, title, category, status,
+   *   filename, summary, meta, extract}. Only documents of the "context"
+   *   category are injected into the prompts; publishable assets stay out of
+   *   the context for now. The extract is the full text when the pipeline
+   *   produced one, NULL otherwise.
    */
   public function __construct(
     public readonly ?string $toneId,
@@ -41,7 +56,7 @@ final class EditorialContext {
     public readonly ?string $tonePrompt,
     public readonly ?string $templateId,
     public readonly ?string $templateLabel,
-    public readonly array $documents = [],
+    public readonly array $contextDocuments = [],
   ) {}
 
   /**
@@ -49,7 +64,8 @@ final class EditorialContext {
    *
    * @return array
    *   An array with tone ({id, label, prompt} or NULL), template ({id, label}
-   *   or NULL) and documents (the descriptor list, possibly empty).
+   *   or NULL) and documents (the context document descriptors without the
+   *   file name and the extracted text, possibly empty).
    */
   public function toSnapshot(): array {
     return [
@@ -59,7 +75,10 @@ final class EditorialContext {
       'template' => $this->templateId !== NULL && $this->templateId !== ''
         ? ['id' => $this->templateId, 'label' => (string) $this->templateLabel]
         : NULL,
-      'documents' => $this->documents,
+      'documents' => array_map(static function (array $document): array {
+        unset($document['filename'], $document['extract']);
+        return $document;
+      }, $this->contextDocuments),
     ];
   }
 
@@ -67,28 +86,106 @@ final class EditorialContext {
    * Builds the prompt text injected into content-producing agents.
    *
    * One crafted block gathers every piece of editorial context that must
-   * steer generation, so all injection sites share the same wording. Only
-   * the tone contributes today; document summaries join it when the
-   * documents backend lands.
+   * steer generation, so all injection sites share the same wording: the
+   * tone guidelines and the context documents.
    *
    * @return string
    *   The prompt block, or an empty string when there is no context.
    */
   public function toPrompt(): string {
-    $lines = [];
+    $blocks = [];
     if ($this->tonePrompt !== NULL && $this->tonePrompt !== '') {
-      $lines[] = sprintf('- Tone: %s', (string) $this->toneLabel);
-      $lines[] = sprintf('- Tone guidelines: %s', $this->tonePrompt);
+      $blocks[] = implode("\n", [
+        'Editorial context selected by the editor for this draft:',
+        sprintf('- Tone: %s', (string) $this->toneLabel),
+        sprintf('- Tone guidelines: %s', $this->tonePrompt),
+        '',
+        'Follow the tone guidelines in every piece of text you generate.',
+      ]);
     }
-    if ($lines === []) {
+    $contextDocuments = $this->toContextDocumentsPrompt();
+    if ($contextDocuments !== '') {
+      $blocks[] = $contextDocuments;
+    }
+
+    return implode("\n\n", $blocks);
+  }
+
+  /**
+   * Builds the context documents block of the prompts.
+   *
+   * Every attached context document appears under its title and file name,
+   * so the agents can tell which document the editor refers to: the
+   * extracted text when the pipeline produced one, otherwise a note that
+   * the content is not available. The router and the sub-agents share this
+   * block, so the assistant can ask the editor to wait for pending material
+   * or to retry failed material. Text is capped per document and over all
+   * documents; a document whose text does not fit in the remaining budget
+   * contributes its summary instead, and counts as not available while it
+   * has none.
+   *
+   * @return string
+   *   The prompt block, or an empty string without context documents.
+   */
+  public function toContextDocumentsPrompt(): string {
+    if ($this->contextDocuments === []) {
       return '';
     }
-    return implode("\n", [
-      'Editorial context selected by the editor for this draft:',
-      ...$lines,
-      '',
-      'Follow the tone guidelines in every piece of text you generate.',
-    ]);
+
+    $lines = ['Context documents attached by the editor as background for this draft:'];
+    $budget = self::MAX_TOTAL_CHARS;
+    $pending = FALSE;
+    $failed = FALSE;
+    foreach ($this->contextDocuments as $document) {
+      $lines[] = '';
+      $heading = '### ' . (string) ($document['title'] ?? $document['id'] ?? 'Document');
+      $filename = trim((string) ($document['filename'] ?? ''));
+      $lines[] = $filename === '' ? $heading : sprintf('%s (file: %s)', $heading, $filename);
+      $extract = trim((string) ($document['extract'] ?? ''));
+      $truncated = mb_strlen($extract) > self::MAX_DOCUMENT_CHARS;
+      if ($truncated) {
+        $extract = mb_substr($extract, 0, self::MAX_DOCUMENT_CHARS);
+      }
+      $summary = trim((string) ($document['summary'] ?? ''));
+      if ($extract !== '' && mb_strlen($extract) <= $budget) {
+        $budget -= mb_strlen($extract);
+        $lines[] = $extract;
+        // The marker is ours: it stays out of the budget, which only counts
+        // document text.
+        if ($truncated) {
+          $lines[] = '[truncated]';
+        }
+      }
+      elseif ($summary !== '') {
+        $lines[] = 'Summary only: ' . $summary;
+      }
+      // The document has nothing to contribute: no text yet, or text that
+      // does not fit and no summary to stand in for it. Waiting only helps a
+      // document still in the pipeline; a failed one stays unavailable until
+      // the editor retries it.
+      elseif (($document['status'] ?? '') === DocumentExtractionProcessorInterface::STATE_ERROR) {
+        $failed = TRUE;
+        $lines[] = 'Processing failed; its content is not available.';
+      }
+      else {
+        $pending = TRUE;
+        $lines[] = 'Not processed yet; its content is not available.';
+      }
+    }
+
+    $lines[] = '';
+    $lines[] = 'Use the context documents as background only: never reproduce them verbatim and do not mention '
+      . 'them unless the editor asks.';
+    if ($pending) {
+      $lines[] = 'Some documents are not available yet. Tell the editor to wait a moment for the full context, '
+        . 'or warn that a draft produced now may miss part of the briefing material.';
+    }
+    if ($failed) {
+      $lines[] = 'Some documents could not be processed. Tell the editor to retry them or to remove them, '
+        . 'and warn that a draft produced now ignores their content.';
+    }
+
+    return implode("\n", $lines);
   }
 
 }
