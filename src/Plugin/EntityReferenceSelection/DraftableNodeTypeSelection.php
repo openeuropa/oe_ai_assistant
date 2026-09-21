@@ -44,7 +44,7 @@ class DraftableNodeTypeSelection extends DefaultSelection {
 
     if ($bundles === []) {
       // No bundle has an enabled template; match nothing.
-      $query->condition($id_key, NULL, '=');
+      $query->notExists($id_key);
       return $query;
     }
 
