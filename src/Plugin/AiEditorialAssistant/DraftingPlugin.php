@@ -14,12 +14,14 @@ use Drupal\oe_ai_assistant\AiDraftingTemplateInterface;
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
 use Drupal\oe_ai_assistant\Exception\ActionException;
 use Drupal\oe_ai_assistant\Neuron\AgentFactory;
-use Drupal\oe_ai_assistant\Neuron\DraftContentTool;
 use Drupal\oe_ai_assistant\Neuron\Drafting\ConfirmationChunk;
 use Drupal\oe_ai_assistant\Neuron\Drafting\DraftedFieldsChunk;
 use Drupal\oe_ai_assistant\Neuron\Drafting\DraftResultChunk;
 use Drupal\oe_ai_assistant\Neuron\Drafting\GroupErrorChunk;
 use Drupal\oe_ai_assistant\Neuron\Drafting\PlanChunk;
+use Drupal\oe_ai_assistant\Neuron\Tools\DraftContentTool;
+use Drupal\oe_ai_assistant\Neuron\Tools\GetContentSchemaTool;
+use Drupal\oe_ai_assistant\Neuron\Tools\GetDraftHistoryTool;
 use Drupal\oe_ai_assistant\Service\Drafting\ContextDocumentRepository;
 use Drupal\oe_ai_assistant\Service\Drafting\DocumentRepositoryInterface;
 use Drupal\oe_ai_assistant\Service\Drafting\DraftHistoryInterface;
@@ -321,28 +323,21 @@ class DraftingPlugin extends AiAssistantPluginBase {
     // The schema tool is pinned to the entity type and bundle of the current
     // editorial context, and the history tool to the session, so the model
     // cannot read outside the session it serves.
-    $fixedToolContexts = [
-      'get_content_schema' => [
-        'entity_type_id' => $context['entityTypeId'],
-        'bundle' => $context['bundle'],
-        // The context definition is string-typed; NULL becomes ''.
-        'template' => $context['template'] ?? '',
-      ],
-      'get_draft_history' => [
-        'session_id' => (string) $session->id(),
-      ],
+    $tools = [
+      new GetContentSchemaTool($this->schemaProvider, $this->logger, $context['entityTypeId'], $context['bundle'], $context['template']),
+      new GetDraftHistoryTool($this->draftHistory, $session),
     ];
 
     return $this->uiMessageStream->respond(
       function (UiMessageStreamInterface $stream) use (
-        $message, $routerContext, $fixedToolContexts, $groups,
+        $message, $routerContext, $tools, $groups,
         $session, $editorialContext,
       ): void {
         $stream->start();
 
         // The router's history is the persisted transcript: it replays the
         // earlier turns to the model and stores every new turn as a row.
-        $router = $this->agentFactory->router($session, $routerContext, $fixedToolContexts, $stream);
+        $router = $this->agentFactory->router($session, $routerContext, $tools, $stream);
         $contextPrompt = $editorialContext->toPrompt();
         $turn = $this->agentFactory->draftingTurn(
           $router,

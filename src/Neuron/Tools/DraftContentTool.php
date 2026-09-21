@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Drupal\oe_ai_assistant\Neuron;
+namespace Drupal\oe_ai_assistant\Neuron\Tools;
 
 use NeuronAI\Tools\Tool;
 

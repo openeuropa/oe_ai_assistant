@@ -5,11 +5,13 @@ declare(strict_types=1);
 namespace Drupal\Tests\oe_ai_assistant\Kernel;
 
 use Drupal\KernelTests\KernelTestBase;
+use Drupal\oe_ai_assistant\Neuron\Tools\GetContentSchemaTool;
+use Drupal\oe_ai_assistant\Service\DraftingSchemaProviderInterface;
 use Drupal\oe_ai_assistant\Service\EntityJsonSchemaComposer;
 use PHPUnit\Framework\Attributes\Group;
 
 /**
- * Tests EntityJsonSchemaComposer schema splitting logic.
+ * Tests the schema tool and the schema splitting behind it.
  *
  * Uses the oe_news content type from the test fixture to verify
  * that fields are correctly split into main_fields and per-entity
@@ -79,22 +81,20 @@ class GetContentSchemaTest extends KernelTestBase {
   }
 
   /**
-   * Executes the get_content_schema plugin with the given context values.
-   *
-   * @param array $context
-   *   Context values keyed by name (bundle, entity_type_id, template).
+   * Runs the schema tool pinned to the given content and template.
    *
    * @return array
-   *   The plugin's structured output.
+   *   The decoded tool result.
    */
-  private function runPlugin(array $context): array {
-    $plugin = $this->container->get('plugin.manager.ai.function_calls')
-      ->createInstance('oe_ai_assistant:get_content_schema');
-    foreach ($context as $name => $value) {
-      $plugin->setContextValue($name, $value);
-    }
-    $plugin->execute();
-    return $plugin->getStructuredOutput();
+  private function runTool(string $entityTypeId, string $bundle, ?string $templateId = NULL): array {
+    $tool = new GetContentSchemaTool(
+      $this->container->get(DraftingSchemaProviderInterface::class),
+      $this->container->get('logger.channel.oe_ai_assistant'),
+      $entityTypeId,
+      $bundle,
+      $templateId,
+    );
+    return json_decode($tool(), TRUE);
   }
 
   /**
@@ -102,11 +102,7 @@ class GetContentSchemaTest extends KernelTestBase {
    */
   public function testExecuteWithTemplateUsesThatTemplate(): void {
     // news_default lists title, field_teaser, field_body (all scalar).
-    $groups = $this->runPlugin([
-      'entity_type_id' => 'node',
-      'bundle' => 'oe_news',
-      'template' => 'news_default',
-    ]);
+    $groups = $this->runTool('node', 'oe_news', 'news_default');
 
     $byId = array_column($groups, 'fieldNames', 'groupId');
     $this->assertSame(['title', 'field_teaser', 'field_body'], $byId['main_fields']);
@@ -118,11 +114,7 @@ class GetContentSchemaTest extends KernelTestBase {
    * An invalid template id degrades to an error payload, not an exception.
    */
   public function testExecuteWithInvalidTemplateReturnsErrorOutput(): void {
-    $output = $this->runPlugin([
-      'entity_type_id' => 'node',
-      'bundle' => 'oe_news',
-      'template' => 'does_not_exist',
-    ]);
+    $output = $this->runTool('node', 'oe_news', 'does_not_exist');
 
     $this->assertArrayHasKey('error', $output);
     $this->assertStringContainsString('not found', $output['error']);
@@ -134,10 +126,7 @@ class GetContentSchemaTest extends KernelTestBase {
   public function testExecuteWithoutTemplateAutoPicksLatest(): void {
     // oe_news' latest template is news_with_paragraphs (title, field_teaser,
     // field_content_paragraphs), not the full schema.
-    $groups = $this->runPlugin([
-      'entity_type_id' => 'node',
-      'bundle' => 'oe_news',
-    ]);
+    $groups = $this->runTool('node', 'oe_news');
 
     $byId = array_column($groups, 'fieldNames', 'groupId');
     $this->assertSame(['title', 'field_teaser'], $byId['main_fields']);

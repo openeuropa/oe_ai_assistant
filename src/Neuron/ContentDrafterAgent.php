@@ -13,9 +13,36 @@ use NeuronAI\Providers\AIProviderInterface;
  */
 final class ContentDrafterAgent extends Agent {
 
+  /**
+   * The instructions every run starts from.
+   */
+  public const INSTRUCTIONS = <<<'PROMPT'
+    You are a content generator. You will receive a JSON schema and
+    instructions describing what content to produce. Generate a JSON
+    object that conforms exactly to the given schema. Return ONLY
+    valid JSON with no markdown fencing, no explanation, no commentary.
+
+    Every field value is an array of items, each item an object with
+    the property keys the schema lists, for example
+    "field_teaser": [{"value": "Short teaser"}]. Use only the property
+    names the schema defines, exactly as written, and match its
+    array, object and property shape.
+
+    For formatted text fields, produce clean HTML.
+    Match the language and tone described in the instructions.
+    PROMPT;
+
+  /**
+   * ContentDrafterAgent constructor.
+   *
+   * @param \NeuronAI\Providers\AIProviderInterface $aiProvider
+   *   The provider to call.
+   * @param string $contextPrompt
+   *   Editorial context appended to the instructions, or empty.
+   */
   public function __construct(
     private readonly AIProviderInterface $aiProvider,
-    private readonly string $systemPrompt,
+    private readonly string $contextPrompt,
   ) {
     parent::__construct();
   }
@@ -31,7 +58,9 @@ final class ContentDrafterAgent extends Agent {
    * {@inheritdoc}
    */
   protected function instructions(): string {
-    return $this->systemPrompt;
+    return $this->contextPrompt === ''
+      ? self::INSTRUCTIONS
+      : self::INSTRUCTIONS . "\n\n" . $this->contextPrompt . "\n";
   }
 
   /**

@@ -31,7 +31,7 @@ class DraftingTurnWorkflowTest extends TestCase {
    */
   public function testTurnIsOneGraphFromRoutingToVersioning(): void {
     $workflow = new DraftingTurnWorkflow(
-      new RouterAgent(new FakeAIProvider(), 'x', [], ['draft_content']),
+      new RouterAgent(new FakeAIProvider(), [], 'x'),
       'Draft it.',
       [],
       fn () => [],
