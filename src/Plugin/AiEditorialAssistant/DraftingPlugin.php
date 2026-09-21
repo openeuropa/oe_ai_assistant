@@ -519,6 +519,14 @@ class DraftingPlugin extends AiAssistantPluginBase {
       );
     }
 
+    $this->logger->debug('Saving draft @version of session @session: template @template, node bundle @bundle, @shape', [
+      '@version' => $version,
+      '@session' => $session->id(),
+      '@template' => $draft['templateId'] ?? '<none>',
+      '@bundle' => $session->getContentType(),
+      '@shape' => $this->summariseDraftShape($draft['fields']),
+    ]);
+
     $result = $this->draftSaver->save($session, $draft['fields'], $draft['templateId'], $version);
 
     $this->messageRecorder->recordEvent(
@@ -574,6 +582,15 @@ class DraftingPlugin extends AiAssistantPluginBase {
     }
 
     $bundle = $session->getContentType();
+
+    $this->logger->debug('Previewing draft @version of session @session: template @template, node bundle @bundle, @shape', [
+      '@version' => $version,
+      '@session' => $session->id(),
+      '@template' => $draft['templateId'] ?? '<none>',
+      '@bundle' => $bundle,
+      '@shape' => $this->summariseDraftShape($draft['fields']),
+    ]);
+
     $node = $this->draftAssembler->assemble($bundle, $draft['fields'], $draft['templateId']);
 
     return $this->previewRenderer->render($node);
@@ -975,6 +992,39 @@ class DraftingPlugin extends AiAssistantPluginBase {
     }
 
     return $prompt;
+  }
+
+  /**
+   * Summarises a drafted fields map without repeating its content.
+   *
+   * @param array $fields
+   *   The drafted fields map, keyed by field machine name.
+   *
+   * @return string
+   *   The field names, each reference field followed by the bundles of its
+   *   items in order.
+   */
+  private function summariseDraftShape(array $fields): string {
+    $segments = [];
+    foreach ($fields as $fieldName => $items) {
+      if (!is_array($items)) {
+        $segments[] = $fieldName;
+        continue;
+      }
+      $bundles = [];
+      foreach ($items as $item) {
+        // Inline items carry their bundle in the discriminator; a plain
+        // value has none, which is what tells the two apart here.
+        $bundle = is_array($item) ? ($item['type'][0]['target_id'] ?? NULL) : NULL;
+        if ($bundle !== NULL) {
+          $bundles[] = $bundle;
+        }
+      }
+      $segments[] = $bundles === []
+        ? sprintf('%s(%d)', $fieldName, count($items))
+        : sprintf('%s(%d: %s)', $fieldName, count($items), implode(', ', $bundles));
+    }
+    return $segments === [] ? 'no fields' : implode(', ', $segments);
   }
 
 }

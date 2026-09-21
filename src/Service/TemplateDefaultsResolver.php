@@ -8,6 +8,8 @@ use Drupal\Component\Datetime\TimeInterface;
 use Drupal\Core\Entity\EntityFieldManagerInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Field\FieldDefinitionInterface;
+use Psr\Log\LoggerInterface;
+use Symfony\Component\DependencyInjection\Attribute\Autowire;
 
 /**
  * Resolves the default values a drafting template declares for a bundle.
@@ -18,6 +20,8 @@ class TemplateDefaultsResolver implements TemplateDefaultsResolverInterface {
     private readonly EntityTypeManagerInterface $entityTypeManager,
     private readonly EntityFieldManagerInterface $entityFieldManager,
     private readonly TimeInterface $time,
+    #[Autowire(service: 'logger.channel.oe_ai_assistant')]
+    private readonly LoggerInterface $logger,
   ) {}
 
   /**
@@ -59,6 +63,14 @@ class TemplateDefaultsResolver implements TemplateDefaultsResolverInterface {
     $resolved = $itemListClass::processDefaultValue($defaultValue, $entity, $fieldDefinition);
 
     if (count($resolved) < count($defaultValue)) {
+      // The exception reaches the caller without the field it came from, so
+      // name the reference here while it is still known.
+      $this->logger->warning('Default of field "@field" on @type:@bundle references a uuid that no entity carries: @uuids', [
+        '@field' => $fieldDefinition->getName(),
+        '@type' => $entityTypeId,
+        '@bundle' => $bundle,
+        '@uuids' => implode(', ', $this->collectTargetUuids($defaultValue)),
+      ]);
       throw new \RuntimeException(sprintf(
         "One or more target_uuid values for field '%s' do not reference an existing entity.",
         $fieldDefinition->getName(),
@@ -66,6 +78,25 @@ class TemplateDefaultsResolver implements TemplateDefaultsResolverInterface {
     }
 
     return $resolved;
+  }
+
+  /**
+   * Lists the uuids a default value list names as reference targets.
+   *
+   * @param array $defaultValue
+   *   The default value list.
+   *
+   * @return array
+   *   The target uuids, in the order they appear.
+   */
+  private function collectTargetUuids(array $defaultValue): array {
+    $uuids = [];
+    foreach ($defaultValue as $item) {
+      if (is_array($item) && isset($item['target_uuid'])) {
+        $uuids[] = (string) $item['target_uuid'];
+      }
+    }
+    return $uuids;
   }
 
   /**

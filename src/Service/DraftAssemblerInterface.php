@@ -15,6 +15,14 @@ use Drupal\Core\Entity\ContentEntityInterface;
 interface DraftAssemblerInterface {
 
   /**
+   * Request attribute holding the merged payload of the current draft.
+   *
+   * Set by assemble() once the template defaults are merged in, so the
+   * stages that run after it can dump the exact input they choked on.
+   */
+  const PAYLOAD_REQUEST_ATTRIBUTE = 'oe_ai_assistant_draft_payload';
+
+  /**
    * Validates, resolves template defaults, and builds an unsaved node.
    *
    * @param string $bundle
@@ -42,6 +50,8 @@ interface DraftAssemblerInterface {
    *     ($existingNode is NULL), or update access on $existingNode.
    *   - 'invalid_request' (400) if $templateId cannot be resolved (deleted,
    *     disabled, or targets a different bundle).
+   *   - 'defaults_failed' (500) if the template's defaults cannot be
+   *     resolved or merged.
    *   - 'invalid_payload' (400) if the entity builder rejects the merged
    *     payload.
    */

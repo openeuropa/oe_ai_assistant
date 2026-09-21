@@ -7,6 +7,7 @@ namespace Drupal\oe_ai_assistant\Service;
 use Drupal\Component\Plugin\Exception\PluginNotFoundException;
 use Drupal\Core\Entity\ContentEntityInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
+use Psr\Log\LoggerInterface;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Component\Serializer\SerializerInterface;
 
@@ -29,6 +30,8 @@ class DraftEntityBuilder {
     private readonly EntityTypeManagerInterface $entityTypeManager,
     private readonly InlineEntityHydrator $inlineEntityHydrator,
     private readonly TextFormatResolver $textFormatResolver,
+    #[Autowire(service: 'logger.channel.oe_ai_assistant')]
+    private readonly LoggerInterface $logger,
   ) {}
 
   /**
@@ -82,6 +85,13 @@ class DraftEntityBuilder {
     [$nonInlineFields, $inlineEntityFields] = $this->inlineEntityHydrator
       ->splitInlineEntityFields($fields, $entityTypeId, $bundle);
 
+    $this->logger->debug('Building @type:@bundle. Deserialized fields: @own. Inline entity fields: @inline', [
+      '@type' => $entityTypeId,
+      '@bundle' => $bundle,
+      '@own' => implode(', ', array_keys($nonInlineFields)) ?: '<none>',
+      '@inline' => implode(', ', array_keys($inlineEntityFields)) ?: '<none>',
+    ]);
+
     $json = json_encode(
       [$bundleKey => [['target_id' => $bundle]], ...$nonInlineFields],
       JSON_THROW_ON_ERROR,
@@ -94,6 +104,7 @@ class DraftEntityBuilder {
       $children = $this->inlineEntityHydrator->buildInlineEntities(
         $info['items'],
         $info['target_type'],
+        $fieldName,
       );
       foreach ($children as $child) {
         $entity->get($fieldName)->appendItem($child);

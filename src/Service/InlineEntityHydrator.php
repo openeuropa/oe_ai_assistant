@@ -7,6 +7,7 @@ namespace Drupal\oe_ai_assistant\Service;
 use Drupal\Core\Entity\EntityFieldManagerInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Entity\FieldableEntityInterface;
+use Psr\Log\LoggerInterface;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Component\Serializer\SerializerInterface;
 
@@ -42,6 +43,8 @@ class InlineEntityHydrator {
     private readonly EntityFieldManagerInterface $entityFieldManager,
     private readonly EntityTypeManagerInterface $entityTypeManager,
     private readonly TextFormatResolver $textFormatResolver,
+    #[Autowire(service: 'logger.channel.oe_ai_assistant')]
+    private readonly LoggerInterface $logger,
   ) {}
 
   /**
@@ -102,11 +105,16 @@ class InlineEntityHydrator {
    *   The entity type ID the items target (e.g. "paragraph"). Used to derive
    *   the entity class for $serializer->deserialize() and to look up nested
    *   field definitions for recursion.
+   * @param string $path
+   *   The parent field name these items belong to, extended with the item
+   *   index at each level of the recursion
+   *   (e.g. "field_content_paragraphs[2].field_section_paragraphs"). Only
+   *   used to say where a failing item sits when one cannot be built.
    *
    * @return \Drupal\Core\Entity\ContentEntityInterface[]
    *   Unsaved entities, ready for appendItem onto the parent's field.
    */
-  public function buildInlineEntities(array $items, string $targetEntityType): array {
+  public function buildInlineEntities(array $items, string $targetEntityType, string $path = ''): array {
     $entityType = $this->entityTypeManager->getDefinition($targetEntityType);
     $bundleKey = $entityType->getKey('bundle');
     if (!$bundleKey) {
@@ -119,7 +127,13 @@ class InlineEntityHydrator {
 
     $entities = [];
     foreach ($items as $i => $item) {
+      $itemPath = sprintf('%s[%d]', $path === '' ? $targetEntityType : $path, $i);
+
       if (!is_array($item)) {
+        $this->logger->error('Inline entity at @path is not an array but a @given.', [
+          '@path' => $itemPath,
+          '@given' => gettype($item),
+        ]);
         throw new \InvalidArgumentException(sprintf(
           'Inline entity item at index %d is not an array.',
           $i,
@@ -127,6 +141,11 @@ class InlineEntityHydrator {
       }
       $bundle = $item[$bundleKey][0]['target_id'] ?? NULL;
       if ($bundle === NULL) {
+        $this->logger->error('Inline entity at @path names no bundle in @key[0][target_id]. Fields present: @fields', [
+          '@path' => $itemPath,
+          '@key' => $bundleKey,
+          '@fields' => implode(', ', array_keys($item)),
+        ]);
         throw new \InvalidArgumentException(sprintf(
           'Inline entity item at index %d is missing %s[0][target_id].',
           $i,
@@ -134,40 +153,56 @@ class InlineEntityHydrator {
         ));
       }
 
-      // Recurse into nested inline-entity fields BEFORE building this entity.
-      [$ownFields, $nestedInlineEntityFields] = $this->splitInlineEntityFields(
-        $item, $targetEntityType, $bundle,
-      );
-
-      // Drop the bundle key from the JSON we pass to denormalize: it's
-      // already supplied via the outer key we inject below.
-      unset($ownFields[$bundleKey]);
-
-      $entityJson = json_encode(
-        [$bundleKey => [['target_id' => $bundle]], ...$ownFields],
-        JSON_THROW_ON_ERROR,
-      );
-      /** @var \Drupal\Core\Entity\ContentEntityInterface $entity */
-      $entity = $this->serializer->deserialize(
-        $entityJson,
-        $entityClass,
-        'json',
-      );
-
-      // Attach nested children (also unsaved) so they persist transactionally
-      // when the outer entity's preSave runs.
-      foreach ($nestedInlineEntityFields as $fieldName => $nestedInfo) {
-        $nestedEntities = $this->buildInlineEntities(
-          $nestedInfo['items'],
-          $nestedInfo['target_type'],
+      try {
+        // Recurse into nested inline-entity fields BEFORE building this
+        // entity.
+        [$ownFields, $nestedInlineEntityFields] = $this->splitInlineEntityFields(
+          $item, $targetEntityType, $bundle,
         );
-        foreach ($nestedEntities as $nested) {
-          $entity->get($fieldName)->appendItem($nested);
-        }
-      }
 
-      // The LLM never supplies a format; deserialize() leaves it unset.
-      $this->textFormatResolver->resolveEntityFormats($entity);
+        // Drop the bundle key from the JSON we pass to denormalize: it's
+        // already supplied via the outer key we inject below.
+        unset($ownFields[$bundleKey]);
+
+        $entityJson = json_encode(
+          [$bundleKey => [['target_id' => $bundle]], ...$ownFields],
+          JSON_THROW_ON_ERROR,
+        );
+        /** @var \Drupal\Core\Entity\ContentEntityInterface $entity */
+        $entity = $this->serializer->deserialize(
+          $entityJson,
+          $entityClass,
+          'json',
+        );
+
+        // Attach nested children (also unsaved) so they persist
+        // transactionally when the outer entity's preSave runs.
+        foreach ($nestedInlineEntityFields as $fieldName => $nestedInfo) {
+          $nestedEntities = $this->buildInlineEntities(
+            $nestedInfo['items'],
+            $nestedInfo['target_type'],
+            "$itemPath.$fieldName",
+          );
+          foreach ($nestedEntities as $nested) {
+            $entity->get($fieldName)->appendItem($nested);
+          }
+        }
+
+        // The LLM never supplies a format; deserialize() leaves it unset.
+        $this->textFormatResolver->resolveEntityFormats($entity);
+      }
+      catch (\Throwable $e) {
+        // Rethrown untouched: the caller owns the response, this only
+        // records which item of which bundle the failure belongs to.
+        $this->logger->error('Inline entity at @path (@type:@bundle) could not be built. Fields: @fields. @exception', [
+          '@path' => $itemPath,
+          '@type' => $targetEntityType,
+          '@bundle' => $bundle,
+          '@fields' => implode(', ', array_keys($item)),
+          '@exception' => (string) $e,
+        ]);
+        throw $e;
+      }
 
       $entities[] = $entity;
     }
@@ -202,6 +237,7 @@ class InlineEntityHydrator {
       $children = $this->buildInlineEntities(
         $info['items'],
         $info['target_type'],
+        $fieldName,
       );
       foreach ($children as $child) {
         $parent->get($fieldName)->appendItem($child);
