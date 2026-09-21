@@ -560,6 +560,8 @@ final class AiDraftingTemplate extends ConfigEntityBase implements AiDraftingTem
           $changed = $this->stripItemsOfBundle($item['fields'], $entity_type_id, $bundle) || $changed;
         }
       }
+      // Release the reference before the next field is processed.
+      unset($item);
     }
 
     return $changed;
