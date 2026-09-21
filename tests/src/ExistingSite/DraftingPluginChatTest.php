@@ -225,9 +225,9 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
   /**
    * Tests that a revision reuses the stored draft and groups under it.
    *
-   * Only the named group is drafted again; every other group is carried
-   * over, the new version records the draft it revises, and the history
-   * numbers it as a revision of that draft.
+   * The named group is drafted again, every other group is carried over,
+   * the new version records the draft it revises, and the history numbers
+   * it as a revision of that draft.
    */
   public function testReviseDraftVersionsUnderTheDraftItRevises(): void {
     $user = $this->createUser(['use oe ai assistant']);
@@ -301,6 +301,73 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
   }
 
   /**
+   * Tests that a revision without named groups covers the whole draft.
+   *
+   * The session points at a template with one group by then, but the draft
+   * being revised has two, so both are drafted again.
+   */
+  public function testReviseWithoutGroupsCoversTheWholeDraft(): void {
+    $user = $this->createUser(['use oe ai assistant']);
+    $this->loginUser($user);
+    $session = $this->createSession($user);
+
+    $this->enqueueDraftFlow();
+    $this->httpPost('/api/ai/plugins/drafting/chat', [
+      'message' => 'Generate the draft now.',
+      'sessionId' => $session->id(),
+    ]);
+    $this->httpPost('/api/ai/plugins/drafting/set-template', [
+      'sessionId' => $session->id(),
+      'template' => 'news_default',
+    ]);
+
+    // The agent asks for a change to the whole draft, naming no group.
+    MockAiProvider::enqueue(new MockResponse(
+      toolCalls: [
+        [
+          'id' => 'call_r1',
+          'type' => 'function',
+          'function' => [
+            'name' => 'revise_draft',
+            'arguments' => '{"instruction": "Append FOO to every field.", "version": 1}',
+          ],
+        ],
+      ],
+    ));
+    MockAiProvider::enqueue(new MockResponse(
+      text: '{"title": [{"value": "Test Title FOO"}], "field_teaser": [{"value": "Test teaser. FOO"}]}',
+    ));
+    MockAiProvider::enqueue(new MockResponse(
+      text: '{"field_content_paragraphs": [{"type": [{"target_id": "text_block"}]}]}',
+    ));
+    MockAiProvider::enqueue(new MockResponse(text: 'Draft 1.1 is ready.'));
+
+    $this->httpPost('/api/ai/plugins/drafting/chat', [
+      'message' => 'Append FOO to every field of draft 1.',
+      'sessionId' => $session->id(),
+    ]);
+
+    // Both groups of the draft were drafted again: the two of the first
+    // turn plus two more.
+    \Drupal::state()->resetCache();
+    $groupCalls = array_filter(
+      MockAiProvider::getCallLog(),
+      fn($call) => str_contains($call['system_prompt'], 'You are a content generator'),
+    );
+    $this->assertCount(4, $groupCalls,
+      'Every group of the revised draft is drafted again.');
+
+    $drafts = $this->loadDraftResults($session);
+    $this->assertCount(2, $drafts);
+    $this->assertSame('Test Title FOO', $drafts[1]['fields']['title'][0]['value']);
+    $this->assertNotSame(
+      $drafts[0]['fields']['field_content_paragraphs'],
+      $drafts[1]['fields']['field_content_paragraphs'],
+      'The paragraphs of the revised draft are drafted again too.',
+    );
+  }
+
+  /**
    * Tests that a revision keeps the structure its draft was written with.
    *
    * The session points at another template by the time the revision runs.
@@ -327,6 +394,11 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
     ]);
     $this->assertEquals(200, $switch['status'],
       'Expected the template switch to succeed. Body: ' . substr($switch['body'], 0, 300));
+
+    // Point the stored draft at the new template while keeping the groups
+    // it was written with, so only the stored groups can explain the
+    // revision that follows.
+    $this->repointDraftTemplate($session, 'news_default');
 
     MockAiProvider::enqueue(new MockResponse(
       toolCalls: [
@@ -883,6 +955,32 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
     }
 
     return array_values(array_filter($names));
+  }
+
+  /**
+   * Rewrites the template a stored draft names, keeping its groups.
+   *
+   * @param \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $session
+   *   The session hosting the conversation.
+   * @param string $templateId
+   *   The template id to record on every stored draft.
+   */
+  protected function repointDraftTemplate(AiEditorialSessionInterface $session, string $templateId): void {
+    foreach ($this->loadTranscript($session) as $message) {
+      $calls = $message->getToolCalls();
+      $changed = FALSE;
+      foreach ($calls as &$call) {
+        if (isset($call['result']['draft']['context']['template']['id'])) {
+          $call['result']['draft']['context']['template']['id'] = $templateId;
+          $changed = TRUE;
+        }
+      }
+      unset($call);
+      if ($changed) {
+        $message->setToolCalls($calls);
+        $message->save();
+      }
+    }
   }
 
   /**

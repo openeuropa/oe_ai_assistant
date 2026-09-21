@@ -55,10 +55,13 @@ final class DraftingAgent extends Agent {
       and that they can review it on the right. Do not repeat the
       field values.
     - When the user asks to change something in a draft that already
-      exists, call revise_draft rather than drafting again, naming the
-      groups that change. Revise the most recent draft unless the user
-      points at another one; get_draft_history tells you which drafts
-      exist and what they are named.
+      exists, call revise_draft rather than drafting again. Name the
+      groups only when the change is limited to particular fields;
+      leave them out when it applies to the whole draft. Revise the
+      most recent draft unless the user points at another one.
+    - The field groups below are the ones a new draft follows. A stored
+      draft keeps the groups it was written with, which may differ;
+      get_draft_history lists them per draft.
     - Answer questions about earlier drafts with get_draft_history.
     - You can have normal conversations with the user at any point.
     PROMPT;

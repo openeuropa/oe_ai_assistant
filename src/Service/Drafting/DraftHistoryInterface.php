@@ -35,7 +35,7 @@ interface DraftHistoryInterface {
    * @return array
    *   One entry per draft, grouped so that revisions follow the draft they
    *   started from: {name: "Draft 2.1", label: "2.1", version: N,
-   *   revisionOf: N|null, context: snapshot array}.
+   *   revisionOf: N|null, groups: [{id, label}], context: snapshot array}.
    */
   public function listDrafts(EntityInterface $session): array;
 

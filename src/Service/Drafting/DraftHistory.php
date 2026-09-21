@@ -48,6 +48,12 @@ final class DraftHistory implements DraftHistoryInterface {
         $major = $majors[$version] = count($majors) + 1;
         $minor = $minors[$version] = 0;
       }
+      // The schemas of the groups are only needed to revise a draft, so the
+      // listing names them instead of carrying them.
+      $context = $draft['context'] ?? [];
+      $groups = is_array($context['groups'] ?? NULL) ? $context['groups'] : [];
+      unset($context['groups']);
+
       $label = $major . '.' . $minor;
       $entries[] = [
         'major' => $major,
@@ -57,7 +63,11 @@ final class DraftHistory implements DraftHistoryInterface {
           'label' => $label,
           'version' => $version,
           'revisionOf' => $root,
-          'context' => $draft['context'] ?? NULL,
+          'groups' => array_map(
+            fn (array $group): array => ['id' => $group['groupId'], 'label' => $group['label']],
+            $groups,
+          ),
+          'context' => $context,
         ],
       ];
     }

@@ -74,8 +74,10 @@ final class ReviseDraftTool extends Tool {
       ),
       new ArrayProperty(
         'groups',
-        'The ids of the field groups the change affects.',
-        TRUE,
+        'The ids of the field groups the change is limited to. Leave it out'
+        . ' to apply the change to the whole draft, which is what a request'
+        . ' that does not point at particular fields means.',
+        FALSE,
         new ToolProperty('group', PropertyType::STRING),
       ),
       new ToolProperty(
@@ -89,7 +91,7 @@ final class ReviseDraftTool extends Tool {
   /**
    * Revises the named groups of a stored draft and versions the result.
    */
-  public function __invoke(string $instruction, array $groups, ?int $version = NULL): string {
+  public function __invoke(string $instruction, ?array $groups = NULL, ?int $version = NULL): string {
     $drafts = $this->draftHistory->listDrafts($this->session);
     if ($drafts === []) {
       return json_encode(['error' => 'No draft has been generated yet, so there is nothing to revise.']);
@@ -107,24 +109,31 @@ final class ReviseDraftTool extends Tool {
       ]);
     }
 
-    // The schema comes from the template the base draft was written with,
-    // so revising an older draft keeps working after a template change.
+    // The draft carries the groups it was written against, so a revision
+    // keeps its structure whatever the session points at now. Drafts stored
+    // before the groups travelled with them fall back to their template.
     $collector = new DraftCollector(
-      ($this->groupsFor)($base['templateId']),
+      $base['context']['groups'] ?? ($this->groupsFor)($base['templateId']),
       fn (array $fields): array => ($this->versionDraft)($fields, $version, $base['context']),
     );
-    $unknown = array_diff($groups, $collector->groupIds());
-    if ($groups === [] || $unknown !== []) {
+    // Without named groups the whole draft is revised, so a change meant
+    // for every field reaches the groups this draft has rather than the
+    // ones the session points at now.
+    $revise = $groups === NULL || $groups === [] ? $collector->groupIds() : array_values($groups);
+    $unknown = array_diff($revise, $collector->groupIds());
+    if ($unknown !== []) {
       return json_encode([
         'error' => sprintf(
-          'Name the groups to revise among: %s.',
+          'Draft version %d has no group %s. Its groups are: %s.',
+          $version,
+          implode(', ', $unknown),
           implode(', ', $collector->groupIds()),
         ),
       ]);
     }
 
-    $collector->seedFrom($base['fields'], $groups);
-    foreach ($groups as $groupId) {
+    $collector->seedFrom($base['fields'], $revise);
+    foreach ($revise as $groupId) {
       $definition = $collector->group($groupId);
       $collector->add($groupId, ($this->reviser)(
         $groupId,
@@ -135,7 +144,8 @@ final class ReviseDraftTool extends Tool {
     }
 
     return json_encode([
-      'revised' => array_values($groups),
+      'revised' => $revise,
+      'groups' => $collector->groupIds(),
       'revisionOf' => $version,
       'draft' => $collector->draft(),
     ]);
