@@ -247,13 +247,9 @@ class DraftEntityBuilderTest extends KernelTestBase {
       'field_body' => [['value' => '<p>Body copy.</p>']],
     ]);
 
-    // Whether the format stays unset or falls back to an allowed entry is the
-    // resolver's call; the user's default must not leak onto a field that
-    // does not allow it.
-    $format = $node->get('field_body')->format;
-    $this->assertTrue(
-      $format === NULL || $format === 'oe_test_restricted',
-      "Resolved format '$format' is not in the field's allowed_formats.",
+    $this->assertNull(
+      $node->get('field_body')->format,
+      'The format stays unset rather than taking a format the field does not allow.',
     );
   }
 

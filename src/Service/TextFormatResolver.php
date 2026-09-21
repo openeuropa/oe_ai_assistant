@@ -6,6 +6,7 @@ namespace Drupal\oe_ai_assistant\Service;
 
 use Drupal\Core\Entity\FieldableEntityInterface;
 use Drupal\Core\Session\AccountInterface;
+use Drupal\filter\FilterFormatRepositoryInterface;
 
 /**
  * Resolves a text format for formatted-text items the LLM left unset.
@@ -25,6 +26,7 @@ class TextFormatResolver {
 
   public function __construct(
     private readonly AccountInterface $currentUser,
+    private readonly FilterFormatRepositoryInterface $filterFormatRepository,
   ) {}
 
   /**
@@ -53,18 +55,20 @@ class TextFormatResolver {
    * @param array $allowedFormats
    *   The field's `allowed_formats` setting; empty means unrestricted.
    *
-   * @return string
-   *   A format ID the current user may use.
+   * @return string|null
+   *   A format ID the current user may use, or NULL if the field allows none
+   *   of the user's formats.
    */
-  private function resolveFormat(array $allowedFormats): string {
-    if ($allowedFormats) {
-      $permitted = array_keys(filter_formats($this->currentUser));
-      $intersection = array_intersect($allowedFormats, $permitted);
-      if ($intersection) {
-        return reset($intersection);
-      }
+  private function resolveFormat(array $allowedFormats): ?string {
+    if (!$allowedFormats) {
+      return $this->filterFormatRepository->getDefaultFormat($this->currentUser)->id();
     }
-    return filter_default_format($this->currentUser);
+
+    $permitted = array_keys($this->filterFormatRepository->getFormatsForAccount($this->currentUser));
+    $intersection = array_intersect($allowedFormats, $permitted);
+    // The user's default format is not a fallback here, as the field does
+    // not allow it; the format stays unset instead.
+    return $intersection ? reset($intersection) : NULL;
   }
 
 }
