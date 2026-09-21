@@ -281,21 +281,13 @@ class EntityJsonSchemaComposer {
    *   TRUE if every exposable property of the field is serialized.
    */
   private function hasSerializedColumn(ContentEntityTypeInterface $entityType, FieldItemListInterface $fieldItemList): bool {
-    $fieldDef = $fieldItemList->getFieldDefinition();
-    $storageDefinition = $fieldDef->getFieldStorageDefinition();
-
-    $itemClass = $fieldItemList->getItemDefinition()->getClass();
-    if (!is_a($itemClass, FieldItemInterface::class, TRUE)) {
-      return FALSE;
-    }
-
     $serializedNames = $this->getSerializedPropertyNames($entityType, $fieldItemList);
     if ($serializedNames === []) {
       return FALSE;
     }
 
     $exposedNames = [];
-    foreach ($itemClass::propertyDefinitions($storageDefinition) as $propName => $propDef) {
+    foreach ($fieldItemList->getItemDefinition()->getPropertyDefinitions() as $propName => $propDef) {
       if (!$propDef->isComputed() && !$propDef->isInternal()) {
         $exposedNames[] = $propName;
       }
