@@ -36,6 +36,7 @@ import {
 import { getConfig } from "@/config";
 import { formatDraftDate } from "../format-draft-date";
 import { buildPreviewUrl } from "../preview-url";
+import { useDraftName } from "../session-drafts";
 import type { DraftingPluginConfig } from "../types";
 import { ContentTableBody, SaveConfirmDialog } from "./content-table";
 
@@ -247,6 +248,7 @@ export function DraftPreview({
   defaultTab = "live",
   onSave,
 }: DraftPreviewProps) {
+  const draftName = useDraftName(versionId);
   // The URL template comes from the host-provided plugin config.
   const draftingConfig = (getConfig().pluginConfig.drafting ??
     {}) as DraftingPluginConfig;
@@ -299,7 +301,7 @@ export function DraftPreview({
             />
           )}
           <h2 className="text-base font-semibold whitespace-nowrap text-gray-900">
-            Draft {versionId}
+            {draftName}
           </h2>
           {createdAt && (
             <span className="truncate text-xs text-gray-500">

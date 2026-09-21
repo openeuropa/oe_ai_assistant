@@ -320,13 +320,16 @@ class DraftingPlugin extends AiAssistantPluginBase {
     // for it; the collector versions the draft once the set is complete.
     $events = new AgentEventQueue();
     $contextPrompt = $editorialContext->toPrompt();
+    $versionDraft = fn (array $fields, ?int $revisionOf = NULL, ?array $inherited = NULL): array => $this->versionDraft($session, $editorialContext, $fields, $revisionOf, $inherited);
     $agent = $this->agentFactory->draftingAgent(
       $session,
       $routerContext,
-      new DraftCollector($groups, fn (array $fields): array => $this->versionDraft($session, $editorialContext, $fields)),
+      new DraftCollector($groups, $versionDraft),
       fn (string $groupId, array $schemaSlice, string $task, ?AiConversationMessageInterface $parent): array => $this->agentFactory
         ->fieldGroupAgent($session, $parent, $groupId, $schemaSlice, $contextPrompt, $events)
         ->structured(new UserMessage($task)),
+      fn (?string $templateId): array => $this->schemaProvider->groups($context['entityTypeId'], $context['bundle'], $templateId),
+      $versionDraft,
       $events,
     );
 
@@ -378,7 +381,9 @@ class DraftingPlugin extends AiAssistantPluginBase {
    * Versions the consolidated fields with the context that produced them.
    *
    * Prior drafts already carry a version; the calls of the current turn do
-   * not yet, so the count is the number of earlier drafts.
+   * not yet, so the count is the number of earlier drafts. A revision
+   * inherits the snapshot of the draft it revises, since that context
+   * produced the content it starts from.
    *
    * @param \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $session
    *   The session hosting the conversation.
@@ -386,15 +391,20 @@ class DraftingPlugin extends AiAssistantPluginBase {
    *   The editorial context of the turn.
    * @param array $fields
    *   The consolidated field values.
+   * @param int|null $revisionOf
+   *   The version being revised, or NULL for a new draft.
+   * @param array|null $inherited
+   *   The snapshot to inherit, or NULL to snapshot the turn's context.
    *
    * @return array
-   *   The draft shaped {version, context, fields}.
+   *   The draft shaped {version, context, fields, revisionOf}.
    */
-  private function versionDraft(AiEditorialSessionInterface $session, EditorialContext $editorialContext, array $fields): array {
+  private function versionDraft(AiEditorialSessionInterface $session, EditorialContext $editorialContext, array $fields, ?int $revisionOf = NULL, ?array $inherited = NULL): array {
     return [
       'version' => $this->draftHistory->countDrafts($session) + 1,
-      'context' => $editorialContext->toSnapshot(),
+      'context' => $inherited ?? $editorialContext->toSnapshot(),
       'fields' => $fields,
+      'revisionOf' => $revisionOf,
     ];
   }
 

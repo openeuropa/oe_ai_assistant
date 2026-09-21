@@ -10,6 +10,7 @@
 import DOMPurify from "dompurify";
 import { Save } from "lucide-react";
 import { useMemo, useState } from "react";
+import { useDraftName } from "../session-drafts";
 import { useDraftingSlice } from "../store";
 
 /** Props for the content table. */
@@ -303,6 +304,7 @@ export function ContentTableBody() {
 /** The content table showing drafted field values. */
 export function ContentTable({ onSave }: ContentTableProps) {
   const { draftedFields, activeDraftVersion } = useDraftingSlice();
+  const draftName = useDraftName(activeDraftVersion);
   const entries = Object.entries(draftedFields);
   const [showConfirm, setShowConfirm] = useState(false);
 
@@ -313,9 +315,7 @@ export function ContentTable({ onSave }: ContentTableProps) {
       {/* Header naming the open draft version when known. */}
       <div className="flex h-12 shrink-0 items-center justify-between border-b border-gray-200 px-4">
         <h2 className="text-base font-semibold text-gray-900">
-          {activeDraftVersion !== null
-            ? `Draft ${activeDraftVersion}`
-            : "Drafted Content"}
+          {activeDraftVersion !== null ? draftName : "Drafted Content"}
         </h2>
         <button
           type="button"

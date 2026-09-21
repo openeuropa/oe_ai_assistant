@@ -9,7 +9,7 @@ use Drupal\Core\Entity\EntityInterface;
 /**
  * Reads the generated-draft history of an editorial session.
  *
- * Drafts live on the draft_group tool call that completed them in the persisted
+ * Drafts live on the tool call that completed them in the persisted
  * transcript; this service is the single reader used both to compute the
  * next version number and to answer the get_draft_history tool.
  */
@@ -33,8 +33,9 @@ interface DraftHistoryInterface {
    *   The session hosting the conversation.
    *
    * @return array
-   *   One entry per draft, in version order: {name: "Draft N", version: N,
-   *   context: snapshot array}.
+   *   One entry per draft, grouped so that revisions follow the draft they
+   *   started from: {name: "Draft 2.1", label: "2.1", version: N,
+   *   revisionOf: N|null, context: snapshot array}.
    */
   public function listDrafts(EntityInterface $session): array;
 
@@ -47,9 +48,9 @@ interface DraftHistoryInterface {
    *   The draft version to look up (as returned by listDrafts()).
    *
    * @return array|null
-   *   {fields: array, templateId: string|null}, or NULL if no stored draft
-   *   result carries that version. templateId is NULL when the draft's
-   *   snapshot has no template.
+   *   {fields: array, templateId: string|null, context: array|null}, or
+   *   NULL if no stored draft carries that version. templateId is NULL
+   *   when the draft's snapshot has no template.
    */
   public function getDraftContent(EntityInterface $session, int $version): ?array;
 

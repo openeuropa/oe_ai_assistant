@@ -83,6 +83,37 @@ class DraftCollectorTest extends TestCase {
   }
 
   /**
+   * @covers ::seedFrom
+   * @covers ::valuesOf
+   */
+  public function testSeedingLeavesOnlyTheRevisedGroupsPending(): void {
+    $collector = $this->collector();
+    $base = [
+      'title' => [['value' => 'T']],
+      'field_teaser' => [['value' => 'S']],
+      'field_contacts' => [['target_uuid' => 'c1']],
+      'field_paragraphs' => [['type' => 'oe_text']],
+    ];
+
+    $collector->seedFrom($base, ['main_fields']);
+    $this->assertSame(['main_fields'], $collector->pending());
+    $this->assertSame(['title' => [['value' => 'T']], 'field_teaser' => [['value' => 'S']]], $collector->valuesOf('main_fields', $base));
+
+    // The revised group replaces its values; the rest are carried over.
+    $collector->add('main_fields', ['title' => [['value' => 'Shorter']], 'field_teaser' => [['value' => 'S']]]);
+    $this->assertSame([
+      'version' => 3,
+      'context' => [],
+      'fields' => [
+        'title' => [['value' => 'Shorter']],
+        'field_teaser' => [['value' => 'S']],
+        'field_contacts' => [['target_uuid' => 'c1']],
+        'field_paragraphs' => [['type' => 'oe_text']],
+      ],
+    ], $collector->draft());
+  }
+
+  /**
    * @covers ::group
    * @covers ::mainFields
    */

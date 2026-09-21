@@ -9,6 +9,7 @@ use Drupal\oe_ai_assistant\Neuron\Chat\History\ConversationChatHistory;
 use Drupal\oe_ai_assistant\Neuron\Tools\DraftGroupTool;
 use Drupal\oe_ai_assistant\Neuron\Tools\GetContentSchemaTool;
 use Drupal\oe_ai_assistant\Neuron\Tools\GetDraftHistoryTool;
+use Drupal\oe_ai_assistant\Neuron\Tools\ReviseDraftTool;
 use Drupal\oe_ai_assistant\Service\Drafting\DraftCollector;
 use Drupal\oe_ai_assistant\Service\Drafting\DraftHistoryInterface;
 use NeuronAI\Agent\Agent;
@@ -53,6 +54,11 @@ final class DraftingAgent extends Agent {
     - Once the draft is versioned, tell the user which draft is ready
       and that they can review it on the right. Do not repeat the
       field values.
+    - When the user asks to change something in a draft that already
+      exists, call revise_draft rather than drafting again, naming the
+      groups that change. Revise the most recent draft unless the user
+      points at another one; get_draft_history tells you which drafts
+      exist and what they are named.
     - Answer questions about earlier drafts with get_draft_history.
     - You can have normal conversations with the user at any point.
     PROMPT;
@@ -80,6 +86,11 @@ final class DraftingAgent extends Agent {
    * @param \Closure $drafter
    *   Drafts one group, called with the group id, the schema slice, the task
    *   prompt and the parent turn, and returning the decoded field values.
+   * @param \Closure $groupsFor
+   *   Returns the schema groups of a template, called with its id or NULL.
+   * @param \Closure $versionDraft
+   *   Versions the consolidated fields, called with them, the version they
+   *   revise and the context to inherit.
    */
   public function __construct(
     private readonly AIProviderInterface $aiProvider,
@@ -88,6 +99,8 @@ final class DraftingAgent extends Agent {
     private readonly DraftHistoryInterface $draftHistory,
     private readonly DraftCollector $collector,
     private readonly \Closure $drafter,
+    private readonly \Closure $groupsFor,
+    private readonly \Closure $versionDraft,
   ) {
     parent::__construct();
   }
@@ -114,6 +127,14 @@ final class DraftingAgent extends Agent {
       new GetContentSchemaTool($this->collector->groups()),
       new GetDraftHistoryTool($this->draftHistory, $this->session),
       new DraftGroupTool($this->collector, $this->conversation(), $this->drafter),
+      new ReviseDraftTool(
+        $this->draftHistory,
+        $this->session,
+        $this->conversation(),
+        $this->groupsFor,
+        $this->drafter,
+        $this->versionDraft,
+      ),
     ];
   }
 

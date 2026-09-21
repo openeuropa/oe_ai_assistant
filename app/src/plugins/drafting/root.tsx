@@ -24,7 +24,11 @@ import { DocumentsPanel } from "./components/documents-panel";
 import { DraftPreview } from "./components/draft-preview";
 import { DraftRail } from "./components/draft-rail";
 import { DraftingThread } from "./components/drafting-thread";
-import { DraftGroupToolUI, EditorialEventToolUI } from "./components/tool-uis";
+import {
+  DraftGroupToolUI,
+  EditorialEventToolUI,
+  ReviseDraftToolUI,
+} from "./components/tool-uis";
 import { useDraftingDocuments } from "./hooks/use-drafting-documents";
 import { useDraftingRuntime } from "./hooks/use-drafting-runtime";
 import { useDraftingTemplate } from "./hooks/use-drafting-template";
@@ -302,6 +306,7 @@ function DraftingChat() {
     <AssistantRuntimeProvider runtime={runtime}>
       {/* Register tool call renderers so they appear inline in chat. */}
       <DraftGroupToolUI />
+      <ReviseDraftToolUI />
       <EditorialEventToolUI />
 
       {/* Feed the shell exit guard with this plugin's pending state.

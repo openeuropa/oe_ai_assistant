@@ -64,12 +64,17 @@ final class AgentFactory {
    * @param \Closure $drafter
    *   Drafts one group, called with the group id, the schema slice, the task
    *   prompt and the parent turn, and returning the decoded field values.
+   * @param \Closure $groupsFor
+   *   Returns the schema groups of a template, called with its id or NULL.
+   * @param \Closure $versionDraft
+   *   Versions the consolidated fields, called with them, the version they
+   *   revise and the context to inherit.
    * @param \Drupal\oe_ai_assistant\Neuron\Observability\AgentEventQueue $events
    *   The queue receiving every event of the run.
    */
-  public function draftingAgent(AiEditorialSessionInterface $session, string $contextPrompt, DraftCollector $collector, \Closure $drafter, AgentEventQueue $events): DraftingAgent {
+  public function draftingAgent(AiEditorialSessionInterface $session, string $contextPrompt, DraftCollector $collector, \Closure $drafter, \Closure $groupsFor, \Closure $versionDraft, AgentEventQueue $events): DraftingAgent {
     [$provider, $providerId, $modelId] = $this->provider('chat_with_tools', ['drafting']);
-    $agent = new DraftingAgent($provider, $contextPrompt, $session, $this->draftHistory, $collector, $drafter);
+    $agent = new DraftingAgent($provider, $contextPrompt, $session, $this->draftHistory, $collector, $drafter, $groupsFor, $versionDraft);
     $history = new ConversationChatHistory(
       $this->messageRecorder,
       $this->entityTypeManager->getStorage('ai_conversation_message'),

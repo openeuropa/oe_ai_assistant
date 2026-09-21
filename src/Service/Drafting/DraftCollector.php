@@ -79,6 +79,39 @@ final class DraftCollector {
   }
 
   /**
+   * Fills every group but the named ones from an existing draft.
+   *
+   * What stays pending is then exactly the groups being revised, so the
+   * draft is versioned once they have been drafted again.
+   *
+   * @param array $fields
+   *   The field values of the draft being revised, keyed by field name.
+   * @param string[] $revised
+   *   The ids of the groups that will be drafted again.
+   */
+  public function seedFrom(array $fields, array $revised): void {
+    foreach ($this->groups as $group) {
+      if (in_array($group['groupId'], $revised, TRUE)) {
+        continue;
+      }
+      $this->results[$group['groupId']] = array_intersect_key($fields, array_flip($group['fieldNames']));
+    }
+  }
+
+  /**
+   * Returns the values a group holds in an existing draft.
+   *
+   * @param string $groupId
+   *   The id of the group to read.
+   * @param array $fields
+   *   The field values of that draft, keyed by field name.
+   */
+  public function valuesOf(string $groupId, array $fields): array {
+    $group = $this->group($groupId);
+    return $group === NULL ? [] : array_intersect_key($fields, array_flip($group['fieldNames']));
+  }
+
+  /**
    * Returns the drafted main fields, or NULL before they are drafted.
    */
   public function mainFields(): ?array {

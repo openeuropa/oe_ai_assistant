@@ -10,9 +10,9 @@
 
 import type { ToolCallMessagePartProps } from "@assistant-ui/react";
 import { makeAssistantToolUI } from "@assistant-ui/react";
-import { Check, Loader2, PenLine, Wrench, X } from "lucide-react";
+import { Check, Loader2, Pencil, PenLine, Wrench, X } from "lucide-react";
 import { useEffect, useRef } from "react";
-import { parseDraftResult } from "../draft-result";
+import { type ParsedDraftResult, parseDraftResult } from "../draft-result";
 import { useSavedVersions } from "../saved-versions";
 import { useSessionDrafts } from "../session-drafts";
 import { setDraftingState } from "../store";
@@ -90,15 +90,86 @@ interface DraftGroupResult {
   error?: string;
 }
 
+/** The result of one revise_draft call, as the backend returns it. */
+interface ReviseDraftResult {
+  /** The ids of the groups drafted again. */
+  revised?: string[];
+  /** The version the revision started from. */
+  revisionOf?: number;
+  /** The versioned draft the revision produced. */
+  draft?: unknown;
+  /** The failure the tool reported, when nothing could be revised. */
+  error?: string;
+}
+
 /**
- * Turns a group id into a readable label for the running state.
+ * Turns a group id into a readable label.
  *
- * The backend label only arrives with the result, so while the call runs
- * the id is humanized instead: "field_content_paragraphs" reads as
- * "content paragraphs".
+ * The backend label only arrives with the result, so while a call runs the
+ * id is humanized instead: "field_content_paragraphs" reads as "content
+ * paragraphs".
  */
 function humanizeGroup(group: string | undefined): string {
   return (group ?? "fields").replace(/^field_/, "").replace(/_/g, " ");
+}
+
+/** Joins several group ids into one readable label. */
+function humanizeGroups(groups: string[] | undefined): string {
+  return groups?.length ? groups.map(humanizeGroup).join(", ") : "the draft";
+}
+
+/**
+ * Opens the pane on a draft the moment the run produces it.
+ *
+ * A rehydrated card mounts complete and leaves the pane alone; only a call
+ * that was still running when it mounted opens what it produced.
+ */
+function useProducedDraft(
+  status: { type: string },
+  draft: ParsedDraftResult | null,
+) {
+  const wasRunning = useRef(status.type === "running");
+  useEffect(() => {
+    if (status.type === "running") {
+      wasRunning.current = true;
+      return;
+    }
+    if (wasRunning.current && draft !== null && draft.version !== null) {
+      wasRunning.current = false;
+      setDraftingState({
+        draftedFields: draft.fields,
+        activeDraftVersion: draft.version,
+        isArtifactCollapsed: false,
+      });
+    }
+  }, [status.type, draft]);
+}
+
+/** Renders the versioned draft a tool call produced. */
+function ProducedDraftCard({ draft }: { draft: ParsedDraftResult }) {
+  // The name, saved state and creation time come from the thread index, so
+  // the card stays in step with the preview header and the rail.
+  const sessionDrafts = useSessionDrafts();
+  const savedVersions = useSavedVersions();
+  const entry = sessionDrafts.find((item) => item.version === draft.version);
+
+  return (
+    <DraftCard
+      name={entry?.name ?? "Draft"}
+      context={draft.context}
+      fields={draft.fields}
+      isSaved={draft.version !== null && savedVersions.has(draft.version)}
+      createdAt={entry?.createdAt ?? null}
+      onOpen={() =>
+        // Show this draft in the pane, expanding it if collapsed.
+        setDraftingState({
+          draftedFields: draft.fields,
+          activeDraftVersion: draft.version,
+          isArtifactCollapsed: false,
+        })
+      }
+    />
+  );
 }
 
 /**
@@ -106,9 +177,7 @@ function humanizeGroup(group: string | undefined): string {
  *
  * Every group the agent drafts is one call, so the chat shows the drafting
  * progress group by group. The call that completes the set carries the
- * versioned draft: it renders the draft card and opens the draft in the
- * artifact pane when it was produced in this run. Rehydrated cards mount
- * complete and leave the pane alone.
+ * versioned draft and renders the draft card.
  */
 export const DraftGroupToolUI = makeAssistantToolUI<
   { group?: string },
@@ -116,32 +185,10 @@ export const DraftGroupToolUI = makeAssistantToolUI<
 >({
   toolName: "draft_group",
   render: ({ args, result, status }) => {
-    // Saved state and creation time come from the thread index, so the
-    // card stays in step with the preview header and the rail.
-    const sessionDrafts = useSessionDrafts();
-    const savedVersions = useSavedVersions();
     const draft = result?.draft ? parseDraftResult(result.draft) : null;
-    const version = draft?.version ?? null;
-
-    // Open the pane once the draft is versioned during this run.
-    const wasRunning = useRef(status.type === "running");
-    useEffect(() => {
-      if (status.type === "running") {
-        wasRunning.current = true;
-        return;
-      }
-      if (wasRunning.current && draft !== null && version !== null) {
-        wasRunning.current = false;
-        setDraftingState({
-          draftedFields: draft.fields,
-          activeDraftVersion: version,
-          isArtifactCollapsed: false,
-        });
-      }
-    }, [status.type, draft, version]);
+    useProducedDraft(status, draft);
 
     const label = result?.label ?? humanizeGroup(args?.group);
-
     if (status.type !== "complete") {
       return (
         <ToolCallCard
@@ -163,39 +210,72 @@ export const DraftGroupToolUI = makeAssistantToolUI<
     }
 
     const fieldCount = Object.keys(result?.fields ?? {}).length;
-    const groupCard = (
-      <ToolCallCard
-        icon={PenLine}
-        label={`Drafted ${label}`}
-        detail={`${fieldCount} field${fieldCount === 1 ? "" : "s"}`}
-        status={status}
-      />
+    return (
+      <>
+        <ToolCallCard
+          icon={PenLine}
+          label={`Drafted ${label}`}
+          detail={`${fieldCount} field${fieldCount === 1 ? "" : "s"}`}
+          status={status}
+        />
+        {draft !== null && Object.keys(draft.fields).length > 0 && (
+          <ProducedDraftCard draft={draft} />
+        )}
+      </>
     );
-    if (draft === null || Object.keys(draft.fields).length === 0) {
-      return groupCard;
+  },
+});
+
+/**
+ * UI for the revise_draft tool call.
+ *
+ * A revision drafts the named groups again from the draft it starts from
+ * and carries the rest over, so one call produces one new version and one
+ * card.
+ */
+export const ReviseDraftToolUI = makeAssistantToolUI<
+  { groups?: string[]; version?: number },
+  ReviseDraftResult
+>({
+  toolName: "revise_draft",
+  render: ({ args, result, status }) => {
+    const draft = result?.draft ? parseDraftResult(result.draft) : null;
+    useProducedDraft(status, draft);
+
+    const label = humanizeGroups(result?.revised ?? args?.groups);
+    if (status.type !== "complete") {
+      return (
+        <ToolCallCard
+          icon={Pencil}
+          label={`Revising ${label}`}
+          status={status}
+        />
+      );
+    }
+    if (result?.error || draft === null) {
+      return (
+        <ToolCallCard
+          icon={Pencil}
+          label={`Revising ${label}`}
+          detail={result?.error}
+          status={{ type: "error" }}
+        />
+      );
     }
 
     return (
       <>
-        {groupCard}
-        <DraftCard
-          version={version}
-          context={draft.context}
-          fields={draft.fields}
-          isSaved={version !== null && savedVersions.has(version)}
-          createdAt={
-            sessionDrafts.find((entry) => entry.version === version)
-              ?.createdAt ?? null
+        <ToolCallCard
+          icon={Pencil}
+          label={`Revised ${label}`}
+          detail={
+            result?.revisionOf !== undefined
+              ? `From draft version ${result.revisionOf}`
+              : undefined
           }
-          onOpen={() =>
-            // Show this draft in the pane, expanding it if collapsed.
-            setDraftingState({
-              draftedFields: draft.fields,
-              activeDraftVersion: version,
-              isArtifactCollapsed: false,
-            })
-          }
+          status={status}
         />
+        <ProducedDraftCard draft={draft} />
       </>
     );
   },

@@ -60,6 +60,8 @@ export interface DraftContext {
 export interface ParsedDraftResult {
   /** Numeric version when the versioned shape is detected; null for legacy. */
   version: number | null;
+  /** The version this draft revises; null when it is a new draft. */
+  revisionOf: number | null;
   /** Editorial context present in versioned shape; null for legacy. */
   context: DraftContext | null;
   /** The field values for this draft, keyed by field name. */
@@ -115,7 +117,7 @@ function normaliseContext(raw: unknown): DraftContext {
  */
 export function parseDraftResult(result: unknown): ParsedDraftResult {
   if (!isPlainObject(result)) {
-    return { version: null, context: null, fields: {} };
+    return { version: null, revisionOf: null, context: null, fields: {} };
   }
 
   const hasNumericVersion = typeof result["version"] === "number";
@@ -124,11 +126,13 @@ export function parseDraftResult(result: unknown): ParsedDraftResult {
   if (hasNumericVersion && hasObjectFields) {
     return {
       version: result["version"] as number,
+      revisionOf:
+        typeof result["revisionOf"] === "number" ? result["revisionOf"] : null,
       context: normaliseContext(result["context"]),
       fields: result["fields"] as Record<string, unknown>,
     };
   }
 
   // Legacy flat map: the whole result object is the fields map.
-  return { version: null, context: null, fields: result };
+  return { version: null, revisionOf: null, context: null, fields: result };
 }

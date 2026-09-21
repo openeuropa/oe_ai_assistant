@@ -88,9 +88,7 @@ export function DraftRail() {
         const tabButton = (
           <button
             type="button"
-            aria-label={
-              isActive ? `Close ${draft.label}` : `Open ${draft.label}`
-            }
+            aria-label={isActive ? `Close ${draft.name}` : `Open ${draft.name}`}
             onClick={() =>
               isActive
                 ? setDraftingState({ isArtifactCollapsed: true })
@@ -98,13 +96,7 @@ export function DraftRail() {
             }
             className={`flex h-9 w-full shrink-0 cursor-pointer items-center justify-center rounded-r-md border-y border-r text-xs font-medium transition-colors ${tabClasses(isActive, isSaved)}`}
           >
-            {isActive ? (
-              <X size={14} />
-            ) : draft.version !== null ? (
-              `v${draft.version}`
-            ) : (
-              "v?"
-            )}
+            {isActive ? <X size={14} /> : draft.label}
           </button>
         );
 
@@ -138,7 +130,7 @@ export function DraftRail() {
                   className="h-auto w-96 bg-transparent [&>button]:my-0 [&>button]:border-0"
                 >
                   <DraftCard
-                    version={draft.version}
+                    name={draft.name}
                     context={draft.context}
                     fields={draft.fields}
                     isSaved={isSaved}

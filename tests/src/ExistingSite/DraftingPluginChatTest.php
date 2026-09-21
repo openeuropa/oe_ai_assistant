@@ -223,6 +223,84 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
   }
 
   /**
+   * Tests that a revision reuses the stored draft and groups under it.
+   *
+   * Only the named group is drafted again; every other group is carried
+   * over, the new version records the draft it revises, and the history
+   * numbers it as a revision of that draft.
+   */
+  public function testReviseDraftVersionsUnderTheDraftItRevises(): void {
+    $user = $this->createUser(['use oe ai assistant']);
+    $this->loginUser($user);
+    $session = $this->createSession($user);
+
+    $this->enqueueDraftFlow();
+    $this->httpPost('/api/ai/plugins/drafting/chat', [
+      'message' => 'Generate the draft now.',
+      'sessionId' => $session->id(),
+    ]);
+
+    // The agent revises the main fields of the latest draft.
+    MockAiProvider::enqueue(new MockResponse(
+      toolCalls: [
+        [
+          'id' => 'call_r1',
+          'type' => 'function',
+          'function' => [
+            'name' => 'revise_draft',
+            'arguments' => '{"instruction": "Make the title shorter.", "groups": ["main_fields"]}',
+          ],
+        ],
+      ],
+    ));
+    MockAiProvider::enqueue(new MockResponse(
+      text: '{"title": [{"value": "Short"}], "field_teaser": [{"value": "Test teaser."}]}',
+    ));
+    MockAiProvider::enqueue(new MockResponse(text: 'Draft 1.1 is ready.'));
+
+    $result = $this->httpPost('/api/ai/plugins/drafting/chat', [
+      'message' => 'Make the title shorter.',
+      'sessionId' => $session->id(),
+    ]);
+    $this->assertEquals(200, $result['status'],
+      'Expected 200. Body: ' . substr($result['body'], 0, 500));
+
+    // The revision drafted one group only, after the two of the first turn.
+    \Drupal::state()->resetCache();
+    $groupCalls = array_filter(
+      MockAiProvider::getCallLog(),
+      fn($call) => str_contains($call['system_prompt'], 'You are a content generator'),
+    );
+    $groupCalls = array_filter(
+      MockAiProvider::getCallLog(),
+      fn($call) => str_contains($call['system_prompt'], 'You are a content generator'),
+    );
+    $this->assertCount(3, $groupCalls,
+      'Only the revised group is drafted again.');
+
+    $drafts = $this->loadDraftResults($session);
+    $this->assertCount(2, $drafts);
+    $this->assertSame(2, $drafts[1]['version']);
+    $this->assertSame(1, $drafts[1]['revisionOf'],
+      'The revision records the draft it started from.');
+    $this->assertSame('Short', $drafts[1]['fields']['title'][0]['value']);
+    $this->assertSame(
+      $drafts[0]['fields']['field_content_paragraphs'],
+      $drafts[1]['fields']['field_content_paragraphs'],
+      'A group left alone is carried over untouched.',
+    );
+    $this->assertSame($drafts[0]['context'], $drafts[1]['context'],
+      'The revision inherits the context that produced the draft.');
+
+    // The history numbers the revision under the draft it revises.
+    /** @var \Drupal\oe_ai_assistant\Service\Drafting\DraftHistoryInterface $history */
+    $history = \Drupal::service('Drupal\oe_ai_assistant\Service\Drafting\DraftHistoryInterface');
+    \Drupal::entityTypeManager()->getStorage('ai_conversation_message')->resetCache();
+    $this->assertSame(['1.0', '1.1'], array_column($history->listDrafts($session), 'label'));
+    $this->assertSame(['Draft 1.0', 'Draft 1.1'], array_column($history->listDrafts($session), 'name'));
+  }
+
+  /**
    * Tests that the router system prompt is stable and tone-free.
    *
    * The router prompt carries role and capabilities only; the tone reaches
@@ -786,21 +864,19 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
   }
 
   /**
-   * Loads every versioned draft stored on draft_group calls, in order.
+   * Loads every versioned draft on the transcript, in order.
    *
    * @param \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $session
    *   The session hosting the conversation.
    *
    * @return array
-   *   The drafts shaped {version, context, fields}.
+   *   The drafts shaped {version, context, fields, revisionOf}.
    */
   protected function loadDraftResults(AiEditorialSessionInterface $session): array {
     $results = [];
     foreach ($this->loadTranscript($session) as $message) {
       foreach ($message->getToolCalls() as $call) {
-        if (($call['function']['name'] ?? '') === 'draft_group'
-          && isset($call['result']['draft'])
-        ) {
+        if (isset($call['result']['draft'])) {
           $results[] = $call['result']['draft'];
         }
       }

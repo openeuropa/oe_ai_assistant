@@ -1,10 +1,11 @@
 /**
  * Session drafts index derived from the assistant-ui thread.
  *
- * Every draft_group tool call whose result carries the versioned draft
- * is one draft. The thread is the single source of truth: it covers both
- * the rehydrated transcript and drafts produced live, so the index stays
- * correct during the session and after a reload.
+ * Every tool call whose result carries a versioned draft is one draft.
+ * The thread is the single source of truth: it covers both the rehydrated
+ * transcript and drafts produced live, so the index stays correct during
+ * the session and after a reload. Revisions are numbered under the draft
+ * they revise, so a session reads 1.0, 1.1, 2.0.
  */
 
 import { useAuiState } from "@assistant-ui/react";
@@ -20,8 +21,10 @@ export interface SessionDraft {
   context: DraftContext | null;
   /** The field values for this draft, keyed by field name. */
   fields: Record<string, unknown>;
-  /** Menu label, e.g. "Draft 2"; plain "Draft" for legacy entries. */
+  /** Compact grouped number, e.g. "2.1". */
   label: string;
+  /** Menu label, e.g. "Draft 2.1". */
+  name: string;
   /** When the thread message carrying the draft was created, if known. */
   createdAt: Date | null;
 }
@@ -56,11 +59,13 @@ function draftOf(result: unknown): unknown {
 export function extractSessionDrafts(
   messages: readonly ThreadMessageLikeShape[],
 ): SessionDraft[] {
-  const drafts: SessionDraft[] = [];
+  const drafts: { draft: SessionDraft; major: number; minor: number }[] = [];
+  const majors = new Map<number, number>();
+  const minors = new Map<number, number>();
 
   for (const message of messages) {
     for (const part of message.content ?? []) {
-      if (part.type !== "tool-call" || part.toolName !== "draft_group") {
+      if (part.type !== "tool-call") {
         continue;
       }
       const draft = draftOf(part.result);
@@ -71,17 +76,42 @@ export function extractSessionDrafts(
       if (Object.keys(parsed.fields).length === 0) {
         continue;
       }
+      // A revision joins the group of the draft it started from. Anything
+      // else, a new draft or a revision of a draft no longer in the thread,
+      // opens a group of its own.
+      const root = parsed.revisionOf;
+      let major: number;
+      let minor: number;
+      if (root !== null && majors.has(root)) {
+        major = majors.get(root) as number;
+        minor = (minors.get(root) ?? 0) + 1;
+        minors.set(root, minor);
+      } else {
+        major = majors.size + 1;
+        minor = 0;
+        if (parsed.version !== null) {
+          majors.set(parsed.version, major);
+          minors.set(parsed.version, 0);
+        }
+      }
+      const label = `${major}.${minor}`;
       drafts.push({
-        ...parsed,
-        label: parsed.version !== null ? `Draft ${parsed.version}` : "Draft",
-        createdAt: message.createdAt ?? null,
+        draft: {
+          ...parsed,
+          label,
+          name: `Draft ${label}`,
+          createdAt: message.createdAt ?? null,
+        },
+        major,
+        minor,
       });
     }
   }
 
-  // Version order; legacy drafts have no version and sort to the front
-  // in their original transcript order (stable sort).
-  return drafts.sort((a, b) => (a.version ?? 0) - (b.version ?? 0));
+  // Revisions follow the draft they belong to, whatever was drafted in
+  // between.
+  drafts.sort((a, b) => a.major - b.major || a.minor - b.minor);
+  return drafts.map((entry) => entry.draft);
 }
 
 /** Reads the drafts index from the current thread. */
@@ -91,6 +121,15 @@ export function useSessionDrafts(): SessionDraft[] {
     () => extractSessionDrafts(messages as readonly ThreadMessageLikeShape[]),
     [messages],
   );
+}
+
+/** Reads the name of one draft from the current thread. */
+export function useDraftName(version: number | null): string {
+  const drafts = useSessionDrafts();
+  if (version === null) {
+    return "Draft";
+  }
+  return drafts.find((draft) => draft.version === version)?.name ?? "Draft";
 }
 
 /** Opens a draft in the artifact pane, expanding the pane if needed. */
