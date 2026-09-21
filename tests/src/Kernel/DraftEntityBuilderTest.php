@@ -219,6 +219,45 @@ class DraftEntityBuilderTest extends KernelTestBase {
   }
 
   /**
+   * Never resolves to a format outside the field's allowed_formats.
+   */
+  public function testDoesNotResolveToFormatOutsideAllowedFormats(): void {
+    FilterFormat::create(['format' => 'oe_test_user_default', 'name' => 'User default', 'weight' => -10])->save();
+    FilterFormat::create(['format' => 'oe_test_restricted', 'name' => 'Restricted', 'weight' => 0])->save();
+
+    $fieldConfig = FieldConfig::loadByName('node', 'oe_news', 'field_body');
+    $fieldConfig->setSetting('allowed_formats', ['oe_test_restricted']);
+    $fieldConfig->save();
+
+    // The user may use a format, just not the only one the field allows, so
+    // the allowed/permitted intersection is empty.
+    Role::create(['id' => 'oe_test_role_other', 'label' => 'Test role other'])
+      ->grantPermission('use text format oe_test_user_default')
+      ->save();
+    // Uid 1 bypasses all permission checks; consume it so the real test user
+    // below is subject to the ordinary permission check the test exercises.
+    User::create(['name' => 'Uid 1 placeholder'])->save();
+    $user = User::create(['name' => 'Format tester other', 'roles' => ['oe_test_role_other']]);
+    $user->save();
+    $this->container->get('current_user')->setAccount($user);
+
+    $node = $this->builder()->fromLlmFields('node', 'oe_news', [
+      'title' => [['value' => 'Formatted body']],
+      'field_news_type' => [['value' => 'announcement']],
+      'field_body' => [['value' => '<p>Body copy.</p>']],
+    ]);
+
+    // Whether the format stays unset or falls back to an allowed entry is the
+    // resolver's call; the user's default must not leak onto a field that
+    // does not allow it.
+    $format = $node->get('field_body')->format;
+    $this->assertTrue(
+      $format === NULL || $format === 'oe_test_restricted',
+      "Resolved format '$format' is not in the field's allowed_formats.",
+    );
+  }
+
+  /**
    * Rejects unknown entity types with a clear error.
    */
   public function testThrowsOnUnknownEntityType(): void {
