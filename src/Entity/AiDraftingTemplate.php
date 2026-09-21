@@ -102,6 +102,13 @@ final class AiDraftingTemplate extends ConfigEntityBase implements AiDraftingTem
   protected array $defaults = [];
 
   /**
+   * The IDs of the field configs being deleted.
+   *
+   * @var string[]
+   */
+  protected array $removedFieldIds = [];
+
+  /**
    * {@inheritdoc}
    */
   public function getDescription(): string {
@@ -192,6 +199,9 @@ final class AiDraftingTemplate extends ConfigEntityBase implements AiDraftingTem
     foreach ($field_definitions as $field_name => $field_definition) {
       if (
         !$field_definition->isRequired() ||
+        // The template is saved before a field it depends on is deleted, so
+        // the field definition is still around.
+        in_array("$entity_type_id.$bundle.$field_name", $this->removedFieldIds, TRUE) ||
         $field_definition->isComputed() ||
         $field_definition->isReadOnly() ||
         !$field_definition->isDisplayConfigurable('form') ||
@@ -431,6 +441,7 @@ final class AiDraftingTemplate extends ConfigEntityBase implements AiDraftingTem
 
     foreach ($dependencies['config'] ?? [] as $entity) {
       if ($entity instanceof FieldConfigInterface) {
+        $this->removedFieldIds[] = $entity->id();
         $changed = $this->stripField(
           $this->fields,
           $this->defaults,
