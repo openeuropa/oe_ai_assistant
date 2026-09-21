@@ -219,6 +219,23 @@ bbb", $prompt);
     $this->assertStringContainsString("### Document $count (file: doc-$count.pdf)
 Summary only: Summary $count", $prompt);
     $this->assertLessThanOrEqual(EditorialContext::MAX_TOTAL_CHARS, substr_count($prompt, 'x'));
+
+    // Test the scenario where every document is longer than the per-document
+    // cap, and there are exactly as many as the total budget can hold.
+    $documents = [];
+    $fitting = intdiv(EditorialContext::MAX_TOTAL_CHARS, EditorialContext::MAX_DOCUMENT_CHARS);
+    for ($i = 1; $i <= $fitting; $i++) {
+      $documents[] = self::document((string) $i, 'done', str_repeat('~', EditorialContext::MAX_DOCUMENT_CHARS + 10), 'Summary ' . $i);
+    }
+    $prompt = (new EditorialContext(NULL, NULL, NULL, NULL, NULL, $documents))->toContextDocumentsPrompt();
+    // The budget counts document text only, not the truncation marker, so
+    // every document is injected truncated.
+    $this->assertSame($fitting, substr_count($prompt, "\n[truncated]"));
+    // None of them is pushed out to its summary by the markers of the others.
+    $this->assertStringNotContainsString('Summary only:', $prompt);
+    // The injected text fills the budget exactly. The tilde appears nowhere
+    // else in the prompt, so counting it counts the document text.
+    $this->assertSame(EditorialContext::MAX_TOTAL_CHARS, substr_count($prompt, '~'));
   }
 
   /**

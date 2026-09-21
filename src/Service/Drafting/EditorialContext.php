@@ -142,13 +142,19 @@ final class EditorialContext {
       $filename = trim((string) ($document['filename'] ?? ''));
       $lines[] = $filename === '' ? $heading : sprintf('%s (file: %s)', $heading, $filename);
       $extract = trim((string) ($document['extract'] ?? ''));
-      if (mb_strlen($extract) > self::MAX_DOCUMENT_CHARS) {
-        $extract = mb_substr($extract, 0, self::MAX_DOCUMENT_CHARS) . "\n[truncated]";
+      $truncated = mb_strlen($extract) > self::MAX_DOCUMENT_CHARS;
+      if ($truncated) {
+        $extract = mb_substr($extract, 0, self::MAX_DOCUMENT_CHARS);
       }
       $summary = trim((string) ($document['summary'] ?? ''));
       if ($extract !== '' && mb_strlen($extract) <= $budget) {
         $budget -= mb_strlen($extract);
         $lines[] = $extract;
+        // The marker is ours: it stays out of the budget, which only counts
+        // document text.
+        if ($truncated) {
+          $lines[] = '[truncated]';
+        }
       }
       elseif ($summary !== '') {
         $lines[] = 'Summary only: ' . $summary;
