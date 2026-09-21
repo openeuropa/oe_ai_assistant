@@ -6,6 +6,7 @@ namespace Drupal\oe_ai_assistant;
 
 use Drupal\Core\Access\AccessResult;
 use Drupal\Core\Entity\EntityAccessControlHandler;
+use Drupal\Core\Entity\EntityHandlerInterface;
 use Drupal\Core\Entity\EntityInterface;
 use Drupal\Core\Entity\EntityTypeInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
@@ -17,7 +18,7 @@ use Symfony\Component\DependencyInjection\ContainerInterface;
 /**
  * Access control handler for AI editorial sessions.
  */
-class AiEditorialSessionAccessControlHandler extends EntityAccessControlHandler {
+class AiEditorialSessionAccessControlHandler extends EntityAccessControlHandler implements EntityHandlerInterface {
 
   /**
    * The entity type manager.
@@ -43,8 +44,8 @@ class AiEditorialSessionAccessControlHandler extends EntityAccessControlHandler 
     EntityTypeInterface $entity_type,
   ): static {
     return new static(
-    $entity_type,
-    $container->get('entity_type.manager'),
+      $entity_type,
+      $container->get('entity_type.manager'),
     );
   }
 

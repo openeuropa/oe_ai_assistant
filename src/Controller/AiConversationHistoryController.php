@@ -8,7 +8,6 @@ use Drupal\Core\Cache\CacheableMetadata;
 use Drupal\Core\Controller\ControllerBase;
 use Drupal\Core\Datetime\DateFormatterInterface;
 use Drupal\Core\Datetime\DrupalDateTime;
-use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\StringTranslation\TranslatableMarkup;
 use Drupal\datetime\Plugin\Field\FieldType\DateTimeItemInterface;
 use Drupal\oe_ai_assistant\Entity\AiConversationMessageInterface;
@@ -38,13 +37,10 @@ class AiConversationHistoryController extends ControllerBase {
   /**
    * Constructs the controller.
    *
-   * @param \Drupal\Core\Entity\EntityTypeManagerInterface $entityTypeManager
-   *   The entity type manager.
    * @param \Drupal\Core\Datetime\DateFormatterInterface $dateFormatter
    *   The date formatter.
    */
   public function __construct(
-    private readonly EntityTypeManagerInterface $entityTypeManager,
     private readonly DateFormatterInterface $dateFormatter,
   ) {}
 
@@ -53,7 +49,6 @@ class AiConversationHistoryController extends ControllerBase {
    */
   public static function create(ContainerInterface $container): static {
     return new static(
-      $container->get('entity_type.manager'),
       $container->get('date.formatter'),
     );
   }
@@ -82,7 +77,7 @@ class AiConversationHistoryController extends ControllerBase {
    *   sub-agent messages indented under their parent turn.
    */
   public function view(AiEditorialSessionInterface $ai_editorial_session): array {
-    $message_storage = $this->entityTypeManager->getStorage('ai_conversation_message');
+    $message_storage = $this->entityTypeManager()->getStorage('ai_conversation_message');
     assert($message_storage instanceof AiConversationMessageStorageInterface);
     $tree = $message_storage->loadTree($ai_editorial_session);
 
