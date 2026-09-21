@@ -110,4 +110,18 @@ class DraftableNodeTypeSelectionTest extends KernelTestBase {
     $this->assertSame(['oe_news'], $this->referenceableTypeIds());
   }
 
+  /**
+   * No bundle is referenceable when no template is enabled.
+   */
+  public function testNoEnabledTemplateReturnsNothing(): void {
+    $storage = $this->container->get('entity_type.manager')->getStorage('ai_drafting_template');
+    /** @var \Drupal\oe_ai_assistant\Entity\AiDraftingTemplate $template */
+    foreach ($storage->loadMultiple() as $template) {
+      $template->set('status', FALSE);
+      $template->save();
+    }
+
+    $this->assertSame([], $this->referenceableTypeIds());
+  }
+
 }
