@@ -93,7 +93,6 @@ class ConversationChatHistoryTest extends KernelTestBase {
       'mock-model',
       $parent,
       7,
-      ['draft_content'],
       $load,
     );
   }
@@ -111,12 +110,17 @@ class ConversationChatHistoryTest extends KernelTestBase {
   /**
    * Tests that the transcript replays as alternating turns with notes merged.
    *
-   * Tool rows and assistant rows without text are skipped, editorial events
-   * become user notes, and consecutive rows of one role become one message.
+   * Tool rows, agent event rows and assistant rows without text are skipped,
+   * editorial events become user notes, and consecutive rows of one role
+   * become one message.
    */
   public function testLoadReplaysAlternatingMessages(): void {
     $this->recorder->recordEvent($this->host, 'Session started', ['type' => 'session']);
     $this->recorder->recordUser($this->host, 'Draft a news article.', 7);
+    $this->recorder->recordEvent($this->host, 'drafting: model call started', [
+      'type' => 'agent',
+      'event' => 'inference-start',
+    ]);
     $this->recorder->recordAssistantTurn($this->host, '', [
       ['type' => 'function', 'function' => ['name' => 'get_draft_history', 'arguments' => '{}']],
     ], [], 'tool_calls', 'orchestrator', 'mock_ai', 'mock-model');
@@ -159,21 +163,24 @@ class ConversationChatHistoryTest extends KernelTestBase {
    * Tests that assistant turns and tool results persist with their details.
    *
    * A drafter history nests every row under its parent turn and tags it with
-   * the agent id; a signal tool leaves no tool row.
+   * the agent id. Each tool result becomes a tool row, and attaching it
+   * stores it on the call that requested it.
    */
   public function testAddPersistsAssistantAndToolRows(): void {
     $parent = $this->recorder->recordAssistantTurn($this->host, '', [], [], 'tool_calls', 'orchestrator', 'mock_ai', 'mock-model');
     $history = $this->history($parent, FALSE);
 
     $lookup = Tool::make('get_draft_history', 'Lists drafts.')->setCallId('call_1')->setResult('{"drafts":[]}');
-    $signal = Tool::make('draft_content', 'Signals readiness.')->setCallId('call_2')->setResult('ok');
+    $echo = Tool::make('echo', 'Echoes.')->setCallId('call_2')->setResult('ok');
 
     $history->addMessage(new UserMessage('Generate the fields.'));
-    $call = new ToolCallMessage(NULL, [$lookup, $signal]);
+    $call = new ToolCallMessage(NULL, [$lookup, $echo]);
     $call->setUsage(new Usage(10, 4));
     $call->setStopReason('tool_calls');
     $history->addMessage($call);
-    $history->addMessage(new ToolResultMessage([$lookup, $signal]));
+    $history->attachToolResult($lookup);
+    $history->attachToolResult($echo);
+    $history->addMessage(new ToolResultMessage([$lookup, $echo]));
     $answer = new AssistantMessage('{"title": [{"value": "x"}]}');
     $answer->setUsage(new Usage(20, 8, 2, 1));
     $history->addMessage($answer);
@@ -182,16 +189,20 @@ class ConversationChatHistoryTest extends KernelTestBase {
       $this->allRows(),
       fn (AiConversationMessageInterface $row) => $row->getParentId() === (int) $parent->id(),
     ));
-    $this->assertSame(['user', 'assistant', 'tool', 'assistant'], array_map(fn ($r) => $r->getRole(), $children));
-    $this->assertSame(['main_fields', 'main_fields', '', 'main_fields'], array_map(fn ($r) => (string) $r->get('agent_id')->value, $children));
+    $this->assertSame(['user', 'assistant', 'tool', 'tool', 'assistant'], array_map(fn ($r) => $r->getRole(), $children));
+    $this->assertSame(['main_fields', 'main_fields', '', '', 'main_fields'], array_map(fn ($r) => (string) $r->get('agent_id')->value, $children));
 
-    $this->assertSame('get_draft_history', $children[1]->getToolCalls()[0]['function']['name']);
-    $this->assertSame('draft_content', $children[1]->getToolCalls()[1]['function']['name']);
+    $calls = $children[1]->getToolCalls();
+    $this->assertSame('get_draft_history', $calls[0]['function']['name']);
+    $this->assertSame(['drafts' => []], $calls[0]['result']);
+    $this->assertSame('echo', $calls[1]['function']['name']);
+    $this->assertSame(['text' => 'ok'], $calls[1]['result']);
     $this->assertSame('tool_calls', $children[1]->get('finish_reason')->value);
     $this->assertSame(['input' => 10, 'output' => 4, 'total' => 14, 'reasoning' => 0, 'cached' => 0], $children[1]->getTokenUsage());
     $this->assertSame('{"drafts":[]}', $children[2]->get('content')->value);
-    $this->assertSame(['input' => 20, 'output' => 8, 'total' => 28, 'reasoning' => 1, 'cached' => 2], $children[3]->getTokenUsage());
-    $this->assertSame((int) $children[3]->id(), (int) $history->lastAssistant()->id());
+    $this->assertSame('ok', $children[3]->get('content')->value);
+    $this->assertSame(['input' => 20, 'output' => 8, 'total' => 28, 'reasoning' => 1, 'cached' => 2], $children[4]->getTokenUsage());
+    $this->assertSame((int) $children[4]->id(), (int) $history->lastAssistant()->id());
   }
 
   /**

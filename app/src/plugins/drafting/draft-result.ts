@@ -1,7 +1,7 @@
 /**
  * Draft result parser.
  *
- * Normalises the value stored as a draft_content tool-call result into a
+ * Normalises the draft stored on the completing draft_group call into a
  * consistent shape. The backend persists two formats:
  *
  *   - Versioned: `{version, context, fields}` introduced when provenance
@@ -107,7 +107,7 @@ function normaliseContext(raw: unknown): DraftContext {
 }
 
 /**
- * Parses a draft_content tool-call result into a normalised shape.
+ * Parses the draft stored on a draft_group call into a normalised shape.
  *
  * Versioned detection: an object with a numeric `version` and an object
  * `fields`. Everything else that is object-like is treated as a legacy flat

@@ -13,7 +13,6 @@ use Drupal\Core\Session\AccountInterface;
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
 use Drupal\oe_ai_assistant\Exception\ActionException;
 use Drupal\oe_ai_assistant\Service\MessageRecorderInterface;
-use Drupal\oe_ai_assistant\Service\UiMessageStreamInterface;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\Request;
@@ -24,20 +23,12 @@ use Symfony\Component\HttpFoundation\Response;
  *
  * Provides Drupal plugin dispatch (action routing, request
  * validation), HTTP utilities (JSON body decoding, user message
- * extraction), and shared AI infrastructure (provider, stream,
- * logger).
+ * extraction), and the shared logger and recorder.
  *
  * @see \Drupal\oe_ai_assistant\Plugin\AiAssistantPluginInterface
  * @see \Drupal\oe_ai_assistant\Plugin\AiAssistantPluginManager
  */
 abstract class AiAssistantPluginBase extends PluginBase implements AiAssistantPluginInterface, ContainerFactoryPluginInterface {
-
-  /**
-   * The UI message stream service.
-   *
-   * @var \Drupal\oe_ai_assistant\Service\UiMessageStreamInterface
-   */
-  protected UiMessageStreamInterface $uiMessageStream;
 
   /**
    * The entity type manager.
@@ -77,7 +68,6 @@ abstract class AiAssistantPluginBase extends PluginBase implements AiAssistantPl
     $plugin_definition,
   ): static {
     $instance = new static($configuration, $plugin_id, $plugin_definition);
-    $instance->uiMessageStream = $container->get(UiMessageStreamInterface::class);
     $instance->entityTypeManager = $container->get('entity_type.manager');
     $instance->currentUser = $container->get('current_user');
     $instance->messageRecorder = $container->get(MessageRecorderInterface::class);
@@ -158,9 +148,13 @@ abstract class AiAssistantPluginBase extends PluginBase implements AiAssistantPl
       // The created field is a datetime stored in UTC; expose it in RFC
       // 3339 so clients can render local timestamps.
       $at = (string) $message->get('created')->date?->format('c');
-      // Event rows surface as compact timeline entries.
+      // Editorial event rows surface as compact timeline entries; the events
+      // of an agent run are streamed live and stay out of the transcript.
       if ($role === 'event') {
         $metadata = $message->getMetadata();
+        if (($metadata['type'] ?? '') === 'agent') {
+          continue;
+        }
         $item = [
           'role' => 'event',
           'type' => (string) ($metadata['type'] ?? ''),

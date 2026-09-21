@@ -6,17 +6,20 @@ namespace Drupal\oe_ai_assistant\Neuron\Observability;
 
 use Drupal\Core\Entity\EntityInterface;
 use Drupal\oe_ai_assistant\Entity\AiConversationMessageInterface;
+use Drupal\oe_ai_assistant\Neuron\Chat\History\ConversationChatHistory;
+use Drupal\oe_ai_assistant\Neuron\Chat\Messages\Stream\Chunks\AgentEventChunk;
 use Drupal\oe_ai_assistant\Service\MessageRecorderInterface;
-use Drupal\oe_ai_assistant\Service\UiMessageStreamInterface;
 use NeuronAI\Observability\Events\AgentError;
+use NeuronAI\Observability\Events\ToolCalled;
 use Psr\Log\LoggerInterface;
 
 /**
- * Frames, annotates and logs one agent run.
+ * Records and queues every event of one agent run.
  *
  * The turns themselves are persisted by the conversation chat history. This
- * observer adds what the history cannot see: the system prompt of a drafter,
- * the step boundaries on the stream, and a failed run.
+ * observer adds what the history cannot see: an event row and a stream
+ * chunk per Neuron event, each tool result as soon as the tool finishes,
+ * the system prompt of a drafter, and a failed run.
  */
 final class TranscriptObserver extends DrupalLogObserver {
 
@@ -36,21 +39,24 @@ final class TranscriptObserver extends DrupalLogObserver {
    *   The entity hosting the conversation.
    * @param string $agentId
    *   The agent id stored on every recorded row.
+   * @param \Drupal\oe_ai_assistant\Neuron\Observability\AgentEventQueue $events
+   *   The queue the stream loop drains.
    * @param \Drupal\oe_ai_assistant\Entity\AiConversationMessageInterface|null $parent
    *   The turn the recorded rows nest under, or NULL for top-level turns.
    * @param string|null $systemPrompt
    *   When given, recorded as a system row before the first inference.
-   * @param \Drupal\oe_ai_assistant\Service\UiMessageStreamInterface|null $stream
-   *   When given, every inference is framed as a step on the stream.
+   * @param \Drupal\oe_ai_assistant\Neuron\Chat\History\ConversationChatHistory|null $history
+   *   When given, receives each tool result as soon as the tool finishes.
    */
   public function __construct(
     LoggerInterface $logger,
     private readonly MessageRecorderInterface $recorder,
     private readonly EntityInterface $host,
     private readonly string $agentId,
+    private readonly AgentEventQueue $events,
     private readonly ?AiConversationMessageInterface $parent = NULL,
     private readonly ?string $systemPrompt = NULL,
-    private readonly ?UiMessageStreamInterface $stream = NULL,
+    private readonly ?ConversationChatHistory $history = NULL,
   ) {
     parent::__construct($logger);
   }
@@ -61,23 +67,28 @@ final class TranscriptObserver extends DrupalLogObserver {
   public function onEvent(string $event, object $source, mixed $data = NULL, ?string $branchId = NULL): void {
     parent::onEvent($event, $source, $data, $branchId);
 
-    match ($event) {
-      'inference-start' => $this->onInferenceStart(),
-      'inference-stop' => $this->stream?->finishStep($this->agentId),
-      'error' => $data instanceof AgentError ? $this->onError($data->exception) : NULL,
-      default => NULL,
-    };
-  }
-
-  /**
-   * Records the system prompt once and opens the step before a model call.
-   */
-  private function onInferenceStart(): void {
-    if ($this->systemPrompt !== NULL && !$this->systemRecorded) {
+    if ($event === 'inference-start' && $this->systemPrompt !== NULL && !$this->systemRecorded) {
       $this->recorder->recordSystem($this->host, $this->systemPrompt, $this->agentId, $this->parent);
       $this->systemRecorded = TRUE;
     }
-    $this->stream?->startStep($this->agentId);
+    if ($event === 'error' && $data instanceof AgentError) {
+      $this->onError($data->exception);
+    }
+    if ($data instanceof ToolCalled) {
+      $this->history?->attachToolResult($data->tool);
+    }
+
+    $summary = AgentEventSummary::describe($event, $data);
+    $this->recorder->recordEvent($this->host, $summary, [
+      'type' => 'agent',
+      'event' => $event,
+      'agent' => $this->agentId,
+    ]);
+    // @todo Temporary: the full payload (prompts, answers, tool results)
+    //   streams to the browser console so the run can be inspected. Gate it
+    //   behind a dev-only configuration before this leaves development.
+    $payload = json_decode((string) json_encode($data, JSON_PARTIAL_OUTPUT_ON_ERROR | JSON_UNESCAPED_UNICODE), TRUE);
+    $this->events->push(new AgentEventChunk($event, $this->agentId, $summary, $payload));
   }
 
   /**

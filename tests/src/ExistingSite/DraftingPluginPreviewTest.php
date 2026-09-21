@@ -16,9 +16,9 @@ use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
 class DraftingPluginPreviewTest extends DraftingPluginTestBase {
 
   /**
-   * Seeds a versioned draft_content result directly on the transcript.
+   * Seeds a versioned draft directly on the transcript.
    *
-   * Bypasses the chat/orchestrator flow entirely: preview only reads
+   * Bypasses the chat flow entirely: preview only reads
    * DraftHistory's stored results, so seeding them directly keeps this
    * suite independent of the (separately tested) drafting conversation flow.
    *
@@ -47,15 +47,18 @@ class DraftingPluginPreviewTest extends DraftingPluginTestBase {
     $message->setToolCalls([
       [
         'type' => 'function',
-        'function' => ['name' => 'draft_content', 'arguments' => '{}'],
+        'function' => ['name' => 'draft_group', 'arguments' => '{"group":"main_fields"}'],
         'result' => [
-          'version' => $version,
-          'context' => [
-            'tone' => NULL,
-            'template' => $templateId !== NULL ? ['id' => $templateId, 'label' => $templateId] : NULL,
-            'documents' => [],
+          'group' => 'main_fields',
+          'draft' => [
+            'version' => $version,
+            'context' => [
+              'tone' => NULL,
+              'template' => $templateId !== NULL ? ['id' => $templateId, 'label' => $templateId] : NULL,
+              'documents' => [],
+            ],
+            'fields' => $fields,
           ],
-          'fields' => $fields,
         ],
       ],
     ]);

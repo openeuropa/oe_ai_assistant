@@ -23,10 +23,10 @@ final class ToolMapper implements ToolMapperInterface {
       $function->setDescription((string) $tool->getDescription());
       foreach ($tool->getProperties() as $property) {
         $input = new ToolsPropertyInput();
-        $input->setFromArray(
-          $property->getName(),
-          $property->getJsonSchema() + ['required' => $property->isRequired()],
-        );
+        $input->setFromArray($property->getName(), $property->getJsonSchema());
+        // The flag is not a schema key: passed in the array it would be
+        // rendered into the property, which providers reject.
+        $input->setRequired($property->isRequired());
         $function->setProperty($input);
       }
       $functions[] = $function;

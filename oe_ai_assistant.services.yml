@@ -41,8 +41,6 @@ services:
   Drupal\oe_ai_assistant\Service\DraftAssembler: {}
   Drupal\oe_ai_assistant\Service\DraftAssemblerInterface: '@Drupal\oe_ai_assistant\Service\DraftAssembler'
 
-  Drupal\oe_ai_assistant\Service\UiMessageStream: {}
-  Drupal\oe_ai_assistant\Service\UiMessageStreamInterface: '@Drupal\oe_ai_assistant\Service\UiMessageStream'
 
   Drupal\oe_ai_assistant\Service\DraftSaver: {}
   Drupal\oe_ai_assistant\Service\DraftSaverInterface: '@Drupal\oe_ai_assistant\Service\DraftSaver'

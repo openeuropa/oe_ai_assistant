@@ -57,8 +57,6 @@ final class ConversationChatHistory extends AbstractChatHistory {
    *   The turn every row nests under, or NULL for the top-level transcript.
    * @param int|null $authorId
    *   The user id stored on user rows, or NULL when not attributable.
-   * @param string[] $unrecordedTools
-   *   Tool names whose results are not persisted, such as signal tools.
    * @param bool $load
    *   Whether to replay the persisted top-level transcript to the model.
    */
@@ -71,7 +69,6 @@ final class ConversationChatHistory extends AbstractChatHistory {
     private readonly string $modelId,
     private readonly ?AiConversationMessageInterface $parent = NULL,
     private readonly ?int $authorId = NULL,
-    private readonly array $unrecordedTools = [],
     bool $load = TRUE,
   ) {
     // The row cap replaces token trimming; the window only has to be large.
@@ -112,14 +109,35 @@ final class ConversationChatHistory extends AbstractChatHistory {
   }
 
   /**
+   * Stores a finished tool's result on the call that requested it.
+   *
+   * Neuron adds tool results to the history only after the next model call,
+   * so this runs when the tool finishes and the transcript can serve the
+   * result while the model is still answering.
+   */
+  public function attachToolResult(ToolInterface $tool): void {
+    if ($this->lastAssistant === NULL) {
+      return;
+    }
+    $decoded = json_decode($tool->getResult(), TRUE);
+    $calls = $this->lastAssistant->getToolCalls();
+    foreach ($calls as &$call) {
+      if (($call['id'] ?? '') === (string) $tool->getCallId()) {
+        $call['result'] = is_array($decoded) ? $decoded : ['text' => $tool->getResult()];
+      }
+    }
+    unset($call);
+    $this->lastAssistant->setToolCalls($calls);
+    $this->lastAssistant->save();
+  }
+
+  /**
    * Persists a message as a conversation row.
    */
   private function persist(Message $message): void {
     if ($message instanceof ToolResultMessage) {
       foreach ($message->getTools() as $tool) {
-        if (!in_array($tool->getName(), $this->unrecordedTools, TRUE)) {
-          $this->recorder->recordTool($this->host, $tool->getResult(), $this->parent);
-        }
+        $this->recorder->recordTool($this->host, $tool->getResult(), $this->parent);
       }
       return;
     }
@@ -153,9 +171,10 @@ final class ConversationChatHistory extends AbstractChatHistory {
    * Replays the persisted transcript as alternating messages.
    *
    * Tool rows are skipped: a stored result cannot be re-linked to the call
-   * that produced it. Assistant rows without text are skipped as well. A
-   * leading assistant run is dropped, since the model expects a user turn
-   * first.
+   * that produced it. Agent event rows are skipped, since they describe the
+   * run rather than the conversation. Assistant rows without text are
+   * skipped as well. A leading assistant run is dropped, since the model
+   * expects a user turn first.
    *
    * @return \NeuronAI\Chat\Messages\Message[]
    *   The replayed messages.
@@ -172,6 +191,9 @@ final class ConversationChatHistory extends AbstractChatHistory {
       $text = (string) $row->get('content')->value;
       $role = $row->getRole();
       if ($role === AiConversationMessageInterface::ROLE_EVENT) {
+        if (($row->getMetadata()['type'] ?? '') === 'agent') {
+          continue;
+        }
         $role = AiConversationMessageInterface::ROLE_USER;
         $text = '[Editorial change] ' . $text;
       }

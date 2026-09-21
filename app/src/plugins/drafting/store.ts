@@ -1,8 +1,8 @@
 /**
  * Zustand store slice for the drafting plugin.
  *
- * Tracks the orchestration plan steps and raw drafted field values
- * from the AI agent. The conversation itself is persisted server
+ * Tracks the draft shown in the artifact pane and the confirmed
+ * composer selections. The conversation itself is persisted server
  * side against the editorial session, so nothing here is persisted.
  */
 
@@ -15,16 +15,7 @@ import {
 
 const PLUGIN_ID = "drafting";
 
-/** A step in the orchestration plan. */
-export interface PlanStep {
-  stepId: string;
-  label: string;
-  status: "pending" | "in_progress" | "done" | "error";
-}
-
 export interface DraftingSliceState {
-  /** Orchestration plan steps (transient). */
-  plan: PlanStep[];
   /** Raw drafted field values keyed by field machine name. */
   draftedFields: Record<string, unknown>;
   /** Confirmed selection per composer panel, keyed by panel id. */
@@ -37,7 +28,6 @@ export interface DraftingSliceState {
 
 export const draftingSliceConfig: PluginSliceConfig<DraftingSliceState> = {
   initialState: {
-    plan: [],
     draftedFields: {},
     selections: {},
     isArtifactCollapsed: false,

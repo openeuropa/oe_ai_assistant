@@ -24,11 +24,7 @@ import { DocumentsPanel } from "./components/documents-panel";
 import { DraftPreview } from "./components/draft-preview";
 import { DraftRail } from "./components/draft-rail";
 import { DraftingThread } from "./components/drafting-thread";
-import { PlanSteps } from "./components/plan-steps";
-import {
-  DraftContentToolUI,
-  EditorialEventToolUI,
-} from "./components/tool-uis";
+import { DraftGroupToolUI, EditorialEventToolUI } from "./components/tool-uis";
 import { useDraftingDocuments } from "./hooks/use-drafting-documents";
 import { useDraftingRuntime } from "./hooks/use-drafting-runtime";
 import { useDraftingTemplate } from "./hooks/use-drafting-template";
@@ -101,16 +97,15 @@ function VersionedDraftPreview({
  * export/import. This avoids any remount or network refetch after a save.
  */
 function DraftingChat() {
-  const { draftedFields, plan, activeDraftVersion } = useDraftingSlice();
+  const { draftedFields, activeDraftVersion } = useDraftingSlice();
   const setPendingWork = useAppStore((s) => s.setPendingWork);
   const runtime = useDraftingRuntime();
   const tone = useDraftingTone();
   const documents = useDraftingDocuments();
   const template = useDraftingTemplate();
+  // The pane only exists once there is a draft to show; before that the
+  // chat takes the full workspace width.
   const hasFields = Object.keys(draftedFields).length > 0;
-  // The pane only exists once there is an artifact to show; before that
-  // the chat takes the full workspace width.
-  const hasArtifact = hasFields || plan.length > 0;
 
   /**
    * Splices a local event chip (or error chip) into the thread.
@@ -158,25 +153,18 @@ function DraftingChat() {
 
   /** Determine what the artifact pane shows. */
   function renderArtifact() {
-    if (hasFields) {
-      // Versioned drafts get the tabbed live preview pane; legacy
-      // unversioned drafts cannot be addressed by the preview
-      // endpoint and keep the plain data table.
-      if (activeDraftVersion !== null) {
-        return (
-          <VersionedDraftPreview
-            version={activeDraftVersion}
-            onSave={handleSave}
-          />
-        );
-      }
-      return <ContentTable onSave={handleSave} />;
+    // Versioned drafts get the tabbed live preview pane; legacy
+    // unversioned drafts cannot be addressed by the preview
+    // endpoint and keep the plain data table.
+    if (activeDraftVersion !== null) {
+      return (
+        <VersionedDraftPreview
+          version={activeDraftVersion}
+          onSave={handleSave}
+        />
+      );
     }
-    return (
-      <div className="flex min-h-0 flex-1 flex-col p-4">
-        <PlanSteps steps={plan} />
-      </div>
-    );
+    return <ContentTable onSave={handleSave} />;
   }
 
   // Editorial context panels, shown as pill buttons under the composer.
@@ -313,7 +301,7 @@ function DraftingChat() {
   return (
     <AssistantRuntimeProvider runtime={runtime}>
       {/* Register tool call renderers so they appear inline in chat. */}
-      <DraftContentToolUI />
+      <DraftGroupToolUI />
       <EditorialEventToolUI />
 
       {/* Feed the shell exit guard with this plugin's pending state.
@@ -330,9 +318,8 @@ function DraftingChat() {
           <DraftingThread tabs={tabs} />
         </div>
 
-        {/* Middle panel appears once a plan or draft exists: plan steps
-            while generating, then the content table. */}
-        {hasArtifact && (
+        {/* Middle panel appears once a draft exists. */}
+        {hasFields && (
           <SessionArtifactPane>{renderArtifact()}</SessionArtifactPane>
         )}
 

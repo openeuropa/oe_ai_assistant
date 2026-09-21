@@ -125,13 +125,13 @@ class DraftingPluginSaveTest extends DraftingPluginTestBase {
     $session->set('template', 'news_default')->save();
 
     MockAiProvider::reset();
-    // The router calls draft_content.
+    // The agent drafts the single group of the template.
     MockAiProvider::enqueue(new MockResponse(
       toolCalls: [
         [
           'id' => 'call_1',
           'type' => 'function',
-          'function' => ['name' => 'draft_content', 'arguments' => '{}'],
+          'function' => ['name' => 'draft_group', 'arguments' => '{"group":"main_fields"}'],
         ],
       ],
     ));
@@ -143,6 +143,7 @@ class DraftingPluginSaveTest extends DraftingPluginTestBase {
     MockAiProvider::enqueue(new MockResponse(
       text: '{"title": [{"value": "Stray key title"}], "field_teaser": [{"value": "Teaser."}], "field_body": [{"value": "<p>Text</p>", "format": "full_html"}]}',
     ));
+    MockAiProvider::enqueue(new MockResponse(text: 'Draft 1 is ready.'));
 
     $chat = $this->httpPost('/api/ai/plugins/drafting/chat', [
       'message' => 'Generate the draft now.',
@@ -462,7 +463,7 @@ class DraftingPluginSaveTest extends DraftingPluginTestBase {
    * Seeds a completed draft version into the session's transcript.
    *
    * Mirrors how the chat flow records drafts: an assistant turn carrying a
-   * draft_content tool call whose result holds the versioned fields.
+   * draft_group tool call whose result holds the versioned draft.
    *
    * @param \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $session
    *   The session hosting the conversation.
@@ -477,13 +478,16 @@ class DraftingPluginSaveTest extends DraftingPluginTestBase {
     $this->seedMessage($session, 'assistant', '', [
       [
         'type' => 'function',
-        'function' => ['name' => 'draft_content', 'arguments' => '{}'],
+        'function' => ['name' => 'draft_group', 'arguments' => '{"group":"main_fields"}'],
         'result' => [
-          'version' => $version,
-          'context' => $templateId !== NULL
-            ? ['template' => ['id' => $templateId, 'label' => $templateId]]
-            : NULL,
-          'fields' => $fields,
+          'group' => 'main_fields',
+          'draft' => [
+            'version' => $version,
+            'context' => $templateId !== NULL
+              ? ['template' => ['id' => $templateId, 'label' => $templateId]]
+              : NULL,
+            'fields' => $fields,
+          ],
         ],
       ],
     ]);

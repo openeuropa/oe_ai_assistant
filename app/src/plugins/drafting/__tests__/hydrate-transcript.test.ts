@@ -23,10 +23,14 @@ describe("toThreadMessages", () => {
     ]);
   });
 
-  it("maps a draft_content tool call with a versioned result to args.fields from parsed shape", () => {
-    // Versioned result shape: the parser extracts fields from result.fields.
-    const fields = { title: [{ value: "Test Title" }] };
-    const versionedResult = { version: 1, context: null, fields };
+  it("maps a draft_group tool call to a part with its group and result", () => {
+    const result = {
+      group: "main_fields",
+      label: "Main fields",
+      fields: { title: [{ value: "Test Title" }] },
+      pending: [],
+      draft: { version: 1, context: null, fields: { title: [] } },
+    };
     const input: SessionMessage[] = [
       {
         role: "assistant",
@@ -34,55 +38,24 @@ describe("toThreadMessages", () => {
         toolCalls: [
           {
             type: "function",
-            function: { name: "draft_content", arguments: "{}" },
-            result: versionedResult,
+            function: {
+              name: "draft_group",
+              arguments: '{"group":"main_fields"}',
+            },
+            result,
           },
         ],
       },
     ];
 
-    const result = toThreadMessages(input);
-
-    expect(result).toHaveLength(1);
-    const [message] = result;
+    const [message] = toThreadMessages(input);
     if (!message) throw new Error("expected a message");
     const part = (message.content as AnyPart[])[0];
     expect(part.type).toBe("tool-call");
-    expect(part.toolName).toBe("draft_content");
-    // args.fields comes from the parsed shape, not the raw result object.
-    expect(part.args).toEqual({ fields });
-    // result carries the raw value so ToolUI can parse it independently.
-    expect(part.result).toEqual(versionedResult);
-  });
-
-  it("maps a draft_content tool call with a legacy flat result to args.fields", () => {
-    // Legacy shape: a flat object without a numeric version; used as-is.
-    const fields = { title: [{ value: "Legacy Title" }] };
-    const input: SessionMessage[] = [
-      {
-        role: "assistant",
-        content: "",
-        toolCalls: [
-          {
-            type: "function",
-            function: { name: "draft_content", arguments: "{}" },
-            result: fields,
-          },
-        ],
-      },
-    ];
-
-    const result = toThreadMessages(input);
-
-    expect(result).toHaveLength(1);
-    const [message] = result;
-    if (!message) throw new Error("expected a message");
-    const part = (message.content as AnyPart[])[0];
-    expect(part.type).toBe("tool-call");
-    expect(part.toolName).toBe("draft_content");
-    // Legacy: parseDraftResult returns fields = the flat object itself.
-    expect(part.args).toEqual({ fields });
-    expect(part.result).toEqual(fields);
+    expect(part.toolName).toBe("draft_group");
+    expect(part.args).toEqual({ group: "main_fields" });
+    // The raw result travels as-is so the tool UI can read the draft.
+    expect(part.result).toEqual(result);
   });
 
   it("maps an event item to an editorial_event tool-call part", () => {

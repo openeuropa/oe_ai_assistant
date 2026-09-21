@@ -35,7 +35,8 @@ final class GetDraftHistoryTool extends Tool {
       self::NAME,
       'Returns the drafts generated in this session, one entry per version'
       . ' ("Draft 1", "Draft 2", ...), each with the tone, template and'
-      . ' documents that produced it.',
+      . ' documents that produced it. Refer to drafts by these names; the'
+      . ' user sees the same names.',
     );
   }
 

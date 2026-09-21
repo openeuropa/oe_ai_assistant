@@ -85,7 +85,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Send a drafting message and receive AG-UI SSE stream */
+        /** Send a drafting message and receive the UI message stream */
         post: operations["postDraftingChat"];
         delete?: never;
         options?: never;
@@ -449,7 +449,7 @@ export interface components {
         DraftingSaveRequest: {
             /** @description The editorial session that owns the draft. */
             sessionId: string;
-            /** @description The draft version to save, matching the version of a draft_content result in the session transcript (the version shown in the artifact pane and the version rail). */
+            /** @description The draft version to save, matching the version of a draft stored on a draft_group result in the session transcript (the version shown in the artifact pane and the version rail). */
             version: number;
         };
         DraftingSaveResponse: {
@@ -770,7 +770,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description SSE stream of AG-UI protocol events */
+            /** @description SSE stream of UI message stream events */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -1047,7 +1047,7 @@ export interface operations {
             query: {
                 /** @description The editorial session hosting the draft to preview. */
                 sessionId: string;
-                /** @description The draft version to render, as returned by get_draft_history / the draft_content result (e.g. 1 for "Draft 1"). */
+                /** @description The draft version to render, as returned by get_draft_history / the draft stored on a draft_group result (e.g. 1 for "Draft 1"). */
                 version: number;
             };
             header?: never;

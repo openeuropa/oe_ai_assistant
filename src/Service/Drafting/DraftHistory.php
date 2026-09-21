@@ -6,6 +6,7 @@ namespace Drupal\oe_ai_assistant\Service\Drafting;
 
 use Drupal\Core\Entity\EntityInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
+use Drupal\oe_ai_assistant\Neuron\Tools\DraftGroupTool;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 
 /**
@@ -64,7 +65,7 @@ class DraftHistory implements DraftHistoryInterface {
   }
 
   /**
-   * Collects every stored draft_content result in transcript order.
+   * Collects every versioned draft in transcript order.
    *
    * @param \Drupal\Core\Entity\EntityInterface $session
    *   The session hosting the conversation.
@@ -78,10 +79,10 @@ class DraftHistory implements DraftHistoryInterface {
     $results = [];
     foreach ($storage->loadTranscript($session) as $message) {
       foreach ($message->getToolCalls() as $call) {
-        if (($call['function']['name'] ?? '') === 'draft_content'
-          && isset($call['result'])
+        if (($call['function']['name'] ?? '') === DraftGroupTool::NAME
+          && isset($call['result']['draft'])
         ) {
-          $results[] = $call['result'];
+          $results[] = $call['result']['draft'];
         }
       }
     }

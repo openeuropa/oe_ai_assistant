@@ -1,9 +1,9 @@
 /**
  * Session drafts index derived from the assistant-ui thread.
  *
- * Every completed draft_content tool call in the thread is one draft.
- * The thread is the single source of truth: it covers both the
- * rehydrated transcript and drafts produced live, so the index stays
+ * Every draft_group tool call whose result carries the versioned draft
+ * is one draft. The thread is the single source of truth: it covers both
+ * the rehydrated transcript and drafts produced live, so the index stays
  * correct during the session and after a reload.
  */
 
@@ -41,15 +41,12 @@ interface ThreadMessageLikeShape {
 }
 
 /**
- * Returns true when the value is a plain object with at least one key.
+ * Returns the versioned draft stored on a group call result, if any.
  */
-function hasKeys(value: unknown): value is Record<string, unknown> {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    !Array.isArray(value) &&
-    Object.keys(value).length > 0
-  );
+function draftOf(result: unknown): unknown {
+  return typeof result === "object" && result !== null && "draft" in result
+    ? (result as { draft: unknown }).draft
+    : undefined;
 }
 
 /**
@@ -63,15 +60,14 @@ export function extractSessionDrafts(
 
   for (const message of messages) {
     for (const part of message.content ?? []) {
-      if (part.type !== "tool-call" || part.toolName !== "draft_content") {
+      if (part.type !== "tool-call" || part.toolName !== "draft_group") {
         continue;
       }
-      // Prefer the persisted result; fall back to args.fields when a
-      // rehydrated trace stored an empty result (mirrors the tool UI).
-      const raw = hasKeys(part.result)
-        ? part.result
-        : (part.args?.["fields"] ?? {});
-      const parsed = parseDraftResult(raw);
+      const draft = draftOf(part.result);
+      if (draft === undefined) {
+        continue;
+      }
+      const parsed = parseDraftResult(draft);
       if (Object.keys(parsed.fields).length === 0) {
         continue;
       }

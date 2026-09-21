@@ -9,7 +9,7 @@ use Drupal\Core\Entity\EntityInterface;
 /**
  * Reads the generated-draft history of an editorial session.
  *
- * Drafts live as results on draft_content tool calls in the persisted
+ * Drafts live on the draft_group tool call that completed them in the persisted
  * transcript; this service is the single reader used both to compute the
  * next version number and to answer the get_draft_history tool.
  */
@@ -22,7 +22,7 @@ interface DraftHistoryInterface {
    *   The session hosting the conversation.
    *
    * @return int
-   *   The number of draft_content calls that carry a result.
+   *   The number of versioned drafts stored on the transcript.
    */
   public function countDrafts(EntityInterface $session): int;
 
@@ -47,7 +47,7 @@ interface DraftHistoryInterface {
    *   The draft version to look up (as returned by listDrafts()).
    *
    * @return array|null
-   *   {fields: array, templateId: string|null}, or NULL if no draft_content
+   *   {fields: array, templateId: string|null}, or NULL if no stored draft
    *   result carries that version. templateId is NULL when the draft's
    *   snapshot has no template.
    */

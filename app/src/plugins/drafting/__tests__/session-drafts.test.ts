@@ -1,13 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { extractSessionDrafts } from "../session-drafts";
 
-/** Builds a draft_content tool-call part in the assistant-ui shape. */
-function draftPart(result: unknown, argsFields?: Record<string, unknown>) {
+/** Builds a completing draft_group tool-call part in the assistant-ui shape. */
+function draftPart(draft: unknown) {
   return {
     type: "tool-call",
-    toolName: "draft_content",
-    args: { fields: argsFields ?? {} },
-    result,
+    toolName: "draft_group",
+    args: { group: "main_fields" },
+    result: { group: "main_fields", fields: {}, pending: [], draft },
   };
 }
 
@@ -64,17 +64,6 @@ describe("extractSessionDrafts", () => {
     expect(drafts[1]?.createdAt).toBeNull();
   });
 
-  it("falls back to args fields when a rehydrated result is empty", () => {
-    const messages = [{ content: [draftPart({}, { title: "From args" })] }];
-
-    const drafts = extractSessionDrafts(messages);
-
-    expect(drafts).toHaveLength(1);
-    expect(drafts[0]?.version).toBeNull();
-    expect(drafts[0]?.label).toBe("Draft");
-    expect(drafts[0]?.fields).toEqual({ title: "From args" });
-  });
-
   it("ignores non-draft tool calls and text parts", () => {
     const messages = [
       {
@@ -94,8 +83,20 @@ describe("extractSessionDrafts", () => {
     expect(extractSessionDrafts(messages)).toEqual([]);
   });
 
-  it("skips draft calls that produced no fields", () => {
-    const messages = [{ content: [draftPart({}, {})] }];
+  it("skips group calls that carry no draft or an empty one", () => {
+    const messages = [
+      {
+        content: [
+          {
+            type: "tool-call",
+            toolName: "draft_group",
+            args: { group: "main_fields" },
+            result: { group: "main_fields", fields: { title: "x" } },
+          },
+          draftPart({ version: 1, context: null, fields: {} }),
+        ],
+      },
+    ];
 
     expect(extractSessionDrafts(messages)).toEqual([]);
   });

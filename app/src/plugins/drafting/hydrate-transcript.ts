@@ -2,14 +2,14 @@
  * Maps a persisted transcript into assistant-ui seed messages.
  *
  * Used by the drafting runtime's history adapter to rehydrate the thread on
- * mount. Text turns become text parts; tool calls become tool-call parts; event
- * items (role "event") become assistant messages carrying an editorial_event
- * tool-call part so they are visible in the thread.
+ * mount. Text turns become text parts and tool calls become tool-call parts
+ * carrying their stored result. Event items (role "event") become assistant
+ * messages carrying an editorial_event tool-call part so they are visible in
+ * the thread.
  */
 
 import type { ThreadMessageLike } from "@assistant-ui/react";
 import type { SessionMessage } from "@/api/session-messages";
-import { parseDraftResult } from "./draft-result";
 
 /**
  * Safe-parses a JSON string into a plain object.
@@ -74,28 +74,15 @@ export function toThreadMessage(
   for (const call of message.toolCalls ?? []) {
     const name = call.function?.name;
     if (!name) continue;
-
-    if (name === "draft_content") {
-      // Parse the result so callers receive normalised fields in args; the
-      // raw result is forwarded as-is so the ToolUI renderer can parse it too.
-      const parsed = parseDraftResult(call.result);
-      parts.push({
-        type: "tool-call",
-        toolCallId: `draft-${index}-${toolIndex++}`,
-        toolName: "draft_content",
-        args: { fields: parsed.fields },
-        result: call.result ?? {},
-      });
-    } else {
-      // General tool call: forward name, safe-parsed args, and raw result.
-      parts.push({
-        type: "tool-call",
-        toolCallId: `tool-${index}-${toolIndex++}`,
-        toolName: name,
-        args: safeParseArgs(call.function?.arguments),
-        result: call.result ?? {},
-      });
-    }
+    // Forward the name, the safe-parsed arguments and the raw result; the
+    // tool UI registered for the name reads what it needs from the result.
+    parts.push({
+      type: "tool-call",
+      toolCallId: `tool-${index}-${toolIndex++}`,
+      toolName: name,
+      args: safeParseArgs(call.function?.arguments),
+      result: call.result ?? {},
+    });
   }
 
   if (parts.length === 0) {

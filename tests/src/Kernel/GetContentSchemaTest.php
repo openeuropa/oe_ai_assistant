@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Drupal\Tests\oe_ai_assistant\Kernel;
 
 use Drupal\KernelTests\KernelTestBase;
+use Drupal\oe_ai_assistant\Neuron\Tools\DraftCollector;
 use Drupal\oe_ai_assistant\Neuron\Tools\GetContentSchemaTool;
 use Drupal\oe_ai_assistant\Service\DraftingSchemaProviderInterface;
 use Drupal\oe_ai_assistant\Service\EntityJsonSchemaComposer;
@@ -81,19 +82,14 @@ class GetContentSchemaTest extends KernelTestBase {
   }
 
   /**
-   * Runs the schema tool pinned to the given content and template.
+   * Runs the schema tool over the groups resolved for a content and template.
    *
    * @return array
    *   The decoded tool result.
    */
   private function runTool(string $entityTypeId, string $bundle, ?string $templateId = NULL): array {
-    $tool = new GetContentSchemaTool(
-      $this->container->get(DraftingSchemaProviderInterface::class),
-      $this->container->get('logger.channel.oe_ai_assistant'),
-      $entityTypeId,
-      $bundle,
-      $templateId,
-    );
+    $groups = $this->container->get(DraftingSchemaProviderInterface::class)->groups($entityTypeId, $bundle, $templateId);
+    $tool = new GetContentSchemaTool(new DraftCollector($groups, static fn (array $fields): array => []));
     return json_decode($tool(), TRUE);
   }
 
@@ -111,13 +107,12 @@ class GetContentSchemaTest extends KernelTestBase {
   }
 
   /**
-   * An invalid template id degrades to an error payload, not an exception.
+   * An invalid template id is rejected before any group is resolved.
    */
-  public function testExecuteWithInvalidTemplateReturnsErrorOutput(): void {
-    $output = $this->runTool('node', 'oe_news', 'does_not_exist');
-
-    $this->assertArrayHasKey('error', $output);
-    $this->assertStringContainsString('not found', $output['error']);
+  public function testInvalidTemplateIsRejected(): void {
+    $this->expectException(\InvalidArgumentException::class);
+    $this->expectExceptionMessage('not found');
+    $this->runTool('node', 'oe_news', 'does_not_exist');
   }
 
   /**

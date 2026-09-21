@@ -138,7 +138,7 @@ class MessageRecorderTest extends KernelTestBase {
       [
         'id' => 'call_1',
         'type' => 'function',
-        'function' => ['name' => 'draft_content', 'arguments' => '{}'],
+        'function' => ['name' => 'draft_group', 'arguments' => '{}'],
       ],
     ];
     $assistant = $this->recorder->recordAssistantTurn(

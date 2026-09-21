@@ -231,8 +231,8 @@ tags:
     description: Content type discovery and field schemas (generic).
   - name: Drafting
     description: >
-      Plugin: content drafting. AI-powered content generation via AG-UI
-      protocol streaming.
+      Plugin: content drafting. AI-powered content generation streamed as
+      a UI message stream.
   - name: Echo
     description: >
       Plugin: echo (dev-only). SSE streaming test endpoint.

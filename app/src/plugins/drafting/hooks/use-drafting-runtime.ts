@@ -1,13 +1,14 @@
 /**
  * Custom runtime hook that connects assistant-ui to the backend
- * drafting endpoint via the Data Stream Protocol.
+ * drafting endpoint via the UI message stream.
  *
  * Uses useDataStreamRuntime from @assistant-ui/react-data-stream
  * which sends POST requests to /api/plugins/drafting/chat and
- * consumes UI Message Stream SSE events. The onData callback
- * intercepts data-drafted-fields events to store the raw field
- * values in the Zustand drafting store. The history adapter
- * rehydrates the thread from the backend on mount.
+ * consumes the SSE events. Drafting progress and the versioned
+ * draft travel as tool parts, so the registered tool UIs read them
+ * from the thread. The events of the agent run arrive as transient
+ * data parts and go to the console as they happen. The history
+ * adapter rehydrates the thread from the backend on mount.
  */
 
 import {
@@ -20,16 +21,16 @@ import { useDataStreamRuntime } from "@assistant-ui/react-data-stream";
 import { useMemo } from "react";
 import { getCsrfHeaders } from "@/api/csrf-token";
 import { getSessionMessages } from "@/api/session-messages";
+import type { AgentEventData } from "@/api/sse-types";
 import { getConfig } from "@/config";
 import { toThreadMessages } from "../hydrate-transcript";
-import { getDraftingState, type PlanStep, setDraftingState } from "../store";
 
 /**
- * Returns an assistant-ui runtime backed by the Data Stream Protocol.
+ * Returns an assistant-ui runtime backed by the UI message stream.
  *
  * The runtime sends POST requests to /api/plugins/drafting/chat
- * and receives UI Message Stream SSE events. assistant-ui handles
- * all event parsing, message rendering, and streaming state. The
+ * and receives the SSE events. assistant-ui handles all event
+ * parsing, message rendering, and streaming state. The
  * conversation is scoped to the current editorial session; history
  * and every turn are persisted server side against that session.
  */
@@ -70,24 +71,14 @@ export function useDraftingRuntime() {
       attachments: attachmentAdapter,
       history: historyAdapter,
     },
-    // Handle custom data-* events from the UI message stream.
+    // Every event of the agent run, logged the moment it is emitted.
+    // TODO: temporary; the payload exposes prompts, answers and tool
+    // results, so this will be gated behind a dev-only configuration.
     onData: (data) => {
-      // Store raw drafted field values directly from the backend.
-      if (data.name === "drafted-fields") {
-        const incoming = data.data as Record<string, unknown>;
-        const existing = getDraftingState().draftedFields;
-        setDraftingState({
-          draftedFields: { ...existing, ...incoming },
-        });
+      if (data.name === "agent-event") {
+        const event = data.data as AgentEventData;
+        console.log(`[agent] ${event.agent}: ${event.summary}`, event.payload);
       }
-      // Handle orchestration plan updates.
-      if (data.name === "plan") {
-        setDraftingState({ plan: data.data as PlanStep[] });
-      }
-    },
-    onFinish: () => {
-      // Clear plan when the run finishes so it doesn't linger.
-      // The drafted fields stay visible.
     },
     onError: (error) => {
       console.error("[drafting] Data stream runtime error:", error);

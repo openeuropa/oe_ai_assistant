@@ -11,6 +11,7 @@
 import type { ToolCallMessagePartProps } from "@assistant-ui/react";
 import { makeAssistantToolUI } from "@assistant-ui/react";
 import { Check, Loader2, PenLine, Wrench, X } from "lucide-react";
+import { useEffect, useRef } from "react";
 import { parseDraftResult } from "../draft-result";
 import { useSavedVersions } from "../saved-versions";
 import { useSessionDrafts } from "../session-drafts";
@@ -76,71 +77,126 @@ function ToolCallCard({
   return <div className={base}>{body}</div>;
 }
 
-/** UI for the draft_content tool call. */
-export const DraftContentToolUI = makeAssistantToolUI<
-  { fields: Record<string, unknown> },
-  Record<string, unknown>
+/** The result of one draft_group call, as the backend returns it. */
+interface DraftGroupResult {
+  group?: string;
+  /** The human-readable group label. */
+  label?: string;
+  /** The drafted values of this group, keyed by field name. */
+  fields?: Record<string, unknown>;
+  /** The versioned draft, present on the call that completed the set. */
+  draft?: unknown;
+  /** The failure the tool reported, when the group could not be drafted. */
+  error?: string;
+}
+
+/**
+ * Turns a group id into a readable label for the running state.
+ *
+ * The backend label only arrives with the result, so while the call runs
+ * the id is humanized instead: "field_content_paragraphs" reads as
+ * "content paragraphs".
+ */
+function humanizeGroup(group: string | undefined): string {
+  return (group ?? "fields").replace(/^field_/, "").replace(/_/g, " ");
+}
+
+/**
+ * UI for the draft_group tool call.
+ *
+ * Every group the agent drafts is one call, so the chat shows the drafting
+ * progress group by group. The call that completes the set carries the
+ * versioned draft: it renders the draft card and opens the draft in the
+ * artifact pane when it was produced in this run. Rehydrated cards mount
+ * complete and leave the pane alone.
+ */
+export const DraftGroupToolUI = makeAssistantToolUI<
+  { group?: string },
+  DraftGroupResult
 >({
-  toolName: "draft_content",
+  toolName: "draft_group",
   render: ({ args, result, status }) => {
     // Saved state and creation time come from the thread index, so the
     // card stays in step with the preview header and the rail.
     const sessionDrafts = useSessionDrafts();
     const savedVersions = useSavedVersions();
+    const draft = result?.draft ? parseDraftResult(result.draft) : null;
+    const version = draft?.version ?? null;
 
-    // While running or on error, show the generic tool card with status.
+    // Open the pane once the draft is versioned during this run.
+    const wasRunning = useRef(status.type === "running");
+    useEffect(() => {
+      if (status.type === "running") {
+        wasRunning.current = true;
+        return;
+      }
+      if (wasRunning.current && draft !== null && version !== null) {
+        wasRunning.current = false;
+        setDraftingState({
+          draftedFields: draft.fields,
+          activeDraftVersion: version,
+          isArtifactCollapsed: false,
+        });
+      }
+    }, [status.type, draft, version]);
+
+    const label = result?.label ?? humanizeGroup(args?.group);
+
     if (status.type !== "complete") {
-      const fieldCount = Object.keys(args?.fields ?? {}).length;
       return (
         <ToolCallCard
           icon={PenLine}
-          label="Drafting content"
-          detail={
-            fieldCount > 0
-              ? `${fieldCount} field${fieldCount > 1 ? "s" : ""}`
-              : undefined
-          }
+          label={`Drafting ${label}`}
           status={status}
         />
       );
     }
-
-    // On completion, parse the result (versioned object on the live path,
-    // or fall back to args.fields when result is empty on a rehydrated trace).
-    // This choice only picks the data source; success itself is signalled by
-    // the complete status checked above.
-    const raw =
-      result && Object.keys(result).length > 0 ? result : (args?.fields ?? {});
-    const parsed = parseDraftResult(raw);
-    const fields = parsed.fields;
-
-    // A completed call that yielded no fields has nothing to open, so show
-    // the plain status card instead of an openable draft card.
-    if (Object.keys(fields).length === 0) {
+    if (result?.error) {
       return (
-        <ToolCallCard icon={PenLine} label="Drafting content" status={status} />
+        <ToolCallCard
+          icon={PenLine}
+          label={`Drafting ${label}`}
+          detail={result.error}
+          status={{ type: "error" }}
+        />
       );
     }
 
-    return (
-      <DraftCard
-        version={parsed.version}
-        context={parsed.context}
-        fields={fields}
-        isSaved={parsed.version !== null && savedVersions.has(parsed.version)}
-        createdAt={
-          sessionDrafts.find((draft) => draft.version === parsed.version)
-            ?.createdAt ?? null
-        }
-        onOpen={() =>
-          // Show this draft in the pane, expanding it if collapsed.
-          setDraftingState({
-            draftedFields: fields,
-            activeDraftVersion: parsed.version,
-            isArtifactCollapsed: false,
-          })
-        }
+    const fieldCount = Object.keys(result?.fields ?? {}).length;
+    const groupCard = (
+      <ToolCallCard
+        icon={PenLine}
+        label={`Drafted ${label}`}
+        detail={`${fieldCount} field${fieldCount === 1 ? "" : "s"}`}
+        status={status}
       />
+    );
+    if (draft === null || Object.keys(draft.fields).length === 0) {
+      return groupCard;
+    }
+
+    return (
+      <>
+        {groupCard}
+        <DraftCard
+          version={version}
+          context={draft.context}
+          fields={draft.fields}
+          isSaved={version !== null && savedVersions.has(version)}
+          createdAt={
+            sessionDrafts.find((entry) => entry.version === version)
+              ?.createdAt ?? null
+          }
+          onOpen={() =>
+            // Show this draft in the pane, expanding it if collapsed.
+            setDraftingState({
+              draftedFields: draft.fields,
+              activeDraftVersion: version,
+              isArtifactCollapsed: false,
+            })
+          }
+        />
+      </>
     );
   },
 });
