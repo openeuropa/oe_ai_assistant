@@ -7,7 +7,8 @@
  * consumes the SSE events. Drafting progress and the versioned
  * draft travel as tool parts, so the registered tool UIs read them
  * from the thread. The events of the agent run arrive as transient
- * data parts and go to the console as they happen. The history
+ * data parts and go to the console as they happen, as errors when
+ * they report a failure. The history
  * adapter rehydrates the thread from the backend on mount.
  */
 
@@ -77,7 +78,13 @@ export function useDraftingRuntime() {
     onData: (data) => {
       if (data.name === "agent-event") {
         const event = data.data as AgentEventData;
-        console.log(`[agent] ${event.agent}: ${event.summary}`, event.payload);
+        const line = `[agent] ${event.agent}: ${event.summary}`;
+        // A rejected answer or a failed run is an error; the rest is trace.
+        if (event.level === "error") {
+          console.error(line, event.payload);
+        } else {
+          console.log(line, event.payload);
+        }
       }
     },
     onError: (error) => {

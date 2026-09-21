@@ -223,6 +223,55 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
   }
 
   /**
+   * Tests that every rejected answer reaches the stream as an error.
+   *
+   * The drafter is corrected until its answer matches the schema, and the
+   * editor sees one error event per rejection, carrying the validator's
+   * own lines.
+   */
+  public function testEveryRejectedAnswerIsStreamedAsAnError(): void {
+    $user = $this->createUser(['use oe ai assistant']);
+    $this->loginUser($user);
+    $session = $this->createSession($user);
+
+    MockAiProvider::enqueue(new MockResponse(
+      toolCalls: [
+        [
+          'id' => 'call_1',
+          'type' => 'function',
+          'function' => ['name' => 'draft_group', 'arguments' => '{"group":"main_fields"}'],
+        ],
+      ],
+    ));
+    // Two answers naming a property the schema forbids, then a good one.
+    MockAiProvider::enqueue(new MockResponse(text: '{"title": [{"value": "T"}], "body": [{"value": "B"}]}'));
+    MockAiProvider::enqueue(new MockResponse(text: '{"title": [{"value": "T"}], "body": [{"value": "B"}]}'));
+    MockAiProvider::enqueue(new MockResponse(
+      text: '{"title": [{"value": "T"}], "field_teaser": [{"value": "S"}]}',
+    ));
+    MockAiProvider::enqueue(new MockResponse(text: 'The main fields are drafted.'));
+
+    $result = $this->httpPost('/api/ai/plugins/drafting/chat', [
+      'message' => 'Draft the main fields.',
+      'sessionId' => $session->id(),
+    ]);
+    $this->assertEquals(200, $result['status'],
+      'Expected 200. Body: ' . substr($result['body'], 0, 500));
+
+    $rejections = array_values(array_filter(
+      $this->parseSseEvents($result['body']),
+      fn($e) => $e['type'] === 'data-agent-event' && ($e['data']['level'] ?? '') === 'error',
+    ));
+    $this->assertCount(2, $rejections,
+      'One error event per rejected answer.');
+    foreach ($rejections as $rejection) {
+      $this->assertStringContainsString('answer rejected by the main_fields schema', $rejection['data']['summary']);
+      $this->assertStringContainsString('The property body is not defined', $rejection['data']['summary']);
+      $this->assertSame('main_fields', $rejection['data']['agent']);
+    }
+  }
+
+  /**
    * Tests that a revision reuses the stored draft and groups under it.
    *
    * The named group is drafted again, every other group is carried over,

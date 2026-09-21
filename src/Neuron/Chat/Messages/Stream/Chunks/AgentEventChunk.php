@@ -22,12 +22,15 @@ final class AgentEventChunk extends StreamChunk {
    *   One short line describing the event.
    * @param mixed $payload
    *   The event data as it serializes to JSON, or NULL for none.
+   * @param string $level
+   *   Set to "error" for a failure the editor should see, "info" otherwise.
    */
   public function __construct(
     public readonly string $event,
     public readonly string $agent,
     public readonly string $summary,
     public readonly mixed $payload = NULL,
+    public readonly string $level = 'info',
   ) {
     parent::__construct();
   }
@@ -41,6 +44,7 @@ final class AgentEventChunk extends StreamChunk {
       'agent' => $this->agent,
       'summary' => $this->summary,
       'payload' => $this->payload,
+      'level' => $this->level,
     ];
   }
 

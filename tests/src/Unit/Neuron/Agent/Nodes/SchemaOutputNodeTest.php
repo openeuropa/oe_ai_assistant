@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\oe_ai_assistant\Unit\Neuron\Agent\Nodes;
 
+use Drupal\oe_ai_assistant\Neuron\Agent\Events\SchemaViolationEvent;
 use Drupal\oe_ai_assistant\Neuron\Agent\Nodes\SchemaOutputNode;
+use Drupal\oe_ai_assistant\Neuron\Agent\Nodes\SchemaRetryNode;
 use NeuronAI\Agent\AgentState;
 use NeuronAI\Agent\Events\AIInferenceEvent;
 use NeuronAI\Chat\Messages\AssistantMessage;
@@ -39,18 +41,30 @@ class SchemaOutputNodeTest extends TestCase {
   ];
 
   /**
-   * Runs the node once over the given provider and returns the state.
+   * Drives the two nodes the way the agent graph routes between them.
+   *
+   * A violation event returns to the retry node, which either asks the
+   * model again through a fresh inference event or gives up.
    */
-  private function runNode(FakeAIProvider $provider, int $maxRetries = 1): AgentState {
+  private function runNodes(FakeAIProvider $provider, int $maxRetries = 1): AgentState {
     $state = new AgentState();
     $state->set('__workflowId', 'test');
-    $node = new SchemaOutputNode($provider, 'main_fields', self::SCHEMA, $maxRetries);
+    $output = new SchemaOutputNode($provider, 'main_fields', self::SCHEMA);
+    $retry = new SchemaRetryNode($maxRetries);
     $event = new AIInferenceEvent('Draft the fields.', []);
     $event->setMessages(new UserMessage('Write about broadband.'));
-    $node->setWorkflowContext($state, $event);
-    $result = $node($event, $state);
-    $this->assertInstanceOf(StopEvent::class, $result);
-    return $state;
+
+    while (TRUE) {
+      $output->setWorkflowContext($state, $event);
+      $result = $output($event, $state);
+      if ($result instanceof StopEvent) {
+        return $state;
+      }
+      $this->assertInstanceOf(SchemaViolationEvent::class, $result);
+      $retry->setWorkflowContext($state, $result);
+      $event = $retry($result, $state);
+      $this->assertInstanceOf(AIInferenceEvent::class, $event);
+    }
   }
 
   /**
@@ -59,7 +73,7 @@ class SchemaOutputNodeTest extends TestCase {
   public function testMatchingAnswerIsDecodedAndSchemaIsQuoted(): void {
     $provider = new FakeAIProvider(new AssistantMessage('{"title": [{"value": "T"}], "field_teaser": [{"value": "S"}]}'));
 
-    $state = $this->runNode($provider);
+    $state = $this->runNodes($provider);
 
     $this->assertSame(['title' => [['value' => 'T']], 'field_teaser' => [['value' => 'S']]], $state->get(SchemaOutputNode::OUTPUT_KEY));
     $provider->assertCallCount(1);
@@ -79,7 +93,7 @@ class SchemaOutputNodeTest extends TestCase {
       new AssistantMessage('{"title": [{"value": "T"}], "field_teaser": [{"value": "S"}]}'),
     );
 
-    $state = $this->runNode($provider);
+    $state = $this->runNodes($provider);
 
     $this->assertArrayHasKey('field_teaser', $state->get(SchemaOutputNode::OUTPUT_KEY));
     $provider->assertCallCount(2);
@@ -93,6 +107,32 @@ class SchemaOutputNodeTest extends TestCase {
   /**
    * @covers ::__invoke
    */
+  public function testViolationEventCarriesTheValidationErrorsOnly(): void {
+    $provider = new FakeAIProvider(new AssistantMessage('{"title": [{"value": "T"}], "body": [{"value": "B"}]}'));
+    $state = new AgentState();
+    $state->set('__workflowId', 'test');
+    $node = new SchemaOutputNode($provider, 'main_fields', self::SCHEMA);
+    $event = new AIInferenceEvent('Draft the fields.', []);
+    $event->setMessages(new UserMessage('Write about broadband.'));
+    $node->setWorkflowContext($state, $event);
+
+    $result = $node($event, $state);
+
+    $this->assertInstanceOf(SchemaViolationEvent::class, $result);
+    $this->assertSame('main_fields', $result->schema);
+    $this->assertSame($event, $result->inferenceEvent,
+      'The inference travels with the violation so the retry can run it again.');
+    // The lines are the validator's own, naming the property and what is
+    // wrong with it.
+    $this->assertSame([
+      'field_teaser: The property field_teaser is required',
+      'The property body is not defined and the definition does not allow additional properties',
+    ], $result->violations);
+  }
+
+  /**
+   * @covers ::__invoke
+   */
   public function testGivesUpAfterTheAllowedRetries(): void {
     $provider = new FakeAIProvider(
       new AssistantMessage('not json at all'),
@@ -101,7 +141,7 @@ class SchemaOutputNodeTest extends TestCase {
 
     $this->expectException(AgentException::class);
     $this->expectExceptionMessage('does not match its schema');
-    $this->runNode($provider);
+    $this->runNodes($provider);
   }
 
 }

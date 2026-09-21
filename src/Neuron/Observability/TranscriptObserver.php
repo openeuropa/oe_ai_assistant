@@ -11,6 +11,7 @@ use Drupal\oe_ai_assistant\Neuron\Chat\Messages\Stream\Chunks\AgentEventChunk;
 use Drupal\oe_ai_assistant\Service\MessageRecorderInterface;
 use NeuronAI\Observability\Events\AgentError;
 use NeuronAI\Observability\Events\ToolCalled;
+use NeuronAI\Observability\Events\Validated;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -19,7 +20,7 @@ use Psr\Log\LoggerInterface;
  * The turns themselves are persisted by the conversation chat history. This
  * observer adds what the history cannot see: an event row and a stream
  * chunk per Neuron event, each tool result as soon as the tool finishes,
- * the system prompt of a drafter, and a failed run.
+ * the system prompt of a drafter, a rejected answer, and a failed run.
  */
 final class TranscriptObserver extends DrupalLogObserver {
 
@@ -78,6 +79,17 @@ final class TranscriptObserver extends DrupalLogObserver {
       $this->history?->attachToolResult($data->tool);
     }
 
+    // A rejected answer is a failure the editor and the site log should
+    // see, even though the run recovers from it by asking again.
+    $rejected = $data instanceof Validated && $data->violations !== [];
+    if ($rejected) {
+      $this->logger->error('Agent @agent answered outside the @schema schema: @violations', [
+        '@agent' => $this->agentId,
+        '@schema' => $data->class,
+        '@violations' => implode('; ', $data->violations),
+      ]);
+    }
+
     $summary = AgentEventSummary::describe($event, $data);
     $this->recorder->recordEvent($this->session, $summary, [
       'type' => 'agent',
@@ -88,7 +100,13 @@ final class TranscriptObserver extends DrupalLogObserver {
     //   streams to the browser console so the run can be inspected. Gate it
     //   behind a dev-only configuration before this leaves development.
     $payload = json_decode((string) json_encode($data, JSON_PARTIAL_OUTPUT_ON_ERROR | JSON_UNESCAPED_UNICODE), TRUE);
-    $this->events->push(new AgentEventChunk($event, $this->agentId, $summary, $payload));
+    $this->events->push(new AgentEventChunk(
+      $event,
+      $this->agentId,
+      $summary,
+      $payload,
+      $rejected || $event === 'error' ? 'error' : 'info',
+    ));
   }
 
   /**

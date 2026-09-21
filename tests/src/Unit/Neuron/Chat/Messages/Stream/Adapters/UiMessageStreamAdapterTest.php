@@ -93,6 +93,7 @@ class UiMessageStreamAdapterTest extends TestCase {
           'agent' => 'drafting',
           'summary' => 'model call started',
           'payload' => ['role' => 'user'],
+          'level' => 'info',
         ],
         'transient' => TRUE,
       ],

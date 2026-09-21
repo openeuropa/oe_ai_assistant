@@ -4,14 +4,13 @@ declare(strict_types=1);
 
 namespace Drupal\oe_ai_assistant\Neuron\Agent\Nodes;
 
+use Drupal\oe_ai_assistant\Neuron\Agent\Events\SchemaViolationEvent;
 use JsonSchema\Constraints\BaseConstraint;
 use JsonSchema\Validator;
 use NeuronAI\Agent\AgentState;
 use NeuronAI\Agent\ChatHistoryHelper;
 use NeuronAI\Agent\Events\AIInferenceEvent;
 use NeuronAI\Agent\Nodes\InferenceNode;
-use NeuronAI\Chat\Messages\UserMessage;
-use NeuronAI\Exceptions\AgentException;
 use NeuronAI\Observability\Events\InferenceStart;
 use NeuronAI\Observability\Events\InferenceStop;
 use NeuronAI\Observability\Events\Validated;
@@ -25,9 +24,9 @@ use NeuronAI\Workflow\Events\StopEvent;
  *
  * Neuron's own structured output derives the schema from a PHP class. The
  * drafting schemas are composed per bundle and template, so this node
- * passes the schema array to the provider, quotes it in the instructions,
- * validates the answer against it and retries with the violations. The
- * decoded object ends up in the state.
+ * passes the schema array to the provider, quotes it in the instructions
+ * and validates the answer against it. The decoded object ends up in the
+ * state; an answer that does not match routes to the retry node instead.
  */
 final class SchemaOutputNode extends InferenceNode {
 
@@ -58,8 +57,6 @@ final class SchemaOutputNode extends InferenceNode {
    * @param array $schema
    *   The JSON schema the response must match. Every top-level property
    *   becomes required and no other property is allowed.
-   * @param int $maxRetries
-   *   How many corrected answers to ask for before giving up.
    * @param \NeuronAI\StructuredOutput\JsonExtractor $extractor
    *   The extractor that finds the JSON object in the response text.
    */
@@ -67,7 +64,6 @@ final class SchemaOutputNode extends InferenceNode {
     private readonly AIProviderInterface $provider,
     private readonly string $name,
     array $schema,
-    private readonly int $maxRetries = 1,
     private readonly JsonExtractor $extractor = new JsonExtractor(),
   ) {
     $this->schema = $schema + [
@@ -79,59 +75,38 @@ final class SchemaOutputNode extends InferenceNode {
 
   /**
    * {@inheritdoc}
-   *
-   * @throws \NeuronAI\Exceptions\AgentException
-   *   When no answer matches the schema within the allowed retries.
    */
-  public function __invoke(AIInferenceEvent $event, AgentState $state): StopEvent {
+  public function __invoke(AIInferenceEvent $event, AgentState $state): StopEvent|SchemaViolationEvent {
     $instructions = $event->instructions
       . "\n\nRespond with one JSON object that matches this JSON schema exactly."
       . " Use the property names as written in the schema and no others.\n"
       . json_encode($this->schema, JSON_UNESCAPED_SLASHES);
 
-    // Inbound and correction messages stay pending until a provider call
-    // succeeds, so a failed call leaves no dangling turn in the history.
-    $pending = $event->getMessages();
-    $violations = [];
-    $attempts = $this->maxRetries + 1;
+    // The inbound messages reach the history only once the call succeeds,
+    // so a failed call leaves no dangling turn to break role alternation.
+    $inbound = $event->getMessages();
+    $messages = $this->pendingConversation($state, $inbound);
+    $last = end($messages);
 
-    while (TRUE) {
-      if ($violations !== []) {
-        $pending[] = new UserMessage(
-          "Your previous answer does not match the schema:\n- " . implode("\n- ", $violations)
-          . "\n\nAnswer again with one JSON object that matches the schema exactly."
-        );
-      }
-      $messages = $this->pendingConversation($state, $pending);
-      $last = end($messages);
+    $this->emit('inference-start', new InferenceStart($last));
+    $response = $this->provider
+      ->systemPrompt($instructions)
+      ->setTools([])
+      ->structured($messages, $this->name, $this->schema);
+    $this->emit('inference-stop', new InferenceStop($last, $response));
 
-      $this->emit('inference-start', new InferenceStart($last));
-      $response = $this->provider
-        ->systemPrompt($instructions)
-        ->setTools([])
-        ->structured($messages, $this->name, $this->schema);
-      $this->emit('inference-stop', new InferenceStop($last, $response));
+    $this->addToChatHistory($state, [...$inbound, $response]);
 
-      $this->addToChatHistory($state, [...$pending, $response]);
-      $pending = [];
+    $json = $this->extractor->getJson($response->getContent() ?? '');
+    $this->emit('structured-validating', new Validating($this->name, (string) $json));
+    $violations = $json === NULL ? ['The answer holds no JSON object.'] : $this->violations($json);
+    $this->emit('structured-validated', new Validated($this->name, (string) $json, $violations));
 
-      $json = $this->extractor->getJson($response->getContent() ?? '');
-      $this->emit('structured-validating', new Validating($this->name, (string) $json));
-      $violations = $json === NULL ? ['The answer holds no JSON object.'] : $this->violations($json);
-      $this->emit('structured-validated', new Validated($this->name, (string) $json, $violations));
-
-      if ($violations === []) {
-        $state->set(self::OUTPUT_KEY, json_decode($json, TRUE));
-        return new StopEvent();
-      }
-      if (--$attempts <= 0) {
-        throw new AgentException(sprintf(
-          'The "%s" answer does not match its schema: %s',
-          $this->name,
-          implode('; ', $violations),
-        ));
-      }
+    if ($violations === []) {
+      $state->set(self::OUTPUT_KEY, json_decode($json, TRUE));
+      return new StopEvent();
     }
+    return new SchemaViolationEvent($this->name, $violations, $event);
   }
 
   /**

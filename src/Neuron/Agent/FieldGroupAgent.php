@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Drupal\oe_ai_assistant\Neuron\Agent;
 
 use Drupal\oe_ai_assistant\Neuron\Agent\Nodes\SchemaOutputNode;
+use Drupal\oe_ai_assistant\Neuron\Agent\Nodes\SchemaRetryNode;
 use NeuronAI\Agent\Agent;
 use NeuronAI\Chat\Messages\Message;
 use NeuronAI\Providers\AIProviderInterface;
@@ -18,6 +19,11 @@ use NeuronAI\Workflow\Interrupt\InterruptRequest;
  * schema from a PHP class.
  */
 final class FieldGroupAgent extends Agent {
+
+  /**
+   * How many corrected answers to ask for before giving up on a group.
+   */
+  public const MAX_SCHEMA_RETRIES = 5;
 
   /**
    * The instructions every run starts from.
@@ -79,14 +85,19 @@ final class FieldGroupAgent extends Agent {
    * {@inheritdoc}
    *
    * The class is ignored: the answer is validated against the schema given
-   * at construction and returned decoded.
+   * at construction and returned decoded. A caller that says nothing about
+   * retries gets this agent's own allowance rather than Neuron's single
+   * correction.
    *
    * @throws \Throwable
    *   When the provider call fails or no answer matches the schema.
    */
-  public function structured(Message|array $messages = [], ?string $class = NULL, int $maxRetries = 1, ?InterruptRequest $interrupt = NULL): mixed {
+  public function structured(Message|array $messages = [], ?string $class = NULL, int $maxRetries = self::MAX_SCHEMA_RETRIES, ?InterruptRequest $interrupt = NULL): mixed {
     $this->resolveStartEvent()->setMessages(...(is_array($messages) ? $messages : [$messages]));
-    $this->compose(new SchemaOutputNode($this->resolveProvider(), $this->name, $this->schema, $maxRetries));
+    $this->compose([
+      new SchemaOutputNode($this->resolveProvider(), $this->name, $this->schema),
+      new SchemaRetryNode($maxRetries),
+    ]);
     return $this->init($interrupt)->run()->get(SchemaOutputNode::OUTPUT_KEY) ?? [];
   }
 

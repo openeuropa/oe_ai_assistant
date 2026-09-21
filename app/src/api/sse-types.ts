@@ -114,6 +114,8 @@ export interface AgentEventData {
   summary: string;
   /** The event data as JSON: prompts, answers, tool results. */
   payload?: unknown;
+  /** "error" for a failure the editor should see, "info" otherwise. */
+  level?: "info" | "error";
 }
 
 /** Transient data event carrying an agent event; never part of a message. */

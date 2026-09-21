@@ -49,7 +49,7 @@ class AgentEventSummaryTest extends TestCase {
     $this->assertSame('get_content_schema failed: Bundle is required.', AgentEventSummary::describe('tool-called', new ToolCalled($failed)));
     $this->assertSame('get_content_schema returned', AgentEventSummary::describe('tool-called', new ToolCalled($done)));
     $rejected = new Validated('main_fields', '{}', ['a', 'b']);
-    $this->assertSame('answer rejected, 2 schema violation(s)', AgentEventSummary::describe('structured-validated', $rejected));
+    $this->assertSame('answer rejected by the main_fields schema: a; b', AgentEventSummary::describe('structured-validated', $rejected));
     $this->assertSame('error: Boom', AgentEventSummary::describe('error', new AgentError(new \RuntimeException('Boom'))));
     $this->assertSame('tools bootstrapped', AgentEventSummary::describe('tools-bootstrapped', NULL));
   }

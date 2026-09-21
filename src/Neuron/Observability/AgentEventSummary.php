@@ -39,7 +39,7 @@ final class AgentEventSummary {
       $data instanceof Validating => 'validating the answer against the ' . $data->class . ' schema',
       $data instanceof Validated => $data->violations === []
         ? 'answer matches the ' . $data->class . ' schema'
-        : sprintf('answer rejected, %d schema violation(s)', count($data->violations)),
+        : 'answer rejected by the ' . $data->class . ' schema: ' . implode('; ', $data->violations),
       $data instanceof AgentError => 'error: ' . $data->exception->getMessage(),
       default => str_replace('-', ' ', $event),
     };
