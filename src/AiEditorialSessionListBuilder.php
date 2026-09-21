@@ -183,20 +183,23 @@ class AiEditorialSessionListBuilder extends EntityListBuilder {
    * {@inheritdoc}
    */
   public function render(): array {
-    $build['transparency_notice'] = [
+    $build = [];
+    $build['sessions_header'] = [
       '#type' => 'container',
-      '#weight' => -100,
-      '#attributes' => ['class' => ['oe-ai-transparency-notice']],
-      'content' => [
-        '#markup' => $this->transparencyNotice->getNotice(),
-      ],
+      '#attributes' => ['class' => ['container-inline']],
     ];
-    $build['add_new_session'] = [
+    $build['sessions_header']['add_new_session'] = [
       '#type' => 'link',
       '#title' => $this->t('Add new session'),
       '#url' => Url::fromRoute('entity.ai_editorial_session.add_page'),
       '#attributes' => [
         'class' => ['button', 'button--action', 'button--primary'],
+      ],
+    ];
+    $build['sessions_header']['tansparency_notice'] = [
+      '#type' => 'container',
+      'content' => [
+        '#markup' => $this->transparencyNotice->getNotice(),
       ],
     ];
     $build += parent::render();
