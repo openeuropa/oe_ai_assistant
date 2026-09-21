@@ -21,6 +21,16 @@ use Symfony\Component\DependencyInjection\Attribute\Autowire;
 class DraftingOrchestrator implements DraftingOrchestratorInterface {
 
   /**
+   * How many times a group is asked before it counts as failed.
+   */
+  private const MAX_ATTEMPTS = 5;
+
+  /**
+   * How many schema problems are quoted back to the model at a time.
+   */
+  private const MAX_REPORTED_ERRORS = 10;
+
+  /**
    * Constructs a DraftingOrchestrator.
    *
    * @param \Drupal\oe_ai_assistant\Service\DraftingSchemaProviderInterface $schemaProvider
@@ -31,6 +41,8 @@ class DraftingOrchestrator implements DraftingOrchestratorInterface {
    *   The logger channel.
    * @param \Drupal\oe_ai_assistant\Service\MessageRecorderInterface $messageRecorder
    *   The message recorder, used to record sub-agent failures as error turns.
+   * @param \Drupal\oe_ai_assistant\Service\StructuredOutputValidatorInterface $outputValidator
+   *   The validator that checks each answer against the group's schema.
    */
   public function __construct(
     private readonly DraftingSchemaProviderInterface $schemaProvider,
@@ -39,6 +51,7 @@ class DraftingOrchestrator implements DraftingOrchestratorInterface {
     #[Autowire(service: 'logger.channel.oe_ai_assistant')]
     private readonly LoggerInterface $logger,
     private readonly MessageRecorderInterface $messageRecorder,
+    private readonly StructuredOutputValidatorInterface $outputValidator,
   ) {}
 
   /**
@@ -87,19 +100,12 @@ class DraftingOrchestrator implements DraftingOrchestratorInterface {
       $stream->customEvent('data-plan', $plan);
 
       try {
-        $fullText = $this->runSubAgent(
-          $stepId, $group['schemaSlice'],
+        [$parsed, $fullText] = $this->draftGroup(
+          $stepId, $group['schemaSlice'], $stream,
           $conversationContext, $mainFieldsResult,
           $host, $parent, $context,
         );
 
-        $parsed = $stream->extractJson($fullText);
-        if ($parsed === NULL) {
-          throw new SubAgentException(sprintf(
-            'The "%s" sub-agent returned a response that is not valid JSON.',
-            $stepId,
-          ));
-        }
         $results[$stepId] = $parsed;
         if ($stepId === 'main_fields') {
           $mainFieldsResult = $fullText;
@@ -175,6 +181,118 @@ class DraftingOrchestrator implements DraftingOrchestratorInterface {
   }
 
   /**
+   * Asks a sub-agent for a group until its answer fits the group's schema.
+   *
+   * Structured output makes a provider declare the shape it will return; it
+   * does not make it keep that promise. Each answer is therefore validated,
+   * and a failing one is handed back to the model as the list of problems it
+   * has to fix, in the schema's own vocabulary. An answer that is not JSON
+   * at all is treated as one more failed attempt.
+   *
+   * @param string $stepId
+   *   The schema group being drafted.
+   * @param array $schemaSlice
+   *   The JSON schema the answer has to satisfy.
+   * @param \Drupal\oe_ai_assistant\Service\UiMessageStreamInterface $stream
+   *   The stream, used to pull the JSON object out of the answer text.
+   * @param string $conversationContext
+   *   The conversation so far, as passed to the sub-agent.
+   * @param string $mainFieldsResult
+   *   The already drafted main fields, empty for the main fields group.
+   * @param \Drupal\Core\Entity\EntityInterface $host
+   *   The session the draft belongs to.
+   * @param \Drupal\oe_ai_assistant\Entity\AiConversationMessageInterface|null $parent
+   *   The turn sub-agent messages are recorded under, or NULL not to record.
+   * @param \Drupal\oe_ai_assistant\Service\Drafting\EditorialContext|null $context
+   *   The editorial context to inject into the sub-agent prompt.
+   *
+   * @return array
+   *   The accepted answer as [decoded fields, raw answer text].
+   *
+   * @throws \Drupal\oe_ai_assistant\Exception\SubAgentException
+   *   When no attempt produced an answer matching the schema.
+   */
+  private function draftGroup(
+    string $stepId,
+    array $schemaSlice,
+    UiMessageStreamInterface $stream,
+    string $conversationContext,
+    string $mainFieldsResult,
+    EntityInterface $host,
+    ?AiConversationMessageInterface $parent,
+    ?EditorialContext $context,
+  ): array {
+    $correction = '';
+    $errors = [];
+
+    for ($attempt = 1; $attempt <= self::MAX_ATTEMPTS; $attempt++) {
+      $fullText = $this->runSubAgent(
+        $stepId, $schemaSlice,
+        $conversationContext, $mainFieldsResult,
+        $host, $parent, $context, $correction,
+      );
+
+      $parsed = $stream->extractJson($fullText);
+      $errors = $parsed === NULL
+        ? ['the returned object: the answer is not valid JSON']
+        : $this->outputValidator->validate($parsed, $schemaSlice);
+
+      if ($errors === []) {
+        if ($attempt > 1) {
+          $this->logger->notice('Sub-agent @step matched its schema on attempt @attempt.', [
+            '@step' => $stepId,
+            '@attempt' => $attempt,
+          ]);
+        }
+        return [$parsed, $fullText];
+      }
+
+      $this->logger->warning('Sub-agent @step attempt @attempt of @max does not match its schema: @errors', [
+        '@step' => $stepId,
+        '@attempt' => $attempt,
+        '@max' => self::MAX_ATTEMPTS,
+        '@errors' => implode(' | ', $errors),
+      ]);
+
+      $correction = $this->buildCorrection($errors);
+    }
+
+    throw new SubAgentException(sprintf(
+      'The "%s" sub-agent did not match its schema in %d attempts: %s',
+      $stepId,
+      self::MAX_ATTEMPTS,
+      implode('; ', array_slice($errors, 0, self::MAX_REPORTED_ERRORS)),
+    ));
+  }
+
+  /**
+   * Turns schema problems into the correction the next attempt receives.
+   *
+   * @param array $errors
+   *   The problems reported for the previous answer.
+   *
+   * @return string
+   *   The prompt fragment listing what has to change.
+   */
+  private function buildCorrection(array $errors): string {
+    $listed = array_slice($errors, 0, self::MAX_REPORTED_ERRORS);
+    $lines = implode("\n", array_map(
+      static fn (string $error): string => "- $error",
+      $listed,
+    ));
+    $remaining = count($errors) - count($listed);
+    if ($remaining > 0) {
+      $lines .= sprintf("\n- and %d further problems of the same kind", $remaining);
+    }
+
+    return "Your previous answer did not match the schema you were given:\n"
+      . $lines . "\n"
+      . "Answer again with a single JSON object that satisfies the schema, "
+      . "correcting exactly the problems listed above and keeping the rest of "
+      . "the content as it was.";
+  }
+
+  /**
    * Runs a single sub-agent for a schema group.
    *
    * When a parent turn is given, the agent is tagged so the response subscriber
@@ -191,6 +309,7 @@ class DraftingOrchestrator implements DraftingOrchestratorInterface {
     EntityInterface $host,
     ?AiConversationMessageInterface $parent,
     ?EditorialContext $context = NULL,
+    string $correction = '',
   ): string {
     $agent = $this->aiAgentManager
       ->createInstance('oe_content_drafter');
@@ -229,6 +348,9 @@ class DraftingOrchestrator implements DraftingOrchestratorInterface {
     }
     $taskPrompt .= "Generate content for the fields in the "
       . "provided schema. Follow the conversation context.";
+    if ($correction !== '') {
+      $taskPrompt .= "\n\n" . $correction;
+    }
 
     $agent->setTask(new Task($taskPrompt));
 

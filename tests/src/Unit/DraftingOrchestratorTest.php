@@ -10,6 +10,7 @@ use Drupal\oe_ai_assistant\Service\Drafting\EditorialContext;
 use Drupal\oe_ai_assistant\Service\DraftingOrchestrator;
 use Drupal\oe_ai_assistant\Service\DraftingSchemaProviderInterface;
 use Drupal\oe_ai_assistant\Service\MessageRecorderInterface;
+use Drupal\oe_ai_assistant\Service\StructuredOutputValidator;
 use Drupal\oe_ai_assistant\Service\UiMessageStreamInterface;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
@@ -44,6 +45,7 @@ class DraftingOrchestratorTest extends TestCase {
         $this->createMock(AiAgentManager::class),
         new NullLogger(),
         $this->createMock(MessageRecorderInterface::class),
+        new StructuredOutputValidator(),
       ),
       $groups,
       ['field_content_paragraphs' => ['title' => [['value' => 'Wrong group']]]],
@@ -70,6 +72,7 @@ class DraftingOrchestratorTest extends TestCase {
       $this->createMock(AiAgentManager::class),
       new NullLogger(),
       $this->createMock(MessageRecorderInterface::class),
+      new StructuredOutputValidator(),
     );
 
     $context = new EditorialContext(
