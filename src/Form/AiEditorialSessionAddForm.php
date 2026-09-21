@@ -4,10 +4,12 @@ declare(strict_types=1);
 
 namespace Drupal\oe_ai_assistant\Form;
 
+use Drupal\Core\Cache\CacheableMetadata;
 use Drupal\Core\Entity\ContentEntityForm;
 use Drupal\Core\Form\FormStateInterface;
 use Drupal\Core\Messenger\MessengerTrait;
 use Drupal\Core\Session\AccountInterface;
+use Drupal\oe_ai_assistant\Service\TransparencyNoticeInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 
 /**
@@ -23,12 +25,18 @@ class AiEditorialSessionAddForm extends ContentEntityForm {
   protected AccountInterface $currentUserAccount;
 
   /**
+   * The transparency notice service.
+   */
+  protected TransparencyNoticeInterface $transparencyNotice;
+
+  /**
    * {@inheritdoc}
    */
   public static function create(ContainerInterface $container): static {
     /** @var static $form */
     $form = parent::create($container);
     $form->currentUserAccount = $container->get('current_user');
+    $form->transparencyNotice = $container->get('oe_ai_assistant.transparency_notice');
     return $form;
   }
 
@@ -62,6 +70,15 @@ class AiEditorialSessionAddForm extends ContentEntityForm {
       '#description' => $this->t('Label for the session.'),
     ];
 
+    $form['transparency_notice'] = [
+      '#type' => 'container',
+      '#weight' => -100,
+      '#attributes' => ['class' => ['oe-ai-transparency-notice']],
+      'content' => [
+        '#markup' => $this->transparencyNotice->getNotice(),
+      ],
+    ];
+
     // Regenerate the template options whenever the content type changes.
     $form['content_type']['widget']['#ajax'] = [
       'callback' => '::updateTemplateElement',
@@ -70,6 +87,10 @@ class AiEditorialSessionAddForm extends ContentEntityForm {
     ];
     $form['template']['#prefix'] = '<div id="ai-editorial-session-template">';
     $form['template']['#suffix'] = '</div>';
+
+    CacheableMetadata::createFromRenderArray($form)
+      ->addCacheableDependency($this->transparencyNotice->getConfig())
+      ->applyTo($form);
 
     return $form;
   }

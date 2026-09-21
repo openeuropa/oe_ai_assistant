@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Drupal\oe_ai_assistant;
 
 use Drupal\content_moderation\ModerationInformationInterface;
+use Drupal\Core\Cache\CacheableMetadata;
 use Drupal\Core\Datetime\DateFormatterInterface;
 use Drupal\Core\Entity\EntityInterface;
 use Drupal\Core\Entity\EntityListBuilder;
@@ -15,6 +16,7 @@ use Drupal\Core\Routing\RedirectDestinationInterface;
 use Drupal\Core\Url;
 use Drupal\Core\Entity\Query\QueryInterface;
 use Drupal\node\NodeInterface;
+use Drupal\oe_ai_assistant\Service\TransparencyNoticeInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 
 /**
@@ -38,6 +40,11 @@ class AiEditorialSessionListBuilder extends EntityListBuilder {
   protected ModerationInformationInterface $moderationInformation;
 
   /**
+   * The transparency notice service.
+   */
+  protected TransparencyNoticeInterface $transparencyNotice;
+
+  /**
    * {@inheritdoc}
    */
   protected function getEntityListQuery(): QueryInterface {
@@ -58,12 +65,14 @@ class AiEditorialSessionListBuilder extends EntityListBuilder {
     RedirectDestinationInterface $redirect_destination,
     EntityTypeManagerInterface $entity_type_manager,
     ModerationInformationInterface $moderation_information,
+    TransparencyNoticeInterface $transparency_notice,
   ) {
     parent::__construct($entity_type, $storage);
     $this->dateFormatter = $date_formatter;
     $this->redirectDestination = $redirect_destination;
     $this->entityTypeManager = $entity_type_manager;
     $this->moderationInformation = $moderation_information;
+    $this->transparencyNotice = $transparency_notice;
   }
 
   /**
@@ -77,6 +86,7 @@ class AiEditorialSessionListBuilder extends EntityListBuilder {
       $container->get('redirect.destination'),
       $container->get('entity_type.manager'),
       $container->get('content_moderation.moderation_information'),
+      $container->get('oe_ai_assistant.transparency_notice'),
     );
   }
 
@@ -173,6 +183,14 @@ class AiEditorialSessionListBuilder extends EntityListBuilder {
    * {@inheritdoc}
    */
   public function render(): array {
+    $build['transparency_notice'] = [
+      '#type' => 'container',
+      '#weight' => -100,
+      '#attributes' => ['class' => ['oe-ai-transparency-notice']],
+      'content' => [
+        '#markup' => $this->transparencyNotice->getNotice(),
+      ],
+    ];
     $build['add_new_session'] = [
       '#type' => 'link',
       '#title' => $this->t('Add new session'),
@@ -182,6 +200,10 @@ class AiEditorialSessionListBuilder extends EntityListBuilder {
       ],
     ];
     $build += parent::render();
+
+    CacheableMetadata::createFromRenderArray($build)
+      ->addCacheableDependency($this->transparencyNotice->getConfig())
+      ->applyTo($build);
 
     return $build;
   }

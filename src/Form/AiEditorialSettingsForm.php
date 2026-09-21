@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Drupal\oe_ai_assistant\Form;
 
 use Drupal\Core\Config\ConfigFactoryInterface;
+use Drupal\Core\Config\TypedConfigManagerInterface;
 use Drupal\Core\Form\ConfigFormBase;
 use Drupal\Core\Form\FormStateInterface;
 use Drupal\oe_ai_assistant\Service\TransparencyNoticeInterface;
@@ -20,9 +21,10 @@ final class AiEditorialSettingsForm extends ConfigFormBase {
    */
   public function __construct(
     ConfigFactoryInterface $config_factory,
+    TypedConfigManagerInterface $typed_config_manager,
     private readonly TransparencyNoticeInterface $transparencyNotice,
   ) {
-    parent::__construct($config_factory);
+    parent::__construct($config_factory, $typed_config_manager);
   }
 
   /**
@@ -31,6 +33,7 @@ final class AiEditorialSettingsForm extends ConfigFormBase {
   public static function create(ContainerInterface $container): static {
     return new static(
       $container->get('config.factory'),
+      $container->get('config.typed'),
       $container->get('oe_ai_assistant.transparency_notice'),
     );
   }
