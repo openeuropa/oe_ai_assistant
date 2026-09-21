@@ -97,6 +97,67 @@ class AiEditorialSessionDashboardTest extends AiEditorialSessionBrowserTestBase 
   }
 
   /**
+   * Tests that administrators can configure the transparency notice.
+   */
+  public function testTransparencyNoticeSettings(): void {
+    $user = $this->drupalCreateUser([
+      'access administration pages',
+      'administer ai editorial sessions',
+    ]);
+    $this->drupalLogin($user);
+
+    $settings_url = Url::fromRoute('oe_ai_assistant.transparency_notice_settings');
+    $this->drupalGet($settings_url);
+
+    $this->assertSession()->statusCodeEquals(200);
+    $this->assertSession()->fieldExists('transparency_notice');
+    $this->assertSession()->pageTextContains('Allowed HTML tags: b, i, a, strong, and em.');
+
+    $notice = '<strong>AI-generated content</strong>. <a href="https://example.com/policy">Read our policy</a>.';
+    $this->submitForm(['transparency_notice' => $notice], 'Save configuration');
+
+    $this->assertSession()->pageTextContains('The configuration options have been saved.');
+    $this->assertSame(
+      $notice,
+      $this->config('oe_ai_assistant.settings')->get('transparency_notice')
+    );
+  }
+
+  /**
+   * Tests that unsupported markup is rejected by the settings form.
+   */
+  public function testTransparencyNoticeSettingsRejectsUnsupportedMarkup(): void {
+    $user = $this->drupalCreateUser([
+      'access administration pages',
+      'administer ai editorial sessions',
+    ]);
+    $this->drupalLogin($user);
+
+    $this->drupalGet(Url::fromRoute('oe_ai_assistant.transparency_notice_settings'));
+    $this->submitForm([
+      'transparency_notice' => '<script>alert("unsafe");</script>',
+    ], 'Save configuration');
+
+    $this->assertSession()->pageTextContains('The transparency notice contains HTML tags or attributes that are not allowed.');
+    $this->assertSame(
+      'AI assistant can make mistakes. Please double-check responses.',
+      $this->config('oe_ai_assistant.settings')->get('transparency_notice')
+    );
+  }
+
+  /**
+   * Tests that the transparency notice settings route requires permission.
+   */
+  public function testTransparencyNoticeSettingsAccess(): void {
+    $this->drupalGet(Url::fromRoute('oe_ai_assistant.transparency_notice_settings'));
+    $this->assertSession()->statusCodeEquals(403);
+
+    $this->drupalLogin($this->drupalCreateUser(['access administration pages']));
+    $this->drupalGet(Url::fromRoute('oe_ai_assistant.transparency_notice_settings'));
+    $this->assertSession()->statusCodeEquals(403);
+  }
+
+  /**
    * Tests the collection route can be accessed with the overview permission.
    */
   public function testDashboardAccessWithOverviewPermission(): void {
