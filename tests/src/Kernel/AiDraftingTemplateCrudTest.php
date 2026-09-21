@@ -85,6 +85,7 @@ class AiDraftingTemplateCrudTest extends KernelTestBase {
       'test_default_covered',
       'test_callback_covered',
       'test_field_strip',
+      'test_required_field_strip',
       'test_default_strip',
       'test_bundle_strip',
       'test_bundle_strip_siblings',
@@ -963,6 +964,33 @@ class AiDraftingTemplateCrudTest extends KernelTestBase {
     FieldConfig::loadByName('node', 'oe_news', 'field_teaser')->delete();
 
     $loaded = AiDraftingTemplate::load('test_field_strip');
+    $this->assertNotNull($loaded);
+    $this->assertSame(['title' => ['prompt' => 'Headline.']], $loaded->getFields());
+  }
+
+  /**
+   * Tests that a required field can be deleted while a template covers it.
+   */
+  public function testRequiredFieldDeletionStripsFieldFromTemplate(): void {
+    $field = FieldConfig::loadByName('node', 'oe_news', 'field_teaser');
+    $field->setRequired(TRUE)->save();
+
+    $template = AiDraftingTemplate::create([
+      'id' => 'test_required_field_strip',
+      'label' => 'Required field strip',
+      'status' => TRUE,
+      'content_type' => 'oe_news',
+      'fields' => [
+        'title' => ['prompt' => 'Headline.'],
+        'field_teaser' => ['prompt' => 'Teaser.'],
+      ],
+    ]);
+    $template->save();
+
+    $field->delete();
+
+    $this->assertNull(FieldConfig::loadByName('node', 'oe_news', 'field_teaser'));
+    $loaded = AiDraftingTemplate::load('test_required_field_strip');
     $this->assertNotNull($loaded);
     $this->assertSame(['title' => ['prompt' => 'Headline.']], $loaded->getFields());
   }
