@@ -87,6 +87,7 @@ class AiDraftingTemplateCrudTest extends KernelTestBase {
       'test_field_strip',
       'test_default_strip',
       'test_bundle_strip',
+      'test_bundle_strip_siblings',
     ];
     foreach ($ids as $id) {
       $template = AiDraftingTemplate::load($id);
@@ -1031,6 +1032,68 @@ class AiDraftingTemplateCrudTest extends KernelTestBase {
     $items = $loaded->getFields()['field_content_paragraphs']['items'];
     $this->assertCount(1, $items);
     $this->assertSame('text_block', $items[0]['bundle']);
+  }
+
+  /**
+   * Tests that stripping a bundle leaves sibling reference fields untouched.
+   */
+  public function testBundleDeletionLeavesSiblingReferenceItemsUntouched(): void {
+    $contacts = [
+      'type' => 'entity_reference',
+      'items' => [
+        [
+          'entity_type' => 'node',
+          'bundle' => 'oe_contact',
+          'prompt' => 'Contact.',
+          'fields' => [
+            'title' => ['prompt' => 'Contact title.'],
+            'field_contact_name' => ['prompt' => 'Name.'],
+          ],
+        ],
+      ],
+    ];
+    // The sibling field comes first and the stripped item comes last, so a
+    // loop variable leaking across fields would overwrite the contact item.
+    $template = AiDraftingTemplate::create([
+      'id' => 'test_bundle_strip_siblings',
+      'label' => 'Bundle strip siblings',
+      'status' => TRUE,
+      'content_type' => 'oe_news',
+      'fields' => [
+        'title' => ['prompt' => 'Headline.'],
+        'field_contacts' => $contacts,
+        'field_content_paragraphs' => [
+          'type' => 'entity_reference_revisions',
+          'items' => [
+            [
+              'entity_type' => 'paragraph',
+              'bundle' => 'text_block',
+              'prompt' => 'Intro.',
+              'fields' => ['field_text_body' => ['prompt' => 'Intro body.']],
+            ],
+            [
+              'entity_type' => 'paragraph',
+              'bundle' => 'quote_block',
+              'prompt' => 'Quote.',
+              'fields' => [
+                'field_quote_text' => ['prompt' => 'The quote.'],
+                'field_quote_attribution' => ['prompt' => 'Who said it.'],
+              ],
+            ],
+          ],
+        ],
+      ],
+    ]);
+    $template->save();
+
+    ParagraphsType::load('quote_block')->delete();
+
+    $loaded = AiDraftingTemplate::load('test_bundle_strip_siblings');
+    $this->assertNotNull($loaded);
+    $fields = $loaded->getFields();
+    $this->assertSame($contacts, $fields['field_contacts']);
+    $this->assertCount(1, $fields['field_content_paragraphs']['items']);
+    $this->assertSame('text_block', $fields['field_content_paragraphs']['items'][0]['bundle']);
   }
 
   /**
