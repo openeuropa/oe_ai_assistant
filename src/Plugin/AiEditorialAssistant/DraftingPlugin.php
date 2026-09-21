@@ -306,15 +306,16 @@ class DraftingPlugin extends AiAssistantPluginBase {
     }
     $context['template'] = $template?->id();
 
-    // Resolve the full editorial context once: tone (id, label, prompt),
-    // template (id, label) and documents. The drafters receive it for prompt
-    // injection and it becomes the provenance snapshot of the produced draft.
-    $editorialContext = $this->buildEditorialContext($session, $template);
-
     $groups = $this->schemaProvider->groups(
       $context['entityTypeId'], $context['bundle'], $context['template']
     );
     $routerContext = $this->buildRouterContext($context, $groups);
+
+    // Resolve the full editorial context once: tone (id, label, prompt),
+    // template (id, label), documents and the schema groups. The drafters
+    // receive it for prompt injection and it becomes the provenance
+    // snapshot of the produced draft.
+    $editorialContext = $this->buildEditorialContext($session, $template, $groups);
 
     // Every group is drafted by its own sub-agent, under the turn that asked
     // for it; the collector versions the draft once the set is complete.
@@ -804,6 +805,8 @@ class DraftingPlugin extends AiAssistantPluginBase {
    *   The session hosting the conversation.
    * @param \Drupal\oe_ai_assistant\AiDraftingTemplateInterface|null $template
    *   The resolved drafting template, or NULL without one.
+   * @param array $groups
+   *   The schema groups the draft will be written against.
    *
    * @return \Drupal\oe_ai_assistant\Service\Drafting\EditorialContext
    *   The immutable per-request editorial context.
@@ -811,7 +814,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
    * @throws \Drupal\oe_ai_assistant\Exception\ActionException
    *   When the stored tone is invalid or not prompt-ready.
    */
-  private function buildEditorialContext(AiEditorialSessionInterface $session, ?AiDraftingTemplateInterface $template): EditorialContext {
+  private function buildEditorialContext(AiEditorialSessionInterface $session, ?AiDraftingTemplateInterface $template, array $groups): EditorialContext {
     $toneId = (string) $session->get(static::TONE_FIELD)->target_id;
     $tone = NULL;
     if ($toneId !== '') {
@@ -829,6 +832,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
       templateId: $template?->id(),
       templateLabel: $template?->label(),
       documents: [],
+      groups: $groups,
     );
   }
 

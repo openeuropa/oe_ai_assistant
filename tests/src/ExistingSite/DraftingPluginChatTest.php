@@ -301,6 +301,75 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
   }
 
   /**
+   * Tests that a revision keeps the structure its draft was written with.
+   *
+   * The session points at another template by the time the revision runs.
+   * The draft carries the groups it was written against, so the revised
+   * group keeps its own fields and the groups it never had stay out.
+   */
+  public function testReviseUsesTheGroupsTheDraftWasWrittenWith(): void {
+    $user = $this->createUser(['use oe ai assistant']);
+    $this->loginUser($user);
+    $session = $this->createSession($user);
+
+    // The first draft follows the latest template, with a paragraphs group.
+    $this->enqueueDraftFlow();
+    $this->httpPost('/api/ai/plugins/drafting/chat', [
+      'message' => 'Generate the draft now.',
+      'sessionId' => $session->id(),
+    ]);
+
+    // The editor then switches to a template whose main fields also carry
+    // field_body and which has no paragraphs group at all.
+    $switch = $this->httpPost('/api/ai/plugins/drafting/set-template', [
+      'sessionId' => $session->id(),
+      'template' => 'news_default',
+    ]);
+    $this->assertEquals(200, $switch['status'],
+      'Expected the template switch to succeed. Body: ' . substr($switch['body'], 0, 300));
+
+    MockAiProvider::enqueue(new MockResponse(
+      toolCalls: [
+        [
+          'id' => 'call_r1',
+          'type' => 'function',
+          'function' => [
+            'name' => 'revise_draft',
+            'arguments' => '{"instruction": "Make the title shorter.", "groups": ["main_fields"]}',
+          ],
+        ],
+      ],
+    ));
+    // Answering the original main fields: against the session's current
+    // template this would miss field_body and be sent back for a retry.
+    MockAiProvider::enqueue(new MockResponse(
+      text: '{"title": [{"value": "Short"}], "field_teaser": [{"value": "Test teaser."}]}',
+    ));
+    MockAiProvider::enqueue(new MockResponse(text: 'Draft 1.1 is ready.'));
+
+    $this->httpPost('/api/ai/plugins/drafting/chat', [
+      'message' => 'Make the title shorter.',
+      'sessionId' => $session->id(),
+    ]);
+
+    \Drupal::state()->resetCache();
+    $groupCalls = array_filter(
+      MockAiProvider::getCallLog(),
+      fn($call) => str_contains($call['system_prompt'], 'You are a content generator'),
+    );
+    $this->assertCount(3, $groupCalls,
+      'The answer matched the original schema, so no correction was needed.');
+
+    $drafts = $this->loadDraftResults($session);
+    $this->assertCount(2, $drafts);
+    $this->assertSame('Short', $drafts[1]['fields']['title'][0]['value']);
+    $this->assertArrayHasKey('field_content_paragraphs', $drafts[1]['fields'],
+      'The revision keeps the group the draft was written with.');
+    $this->assertArrayNotHasKey('field_body', $drafts[1]['fields'],
+      'A field the new template added never enters the revision.');
+  }
+
+  /**
    * Tests that the router system prompt is stable and tone-free.
    *
    * The router prompt carries role and capabilities only; the tone reaches

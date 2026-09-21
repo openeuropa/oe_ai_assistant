@@ -38,6 +38,14 @@ class EditorialContextTest extends UnitTestCase {
         'meta' => ['mime' => 'image/png'],
       ],
     ];
+    $groups = [
+      [
+        'groupId' => 'main_fields',
+        'label' => 'Main fields',
+        'fieldNames' => ['title'],
+        'schemaSlice' => ['type' => 'object'],
+      ],
+    ];
     $context = new EditorialContext(
       toneId: '3',
       toneLabel: 'Formal',
@@ -45,6 +53,7 @@ class EditorialContextTest extends UnitTestCase {
       templateId: 'news_default',
       templateLabel: 'News default',
       documents: $documents,
+      groups: $groups,
     );
 
     $snapshot = $context->toSnapshot();
@@ -55,6 +64,8 @@ class EditorialContextTest extends UnitTestCase {
       $snapshot['template'],
     );
     $this->assertSame($documents, $snapshot['documents']);
+    $this->assertSame($groups, $snapshot['groups'],
+      'The groups the draft is written against travel with it.');
   }
 
   /**
@@ -68,6 +79,7 @@ class EditorialContextTest extends UnitTestCase {
     $this->assertNull($snapshot['tone']);
     $this->assertNull($snapshot['template']);
     $this->assertSame([], $snapshot['documents']);
+    $this->assertSame([], $snapshot['groups']);
   }
 
   /**

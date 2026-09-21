@@ -8,12 +8,12 @@ namespace Drupal\oe_ai_assistant\Service\Drafting;
  * Immutable editorial context for one drafting request.
  *
  * Resolved once per chat request from the editorial session, passed to the
- * orchestrator for sub-agent prompt injection, and flattened into the
+ * content-producing agents for prompt injection, and flattened into the
  * provenance snapshot stored on every draft result. Ids travel with the
  * labels resolved at request time so the snapshot preserves what the editor
  * saw even if a term or template is renamed later. The tone prompt string is
  * resolved by the AiEditorialContext service, which stays the single source
- * of tone wording; the orchestrator never resolves tones itself.
+ * of tone wording.
  */
 final class EditorialContext {
 
@@ -34,6 +34,9 @@ final class EditorialContext {
    *   Document descriptors, each {id, title, category, summary, meta} with
    *   category either "context" or "publishable". Always empty until the
    *   documents backend lands.
+   * @param array $groups
+   *   The schema groups the draft is written against, each with groupId,
+   *   label, fieldNames and schemaSlice.
    */
   public function __construct(
     public readonly ?string $toneId,
@@ -42,14 +45,19 @@ final class EditorialContext {
     public readonly ?string $templateId,
     public readonly ?string $templateLabel,
     public readonly array $documents = [],
+    public readonly array $groups = [],
   ) {}
 
   /**
    * Flattens the context into the provenance snapshot stored on a draft.
    *
+   * The schema groups travel with it, so a draft can be revised against
+   * the structure it was written with rather than whatever the session
+   * points at later.
+   *
    * @return array
    *   An array with tone ({id, label, prompt} or NULL), template ({id, label}
-   *   or NULL) and documents (the descriptor list, possibly empty).
+   *   or NULL), documents (the descriptor list, possibly empty) and groups.
    */
   public function toSnapshot(): array {
     return [
@@ -60,6 +68,7 @@ final class EditorialContext {
         ? ['id' => $this->templateId, 'label' => (string) $this->templateLabel]
         : NULL,
       'documents' => $this->documents,
+      'groups' => $this->groups,
     ];
   }
 
