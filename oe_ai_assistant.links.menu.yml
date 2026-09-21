@@ -12,6 +12,13 @@ oe_ai_assistant.dashboard:
   parent: oe_ai_assistant.admin_settings
   weight: 20
 
+oe_ai_assistant.transparency_notice_settings:
+  title: 'AI transparency notice'
+  description: 'Configure the notice shown during AI-assisted content creation.'
+  route_name: oe_ai_assistant.transparency_notice_settings
+  parent: oe_ai_assistant.admin_settings
+  weight: 10
+
 entity.ai_drafting_template.collection:
   title: 'AI Drafting Templates'
   description: 'Manage templates that define field structure and prompts for AI content generation.'
