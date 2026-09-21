@@ -29,6 +29,7 @@ class AiEditorialSessionDashboardTest extends AiEditorialSessionBrowserTestBase 
 
     $this->assertSession()->statusCodeEquals(200);
     $this->assertSession()->pageTextContains('AI Editorial Sessions');
+    $this->assertSession()->pageTextContains('AI assistant can make mistakes. Please double-check responses.');
     $this->assertSession()->pageTextContains('Add new session');
     $this->assertSession()->pageTextContains('Session');
     $this->assertSession()->pageTextContains('Type');
@@ -57,6 +58,27 @@ class AiEditorialSessionDashboardTest extends AiEditorialSessionBrowserTestBase 
     $this->assertSession()->statusCodeEquals(200);
     $this->assertSame($session->toUrl('canonical', ['absolute' => TRUE])->toString(), $this->getUrl());
     $this->assertSessionAppPage('oe_news', (string) $session->id());
+  }
+
+  /**
+   * The dashboard displays the configured transparency notice.
+   */
+  public function testDashboardDisplaysTransparencyNotice(): void {
+    $this->config('oe_ai_assistant.settings')
+      ->set('transparency_notice', '<strong>AI-generated content</strong>. <a href="https://example.com/policy">Read our policy</a>.')
+      ->save();
+    $user = $this->drupalCreateUser([
+      'access administration pages',
+      'access content overview',
+      'administer ai editorial sessions',
+    ]);
+    $this->drupalLogin($user);
+
+    $this->drupalGet(Url::fromRoute('entity.ai_editorial_session.collection'));
+
+    $this->assertSession()->statusCodeEquals(200);
+    $this->assertSession()->responseContains('<strong>AI-generated content</strong>');
+    $this->assertSession()->linkByHrefExists('https://example.com/policy');
   }
 
   /**
