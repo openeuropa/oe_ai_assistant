@@ -1,15 +1,3 @@
-diff --git a/.cspell-project-words.txt b/.cspell-project-words.txt
-index c32946fb9a81237ad19129d87c03992708be19de..aa1ed2b12992bdfeb784249955e59d5a903bb3fe 100644
---- a/.cspell-project-words.txt
-+++ b/.cspell-project-words.txt
-@@ -240,6 +240,7 @@ Radisson
- rangesets
- Recogniztion
- Renederer
-+reencode
- reparses
- replayable
- refinable
 diff --git a/docs/developers/hostname_filter.md b/docs/developers/hostname_filter.md
 index fb7245d6bc19e984738226bec23fcb80716d62b1..80d1779c62ef55c0112766a04b4a061aca305743 100644
 --- a/docs/developers/hostname_filter.md

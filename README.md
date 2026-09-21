@@ -229,12 +229,13 @@ ddev phpcbf    # Auto-fix violations
 
 ## Patches
 
-This module patches `drupal/ai_agents` via `cweagans/composer-patches`. The patch is declared with an absolute
-URL pinned to a commit in this repository, so consumers relying on the plugin's "patches from dependencies"
-feature (v1 or v2) get it applied automatically with no extra configuration.
+This module patches `drupal/ai_agents` and `drupal/ai` via `cweagans/composer-patches`. Each patch is declared
+with an absolute URL pinned to a commit in this repository, so consumers relying on the plugin's "patches from
+dependencies" feature (v1 or v2) get it applied automatically with no extra configuration. A relative path would
+be resolved against the consumer's root and fail.
 
 One caveat for `cweagans/composer-patches` v1 consumers: dependency patches are only gathered when your root
 `composer.json` declares patches of its own or sets `"enable-patching": true`; otherwise this module's patch is
-silently skipped. Air-gapped projects that cannot fetch the patch URL can copy
-`vendor/openeuropa/oe_ai_assistant/patches/ai-agents-agent-wrapper-extra-tags.patch` into their project and
-re-declare it in their root `extra.patches` instead.
+silently skipped. Air-gapped projects that cannot fetch the patch URLs can copy the files from
+`vendor/openeuropa/oe_ai_assistant/patches/` into their project and re-declare them in their root `extra.patches`
+instead.
