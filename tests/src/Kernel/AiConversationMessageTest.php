@@ -43,7 +43,6 @@ class AiConversationMessageTest extends KernelTestBase {
     'taxonomy',
     // Contrib.
     'ai',
-    'ai_agents',
     'entity_reference_revisions',
     'inline_entity_form',
     'key',
