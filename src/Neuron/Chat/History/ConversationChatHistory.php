@@ -72,8 +72,7 @@ final class ConversationChatHistory extends AbstractChatHistory {
     private readonly ?int $authorId = NULL,
     bool $load = TRUE,
   ) {
-    // The row cap replaces token trimming; the window only has to be large.
-    parent::__construct(contextWindow: 2000000);
+    parent::__construct();
     if ($load) {
       $this->history = $this->load();
     }
@@ -83,7 +82,8 @@ final class ConversationChatHistory extends AbstractChatHistory {
    * {@inheritdoc}
    *
    * A user message following a user message merges into it, so notes and
-   * the turn they precede reach the model as one message.
+   * the turn they precede reach the model as one message. The row cap of
+   * load() replaces token trimming.
    */
   public function addMessage(Message $message): ChatHistoryInterface {
     $last = end($this->history);
@@ -96,7 +96,6 @@ final class ConversationChatHistory extends AbstractChatHistory {
       $this->history[] = $message;
     }
 
-    $this->trimHistory();
     $this->persist($message);
 
     return $this;

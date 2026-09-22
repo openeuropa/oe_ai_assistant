@@ -64,19 +64,6 @@ class MessageRecorder implements MessageRecorderInterface {
   /**
    * {@inheritdoc}
    */
-  public function recordAssistantText(EntityInterface $host, string $text, string $agentId = '', ?AiConversationMessageInterface $parent = NULL): AiConversationMessageInterface {
-    $values = $this->base($host, AiConversationMessageInterface::ROLE_ASSISTANT, $parent) + [
-      'content' => $text,
-    ];
-    if ($agentId !== '') {
-      $values['agent_id'] = $agentId;
-    }
-    return $this->create($values);
-  }
-
-  /**
-   * {@inheritdoc}
-   */
   public function recordSystem(EntityInterface $host, string $text, string $agentId = '', ?AiConversationMessageInterface $parent = NULL): AiConversationMessageInterface {
     $values = $this->base($host, AiConversationMessageInterface::ROLE_SYSTEM, $parent) + [
       'content' => $text,

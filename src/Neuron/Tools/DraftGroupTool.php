@@ -10,6 +10,7 @@ use NeuronAI\Tools\HasRunKey;
 use NeuronAI\Tools\PropertyType;
 use NeuronAI\Tools\Tool;
 use NeuronAI\Tools\ToolProperty;
+use NeuronAI\Tools\TrackByInputs;
 
 /**
  * Tool drafting the field values of one schema group.
@@ -20,6 +21,10 @@ use NeuronAI\Tools\ToolProperty;
  * from the same place.
  */
 final class DraftGroupTool extends Tool implements HasRunKey {
+
+  // Each group counts as its own run, so drafting many groups in one turn
+  // stays within the per-tool run limit.
+  use TrackByInputs;
 
   public const NAME = 'draft_group';
 
@@ -55,16 +60,6 @@ final class DraftGroupTool extends Tool implements HasRunKey {
     return [
       new ToolProperty('group', PropertyType::STRING, 'The id of the field group to draft.', TRUE, $this->collector->groupIds()),
     ];
-  }
-
-  /**
-   * {@inheritdoc}
-   *
-   * Each group counts as its own run, so drafting many groups in one turn
-   * stays within the per-tool run limit.
-   */
-  public function getRunKey(): string {
-    return self::NAME . ':' . ($this->getInputs()['group'] ?? '');
   }
 
   /**

@@ -35,7 +35,7 @@ final class AgentFactory {
   /**
    * The agent id stored on the rows of the drafting agent.
    */
-  public const DRAFTING_AGENT_ID = 'drafting';
+  private const DRAFTING_AGENT_ID = 'drafting';
 
   public function __construct(
     #[Autowire(service: 'ai.provider')]
