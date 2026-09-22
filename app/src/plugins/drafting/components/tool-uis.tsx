@@ -133,7 +133,7 @@ function useProducedDraft(
       wasRunning.current = true;
       return;
     }
-    if (wasRunning.current && draft !== null && draft.version !== null) {
+    if (wasRunning.current && draft !== null) {
       wasRunning.current = false;
       openSessionDraft(draft);
     }
@@ -157,7 +157,7 @@ function ProducedDraftCard({ draft }: { draft: ParsedDraftResult }) {
       name={entry?.name ?? "Draft"}
       context={draft.context}
       fields={draft.fields}
-      isSaved={draft.version !== null && savedVersions.has(draft.version)}
+      isSaved={savedVersions.has(draft.version)}
       createdAt={entry?.createdAt ?? null}
       onOpen={() => openSessionDraft(draft)}
     />

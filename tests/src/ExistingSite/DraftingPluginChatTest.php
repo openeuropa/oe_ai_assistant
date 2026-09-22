@@ -890,45 +890,14 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
         'summary' => 'Funding lines and deadlines.',
       ],
     ];
-    $this->seedMessage($session, 'assistant', '', [
-      [
-        'type' => 'function',
-        'function' => ['name' => 'draft_group', 'arguments' => '{"group":"main_fields"}'],
-        'result' => [
-          'group' => 'main_fields',
-          'draft' => [
-            'version' => 1,
-            'major' => 1,
-            'minor' => 0,
-            'context' => [
-              'tone' => ['id' => '1', 'label' => 'Formal', 'prompt' => 'Use professional, institutional language.'],
-              'template' => ['id' => 'news_default', 'label' => 'News default'],
-              'documents' => $documents,
-            ],
-            'fields' => ['title' => [['value' => 'First']]],
-          ],
-        ],
-      ],
+    $this->seedDraft($session, 1, ['title' => [['value' => 'First']]], [
+      'tone' => ['id' => '1', 'label' => 'Formal', 'prompt' => 'Use professional, institutional language.'],
+      'template' => ['id' => 'news_default', 'label' => 'News default'],
+      'documents' => $documents,
     ]);
-    $this->seedMessage($session, 'assistant', '', [
-      [
-        'type' => 'function',
-        'function' => ['name' => 'draft_group', 'arguments' => '{"group":"main_fields"}'],
-        'result' => [
-          'group' => 'main_fields',
-          'draft' => [
-            'version' => 2,
-            'major' => 2,
-            'minor' => 0,
-            'context' => [
-              'tone' => ['id' => '2', 'label' => 'Technical', 'prompt' => 'Use domain-specific terminology precisely.'],
-              'template' => ['id' => 'news_default', 'label' => 'News default'],
-              'documents' => [],
-            ],
-            'fields' => ['title' => [['value' => 'Second']]],
-          ],
-        ],
-      ],
+    $this->seedDraft($session, 2, ['title' => [['value' => 'Second']]], [
+      'tone' => ['id' => '2', 'label' => 'Technical', 'prompt' => 'Use domain-specific terminology precisely.'],
+      'template' => ['id' => 'news_default', 'label' => 'News default'],
     ]);
 
     // The router calls the tool with a bogus session id, then answers.

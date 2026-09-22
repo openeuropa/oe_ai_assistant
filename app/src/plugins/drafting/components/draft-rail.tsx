@@ -76,14 +76,12 @@ export function DraftRail() {
     // Vertical tab strip: no divider against the pane so the active white
     // tab reads as a continuation of the white draft pane on its left.
     <div className="flex w-12 shrink-0 flex-col items-stretch gap-1 overflow-y-auto bg-gray-100 py-2 pr-1.5">
-      {newestFirst.map((draft, index) => {
+      {newestFirst.map((draft) => {
         const isActive =
           hasFields &&
           !isArtifactCollapsed &&
           activeDraftVersion === draft.version;
-        const key = draft.version ?? `legacy-${index}`;
-        const isSaved =
-          draft.version !== null && savedVersions.has(draft.version);
+        const isSaved = savedVersions.has(draft.version);
 
         const tabButton = (
           <button
@@ -103,11 +101,11 @@ export function DraftRail() {
         // The open draft's tab is a close control: its content is
         // already on screen, so hovering the X shows no summary card.
         if (isActive) {
-          return <Fragment key={key}>{tabButton}</Fragment>;
+          return <Fragment key={draft.version}>{tabButton}</Fragment>;
         }
 
         return (
-          <HoverCard.Root key={key} openDelay={200} closeDelay={100}>
+          <HoverCard.Root key={draft.version} openDelay={200} closeDelay={100}>
             <HoverCard.Trigger asChild>{tabButton}</HoverCard.Trigger>
 
             {/* At-a-glance preview: the draft's chat card, floated to the

@@ -2,14 +2,10 @@
  * Draft result parser.
  *
  * Normalises the draft stored on the completing draft_group call into a
- * consistent shape. The backend persists two formats:
- *
- *   - Versioned: `{version, major, minor, context, fields}` introduced when
- *     provenance tracking was added. The major and minor numbers place the
- *     draft under the one it revises; the context captures the tone,
- *     template, and documents that were active when it was generated.
- *   - Legacy flat: any other object-like value where the object itself is
- *     the fields map.
+ * consistent shape. The backend persists `{version, major, minor, context,
+ * fields}`: the major and minor numbers place the draft under the one it
+ * revises, and the context captures the tone, template, and documents that
+ * were active when it was generated.
  */
 
 import type { components } from "@/api/schema";
@@ -39,16 +35,16 @@ export interface DraftContext {
   documents: DraftDocumentSnapshot[];
 }
 
-/** Normalized draft result: versioned shape or legacy flat fields map. */
+/** Normalised draft result. */
 export interface ParsedDraftResult {
-  /** Numeric version when the versioned shape is detected; null for legacy. */
-  version: number | null;
-  /** Group number: the draft it revises shares it; 0 for legacy. */
+  /** Session-wide draft number, the one the API addresses. */
+  version: number;
+  /** Group number: the draft it revises shares it. */
   major: number;
   /** Position within the group, 0 for the draft that opened it. */
   minor: number;
-  /** Editorial context present in versioned shape; null for legacy. */
-  context: DraftContext | null;
+  /** The editorial context captured when the draft was generated. */
+  context: DraftContext;
   /** The field values for this draft, keyed by field name. */
   fields: Record<string, unknown>;
 }
@@ -96,40 +92,25 @@ function normaliseContext(raw: unknown): DraftContext {
 /**
  * Parses the draft stored on a draft_group call into a normalised shape.
  *
- * Versioned detection: an object with a numeric `version` and an object
- * `fields`. Everything else that is object-like is treated as a legacy flat
- * fields map. Null/undefined/non-object inputs produce empty fields.
+ * Returns null for anything but an object with numeric `version`, `major`
+ * and `minor` and an object `fields`.
  */
-export function parseDraftResult(result: unknown): ParsedDraftResult {
-  if (!isPlainObject(result)) {
-    return {
-      version: null,
-      major: 0,
-      minor: 0,
-      context: null,
-      fields: {},
-    };
+export function parseDraftResult(result: unknown): ParsedDraftResult | null {
+  if (
+    !isPlainObject(result) ||
+    typeof result["version"] !== "number" ||
+    typeof result["major"] !== "number" ||
+    typeof result["minor"] !== "number" ||
+    !isPlainObject(result["fields"])
+  ) {
+    return null;
   }
 
-  const hasNumericVersion = typeof result["version"] === "number";
-  const hasObjectFields = isPlainObject(result["fields"]);
-
-  if (hasNumericVersion && hasObjectFields) {
-    return {
-      version: result["version"] as number,
-      major: typeof result["major"] === "number" ? result["major"] : 0,
-      minor: typeof result["minor"] === "number" ? result["minor"] : 0,
-      context: normaliseContext(result["context"]),
-      fields: result["fields"] as Record<string, unknown>,
-    };
-  }
-
-  // Legacy flat map: the whole result object is the fields map.
   return {
-    version: null,
-    major: 0,
-    minor: 0,
-    context: null,
-    fields: result,
+    version: result["version"],
+    major: result["major"],
+    minor: result["minor"],
+    context: normaliseContext(result["context"]),
+    fields: result["fields"],
   };
 }

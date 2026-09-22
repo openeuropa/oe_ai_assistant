@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\oe_ai_assistant\ExistingSite;
 
-use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
 use Drupal\oe_ai_assistant_test\Plugin\AiProvider\MockAiProvider;
 use Drupal\oe_ai_assistant_test\Plugin\AiProvider\MockResponse;
 
@@ -246,7 +245,7 @@ class DraftingPluginSaveTest extends DraftingPluginTestBase {
 
     $this->seedDraft($session, 1, [
       'title' => [['value' => 'Defaults round-trip']],
-    ], 'news_preview_defaults');
+    ], ['template' => ['id' => 'news_preview_defaults', 'label' => 'news_preview_defaults']]);
 
     $result = $this->httpPost('/api/ai/plugins/drafting/save', [
       'sessionId' => $session->id(),
@@ -457,40 +456,6 @@ class DraftingPluginSaveTest extends DraftingPluginTestBase {
     $reloaded = $sessionStorage->load($session->id());
     $this->assertEquals($secondBody['nodeId'], $reloaded->getNode()->id(),
       'The session must repoint to the newly created node.');
-  }
-
-  /**
-   * Seeds a completed draft version into the session's transcript.
-   *
-   * Mirrors how the chat flow records drafts: an assistant turn carrying a
-   * draft_group tool call whose result holds the versioned draft.
-   *
-   * @param \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $session
-   *   The session hosting the conversation.
-   * @param int $version
-   *   The draft version number.
-   * @param array $fields
-   *   The drafted field values, keyed by field machine name.
-   * @param string|null $templateId
-   *   The template id to snapshot in the result context, or NULL for none.
-   */
-  protected function seedDraft(AiEditorialSessionInterface $session, int $version, array $fields, ?string $templateId = NULL): void {
-    $this->seedMessage($session, 'assistant', '', [
-      [
-        'type' => 'function',
-        'function' => ['name' => 'draft_group', 'arguments' => '{"group":"main_fields"}'],
-        'result' => [
-          'group' => 'main_fields',
-          'draft' => [
-            'version' => $version,
-            'context' => $templateId !== NULL
-              ? ['template' => ['id' => $templateId, 'label' => $templateId]]
-              : NULL,
-            'fields' => $fields,
-          ],
-        ],
-      ],
-    ]);
   }
 
   /**

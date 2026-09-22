@@ -135,8 +135,7 @@ function DraftingChat() {
   const handleSave = useCallback(async () => {
     const version = getDraftingState().activeDraftVersion;
     if (version === null) {
-      // Legacy unversioned drafts cannot be addressed by the contract.
-      appendEvent("error", "This draft has no version and cannot be saved");
+      appendEvent("error", "No draft is open to save");
       return;
     }
     setPendingWork("drafting:save", true);
@@ -157,9 +156,8 @@ function DraftingChat() {
 
   /** Determine what the artifact pane shows. */
   function renderArtifact() {
-    // Versioned drafts get the tabbed live preview pane; legacy
-    // unversioned drafts cannot be addressed by the preview
-    // endpoint and keep the plain data table.
+    // An open draft gets the tabbed live preview pane; otherwise the
+    // plain data table stands in.
     if (activeDraftVersion !== null) {
       return (
         <VersionedDraftPreview

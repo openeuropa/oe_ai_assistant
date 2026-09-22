@@ -48,7 +48,7 @@ function draftOf(result: unknown): unknown {
 
 /**
  * Extracts the drafts from thread messages, revisions under the draft they
- * revise and legacy (unversioned) drafts in transcript order at the front.
+ * revise.
  */
 export function extractSessionDrafts(
   messages: readonly ThreadMessageLikeShape[],
@@ -65,7 +65,7 @@ export function extractSessionDrafts(
         continue;
       }
       const parsed = parseDraftResult(draft);
-      if (Object.keys(parsed.fields).length === 0) {
+      if (parsed === null || Object.keys(parsed.fields).length === 0) {
         continue;
       }
       const label = `${parsed.major}.${parsed.minor}`;

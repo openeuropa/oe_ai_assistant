@@ -91,7 +91,7 @@ describe("extractSessionDrafts", () => {
     expect(extractSessionDrafts(messages)).toEqual([]);
   });
 
-  it("skips group calls that carry no draft or an empty one", () => {
+  it("skips group calls that carry no draft, an unnumbered or an empty one", () => {
     const messages = [
       {
         content: [
@@ -101,7 +101,8 @@ describe("extractSessionDrafts", () => {
             args: { group: "main_fields" },
             result: { group: "main_fields", fields: { title: "x" } },
           },
-          draftPart({ version: 1, context: null, fields: {} }),
+          draftPart({ version: 1, context: null, fields: { title: "x" } }),
+          draftPart({ ...draft(2, 2), fields: {} }),
         ],
       },
     ];

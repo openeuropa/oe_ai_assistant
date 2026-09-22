@@ -26,11 +26,8 @@ import { DocumentDetailsDialog } from "./document-details-dialog";
 export interface DraftCardProps {
   /** The draft's name, e.g. "Draft 2.1". */
   name: string;
-  /**
-   * The editorial context captured when the draft was generated. Null for
-   * legacy drafts that pre-date context tracking.
-   */
-  context: DraftContext | null;
+  /** The editorial context captured when the draft was generated. */
+  context: DraftContext;
   /** The drafted fields produced by the AI. */
   fields: Record<string, unknown>;
   /** Whether this version has been saved as a revision. */
@@ -85,9 +82,7 @@ export function DraftCard({
     useState<DraftDocumentSnapshot | null>(null);
 
   const fieldCount = Object.keys(fields).length;
-  const documents = context?.documents ?? [];
-  const tone = context?.tone ?? null;
-  const template = context?.template ?? null;
+  const { documents, tone, template } = context;
 
   const hasProvenance =
     createdAt !== null ||

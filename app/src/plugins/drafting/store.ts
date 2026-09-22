@@ -22,7 +22,7 @@ export interface DraftingSliceState {
   selections: Record<string, string>;
   /** Whether the artifact pane is collapsed to a slim rail (transient). */
   isArtifactCollapsed: boolean;
-  /** Version of the draft currently shown in the pane; null for none/legacy. */
+  /** Version of the draft currently shown in the pane; null for none. */
   activeDraftVersion: number | null;
 }
 
