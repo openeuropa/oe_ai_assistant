@@ -99,7 +99,7 @@ class DraftingPluginSaveTest extends DraftingPluginTestBase {
       fn($m) => $m['role'] === 'event' && $m['type'] === 'save',
     ));
     $this->assertCount(1, $events, 'The save must record one event row.');
-    $this->assertStringContainsString('Draft 1', $events[0]['summary']);
+    $this->assertStringContainsString('Draft 1.0 saved', $events[0]['summary']);
     $this->assertSame(1, $events[0]['version'], 'The save event must name the saved version.');
   }
 
@@ -330,7 +330,8 @@ class DraftingPluginSaveTest extends DraftingPluginTestBase {
     $session = $this->createSession($user);
 
     $this->seedDraft($session, 1, ['title' => [['value' => 'First save']]]);
-    $this->seedDraft($session, 2, ['title' => [['value' => 'Second save']]]);
+    // The second draft revises the first, so it is named "Draft 1.1".
+    $this->seedDraft($session, 2, ['title' => [['value' => 'Second save']]], [], 1, 1);
 
     $first = $this->httpPost('/api/ai/plugins/drafting/save', [
       'sessionId' => $session->id(),
@@ -357,7 +358,7 @@ class DraftingPluginSaveTest extends DraftingPluginTestBase {
     $this->assertEquals('Second save', $node->getTitle(), 'The latest revision carries the second draft.');
     $this->assertEquals('draft', $node->get('moderation_state')->value);
     $this->assertStringContainsString(
-      sprintf('Draft 2 from session %s', $session->label()),
+      sprintf('Draft 1.1 from session %s', $session->label()),
       $node->getRevisionLogMessage(),
     );
 
@@ -389,7 +390,8 @@ class DraftingPluginSaveTest extends DraftingPluginTestBase {
     $session = $this->createSession($user);
 
     $this->seedDraft($session, 1, ['title' => [['value' => 'First save']]]);
-    $this->seedDraft($session, 2, ['title' => [['value' => 'Second save']]]);
+    // The second draft revises the first, so it is named "Draft 1.1".
+    $this->seedDraft($session, 2, ['title' => [['value' => 'Second save']]], [], 1, 1);
 
     $first = $this->httpPost('/api/ai/plugins/drafting/save', [
       'sessionId' => $session->id(),

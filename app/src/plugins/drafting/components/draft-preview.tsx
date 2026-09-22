@@ -67,8 +67,8 @@ interface DraftPreviewProps {
   isSaved: boolean;
   /** Tab shown on mount. Defaults to the live preview. */
   defaultTab?: PreviewTab;
-  /** Invoked after the user confirms the save dialog. */
-  onSave: () => void;
+  /** Invoked with the draft's name after the user confirms the save dialog. */
+  onSave: (name: string) => void;
 }
 
 /** A single tab button in the header switcher. */
@@ -397,7 +397,7 @@ export function DraftPreview({
         <SaveConfirmDialog
           onConfirm={() => {
             setShowConfirm(false);
-            onSave();
+            onSave(draftName);
           }}
           onCancel={() => setShowConfirm(false)}
         />

@@ -455,16 +455,16 @@ class DraftingPlugin extends AiAssistantPluginBase {
     if ($draft === NULL || $draft['fields'] === []) {
       throw new ActionException(
         'invalid_request',
-        sprintf('Draft %d does not exist in this session.', $version),
+        sprintf('Draft version %d does not exist in this session.', $version),
         400,
       );
     }
 
-    $result = $this->draftSaver->save($session, $draft['fields'], $draft['templateId'], $version);
+    $result = $this->draftSaver->save($session, $draft['fields'], $draft['templateId'], $draft['name']);
 
     $this->messageRecorder->recordEvent(
       $session,
-      sprintf('Draft %d saved as unpublished revision', $version),
+      sprintf('%s saved as unpublished revision', $draft['name']),
       ['type' => 'save', 'version' => $version, 'nodeId' => $result['nodeId']],
       (int) $this->currentUser->id(),
     );

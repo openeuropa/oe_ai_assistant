@@ -76,7 +76,7 @@ function VersionedDraftPreview({
   onSave,
 }: {
   version: number;
-  onSave: () => void;
+  onSave: (name: string) => void;
 }) {
   const sessionDrafts = useSessionDrafts();
   const savedVersions = useSavedVersions();
@@ -125,34 +125,33 @@ function DraftingChat() {
 
   /**
    * Saves the draft version open in the artifact pane via the save
-   * endpoint. The backend resolves the fields for that version from its
-   * own draft history, so saving an older version saves exactly what
-   * the pane shows. The in-flight request reports pending work so the
-   * exit guard blocks navigation, and the outcome lands in the thread
-   * as a local event chip (the backend records the matching durable
-   * event row).
+   * endpoint, called with the name the pane shows for it. The backend
+   * resolves the fields for that version from its own draft history, so
+   * saving an older version saves exactly what the pane shows. The
+   * in-flight request reports pending work so the exit guard blocks
+   * navigation, and the outcome lands in the thread as a local event
+   * chip (the backend records the matching durable event row).
    */
-  const handleSave = useCallback(async () => {
-    const version = getDraftingState().activeDraftVersion;
-    if (version === null) {
-      appendEvent("error", "No draft is open to save");
-      return;
-    }
-    setPendingWork("drafting:save", true);
-    try {
-      await saveDraftRevision({ version });
-    } catch {
-      appendEvent("error", `Draft ${version} could not be saved`);
-      return;
-    } finally {
-      setPendingWork("drafting:save", false);
-    }
-    appendEvent(
-      "save",
-      `Draft ${version} saved as unpublished revision`,
-      version,
-    );
-  }, [appendEvent, setPendingWork]);
+  const handleSave = useCallback(
+    async (name: string) => {
+      const version = getDraftingState().activeDraftVersion;
+      if (version === null) {
+        appendEvent("error", "No draft is open to save");
+        return;
+      }
+      setPendingWork("drafting:save", true);
+      try {
+        await saveDraftRevision({ version });
+      } catch {
+        appendEvent("error", `${name} could not be saved`);
+        return;
+      } finally {
+        setPendingWork("drafting:save", false);
+      }
+      appendEvent("save", `${name} saved as unpublished revision`, version);
+    },
+    [appendEvent, setPendingWork],
+  );
 
   /** Determine what the artifact pane shows. */
   function renderArtifact() {

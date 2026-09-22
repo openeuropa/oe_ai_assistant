@@ -48,7 +48,7 @@ interface DraftHistoryInterface {
   public function listDrafts(EntityInterface $session): array;
 
   /**
-   * Returns the fields and template id for one stored draft version.
+   * Returns the name, fields and template id for one stored draft version.
    *
    * @param \Drupal\Core\Entity\EntityInterface $session
    *   The session hosting the conversation.
@@ -56,9 +56,10 @@ interface DraftHistoryInterface {
    *   The draft version to look up (as returned by listDrafts()).
    *
    * @return array|null
-   *   {fields: array, templateId: string|null, context: array|null}, or
-   *   NULL if no stored draft carries that version. templateId is NULL
-   *   when the draft's snapshot has no template.
+   *   {name: "Draft 2.1", fields: array, templateId: string|null, context:
+   *   array|null}, or NULL if no stored draft carries that version. The
+   *   name is the one listDrafts() gives the draft; templateId is NULL when
+   *   the draft's snapshot has no template.
    */
   public function getDraftContent(EntityInterface $session, int $version): ?array;
 

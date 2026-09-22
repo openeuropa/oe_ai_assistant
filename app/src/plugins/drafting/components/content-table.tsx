@@ -15,7 +15,8 @@ import { useDraftingSlice } from "../store";
 
 /** Props for the content table. */
 interface ContentTableProps {
-  onSave: () => void;
+  /** Called with the name of the draft to save. */
+  onSave: (name: string) => void;
 }
 
 /**
@@ -334,7 +335,7 @@ export function ContentTable({ onSave }: ContentTableProps) {
         <SaveConfirmDialog
           onConfirm={() => {
             setShowConfirm(false);
-            onSave();
+            onSave(draftName);
           }}
           onCancel={() => setShowConfirm(false)}
         />

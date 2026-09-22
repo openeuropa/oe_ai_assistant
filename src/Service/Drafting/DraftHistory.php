@@ -60,10 +60,9 @@ final class DraftHistory implements DraftHistoryInterface {
       $groups = is_array($context['groups'] ?? NULL) ? $context['groups'] : [];
       unset($context['groups']);
 
-      $label = $draft['major'] . '.' . $draft['minor'];
       $entries[] = [
-        'name' => 'Draft ' . $label,
-        'label' => $label,
+        'name' => self::nameOf($draft),
+        'label' => self::labelOf($draft),
         'version' => (int) $draft['version'],
         'revisionOf' => $draft['revisionOf'] ?? NULL,
         'groups' => array_map(
@@ -85,10 +84,25 @@ final class DraftHistory implements DraftHistoryInterface {
       return NULL;
     }
     return [
+      'name' => self::nameOf($draft),
       'fields' => $draft['fields'] ?? [],
       'templateId' => $draft['context']['template']['id'] ?? NULL,
       'context' => $draft['context'] ?? NULL,
     ];
+  }
+
+  /**
+   * Returns the grouped number of a draft, such as "2.1".
+   */
+  private static function labelOf(array $draft): string {
+    return $draft['major'] . '.' . $draft['minor'];
+  }
+
+  /**
+   * Returns the name the editor and the model see for a draft.
+   */
+  private static function nameOf(array $draft): string {
+    return 'Draft ' . self::labelOf($draft);
   }
 
   /**

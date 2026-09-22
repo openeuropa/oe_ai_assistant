@@ -32,7 +32,7 @@ class DraftSaver implements DraftSaverInterface {
   /**
    * {@inheritdoc}
    */
-  public function save(AiEditorialSessionInterface $session, array $fields, ?string $templateId, int $version): array {
+  public function save(AiEditorialSessionInterface $session, array $fields, ?string $templateId, string $draftName): array {
     $existingNode = $session->getNode();
 
     /** @var \Drupal\node\NodeInterface $node */
@@ -43,7 +43,7 @@ class DraftSaver implements DraftSaverInterface {
     }
     else {
       $node->setNewRevision(TRUE);
-      $node->setRevisionLogMessage(sprintf('Draft %d from session %s', $version, $session->label()));
+      $node->setRevisionLogMessage(sprintf('%s from session %s', $draftName, $session->label()));
       $node->setRevisionUserId((int) $this->currentUser->id());
       $node->setRevisionCreationTime($this->time->getRequestTime());
     }
