@@ -11,11 +11,10 @@
 import type { ToolCallMessagePartProps } from "@assistant-ui/react";
 import { makeAssistantToolUI } from "@assistant-ui/react";
 import { Check, Loader2, Pencil, PenLine, Wrench, X } from "lucide-react";
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { type ParsedDraftResult, parseDraftResult } from "../draft-result";
 import { useSavedVersions } from "../saved-versions";
-import { useSessionDrafts } from "../session-drafts";
-import { setDraftingState } from "../store";
+import { openSessionDraft, useSessionDraft } from "../session-drafts";
 import { DraftCard } from "./draft-card";
 import { EventChip } from "./event-chip";
 
@@ -136,22 +135,22 @@ function useProducedDraft(
     }
     if (wasRunning.current && draft !== null && draft.version !== null) {
       wasRunning.current = false;
-      setDraftingState({
-        draftedFields: draft.fields,
-        activeDraftVersion: draft.version,
-        isArtifactCollapsed: false,
-      });
+      openSessionDraft(draft);
     }
   }, [status.type, draft]);
+}
+
+/** Parses the draft a tool result carries, once per result. */
+function useParsedDraft(raw: unknown): ParsedDraftResult | null {
+  return useMemo(() => (raw ? parseDraftResult(raw) : null), [raw]);
 }
 
 /** Renders the versioned draft a tool call produced. */
 function ProducedDraftCard({ draft }: { draft: ParsedDraftResult }) {
   // The name, saved state and creation time come from the thread index, so
   // the card stays in step with the preview header and the rail.
-  const sessionDrafts = useSessionDrafts();
+  const entry = useSessionDraft(draft.version);
   const savedVersions = useSavedVersions();
-  const entry = sessionDrafts.find((item) => item.version === draft.version);
 
   return (
     <DraftCard
@@ -160,14 +159,7 @@ function ProducedDraftCard({ draft }: { draft: ParsedDraftResult }) {
       fields={draft.fields}
       isSaved={draft.version !== null && savedVersions.has(draft.version)}
       createdAt={entry?.createdAt ?? null}
-      onOpen={() =>
-        // Show this draft in the pane, expanding it if collapsed.
-        setDraftingState({
-          draftedFields: draft.fields,
-          activeDraftVersion: draft.version,
-          isArtifactCollapsed: false,
-        })
-      }
+      onOpen={() => openSessionDraft(draft)}
     />
   );
 }
@@ -185,7 +177,7 @@ export const DraftGroupToolUI = makeAssistantToolUI<
 >({
   toolName: "draft_group",
   render: ({ args, result, status }) => {
-    const draft = result?.draft ? parseDraftResult(result.draft) : null;
+    const draft = useParsedDraft(result?.draft);
     useProducedDraft(status, draft);
 
     const label = result?.label ?? humanizeGroup(args?.group);
@@ -239,7 +231,7 @@ export const ReviseDraftToolUI = makeAssistantToolUI<
 >({
   toolName: "revise_draft",
   render: ({ args, result, status }) => {
-    const draft = result?.draft ? parseDraftResult(result.draft) : null;
+    const draft = useParsedDraft(result?.draft);
     useProducedDraft(status, draft);
 
     const label = humanizeGroups(result?.revised ?? args?.groups);

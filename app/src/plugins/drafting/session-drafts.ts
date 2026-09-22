@@ -93,17 +93,24 @@ export function useSessionDrafts(): SessionDraft[] {
   );
 }
 
-/** Reads the name of one draft from the current thread. */
-export function useDraftName(version: number | null): string {
+/** Reads one draft from the current thread, or null when it is not there. */
+export function useSessionDraft(version: number | null): SessionDraft | null {
   const drafts = useSessionDrafts();
   if (version === null) {
-    return "Draft";
+    return null;
   }
-  return drafts.find((draft) => draft.version === version)?.name ?? "Draft";
+  return drafts.find((draft) => draft.version === version) ?? null;
+}
+
+/** Reads the name of one draft from the current thread. */
+export function useDraftName(version: number | null): string {
+  return useSessionDraft(version)?.name ?? "Draft";
 }
 
 /** Opens a draft in the artifact pane, expanding the pane if needed. */
-export function openSessionDraft(draft: SessionDraft): void {
+export function openSessionDraft(
+  draft: Pick<SessionDraft, "fields" | "version">,
+): void {
   setDraftingState({
     draftedFields: draft.fields,
     activeDraftVersion: draft.version,

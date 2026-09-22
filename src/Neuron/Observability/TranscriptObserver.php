@@ -66,7 +66,8 @@ final class TranscriptObserver extends DrupalLogObserver {
    * {@inheritdoc}
    */
   public function onEvent(string $event, object $source, mixed $data = NULL, ?string $branchId = NULL): void {
-    parent::onEvent($event, $source, $data, $branchId);
+    $json = $this->encode($data);
+    $this->log($event, $source, $json);
 
     if ($event === 'inference-start' && $this->systemPrompt !== NULL && !$this->systemRecorded) {
       $this->recorder->recordSystem($this->session, $this->systemPrompt, $this->agentId, $this->parent);
@@ -99,12 +100,11 @@ final class TranscriptObserver extends DrupalLogObserver {
     // @todo Temporary: the full payload (prompts, answers, tool results)
     //   streams to the browser console so the run can be inspected. Gate it
     //   behind a dev-only configuration before this leaves development.
-    $payload = json_decode((string) json_encode($data, JSON_PARTIAL_OUTPUT_ON_ERROR | JSON_UNESCAPED_UNICODE), TRUE);
     $this->events->push(new AgentEventChunk(
       $event,
       $this->agentId,
       $summary,
-      $payload,
+      json_decode($json, TRUE),
       $rejected || $event === 'error' ? 'error' : 'info',
     ));
   }

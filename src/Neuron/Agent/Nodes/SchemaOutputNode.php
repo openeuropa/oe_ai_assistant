@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Drupal\oe_ai_assistant\Neuron\Agent\Nodes;
 
 use Drupal\oe_ai_assistant\Neuron\Agent\Events\SchemaViolationEvent;
+use Drupal\oe_ai_assistant\Service\RequestValidator;
 use JsonSchema\Constraints\BaseConstraint;
 use JsonSchema\Validator;
 use NeuronAI\Agent\AgentState;
@@ -119,10 +120,7 @@ final class SchemaOutputNode extends InferenceNode {
     $data = json_decode($json);
     $validator = new Validator();
     $validator->validate($data, $this->schemaObject);
-    return array_map(
-      static fn (array $error): string => trim(($error['property'] !== '' ? $error['property'] . ': ' : '') . $error['message']),
-      $validator->getErrors(),
-    );
+    return RequestValidator::formatErrors($validator);
   }
 
 }

@@ -31,14 +31,28 @@ class DrupalLogObserver implements ObserverInterface {
    * {@inheritdoc}
    */
   public function onEvent(string $event, object $source, mixed $data = NULL, ?string $branchId = NULL): void {
+    $this->log($event, $source, $this->encode($data));
+  }
+
+  /**
+   * Writes one event and its encoded payload to the log.
+   */
+  protected function log(string $event, object $source, string $json): void {
     // @todo Every event is logged with its payload at debug level. A
     //   follow-up will make the level and the selection of events
     //   configurable.
     $this->logger->log(LogLevel::DEBUG, 'Neuron @event from @source: @data', [
       '@event' => $event,
       '@source' => $source::class,
-      '@data' => (string) json_encode($data, JSON_PARTIAL_OUTPUT_ON_ERROR | JSON_UNESCAPED_UNICODE),
+      '@data' => $json,
     ]);
+  }
+
+  /**
+   * Encodes an event payload as JSON, tolerating values that cannot encode.
+   */
+  protected function encode(mixed $data): string {
+    return (string) json_encode($data, JSON_PARTIAL_OUTPUT_ON_ERROR | JSON_UNESCAPED_UNICODE);
   }
 
 }

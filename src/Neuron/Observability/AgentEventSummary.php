@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\oe_ai_assistant\Neuron\Observability;
 
+use Drupal\oe_ai_assistant\Neuron\Tools\ToolResult;
 use NeuronAI\Chat\Messages\ToolCallMessage;
 use NeuronAI\Observability\Events\AgentError;
 use NeuronAI\Observability\Events\InferenceStop;
@@ -64,8 +65,8 @@ final class AgentEventSummary {
    * Describes a finished tool call, naming a failure the tool reported.
    */
   private static function toolResult(ToolCalled $data): string {
-    $result = json_decode($data->tool->getResult(), TRUE);
-    if (is_array($result) && isset($result['error'])) {
+    $result = ToolResult::decode($data->tool->getResult());
+    if (isset($result['error'])) {
       return $data->tool->getName() . ' failed: ' . $result['error'];
     }
     return $data->tool->getName() . ' returned';

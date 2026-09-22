@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Drupal\oe_ai_assistant\Neuron\Chat\Messages\Stream\Adapters;
 
 use Drupal\oe_ai_assistant\Neuron\Chat\Messages\Stream\Chunks\AgentEventChunk;
+use Drupal\oe_ai_assistant\Neuron\Tools\ToolResult;
 use NeuronAI\Chat\Messages\Stream\Adapters\VercelAIAdapter;
 use NeuronAI\Chat\Messages\Stream\Chunks\TextChunk;
 use NeuronAI\Chat\Messages\Stream\Chunks\ToolCallChunk;
@@ -74,7 +75,7 @@ final class UiMessageStreamAdapter extends VercelAIAdapter {
    * {@inheritdoc}
    */
   protected function handleToolResult(ToolResultChunk $chunk): iterable {
-    yield from $this->toolResult($this->callId($chunk->tool), $this->decode($chunk->tool->getResult()));
+    yield from $this->toolResult($this->callId($chunk->tool), ToolResult::decode($chunk->tool->getResult()));
   }
 
   /**
@@ -105,7 +106,7 @@ final class UiMessageStreamAdapter extends VercelAIAdapter {
   /**
    * Streams the result of a tool call.
    */
-  private function toolResult(string $id, mixed $result): iterable {
+  private function toolResult(string $id, array $result): iterable {
     yield $this->sse([
       'type' => 'tool-result',
       'toolCallId' => $id,
@@ -118,14 +119,6 @@ final class UiMessageStreamAdapter extends VercelAIAdapter {
    */
   private function callId(ToolInterface $tool): string {
     return $tool->getCallId() ?: 'call_' . spl_object_id($tool);
-  }
-
-  /**
-   * Decodes a tool result for the client, keeping plain text as text.
-   */
-  private function decode(string $result): mixed {
-    $decoded = json_decode($result, TRUE);
-    return is_array($decoded) ? $decoded : ['text' => $result];
   }
 
 }

@@ -87,7 +87,7 @@ final class DraftCollector {
       if (in_array($group['groupId'], $revised, TRUE)) {
         continue;
       }
-      $this->results[$group['groupId']] = array_intersect_key($fields, array_flip($group['fieldNames']));
+      $this->results[$group['groupId']] = self::slice($fields, $group);
     }
   }
 
@@ -101,7 +101,7 @@ final class DraftCollector {
    */
   public function valuesOf(string $groupId, array $fields): array {
     $group = $this->group($groupId);
-    return $group === NULL ? [] : array_intersect_key($fields, array_flip($group['fieldNames']));
+    return $group === NULL ? [] : self::slice($fields, $group);
   }
 
   /**
@@ -144,7 +144,7 @@ final class DraftCollector {
         continue;
       }
       if ($group['groupId'] === 'main_fields') {
-        $fields = array_merge($fields, array_intersect_key($result, array_flip($group['fieldNames'])));
+        $fields = array_merge($fields, self::slice($result, $group));
         continue;
       }
       foreach ($group['fieldNames'] as $fieldName) {
@@ -157,6 +157,13 @@ final class DraftCollector {
       }
     }
     return $fields;
+  }
+
+  /**
+   * Keeps the values of a group's own fields.
+   */
+  private static function slice(array $fields, array $group): array {
+    return array_intersect_key($fields, array_flip($group['fieldNames']));
   }
 
 }

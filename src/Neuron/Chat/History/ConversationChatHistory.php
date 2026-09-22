@@ -7,6 +7,7 @@ namespace Drupal\oe_ai_assistant\Neuron\Chat\History;
 use Drupal\Core\Entity\EntityInterface;
 use Drupal\oe_ai_assistant\Entity\AiConversationMessageInterface;
 use Drupal\oe_ai_assistant\Entity\Storage\AiConversationMessageStorageInterface;
+use Drupal\oe_ai_assistant\Neuron\Tools\ToolResult;
 use Drupal\oe_ai_assistant\Service\MessageRecorderInterface;
 use NeuronAI\Chat\History\AbstractChatHistory;
 use NeuronAI\Chat\History\ChatHistoryInterface;
@@ -119,11 +120,11 @@ final class ConversationChatHistory extends AbstractChatHistory {
     if ($this->lastAssistant === NULL) {
       return;
     }
-    $decoded = json_decode($tool->getResult(), TRUE);
+    $result = ToolResult::decode($tool->getResult());
     $calls = $this->lastAssistant->getToolCalls();
     foreach ($calls as &$call) {
       if (($call['id'] ?? '') === (string) $tool->getCallId()) {
-        $call['result'] = is_array($decoded) ? $decoded : ['text' => $tool->getResult()];
+        $call['result'] = $result;
       }
     }
     unset($call);
