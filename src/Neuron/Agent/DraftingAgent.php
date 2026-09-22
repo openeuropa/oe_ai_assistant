@@ -7,7 +7,6 @@ namespace Drupal\oe_ai_assistant\Neuron\Agent;
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
 use Drupal\oe_ai_assistant\Neuron\Chat\History\ConversationChatHistory;
 use Drupal\oe_ai_assistant\Neuron\Tools\DraftGroupTool;
-use Drupal\oe_ai_assistant\Neuron\Tools\GetContentSchemaTool;
 use Drupal\oe_ai_assistant\Neuron\Tools\GetDraftHistoryTool;
 use Drupal\oe_ai_assistant\Neuron\Tools\ReviseDraftTool;
 use Drupal\oe_ai_assistant\Service\Drafting\DraftCollector;
@@ -19,7 +18,7 @@ use NeuronAI\Tools\ToolInterface;
 /**
  * Conversational agent that gathers requirements and drafts through tools.
  *
- * The model decides when to call the schema, history and group tools; the
+ * The model decides when to call the history and group tools; the
  * group tool runs a drafter sub-agent per call. A tool failure is returned
  * to the model as an error payload, so the conversation continues.
  */
@@ -35,7 +34,7 @@ final class DraftingAgent extends Agent {
 
     Workflow:
     - When the user asks to draft content, review the field groups
-      provided below, or call get_content_schema for the latest ones.
+      provided below.
     - For each group, determine whether you have enough information
       from the conversation to generate meaningful content. If ANY
       field group lacks context, ask the user about it specifically.
@@ -127,7 +126,6 @@ final class DraftingAgent extends Agent {
    */
   protected function tools(): array {
     return $this->declaredTools ??= [
-      new GetContentSchemaTool($this->collector->groups()),
       new GetDraftHistoryTool($this->draftHistory, $this->session),
       new DraftGroupTool($this->collector, $this->conversation(), $this->drafter),
       new ReviseDraftTool(

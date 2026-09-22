@@ -43,13 +43,6 @@ final class DraftCollector {
   ) {}
 
   /**
-   * Returns the schema groups, in drafting order.
-   */
-  public function groups(): array {
-    return $this->groups;
-  }
-
-  /**
    * Returns the ids of every group, in drafting order.
    *
    * @return string[]

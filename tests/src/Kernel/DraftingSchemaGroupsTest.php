@@ -5,20 +5,19 @@ declare(strict_types=1);
 namespace Drupal\Tests\oe_ai_assistant\Kernel;
 
 use Drupal\KernelTests\KernelTestBase;
-use Drupal\oe_ai_assistant\Neuron\Tools\GetContentSchemaTool;
 use Drupal\oe_ai_assistant\Service\DraftingSchemaProviderInterface;
 use Drupal\oe_ai_assistant\Service\EntityJsonSchemaComposer;
 use PHPUnit\Framework\Attributes\Group;
 
 /**
- * Tests the schema tool and the schema splitting behind it.
+ * Tests the schema groups resolved for drafting and the splitting behind them.
  *
  * Uses the oe_news content type from the test fixture to verify
  * that fields are correctly split into main_fields and per-entity
  * reference groups.
  */
 #[Group('oe_ai_assistant')]
-class GetContentSchemaTest extends KernelTestBase {
+class DraftingSchemaGroupsTest extends KernelTestBase {
 
   /**
    * {@inheritdoc}
@@ -44,7 +43,6 @@ class GetContentSchemaTest extends KernelTestBase {
     'options',
     'key',
     'ai',
-    'ai_agents',
     'oe_ai_assistant',
     'state_machine',
     'document_loader',
@@ -81,34 +79,18 @@ class GetContentSchemaTest extends KernelTestBase {
   }
 
   /**
-   * Runs the schema tool over the groups resolved for a content and template.
-   *
-   * @return array
-   *   The decoded tool result.
+   * Resolves the groups for a content type and template.
    */
-  private function runTool(string $entityTypeId, string $bundle, ?string $templateId = NULL): array {
-    $groups = $this->container->get(DraftingSchemaProviderInterface::class)->groups($entityTypeId, $bundle, $templateId);
-    $tool = new GetContentSchemaTool($groups);
-    return json_decode($tool(), TRUE);
+  private function resolveGroups(string $entityTypeId, string $bundle, ?string $templateId = NULL): array {
+    return $this->container->get(DraftingSchemaProviderInterface::class)->groups($entityTypeId, $bundle, $templateId);
   }
 
   /**
-   * Tests that the tool sends the groups to the model as compact JSON.
-   */
-  public function testToolOutputIsCompactJson(): void {
-    $groups = $this->container->get(DraftingSchemaProviderInterface::class)
-      ->groups('node', 'oe_news', 'news_default');
-    $tool = new GetContentSchemaTool($groups);
-
-    $this->assertSame(json_encode($groups), $tool());
-  }
-
-  /**
-   * An explicit template context restricts the tool output to its fields.
+   * An explicit template context restricts the groups to its fields.
    */
   public function testExecuteWithTemplateUsesThatTemplate(): void {
     // news_default lists title, field_teaser, field_body (all scalar).
-    $groups = $this->runTool('node', 'oe_news', 'news_default');
+    $groups = $this->resolveGroups('node', 'oe_news', 'news_default');
 
     $byId = array_column($groups, 'fieldNames', 'groupId');
     $this->assertSame(['title', 'field_teaser', 'field_body'], $byId['main_fields']);
@@ -122,7 +104,7 @@ class GetContentSchemaTest extends KernelTestBase {
   public function testInvalidTemplateIsRejected(): void {
     $this->expectException(\InvalidArgumentException::class);
     $this->expectExceptionMessage('not found');
-    $this->runTool('node', 'oe_news', 'does_not_exist');
+    $this->resolveGroups('node', 'oe_news', 'does_not_exist');
   }
 
   /**
@@ -131,7 +113,7 @@ class GetContentSchemaTest extends KernelTestBase {
   public function testExecuteWithoutTemplateAutoPicksLatest(): void {
     // oe_news' latest template is news_with_paragraphs (title, field_teaser,
     // field_content_paragraphs), not the full schema.
-    $groups = $this->runTool('node', 'oe_news');
+    $groups = $this->resolveGroups('node', 'oe_news');
 
     $byId = array_column($groups, 'fieldNames', 'groupId');
     $this->assertSame(['title', 'field_teaser'], $byId['main_fields']);
