@@ -26,13 +26,11 @@ services:
   Drupal\oe_ai_assistant\Service\AiEditorialContextInterface: '@Drupal\oe_ai_assistant\Service\AiEditorialContext'
 
   Drupal\oe_ai_assistant\Service\Drafting\ContextDocumentRepository: {}
+  Drupal\oe_ai_assistant\Service\TextFormatResolver: {}
 
   # Drives a document through extraction and summarisation.
   Drupal\oe_ai_assistant\Service\Drafting\DocumentExtractionProcessorInterface:
     class: Drupal\oe_ai_assistant\Service\Drafting\DocumentExtractionProcessor
-
-  Drupal\oe_ai_assistant\Service\TextFormatResolver: {}
-  Drupal\oe_ai_assistant\Service\TextFormatResolverInterface: '@Drupal\oe_ai_assistant\Service\TextFormatResolver'
 
   Drupal\oe_ai_assistant\Service\InlineEntityHydrator: {}
 

@@ -93,6 +93,17 @@ class GetContentSchemaTest extends KernelTestBase {
   }
 
   /**
+   * Tests that the tool sends the groups to the model as compact JSON.
+   */
+  public function testToolOutputIsCompactJson(): void {
+    $groups = $this->container->get(DraftingSchemaProviderInterface::class)
+      ->groups('node', 'oe_news', 'news_default');
+    $tool = new GetContentSchemaTool($groups);
+
+    $this->assertSame(json_encode($groups), $tool());
+  }
+
+  /**
    * An explicit template context restricts the tool output to its fields.
    */
   public function testExecuteWithTemplateUsesThatTemplate(): void {

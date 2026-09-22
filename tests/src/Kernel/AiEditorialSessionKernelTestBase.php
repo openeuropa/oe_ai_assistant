@@ -28,6 +28,7 @@ abstract class AiEditorialSessionKernelTestBase extends KernelTestBase {
     'datetime',
     'file',
     'field',
+    'filter',
     'image',
     'media',
     'text',

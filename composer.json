@@ -17,6 +17,7 @@
         "drupal/ai": "^1.3",
         "drupal/ai_agents": "^1.3@beta",
         "drupal/document_loader": "^2.0",
+        "drupal/key": "^1.22",
         "drupal/state_machine": "^1.14",
         "justinrainbow/json-schema": "^6.0",
         "neuron-core/neuron-ai": "^3.17"
@@ -46,7 +47,7 @@
         "enable-patching": true,
         "patches": {
             "drupal/ai": {
-                "HostnameFilter breaks HTML in JSON (@see https://git.drupalcode.org/project/ai/-/work_items/3586677)": "patches/ai-hostname-filter-handling-of-html-in-json.patch"
+                "HostnameFilter breaks HTML in JSON (@see https://git.drupalcode.org/project/ai/-/work_items/3586677)": "https://raw.githubusercontent.com/openeuropa/oe_ai_assistant/62ecddfe24c1b00d150f3187caac192accd7d32e/patches/ai-hostname-filter-handling-of-html-in-json.patch"
             }
         },
         "installer-paths": {

@@ -7,8 +7,10 @@ namespace Drupal\oe_ai_assistant\Service;
 use Drupal\Core\Entity\ContentEntityTypeInterface;
 use Drupal\Core\Entity\EntityFieldManagerInterface;
 use Drupal\Core\Entity\EntityTypeBundleInfoInterface;
+use Drupal\Core\Entity\EntityTypeInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Field\FieldDefinitionInterface;
+use Drupal\Core\Field\FieldItemInterface;
 use Drupal\Core\Field\FieldItemListInterface;
 use Drupal\Core\Field\FieldStorageDefinitionInterface;
 use Drupal\Core\Field\Plugin\Field\FieldType\EntityReferenceItem;
@@ -190,7 +192,7 @@ class EntityJsonSchemaComposer {
       $schemaProperties = [];
       $required = [];
       foreach ($properties as $fieldName => $fieldItemList) {
-        if (isset($skip[$fieldName])) {
+        if (isset($skip[$fieldName]) || $this->hasSerializedColumn($entityType, $fieldItemList)) {
           continue;
         }
         $schemaProperties[$fieldName] = $this->composeField($fieldItemList, $depth);
@@ -254,6 +256,76 @@ class EntityJsonSchemaComposer {
   }
 
   /**
+   * Checks whether a field's exposable properties are all serialized.
+   *
+   * Detection mirrors core's
+   * `SerializedColumnNormalizerTrait::getSerializedPropertyNames()`: a
+   * property is serialized either via the entity type's
+   * 'serialized_field_property_names' override (e.g. paragraphs'
+   * `behavior_settings`) or via a `serialize: true` flag on its storage
+   * schema column. Core's FieldItemNormalizer refuses to denormalize a
+   * string value for such a property, so exposing it would let the LLM
+   * emit a value core then rejects.
+   *
+   * Only fields left with NO non-serialized property (e.g. `behavior_settings`,
+   * whose sole property is serialized) are skipped outright. A field with a
+   * mix (e.g. link's `options` alongside plain `uri`/`title`) keeps its
+   * usable properties; composeItem() omits the serialized ones.
+   *
+   * @param \Drupal\Core\Entity\ContentEntityTypeInterface $entityType
+   *   The entity type the field belongs to.
+   * @param \Drupal\Core\Field\FieldItemListInterface $fieldItemList
+   *   The field item list to introspect.
+   *
+   * @return bool
+   *   TRUE if every exposable property of the field is serialized.
+   */
+  private function hasSerializedColumn(ContentEntityTypeInterface $entityType, FieldItemListInterface $fieldItemList): bool {
+    $serializedNames = $this->getSerializedPropertyNames($entityType, $fieldItemList);
+    if ($serializedNames === []) {
+      return FALSE;
+    }
+
+    $exposedNames = [];
+    foreach ($fieldItemList->getItemDefinition()->getPropertyDefinitions() as $propName => $propDef) {
+      if (!$propDef->isComputed() && !$propDef->isInternal()) {
+        $exposedNames[] = $propName;
+      }
+    }
+
+    return array_diff($exposedNames, $serializedNames) === [];
+  }
+
+  /**
+   * Gets the names of a field's serialized properties.
+   *
+   * @param \Drupal\Core\Entity\EntityTypeInterface $entityType
+   *   The entity type the field belongs to.
+   * @param \Drupal\Core\Field\FieldItemListInterface $fieldItemList
+   *   The field item list to introspect.
+   *
+   * @return string[]
+   *   The serialized property names.
+   */
+  private function getSerializedPropertyNames(EntityTypeInterface $entityType, FieldItemListInterface $fieldItemList): array {
+    $fieldDef = $fieldItemList->getFieldDefinition();
+    $itemClass = $fieldItemList->getItemDefinition()->getClass();
+    if (!is_a($itemClass, FieldItemInterface::class, TRUE)) {
+      return [];
+    }
+
+    $serializedNames = $entityType->get('serialized_field_property_names')[$fieldDef->getName()] ?? [];
+    $columns = $itemClass::schema($fieldDef->getFieldStorageDefinition())['columns'] ?? [];
+    foreach ($columns as $columnName => $column) {
+      if (($column['serialize'] ?? FALSE) === TRUE) {
+        $serializedNames[] = $columnName;
+      }
+    }
+
+    return $serializedNames;
+  }
+
+  /**
    * Composes the schema for one field, applying cardinality wrapping.
    *
    * Always wraps the item schema in `{type: "array", items: ...}`: the
@@ -314,8 +386,9 @@ class EntityJsonSchemaComposer {
   /**
    * Composes the per-item schema for a field's first item.
    *
-   * Walks the item's non-computed, non-internal property definitions and
-   * normalises each leaf via core's `'json_schema'` format. Always wraps as
+   * Walks the item's non-computed, non-internal, non-serialized property
+   * definitions and normalises each leaf via core's `'json_schema'` format.
+   * Always wraps as
    * `{type: "object", properties: {...}, required?: [...]}`. Single-property
    * collapse is intentionally absent because the denormalize-input shape
    * requires the LLM to emit the wrapped form (`[{"value": "..."}]`) so
@@ -337,10 +410,12 @@ class EntityJsonSchemaComposer {
     $item = $fieldItemList->first();
     $itemDef = $item->getDataDefinition();
 
+    $serializedNames = $this->getSerializedPropertyNames($fieldItemList->getEntity()->getEntityType(), $fieldItemList);
+
     $properties = [];
     $required = [];
     foreach ($itemDef->getPropertyDefinitions() as $propName => $propDef) {
-      if ($propDef->isComputed() || $propDef->isInternal()) {
+      if ($propDef->isComputed() || $propDef->isInternal() || in_array($propName, $serializedNames, TRUE)) {
         continue;
       }
       $properties[$propName] = $this->serializer->normalize(

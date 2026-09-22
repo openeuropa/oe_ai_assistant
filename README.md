@@ -226,3 +226,12 @@ ddev build-app
 ddev phpcs
 ddev phpcbf    # Auto-fix violations
 ```
+
+## Patches
+
+This module patches `drupal/ai_agents` and `drupal/ai` via `cweagans/composer-patches`. Each patch is declared
+with an absolute URL pinned to a commit in this repository, so it is applied automatically on projects that
+enable patches from dependencies.
+
+With `cweagans/composer-patches` v1, dependency patches are only applied if the root `composer.json` sets
+`"enable-patching": true`.

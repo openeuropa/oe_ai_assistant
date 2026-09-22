@@ -4,64 +4,66 @@ declare(strict_types=1);
 
 namespace Drupal\oe_ai_assistant\Service;
 
-use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Entity\FieldableEntityInterface;
 use Drupal\Core\Session\AccountInterface;
+use Drupal\filter\FilterFormatRepositoryInterface;
 
 /**
- * Resolves text formats against the formats the current user may use.
+ * Resolves a text format for formatted-text items the LLM left unset.
+ *
+ * EntityJsonSchemaComposer's JSON Schema omits the `format` property from
+ * formatted-text fields, so LLM output never carries one. Deserializing that
+ * output leaves the item's `format` property empty, which Drupal's render
+ * pipeline falls back to `plain_text` for, escaping markup the LLM produced
+ * (e.g. a literal &lt;p&gt; on the page) instead of rendering it.
  */
-final class TextFormatResolver implements TextFormatResolverInterface {
-
-  /**
-   * The ids of the formats the current user may use, by weight.
-   *
-   * @var string[]|null
-   */
-  private ?array $usable = NULL;
+class TextFormatResolver {
 
   public function __construct(
-    private readonly EntityTypeManagerInterface $entityTypeManager,
     private readonly AccountInterface $currentUser,
+    private readonly FilterFormatRepositoryInterface $filterFormatRepository,
   ) {}
 
   /**
-   * {@inheritdoc}
+   * Fills in the format of any unset formatted-text item on the entity.
+   *
+   * @param \Drupal\Core\Entity\FieldableEntityInterface $entity
+   *   The entity to resolve formats on. Mutated in place.
    */
   public function resolveEntityFormats(FieldableEntityInterface $entity): void {
     foreach ($entity->getFields() as $items) {
-      if (!$items->getFieldDefinition()->getFieldStorageDefinition()->getPropertyDefinition('format')) {
+      $fieldDefinition = $items->getFieldDefinition();
+      if (!$fieldDefinition->getFieldStorageDefinition()->getPropertyDefinition('format')) {
         continue;
       }
       foreach ($items as $item) {
-        $format = $item->get('format')->getValue();
-        if ($format !== NULL && $format !== '' && in_array($format, $this->usableFormats(), TRUE)) {
-          continue;
+        if (empty($item->format)) {
+          $item->format = $this->resolveFormat((array) $fieldDefinition->getSetting('allowed_formats'));
         }
-        $item->set('format', $this->usableFormats()[0]);
       }
     }
   }
 
   /**
-   * Returns the ids of the enabled formats the current user may use.
+   * Resolves a format ID the current user is permitted to use.
    *
-   * Ordered by weight, so the first entry is the user's default format. The
-   * fallback format is usable by everyone, so the list is never empty.
+   * @param array $allowedFormats
+   *   The field's `allowed_formats` setting; empty means unrestricted.
    *
-   * @return string[]
-   *   The format ids.
+   * @return string|null
+   *   A format ID the current user may use, or NULL if the field allows none
+   *   of the user's formats.
    */
-  private function usableFormats(): array {
-    if ($this->usable === NULL) {
-      $formats = $this->entityTypeManager->getStorage('filter_format')->loadByProperties(['status' => TRUE]);
-      uasort($formats, static fn ($a, $b): int => $a->get('weight') <=> $b->get('weight'));
-      $this->usable = array_keys(array_filter(
-        $formats,
-        fn ($format): bool => $format->access('use', $this->currentUser),
-      ));
+  private function resolveFormat(array $allowedFormats): ?string {
+    if (!$allowedFormats) {
+      return $this->filterFormatRepository->getDefaultFormat($this->currentUser)->id();
     }
-    return $this->usable;
+
+    $permitted = array_keys($this->filterFormatRepository->getFormatsForAccount($this->currentUser));
+    $intersection = array_intersect($allowedFormats, $permitted);
+    // The user's default format is not a fallback here, as the field does
+    // not allow it; the format stays unset instead.
+    return $intersection ? reset($intersection) : NULL;
   }
 
 }
