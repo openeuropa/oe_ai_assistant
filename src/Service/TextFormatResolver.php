@@ -16,11 +16,6 @@ use Drupal\filter\FilterFormatRepositoryInterface;
  * output leaves the item's `format` property empty, which Drupal's render
  * pipeline falls back to `plain_text` for, escaping markup the LLM produced
  * (e.g. a literal &lt;p&gt; on the page) instead of rendering it.
- *
- * Used by both DraftEntityBuilder (on the built entity) and
- * InlineEntityHydrator (on every inline child it builds, including nested
- * ones) after deserialization, since neither can rely on the other to have
- * covered the entities it builds.
  */
 class TextFormatResolver {
 
