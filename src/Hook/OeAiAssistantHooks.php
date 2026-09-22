@@ -54,11 +54,7 @@ final class OeAiAssistantHooks {
       return;
     }
     $settings = $context['fieldDefinition']?->getSettings();
-    if (isset($settings['handler'])
-      && isset($settings['target_type'])
-      && $settings['handler'] == 'default:node_type'
-      && $settings['target_type'] == 'node_type'
-    ) {
+    if (isset($settings['target_type']) && $settings['target_type'] == 'node_type') {
       $accessHandler = \Drupal::entityTypeManager()->getAccessControlHandler('node');
       $valid_options = [];
       foreach ($options as $type => $option) {

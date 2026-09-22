@@ -36,7 +36,7 @@ class AiDraftingTemplateSelection extends DefaultSelection {
       // Without a host session, match nothing.
       $target_type = $this->getConfiguration()['target_type'];
       $id_key = $this->entityTypeManager->getDefinition($target_type)->getKey('id');
-      $query->condition($id_key, NULL, '=');
+      $query->notExists($id_key);
       return $query;
     }
 

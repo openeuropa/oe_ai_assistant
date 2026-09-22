@@ -375,6 +375,20 @@ class EntityJsonSchemaComposerTest extends KernelTestBase {
   }
 
   /**
+   * Asserts the paragraphs serialized base field is excluded.
+   *
+   * `behavior_settings` has a serialized property (core's
+   * SerializedColumnNormalizerTrait raises `\LogicException` on
+   * denormalizing a string for it), so composing it into the schema would
+   * let the LLM emit a plain string that then fails deserialization.
+   */
+  public function testSerializedBehaviorSettingsFieldExcluded(): void {
+    $schema = $this->composer()->compose('paragraph', 'quote_block');
+    $this->assertArrayNotHasKey('behavior_settings', $schema['properties'],
+      'behavior_settings is excluded from the schema.');
+  }
+
+  /**
    * Asserts auto-managed base fields (created, changed) are excluded.
    */
   public function testAutoManagedBaseFieldsExcluded(): void {
@@ -425,6 +439,22 @@ class EntityJsonSchemaComposerTest extends KernelTestBase {
     $this->assertSame('object', $link['items']['type']);
     $this->assertArrayHasKey('uri', $link['items']['properties']);
     $this->assertArrayHasKey('title', $link['items']['properties']);
+  }
+
+  /**
+   * Asserts a serialized property is omitted from an otherwise exposed field.
+   */
+  public function testSerializedPropertyOfMixedFieldExcluded(): void {
+    // The link item mixes plain properties (uri, title) with the serialized
+    // `options` column, so the field stays in the schema but `options` must
+    // not: core's SerializedColumnNormalizerTrait raises `\LogicException` on
+    // denormalizing a string for it.
+    $schema = $this->composer()->compose('node', 'oe_news');
+    $properties = $schema['properties']['field_news_link']['items']['properties'];
+
+    $this->assertArrayHasKey('uri', $properties);
+    $this->assertArrayNotHasKey('options', $properties,
+      'The serialized options property is excluded from the schema.');
   }
 
   /**
