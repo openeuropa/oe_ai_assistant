@@ -186,7 +186,8 @@ class AiEditorialSessionListBuilder extends EntityListBuilder {
     $build = [];
     $build['sessions_header'] = [
       '#type' => 'container',
-      '#attributes' => ['class' => ['container-inline']],
+      '#attributes' => ['class' => ['container-inline', 'oe-ai-session-list-header']],
+      '#attached' => ['library' => ['oe_ai_assistant/session_builder']],
     ];
     $build['sessions_header']['add_new_session'] = [
       '#type' => 'link',
@@ -198,9 +199,7 @@ class AiEditorialSessionListBuilder extends EntityListBuilder {
     ];
     $build['sessions_header']['tansparency_notice'] = [
       '#type' => 'container',
-      'content' => [
-        '#markup' => $this->transparencyNotice->getNotice(),
-      ],
+      '#markup' => $this->transparencyNotice->getNotice(),
     ];
     $build += parent::render();
 
