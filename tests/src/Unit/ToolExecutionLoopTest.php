@@ -9,6 +9,7 @@ use Drupal\ai\OperationType\Chat\Tools\ToolsFunctionOutputInterface;
 use Drupal\ai\OperationType\Chat\Tools\ToolsPropertyInput;
 use Drupal\ai\OperationType\Chat\ChatMessage;
 use Drupal\ai\OperationType\Chat\ChatOutput;
+use Drupal\ai\OperationType\Chat\ChatInterface;
 use Drupal\ai\OperationType\Chat\StreamedChatMessageIteratorInterface;
 use Drupal\oe_ai_assistant\Service\ToolExecutionLoop;
 use Drupal\oe_ai_assistant\Service\ToolExecutorInterface;
@@ -305,9 +306,7 @@ class ToolExecutionLoopTest extends TestCase {
    */
   private function createMockProvider(array $outputs): object {
     $callIndex = 0;
-    $provider = $this->getMockBuilder(\stdClass::class)
-      ->addMethods(['chat'])
-      ->getMock();
+    $provider = $this->createMock(ChatInterface::class);
     $provider->method('chat')
       ->willReturnCallback(function () use (&$callIndex, $outputs) {
         return $outputs[$callIndex++];

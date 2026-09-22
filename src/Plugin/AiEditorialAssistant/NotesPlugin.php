@@ -36,7 +36,7 @@ class NotesPlugin extends AiAssistantPluginBase {
    *
    * @var \Drupal\Core\State\StateInterface
    */
-  private readonly StateInterface $state;
+  protected StateInterface $state;
 
   /**
    * {@inheritdoc}

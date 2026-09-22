@@ -6,15 +6,48 @@ namespace Drupal\oe_ai_assistant;
 
 use Drupal\Core\Access\AccessResult;
 use Drupal\Core\Entity\EntityAccessControlHandler;
+use Drupal\Core\Entity\EntityHandlerInterface;
 use Drupal\Core\Entity\EntityInterface;
+use Drupal\Core\Entity\EntityTypeInterface;
+use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Session\AccountInterface;
 use Drupal\node\NodeTypeInterface;
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
+use Symfony\Component\DependencyInjection\ContainerInterface;
 
 /**
  * Access control handler for AI editorial sessions.
  */
-class AiEditorialSessionAccessControlHandler extends EntityAccessControlHandler {
+class AiEditorialSessionAccessControlHandler extends EntityAccessControlHandler implements EntityHandlerInterface {
+
+  /**
+   * The entity type manager.
+   */
+  protected EntityTypeManagerInterface $entityTypeManager;
+
+  /**
+   * Constructs an AI editorial session access control handler.
+   */
+  public function __construct(
+    EntityTypeInterface $entity_type,
+    EntityTypeManagerInterface $entity_type_manager,
+  ) {
+    parent::__construct($entity_type);
+    $this->entityTypeManager = $entity_type_manager;
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public static function createInstance(
+    ContainerInterface $container,
+    EntityTypeInterface $entity_type,
+  ): static {
+    return new static(
+      $entity_type,
+      $container->get('entity_type.manager'),
+    );
+  }
 
   /**
    * {@inheritdoc}
@@ -51,7 +84,7 @@ class AiEditorialSessionAccessControlHandler extends EntityAccessControlHandler 
     }
 
     $result = AccessResult::neutral()->cachePerPermissions();
-    $node_types = \Drupal::entityTypeManager()
+    $node_types = $this->entityTypeManager
       ->getStorage('node_type')
       ->loadMultiple();
 
