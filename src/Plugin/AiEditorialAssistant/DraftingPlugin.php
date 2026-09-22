@@ -389,10 +389,8 @@ class DraftingPlugin extends AiAssistantPluginBase {
   /**
    * Versions the consolidated fields with the context that produced them.
    *
-   * Prior drafts already carry a version; the calls of the current turn do
-   * not yet, so the count is the number of earlier drafts. A revision
-   * inherits the snapshot of the draft it revises, since that context
-   * produced the content it starts from.
+   * A revision inherits the snapshot of the draft it revises, since that
+   * context produced the content it starts from.
    *
    * @param \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $session
    *   The session hosting the conversation.
@@ -406,11 +404,10 @@ class DraftingPlugin extends AiAssistantPluginBase {
    *   The snapshot to inherit, or NULL to snapshot the turn's context.
    *
    * @return array
-   *   The draft shaped {version, context, fields, revisionOf}.
+   *   The draft shaped {version, major, minor, context, fields, revisionOf}.
    */
   private function versionDraft(AiEditorialSessionInterface $session, EditorialContext $editorialContext, array $fields, ?int $revisionOf = NULL, ?array $inherited = NULL): array {
-    return [
-      'version' => $this->draftHistory->countDrafts($session) + 1,
+    return $this->draftHistory->nextVersion($session, $revisionOf) + [
       'context' => $inherited ?? $editorialContext->toSnapshot(),
       'fields' => $fields,
       'revisionOf' => $revisionOf,

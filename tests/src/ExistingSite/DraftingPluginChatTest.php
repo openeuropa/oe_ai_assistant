@@ -950,6 +950,8 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
           'group' => 'main_fields',
           'draft' => [
             'version' => 1,
+            'major' => 1,
+            'minor' => 0,
             'context' => [
               'tone' => ['id' => '1', 'label' => 'Formal', 'prompt' => 'Use professional, institutional language.'],
               'template' => ['id' => 'news_default', 'label' => 'News default'],
@@ -968,6 +970,8 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
           'group' => 'main_fields',
           'draft' => [
             'version' => 2,
+            'major' => 2,
+            'minor' => 0,
             'context' => [
               'tone' => ['id' => '2', 'label' => 'Technical', 'prompt' => 'Use domain-specific terminology precisely.'],
               'template' => ['id' => 'news_default', 'label' => 'News default'],

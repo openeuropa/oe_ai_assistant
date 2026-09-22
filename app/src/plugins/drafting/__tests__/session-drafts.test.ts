@@ -21,11 +21,12 @@ function revisePart(draft: unknown) {
   };
 }
 
-/** Builds a stored draft, optionally revising another version. */
-function draft(version: number, revisionOf: number | null = null) {
+/** Builds a stored draft, numbered as the backend numbers it. */
+function draft(version: number, major: number, minor = 0) {
   return {
     version,
-    revisionOf,
+    major,
+    minor,
     context: { tone: null, template: null, documents: [] },
     fields: { title: `v${version}` },
   };
@@ -36,13 +37,13 @@ describe("extractSessionDrafts", () => {
     expect(extractSessionDrafts([])).toEqual([]);
   });
 
-  it("numbers revisions under the draft they revise", () => {
+  it("lists revisions under the draft they revise", () => {
     // A revision of the first draft, produced after the second one.
     const messages = [
       { content: [{ type: "text" }] },
-      { content: [draftPart(draft(1))] },
-      { content: [draftPart(draft(2))] },
-      { content: [revisePart(draft(3, 1))] },
+      { content: [draftPart(draft(1, 1))] },
+      { content: [draftPart(draft(2, 2))] },
+      { content: [revisePart(draft(3, 1, 1))] },
     ];
 
     const drafts = extractSessionDrafts(messages);
@@ -60,14 +61,9 @@ describe("extractSessionDrafts", () => {
 
   it("carries the creation time of the message holding the draft", () => {
     const createdAt = new Date(2026, 4, 22, 14, 30);
-    const versioned = {
-      version: 1,
-      context: { tone: null, template: null, documents: [] },
-      fields: { title: "Timed" },
-    };
     const messages = [
-      { content: [draftPart(versioned)], createdAt },
-      { content: [draftPart({ ...versioned, version: 2 })] },
+      { content: [draftPart(draft(1, 1))], createdAt },
+      { content: [draftPart(draft(2, 2))] },
     ];
 
     const drafts = extractSessionDrafts(messages);

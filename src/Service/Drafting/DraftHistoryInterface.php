@@ -10,21 +10,27 @@ use Drupal\Core\Entity\EntityInterface;
  * Reads the generated-draft history of an editorial session.
  *
  * Drafts live on the tool call that completed them in the persisted
- * transcript; this service is the single reader used both to compute the
- * next version number and to answer the get_draft_history tool.
+ * transcript; this service is the single reader used both to number the
+ * next draft and to answer the get_draft_history tool.
  */
 interface DraftHistoryInterface {
 
   /**
-   * Counts the drafts already stored for a session.
+   * Numbers the draft about to be stored for a session.
+   *
+   * A revision joins the group of the draft it started from and takes its
+   * next minor number; anything else opens the next major group.
    *
    * @param \Drupal\Core\Entity\EntityInterface $session
    *   The session hosting the conversation.
+   * @param int|null $revisionOf
+   *   The version being revised, or NULL for a new draft.
    *
-   * @return int
-   *   The number of versioned drafts stored on the transcript.
+   * @return array
+   *   {version: N, major: M, minor: m}: the version follows the drafts
+   *   already stored, the major and minor form the "M.m" label.
    */
-  public function countDrafts(EntityInterface $session): int;
+  public function nextVersion(EntityInterface $session, ?int $revisionOf = NULL): array;
 
   /**
    * Lists the stored drafts with their provenance snapshots.

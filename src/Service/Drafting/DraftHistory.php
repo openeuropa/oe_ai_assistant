@@ -21,76 +21,77 @@ final class DraftHistory implements DraftHistoryInterface {
   /**
    * {@inheritdoc}
    */
-  public function countDrafts(EntityInterface $session): int {
-    return count($this->collectDrafts($session));
+  public function nextVersion(EntityInterface $session, ?int $revisionOf = NULL): array {
+    $drafts = $this->collectDrafts($session);
+    $root = $revisionOf === NULL ? NULL : self::find($drafts, $revisionOf);
+    if ($root === NULL) {
+      $major = max([0, ...array_column($drafts, 'major')]) + 1;
+      $minor = 0;
+    }
+    else {
+      $major = (int) $root['major'];
+      $siblings = array_filter($drafts, fn (array $draft): bool => (int) $draft['major'] === $major);
+      $minor = max(array_column($siblings, 'minor')) + 1;
+    }
+    return ['version' => count($drafts) + 1, 'major' => $major, 'minor' => $minor];
   }
 
   /**
    * {@inheritdoc}
    */
   public function listDrafts(EntityInterface $session): array {
-    $entries = [];
-    $majors = [];
-    $minors = [];
+    $drafts = $this->collectDrafts($session);
+    // Revisions follow the draft they belong to, whatever else was drafted
+    // in between.
+    usort($drafts, fn (array $a, array $b): int => [$a['major'], $a['minor']] <=> [$b['major'], $b['minor']]);
 
-    foreach ($this->collectDrafts($session) as $draft) {
-      $version = (int) $draft['version'];
-      $root = isset($draft['revisionOf']) ? (int) $draft['revisionOf'] : NULL;
-      // A revision joins the group of the draft it started from. Anything
-      // else, a new draft or a revision of a draft that is no longer
-      // stored, opens a group of its own.
-      if ($root !== NULL && isset($majors[$root])) {
-        $major = $majors[$root];
-        $minor = ++$minors[$root];
-      }
-      else {
-        $root = NULL;
-        $major = $majors[$version] = count($majors) + 1;
-        $minor = $minors[$version] = 0;
-      }
+    $entries = [];
+    foreach ($drafts as $draft) {
       // The schemas of the groups are only needed to revise a draft, so the
       // listing names them instead of carrying them.
       $context = $draft['context'] ?? [];
       $groups = is_array($context['groups'] ?? NULL) ? $context['groups'] : [];
       unset($context['groups']);
 
-      $label = $major . '.' . $minor;
+      $label = $draft['major'] . '.' . $draft['minor'];
       $entries[] = [
-        'major' => $major,
-        'minor' => $minor,
-        'draft' => [
-          'name' => 'Draft ' . $label,
-          'label' => $label,
-          'version' => $version,
-          'revisionOf' => $root,
-          'groups' => array_map(
-            fn (array $group): array => ['id' => $group['groupId'], 'label' => $group['label']],
-            $groups,
-          ),
-          'context' => $context,
-        ],
+        'name' => 'Draft ' . $label,
+        'label' => $label,
+        'version' => (int) $draft['version'],
+        'revisionOf' => isset($draft['revisionOf']) ? (int) $draft['revisionOf'] : NULL,
+        'groups' => array_map(
+          fn (array $group): array => ['id' => $group['groupId'], 'label' => $group['label']],
+          $groups,
+        ),
+        'context' => $context,
       ];
     }
-
-    // Revisions follow the draft they belong to, whatever else was drafted
-    // in between.
-    usort($entries, fn (array $a, array $b): int => [$a['major'], $a['minor']] <=> [$b['major'], $b['minor']]);
-    return array_column($entries, 'draft');
+    return $entries;
   }
 
   /**
    * {@inheritdoc}
    */
   public function getDraftContent(EntityInterface $session, int $version): ?array {
-    foreach ($this->collectDrafts($session) as $draft) {
-      if ((int) $draft['version'] !== $version) {
-        continue;
+    $draft = self::find($this->collectDrafts($session), $version);
+    if ($draft === NULL) {
+      return NULL;
+    }
+    return [
+      'fields' => $draft['fields'] ?? [],
+      'templateId' => $draft['context']['template']['id'] ?? NULL,
+      'context' => $draft['context'] ?? NULL,
+    ];
+  }
+
+  /**
+   * Returns the draft carrying a version, or NULL when none does.
+   */
+  private static function find(array $drafts, int $version): ?array {
+    foreach ($drafts as $draft) {
+      if ((int) $draft['version'] === $version) {
+        return $draft;
       }
-      return [
-        'fields' => $draft['fields'] ?? [],
-        'templateId' => $draft['context']['template']['id'] ?? NULL,
-        'context' => $draft['context'] ?? NULL,
-      ];
     }
     return NULL;
   }
@@ -102,7 +103,7 @@ final class DraftHistory implements DraftHistoryInterface {
    * produced it.
    *
    * @return array
-   *   The drafts shaped {version, context, fields, revisionOf}.
+   *   The drafts shaped {version, major, minor, context, fields, revisionOf}.
    */
   private function collectDrafts(EntityInterface $session): array {
     $storage = $this->entityTypeManager->getStorage('ai_conversation_message');

@@ -4,9 +4,10 @@
  * Normalises the draft stored on the completing draft_group call into a
  * consistent shape. The backend persists two formats:
  *
- *   - Versioned: `{version, context, fields}` introduced when provenance
- *     tracking was added. The context captures the tone, template, and
- *     documents that were active when the draft was generated.
+ *   - Versioned: `{version, major, minor, context, fields}` introduced when
+ *     provenance tracking was added. The major and minor numbers place the
+ *     draft under the one it revises; the context captures the tone,
+ *     template, and documents that were active when it was generated.
  *   - Legacy flat: any other object-like value where the object itself is
  *     the fields map.
  */
@@ -42,8 +43,10 @@ export interface DraftContext {
 export interface ParsedDraftResult {
   /** Numeric version when the versioned shape is detected; null for legacy. */
   version: number | null;
-  /** The version this draft revises; null when it is a new draft. */
-  revisionOf: number | null;
+  /** Group number: the draft it revises shares it; 0 for legacy. */
+  major: number;
+  /** Position within the group, 0 for the draft that opened it. */
+  minor: number;
   /** Editorial context present in versioned shape; null for legacy. */
   context: DraftContext | null;
   /** The field values for this draft, keyed by field name. */
@@ -99,7 +102,13 @@ function normaliseContext(raw: unknown): DraftContext {
  */
 export function parseDraftResult(result: unknown): ParsedDraftResult {
   if (!isPlainObject(result)) {
-    return { version: null, revisionOf: null, context: null, fields: {} };
+    return {
+      version: null,
+      major: 0,
+      minor: 0,
+      context: null,
+      fields: {},
+    };
   }
 
   const hasNumericVersion = typeof result["version"] === "number";
@@ -108,13 +117,19 @@ export function parseDraftResult(result: unknown): ParsedDraftResult {
   if (hasNumericVersion && hasObjectFields) {
     return {
       version: result["version"] as number,
-      revisionOf:
-        typeof result["revisionOf"] === "number" ? result["revisionOf"] : null,
+      major: typeof result["major"] === "number" ? result["major"] : 0,
+      minor: typeof result["minor"] === "number" ? result["minor"] : 0,
       context: normaliseContext(result["context"]),
       fields: result["fields"] as Record<string, unknown>,
     };
   }
 
   // Legacy flat map: the whole result object is the fields map.
-  return { version: null, revisionOf: null, context: null, fields: result };
+  return {
+    version: null,
+    major: 0,
+    minor: 0,
+    context: null,
+    fields: result,
+  };
 }

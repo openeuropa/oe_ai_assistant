@@ -35,7 +35,7 @@ final class DraftCollector {
    *   schemaSlice, in drafting order.
    * @param \Closure $versionDraft
    *   Versions and stores the consolidated fields, called with them and
-   *   returning the draft shaped {version, context, fields}.
+   *   returning the draft shaped {version, major, minor, context, fields}.
    */
   public function __construct(
     private readonly array $groups,
