@@ -33,7 +33,14 @@ final class DraftHistory implements DraftHistoryInterface {
       $siblings = array_filter($drafts, fn (array $draft): bool => (int) $draft['major'] === $major);
       $minor = max(array_column($siblings, 'minor')) + 1;
     }
-    return ['version' => count($drafts) + 1, 'major' => $major, 'minor' => $minor];
+    return [
+      'version' => count($drafts) + 1,
+      'major' => $major,
+      'minor' => $minor,
+      // Only a draft that joined a group revises another one: a root that
+      // is not stored opens a new group instead.
+      'revisionOf' => $root === NULL ? NULL : $revisionOf,
+    ];
   }
 
   /**
@@ -58,7 +65,7 @@ final class DraftHistory implements DraftHistoryInterface {
         'name' => 'Draft ' . $label,
         'label' => $label,
         'version' => (int) $draft['version'],
-        'revisionOf' => isset($draft['revisionOf']) ? (int) $draft['revisionOf'] : NULL,
+        'revisionOf' => $draft['revisionOf'] ?? NULL,
         'groups' => array_map(
           fn (array $group): array => ['id' => $group['groupId'], 'label' => $group['label']],
           $groups,

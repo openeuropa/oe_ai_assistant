@@ -1104,7 +1104,7 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
    *   The session hosting the conversation.
    *
    * @return array
-   *   The drafts shaped {version, context, fields, revisionOf}.
+   *   The drafts shaped {version, major, minor, context, fields, revisionOf}.
    */
   protected function loadDraftResults(AiEditorialSessionInterface $session): array {
     $results = [];

@@ -27,8 +27,10 @@ interface DraftHistoryInterface {
    *   The version being revised, or NULL for a new draft.
    *
    * @return array
-   *   {version: N, major: M, minor: m}: the version follows the drafts
-   *   already stored, the major and minor form the "M.m" label.
+   *   {version: N, major: M, minor: m, revisionOf: N|null}: the version
+   *   follows the drafts already stored, the major and minor form the "M.m"
+   *   label, and revisionOf names the draft whose group was joined, NULL when
+   *   a new group was opened.
    */
   public function nextVersion(EntityInterface $session, ?int $revisionOf = NULL): array;
 

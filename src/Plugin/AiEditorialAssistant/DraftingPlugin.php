@@ -410,7 +410,6 @@ class DraftingPlugin extends AiAssistantPluginBase {
     return $this->draftHistory->nextVersion($session, $revisionOf) + [
       'context' => $inherited ?? $editorialContext->toSnapshot(),
       'fields' => $fields,
-      'revisionOf' => $revisionOf,
     ];
   }
 
