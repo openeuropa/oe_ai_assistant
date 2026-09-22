@@ -290,18 +290,7 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
     ]);
 
     // The agent revises the main fields of the latest draft.
-    MockAiProvider::enqueue(new MockResponse(
-      toolCalls: [
-        [
-          'id' => 'call_r1',
-          'type' => 'function',
-          'function' => [
-            'name' => 'revise_draft',
-            'arguments' => '{"instruction": "Make the title shorter.", "groups": ["main_fields"]}',
-          ],
-        ],
-      ],
-    ));
+    $this->enqueueRevision(['instruction' => 'Make the title shorter.', 'groups' => ['main_fields']]);
     MockAiProvider::enqueue(new MockResponse(
       text: '{"title": [{"value": "Short"}], "field_teaser": [{"value": "Test teaser."}]}',
     ));
@@ -315,16 +304,7 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
       'Expected 200. Body: ' . substr($result['body'], 0, 500));
 
     // The revision drafted one group only, after the two of the first turn.
-    \Drupal::state()->resetCache();
-    $groupCalls = array_filter(
-      MockAiProvider::getCallLog(),
-      fn($call) => str_contains($call['system_prompt'], 'You are a content generator'),
-    );
-    $groupCalls = array_filter(
-      MockAiProvider::getCallLog(),
-      fn($call) => str_contains($call['system_prompt'], 'You are a content generator'),
-    );
-    $this->assertCount(3, $groupCalls,
+    $this->assertSame(3, $this->drafterCallCount(),
       'Only the revised group is drafted again.');
 
     $drafts = $this->loadDraftResults($session);
@@ -371,18 +351,7 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
     ]);
 
     // The agent asks for a change to the whole draft, naming no group.
-    MockAiProvider::enqueue(new MockResponse(
-      toolCalls: [
-        [
-          'id' => 'call_r1',
-          'type' => 'function',
-          'function' => [
-            'name' => 'revise_draft',
-            'arguments' => '{"instruction": "Append FOO to every field.", "version": 1}',
-          ],
-        ],
-      ],
-    ));
+    $this->enqueueRevision(['instruction' => 'Append FOO to every field.', 'version' => 1]);
     MockAiProvider::enqueue(new MockResponse(
       text: '{"title": [{"value": "Test Title FOO"}], "field_teaser": [{"value": "Test teaser. FOO"}]}',
     ));
@@ -398,12 +367,7 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
 
     // Both groups of the draft were drafted again: the two of the first
     // turn plus two more.
-    \Drupal::state()->resetCache();
-    $groupCalls = array_filter(
-      MockAiProvider::getCallLog(),
-      fn($call) => str_contains($call['system_prompt'], 'You are a content generator'),
-    );
-    $this->assertCount(4, $groupCalls,
+    $this->assertSame(4, $this->drafterCallCount(),
       'Every group of the revised draft is drafted again.');
 
     $drafts = $this->loadDraftResults($session);
@@ -449,18 +413,7 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
     // revision that follows.
     $this->repointDraftTemplate($session, 'news_default');
 
-    MockAiProvider::enqueue(new MockResponse(
-      toolCalls: [
-        [
-          'id' => 'call_r1',
-          'type' => 'function',
-          'function' => [
-            'name' => 'revise_draft',
-            'arguments' => '{"instruction": "Make the title shorter.", "groups": ["main_fields"]}',
-          ],
-        ],
-      ],
-    ));
+    $this->enqueueRevision(['instruction' => 'Make the title shorter.', 'groups' => ['main_fields']]);
     // Answering the original main fields: against the session's current
     // template this would miss field_body and be sent back for a retry.
     MockAiProvider::enqueue(new MockResponse(
@@ -473,12 +426,7 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
       'sessionId' => $session->id(),
     ]);
 
-    \Drupal::state()->resetCache();
-    $groupCalls = array_filter(
-      MockAiProvider::getCallLog(),
-      fn($call) => str_contains($call['system_prompt'], 'You are a content generator'),
-    );
-    $this->assertCount(3, $groupCalls,
+    $this->assertSame(3, $this->drafterCallCount(),
       'The answer matched the original schema, so no correction was needed.');
 
     $drafts = $this->loadDraftResults($session);
@@ -1128,6 +1076,33 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
     ));
     MockAiProvider::enqueue(new MockResponse(text: '{"field_content_paragraphs": []}'));
     MockAiProvider::enqueue(new MockResponse(text: 'Draft 1 is ready. Review it on the right.'));
+  }
+
+  /**
+   * Enqueues a revise_draft request from the mock agent.
+   *
+   * @param array $arguments
+   *   The tool arguments: instruction, and optionally groups and version.
+   */
+  protected function enqueueRevision(array $arguments): void {
+    MockAiProvider::enqueue(new MockResponse(toolCalls: [
+      [
+        'id' => 'call_r1',
+        'type' => 'function',
+        'function' => ['name' => 'revise_draft', 'arguments' => json_encode($arguments)],
+      ],
+    ]));
+  }
+
+  /**
+   * Counts the calls made to the drafter sub-agents so far.
+   */
+  protected function drafterCallCount(): int {
+    \Drupal::state()->resetCache();
+    return count(array_filter(
+      MockAiProvider::getCallLog(),
+      fn($call) => str_contains($call['system_prompt'], 'You are a content generator'),
+    ));
   }
 
   /**
