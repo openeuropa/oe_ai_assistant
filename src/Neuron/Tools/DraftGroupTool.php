@@ -48,8 +48,8 @@ final class DraftGroupTool extends Tool implements HasRunKey {
       self::NAME,
       'Drafts the field values of one field group through a sub-agent.'
       . ' The result lists the groups still pending; the call that completes'
-      . ' the set carries the versioned draft, named "Draft 1", "Draft 2"'
-      . ' and so on.',
+      . ' the set carries the versioned draft. Drafts are named "Draft 1.0",'
+      . ' "Draft 2.0" and so on; get_draft_history lists their names.',
     );
   }
 

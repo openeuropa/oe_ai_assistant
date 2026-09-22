@@ -11,7 +11,7 @@ use NeuronAI\Tools\Tool;
 /**
  * Tool listing the drafts generated in the session being served.
  *
- * Each entry carries the "Draft N" name the editor sees and the provenance
+ * Each entry carries the "Draft M.m" name the editor sees and the provenance
  * snapshot stored at generation time. The session is pinned by the caller,
  * so the model cannot read another session's history.
  */
@@ -34,9 +34,9 @@ final class GetDraftHistoryTool extends Tool {
     parent::__construct(
       self::NAME,
       'Returns the drafts generated in this session, one entry per version'
-      . ' ("Draft 1", "Draft 2", ...), each with the tone, template and'
-      . ' documents that produced it. Refer to drafts by these names; the'
-      . ' user sees the same names.',
+      . ' ("Draft 1.0", "Draft 2.0", a revision "Draft 1.1"), each with the'
+      . ' tone, template and documents that produced it. Refer to drafts by'
+      . ' these names; the user sees the same names.',
     );
   }
 

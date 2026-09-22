@@ -142,7 +142,7 @@ class DraftingPluginSaveTest extends DraftingPluginTestBase {
     MockAiProvider::enqueue(new MockResponse(
       text: '{"title": [{"value": "Stray key title"}], "field_teaser": [{"value": "Teaser."}], "field_body": [{"value": "<p>Text</p>", "format": "full_html"}]}',
     ));
-    MockAiProvider::enqueue(new MockResponse(text: 'Draft 1 is ready.'));
+    MockAiProvider::enqueue(new MockResponse(text: 'Draft 1.0 is ready.'));
 
     $chat = $this->httpPost('/api/ai/plugins/drafting/chat', [
       'message' => 'Generate the draft now.',

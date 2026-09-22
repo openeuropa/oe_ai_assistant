@@ -185,7 +185,7 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
 
     // The model's answer after the tools is streamed as text.
     $text = implode('', array_map(fn($e) => $e['textDelta'] ?? '', $events));
-    $this->assertStringContainsString('Draft 1 is ready', $text);
+    $this->assertStringContainsString('Draft 1.0 is ready', $text);
 
     // The sub-agent transcript is recorded: the calling turn has one system
     // row per group nested under it, followed by the assistant rows.
@@ -1044,7 +1044,7 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
       text: '{"title": [{"value": "Test Title"}], "field_teaser": [{"value": "Test teaser."}]}',
     ));
     MockAiProvider::enqueue(new MockResponse(text: '{"field_content_paragraphs": []}'));
-    MockAiProvider::enqueue(new MockResponse(text: 'Draft 1 is ready. Review it on the right.'));
+    MockAiProvider::enqueue(new MockResponse(text: 'Draft 1.0 is ready. Review it on the right.'));
   }
 
   /**
