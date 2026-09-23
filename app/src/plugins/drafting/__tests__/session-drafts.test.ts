@@ -1,13 +1,34 @@
 import { describe, expect, it } from "vitest";
 import { extractSessionDrafts } from "../session-drafts";
 
-/** Builds a draft_content tool-call part in the assistant-ui shape. */
-function draftPart(result: unknown, argsFields?: Record<string, unknown>) {
+/** Builds a completing draft_group tool-call part in the assistant-ui shape. */
+function draftPart(draft: unknown) {
   return {
     type: "tool-call",
-    toolName: "draft_content",
-    args: { fields: argsFields ?? {} },
-    result,
+    toolName: "draft_group",
+    args: { group: "main_fields" },
+    result: { group: "main_fields", fields: {}, pending: [], draft },
+  };
+}
+
+/** Builds a revise_draft tool-call part in the assistant-ui shape. */
+function revisePart(draft: unknown) {
+  return {
+    type: "tool-call",
+    toolName: "revise_draft",
+    args: { groups: ["main_fields"] },
+    result: { revised: ["main_fields"], draft },
+  };
+}
+
+/** Builds a stored draft, numbered as the backend numbers it. */
+function draft(version: number, major: number, minor = 0) {
+  return {
+    version,
+    major,
+    minor,
+    context: { tone: null, template: null, documents: [] },
+    fields: { title: `v${version}` },
   };
 }
 
@@ -16,63 +37,39 @@ describe("extractSessionDrafts", () => {
     expect(extractSessionDrafts([])).toEqual([]);
   });
 
-  it("collects versioned drafts in version order with their labels", () => {
+  it("lists revisions under the draft they revise", () => {
+    // A revision of the first draft, produced after the second one.
     const messages = [
       { content: [{ type: "text" }] },
-      {
-        content: [
-          draftPart({
-            version: 2,
-            context: { tone: null, template: null, documents: [] },
-            fields: { title: "Second" },
-          }),
-        ],
-      },
-      {
-        content: [
-          draftPart({
-            version: 1,
-            context: { tone: null, template: null, documents: [] },
-            fields: { title: "First" },
-          }),
-        ],
-      },
+      { content: [draftPart(draft(1, 1))] },
+      { content: [draftPart(draft(2, 2))] },
+      { content: [revisePart(draft(3, 1, 1))] },
     ];
 
     const drafts = extractSessionDrafts(messages);
 
-    expect(drafts.map((d) => d.label)).toEqual(["Draft 1", "Draft 2"]);
-    expect(drafts[0]?.fields).toEqual({ title: "First" });
-    expect(drafts[1]?.version).toBe(2);
+    expect(drafts.map((d) => d.label)).toEqual(["1.0", "1.1", "2.0"]);
+    expect(drafts.map((d) => d.name)).toEqual([
+      "Draft 1.0",
+      "Draft 1.1",
+      "Draft 2.0",
+    ]);
+    // The revision sorts under the draft it revises, not by creation.
+    expect(drafts.map((d) => d.version)).toEqual([1, 3, 2]);
+    expect(drafts[1]?.fields).toEqual({ title: "v3" });
   });
 
   it("carries the creation time of the message holding the draft", () => {
     const createdAt = new Date(2026, 4, 22, 14, 30);
-    const versioned = {
-      version: 1,
-      context: { tone: null, template: null, documents: [] },
-      fields: { title: "Timed" },
-    };
     const messages = [
-      { content: [draftPart(versioned)], createdAt },
-      { content: [draftPart({ ...versioned, version: 2 })] },
+      { content: [draftPart(draft(1, 1))], createdAt },
+      { content: [draftPart(draft(2, 2))] },
     ];
 
     const drafts = extractSessionDrafts(messages);
 
     expect(drafts[0]?.createdAt).toBe(createdAt);
     expect(drafts[1]?.createdAt).toBeNull();
-  });
-
-  it("falls back to args fields when a rehydrated result is empty", () => {
-    const messages = [{ content: [draftPart({}, { title: "From args" })] }];
-
-    const drafts = extractSessionDrafts(messages);
-
-    expect(drafts).toHaveLength(1);
-    expect(drafts[0]?.version).toBeNull();
-    expect(drafts[0]?.label).toBe("Draft");
-    expect(drafts[0]?.fields).toEqual({ title: "From args" });
   });
 
   it("ignores non-draft tool calls and text parts", () => {
@@ -94,8 +91,21 @@ describe("extractSessionDrafts", () => {
     expect(extractSessionDrafts(messages)).toEqual([]);
   });
 
-  it("skips draft calls that produced no fields", () => {
-    const messages = [{ content: [draftPart({}, {})] }];
+  it("skips group calls that carry no draft, an unnumbered or an empty one", () => {
+    const messages = [
+      {
+        content: [
+          {
+            type: "tool-call",
+            toolName: "draft_group",
+            args: { group: "main_fields" },
+            result: { group: "main_fields", fields: { title: "x" } },
+          },
+          draftPart({ version: 1, context: null, fields: { title: "x" } }),
+          draftPart({ ...draft(2, 2), fields: {} }),
+        ],
+      },
+    ];
 
     expect(extractSessionDrafts(messages)).toEqual([]);
   });

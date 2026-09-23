@@ -125,19 +125,26 @@ class RequestValidator {
     $validator = new Validator();
     $validator->validate($data, $schema, $checkMode);
 
-    if ($validator->isValid()) {
-      return [];
-    }
+    return self::formatErrors($validator);
+  }
 
-    // Collect and format all validation errors. The property key is the
-    // dot-notation JSON path to the failing field (e.g. 'fields.title').
-    // An empty property string means the error is at the root level.
+  /**
+   * Formats the errors of a finished validation, one line each.
+   *
+   * @param \JsonSchema\Validator $validator
+   *   The validator after validate() ran.
+   *
+   * @return string[]
+   *   Human-readable messages, empty when the data was valid. Each is
+   *   prefixed with the dot-notation JSON path of the failing field when
+   *   there is one (e.g. "fields.title: ..."); a root-level error has none.
+   */
+  public static function formatErrors(Validator $validator): array {
     $errors = [];
     foreach ($validator->getErrors() as $error) {
       $path = $error['property'] ? $error['property'] . ': ' : '';
       $errors[] = $path . $error['message'];
     }
-
     return $errors;
   }
 

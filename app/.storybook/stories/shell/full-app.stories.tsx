@@ -1,9 +1,9 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { MemoryRouter } from "react-router-dom";
 import { setConfig } from "../../../src/config";
-import { developmentConfig } from "../../../src/development-config";
 import { Nav } from "../../../src/shell/nav";
 import { SessionHeader } from "../../../src/shell/session-header";
+import { storybookConfig } from "../../preview";
 import {
   FullDraftingPreview,
   seedDraftingPreviewState,
@@ -49,7 +49,7 @@ export const FullApp: Story = {
       // Give the session a realistic title and exit target, then seed the
       // drafting slice so the artifact pane has content.
       setConfig({
-        ...developmentConfig,
+        ...storybookConfig,
         sessionTitle: "Content creation: EU AI Act news article",
         exitUrl: "/",
       });

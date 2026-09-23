@@ -43,7 +43,6 @@ class AiConversationMessageTest extends KernelTestBase {
     'taxonomy',
     // Contrib.
     'ai',
-    'ai_agents',
     'entity_reference_revisions',
     'inline_entity_form',
     'key',
@@ -88,7 +87,7 @@ class AiConversationMessageTest extends KernelTestBase {
       'provider' => 'mistral',
       'model' => 'mistral-large-latest',
     ]);
-    $message->setToolCalls([['name' => 'draft_content']]);
+    $message->setToolCalls([['name' => 'draft_group']]);
     $message->setTokenUsage(['input' => 10, 'output' => 5, 'total' => 15]);
     $message->save();
 
@@ -103,7 +102,7 @@ class AiConversationMessageTest extends KernelTestBase {
     $this->assertSame('mistral', $loaded->get('provider')->value);
 
     // The typed getters decode the stored JSON back to arrays.
-    $this->assertSame([['name' => 'draft_content']], $loaded->getToolCalls());
+    $this->assertSame([['name' => 'draft_group']], $loaded->getToolCalls());
     $this->assertSame([], $loaded->getMetadata());
 
     // Token usage round-trips through the typed accessor with all five keys.

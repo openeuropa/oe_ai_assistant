@@ -11,7 +11,6 @@ describe("drafting plugin state", () => {
     const { draftingSliceConfig } = await import("../store");
 
     expect(draftingSliceConfig.initialState).toEqual({
-      plan: [],
       draftedFields: {},
       selections: {},
       isArtifactCollapsed: false,
@@ -21,7 +20,6 @@ describe("drafting plugin state", () => {
     // The conversation lives on the backend; nothing is persisted locally.
     expect(
       draftingSliceConfig.partialize?.({
-        plan: [],
         draftedFields: {
           title: { label: "Title", value: "Draft", type: "string" },
         },
@@ -37,7 +35,6 @@ describe("drafting plugin state", () => {
     const { getDraftingState } = await import("../store");
 
     expect(getDraftingState()).toEqual({
-      plan: [],
       draftedFields: {},
       selections: {},
       isArtifactCollapsed: false,
@@ -50,7 +47,6 @@ describe("drafting plugin state", () => {
     const { getDraftingState, setDraftingState } = await import("../store");
 
     setDraftingState({
-      plan: [{ stepId: "s1", label: "Step 1", status: "done" }],
       draftedFields: {
         title: { label: "Title", value: "Draft", type: "string" },
       },
@@ -58,7 +54,6 @@ describe("drafting plugin state", () => {
     });
 
     expect(getDraftingState()).toEqual({
-      plan: [{ stepId: "s1", label: "Step 1", status: "done" }],
       draftedFields: {
         title: { label: "Title", value: "Draft", type: "string" },
       },

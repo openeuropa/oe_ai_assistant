@@ -9,22 +9,30 @@ use Drupal\Core\Entity\EntityInterface;
 /**
  * Reads the generated-draft history of an editorial session.
  *
- * Drafts live as results on draft_content tool calls in the persisted
- * transcript; this service is the single reader used both to compute the
- * next version number and to answer the get_draft_history tool.
+ * Drafts live on the tool call that completed them in the persisted
+ * transcript; this service is the single reader used both to number the
+ * next draft and to answer the get_draft_history tool.
  */
 interface DraftHistoryInterface {
 
   /**
-   * Counts the drafts already stored for a session.
+   * Numbers the draft about to be stored for a session.
+   *
+   * A revision joins the group of the draft it started from and takes its
+   * next minor number; anything else opens the next major group.
    *
    * @param \Drupal\Core\Entity\EntityInterface $session
    *   The session hosting the conversation.
+   * @param int|null $revisionOf
+   *   The version being revised, or NULL for a new draft.
    *
-   * @return int
-   *   The number of draft_content calls that carry a result.
+   * @return array
+   *   {version: N, major: M, minor: m, revisionOf: N|null}: the version
+   *   follows the drafts already stored, the major and minor form the "M.m"
+   *   label, and revisionOf names the draft whose group was joined, NULL when
+   *   a new group was opened.
    */
-  public function countDrafts(EntityInterface $session): int;
+  public function nextVersion(EntityInterface $session, ?int $revisionOf = NULL): array;
 
   /**
    * Lists the stored drafts with their provenance snapshots.
@@ -33,13 +41,14 @@ interface DraftHistoryInterface {
    *   The session hosting the conversation.
    *
    * @return array
-   *   One entry per draft, in version order: {name: "Draft N", version: N,
-   *   context: snapshot array}.
+   *   One entry per draft, grouped so that revisions follow the draft they
+   *   started from: {name: "Draft 2.1", label: "2.1", version: N,
+   *   revisionOf: N|null, groups: [{id, label}], context: snapshot array}.
    */
   public function listDrafts(EntityInterface $session): array;
 
   /**
-   * Returns the fields and template id for one stored draft version.
+   * Returns the name, fields and template id for one stored draft version.
    *
    * @param \Drupal\Core\Entity\EntityInterface $session
    *   The session hosting the conversation.
@@ -47,9 +56,10 @@ interface DraftHistoryInterface {
    *   The draft version to look up (as returned by listDrafts()).
    *
    * @return array|null
-   *   {fields: array, templateId: string|null}, or NULL if no draft_content
-   *   result carries that version. templateId is NULL when the draft's
-   *   snapshot has no template.
+   *   {name: "Draft 2.1", fields: array, templateId: string|null, context:
+   *   array|null}, or NULL if no stored draft carries that version. The
+   *   name is the one listDrafts() gives the draft; templateId is NULL when
+   *   the draft's snapshot has no template.
    */
   public function getDraftContent(EntityInterface $session, int $version): ?array;
 
