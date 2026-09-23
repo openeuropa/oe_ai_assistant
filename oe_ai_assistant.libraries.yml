@@ -27,4 +27,3 @@ session_builder:
   css:
     component:
       css/session-builder.css: {}
-
