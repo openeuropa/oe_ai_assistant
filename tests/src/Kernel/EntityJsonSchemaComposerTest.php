@@ -340,12 +340,13 @@ class EntityJsonSchemaComposerTest extends KernelTestBase {
     // composed schema with `type` constrained to the bundle name.
     $this->assertSame('paragraph', $items['x-targetType']);
     $this->assertArrayHasKey('oneOf', $items);
-    $this->assertCount(3, $items['oneOf'], 'One variant per allowed bundle.');
+    $this->assertCount(4, $items['oneOf'], 'One variant per allowed bundle.');
 
     // Find each variant by its constrained type.
     $textBlockVariant = NULL;
     $quoteBlockVariant = NULL;
     $heroVariant = NULL;
+    $sectionVariant = NULL;
     foreach ($items['oneOf'] as $variant) {
       $bundleConst = $variant['properties']['type']['items']['properties']['target_id']['const'] ?? NULL;
       if ($bundleConst === 'text_block') {
@@ -357,16 +358,21 @@ class EntityJsonSchemaComposerTest extends KernelTestBase {
       if ($bundleConst === 'hero') {
         $heroVariant = $variant;
       }
+      if ($bundleConst === 'section') {
+        $sectionVariant = $variant;
+      }
     }
     $this->assertNotNull($textBlockVariant, 'oneOf includes a text_block variant.');
     $this->assertNotNull($quoteBlockVariant, 'oneOf includes a quote_block variant.');
     $this->assertNotNull($heroVariant, 'oneOf includes a hero variant.');
+    $this->assertNotNull($sectionVariant, 'oneOf includes a section variant.');
 
     // Each variant carries the bundle's editorially meaningful fields.
     $this->assertArrayHasKey('field_text_body', $textBlockVariant['properties']);
     $this->assertArrayHasKey('field_quote_text', $quoteBlockVariant['properties']);
     $this->assertArrayHasKey('field_quote_attribution', $quoteBlockVariant['properties']);
     $this->assertArrayHasKey('field_hero_image', $heroVariant['properties']);
+    $this->assertArrayHasKey('field_section_paragraphs', $sectionVariant['properties']);
 
     // The bundle discriminator must be required, or the LLM may omit it and
     // InlineEntityHydrator::buildInlineEntities() has no bundle to route to.
@@ -376,6 +382,8 @@ class EntityJsonSchemaComposerTest extends KernelTestBase {
       'quote_block variant requires the type discriminator.');
     $this->assertContains('type', $heroVariant['required'] ?? [],
       'hero variant requires the type discriminator.');
+    $this->assertContains('type', $sectionVariant['required'] ?? [],
+      'section variant requires the type discriminator.');
   }
 
   /**

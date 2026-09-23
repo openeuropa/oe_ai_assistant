@@ -161,6 +161,11 @@ final class AiDraftingTemplate extends ConfigEntityBase implements AiDraftingTem
       foreach ($entityFieldManager->getFieldDefinitions($entityTypeId, $bundle) as $fieldName => $definition) {
         if (
           !$definition->isRequired() ||
+          // The template is saved before a field it depends on is actually
+          // deleted, so the field definition is still around and still
+          // required at this point; skip it rather than flag a field the
+          // same cascade is in the process of removing.
+          in_array("$entityTypeId.$bundle.$fieldName", $this->removedFieldIds, TRUE) ||
           $definition->isComputed() ||
           $definition->isReadOnly() ||
           !$definition->isDisplayConfigurable('form') ||
@@ -285,6 +290,7 @@ final class AiDraftingTemplate extends ConfigEntityBase implements AiDraftingTem
     foreach ($dependencies['config'] ?? [] as $entity) {
       if ($entity instanceof FieldConfigInterface) {
         $removedFields[$entity->getTargetEntityTypeId()][$entity->getTargetBundle()][] = $entity->getName();
+        $this->removedFieldIds[] = $entity->id();
       }
       elseif ($entity instanceof ConfigEntityInterface && $entity->getEntityType()->getBundleOf() !== NULL) {
         $removedBundles[$entity->getEntityType()->getBundleOf()][] = (string) $entity->id();
