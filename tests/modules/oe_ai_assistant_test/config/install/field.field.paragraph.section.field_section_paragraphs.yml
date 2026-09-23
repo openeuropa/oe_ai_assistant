@@ -2,17 +2,15 @@ langcode: en
 status: true
 dependencies:
   config:
-    - field.storage.node.field_content_paragraphs
-    - node.type.oe_news
+    - field.storage.paragraph.field_section_paragraphs
     - paragraphs.paragraphs_type.hero
-    - paragraphs.paragraphs_type.quote_block
     - paragraphs.paragraphs_type.section
     - paragraphs.paragraphs_type.text_block
-id: node.oe_news.field_content_paragraphs
-field_name: field_content_paragraphs
-entity_type: node
-bundle: oe_news
-label: 'Content paragraphs'
+id: paragraph.section.field_section_paragraphs
+field_name: field_section_paragraphs
+entity_type: paragraph
+bundle: section
+label: 'Section paragraphs'
 description: ''
 required: false
 translatable: true
@@ -23,21 +21,13 @@ settings:
   handler_settings:
     target_bundles:
       text_block: text_block
-      quote_block: quote_block
       hero: hero
-      section: section
     negate: 0
     target_bundles_drag_drop:
       text_block:
         enabled: true
         weight: 0
-      quote_block:
-        enabled: true
-        weight: 1
       hero:
         enabled: true
-        weight: 2
-      section:
-        enabled: true
-        weight: 3
+        weight: 1
 field_type: entity_reference_revisions

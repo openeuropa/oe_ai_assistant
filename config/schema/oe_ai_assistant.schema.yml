@@ -115,6 +115,13 @@ oe_ai_assistant.ai_drafting_template_reference_item:
       sequence:
         type: oe_ai_assistant.ai_drafting_template_reference_field
         label: 'Field definition'
+    defaults:
+      requiredKey: false
+      type: sequence
+      label: 'Item default values'
+      sequence:
+        type: oe_ai_assistant.ai_drafting_template_item_default
+        label: 'Default value'
 
 oe_ai_assistant.ai_drafting_template_reference_field:
   type: mapping
@@ -144,6 +151,25 @@ oe_ai_assistant.ai_drafting_template_reference_field:
       sequence:
         type: oe_ai_assistant.ai_drafting_template_reference_item
         label: 'Reference item'
+
+oe_ai_assistant.ai_drafting_template_item_default:
+  type: mapping
+  label: 'Item default value'
+  constraints:
+    FullyValidatable: ~
+    FieldDefaultValue:
+      entityTypeId: '[%parent.%parent.entity_type]'
+      bundle: '[%parent.%parent.bundle]'
+  mapping:
+    default_value:
+      type: sequence
+      label: 'Default values'
+      # Default values use a generic schema because the concrete field.value.* type
+      # cannot be resolved reliably at schema build time. FieldDefaultValue performs
+      # field-specific validation.
+      sequence:
+        type: ignore
+        label: 'Default value'
 
 oe_ai_assistant.ai_drafting_template_default:
   type: mapping
