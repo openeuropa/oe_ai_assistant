@@ -82,6 +82,70 @@ class AiEditorialSessionDashboardTest extends AiEditorialSessionBrowserTestBase 
   }
 
   /**
+   * The same sanitized notice is exposed on every editorial session surface.
+   */
+  public function testTransparencyNoticeIsSharedAcrossSessionSurfaces(): void {
+    $configured_notice = '<strong>AI-generated content</strong>. <a href="https://example.com/policy">Read our policy</a>. <u>Unsupported</u>';
+    $sanitized_notice = '<strong>AI-generated content</strong>. <a href="https://example.com/policy">Read our policy</a>. Unsupported';
+    $this->config('oe_ai_assistant.settings')
+      ->set('transparency_notice', $configured_notice)
+      ->save();
+
+    $user = $this->drupalCreateUser([
+      'access administration pages',
+      'access content overview',
+      'administer ai editorial sessions',
+      'create oe_news content',
+    ]);
+    $session = $this->createSession($user);
+    $this->drupalLogin($user);
+
+    $this->drupalGet(Url::fromRoute('entity.ai_editorial_session.add_page'));
+    $this->assertSession()->responseContains($sanitized_notice);
+    $this->assertSession()->responseNotContains('<u>Unsupported</u>');
+    $this->assertSession()->responseHeaderContains('X-Drupal-Cache-Tags', 'config:oe_ai_assistant.settings');
+
+    $this->drupalGet(Url::fromRoute('entity.ai_editorial_session.collection'));
+    $this->assertSession()->responseContains($sanitized_notice);
+    $this->assertSession()->responseNotContains('<u>Unsupported</u>');
+    $this->assertSession()->responseHeaderContains('X-Drupal-Cache-Tags', 'config:oe_ai_assistant.settings');
+
+    $this->drupalGet($session->toUrl('canonical'));
+    $this->assertSession()->responseContains('"disclaimer":' . json_encode(
+      $sanitized_notice,
+      JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT,
+    ));
+    $this->assertSession()->responseNotContains('<u>Unsupported</u>');
+    $this->assertSession()->responseHeaderContains('X-Drupal-Cache-Tags', 'config:oe_ai_assistant.settings');
+  }
+
+  /**
+   * Saving the setting invalidates the cache tag carried by the dashboard.
+   */
+  public function testTransparencyNoticeChangeInvalidatesDashboardCache(): void {
+    $user = $this->drupalCreateUser([
+      'access administration pages',
+      'access content overview',
+      'administer ai editorial sessions',
+    ]);
+    $this->drupalLogin($user);
+
+    $url = Url::fromRoute('entity.ai_editorial_session.collection');
+    $this->drupalGet($url);
+    $this->assertSession()->pageTextContains('AI assistant can make mistakes. Please double-check responses.');
+    $this->assertSession()->responseHeaderContains('X-Drupal-Cache-Tags', 'config:oe_ai_assistant.settings');
+
+    $this->config('oe_ai_assistant.settings')
+      ->set('transparency_notice', 'Updated notice.')
+      ->save();
+
+    $this->drupalGet($url);
+    $this->assertSession()->pageTextContains('Updated notice.');
+    $this->assertSession()->pageTextNotContains('AI assistant can make mistakes. Please double-check responses.');
+    $this->assertSession()->responseHeaderContains('X-Drupal-Cache-Tags', 'config:oe_ai_assistant.settings');
+  }
+
+  /**
    * Tests the admin parent routes for content and configuration.
    */
   public function testAdminStructure(): void {
