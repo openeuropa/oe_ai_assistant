@@ -27,6 +27,8 @@ import { DraftingThread } from "./components/drafting-thread";
 import {
   DraftGroupToolUI,
   EditorialEventToolUI,
+  GetContentSchemaToolUI,
+  GetDraftHistoryToolUI,
   ReviseDraftToolUI,
 } from "./components/tool-uis";
 import { useDraftingDocuments } from "./hooks/use-drafting-documents";
@@ -304,6 +306,8 @@ function DraftingChat() {
       {/* Register tool call renderers so they appear inline in chat. */}
       <DraftGroupToolUI />
       <ReviseDraftToolUI />
+      <GetContentSchemaToolUI />
+      <GetDraftHistoryToolUI />
       <EditorialEventToolUI />
 
       {/* Feed the shell exit guard with this plugin's pending state.

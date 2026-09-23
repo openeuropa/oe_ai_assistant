@@ -10,7 +10,16 @@
 
 import type { ToolCallMessagePartProps } from "@assistant-ui/react";
 import { makeAssistantToolUI } from "@assistant-ui/react";
-import { Check, Loader2, Pencil, PenLine, Wrench, X } from "lucide-react";
+import {
+  Check,
+  FileJson,
+  History,
+  Loader2,
+  Pencil,
+  PenLine,
+  Wrench,
+  X,
+} from "lucide-react";
 import { useEffect, useMemo, useRef } from "react";
 import { type ParsedDraftResult, parseDraftResult } from "../draft-result";
 import { useSavedVersions } from "../saved-versions";
@@ -38,7 +47,7 @@ function ToolCallCard({
   const isDone = status.type === "complete";
 
   const base =
-    "my-4 flex w-full items-start gap-3 rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-left";
+    "my-2 flex w-full items-center gap-3 rounded-lg border border-gray-200 bg-white px-3 py-2 text-left";
   const interactive = onClick
     ? " cursor-pointer transition-colors hover:border-gray-300 hover:bg-gray-50"
     : "";
@@ -46,7 +55,7 @@ function ToolCallCard({
   const body = (
     <>
       {/* Status icon */}
-      <div className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center">
+      <div className="flex h-5 w-5 shrink-0 items-center justify-center">
         {isRunning && (
           <Loader2 size={16} className="animate-spin text-blue-500" />
         )}
@@ -54,13 +63,15 @@ function ToolCallCard({
         {isError && <X size={16} className="text-red-500" />}
       </div>
 
-      {/* Content */}
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-1.5">
-          <Icon size={14} className="shrink-0 text-gray-400" />
-          <span className="text-sm font-medium text-gray-700">{label}</span>
-        </div>
-        {detail && <p className="mt-0.5 text-xs text-gray-400">{detail}</p>}
+      {/* Label and detail share one line; a long detail truncates. */}
+      <div className="flex min-w-0 flex-1 items-center gap-2">
+        <Icon size={14} className="shrink-0 text-gray-400" />
+        <span className="shrink-0 text-sm font-medium text-gray-700">
+          {label}
+        </span>
+        {detail && (
+          <span className="truncate text-xs text-gray-400">{detail}</span>
+        )}
       </div>
     </>
   );
@@ -110,6 +121,28 @@ interface ReviseDraftResult {
  */
 function humanizeGroup(group: string | undefined): string {
   return (group ?? "fields").replace(/^field_/, "").replace(/_/g, " ");
+}
+
+/**
+ * Describes what one group call produced.
+ *
+ * A reference group holds a single field whose items are the entities that
+ * were drafted, so counting its fields would always say one. Everywhere
+ * else the fields themselves are what the editor drafted.
+ */
+function draftedDetail(result: DraftGroupResult): string | undefined {
+  if (!result.fields) {
+    return undefined;
+  }
+  const items = result.fields[result.group ?? ""];
+  return Array.isArray(items)
+    ? countLabel(items.length, "item")
+    : countLabel(Object.keys(result.fields).length, "field");
+}
+
+/** Counts a thing for a card detail, e.g. "2 drafts". */
+function countLabel(count: number, noun: string): string {
+  return `${count} ${noun}${count === 1 ? "" : "s"}`;
 }
 
 /** Joins several group ids into one readable label. */
@@ -201,13 +234,12 @@ export const DraftGroupToolUI = makeAssistantToolUI<
       );
     }
 
-    const fieldCount = Object.keys(result?.fields ?? {}).length;
     return (
       <>
         <ToolCallCard
           icon={PenLine}
           label={`Drafted ${label}`}
-          detail={`${fieldCount} field${fieldCount === 1 ? "" : "s"}`}
+          detail={result ? draftedDetail(result) : undefined}
           status={status}
         />
         {draft !== null && Object.keys(draft.fields).length > 0 && (
@@ -274,6 +306,60 @@ export const ReviseDraftToolUI = makeAssistantToolUI<
 });
 
 /**
+ * UI for the get_content_schema tool call.
+ *
+ * The agent reads the field groups it may draft; the card says how many
+ * came back.
+ */
+export const GetContentSchemaToolUI = makeAssistantToolUI<
+  Record<string, never>,
+  unknown[]
+>({
+  toolName: "get_content_schema",
+  render: ({ result, status }) => (
+    <ToolCallCard
+      icon={FileJson}
+      label={
+        status.type === "complete"
+          ? "Got content schema"
+          : "Getting content schema"
+      }
+      detail={
+        Array.isArray(result) ? countLabel(result.length, "group") : undefined
+      }
+      status={status}
+    />
+  ),
+});
+
+/**
+ * UI for the get_draft_history tool call.
+ *
+ * The agent looks up the drafts of the session, which is how it answers
+ * questions about earlier versions and resolves the one to revise.
+ */
+export const GetDraftHistoryToolUI = makeAssistantToolUI<
+  Record<string, never>,
+  { drafts?: unknown[] }
+>({
+  toolName: "get_draft_history",
+  render: ({ result, status }) => (
+    <ToolCallCard
+      icon={History}
+      label={
+        status.type === "complete"
+          ? "Got draft history"
+          : "Getting draft history"
+      }
+      detail={
+        result?.drafts ? countLabel(result.drafts.length, "draft") : undefined
+      }
+      status={status}
+    />
+  ),
+});
+
+/**
  * UI for the editorial_event tool call.
  *
  * Editorial events are injected into the transcript by the history adapter
@@ -301,7 +387,9 @@ export function ToolFallbackCard({
   toolName,
   status,
 }: ToolCallMessagePartProps) {
-  // Convert snake_case tool name to a readable label (underscores to spaces).
-  const label = toolName.replace(/_/g, " ");
+  // Convert snake_case tool name to a readable label: underscores become
+  // spaces and the first word is capitalised.
+  const words = toolName.replace(/_/g, " ");
+  const label = words.charAt(0).toUpperCase() + words.slice(1);
   return <ToolCallCard icon={Wrench} label={label} status={status} />;
 }
