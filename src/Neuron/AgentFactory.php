@@ -18,6 +18,7 @@ use Drupal\oe_ai_assistant\Neuron\Observability\TranscriptObserver;
 use Drupal\oe_ai_assistant\Neuron\Providers\DrupalAi\DrupalAiProvider;
 use Drupal\oe_ai_assistant\Service\Drafting\DraftCollector;
 use Drupal\oe_ai_assistant\Service\Drafting\DraftHistoryInterface;
+use Drupal\oe_ai_assistant\Service\Drafting\EditorialContext;
 use Drupal\oe_ai_assistant\Service\MessageRecorderInterface;
 use NeuronAI\Observability\EventBus;
 use Psr\Log\LoggerInterface;
@@ -59,6 +60,8 @@ final class AgentFactory {
    *   The session hosting the conversation.
    * @param string $contextPrompt
    *   Content type context appended to the agent's instructions.
+   * @param \Drupal\oe_ai_assistant\Service\Drafting\EditorialContext $editorialContext
+   *   What the editor set up for this session: tone, template, documents.
    * @param \Drupal\oe_ai_assistant\Service\Drafting\DraftCollector $collector
    *   The collector of this turn's group results.
    * @param \Closure $drafter
@@ -72,9 +75,9 @@ final class AgentFactory {
    * @param \Drupal\oe_ai_assistant\Neuron\Observability\AgentEventQueue $events
    *   The queue receiving every event of the run.
    */
-  public function draftingAgent(AiEditorialSessionInterface $session, string $contextPrompt, DraftCollector $collector, \Closure $drafter, \Closure $groupsFor, \Closure $versionDraft, AgentEventQueue $events): DraftingAgent {
+  public function draftingAgent(AiEditorialSessionInterface $session, string $contextPrompt, EditorialContext $editorialContext, DraftCollector $collector, \Closure $drafter, \Closure $groupsFor, \Closure $versionDraft, AgentEventQueue $events): DraftingAgent {
     [$provider, $providerId, $modelId] = $this->provider('chat_with_tools', ['drafting']);
-    $agent = new DraftingAgent($provider, $contextPrompt, $session, $this->draftHistory, $collector, $drafter, $groupsFor, $versionDraft);
+    $agent = new DraftingAgent($provider, $contextPrompt, $session, $this->draftHistory, $editorialContext, $collector, $drafter, $groupsFor, $versionDraft);
     $history = new ConversationChatHistory(
       $this->messageRecorder,
       $this->entityTypeManager->getStorage('ai_conversation_message'),

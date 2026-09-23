@@ -8,9 +8,12 @@ use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
 use Drupal\oe_ai_assistant\Neuron\Chat\History\ConversationChatHistory;
 use Drupal\oe_ai_assistant\Neuron\Tools\DraftGroupTool;
 use Drupal\oe_ai_assistant\Neuron\Tools\GetDraftHistoryTool;
+use Drupal\oe_ai_assistant\Neuron\Tools\GetEditorialContextTool;
+use Drupal\oe_ai_assistant\Neuron\Tools\ReadDocumentTool;
 use Drupal\oe_ai_assistant\Neuron\Tools\ReviseDraftTool;
 use Drupal\oe_ai_assistant\Service\Drafting\DraftCollector;
 use Drupal\oe_ai_assistant\Service\Drafting\DraftHistoryInterface;
+use Drupal\oe_ai_assistant\Service\Drafting\EditorialContext;
 use NeuronAI\Agent\Agent;
 use NeuronAI\Providers\AIProviderInterface;
 use NeuronAI\Tools\ToolInterface;
@@ -62,6 +65,11 @@ final class DraftingAgent extends Agent {
       draft keeps the groups it was written with, which may differ;
       get_draft_history lists them per draft.
     - Answer questions about earlier drafts with get_draft_history.
+    - Answer questions about the session itself, what it is about, what
+      material is attached, what a document covers, by calling
+      get_editorial_context first. Read one document in full with
+      read_document only when its summary does not answer the question.
+      Never guess what a document contains.
     - You can have normal conversations with the user at any point.
     PROMPT;
 
@@ -83,6 +91,8 @@ final class DraftingAgent extends Agent {
    *   The editorial session whose drafts the history tool lists.
    * @param \Drupal\oe_ai_assistant\Service\Drafting\DraftHistoryInterface $draftHistory
    *   The draft history reader.
+   * @param \Drupal\oe_ai_assistant\Service\Drafting\EditorialContext $editorialContext
+   *   What the editor set up for this session: tone, template, documents.
    * @param \Drupal\oe_ai_assistant\Service\Drafting\DraftCollector $collector
    *   The collector of this turn's group results.
    * @param \Closure $drafter
@@ -99,6 +109,7 @@ final class DraftingAgent extends Agent {
     private readonly string $contextPrompt,
     private readonly AiEditorialSessionInterface $session,
     private readonly DraftHistoryInterface $draftHistory,
+    private readonly EditorialContext $editorialContext,
     private readonly DraftCollector $collector,
     private readonly \Closure $drafter,
     private readonly \Closure $groupsFor,
@@ -127,6 +138,8 @@ final class DraftingAgent extends Agent {
   protected function tools(): array {
     return $this->declaredTools ??= [
       new GetDraftHistoryTool($this->draftHistory, $this->session),
+      new GetEditorialContextTool($this->editorialContext),
+      new ReadDocumentTool($this->editorialContext),
       new DraftGroupTool($this->collector, $this->conversation(), $this->drafter),
       new ReviseDraftTool(
         $this->draftHistory,

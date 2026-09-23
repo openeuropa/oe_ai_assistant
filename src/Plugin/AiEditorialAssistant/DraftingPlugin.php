@@ -333,6 +333,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
     $agent = $this->agentFactory->draftingAgent(
       $session,
       $routerContext,
+      $editorialContext,
       new DraftCollector($groups, $versionDraft),
       fn (string $groupId, array $schemaSlice, string $task, ?AiConversationMessageInterface $parent): array => $this->agentFactory
         ->fieldGroupAgent($session, $parent, $groupId, $schemaSlice, $contextPrompt, $events)
