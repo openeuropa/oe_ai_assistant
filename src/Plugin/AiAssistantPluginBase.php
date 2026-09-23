@@ -148,13 +148,9 @@ abstract class AiAssistantPluginBase extends PluginBase implements AiAssistantPl
       // The created field is a datetime stored in UTC; expose it in RFC
       // 3339 so clients can render local timestamps.
       $at = (string) $message->get('created')->date?->format('c');
-      // Editorial event rows surface as compact timeline entries; the events
-      // of an agent run are streamed live and stay out of the transcript.
+      // Event rows surface as compact timeline entries.
       if ($role === 'event') {
         $metadata = $message->getMetadata();
-        if (($metadata['type'] ?? '') === 'agent') {
-          continue;
-        }
         $item = [
           'role' => 'event',
           'type' => (string) ($metadata['type'] ?? ''),

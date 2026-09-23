@@ -171,10 +171,9 @@ final class ConversationChatHistory extends AbstractChatHistory {
    * Replays the persisted transcript as alternating messages.
    *
    * Tool rows are skipped: a stored result cannot be re-linked to the call
-   * that produced it. Agent event rows are skipped, since they describe the
-   * run rather than the conversation. Assistant rows without text are
-   * skipped as well. A leading assistant run is dropped, since the model
-   * expects a user turn first.
+   * that produced it. Assistant rows without text are skipped as well. A
+   * leading assistant run is dropped, since the model expects a user turn
+   * first.
    *
    * @return \NeuronAI\Chat\Messages\Message[]
    *   The replayed messages.
@@ -191,9 +190,6 @@ final class ConversationChatHistory extends AbstractChatHistory {
       $text = (string) $row->get('content')->value;
       $role = $row->getRole();
       if ($role === AiConversationMessageInterface::ROLE_EVENT) {
-        if (($row->getMetadata()['type'] ?? '') === 'agent') {
-          continue;
-        }
         $role = AiConversationMessageInterface::ROLE_USER;
         $text = '[Editorial change] ' . $text;
       }

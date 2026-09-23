@@ -44,14 +44,17 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
     $types = array_column($events, 'type');
     $this->assertContains('start', $types, 'SSE must include a start event.');
 
-    // Every agent event is streamed as a transient data part, not shown in
-    // the transcript.
+    // The events of the run are streamed as transient data parts. They
+    // describe the run, not the conversation, so nothing records them.
     $agentEvents = array_values(array_filter($events, fn($e) => $e['type'] === 'data-agent-event'));
     $this->assertNotEmpty($agentEvents, 'Agent events are streamed as data parts.');
     $this->assertSame('drafting', $agentEvents[0]['data']['agent']);
     $this->assertTrue($agentEvents[0]['transient']);
-    $this->assertSame([], array_filter($this->getMessages($session), fn($m) => ($m['type'] ?? '') === 'agent'),
-      'Agent events stay out of the transcript.');
+    $this->assertSame(
+      ['event', 'user', 'assistant'],
+      array_column($this->getMessages($session), 'role'),
+      'The transcript holds the session event and the turn, nothing else.',
+    );
     $this->assertContains('finish', $types, 'SSE must include a finish event.');
 
     // Verify text-delta events contain the mock response text.

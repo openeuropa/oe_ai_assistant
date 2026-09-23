@@ -36,14 +36,24 @@ class DrupalLogObserver implements ObserverInterface {
 
   /**
    * Writes one event and its encoded payload to the log.
+   *
+   * @param string $event
+   *   The Neuron event name.
+   * @param object $source
+   *   The agent, workflow or node that emitted it.
+   * @param string $json
+   *   The event payload, already encoded.
+   * @param string $summary
+   *   One line describing the event, or empty when none was built.
    */
-  protected function log(string $event, object $source, string $json): void {
+  protected function log(string $event, object $source, string $json, string $summary = ''): void {
     // @todo Every event is logged with its payload at debug level. A
     //   follow-up will make the level and the selection of events
     //   configurable.
-    $this->logger->log(LogLevel::DEBUG, 'Neuron @event from @source: @data', [
+    $this->logger->log(LogLevel::DEBUG, 'Neuron @event from @source: @summary @data', [
       '@event' => $event,
       '@source' => $source::class,
+      '@summary' => $summary,
       '@data' => $json,
     ]);
   }

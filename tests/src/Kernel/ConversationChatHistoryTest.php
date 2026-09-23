@@ -109,17 +109,12 @@ class ConversationChatHistoryTest extends KernelTestBase {
   /**
    * Tests that the transcript replays as alternating turns with notes merged.
    *
-   * Tool rows, agent event rows and assistant rows without text are skipped,
-   * editorial events become user notes, and consecutive rows of one role
-   * become one message.
+   * Tool rows and assistant rows without text are skipped, editorial events
+   * become user notes, and consecutive rows of one role become one message.
    */
   public function testLoadReplaysAlternatingMessages(): void {
     $this->recorder->recordEvent($this->host, 'Session started', ['type' => 'session']);
     $this->recorder->recordUser($this->host, 'Draft a news article.', 7);
-    $this->recorder->recordEvent($this->host, 'drafting: model call started', [
-      'type' => 'agent',
-      'event' => 'inference-start',
-    ]);
     $this->recorder->recordAssistantTurn($this->host, '', [
       ['type' => 'function', 'function' => ['name' => 'get_draft_history', 'arguments' => '{}']],
     ], [], 'tool_calls', 'orchestrator', 'mock_ai', 'mock-model');

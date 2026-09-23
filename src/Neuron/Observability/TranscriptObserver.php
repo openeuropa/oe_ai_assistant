@@ -17,10 +17,11 @@ use Psr\Log\LoggerInterface;
 /**
  * Records and queues every event of one agent run.
  *
- * The turns themselves are persisted by the conversation chat history. This
- * observer adds what the history cannot see: an event row and a stream
- * chunk per Neuron event, each tool result as soon as the tool finishes,
- * the system prompt of a drafter, a rejected answer, and a failed run.
+ * The conversation records the turns; this observer records what the chat
+ * history cannot see. The events of the run itself go to the log and to
+ * the stream, never to the conversation, so the transcript stays readable.
+ * What it does persist is each tool result as soon as the tool finishes,
+ * the system prompt of a drafter, and a failed run.
  */
 final class TranscriptObserver extends DrupalLogObserver {
 
@@ -67,7 +68,8 @@ final class TranscriptObserver extends DrupalLogObserver {
    */
   public function onEvent(string $event, object $source, mixed $data = NULL, ?string $branchId = NULL): void {
     $json = $this->encode($data);
-    $this->log($event, $source, $json);
+    $summary = AgentEventSummary::describe($event, $data);
+    $this->log($event, $source, $json, $this->agentId . ': ' . $summary);
 
     if ($event === 'inference-start' && $this->systemPrompt !== NULL && !$this->systemRecorded) {
       $this->recorder->recordSystem($this->session, $this->systemPrompt, $this->agentId, $this->parent);
@@ -91,12 +93,6 @@ final class TranscriptObserver extends DrupalLogObserver {
       ]);
     }
 
-    $summary = AgentEventSummary::describe($event, $data);
-    $this->recorder->recordEvent($this->session, $summary, [
-      'type' => 'agent',
-      'event' => $event,
-      'agent' => $this->agentId,
-    ]);
     // @todo Temporary: the full payload (prompts, answers, tool results)
     //   streams to the browser console so the run can be inspected. Gate it
     //   behind a dev-only configuration before this leaves development.
