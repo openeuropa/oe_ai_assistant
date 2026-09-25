@@ -6,6 +6,7 @@ namespace Drupal\oe_ai_assistant;
 
 use Drupal\content_moderation\ModerationInformationInterface;
 use Drupal\Core\Cache\CacheableMetadata;
+use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Datetime\DateFormatterInterface;
 use Drupal\Core\Entity\EntityInterface;
 use Drupal\Core\Entity\EntityListBuilder;
@@ -16,7 +17,7 @@ use Drupal\Core\Routing\RedirectDestinationInterface;
 use Drupal\Core\Url;
 use Drupal\Core\Entity\Query\QueryInterface;
 use Drupal\node\NodeInterface;
-use Drupal\oe_ai_assistant\Service\TransparencyNoticeInterface;
+use Drupal\oe_ai_assistant\Form\AiEditorialSettingsForm;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 
 /**
@@ -40,9 +41,9 @@ class AiEditorialSessionListBuilder extends EntityListBuilder {
   protected ModerationInformationInterface $moderationInformation;
 
   /**
-   * The transparency notice service.
+   * The configuration service.
    */
-  protected TransparencyNoticeInterface $transparencyNotice;
+  protected ConfigFactoryInterface $configFactory;
 
   /**
    * {@inheritdoc}
@@ -65,14 +66,14 @@ class AiEditorialSessionListBuilder extends EntityListBuilder {
     RedirectDestinationInterface $redirect_destination,
     EntityTypeManagerInterface $entity_type_manager,
     ModerationInformationInterface $moderation_information,
-    TransparencyNoticeInterface $transparency_notice,
+    ConfigFactoryInterface $config_factory,
   ) {
     parent::__construct($entity_type, $storage);
     $this->dateFormatter = $date_formatter;
     $this->redirectDestination = $redirect_destination;
     $this->entityTypeManager = $entity_type_manager;
     $this->moderationInformation = $moderation_information;
-    $this->transparencyNotice = $transparency_notice;
+    $this->configFactory = $config_factory;
   }
 
   /**
@@ -86,7 +87,8 @@ class AiEditorialSessionListBuilder extends EntityListBuilder {
       $container->get('redirect.destination'),
       $container->get('entity_type.manager'),
       $container->get('content_moderation.moderation_information'),
-      $container->get('oe_ai_assistant.transparency_notice'),
+      $container->get('config.factory'),
+
     );
   }
 
@@ -197,14 +199,15 @@ class AiEditorialSessionListBuilder extends EntityListBuilder {
         'class' => ['button', 'button--action', 'button--primary'],
       ],
     ];
-    $build['sessions_header']['tansparency_notice'] = [
+    $build['sessions_header']['transparency_notice'] = [
       '#type' => 'container',
-      '#markup' => $this->transparencyNotice->getNotice(),
+      '#markup' => $this->configFactory->get('oe_ai_assistant.settings')->get('transparency_notice'),
+      '#allowed_tags' => AiEditorialSettingsForm::ALLOWED_TAGS,
     ];
     $build += parent::render();
 
     CacheableMetadata::createFromRenderArray($build)
-      ->addCacheableDependency($this->transparencyNotice->getConfig())
+      ->addCacheableDependency($this->configFactory->get('oe_ai_assistant.settings'))
       ->applyTo($build);
 
     return $build;

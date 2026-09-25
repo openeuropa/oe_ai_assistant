@@ -81,7 +81,7 @@ class AiEditorialSessionAddFormTest extends AiEditorialSessionKernelTestBase {
     $form = $this->container->get('form_builder')
       ->buildForm($formObject, $formState);
 
-    $this->assertSame($notice, $form['transparency_notice']['content']['#markup']);
+    $this->assertSame($notice, $form['transparency_notice']['#markup']);
     $this->assertContains('config:oe_ai_assistant.settings', $form['#cache']['tags'] ?? []);
   }
 

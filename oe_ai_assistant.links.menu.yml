@@ -13,7 +13,7 @@ oe_ai_assistant.dashboard:
   weight: 20
 
 oe_ai_assistant.transparency_notice_settings:
-  title: 'AI transparency notice'
+  title: 'AI Transparency Notice'
   description: 'Configure the notice shown during AI-assisted content creation.'
   route_name: oe_ai_assistant.transparency_notice_settings
   parent: oe_ai_assistant.admin_settings
