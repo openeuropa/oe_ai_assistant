@@ -29,6 +29,7 @@ class AiEditorialSessionDashboardTest extends AiEditorialSessionBrowserTestBase 
 
     $this->assertSession()->statusCodeEquals(200);
     $this->assertSession()->pageTextContains('AI Editorial Sessions');
+    $this->assertSession()->pageTextContains('AI assistant can make mistakes. Please double-check responses.');
     $this->assertSession()->pageTextContains('Add new session');
     $this->assertSession()->pageTextContains('Session');
     $this->assertSession()->pageTextContains('Type');
@@ -57,6 +58,91 @@ class AiEditorialSessionDashboardTest extends AiEditorialSessionBrowserTestBase 
     $this->assertSession()->statusCodeEquals(200);
     $this->assertSame($session->toUrl('canonical', ['absolute' => TRUE])->toString(), $this->getUrl());
     $this->assertSessionAppPage('oe_news', (string) $session->id());
+  }
+
+  /**
+   * The dashboard displays the configured transparency notice.
+   */
+  public function testDashboardDisplaysTransparencyNotice(): void {
+    $this->config('oe_ai_assistant.settings')
+      ->set('transparency_notice', '<strong>AI-generated content</strong>. <a href="https://example.com/policy">Read our policy</a>.')
+      ->save();
+    $user = $this->drupalCreateUser([
+      'access administration pages',
+      'access content overview',
+      'administer ai editorial sessions',
+    ]);
+    $this->drupalLogin($user);
+
+    $this->drupalGet(Url::fromRoute('entity.ai_editorial_session.collection'));
+
+    $this->assertSession()->statusCodeEquals(200);
+    $this->assertSession()->responseContains('<strong>AI-generated content</strong>');
+    $this->assertSession()->linkByHrefExists('https://example.com/policy');
+  }
+
+  /**
+   * The same sanitized notice is exposed on every editorial session surface.
+   */
+  public function testTransparencyNoticeIsSharedAcrossSessionSurfaces(): void {
+    $configured_notice = '<strong>AI-generated content</strong>. <a href="https://example.com/policy">Read our policy</a>. <u>Unsupported</u>';
+    $sanitized_notice = '<strong>AI-generated content</strong>. <a href="https://example.com/policy">Read our policy</a>. Unsupported';
+    $this->config('oe_ai_assistant.settings')
+      ->set('transparency_notice', $configured_notice)
+      ->save();
+
+    $user = $this->drupalCreateUser([
+      'access administration pages',
+      'access content overview',
+      'administer ai editorial sessions',
+      'create oe_news content',
+    ]);
+    $session = $this->createSession($user);
+    $this->drupalLogin($user);
+
+    $this->drupalGet(Url::fromRoute('entity.ai_editorial_session.add_page'));
+    $this->assertSession()->responseContains($sanitized_notice);
+    $this->assertSession()->responseNotContains('<u>Unsupported</u>');
+    $this->assertSession()->responseHeaderContains('X-Drupal-Cache-Tags', 'config:oe_ai_assistant.settings');
+
+    $this->drupalGet(Url::fromRoute('entity.ai_editorial_session.collection'));
+    $this->assertSession()->responseContains($sanitized_notice);
+    $this->assertSession()->responseNotContains('<u>Unsupported</u>');
+    $this->assertSession()->responseHeaderContains('X-Drupal-Cache-Tags', 'config:oe_ai_assistant.settings');
+
+    $this->drupalGet($session->toUrl('canonical'));
+    $this->assertSession()->responseContains('"disclaimer":' . json_encode(
+      $sanitized_notice,
+      JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT,
+    ));
+    $this->assertSession()->responseNotContains('<u>Unsupported</u>');
+    $this->assertSession()->responseHeaderContains('X-Drupal-Cache-Tags', 'config:oe_ai_assistant.settings');
+  }
+
+  /**
+   * Saving the setting invalidates the cache tag carried by the dashboard.
+   */
+  public function testTransparencyNoticeChangeInvalidatesDashboardCache(): void {
+    $user = $this->drupalCreateUser([
+      'access administration pages',
+      'access content overview',
+      'administer ai editorial sessions',
+    ]);
+    $this->drupalLogin($user);
+
+    $url = Url::fromRoute('entity.ai_editorial_session.collection');
+    $this->drupalGet($url);
+    $this->assertSession()->pageTextContains('AI assistant can make mistakes. Please double-check responses.');
+    $this->assertSession()->responseHeaderContains('X-Drupal-Cache-Tags', 'config:oe_ai_assistant.settings');
+
+    $this->config('oe_ai_assistant.settings')
+      ->set('transparency_notice', 'Updated notice.')
+      ->save();
+
+    $this->drupalGet($url);
+    $this->assertSession()->pageTextContains('Updated notice.');
+    $this->assertSession()->pageTextNotContains('AI assistant can make mistakes. Please double-check responses.');
+    $this->assertSession()->responseHeaderContains('X-Drupal-Cache-Tags', 'config:oe_ai_assistant.settings');
   }
 
   /**
@@ -94,6 +180,67 @@ class AiEditorialSessionDashboardTest extends AiEditorialSessionBrowserTestBase 
     $this->assertSession()->pageTextContains('List and manage AI editorial sessions.');
     $this->assertSession()->linkExists('AI Editorial Sessions');
     $this->assertSession()->linkByHrefExists($dashboard_url->toString());
+  }
+
+  /**
+   * Tests that administrators can configure the transparency notice.
+   */
+  public function testTransparencyNoticeSettings(): void {
+    $user = $this->drupalCreateUser([
+      'access administration pages',
+      'administer ai editorial sessions',
+    ]);
+    $this->drupalLogin($user);
+
+    $settings_url = Url::fromRoute('oe_ai_assistant.transparency_notice_settings');
+    $this->drupalGet($settings_url);
+
+    $this->assertSession()->statusCodeEquals(200);
+    $this->assertSession()->fieldExists('transparency_notice');
+    $this->assertSession()->pageTextContains('Allowed HTML tags: b, i, a, strong, and em.');
+
+    $notice = 'Tom & Jerry: <strong>AI-generated content</strong>. <a href="https://example.com/policy"  title="Read our policy">Read our policy</a>.';
+    $this->submitForm(['transparency_notice' => $notice], 'Save configuration');
+
+    $this->assertSession()->pageTextContains('The configuration options have been saved.');
+    $this->assertSame(
+      $notice,
+      $this->config('oe_ai_assistant.settings')->get('transparency_notice')
+    );
+  }
+
+  /**
+   * Tests that unsupported markup is rejected by the settings form.
+   */
+  public function testTransparencyNoticeSettingsRejectsUnsupportedMarkup(): void {
+    $user = $this->drupalCreateUser([
+      'access administration pages',
+      'administer ai editorial sessions',
+    ]);
+    $this->drupalLogin($user);
+
+    $this->drupalGet(Url::fromRoute('oe_ai_assistant.transparency_notice_settings'));
+    $this->submitForm([
+      'transparency_notice' => '<script>alert("unsafe");</script>',
+    ], 'Save configuration');
+
+    $this->assertSession()->pageTextContains('The transparency notice contains HTML tags or attributes that are not allowed.');
+    $this->assertSame(
+      'AI assistant can make mistakes. Please double-check responses.',
+      $this->config('oe_ai_assistant.settings')->get('transparency_notice')
+    );
+  }
+
+  /**
+   * Tests that the transparency notice settings route requires permission.
+   */
+  public function testTransparencyNoticeSettingsAccess(): void {
+    $this->drupalGet(Url::fromRoute('oe_ai_assistant.transparency_notice_settings'));
+    $this->assertSession()->statusCodeEquals(403);
+
+    $this->drupalLogin($this->drupalCreateUser(['access administration pages']));
+    $this->drupalGet(Url::fromRoute('oe_ai_assistant.transparency_notice_settings'));
+    $this->assertSession()->statusCodeEquals(403);
   }
 
   /**

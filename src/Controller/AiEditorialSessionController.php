@@ -7,9 +7,11 @@ namespace Drupal\oe_ai_assistant\Controller;
 use Drupal\Core\Cache\CacheableMetadata;
 use Drupal\Core\Controller\ControllerBase;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
+use Drupal\Core\Render\RendererInterface;
 use Drupal\Core\Url;
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionType;
+use Drupal\oe_ai_assistant\Form\AiEditorialSettingsForm;
 use Drupal\oe_ai_assistant\Plugin\AiAssistantPluginManager;
 use Drupal\system\SystemManager;
 use Symfony\Component\HttpFoundation\RedirectResponse;
@@ -26,6 +28,7 @@ class AiEditorialSessionController extends ControllerBase {
     private readonly SystemManager $systemManager,
     private readonly RequestStack $requestStack,
     private readonly AiAssistantPluginManager $pluginManager,
+    private readonly RendererInterface $renderer,
   ) {}
 
   /**
@@ -120,6 +123,12 @@ class AiEditorialSessionController extends ControllerBase {
         $pluginConfig[$pluginId] = $config;
       }
     }
+    $disclaimer = [
+      '#type' => 'markup',
+      '#markup' => $this->config('oe_ai_assistant.settings')->get('transparency_notice'),
+      '#allowed_tags' => AiEditorialSettingsForm::ALLOWED_TAGS,
+    ];
+    $disclaimer = (string) $this->renderer->renderInIsolation($disclaimer);
     // Build the configuration object that bootstraps the React app.
     // This data is serialised into window.drupalSettings.oeAiAssistant
     // and read by the React entry point before the first render.
@@ -147,8 +156,8 @@ class AiEditorialSessionController extends ControllerBase {
       // Where the exit control returns the editor to: the AI editorial
       // sessions dashboard.
       'exitUrl' => Url::fromRoute('entity.ai_editorial_session.collection')->toString(),
-      // Disclaimer shown under the chat composer.
-      'disclaimer' => (string) $this->t('AI assistant can make mistakes. Please double-check responses.'),
+      // Sanitized notice shown under the chat composer.
+      'disclaimer' => $disclaimer,
       // List of plugin IDs that should be available in the UI for this node.
       // The React app only registers plugins whose IDs appear in this list,
       // allowing server-side control over which tools are shown per context.
@@ -199,6 +208,7 @@ class AiEditorialSessionController extends ControllerBase {
     CacheableMetadata::createFromRenderArray($build)
       ->addCacheableDependency($session)
       ->addCacheableDependency($this->sessionEntityTypeManager->getStorage('ai_editorial_session_type')->load($session->bundle()))
+      ->addCacheableDependency($this->config('oe_ai_assistant.settings'))
       ->merge($cacheability)
       ->applyTo($build);
 

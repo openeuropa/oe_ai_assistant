@@ -16,6 +16,7 @@ import {
   useAuiState,
 } from "@assistant-ui/react";
 
+import DOMPurify from "dompurify";
 import { Streamdown } from "streamdown";
 import "streamdown/styles.css";
 import {
@@ -27,6 +28,7 @@ import {
   SendHorizontal,
   X,
 } from "lucide-react";
+import { useMemo } from "react";
 import type { PaneTabItem } from "@/components/ui/pane-tabs";
 import { avatarColorClass, UserAvatar } from "@/components/ui/user-avatar";
 import { getConfig } from "@/config";
@@ -375,6 +377,39 @@ interface DraftingThreadProps {
 }
 
 /**
+ * Sanitizes the host-provided transparency notice and hardens its links.
+ *
+ * Drupal supplies sanitized simple HTML, but the client keeps its own
+ * defensive boundary because this value is rendered with innerHTML.
+ */
+function sanitizeTransparencyNotice(value: string): string {
+  const clean = DOMPurify.sanitize(value, {
+    ALLOWED_TAGS: ["b", "i", "a", "strong", "em"],
+    ALLOWED_ATTR: ["href"],
+  });
+
+  if (typeof DOMParser === "undefined") {
+    return clean;
+  }
+
+  const document = new DOMParser().parseFromString(
+    `<div>${clean}</div>`,
+    "text/html",
+  );
+  const wrapper = document.body.firstElementChild;
+  if (!wrapper) {
+    return clean;
+  }
+
+  for (const link of wrapper.querySelectorAll("a")) {
+    link.setAttribute("target", "_blank");
+    link.setAttribute("rel", "noopener");
+  }
+
+  return wrapper.innerHTML;
+}
+
+/**
  * Full chat thread with welcome, messages, and composer. The scroll
  * container spans the whole chat area so the scrollbar sits at its
  * outer edge, while the messages and the composer are centered with a
@@ -386,6 +421,10 @@ export function DraftingThread({
 }: DraftingThreadProps) {
   // Host-controlled disclaimer under the composer; hidden when empty.
   const disclaimer = getConfig().disclaimer.trim();
+  const safeDisclaimer = useMemo(
+    () => sanitizeTransparencyNotice(disclaimer),
+    [disclaimer],
+  );
 
   return (
     <ThreadPrimitive.Root className="flex min-h-0 flex-1 flex-col">
@@ -402,8 +441,11 @@ export function DraftingThread({
       </ThreadPrimitive.Viewport>
       <div className="mx-auto w-full max-w-3xl">
         <Composer tabs={tabs} defaultActiveTabId={defaultActiveTabId} />
-        {disclaimer !== "" && (
-          <p className="pb-2 text-center text-xs text-gray-400">{disclaimer}</p>
+        {safeDisclaimer !== "" && (
+          <p
+            className="pb-2 text-center text-xs text-gray-400 [&_a]:cursor-pointer [&_a]:underline"
+            dangerouslySetInnerHTML={{ __html: safeDisclaimer }}
+          />
         )}
       </div>
     </ThreadPrimitive.Root>
