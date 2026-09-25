@@ -22,6 +22,7 @@ class AiEditorialSessionAddForm extends ContentEntityForm {
    * The current user.
    */
   protected AccountInterface $currentUserAccount;
+
   /**
    * {@inheritdoc}
    */
@@ -53,8 +54,7 @@ class AiEditorialSessionAddForm extends ContentEntityForm {
       $this->entity->set('template', NULL);
     }
     $form['transparency_notice'] = [
-      '#type' => 'markup',
-      '#attributes' => ['class' => ['oe-ai-transparency-notice']],
+      '#type' => 'container',
       '#markup' => $this->config('oe_ai_assistant.settings')->get('transparency_notice'),
       '#allowed_tags' => AiEditorialSettingsForm::ALLOWED_TAGS,
     ];
