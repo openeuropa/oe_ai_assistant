@@ -199,7 +199,7 @@ class AiEditorialSessionDashboardTest extends AiEditorialSessionBrowserTestBase 
     $this->assertSession()->fieldExists('transparency_notice');
     $this->assertSession()->pageTextContains('Allowed HTML tags: b, i, a, strong, and em.');
 
-    $notice = '<strong>AI-generated content</strong>. <a href="https://example.com/policy">Read our policy</a>.';
+    $notice = 'Tom & Jerry: <strong>AI-generated content</strong>. <a href="https://example.com/policy"  title="Read our policy">Read our policy</a>.';
     $this->submitForm(['transparency_notice' => $notice], 'Save configuration');
 
     $this->assertSession()->pageTextContains('The configuration options have been saved.');
