@@ -56,8 +56,6 @@ final class AiEditorialSettingsForm extends ConfigFormBase {
     parent::validateForm($form, $form_state);
 
     $value = (string) $form_state->getValue('transparency_notice');
-    $notice = $this->configFactory->get('oe_ai_assistant.settings')
-      ->get('transparency_notice');
     if ($value !== Xss::filter($value, self::ALLOWED_TAGS)) {
       $form_state->setErrorByName(
         'transparency_notice',

@@ -186,12 +186,7 @@ class AiEditorialSessionListBuilder extends EntityListBuilder {
    */
   public function render(): array {
     $build = [];
-    $build['sessions_header'] = [
-      '#type' => 'container',
-      '#attributes' => ['class' => ['container-inline', 'oe-ai-session-list-header']],
-      '#attached' => ['library' => ['oe_ai_assistant/session_builder']],
-    ];
-    $build['sessions_header']['add_new_session'] = [
+    $build['add_new_session'] = [
       '#type' => 'link',
       '#title' => $this->t('Add new session'),
       '#url' => Url::fromRoute('entity.ai_editorial_session.add_page'),
@@ -199,7 +194,7 @@ class AiEditorialSessionListBuilder extends EntityListBuilder {
         'class' => ['button', 'button--action', 'button--primary'],
       ],
     ];
-    $build['sessions_header']['transparency_notice'] = [
+    $build['transparency_notice'] = [
       '#type' => 'container',
       '#markup' => $this->configFactory->get('oe_ai_assistant.settings')->get('transparency_notice'),
       '#allowed_tags' => AiEditorialSettingsForm::ALLOWED_TAGS,
