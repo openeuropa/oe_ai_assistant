@@ -4,12 +4,9 @@ declare(strict_types=1);
 
 namespace Drupal\oe_ai_assistant\Form;
 
-use Drupal\Core\Config\ConfigFactoryInterface;
-use Drupal\Core\Config\TypedConfigManagerInterface;
+use Drupal\Component\Utility\Xss;
 use Drupal\Core\Form\ConfigFormBase;
 use Drupal\Core\Form\FormStateInterface;
-use Drupal\oe_ai_assistant\Service\TransparencyNoticeInterface;
-use Symfony\Component\DependencyInjection\ContainerInterface;
 
 /**
  * Settings form for the AI Editorial Assistant.
@@ -17,26 +14,11 @@ use Symfony\Component\DependencyInjection\ContainerInterface;
 final class AiEditorialSettingsForm extends ConfigFormBase {
 
   /**
-   * The transparency notice service.
+   * HTML tags supported in the transparency notice.
+   *
+   * @var string[]
    */
-  public function __construct(
-    ConfigFactoryInterface $config_factory,
-    TypedConfigManagerInterface $typed_config_manager,
-    private readonly TransparencyNoticeInterface $transparencyNotice,
-  ) {
-    parent::__construct($config_factory, $typed_config_manager);
-  }
-
-  /**
-   * {@inheritdoc}
-   */
-  public static function create(ContainerInterface $container): static {
-    return new static(
-      $container->get('config.factory'),
-      $container->get('config.typed'),
-      $container->get('oe_ai_assistant.transparency_notice'),
-    );
-  }
+  public const ALLOWED_TAGS = ['b', 'i', 'a', 'strong', 'em'];
 
   /**
    * {@inheritdoc}
@@ -74,8 +56,9 @@ final class AiEditorialSettingsForm extends ConfigFormBase {
     parent::validateForm($form, $form_state);
 
     $value = (string) $form_state->getValue('transparency_notice');
-    $sanitized = $this->transparencyNotice->sanitize($value);
-    if ($value !== $sanitized) {
+    $notice = $this->configFactory->get('oe_ai_assistant.settings')
+      ->get('transparency_notice');
+    if ($value !== Xss::filter($value, self::ALLOWED_TAGS)) {
       $form_state->setErrorByName(
         'transparency_notice',
         $this->t('The transparency notice contains HTML tags or attributes that are not allowed. Allowed tags: b, i, a, strong, and em.')
