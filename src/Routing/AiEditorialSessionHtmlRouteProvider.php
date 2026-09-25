@@ -47,6 +47,7 @@ class AiEditorialSessionHtmlRouteProvider extends AdminHtmlRouteProvider {
         '_title_callback' => '\Drupal\oe_ai_assistant\Controller\AiConversationHistoryController::title',
       ])
       ->setRequirement('_permission', 'access ai conversation message overview+administer ai conversation messages')
+      ->setRequirement('_entity_access', 'ai_editorial_session.view')
       ->setOption('_admin_route', TRUE)
       ->setOption('parameters', [
         $entity_type_id => ['type' => 'entity:' . $entity_type_id],

@@ -8,6 +8,8 @@ use Drupal\Core\Access\AccessResult;
 use Drupal\Core\Entity\EntityAccessControlHandler;
 use Drupal\Core\Entity\EntityInterface;
 use Drupal\Core\Session\AccountInterface;
+use Drupal\oe_ai_assistant\Entity\AiConversationMessageInterface;
+use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
 
 /**
  * Access control handler for AI conversation messages.
@@ -36,7 +38,24 @@ class AiConversationMessageAccessControlHandler extends EntityAccessControlHandl
       return AccessResult::neutral();
     }
 
-    return AccessResult::allowedIfHasPermission($account, $permission);
+    $flat_access = AccessResult::allowedIfHasPermission($account, $permission);
+
+    if (!$entity instanceof AiConversationMessageInterface || $entity->getHostEntityType() !== 'ai_editorial_session') {
+      return $flat_access;
+    }
+
+    $session = \Drupal::entityTypeManager()
+      ->getStorage('ai_editorial_session')
+      ->load($entity->getHostEntityId());
+    if (!$session instanceof AiEditorialSessionInterface) {
+      return $flat_access;
+    }
+
+    $session_operation = $operation === 'view' || $operation === 'view label' ? 'view' : 'update';
+
+    return $flat_access
+      ->andIf($session->access($session_operation, $account, TRUE))
+      ->addCacheableDependency($entity);
   }
 
   /**
