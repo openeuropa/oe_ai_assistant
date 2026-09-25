@@ -9,7 +9,6 @@ use Drupal\Core\Entity\ContentEntityForm;
 use Drupal\Core\Form\FormStateInterface;
 use Drupal\Core\Messenger\MessengerTrait;
 use Drupal\Core\Session\AccountInterface;
-use Drupal\oe_ai_assistant\Service\TransparencyNoticeInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 
 /**
@@ -23,12 +22,6 @@ class AiEditorialSessionAddForm extends ContentEntityForm {
    * The current user.
    */
   protected AccountInterface $currentUserAccount;
-
-  /**
-   * The transparency notice service.
-   */
-  protected TransparencyNoticeInterface $transparencyNotice;
-
   /**
    * {@inheritdoc}
    */
@@ -36,7 +29,6 @@ class AiEditorialSessionAddForm extends ContentEntityForm {
     /** @var static $form */
     $form = parent::create($container);
     $form->currentUserAccount = $container->get('current_user');
-    $form->transparencyNotice = $container->get('oe_ai_assistant.transparency_notice');
     return $form;
   }
 
@@ -60,7 +52,12 @@ class AiEditorialSessionAddForm extends ContentEntityForm {
       $this->entity->set('content_type', $chosenType);
       $this->entity->set('template', NULL);
     }
-
+    $form['transparency_notice'] = [
+      '#type' => 'markup',
+      '#attributes' => ['class' => ['oe-ai-transparency-notice']],
+      '#markup' => $this->config('oe_ai_assistant.settings')->get('transparency_notice'),
+      '#allowed_tags' => AiEditorialSettingsForm::ALLOWED_TAGS,
+    ];
     $form = parent::form($form, $form_state);
     $form['label'] = [
       '#type' => 'textfield',
@@ -68,15 +65,6 @@ class AiEditorialSessionAddForm extends ContentEntityForm {
       '#default_value' => $this->entity->get('label')->value ?? '',
       '#required' => TRUE,
       '#description' => $this->t('Label for the session.'),
-    ];
-
-    $form['transparency_notice'] = [
-      '#type' => 'container',
-      '#weight' => -100,
-      '#attributes' => ['class' => ['oe-ai-transparency-notice']],
-      'content' => [
-        '#markup' => $this->transparencyNotice->getNotice(),
-      ],
     ];
 
     // Regenerate the template options whenever the content type changes.
@@ -89,7 +77,7 @@ class AiEditorialSessionAddForm extends ContentEntityForm {
     $form['template']['#suffix'] = '</div>';
 
     CacheableMetadata::createFromRenderArray($form)
-      ->addCacheableDependency($this->transparencyNotice->getConfig())
+      ->addCacheableDependency($this->config('oe_ai_assistant.settings'))
       ->applyTo($form);
 
     return $form;

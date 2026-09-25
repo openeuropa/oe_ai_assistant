@@ -14,12 +14,6 @@ services:
 
   Drupal\oe_ai_assistant\Service\RequestValidator: {}
 
-  oe_ai_assistant.transparency_notice:
-    class: Drupal\oe_ai_assistant\Service\TransparencyNotice
-    arguments:
-      - '@config.factory'
-  Drupal\oe_ai_assistant\Service\TransparencyNoticeInterface: '@oe_ai_assistant.transparency_notice'
-
   Drupal\oe_ai_assistant\Service\EntityJsonSchemaComposer: {}
 
   Drupal\oe_ai_assistant\Service\TemplateSchemaFilter: {}
