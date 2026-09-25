@@ -1,0 +1,11 @@
+langcode: en
+status: true
+dependencies:
+  module:
+    - oe_ai_assistant
+id: oel_ai_editor_assistant
+label: 'Use AI editor assistant'
+weight: 0
+is_admin: false
+permissions:
+  - 'use oe ai assistant'

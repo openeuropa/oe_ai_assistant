@@ -11,6 +11,7 @@ use Drupal\datetime\Plugin\Field\FieldType\DateTimeItemInterface;
 use Drupal\oe_ai_assistant\Entity\AiConversationMessage;
 use Drupal\oe_ai_assistant\Entity\AiConversationMessageInterface;
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
+use Drupal\user\Entity\Role;
 
 /**
  * Tests the AI conversation history admin page.
@@ -24,8 +25,18 @@ class AiConversationHistoryTest extends AiEditorialSessionBrowserTestBase {
    */
   public function testAccess(): void {
     $assert_session = $this->assertSession();
-    $owner = $this->createUser();
-    $session = $this->createSession($owner);
+
+    // This site grants 'access content' (and 'view media') to the
+    // 'authenticated' role by default, which would give every logged-in
+    // user node view access regardless of the scenarios below. Revoke it
+    // for this test only (an isolated site install) so 'access content'
+    // reflects an explicit, per-user grant like every other permission
+    // asserted here.
+    Role::load('authenticated')->revokePermission('access content')->save();
+
+    $owner = $this->createUser(['access content', 'create oe_news content']);
+    $node = $this->createPublishedNode('oe_news', 'Shared node');
+    $session = $this->createSession($owner, $node);
     $url = $session->toUrl('history');
 
     // Anonymous is denied.
@@ -37,18 +48,40 @@ class AiConversationHistoryTest extends AiEditorialSessionBrowserTestBase {
     $this->drupalGet($url);
     $assert_session->statusCodeEquals(403);
 
-    // The overview permission grants access, even though this reviewer
-    // does not own the session. This page is a technical/debug overview
-    // of the raw conversation for developers, not end-user content, so
-    // cross-session visibility is intentional.
-    $reviewer = $this->createUser(['access ai conversation message overview']);
+    // The overview permission alone is no longer enough: node access now
+    // governs collaboration too, closing this route's read gap.
+    $overviewOnly = $this->createUser(['access ai conversation message overview']);
+    $this->drupalLogin($overviewOnly);
+    $this->drupalGet($url);
+    $assert_session->statusCodeEquals(403);
+
+    // The overview permission plus node view access grants access, even
+    // though this reviewer does not own the session — but only alongside
+    // 'use oe ai assistant', which now gates session access itself.
+    $reviewer = $this->createUser(['use oe ai assistant', 'access ai conversation message overview', 'access content']);
     $this->drupalLogin($reviewer);
     $this->drupalGet($url);
     $assert_session->statusCodeEquals(200);
 
-    // The admin permission also grants access, again across sessions.
-    $admin = $this->createUser(['administer ai conversation messages']);
-    $this->drupalLogin($admin);
+    // The message-admin permission alone is likewise not enough without
+    // node access.
+    $messageAdminOnly = $this->createUser(['administer ai conversation messages']);
+    $this->drupalLogin($messageAdminOnly);
+    $this->drupalGet($url);
+    $assert_session->statusCodeEquals(403);
+
+    // Combined with node view access, the message-admin permission grants
+    // access across sessions, as before — again requiring the feature
+    // permission for session access to succeed.
+    $messageAdmin = $this->createUser(['use oe ai assistant', 'administer ai conversation messages', 'access content']);
+    $this->drupalLogin($messageAdmin);
+    $this->drupalGet($url);
+    $assert_session->statusCodeEquals(200);
+
+    // The session-admin permission bypasses node access entirely, via the
+    // session access handler's own admin short-circuit.
+    $sessionAdmin = $this->createUser(['access ai conversation message overview', 'administer ai editorial sessions']);
+    $this->drupalLogin($sessionAdmin);
     $this->drupalGet($url);
     $assert_session->statusCodeEquals(200);
   }
@@ -709,8 +742,10 @@ class AiConversationHistoryTest extends AiEditorialSessionBrowserTestBase {
   public function testHistoryOperationLinksFromCollection(): void {
     $assert_session = $this->assertSession();
     $user = $this->createUser([
+      'use oe ai assistant',
       'view_update own sessions',
       'access ai conversation message overview',
+      'create oe_news content',
     ]);
     $session = $this->createSession($user);
     $session->set('label', 'Session with history link')->save();
@@ -725,7 +760,7 @@ class AiConversationHistoryTest extends AiEditorialSessionBrowserTestBase {
     // (or admin) permission does not get a History operation link for it:
     // the access guard in AiEditorialSessionListBuilder::getDefaultOperations()
     // is respected, not just skipped for everyone.
-    $userWithoutMessageAccess = $this->createUser(['view_update own sessions']);
+    $userWithoutMessageAccess = $this->createUser(['use oe ai assistant', 'view_update own sessions']);
     $theirSession = $this->createSession($userWithoutMessageAccess);
     $this->drupalLogin($userWithoutMessageAccess);
     $this->drupalGet(Url::fromRoute('entity.ai_editorial_session.collection'));
@@ -918,7 +953,12 @@ class AiConversationHistoryTest extends AiEditorialSessionBrowserTestBase {
    *   The session whose history page to visit.
    */
   private function visitHistoryPage(AiEditorialSessionInterface $session): void {
-    $reviewer = $this->createUser(['access ai conversation message overview']);
+    // These fixture sessions have no node attached, so node-based access
+    // does not apply; grant the session-admin bypass so this helper's
+    // callers (which test message rendering, not access control) are not
+    // coupled to the node/content_type access cascade covered by
+    // testAccess().
+    $reviewer = $this->createUser(['access ai conversation message overview', 'administer ai editorial sessions']);
     $this->drupalLogin($reviewer);
     $this->drupalGet($session->toUrl('history'));
     $this->assertSession()->statusCodeEquals(200);

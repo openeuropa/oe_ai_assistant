@@ -45,6 +45,17 @@ class AiEditorialSessionAddForm extends ContentEntityForm {
     if (is_array($chosenType)) {
       $chosenType = $chosenType[0]['target_id'] ?? ($chosenType['target_id'] ?? NULL);
     }
+
+    // A required select with exactly one valid option is pre-selected by
+    // the browser without firing 'change', so updateTemplateElement's AJAX
+    // is never triggered.
+    if ($chosenType === NULL && $this->entity->get('content_type')->isEmpty()) {
+      $options = $this->getDraftableContentTypeOptions();
+      if (count($options) === 1) {
+        $chosenType = array_key_first($options);
+      }
+    }
+
     // The select placeholder submits '_none'; treat it as no selection so
     // AJAX rebuilds (e.g. the context documents add-more button) do not
     // store it on the entity as a real content type.
@@ -54,6 +65,7 @@ class AiEditorialSessionAddForm extends ContentEntityForm {
     }
 
     $form = parent::form($form, $form_state);
+
     $form['label'] = [
       '#type' => 'textfield',
       '#title' => $this->t('Label'),
@@ -125,6 +137,28 @@ class AiEditorialSessionAddForm extends ContentEntityForm {
     }
 
     return $options;
+  }
+
+  /**
+   * Helper function to return the content_type options the widget will render.
+   *
+   * @return array<string, string>
+   *   A map of node type IDs to labels.
+   */
+  protected function getDraftableContentTypeOptions(): array {
+    $templateStorage = $this->entityTypeManager->getStorage('ai_drafting_template');
+    $ids = $templateStorage->getQuery()->accessCheck(FALSE)->condition('status', TRUE)->execute();
+
+    $nodeTypeStorage = $this->entityTypeManager->getStorage('node_type');
+    $options = [];
+    foreach ($templateStorage->loadMultiple($ids) as $template) {
+      $bundle = $template->getContentType();
+      if (!isset($options[$bundle]) && ($nodeType = $nodeTypeStorage->load($bundle))) {
+        $options[$bundle] = $nodeType->label();
+      }
+    }
+
+    return $this->checkTypesAccess($options);
   }
 
 }

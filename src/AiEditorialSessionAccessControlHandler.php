@@ -69,16 +69,35 @@ class AiEditorialSessionAccessControlHandler extends EntityAccessControlHandler 
    * Checks access to an existing session.
    */
   protected function checkSessionAccess(AiEditorialSessionInterface $entity, AccountInterface $account, string $operation): AccessResult {
-    $owner_access = AccessResult::allowedIf((int) $entity->getOwnerId() === (int) $account->id())
-      ->addCacheableDependency($entity)
-      ->cachePerUser();
-    if ($owner_access->isAllowed()) {
-      return $owner_access;
+    $feature_access = AccessResult::allowedIfHasPermission($account, 'use oe ai assistant');
+    if (!$feature_access->isAllowed()) {
+      return AccessResult::forbidden()->inheritCacheability($feature_access)->addCacheableDependency($entity);
     }
-    return AccessResult::forbidden()
-      ->addCacheableDependency($entity)
-      ->cachePerUser();
 
+    $node_operation = $operation === 'update' ? 'update' : 'view';
+
+    $access = AccessResult::neutral()->addCacheableDependency($entity);
+
+    $node = $entity->getNode();
+    if ($node !== NULL) {
+      $access = $access->orIf(
+        AccessResult::allowedIf($node->access($node_operation, $account))
+          ->addCacheableDependency($node)
+      );
+    }
+
+    // If there is no node related with entity use session's content type for access check.
+    $content_type = $entity->getContentType();
+    if ($content_type !== '') {
+      $access = $access->orIf(AccessResult::allowedIfHasPermission($account, sprintf('create %s content', $content_type)));
+    }
+
+    // If content type cannot be determined for some reason - owner check.
+    $access = $access->orIf(
+      AccessResult::allowedIf((int) $entity->getOwnerId() === (int) $account->id())->cachePerUser()
+    );
+
+    return $access->isAllowed() ? $access : AccessResult::forbidden()->inheritCacheability($access);
   }
 
 }

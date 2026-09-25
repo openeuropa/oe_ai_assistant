@@ -127,6 +127,9 @@ abstract class AiEditorialSessionKernelTestBase extends KernelTestBase {
         'uid' => $owner->id(),
         'content_type' => 'oe_news',
       ]);
+    if ($node !== NULL) {
+      $session->setNode((int) $node->id());
+    }
     $session->save();
 
     return $session;
