@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\oe_ai_assistant\Form;
 
+use Drupal\Component\Utility\Html;
 use Drupal\Component\Utility\Xss;
 use Drupal\Core\Form\ConfigFormBase;
 use Drupal\Core\Form\FormStateInterface;
@@ -56,12 +57,20 @@ final class AiEditorialSettingsForm extends ConfigFormBase {
     parent::validateForm($form, $form_state);
 
     $value = (string) $form_state->getValue('transparency_notice');
-    if ($value !== Xss::filter($value, self::ALLOWED_TAGS)) {
+    if ($this->containsUnsupportedMarkup($value)) {
       $form_state->setErrorByName(
         'transparency_notice',
         $this->t('The transparency notice contains HTML tags or attributes that are not allowed. Allowed tags: b, i, a, strong, and em.')
       );
     }
+  }
+
+  /**
+   * Determines whether filtering would remove markup from the notice.
+   */
+  private function containsUnsupportedMarkup(string $value): bool {
+    $filtered_value = Xss::filter($value, self::ALLOWED_TAGS);
+    return Html::serialize(Html::load($value)) !== Html::serialize(Html::load($filtered_value));
   }
 
 }
