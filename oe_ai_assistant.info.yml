@@ -16,6 +16,7 @@ dependencies:
   - drupal:options
   - drupal:serialization
   - drupal:text
+  - drupal:views
   - key:key
   - drupal:taxonomy
   - state_machine:state_machine
