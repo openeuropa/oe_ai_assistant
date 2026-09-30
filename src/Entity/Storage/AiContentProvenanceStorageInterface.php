@@ -17,6 +17,17 @@ use Drupal\oe_ai_assistant\Entity\AiContentProvenanceInterface;
 interface AiContentProvenanceStorageInterface extends ContentEntityStorageInterface {
 
   /**
+   * Loads the unsaved provenance record for a drafting message.
+   *
+   * @param int $message_id
+   *   The triggering conversation message id.
+   *
+   * @return \Drupal\oe_ai_assistant\Entity\AiContentProvenanceInterface|null
+   *   The pending record, or NULL when none exists.
+   */
+  public function loadPendingForMessage(int $message_id): ?AiContentProvenanceInterface;
+
+  /**
    * Loads the provenance record for one revision.
    *
    * @param string $entity_type_id

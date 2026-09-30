@@ -47,6 +47,27 @@ class ProvenanceRecorder implements ProvenanceRecorderInterface {
   /**
    * {@inheritdoc}
    */
+  public function recordDraft(AiEditorialSessionInterface $session, AiConversationMessageInterface $message): ?AiContentProvenanceInterface {
+    try {
+      $storage = $this->provenanceStorage();
+      $record = $storage->loadPendingForMessage((int) $message->id())
+        ?? $storage->create();
+      $this->applyDraftSnapshot($record, $session, $message);
+      $record->save();
+      return $record;
+    }
+    catch (EntityStorageException $e) {
+      $this->logger->error('Failed to record AI provenance for draft message @message: @e', [
+        '@message' => $message->id(),
+        '@e' => (string) $e,
+      ]);
+      return NULL;
+    }
+  }
+
+  /**
+   * {@inheritdoc}
+   */
   public function record(RevisionableInterface $entity, AiEditorialSessionInterface $session, AiConversationMessageInterface $message): ?AiContentProvenanceInterface {
     try {
       $storage = $this->provenanceStorage();
@@ -57,33 +78,17 @@ class ProvenanceRecorder implements ProvenanceRecorderInterface {
         return $existing;
       }
 
-      $tokens = $this->sumTokenUsage($session, $message);
+      $record = $storage->loadPendingForMessage((int) $message->id())
+        ?? $storage->create();
+      $this->applyDraftSnapshot($record, $session, $message);
       $version = $this->snapshotVersion($entity);
-
-      // Prefer the template stamped on the drafting turn so an older draft
-      // keeps the template that produced it, even if the session's template
-      // was changed afterwards. Fall back to the session's current template
-      // for turns recorded before stamping was introduced.
-      $template = $message->getDraftTemplateId()
-        ?? ($session->get('template')->target_id ?: NULL);
-
-      $record = $storage->create([
-        'entity_type' => $entity->getEntityTypeId(),
-        'entity_id' => (int) $entity->id(),
-        'revision_id' => (int) $entity->getRevisionId(),
-        'uid' => (int) $this->currentUser->id(),
-        'session' => $session->id(),
-        'message' => $message->id(),
-        'template' => $template,
-        'tokens_input' => $tokens['input'],
-        'tokens_output' => $tokens['output'],
-        'tokens_total' => $tokens['total'],
-        'provider' => (string) $message->get('provider')->value,
-        'model' => (string) $message->get('model')->value,
-        'version_major' => $version['major'],
-        'version_minor' => $version['minor'],
-        'version_patch' => $version['patch'],
-      ]);
+      $record->set('uid', (int) $this->currentUser->id());
+      $record->set('entity_type', $entity->getEntityTypeId());
+      $record->set('entity_id', (int) $entity->id());
+      $record->set('revision_id', (int) $entity->getRevisionId());
+      $record->set('version_major', $version['major']);
+      $record->set('version_minor', $version['minor']);
+      $record->set('version_patch', $version['patch']);
       $record->save();
       return $record;
     }
@@ -99,7 +104,31 @@ class ProvenanceRecorder implements ProvenanceRecorderInterface {
   }
 
   /**
-   * Sums token usage over the drafting turn and its sub-agent tree.
+   * Applies the generation-time provenance snapshot to a record.
+   */
+  private function applyDraftSnapshot(AiContentProvenanceInterface $record, AiEditorialSessionInterface $session, AiConversationMessageInterface $message): void {
+    $tokens = $this->sumTokenUsage($session, $message);
+    $template = $message->getDraftTemplateId()
+      ?? ($session->get('template')->target_id ?: NULL);
+
+    $record->set('uid', (int) $this->currentUser->id());
+    $record->set('session', $session->id());
+    $record->set('message', $message->id());
+    $record->set('template', $template);
+    $record->set('tokens_input', $tokens['input']);
+    $record->set('tokens_output', $tokens['output']);
+    $record->set('tokens_total', $tokens['total']);
+    $record->set('provider', (string) $message->get('provider')->value);
+    $record->set('model', (string) $message->get('model')->value);
+  }
+
+  /**
+   * Sums token usage since the previous draft through the drafting turn.
+   *
+   * For the first draft, this includes the conversation from the start of the
+   * session. For later drafts, the previous draft and its sub-agent branch are
+   * excluded. The current drafting turn is included recursively, while turns
+   * made after it are excluded.
    *
    * @return array<string, int>
    *   Keys input, output and total.
@@ -107,12 +136,31 @@ class ProvenanceRecorder implements ProvenanceRecorderInterface {
   private function sumTokenUsage(AiEditorialSessionInterface $session, AiConversationMessageInterface $message): array {
     $totals = ['input' => 0, 'output' => 0, 'total' => 0];
     foreach ($this->messageStorage()->loadTree($session) as $branch) {
-      if ((int) $branch['message']->id() === (int) $message->id()) {
-        $this->sumBranch($branch, $totals);
+      $branch_message = $branch['message'];
+      if ((int) $branch_message->id() !== (int) $message->id()
+        && $this->isDraftTurn($branch_message)
+      ) {
+        $totals = ['input' => 0, 'output' => 0, 'total' => 0];
+        continue;
+      }
+      $this->sumBranch($branch, $totals);
+      if ((int) $branch_message->id() === (int) $message->id()) {
         break;
       }
     }
     return $totals;
+  }
+
+  /**
+   * Returns whether a conversation message triggered draft creation.
+   */
+  private function isDraftTurn(AiConversationMessageInterface $message): bool {
+    foreach ($message->getToolCalls() as $tool_call) {
+      if (($tool_call['function']['name'] ?? NULL) === 'draft_content') {
+        return TRUE;
+      }
+    }
+    return FALSE;
   }
 
   /**
@@ -125,9 +173,13 @@ class ProvenanceRecorder implements ProvenanceRecorderInterface {
    */
   private function sumBranch(array $branch, array &$totals): void {
     $usage = $branch['message']->getTokenUsage();
-    foreach (array_keys($totals) as $key) {
-      $totals[$key] += (int) ($usage[$key] ?? 0);
-    }
+    $input = (int) ($usage['input'] ?? 0);
+    $output = (int) ($usage['output'] ?? 0);
+    $totals['input'] += $input;
+    $totals['output'] += $output;
+    $totals['total'] += $usage['total'] === NULL
+      ? $input + $output
+      : (int) $usage['total'];
     foreach ($branch['children'] as $child) {
       $this->sumBranch($child, $totals);
     }

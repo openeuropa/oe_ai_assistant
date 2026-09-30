@@ -15,6 +15,19 @@ use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
 interface ProvenanceRecorderInterface {
 
   /**
+   * Creates or refreshes provenance for a generated, unsaved draft.
+   *
+   * @param \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $session
+   *   The editorial session that produced the draft.
+   * @param \Drupal\oe_ai_assistant\Entity\AiConversationMessageInterface $message
+   *   The assistant turn that triggered drafting.
+   *
+   * @return \Drupal\oe_ai_assistant\Entity\AiContentProvenanceInterface|null
+   *   The pending record, or NULL when the write failed.
+   */
+  public function recordDraft(AiEditorialSessionInterface $session, AiConversationMessageInterface $message): ?AiContentProvenanceInterface;
+
+  /**
    * Records provenance for a saved revision.
    *
    * @param \Drupal\Core\Entity\RevisionableInterface $entity
@@ -25,8 +38,9 @@ interface ProvenanceRecorderInterface {
    *   The assistant turn that triggered drafting.
    *
    * @return \Drupal\oe_ai_assistant\Entity\AiContentProvenanceInterface|null
-   *   The saved record, the existing record when the revision was already
-   *   tracked, or NULL when the write failed (logged, not thrown).
+   *   The finalized record, the existing record when the revision was already
+   *   tracked, or NULL when the write failed (logged, not thrown). A record is
+   *   created for legacy drafts that have no pending provenance.
    */
   public function record(RevisionableInterface $entity, AiEditorialSessionInterface $session, AiConversationMessageInterface $message): ?AiContentProvenanceInterface;
 

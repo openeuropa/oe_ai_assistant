@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Drupal\Tests\oe_ai_assistant\ExistingSite;
 
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
+use Drupal\oe_ai_assistant\Service\ProvenanceRecorderInterface;
 use Drupal\oe_ai_assistant_test\Plugin\AiProvider\MockAiProvider;
 use Drupal\oe_ai_assistant_test\Plugin\AiProvider\MockResponse;
 
@@ -563,6 +564,10 @@ class DraftingPluginSaveTest extends DraftingPluginTestBase {
     // The next commit adds this per-turn stamp and makes the recorder use it.
     $firstMessage->setDraftTemplateId($firstTemplate->id());
     $firstMessage->save();
+    $pendingProvenance = \Drupal::service(ProvenanceRecorderInterface::class)
+      ->recordDraft($session, $firstMessage);
+    $this->assertNotNull($pendingProvenance);
+    $this->assertNull($pendingProvenance->getTrackedRevisionId());
 
     $secondTemplate = $templateStorage->create([
       'id' => 'provenance_second_' . uniqid(),
@@ -588,6 +593,7 @@ class DraftingPluginSaveTest extends DraftingPluginTestBase {
     ]);
     $this->assertNotEmpty($provenance);
     $provenance = reset($provenance);
+    $this->assertSame((int) $pendingProvenance->id(), (int) $provenance->id());
     $this->assertSame((int) $firstMessage->id(), (int) $provenance->getMessage()?->id());
     $this->assertSame($firstTemplate->id(), $provenance->getTemplateId());
   }

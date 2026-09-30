@@ -17,6 +17,25 @@ class AiContentProvenanceStorage extends SqlContentEntityStorage implements AiCo
   /**
    * {@inheritdoc}
    */
+  public function loadPendingForMessage(int $message_id): ?AiContentProvenanceInterface {
+    $ids = $this->getQuery()
+      ->accessCheck(FALSE)
+      ->condition('message.target_id', $message_id)
+      ->condition('entity_type', NULL, 'IS NULL')
+      ->condition('entity_id', NULL, 'IS NULL')
+      ->condition('revision_id', NULL, 'IS NULL')
+      ->range(0, 1)
+      ->execute();
+    if (!$ids) {
+      return NULL;
+    }
+    $record = $this->load(reset($ids));
+    return $record instanceof AiContentProvenanceInterface ? $record : NULL;
+  }
+
+  /**
+   * {@inheritdoc}
+   */
   public function loadForRevision(string $entity_type_id, int $entity_id, int $revision_id): ?AiContentProvenanceInterface {
     $records = $this->loadForRevisions($entity_type_id, $entity_id, [$revision_id]);
     return $records[$revision_id] ?? NULL;
@@ -40,7 +59,10 @@ class AiContentProvenanceStorage extends SqlContentEntityStorage implements AiCo
     }
     $by_revision = [];
     foreach ($this->loadMultiple($ids) as $record) {
-      $by_revision[$record->getTrackedRevisionId()] = $record;
+      $revision_id = $record->getTrackedRevisionId();
+      if ($revision_id !== NULL) {
+        $by_revision[$revision_id] = $record;
+      }
     }
     return $by_revision;
   }

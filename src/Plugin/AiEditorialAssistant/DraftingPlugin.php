@@ -28,6 +28,7 @@ use Drupal\oe_ai_assistant\Service\DraftingOrchestratorInterface;
 use Drupal\oe_ai_assistant\Service\DraftSaverInterface;
 use Drupal\oe_ai_assistant\Service\DraftingSchemaProviderInterface;
 use Drupal\oe_ai_assistant\Service\PreviewRendererInterface;
+use Drupal\oe_ai_assistant\Service\ProvenanceRecorderInterface;
 use Drupal\oe_ai_assistant\Service\ToolExecutionLoopInterface;
 use Drupal\oe_ai_assistant\Service\UiMessageStreamInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
@@ -143,6 +144,13 @@ class DraftingPlugin extends AiAssistantPluginBase {
   protected PreviewRendererInterface $previewRenderer;
 
   /**
+   * The provenance recorder.
+   *
+   * @var \Drupal\oe_ai_assistant\Service\ProvenanceRecorderInterface
+   */
+  protected ProvenanceRecorderInterface $provenanceRecorder;
+
+  /**
    * {@inheritdoc}
    */
   public static function create(
@@ -163,6 +171,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
     $instance->inputStreamFileWriter = $container->get(InputStreamFileWriterInterface::class);
     $instance->draftAssembler = $container->get(DraftAssemblerInterface::class);
     $instance->previewRenderer = $container->get(PreviewRendererInterface::class);
+    $instance->provenanceRecorder = $container->get(ProvenanceRecorderInterface::class);
     return $instance;
   }
 
@@ -422,15 +431,32 @@ class DraftingPlugin extends AiAssistantPluginBase {
         if ($result->hasTerminalTool()
           && $result->terminalToolName === 'draft_content'
         ) {
+          // Create provenance as soon as the LLM requests a draft. The record
+          // is finalized with the entity and revision when the draft is saved.
+          if ($lastAssistant !== NULL) {
+            $lastAssistant->setDraftTemplateId($context['template']);
+            $lastAssistant->save();
+            $this->provenanceRecorder->recordDraft($session, $lastAssistant);
+          }
+
           // Run the sub-agent orchestration and keep the consolidated fields.
           // The draft_content turn is the parent each sub-agent turn nests
           // under in the recorded transcript.
-          $drafted = $this->orchestrator->run(
-            $stream, $history,
-            $context['entityTypeId'], $context['bundle'],
-            $session, $lastAssistant,
-            $editorialContext
-          );
+          try {
+            $drafted = $this->orchestrator->run(
+              $stream, $history,
+              $context['entityTypeId'], $context['bundle'],
+              $session, $lastAssistant,
+              $editorialContext
+            );
+          }
+          finally {
+            // Refresh the same pending row after sub-agents have recorded
+            // their token usage, including when orchestration fails.
+            if ($lastAssistant !== NULL) {
+              $this->provenanceRecorder->recordDraft($session, $lastAssistant);
+            }
+          }
           // Version the draft and snapshot the context that produced it.
           // Prior drafts already carry a result; the current draft_content
           // call does not yet, so the count is the number of earlier drafts.

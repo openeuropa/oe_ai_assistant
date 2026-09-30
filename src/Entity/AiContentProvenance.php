@@ -50,6 +50,9 @@ class AiContentProvenance extends ContentEntityBase implements AiContentProvenan
    * {@inheritdoc}
    */
   public function label(): string {
+    if ($this->getTrackedRevisionId() === NULL) {
+      return sprintf('Unsaved draft from message %s', $this->getMessage()?->id() ?? 'unknown');
+    }
     return sprintf('%s %d revision %d',
       $this->getTrackedEntityTypeId(),
       $this->getTrackedEntityId(),
@@ -71,22 +74,23 @@ class AiContentProvenance extends ContentEntityBase implements AiContentProvenan
   /**
    * {@inheritdoc}
    */
-  public function getTrackedEntityTypeId(): string {
-    return (string) $this->get('entity_type')->value;
+  public function getTrackedEntityTypeId(): ?string {
+    $value = $this->get('entity_type')->value;
+    return $value === NULL || $value === '' ? NULL : (string) $value;
   }
 
   /**
    * {@inheritdoc}
    */
-  public function getTrackedEntityId(): int {
-    return (int) $this->get('entity_id')->value;
+  public function getTrackedEntityId(): ?int {
+    return $this->getIntOrNull('entity_id');
   }
 
   /**
    * {@inheritdoc}
    */
-  public function getTrackedRevisionId(): int {
-    return (int) $this->get('revision_id')->value;
+  public function getTrackedRevisionId(): ?int {
+    return $this->getIntOrNull('revision_id');
   }
 
   /**
@@ -172,19 +176,16 @@ class AiContentProvenance extends ContentEntityBase implements AiContentProvenan
 
     $fields['entity_type'] = BaseFieldDefinition::create('string')
       ->setLabel(t('Tracked entity type'))
-      ->setDescription(t('The entity type that owns the tracked revision.'))
-      ->setRequired(TRUE)
+      ->setDescription(t('The entity type that owns the tracked revision; empty until the draft is saved.'))
       ->setSetting('max_length', 64);
 
     $fields['entity_id'] = BaseFieldDefinition::create('integer')
       ->setLabel(t('Tracked entity ID'))
-      ->setDescription(t('The entity ID that owns the tracked revision.'))
-      ->setRequired(TRUE);
+      ->setDescription(t('The entity ID that owns the tracked revision; empty until the draft is saved.'));
 
     $fields['revision_id'] = BaseFieldDefinition::create('integer')
       ->setLabel(t('Tracked revision ID'))
-      ->setDescription(t('The revision ID that was produced with AI assistance.'))
-      ->setRequired(TRUE);
+      ->setDescription(t('The revision ID that was produced with AI assistance; empty until the draft is saved.'));
 
     $fields['uid'] = BaseFieldDefinition::create('entity_reference')
       ->setLabel(t('Author'))

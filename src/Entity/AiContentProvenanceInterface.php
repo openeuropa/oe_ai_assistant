@@ -15,17 +15,17 @@ interface AiContentProvenanceInterface extends ContentEntityInterface, EntityOwn
   /**
    * Returns the tracked entity type id.
    */
-  public function getTrackedEntityTypeId(): string;
+  public function getTrackedEntityTypeId(): ?string;
 
   /**
    * Returns the tracked entity id.
    */
-  public function getTrackedEntityId(): int;
+  public function getTrackedEntityId(): ?int;
 
   /**
    * Returns the tracked revision id.
    */
-  public function getTrackedRevisionId(): int;
+  public function getTrackedRevisionId(): ?int;
 
   /**
    * Returns the editorial session, or NULL.
