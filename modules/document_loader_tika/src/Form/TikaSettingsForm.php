@@ -41,7 +41,6 @@ final class TikaSettingsForm extends ConfigFormBase {
       ],
       '#description' => $this->t('Use a Tika HTTP server or run the tika-app JAR on this web server.'),
       '#config_target' => 'document_loader_tika.settings:mode',
-      // Existing installations do not yet have this configuration value.
       '#default_value' => $this->config('document_loader_tika.settings')->get('mode') ?: 'server',
       '#required' => TRUE,
     ];

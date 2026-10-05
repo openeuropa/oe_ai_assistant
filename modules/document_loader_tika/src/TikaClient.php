@@ -41,7 +41,7 @@ final class TikaClient implements TikaClientInterface {
   /**
    * Gets the client for the active extraction mode.
    */
-  private function client(): TikaClientInterface {
+  public function client(): TikaClientInterface {
     $mode = $this->configFactory->get('document_loader_tika.settings')->get('mode');
 
     return $mode === 'executable' ? $this->executableClient : $this->serverClient;
