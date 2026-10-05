@@ -2,63 +2,50 @@
 
 declare(strict_types=1);
 
-namespace Drupal\oe_ai_assistant\Neuron\Tools;
+namespace Drupal\oe_ai_assistant\Plugin\NeuronTool;
 
-use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
-use Drupal\oe_ai_assistant\Neuron\Chat\History\ConversationChatHistory;
+use Drupal\ai_neuron\Attribute\NeuronTool;
+use Drupal\ai_neuron\Tools\NeuronToolPluginBase;
+use Drupal\Core\StringTranslation\TranslatableMarkup;
+use Drupal\oe_ai_assistant\Entity\AiConversationMessageInterface;
+use Drupal\oe_ai_assistant\Neuron\Chat\History\ConversationMessageStore;
 use Drupal\oe_ai_assistant\Service\Drafting\DraftCollector;
 use Drupal\oe_ai_assistant\Service\Drafting\DraftHistoryInterface;
+use Drupal\oe_ai_assistant\Service\Drafting\DraftingTurn;
+use Drupal\oe_ai_assistant\Service\DraftingSchemaProviderInterface;
 use NeuronAI\Tools\ArrayProperty;
 use NeuronAI\Tools\PropertyType;
-use NeuronAI\Tools\Tool;
 use NeuronAI\Tools\ToolProperty;
 
 /**
- * Tool applying a requested change to a stored draft.
+ * Applies a requested change to a stored draft.
  *
  * The groups the change affects are drafted again from their current
  * values; every other group is carried over untouched. The result is the
  * next version, grouped under the draft it started from, so the editor can
  * compare it with the original.
  */
-final class ReviseDraftTool extends Tool {
+#[NeuronTool(
+  id: 'revise_draft',
+  description: 'Applies a change the user asked for to a draft that already exists,'
+  . ' instead of writing a new one. Name the groups the change affects;'
+  . ' every other group is carried over untouched. The result is the'
+  . ' next version, named after the draft it revises, such as "Draft'
+  . ' 2.1" for the first revision of "Draft 2.0".',
+  label: new TranslatableMarkup('Revise draft'),
+)]
+final class ReviseDraftNeuronTool extends NeuronToolPluginBase {
 
-  public const NAME = 'revise_draft';
-
-  /**
-   * ReviseDraftTool constructor.
-   *
-   * @param \Drupal\oe_ai_assistant\Service\Drafting\DraftHistoryInterface $draftHistory
-   *   The draft history reader.
-   * @param \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $session
-   *   The editorial session holding the drafts.
-   * @param \Drupal\oe_ai_assistant\Neuron\Chat\History\ConversationChatHistory $conversation
-   *   The conversation the revised rows nest under.
-   * @param \Closure $groupsFor
-   *   Returns the schema groups of a template, called with its id or NULL.
-   * @param \Closure $reviser
-   *   Drafts one group, called with the group id, the schema slice, the task
-   *   prompt and the parent turn, and returning the decoded field values.
-   * @param \Closure $versionDraft
-   *   Versions the consolidated fields, called with them, the version they
-   *   revise and the context to inherit.
-   */
   public function __construct(
+    array $configuration,
+    $plugin_id,
+    $plugin_definition,
     private readonly DraftHistoryInterface $draftHistory,
-    private readonly AiEditorialSessionInterface $session,
-    private readonly ConversationChatHistory $conversation,
-    private readonly \Closure $groupsFor,
-    private readonly \Closure $reviser,
-    private readonly \Closure $versionDraft,
+    private readonly DraftingSchemaProviderInterface $schemaProvider,
+    private readonly DraftingTurn $turn,
+    private readonly ConversationMessageStore $store,
   ) {
-    parent::__construct(
-      self::NAME,
-      'Applies a change the user asked for to a draft that already exists,'
-      . ' instead of writing a new one. Name the groups the change affects;'
-      . ' every other group is carried over untouched. The result is the'
-      . ' next version, named after the draft it revises, such as "Draft'
-      . ' 2.1" for the first revision of "Draft 2.0".',
-    );
+    parent::__construct($configuration, $plugin_id, $plugin_definition);
   }
 
   /**
@@ -92,13 +79,14 @@ final class ReviseDraftTool extends Tool {
    * Revises the named groups of a stored draft and versions the result.
    */
   public function __invoke(string $instruction, ?array $groups = NULL, ?int $version = NULL): string {
-    $drafts = $this->draftHistory->listDrafts($this->session);
+    $session = $this->turn->session();
+    $drafts = $this->draftHistory->listDrafts($session);
     if ($drafts === []) {
       return json_encode(['error' => 'No draft has been generated yet, so there is nothing to revise.']);
     }
     $version ??= (int) end($drafts)['version'];
 
-    $base = $this->draftHistory->getDraftContent($this->session, $version);
+    $base = $this->draftHistory->getDraftContent($session, $version);
     if ($base === NULL) {
       return json_encode([
         'error' => sprintf(
@@ -113,8 +101,12 @@ final class ReviseDraftTool extends Tool {
     // keeps its structure whatever the session points at now. Drafts stored
     // before the groups travelled with them fall back to their template.
     $collector = new DraftCollector(
-      $base['context']['groups'] ?? ($this->groupsFor)($base['templateId']),
-      fn (array $fields): array => ($this->versionDraft)($fields, $version, $base['context']),
+      $base['context']['groups'] ?? $this->schemaProvider->groups(
+        $this->turn->entityTypeId(),
+        $this->turn->bundle(),
+        $base['templateId'],
+      ),
+      fn (array $fields): array => $this->turn->version($fields, $version, $base['context']),
     );
     // Without named groups the whole draft is revised, so a change meant
     // for every field reaches the groups this draft has rather than the
@@ -135,11 +127,11 @@ final class ReviseDraftTool extends Tool {
     $collector->seedFrom($base['fields'], $revise);
     foreach ($revise as $groupId) {
       $definition = $collector->group($groupId);
-      $collector->add($groupId, ($this->reviser)(
+      $collector->add($groupId, $this->turn->draft(
         $groupId,
         $definition['schemaSlice'],
         $this->task($collector->valuesOf($groupId, $base['fields']), $instruction),
-        $this->conversation->lastAssistant(),
+        $this->parentTurn(),
       ));
     }
 
@@ -159,6 +151,13 @@ final class ReviseDraftTool extends Tool {
       . "Requested change:\n" . $instruction . "\n\n"
       . 'Return the complete group with that change applied,'
       . ' and every other value exactly as it is now.';
+  }
+
+  /**
+   * Returns the assistant turn that asked for the revision, if recorded.
+   */
+  private function parentTurn(): ?AiConversationMessageInterface {
+    return $this->store->lastAssistant($this->turn->threadId());
   }
 
 }

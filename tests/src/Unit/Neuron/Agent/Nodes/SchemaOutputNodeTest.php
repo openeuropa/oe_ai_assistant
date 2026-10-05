@@ -7,13 +7,18 @@ namespace Drupal\Tests\oe_ai_assistant\Unit\Neuron\Agent\Nodes;
 use Drupal\oe_ai_assistant\Neuron\Agent\Events\SchemaViolationEvent;
 use Drupal\oe_ai_assistant\Neuron\Agent\Nodes\SchemaOutputNode;
 use Drupal\oe_ai_assistant\Neuron\Agent\Nodes\SchemaRetryNode;
+use NeuronAI\Agent\AgentResources;
 use NeuronAI\Agent\AgentState;
-use NeuronAI\Agent\Events\AIInferenceEvent;
+use NeuronAI\Agent\Events\AgentOutputEvent;
+use NeuronAI\Agent\Events\StructuredInferenceEvent;
+use NeuronAI\Agent\InferenceRequest;
+use NeuronAI\Chat\History\ChatHistory;
+use NeuronAI\Chat\History\InMemoryMessageStore;
 use NeuronAI\Chat\Messages\AssistantMessage;
+use NeuronAI\Chat\Messages\SystemMessage;
 use NeuronAI\Chat\Messages\UserMessage;
 use NeuronAI\Exceptions\AgentException;
 use NeuronAI\Testing\FakeAIProvider;
-use NeuronAI\Workflow\Events\StopEvent;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -41,29 +46,49 @@ class SchemaOutputNodeTest extends TestCase {
   ];
 
   /**
+   * Builds the state and resources a run of the node reads.
+   *
+   * @return array
+   *   The agent state and the agent resources.
+   */
+  private function context(FakeAIProvider $provider, int $maxRetries = 1): array {
+    $state = new AgentState();
+    $state->request = new InferenceRequest(
+      new SystemMessage('Draft the fields.'),
+      [new UserMessage('Write about broadband.')],
+    );
+    $state->request->options->maxRetries = $maxRetries;
+    $state->request->options->outputClass = 'main_fields';
+
+    $resources = new AgentResources(
+      $provider,
+      new ChatHistory(new InMemoryMessageStore(), 'test.1'),
+      $state->request->instructions,
+    );
+
+    return [$state, $resources];
+  }
+
+  /**
    * Drives the two nodes the way the agent graph routes between them.
    *
    * A violation event returns to the retry node, which either asks the
    * model again through a fresh inference event or gives up.
    */
   private function runNodes(FakeAIProvider $provider, int $maxRetries = 1): AgentState {
-    $state = new AgentState();
-    $state->set('__workflowId', 'test');
-    $output = new SchemaOutputNode($provider, 'main_fields', self::SCHEMA);
-    $retry = new SchemaRetryNode($maxRetries);
-    $event = new AIInferenceEvent('Draft the fields.', []);
-    $event->setMessages(new UserMessage('Write about broadband.'));
+    [$state, $resources] = $this->context($provider, $maxRetries);
+    $output = new SchemaOutputNode('main_fields', self::SCHEMA);
+    $retry = new SchemaRetryNode();
+    $event = new StructuredInferenceEvent();
 
     while (TRUE) {
-      $output->setWorkflowContext($state, $event);
-      $result = $output($event, $state);
-      if ($result instanceof StopEvent) {
+      $result = $output($event, $state, $resources);
+      if ($result instanceof AgentOutputEvent) {
         return $state;
       }
       $this->assertInstanceOf(SchemaViolationEvent::class, $result);
-      $retry->setWorkflowContext($state, $result);
       $event = $retry($result, $state);
-      $this->assertInstanceOf(AIInferenceEvent::class, $event);
+      $this->assertInstanceOf(StructuredInferenceEvent::class, $event);
     }
   }
 
@@ -80,8 +105,8 @@ class SchemaOutputNodeTest extends TestCase {
     $record = $provider->getRecorded()[0];
     $this->assertSame(['title', 'field_teaser'], $record->structuredSchema['required']);
     $this->assertFalse($record->structuredSchema['additionalProperties']);
-    $this->assertStringContainsString('Draft the fields.', $record->systemPrompt);
-    $this->assertStringContainsString('"field_teaser"', $record->systemPrompt);
+    $this->assertStringContainsString('Draft the fields.', $record->systemPrompt?->getContent());
+    $this->assertStringContainsString('"field_teaser"', $record->systemPrompt?->getContent());
   }
 
   /**
@@ -109,19 +134,13 @@ class SchemaOutputNodeTest extends TestCase {
    */
   public function testViolationEventCarriesTheValidationErrorsOnly(): void {
     $provider = new FakeAIProvider(new AssistantMessage('{"title": [{"value": "T"}], "body": [{"value": "B"}]}'));
-    $state = new AgentState();
-    $state->set('__workflowId', 'test');
-    $node = new SchemaOutputNode($provider, 'main_fields', self::SCHEMA);
-    $event = new AIInferenceEvent('Draft the fields.', []);
-    $event->setMessages(new UserMessage('Write about broadband.'));
-    $node->setWorkflowContext($state, $event);
+    [$state, $resources] = $this->context($provider);
+    $node = new SchemaOutputNode('main_fields', self::SCHEMA);
 
-    $result = $node($event, $state);
+    $result = $node(new StructuredInferenceEvent(), $state, $resources);
 
     $this->assertInstanceOf(SchemaViolationEvent::class, $result);
     $this->assertSame('main_fields', $result->schema);
-    $this->assertSame($event, $result->inferenceEvent,
-      'The inference travels with the violation so the retry can run it again.');
     // The lines are the validator's own, naming the property and what is
     // wrong with it.
     $this->assertSame([

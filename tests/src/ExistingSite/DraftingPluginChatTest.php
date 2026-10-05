@@ -69,9 +69,12 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
     $this->assertStringContainsString('Hello', $fullText,
       'Streamed text should contain the mock response.');
 
-    // Verify [DONE] terminator is present.
-    $this->assertStringContainsString('[DONE]', $result['body'],
-      'SSE stream must end with [DONE].');
+    // The last decoded event is the finish, and the raw stream still ends
+    // with the sentinel the app's decoder waits for.
+    $this->assertSame('finish', end($events)['type'],
+      'The last event must be the finish.');
+    $this->assertStringEndsWith("data: [DONE]\n\n", $result['body'],
+      'The stream must end with the sentinel the decoder waits for.');
 
     // The turn is persisted: a user row and an assistant row are hosted by
     // the session, and get-messages returns them as the transcript.
@@ -268,7 +271,7 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
     $this->assertCount(2, $rejections,
       'One error event per rejected answer.');
     foreach ($rejections as $rejection) {
-      $this->assertStringContainsString('answer rejected by the main_fields schema', $rejection['data']['summary']);
+      $this->assertStringContainsString('validation of main_fields failed', $rejection['data']['summary']);
       $this->assertStringContainsString('The property body is not defined', $rejection['data']['summary']);
       $this->assertSame('main_fields', $rejection['data']['agent']);
     }
@@ -750,48 +753,6 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
 
     $this->assertSame([], $this->loadTranscript($session),
       'Reset must delete every message hosted by the session.');
-  }
-
-  /**
-   * Parses SSE events from a raw response body string.
-   *
-   * Each SSE frame is a "data: <json>\n\n" block. This method splits
-   * the body, decodes the JSON, and returns structured event data.
-   *
-   * @param string $body
-   *   The raw SSE response body.
-   *
-   * @return array
-   *   Array of parsed event arrays, each with a 'type' key.
-   */
-  protected function parseSseEvents(string $body): array {
-    $events = [];
-    $frames = preg_split('/\n\n+/', trim($body));
-
-    foreach ($frames as $frame) {
-      $frame = trim($frame);
-      if ($frame === '') {
-        continue;
-      }
-
-      $data = '';
-      foreach (explode("\n", $frame) as $line) {
-        if (str_starts_with($line, 'data: ')) {
-          $data .= substr($line, 6);
-        }
-      }
-
-      if ($data === '' || $data === '[DONE]') {
-        continue;
-      }
-
-      $decoded = json_decode($data, TRUE);
-      if (is_array($decoded) && isset($decoded['type'])) {
-        $events[] = $decoded;
-      }
-    }
-
-    return $events;
   }
 
   /**

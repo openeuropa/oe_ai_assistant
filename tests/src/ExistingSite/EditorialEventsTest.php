@@ -170,9 +170,13 @@ class EditorialEventsTest extends DraftingPluginTestBase {
   }
 
   /**
-   * Tests that event rows reach the model as compact history notes.
+   * Tests that an editorial change stays out of the model's conversation.
+   *
+   * A change is not a turn, so replaying it as one would put words in the
+   * editor's mouth and break the alternation Neuron requires. The rows are
+   * recorded and read by get_session_history instead.
    */
-  public function testEventsAppearInModelHistoryAsNotes(): void {
+  public function testEventsStayOutOfModelHistory(): void {
     $user = $this->createUser(['use oe ai assistant']);
     $this->loginUser($user);
     $session = $this->createSession($user);
@@ -193,14 +197,59 @@ class EditorialEventsTest extends DraftingPluginTestBase {
     $this->assertCount(1, $log);
     $texts = array_column($log[0]['messages'], 'text');
 
-    $this->assertNotEmpty(array_filter(
-      $texts,
-      fn($t) => str_contains($t, '[Editorial change] Tone changed to Formal'),
-    ), 'The tone change note is in the model history.');
-    $this->assertNotEmpty(array_filter(
-      $texts,
-      fn($t) => str_contains($t, '[Editorial change] Session started'),
-    ), 'The initial-state note is in the model history.');
+    $this->assertSame(['Hello.'], $texts,
+      'The conversation holds the turn and nothing else.');
+    $this->assertStringContainsString('get_session_history', json_encode($log[0]['tools']),
+      'The agent can read the changes instead.');
+    // The rows are still there, which is what the tool and the app read.
+    $this->assertCount(1, $this->loadEvents($session, 'tone'));
+    $this->assertCount(1, $this->loadEvents($session, 'session_start'));
+  }
+
+  /**
+   * Tests that the session history tool reports every editorial change.
+   */
+  public function testSessionHistoryToolReportsEveryChange(): void {
+    $user = $this->createUser(['use oe ai assistant']);
+    $this->loginUser($user);
+    $session = $this->createSession($user);
+
+    foreach (['Formal', 'Conversational'] as $tone) {
+      $this->httpPost('/api/ai/plugins/drafting/set-tone', [
+        'sessionId' => $session->id(),
+        'toneId' => $this->getTermIdByName('oe_ai_tone', $tone),
+      ]);
+    }
+
+    MockAiProvider::enqueue(new MockResponse(toolCalls: [
+      [
+        'id' => 'call_h1',
+        'type' => 'function',
+        'function' => ['name' => 'get_session_history', 'arguments' => '{}'],
+      ],
+    ]));
+    MockAiProvider::enqueue(new MockResponse(text: 'You changed the tone twice.'));
+
+    $result = $this->httpPost('/api/ai/plugins/drafting/chat', [
+      'message' => 'How many times did I change the tone?',
+      'sessionId' => $session->id(),
+    ]);
+    $this->assertEquals(200, $result['status'], $result['body']);
+
+    $events = $this->parseSseEvents($result['body']);
+    $reported = array_values(array_filter(
+      $events,
+      fn($e) => $e['type'] === 'tool-result' && isset($e['result']['changes']),
+    ));
+    $this->assertCount(1, $reported, 'The tool answers with the changes.');
+
+    $types = array_column($reported[0]['result']['changes'], 'type');
+    $this->assertSame(['session_start', 'tone', 'tone'], $types,
+      'Every change is reported, in the order it happened.');
+    // A change says what it moved away from, so an earlier setting is
+    // answerable and not only the current one.
+    $this->assertSame('Formal', $reported[0]['result']['changes'][2]['from']['label']);
+    $this->assertSame('Conversational', $reported[0]['result']['changes'][2]['to']['label']);
   }
 
   /**

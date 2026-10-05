@@ -42,6 +42,7 @@ class MessageRecorderTest extends KernelTestBase {
     'taxonomy',
     // Contrib.
     'ai',
+    'ai_neuron',
     'entity_reference_revisions',
     'inline_entity_form',
     'key',

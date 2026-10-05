@@ -62,6 +62,12 @@ abstract class DraftingPluginTestBase extends ExistingSiteBase {
           'provider_id' => 'mock_ai',
           'model_id' => 'mock-model',
         ],
+        // The group drafters answer with structured output, which ai_neuron
+        // resolves as its own operation type.
+        'chat_with_structured_response' => [
+          'provider_id' => 'mock_ai',
+          'model_id' => 'mock-model',
+        ],
       ])
       ->save();
 
@@ -347,6 +353,48 @@ abstract class DraftingPluginTestBase extends ExistingSiteBase {
       $this->fail(sprintf('Term "%s" was not found in "%s".', $name, $vid));
     }
     return (string) $term->id();
+  }
+
+  /**
+   * Parses SSE events from a raw response body string.
+   *
+   * Each SSE frame is a "data: <json>\n\n" block. This method splits
+   * the body, decodes the JSON, and returns structured event data.
+   *
+   * @param string $body
+   *   The raw SSE response body.
+   *
+   * @return array
+   *   Array of parsed event arrays, each with a 'type' key.
+   */
+  protected function parseSseEvents(string $body): array {
+    $events = [];
+    $frames = preg_split('/\n\n+/', trim($body));
+
+    foreach ($frames as $frame) {
+      $frame = trim($frame);
+      if ($frame === '') {
+        continue;
+      }
+
+      $data = '';
+      foreach (explode("\n", $frame) as $line) {
+        if (str_starts_with($line, 'data: ')) {
+          $data .= substr($line, 6);
+        }
+      }
+
+      if ($data === '' || $data === '[DONE]') {
+        continue;
+      }
+
+      $decoded = json_decode($data, TRUE);
+      if (is_array($decoded) && isset($decoded['type'])) {
+        $events[] = $decoded;
+      }
+    }
+
+    return $events;
   }
 
 }

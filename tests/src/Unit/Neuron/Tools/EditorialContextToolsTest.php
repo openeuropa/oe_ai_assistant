@@ -4,17 +4,59 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\oe_ai_assistant\Unit\Neuron\Tools;
 
-use Drupal\oe_ai_assistant\Neuron\Tools\GetEditorialContextTool;
-use Drupal\oe_ai_assistant\Neuron\Tools\ReadDocumentTool;
+use Drupal\ai_neuron\Workflow\NeuronWorkflowManagerInterface;
+use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
+use Drupal\oe_ai_assistant\Neuron\Observability\AgentEventQueue;
+use Drupal\oe_ai_assistant\Plugin\NeuronTool\GetEditorialContextNeuronTool;
+use Drupal\oe_ai_assistant\Plugin\NeuronTool\ReadDocumentNeuronTool;
+use Drupal\oe_ai_assistant\Service\Drafting\DraftCollector;
+use Drupal\oe_ai_assistant\Service\Drafting\DraftHistoryInterface;
+use Drupal\oe_ai_assistant\Service\Drafting\DraftingTurn;
 use Drupal\oe_ai_assistant\Service\Drafting\EditorialContext;
 use PHPUnit\Framework\TestCase;
 
 /**
  * Unit tests for the tools that answer from the editorial context.
  *
- * @coversDefaultClass \Drupal\oe_ai_assistant\Neuron\Tools\GetEditorialContextTool
+ * @coversDefaultClass \Drupal\oe_ai_assistant\Plugin\NeuronTool\GetEditorialContextNeuronTool
  */
 class EditorialContextToolsTest extends TestCase {
+
+  /**
+   * Opens a turn on a context, as the chat action does.
+   */
+  private function turn(EditorialContext $context): DraftingTurn {
+    $turn = new DraftingTurn(
+      $this->createMock(NeuronWorkflowManagerInterface::class),
+      $this->createMock(DraftHistoryInterface::class),
+    );
+    $turn->open(
+      $this->createMock(AiEditorialSessionInterface::class),
+      $context,
+      new DraftCollector([], static fn (array $fields): array => $fields),
+      new AgentEventQueue(),
+      '',
+      '',
+      'node',
+      'oe_news',
+    );
+
+    return $turn;
+  }
+
+  /**
+   * Builds the context tool on an open turn.
+   */
+  private function contextTool(EditorialContext $context): GetEditorialContextNeuronTool {
+    return new GetEditorialContextNeuronTool([], 'get_editorial_context', [], $this->turn($context));
+  }
+
+  /**
+   * Builds the document tool on an open turn.
+   */
+  private function documentTool(EditorialContext $context): ReadDocumentNeuronTool {
+    return new ReadDocumentNeuronTool([], 'read_document', [], $this->turn($context));
+  }
 
   /**
    * Builds a context with one processed and one pending document.
@@ -51,7 +93,7 @@ class EditorialContextToolsTest extends TestCase {
    * @covers ::__invoke
    */
   public function testTheContextReportsSummariesAndNotTheText(): void {
-    $reported = json_decode((new GetEditorialContextTool($this->context()))(), TRUE);
+    $reported = json_decode(($this->contextTool($this->context()))(), TRUE);
 
     $this->assertSame('Formal', $reported['tone']['label']);
     $this->assertSame('Use professional, institutional language.', $reported['tone']['guidelines']);
@@ -78,7 +120,7 @@ class EditorialContextToolsTest extends TestCase {
    * @covers ::__invoke
    */
   public function testEmptyContextReportsNothingSet(): void {
-    $reported = json_decode((new GetEditorialContextTool(new EditorialContext(NULL, NULL, NULL, NULL, NULL)))(), TRUE);
+    $reported = json_decode(($this->contextTool(new EditorialContext(NULL, NULL, NULL, NULL, NULL)))(), TRUE);
 
     $this->assertNull($reported['tone']);
     $this->assertNull($reported['template']);
@@ -86,10 +128,10 @@ class EditorialContextToolsTest extends TestCase {
   }
 
   /**
-   * @covers \Drupal\oe_ai_assistant\Neuron\Tools\ReadDocumentTool::__invoke
+   * @covers \Drupal\oe_ai_assistant\Plugin\NeuronTool\ReadDocumentNeuronTool::__invoke
    */
   public function testReadingOneDocumentReturnsItsTextOrItsState(): void {
-    $tool = new ReadDocumentTool($this->context());
+    $tool = $this->documentTool($this->context());
 
     $read = json_decode($tool('12'), TRUE);
     $this->assertSame('Climate briefing', $read['title']);
@@ -106,10 +148,10 @@ class EditorialContextToolsTest extends TestCase {
   }
 
   /**
-   * @covers \Drupal\oe_ai_assistant\Neuron\Tools\ReadDocumentTool::properties
+   * @covers \Drupal\oe_ai_assistant\Plugin\NeuronTool\ReadDocumentNeuronTool::properties
    */
   public function testTheDocumentArgumentOffersTheAttachedIds(): void {
-    $properties = (new ReadDocumentTool($this->context()))->getProperties();
+    $properties = $this->documentTool($this->context())->getNeuron()->getProperties();
 
     $this->assertCount(1, $properties);
     $this->assertSame('document', $properties[0]->getName());

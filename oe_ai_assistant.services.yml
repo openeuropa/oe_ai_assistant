@@ -46,8 +46,15 @@ services:
   Drupal\oe_ai_assistant\Service\MessageRecorder: {}
   Drupal\oe_ai_assistant\Service\MessageRecorderInterface: '@Drupal\oe_ai_assistant\Service\MessageRecorder'
 
-  # Builds the Neuron agents and workflows on top of drupal/ai.
-  Drupal\oe_ai_assistant\Neuron\AgentFactory: {}
+  # The conversation entities are where Neuron keeps its messages. The
+  # ai_neuron module ships no store, so declaring this one is what tells it
+  # where every agent's conversation lives.
+  Drupal\oe_ai_assistant\Neuron\Chat\History\ConversationMessageStore: {}
+  NeuronAI\Chat\History\MessageStoreInterface: '@Drupal\oe_ai_assistant\Neuron\Chat\History\ConversationMessageStore'
+
+  # What one chat turn knows, read by the agent and tool plugins the turn
+  # builds. Per request: a turn is opened by the chat action.
+  Drupal\oe_ai_assistant\Service\Drafting\DraftingTurn: {}
 
   Drupal\oe_ai_assistant\Service\Drafting\DraftHistory: {}
   Drupal\oe_ai_assistant\Service\Drafting\DraftHistoryInterface: '@Drupal\oe_ai_assistant\Service\Drafting\DraftHistory'

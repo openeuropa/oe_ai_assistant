@@ -4,10 +4,9 @@ declare(strict_types=1);
 
 namespace Drupal\oe_ai_assistant\Service\Drafting;
 
-use Drupal\ai\AiProviderPluginManager;
-use Drupal\ai\OperationType\Chat\ChatInput;
-use Drupal\ai\OperationType\Chat\ChatMessage;
+use Drupal\ai_neuron\Agent\NeuronAgentManagerInterface;
 use Drupal\Component\Datetime\TimeInterface;
+use NeuronAI\Chat\Messages\UserMessage;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Lock\LockBackendInterface;
 use Drupal\Core\Session\AccountProxyInterface;
@@ -55,19 +54,11 @@ final class DocumentExtractionProcessor implements DocumentExtractionProcessorIn
    */
   private const int MAX_PROMPT_CHARS = 60000;
 
-  /**
-   * System prompt of the summary call.
-   */
-  private const string SUMMARY_PROMPT = 'You summarise briefing documents for editors. '
-    . 'Write a brief summary of the document in English, three to five sentences: '
-    . 'what it is and its key points. Return only the summary.';
-
   public function __construct(
     #[Autowire(service: 'document_loader.manager')]
     private readonly DocumentLoaderManager $loader,
     private readonly AccountProxyInterface $currentUser,
-    #[Autowire(service: 'ai.provider')]
-    private readonly AiProviderPluginManager $aiProviderManager,
+    private readonly NeuronAgentManagerInterface $agents,
     private readonly EntityTypeManagerInterface $entityTypeManager,
     #[Autowire(service: 'lock')]
     private readonly LockBackendInterface $lock,
@@ -295,23 +286,16 @@ final class DocumentExtractionProcessor implements DocumentExtractionProcessorIn
   }
 
   /**
-   * Writes a brief summary of the extract with the default chat provider.
+   * Writes a brief summary of the extract through the summary agent.
    *
    * The call is not streamed and the extract is capped so a long document
    * never overflows the model context.
    */
   private function summarize(string $text): string {
-    $defaults = $this->aiProviderManager->getDefaultProviderForOperationType('chat');
-    if (empty($defaults['provider_id']) || empty($defaults['model_id'])) {
-      throw new DocumentExtractionException('No default chat provider is configured.');
-    }
-    $provider = $this->aiProviderManager->createInstance($defaults['provider_id']);
+    $agent = $this->agents->createAgent('document_summary');
+    $answer = $agent->chat(new UserMessage(mb_substr($text, 0, self::MAX_PROMPT_CHARS)));
 
-    $input = new ChatInput([new ChatMessage('user', mb_substr($text, 0, self::MAX_PROMPT_CHARS))]);
-    $input->setSystemPrompt(self::SUMMARY_PROMPT);
-    $output = $provider->chat($input, $defaults['model_id'], ['oe_ai_assistant', 'document_summary']);
-
-    $summary = trim($output->getNormalized()->getText());
+    $summary = trim((string) $answer->getMessage()?->getContent());
     if ($summary === '') {
       throw new DocumentExtractionException('The provider returned an empty summary.');
     }

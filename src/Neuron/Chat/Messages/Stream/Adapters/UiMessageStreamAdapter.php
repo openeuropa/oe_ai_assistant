@@ -6,27 +6,32 @@ namespace Drupal\oe_ai_assistant\Neuron\Chat\Messages\Stream\Adapters;
 
 use Drupal\oe_ai_assistant\Neuron\Chat\Messages\Stream\Chunks\AgentEventChunk;
 use Drupal\oe_ai_assistant\Neuron\Tools\ToolResult;
-use NeuronAI\Chat\Messages\Stream\Adapters\VercelAIAdapter;
+use NeuronAI\Agent\Adapters\VercelAIAdapter;
 use NeuronAI\Chat\Messages\Stream\Chunks\TextChunk;
 use NeuronAI\Chat\Messages\Stream\Chunks\ToolCallChunk;
 use NeuronAI\Chat\Messages\Stream\Chunks\ToolResultChunk;
-use NeuronAI\Tools\ToolInterface;
+use NeuronAI\Tools\ToolCall;
+use NeuronAI\Workflow\Streaming\ProtocolEvent;
 
 /**
  * Renders Neuron chunks in the UI message stream dialect of assistant-ui.
  *
- * The app decodes text deltas, tool call start, delta and end parts and
- * tool results. Agent events travel as transient data parts, which the app
- * receives as they arrive without adding them to the message.
+ * The installed decoder speaks its own vocabulary: text deltas carry the
+ * text under textDelta, a tool call opens, streams and closes in three
+ * parts, and a result arrives as tool-result. Agent events travel as
+ * transient data parts, which the app receives as they arrive without
+ * adding them to the message.
  */
 final class UiMessageStreamAdapter extends VercelAIAdapter {
 
   /**
    * {@inheritdoc}
+   *
+   * The app opens its message on the start event, so it is emitted before
+   * the first chunk rather than lazily with it.
    */
   public function start(): iterable {
-    $this->started = TRUE;
-    yield $this->sse(['type' => 'start', 'messageId' => $this->generateId('msg')]);
+    yield from $this->startMessage();
   }
 
   /**
@@ -41,18 +46,10 @@ final class UiMessageStreamAdapter extends VercelAIAdapter {
   }
 
   /**
-   * Streams an error the editor can read, in place of the failed turn.
-   */
-  public function error(string $text): iterable {
-    yield $this->sse(['type' => 'error', 'errorText' => $text]);
-  }
-
-  /**
    * {@inheritdoc}
    */
   public function end(): iterable {
-    yield $this->sse(['type' => 'finish', 'finishReason' => 'stop']);
-    yield "data: [DONE]\n\n";
+    yield new ProtocolEvent('finish', ['finishReason' => 'stop']);
   }
 
   /**
@@ -60,7 +57,7 @@ final class UiMessageStreamAdapter extends VercelAIAdapter {
    */
   protected function handleText(TextChunk $chunk): iterable {
     if ($chunk->content !== '') {
-      yield $this->sse(['type' => 'text-delta', 'textDelta' => $chunk->content]);
+      yield new ProtocolEvent('text-delta', ['textDelta' => $chunk->content]);
     }
   }
 
@@ -68,22 +65,22 @@ final class UiMessageStreamAdapter extends VercelAIAdapter {
    * {@inheritdoc}
    */
   protected function handleToolCall(ToolCallChunk $chunk): iterable {
-    yield from $this->toolCall($this->callId($chunk->tool), $chunk->tool->getName(), $chunk->tool->getInputs());
+    yield from $this->toolCall($chunk->tool);
   }
 
   /**
    * {@inheritdoc}
    */
   protected function handleToolResult(ToolResultChunk $chunk): iterable {
-    yield from $this->toolResult($this->callId($chunk->tool), ToolResult::decode($chunk->tool->getResult()));
+    yield from $this->toolCall($chunk->tool);
+    yield from $this->toolResult($chunk->tool);
   }
 
   /**
    * Streams an agent event as a transient data part.
    */
   private function handleAgentEvent(AgentEventChunk $chunk): iterable {
-    yield $this->sse([
-      'type' => 'data-agent-event',
+    yield new ProtocolEvent('data-agent-event', [
       'data' => $chunk->toArray(),
       'transient' => TRUE,
     ]);
@@ -92,33 +89,37 @@ final class UiMessageStreamAdapter extends VercelAIAdapter {
   /**
    * Streams the three parts that open a tool call with complete arguments.
    */
-  private function toolCall(string $id, string $name, array $arguments): iterable {
-    yield $this->sse(['type' => 'tool-call-start', 'toolCallId' => $id, 'toolName' => $name]);
+  private function toolCall(ToolCall $call): iterable {
+    $id = $this->resolveToolCallId($call);
+    if (isset($this->toolInputStarted[$id])) {
+      return;
+    }
+    $this->toolInputStarted[$id] = TRUE;
+
+    yield new ProtocolEvent('tool-call-start', ['toolCallId' => $id, 'toolName' => $call->getName()]);
     // An empty argument list must decode as an object on the client.
-    yield $this->sse([
-      'type' => 'tool-call-delta',
+    yield new ProtocolEvent('tool-call-delta', [
       'toolCallId' => $id,
-      'argsText' => json_encode($arguments ?: new \stdClass()),
+      'argsText' => json_encode($call->getInputs() ?: new \stdClass()),
     ]);
-    yield $this->sse(['type' => 'tool-call-end', 'toolCallId' => $id]);
+    yield new ProtocolEvent('tool-call-end', ['toolCallId' => $id]);
   }
 
   /**
    * Streams the result of a tool call.
    */
-  private function toolResult(string $id, array $result): iterable {
-    yield $this->sse([
-      'type' => 'tool-result',
+  private function toolResult(ToolCall $call): iterable {
+    $id = $this->resolveToolCallId($call);
+    if (isset($this->knownOutputs[$id])) {
+      return;
+    }
+    $this->knownOutputs[$id] = TRUE;
+    $result = ToolResult::decode((string) $call->getResult());
+
+    yield new ProtocolEvent('tool-result', [
       'toolCallId' => $id,
       'result' => $result === [] ? new \stdClass() : $result,
     ]);
-  }
-
-  /**
-   * Returns the id the provider assigned to a call, or one derived from it.
-   */
-  private function callId(ToolInterface $tool): string {
-    return $tool->getCallId() ?: 'call_' . spl_object_id($tool);
   }
 
 }

@@ -9,7 +9,8 @@ use Drupal\oe_ai_assistant\Neuron\Chat\Messages\Stream\Chunks\AgentEventChunk;
 use NeuronAI\Chat\Messages\Stream\Chunks\TextChunk;
 use NeuronAI\Chat\Messages\Stream\Chunks\ToolCallChunk;
 use NeuronAI\Chat\Messages\Stream\Chunks\ToolResultChunk;
-use NeuronAI\Tools\Tool;
+use NeuronAI\Tools\ToolCall;
+use NeuronAI\Workflow\Streaming\ProtocolEvent;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -20,12 +21,13 @@ use PHPUnit\Framework\TestCase;
 class UiMessageStreamAdapterTest extends TestCase {
 
   /**
-   * Decodes the SSE frames an iterable of output lines carries.
+   * Renders protocol events as the arrays the wire carries.
    */
-  private function frames(iterable $lines): array {
+  private function frames(iterable $events): array {
     $frames = [];
-    foreach ($lines as $line) {
-      $frames[] = str_starts_with($line, 'data: [DONE]') ? '[DONE]' : json_decode(substr($line, 6), TRUE);
+    foreach ($events as $event) {
+      assert($event instanceof ProtocolEvent);
+      $frames[] = json_decode((string) json_encode($event), TRUE);
     }
     return $frames;
   }
@@ -47,7 +49,7 @@ class UiMessageStreamAdapterTest extends TestCase {
     );
     $this->assertSame([], $this->frames($adapter->transform(new TextChunk('m1', ''))));
     $this->assertSame(
-      [['type' => 'finish', 'finishReason' => 'stop'], '[DONE]'],
+      [['type' => 'finish', 'finishReason' => 'stop']],
       $this->frames($adapter->end()),
     );
   }
@@ -59,22 +61,26 @@ class UiMessageStreamAdapterTest extends TestCase {
   public function testToolCallsKeepTheirOwnIdsAndDecodedResults(): void {
     $adapter = new UiMessageStreamAdapter();
     $this->frames($adapter->start());
-    $first = Tool::make('draft_group', 'Drafts.')->setCallId('call_1')->setInputs(['group' => 'main_fields'])->setResult('{"group":"main_fields"}');
-    $second = Tool::make('draft_group', 'Drafts.')->setCallId('call_2')->setInputs(['group' => 'field_paragraphs'])->setResult('plain');
+    $first = ToolCall::make('draft_group', 'call_1', ['group' => 'main_fields'])->setResult('{"group":"main_fields"}');
+    $second = ToolCall::make('draft_group', 'call_2', ['group' => 'field_paragraphs'])->setResult('plain');
 
     $this->assertSame([
       ['type' => 'tool-call-start', 'toolCallId' => 'call_1', 'toolName' => 'draft_group'],
       ['type' => 'tool-call-delta', 'toolCallId' => 'call_1', 'argsText' => '{"group":"main_fields"}'],
       ['type' => 'tool-call-end', 'toolCallId' => 'call_1'],
-    ], $this->frames($adapter->transform(new ToolCallChunk($first))));
+    ], $this->frames($adapter->transform(new ToolCallChunk('m1', $first))));
     $this->assertSame(
       [['type' => 'tool-result', 'toolCallId' => 'call_1', 'result' => ['group' => 'main_fields']]],
       $this->frames($adapter->transform(new ToolResultChunk($first))),
     );
-    $this->assertSame(
-      [['type' => 'tool-result', 'toolCallId' => 'call_2', 'result' => ['text' => 'plain']]],
-      $this->frames($adapter->transform(new ToolResultChunk($second))),
-    );
+    // A result arriving without its call having streamed opens the call
+    // first, so the app has a part to attach the result to.
+    $this->assertSame([
+      ['type' => 'tool-call-start', 'toolCallId' => 'call_2', 'toolName' => 'draft_group'],
+      ['type' => 'tool-call-delta', 'toolCallId' => 'call_2', 'argsText' => '{"group":"field_paragraphs"}'],
+      ['type' => 'tool-call-end', 'toolCallId' => 'call_2'],
+      ['type' => 'tool-result', 'toolCallId' => 'call_2', 'result' => ['text' => 'plain']],
+    ], $this->frames($adapter->transform(new ToolResultChunk($second))));
   }
 
   /**
@@ -101,13 +107,13 @@ class UiMessageStreamAdapterTest extends TestCase {
   }
 
   /**
-   * @covers ::error
+   * The failure the editor reads says nothing about the exception.
    */
-  public function testErrorFrame(): void {
-    $this->assertSame(
-      [['type' => 'error', 'errorText' => 'Boom']],
-      $this->frames((new UiMessageStreamAdapter())->error('Boom')),
-    );
+  public function testErrorFrameDoesNotLeakTheException(): void {
+    $frames = $this->frames((new UiMessageStreamAdapter())->error(new \RuntimeException('Boom')));
+
+    $this->assertSame('error', $frames[0]['type']);
+    $this->assertStringNotContainsString('Boom', $frames[0]['errorText']);
   }
 
 }

@@ -11,10 +11,9 @@ use Drupal\file\Upload\InputStreamFileWriterInterface;
 use Drupal\file\Upload\InputStreamUploadedFile;
 use Drupal\oe_ai_assistant\AiDraftingTemplateInterface;
 use Drupal\oe_ai_assistant\Annotation\AiEditorialAssistant;
-use Drupal\oe_ai_assistant\Entity\AiConversationMessageInterface;
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
 use Drupal\oe_ai_assistant\Exception\ActionException;
-use Drupal\oe_ai_assistant\Neuron\AgentFactory;
+use Drupal\ai_neuron\Agent\NeuronAgentManagerInterface;
 use Drupal\oe_ai_assistant\Neuron\Chat\Messages\Stream\Adapters\UiMessageStreamAdapter;
 use Drupal\oe_ai_assistant\Neuron\Observability\AgentEventQueue;
 use Drupal\oe_ai_assistant\Plugin\AiAssistantPluginBase;
@@ -23,12 +22,14 @@ use Drupal\oe_ai_assistant\Service\DraftAssemblerInterface;
 use Drupal\oe_ai_assistant\Service\Drafting\ContextDocumentRepository;
 use Drupal\oe_ai_assistant\Service\Drafting\DocumentRepositoryInterface;
 use Drupal\oe_ai_assistant\Service\Drafting\DraftCollector;
+use Drupal\oe_ai_assistant\Service\Drafting\DraftingTurn;
 use Drupal\oe_ai_assistant\Service\Drafting\DraftHistoryInterface;
 use Drupal\oe_ai_assistant\Service\Drafting\EditorialContext;
 use Drupal\oe_ai_assistant\Service\DraftingSchemaProviderInterface;
 use Drupal\oe_ai_assistant\Service\DraftSaverInterface;
 use Drupal\oe_ai_assistant\Service\PreviewRendererInterface;
-use NeuronAI\Agent\AgentHandler;
+use NeuronAI\Workflow\Streaming\ProtocolEvent;
+use NeuronAI\Workflow\Streaming\SSEEncoder;
 use NeuronAI\Chat\Messages\UserMessage;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\File\Exception\FileException;
@@ -80,11 +81,18 @@ class DraftingPlugin extends AiAssistantPluginBase {
   protected DraftSaverInterface $draftSaver;
 
   /**
-   * The factory of the Neuron agents and workflows.
+   * The agent plugin manager, which builds the drafting agent.
    *
-   * @var \Drupal\oe_ai_assistant\Neuron\AgentFactory
+   * @var \Drupal\ai_neuron\Agent\NeuronAgentManagerInterface
    */
-  protected AgentFactory $agentFactory;
+  protected NeuronAgentManagerInterface $agentManager;
+
+  /**
+   * What the chat turn being served knows.
+   *
+   * @var \Drupal\oe_ai_assistant\Service\Drafting\DraftingTurn
+   */
+  protected DraftingTurn $turn;
 
   /**
    * The editorial tone context service.
@@ -140,7 +148,8 @@ class DraftingPlugin extends AiAssistantPluginBase {
     $instance = parent::create($container, $configuration, $plugin_id, $plugin_definition);
     $instance->schemaProvider = $container->get(DraftingSchemaProviderInterface::class);
     $instance->draftSaver = $container->get(DraftSaverInterface::class);
-    $instance->agentFactory = $container->get(AgentFactory::class);
+    $instance->agentManager = $container->get(NeuronAgentManagerInterface::class);
+    $instance->turn = $container->get(DraftingTurn::class);
     $instance->aiEditorialContext = $container->get(AiEditorialContextInterface::class);
     $instance->draftHistory = $container->get(DraftHistoryInterface::class);
     $instance->contextDocumentRepository = $container->get(ContextDocumentRepository::class);
@@ -327,21 +336,21 @@ class DraftingPlugin extends AiAssistantPluginBase {
 
     // Every group is drafted by its own sub-agent, under the turn that asked
     // for it; the collector versions the draft once the set is complete.
+    // The agent and its tools are plugins, so what this turn knows reaches
+    // them through the turn service rather than through their constructors.
     $events = new AgentEventQueue();
-    $contextPrompt = $editorialContext->toPrompt();
-    $versionDraft = fn (array $fields, ?int $revisionOf = NULL, ?array $inherited = NULL): array => $this->versionDraft($session, $editorialContext, $fields, $revisionOf, $inherited);
-    $agent = $this->agentFactory->draftingAgent(
+    $this->turn->open(
       $session,
-      $routerContext,
       $editorialContext,
-      new DraftCollector($groups, $versionDraft),
-      fn (string $groupId, array $schemaSlice, string $task, ?AiConversationMessageInterface $parent): array => $this->agentFactory
-        ->fieldGroupAgent($session, $parent, $groupId, $schemaSlice, $contextPrompt, $events)
-        ->structured(new UserMessage($task)),
-      fn (?string $templateId): array => $this->schemaProvider->groups($context['entityTypeId'], $context['bundle'], $templateId),
-      $versionDraft,
+      new DraftCollector($groups, fn (array $fields): array => $this->turn->version($fields)),
       $events,
+      $routerContext,
+      $editorialContext->toPrompt(),
+      $context['entityTypeId'],
+      $context['bundle'],
     );
+
+    $agent = $this->agentManager->createAgent('drafting');
 
     return $this->streamRun($agent->stream(new UserMessage($message)), $events);
   }
@@ -353,14 +362,18 @@ class DraftingPlugin extends AiAssistantPluginBase {
    * them where they happened. A failure mid-stream degrades into an error
    * event, since an exception would print an HTML page into the stream.
    */
-  private function streamRun(AgentHandler $handler, AgentEventQueue $events): Response {
+  private function streamRun(\Generator $run, AgentEventQueue $events): Response {
+    // The run already yields protocol events, including the start, the
+    // finish and a failure, because the agent carries the adapter. This one
+    // renders only the queued events, which no listener can yield into the
+    // stream itself.
     $adapter = new UiMessageStreamAdapter();
     $response = new AiStreamedResponse(NULL, 200, $adapter->getHeaders());
-    $response->setCallback(function () use ($handler, $events, $adapter): void {
+    $response->setCallback(function () use ($run, $events, $adapter): void {
       set_time_limit(0);
-      $emit = static function (iterable $lines): void {
-        foreach ($lines as $line) {
-          echo $line;
+      $emit = static function (iterable $protocolEvents): void {
+        foreach ($protocolEvents as $protocolEvent) {
+          echo SSEEncoder::frame($protocolEvent);
         }
         flush();
       };
@@ -369,49 +382,36 @@ class DraftingPlugin extends AiAssistantPluginBase {
           $emit($adapter->transform($event));
         }
       };
+      // The event that closes the stream is held back until the queue is
+      // empty, since the app stops reading the message once it arrives.
+      $terminal = NULL;
       try {
-        $emit($adapter->start());
-        foreach ($handler->events() as $chunk) {
+        foreach ($run as $protocolEvent) {
           $flushEvents();
-          $emit($adapter->transform($chunk));
+          if (in_array($protocolEvent->type, ['finish', 'error'], TRUE)) {
+            $terminal = $protocolEvent;
+            continue;
+          }
+          $emit([$protocolEvent]);
         }
         $flushEvents();
       }
       catch (\Throwable $e) {
         $this->logger->error('Drafting turn failed: @message', ['@message' => $e->getMessage()]);
         $flushEvents();
-        $emit($adapter->error('The assistant request failed. Please try again.'));
+        $terminal = new ProtocolEvent('error', ['errorText' => 'The assistant request failed. Please try again.']);
       }
-      $emit($adapter->end());
+      if ($terminal instanceof ProtocolEvent) {
+        $emit([$terminal]);
+      }
+      // Neuron stopped sending the sentinel, since a protocol does not get
+      // to decide how a transport ends. The decoder the app runs still
+      // reads a stream without it as truncated, so the transport sends it.
+      echo "data: [DONE]\n\n";
+      flush();
     });
-    return $response;
-  }
 
-  /**
-   * Versions the consolidated fields with the context that produced them.
-   *
-   * A revision inherits the snapshot of the draft it revises, since that
-   * context produced the content it starts from.
-   *
-   * @param \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $session
-   *   The session hosting the conversation.
-   * @param \Drupal\oe_ai_assistant\Service\Drafting\EditorialContext $editorialContext
-   *   The editorial context of the turn.
-   * @param array $fields
-   *   The consolidated field values.
-   * @param int|null $revisionOf
-   *   The version being revised, or NULL for a new draft.
-   * @param array|null $inherited
-   *   The snapshot to inherit, or NULL to snapshot the turn's context.
-   *
-   * @return array
-   *   The draft shaped {version, major, minor, context, fields, revisionOf}.
-   */
-  private function versionDraft(AiEditorialSessionInterface $session, EditorialContext $editorialContext, array $fields, ?int $revisionOf = NULL, ?array $inherited = NULL): array {
-    return $this->draftHistory->nextVersion($session, $revisionOf) + [
-      'context' => $inherited ?? $editorialContext->toSnapshot(),
-      'fields' => $fields,
-    ];
+    return $response;
   }
 
   /**

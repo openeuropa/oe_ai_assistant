@@ -23,6 +23,7 @@ abstract class AiEditorialSessionKernelTestBase extends KernelTestBase {
    */
   protected static $modules = [
     'ai',
+    'ai_neuron',
     'content_moderation',
     'datetime',
     'file',

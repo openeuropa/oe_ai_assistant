@@ -22,6 +22,7 @@ abstract class AiEditorialSessionBrowserTestBase extends BrowserTestBase {
    */
   protected static $modules = [
     'ai',
+    'ai_neuron',
     'field',
     'key',
     'node',
