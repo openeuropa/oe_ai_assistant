@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Drupal\oe_ai_assistant\Neuron\Chat\Messages\Stream\Adapters;
 
-use Drupal\oe_ai_assistant\Neuron\Chat\Messages\Stream\Chunks\AgentEventChunk;
 use Drupal\oe_ai_assistant\Neuron\Tools\ToolResult;
 use NeuronAI\Agent\Adapters\VercelAIAdapter;
 use NeuronAI\Chat\Messages\Stream\Chunks\TextChunk;
@@ -37,17 +36,6 @@ final class UiMessageStreamAdapter extends VercelAIAdapter {
   /**
    * {@inheritdoc}
    */
-  public function transform(object $chunk): iterable {
-    if ($chunk instanceof AgentEventChunk) {
-      yield from $this->handleAgentEvent($chunk);
-      return;
-    }
-    yield from parent::transform($chunk);
-  }
-
-  /**
-   * {@inheritdoc}
-   */
   public function end(): iterable {
     yield new ProtocolEvent('finish', ['finishReason' => 'stop']);
   }
@@ -74,16 +62,6 @@ final class UiMessageStreamAdapter extends VercelAIAdapter {
   protected function handleToolResult(ToolResultChunk $chunk): iterable {
     yield from $this->toolCall($chunk->tool);
     yield from $this->toolResult($chunk->tool);
-  }
-
-  /**
-   * Streams an agent event as a transient data part.
-   */
-  private function handleAgentEvent(AgentEventChunk $chunk): iterable {
-    yield new ProtocolEvent('data-agent-event', [
-      'data' => $chunk->toArray(),
-      'transient' => TRUE,
-    ]);
   }
 
   /**

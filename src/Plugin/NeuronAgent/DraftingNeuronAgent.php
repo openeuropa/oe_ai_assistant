@@ -11,11 +11,9 @@ use Drupal\ai_neuron\Tools\NeuronToolManagerInterface;
 use Drupal\Core\StringTranslation\TranslatableMarkup;
 use Drupal\oe_ai_assistant\Neuron\Chat\History\ThreadAddress;
 use Drupal\oe_ai_assistant\Neuron\Chat\Messages\Stream\Adapters\UiMessageStreamAdapter;
-use Drupal\oe_ai_assistant\Neuron\Observability\RunListener;
 use Drupal\oe_ai_assistant\Service\Drafting\DraftingTurn;
 use NeuronAI\Agent\Agent;
 use NeuronAI\Agent\AgentInterface;
-use NeuronAI\Observability\ObservabilityEvent;
 use NeuronAI\Tools\ToolCall;
 
 /**
@@ -139,8 +137,7 @@ final class DraftingNeuronAgent extends NeuronAgentPluginBase {
    * {@inheritdoc}
    *
    * The base class sets the provider, the instructions, the tools and the
-   * middleware. What follows is the stream the app reads and the run the
-   * browser console shows.
+   * middleware. What is left is the stream dialect the app reads.
    */
   public function getNeuron(?string $threadKey = NULL): AgentInterface {
     $agent = parent::getNeuron($threadKey);
@@ -149,11 +146,6 @@ final class DraftingNeuronAgent extends NeuronAgentPluginBase {
     // The app decodes its own dialect of the UI message stream, so the run
     // yields those protocol events rather than Neuron's own.
     $agent->setStreamAdapter(static fn (): UiMessageStreamAdapter => new UiMessageStreamAdapter());
-
-    $agent->subscribe(
-      ObservabilityEvent::class,
-      (new RunListener($this->getPluginId(), $this->turn->events()))->onEvent(...),
-    );
 
     return $agent;
   }

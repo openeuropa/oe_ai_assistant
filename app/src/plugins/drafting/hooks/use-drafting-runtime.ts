@@ -22,7 +22,6 @@ import { useDataStreamRuntime } from "@assistant-ui/react-data-stream";
 import { useMemo, useRef } from "react";
 import { getCsrfHeaders } from "@/api/csrf-token";
 import { getSessionMessages } from "@/api/session-messages";
-import type { AgentEventData } from "@/api/sse-types";
 import { getConfig } from "@/config";
 import { eventBus } from "@/lib/events";
 import { toThreadMessages } from "../hydrate-transcript";
@@ -77,25 +76,12 @@ export function useDraftingRuntime() {
       attachments: attachmentAdapter,
       history: historyAdapter,
     },
-    // Every event of the agent run, logged the moment it is emitted.
-    // TODO: temporary; the payload exposes prompts, answers and tool
-    // results, so this will be gated behind a dev-only configuration.
     onData: (data) => {
       // A gated tool call is written to the conversation and then suspends,
       // with no part of its own in the stream, so the thread shows nothing
       // until it is read back.
       if (data.name === "approval-request") {
         awaitingDecision.current = true;
-      }
-      if (data.name === "agent-event") {
-        const event = data.data as AgentEventData;
-        const line = `[agent] ${event.agent}: ${event.summary}`;
-        // A rejected answer or a failed run is an error; the rest is trace.
-        if (event.level === "error") {
-          console.error(line, event.payload);
-        } else {
-          console.log(line, event.payload);
-        }
       }
     },
     onFinish: () => {

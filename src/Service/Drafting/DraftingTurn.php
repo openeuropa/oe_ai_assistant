@@ -7,7 +7,6 @@ namespace Drupal\oe_ai_assistant\Service\Drafting;
 use Drupal\ai_neuron\Workflow\NeuronWorkflowManagerInterface;
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
 use Drupal\oe_ai_assistant\Neuron\Chat\History\ThreadAddress;
-use Drupal\oe_ai_assistant\Neuron\Observability\AgentEventQueue;
 use Drupal\oe_ai_assistant\Neuron\Agent\Nodes\SchemaOutputNode;
 
 /**
@@ -39,11 +38,6 @@ final class DraftingTurn {
    * The collector of this turn's group results.
    */
   private ?DraftCollector $collector = NULL;
-
-  /**
-   * The queue receiving every event of the run.
-   */
-  private ?AgentEventQueue $events = NULL;
 
   /**
    * Content type context appended to the conversational agent's prompt.
@@ -91,8 +85,6 @@ final class DraftingTurn {
    *   Tone, template and documents of the session.
    * @param \Drupal\oe_ai_assistant\Service\Drafting\DraftCollector $collector
    *   The collector of this turn's group results.
-   * @param \Drupal\oe_ai_assistant\Neuron\Observability\AgentEventQueue $events
-   *   The queue the stream loop drains.
    * @param string $agentPrompt
    *   Content type context appended to the conversational agent's prompt.
    * @param string $drafterPrompt
@@ -106,7 +98,6 @@ final class DraftingTurn {
     AiEditorialSessionInterface $session,
     EditorialContext $editorialContext,
     DraftCollector $collector,
-    AgentEventQueue $events,
     string $agentPrompt,
     string $drafterPrompt,
     string $entityTypeId,
@@ -115,7 +106,6 @@ final class DraftingTurn {
     $this->session = $session;
     $this->editorialContext = $editorialContext;
     $this->collector = $collector;
-    $this->events = $events;
     $this->agentPrompt = $agentPrompt;
     $this->drafterPrompt = $drafterPrompt;
     $this->entityTypeId = $entityTypeId;
@@ -162,16 +152,6 @@ final class DraftingTurn {
    */
   public function collector(): DraftCollector {
     return $this->collector ?? throw new \LogicException('No drafting turn is open.');
-  }
-
-  /**
-   * Returns the queue receiving every event of the run.
-   *
-   * @throws \LogicException
-   *   When no turn is open.
-   */
-  public function events(): AgentEventQueue {
-    return $this->events ?? throw new \LogicException('No drafting turn is open.');
   }
 
   /**

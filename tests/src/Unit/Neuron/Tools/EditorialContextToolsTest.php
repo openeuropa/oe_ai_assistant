@@ -6,7 +6,6 @@ namespace Drupal\Tests\oe_ai_assistant\Unit\Neuron\Tools;
 
 use Drupal\ai_neuron\Workflow\NeuronWorkflowManagerInterface;
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
-use Drupal\oe_ai_assistant\Neuron\Observability\AgentEventQueue;
 use Drupal\oe_ai_assistant\Plugin\NeuronTool\GetEditorialContextNeuronTool;
 use Drupal\oe_ai_assistant\Plugin\NeuronTool\ReadDocumentNeuronTool;
 use Drupal\oe_ai_assistant\Service\Drafting\DraftCollector;
@@ -34,7 +33,6 @@ class EditorialContextToolsTest extends TestCase {
       $this->createMock(AiEditorialSessionInterface::class),
       $context,
       new DraftCollector([], static fn (array $fields): array => $fields),
-      new AgentEventQueue(),
       '',
       '',
       'node',

@@ -45,12 +45,6 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
     $types = array_column($events, 'type');
     $this->assertContains('start', $types, 'SSE must include a start event.');
 
-    // The events of the run are streamed as transient data parts. They
-    // describe the run, not the conversation, so nothing records them.
-    $agentEvents = array_values(array_filter($events, fn($e) => $e['type'] === 'data-agent-event'));
-    $this->assertNotEmpty($agentEvents, 'Agent events are streamed as data parts.');
-    $this->assertSame('drafting', $agentEvents[0]['data']['agent']);
-    $this->assertTrue($agentEvents[0]['transient']);
     $this->assertSame(
       ['user', 'assistant'],
       array_column($this->getMessages($session), 'role'),
@@ -215,13 +209,13 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
   }
 
   /**
-   * Tests that every rejected answer reaches the stream as an error.
+   * Tests that a rejected answer is asked for again until it matches.
    *
-   * The drafter is corrected until its answer matches the schema, and the
-   * editor sees one error event per rejection, carrying the validator's
-   * own lines.
+   * The drafter is corrected rather than failing, so two answers naming a
+   * property the schema forbids cost two more calls and the turn still
+   * produces the draft. The violations themselves go to the log.
    */
-  public function testEveryRejectedAnswerIsStreamedAsAnError(): void {
+  public function testRejectedAnswerIsAskedForAgain(): void {
     $user = $this->createUser(['use oe ai assistant']);
     $this->loginUser($user);
     $session = $this->createSession($user);
@@ -250,20 +244,21 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
     $this->assertEquals(200, $result['status'],
       'Expected 200. Body: ' . substr($result['body'], 0, 500));
 
-    $rejections = array_values(array_filter(
-      $this->parseSseEvents($result['body']),
-      fn($e) => $e['type'] === 'data-agent-event' && ($e['data']['level'] ?? '') === 'error',
-    ));
-    $this->assertCount(2, $rejections,
-      'One error event per rejected answer.');
-    foreach ($rejections as $rejection) {
-      $this->assertStringContainsString('validation of main_fields failed', $rejection['data']['summary']);
-      $this->assertStringContainsString(
-        'The property body is not defined',
-        json_encode($rejection['data']['payload']['violations'] ?? []),
-      );
-      $this->assertSame('main_fields', $rejection['data']['agent']);
-    }
+    // Four calls for the group: the turn that asked, the two answers the
+    // schema refused, and the one it accepted.
+    \Drupal::state()->resetCache();
+    $this->assertCount(5, MockAiProvider::getCallLog(),
+      'Each rejected answer costs one more call.');
+
+    // The accepted answer is what the group came back with. One group does
+    // not complete the set, so the turn versions no draft here.
+    $drafted = $this->resultOfToolCall($session, 'draft_group');
+    $this->assertNotNull($drafted, 'The corrected run still answers the call.');
+    $this->assertSame(
+      ['title', 'field_teaser'],
+      array_keys($drafted['fields']),
+      'The group holds the answer the schema accepted.',
+    );
   }
 
   /**

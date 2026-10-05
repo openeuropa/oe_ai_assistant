@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Drupal\Tests\oe_ai_assistant\Unit\Neuron\Chat\Messages\Stream\Adapters;
 
 use Drupal\oe_ai_assistant\Neuron\Chat\Messages\Stream\Adapters\UiMessageStreamAdapter;
-use Drupal\oe_ai_assistant\Neuron\Chat\Messages\Stream\Chunks\AgentEventChunk;
 use NeuronAI\Chat\Messages\Stream\Chunks\TextChunk;
 use NeuronAI\Chat\Messages\Stream\Chunks\ToolCallChunk;
 use NeuronAI\Chat\Messages\Stream\Chunks\ToolResultChunk;
@@ -81,29 +80,6 @@ class UiMessageStreamAdapterTest extends TestCase {
       ['type' => 'tool-call-end', 'toolCallId' => 'call_2'],
       ['type' => 'tool-result', 'toolCallId' => 'call_2', 'result' => ['text' => 'plain']],
     ], $this->frames($adapter->transform(new ToolResultChunk($second))));
-  }
-
-  /**
-   * @covers ::transform
-   */
-  public function testAgentEventBecomesOneTransientDataPart(): void {
-    $adapter = new UiMessageStreamAdapter();
-    $chunk = new AgentEventChunk('inference-start', 'drafting', 'model call started', ['role' => 'user']);
-    $frames = $this->frames($adapter->transform($chunk));
-
-    $this->assertSame([
-      [
-        'type' => 'data-agent-event',
-        'data' => [
-          'event' => 'inference-start',
-          'agent' => 'drafting',
-          'summary' => 'model call started',
-          'payload' => ['role' => 'user'],
-          'level' => 'info',
-        ],
-        'transient' => TRUE,
-      ],
-    ], $frames);
   }
 
   /**

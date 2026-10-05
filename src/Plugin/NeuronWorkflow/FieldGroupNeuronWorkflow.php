@@ -12,7 +12,6 @@ use Drupal\Core\StringTranslation\TranslatableMarkup;
 use Drupal\oe_ai_assistant\Neuron\Agent\Nodes\SchemaOutputNode;
 use Drupal\oe_ai_assistant\Neuron\Agent\Nodes\SchemaRetryNode;
 use Drupal\oe_ai_assistant\Neuron\Chat\History\ThreadAddress;
-use Drupal\oe_ai_assistant\Neuron\Observability\RunListener;
 use Drupal\oe_ai_assistant\Service\Drafting\DraftingTurn;
 use NeuronAI\Agent\AgentResources;
 use NeuronAI\Agent\AgentRunOptions;
@@ -23,7 +22,6 @@ use NeuronAI\Agent\Nodes\AgentStartNode;
 use NeuronAI\Chat\History\ChatHistory;
 use NeuronAI\Chat\Messages\SystemMessage;
 use NeuronAI\Chat\Messages\UserMessage;
-use NeuronAI\Observability\ObservabilityEvent;
 use NeuronAI\Workflow\Events\Event;
 use NeuronAI\Workflow\Workflow;
 use NeuronAI\Workflow\WorkflowInterface;
@@ -153,7 +151,6 @@ final class FieldGroupNeuronWorkflow extends NeuronWorkflowPluginBase {
    * and the base class builds a plain workflow with neither.
    */
   public function getNeuron(array $state = []): WorkflowInterface {
-    $group = $this->turn->pendingGroup();
     $threadId = $this->runId($this->runKey());
 
     $agentState = new AgentState();
@@ -170,11 +167,6 @@ final class FieldGroupNeuronWorkflow extends NeuronWorkflowPluginBase {
       ->setResources(static fn (): AgentResources => $resources);
 
     $this->applyMiddleware($workflow);
-
-    $workflow->subscribe(
-      ObservabilityEvent::class,
-      (new RunListener($group['id'], $this->turn->events()))->onEvent(...),
-    );
 
     return $workflow;
   }

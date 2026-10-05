@@ -15,7 +15,6 @@ use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
 use Drupal\oe_ai_assistant\Exception\ActionException;
 use Drupal\ai_neuron\Agent\NeuronAgentManagerInterface;
 use Drupal\oe_ai_assistant\Neuron\Chat\Messages\Stream\Adapters\UiMessageStreamAdapter;
-use Drupal\oe_ai_assistant\Neuron\Observability\AgentEventQueue;
 use Drupal\oe_ai_assistant\Plugin\AiAssistantPluginBase;
 use Drupal\oe_ai_assistant\Service\AiEditorialContextInterface;
 use Drupal\oe_ai_assistant\Service\DraftAssemblerInterface;
@@ -295,11 +294,11 @@ class DraftingPlugin extends AiAssistantPluginBase {
       );
     }
 
-    $events = $this->openTurn($body);
+    $this->openTurn($body);
 
     $agent = $this->agentManager->createAgent('drafting');
 
-    return $this->streamRun($agent->stream(new UserMessage($message)), $events, $agent);
+    return $this->streamRun($agent->stream(new UserMessage($message)), $agent);
   }
 
   /**
@@ -312,13 +311,10 @@ class DraftingPlugin extends AiAssistantPluginBase {
    * @param array $body
    *   The decoded request body, which names the session.
    *
-   * @return \Drupal\oe_ai_assistant\Neuron\Observability\AgentEventQueue
-   *   The queue the stream loop drains.
-   *
    * @throws \Drupal\oe_ai_assistant\Exception\ActionException
    *   When the session is unknown, or its stored template is not valid.
    */
-  private function openTurn(array $body): AgentEventQueue {
+  private function openTurn(array $body): void {
     $session = $this->loadSession($body);
     $context = $this->buildContext($session);
 
@@ -357,19 +353,15 @@ class DraftingPlugin extends AiAssistantPluginBase {
     // for it; the collector versions the draft once the set is complete.
     // The agent and its tools are plugins, so what this turn knows reaches
     // them through the turn service rather than through their constructors.
-    $events = new AgentEventQueue();
     $this->turn->open(
       $session,
       $editorialContext,
       new DraftCollector($groups, fn (array $fields): array => $this->turn->version($fields)),
-      $events,
       $routerContext,
       $editorialContext->toPrompt(),
       $context['entityTypeId'],
       $context['bundle'],
     );
-
-    return $events;
   }
 
   /**
@@ -421,7 +413,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
       throw new ActionException('invalid_request', 'A decision must be approve or reject.', 400);
     }
 
-    $events = $this->openTurn($body);
+    $this->openTurn($body);
     $agent = $this->agentManager->createAgent('drafting');
 
     $pending = array_map(static fn (Action $action): string => $action->id, $agent->pendingApprovals());
@@ -433,75 +425,61 @@ class DraftingPlugin extends AiAssistantPluginBase {
     // was turned down rather than retrying the same call.
     $answer = $decision === 'reject' && $reason !== '' ? ['reject', $reason] : $decision;
 
-    return $this->streamRun($agent->submitApprovalDecisions([$callId => $answer])->events(), $events, $agent);
+    return $this->streamRun($agent->submitApprovalDecisions([$callId => $answer])->events(), $agent);
   }
 
   /**
    * Streams an agent run as UI message stream events.
    *
-   * Queued agent events are flushed before each chunk, so the thread shows
-   * them where they happened. A failure mid-stream degrades into an error
-   * event, since an exception would print an HTML page into the stream.
+   * Neuron yields the protocol events and frames them; the response, the
+   * flush and what is sent after the run are the host's. A failure mid-stream
+   * degrades into an error event, since an exception would print an HTML page
+   * into the stream.
    */
-  private function streamRun(\Generator $run, AgentEventQueue $events, AgentInterface $agent): Response {
-    // The run already yields protocol events, including the start, the
-    // finish and a failure, because the agent carries the adapter. This one
-    // renders only the queued events, which no listener can yield into the
-    // stream itself.
-    $adapter = new UiMessageStreamAdapter();
-    $response = new AiStreamedResponse(NULL, 200, $adapter->getHeaders());
-    $response->setCallback(function () use ($run, $events, $adapter, $agent): void {
+  private function streamRun(\Generator $run, AgentInterface $agent): Response {
+    $response = new AiStreamedResponse(NULL, 200, (new UiMessageStreamAdapter())->getHeaders());
+    $response->setCallback(function () use ($run, $agent): void {
       set_time_limit(0);
-      $emit = static function (iterable $protocolEvents): void {
-        foreach ($protocolEvents as $protocolEvent) {
-          echo SSEEncoder::frame($protocolEvent);
-        }
+      $emit = static function (ProtocolEvent $event): void {
+        echo SSEEncoder::frame($event);
         flush();
       };
-      $flushEvents = static function () use ($events, $adapter, $emit): void {
-        foreach ($events->drain() as $event) {
-          $emit($adapter->transform($event));
-        }
-      };
-      // The event that closes the stream is held back until the queue is
-      // empty, since the app stops reading the message once it arrives.
+
+      // The event closing the stream is held back: the app stops reading the
+      // message once it arrives, and a suspended run has a question to ask
+      // first.
       $terminal = NULL;
       try {
         foreach ($run as $protocolEvent) {
-          $flushEvents();
           if (in_array($protocolEvent->type, ['finish', 'error'], TRUE)) {
             $terminal = $protocolEvent;
             continue;
           }
-          $emit([$protocolEvent]);
+          $emit($protocolEvent);
         }
-        $flushEvents();
       }
       catch (\Throwable $e) {
         $this->logger->error('Drafting turn failed: @message', ['@message' => $e->getMessage()]);
-        $flushEvents();
         $terminal = new ProtocolEvent('error', ['errorText' => 'The assistant request failed. Please try again.']);
       }
-      // A gated tool call suspends the run, and the editor answers it before
-      // anything else happens. The request is sent with the message rather
-      // than left for the app to go and ask for, and it is not transient: the
-      // prompt belongs to the turn it interrupted.
+
+      // A gated tool call suspends the run with no part of its own in the
+      // stream, so the request is sent here rather than left for the app to go
+      // and ask for.
       $approvals = array_map(
         static fn (Action $action): array => $action->jsonSerialize(),
         $agent->pendingApprovals(),
       );
       if ($approvals !== []) {
-        $emit([new ProtocolEvent('data-approval-request', [
-          'data' => ['approvals' => $approvals],
-        ]),
-        ]);
+        $emit(new ProtocolEvent('data-approval-request', ['data' => ['approvals' => $approvals]]));
       }
       if ($terminal instanceof ProtocolEvent) {
-        $emit([$terminal]);
+        $emit($terminal);
       }
-      // Neuron stopped sending the sentinel, since a protocol does not get
-      // to decide how a transport ends. The decoder the app runs still
-      // reads a stream without it as truncated, so the transport sends it.
+
+      // Neuron stopped sending the sentinel, since a protocol does not get to
+      // decide how a transport ends. The decoder the app runs still reads a
+      // stream without it as truncated, so the transport sends it.
       echo "data: [DONE]\n\n";
       flush();
     });

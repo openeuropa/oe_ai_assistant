@@ -104,29 +104,26 @@ export interface EchoDataEvent {
 
 // -- Drafting plugin custom data events --
 
-/** One observability event of the agent run. */
-export interface AgentEventData {
-  /** The Neuron event name, e.g. "inference-start". */
-  event: string;
-  /** The id of the agent that fired the event. */
-  agent: string;
-  /** One short line describing the event. */
-  summary: string;
-  /** The event data as JSON: prompts, answers, tool results. */
-  payload?: unknown;
-  /** "error" for a failure the editor should see, "info" otherwise. */
-  level?: "info" | "error";
+/** One tool call of the run that is waiting for the editor's decision. */
+export interface ApprovalData {
+  /** The tool call id, which names the call in a decision. */
+  id: string;
+  /** The tool the model asked to run. */
+  name: string;
+  /** Why the call needs a decision, declared by the tool. */
+  reason?: string | null;
+  /** The arguments the call would run with. */
+  inputs?: Record<string, unknown>;
 }
 
-/** Transient data event carrying an agent event; never part of a message. */
-export interface AgentEventEvent {
-  type: "data-agent-event";
-  data: AgentEventData;
-  transient: true;
+/** Data event sent when a turn ends by asking the editor to decide. */
+export interface ApprovalRequestEvent {
+  type: "data-approval-request";
+  data: { approvals: ApprovalData[] };
 }
 
 /** Union of all SSE events emitted by the drafting plugin. */
-export type DraftingSSEEvent = DataStreamLifecycleEvent | AgentEventEvent;
+export type DraftingSSEEvent = DataStreamLifecycleEvent | ApprovalRequestEvent;
 
 /** Union of all SSE events emitted by the echo plugin. */
 export type EchoSSEEvent = StartEvent | FinishEvent | EchoDataEvent;
