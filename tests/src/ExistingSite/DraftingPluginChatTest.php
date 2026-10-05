@@ -275,6 +275,57 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
   }
 
   /**
+   * Tests that a field borrowed from another bundle never reaches a draft.
+   *
+   * The drafter writes the body of a text block under field_quote_text, a
+   * field of the quote block. The answer is rejected, the corrected one
+   * becomes the draft, and the draft previews.
+   */
+  public function testUnknownFieldOnParagraphIsCorrected(): void {
+    $user = $this->createUser(['use oe ai assistant', 'create oe_news content']);
+    $this->loginUser($user);
+    $session = $this->createSession($user);
+
+    $paragraphs = fn (string $body_field): string => json_encode([
+      'field_content_paragraphs' => [
+        [
+          'type' => [['target_id' => 'text_block']],
+          $body_field => [['value' => 'Workers keep their rights abroad.']],
+        ],
+      ],
+    ]);
+    $calls = [];
+    foreach (['main_fields', 'field_content_paragraphs'] as $index => $group) {
+      $calls[] = [
+        'id' => 'call_' . ($index + 1),
+        'type' => 'function',
+        'function' => ['name' => 'draft_group', 'arguments' => json_encode(['group' => $group])],
+      ];
+    }
+    MockAiProvider::enqueue(new MockResponse(toolCalls: $calls));
+    MockAiProvider::enqueue(new MockResponse(
+      text: '{"title": [{"value": "Fair labour mobility"}], "field_teaser": [{"value": "Teaser."}]}',
+    ));
+    MockAiProvider::enqueue(new MockResponse(text: $paragraphs('field_quote_text')));
+    MockAiProvider::enqueue(new MockResponse(text: $paragraphs('field_text_body')));
+    MockAiProvider::enqueue(new MockResponse(text: 'Draft 1.0 is ready.'));
+
+    $result = $this->httpPost('/api/ai/plugins/drafting/chat', [
+      'message' => 'Generate the draft now.',
+      'sessionId' => $session->id(),
+    ]);
+    $this->assertEquals(200, $result['status'],
+      'Expected 200. Body: ' . substr($result['body'], 0, 500));
+    $this->assertStringContainsString('The property field_quote_text is not defined', $result['body']);
+
+    $preview = $this->httpGet('/api/ai/plugins/drafting/preview', [
+      'sessionId' => $session->id(),
+      'version' => 1,
+    ]);
+    $this->assertStringContainsString('Workers keep their rights abroad.', $preview['body']);
+  }
+
+  /**
    * Tests that a revision reuses the stored draft and groups under it.
    *
    * The named group is drafted again, every other group is carried over,
