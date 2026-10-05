@@ -43,14 +43,16 @@ services:
   Drupal\oe_ai_assistant\Service\DraftSaver: {}
   Drupal\oe_ai_assistant\Service\DraftSaverInterface: '@Drupal\oe_ai_assistant\Service\DraftSaver'
 
-  Drupal\oe_ai_assistant\Service\MessageRecorder: {}
-  Drupal\oe_ai_assistant\Service\MessageRecorderInterface: '@Drupal\oe_ai_assistant\Service\MessageRecorder'
 
   # The conversation entities are where Neuron keeps its messages. The
-  # ai_neuron module ships no store, so declaring this one is what tells it
-  # where every agent's conversation lives.
-  Drupal\oe_ai_assistant\Neuron\Chat\History\ConversationMessageStore: {}
-  NeuronAI\Chat\History\MessageStoreInterface: '@Drupal\oe_ai_assistant\Neuron\Chat\History\ConversationMessageStore'
+  # ai_neuron's own store, subclassed to record the session a conversation
+  # belongs to. Replacing both of its aliases is what puts it in front of the
+  # store ai_neuron would otherwise give every agent.
+  Drupal\oe_ai_assistant\Neuron\Chat\History\SessionConversation: {}
+
+  Drupal\oe_ai_assistant\Neuron\Chat\History\EditorialMessageStore: {}
+  Drupal\ai_neuron\Chat\History\ContextualMessageStoreInterface: '@Drupal\oe_ai_assistant\Neuron\Chat\History\EditorialMessageStore'
+  NeuronAI\Chat\History\MessageStoreInterface: '@Drupal\oe_ai_assistant\Neuron\Chat\History\EditorialMessageStore'
 
   # What one chat turn knows, read by the agent and tool plugins the turn
   # builds. Per request: a turn is opened by the chat action.

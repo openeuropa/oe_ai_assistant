@@ -46,7 +46,9 @@ class AiEditorialSessionHtmlRouteProvider extends AdminHtmlRouteProvider {
         '_controller' => '\Drupal\oe_ai_assistant\Controller\AiConversationHistoryController::view',
         '_title_callback' => '\Drupal\oe_ai_assistant\Controller\AiConversationHistoryController::title',
       ])
-      ->setRequirement('_permission', 'access ai conversation message overview+administer ai conversation messages')
+      // The page reads the stored Neuron messages, so it is behind the
+      // permission ai_neuron puts its own inspection screens behind.
+      ->setRequirement('_permission', 'view neuron messages')
       ->setOption('_admin_route', TRUE)
       ->setOption('parameters', [
         $entity_type_id => ['type' => 'entity:' . $entity_type_id],

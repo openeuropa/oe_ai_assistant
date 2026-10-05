@@ -80,7 +80,7 @@ describe("extractSessionDrafts", () => {
           { type: "tool-call", toolName: "save_draft_revision", result: {} },
           {
             type: "tool-call",
-            toolName: "editorial_event",
+            toolName: "save_draft",
             args: { eventType: "tone", summary: "Tone changed" },
             result: {},
           },

@@ -4,11 +4,10 @@ declare(strict_types=1);
 
 namespace Drupal\oe_ai_assistant\Plugin\NeuronTool;
 
-use Drupal\oe_ai_assistant\Entity\AiConversationMessageInterface;
 use Drupal\ai_neuron\Attribute\NeuronTool;
 use Drupal\ai_neuron\Tools\NeuronToolPluginBase;
 use Drupal\Core\StringTranslation\TranslatableMarkup;
-use Drupal\oe_ai_assistant\Neuron\Chat\History\ConversationMessageStore;
+use NeuronAI\Chat\History\MessageStoreInterface;
 use Drupal\oe_ai_assistant\Service\Drafting\DraftingTurn;
 use NeuronAI\Tools\PropertyType;
 use NeuronAI\Tools\ToolProperty;
@@ -41,7 +40,7 @@ final class DraftGroupNeuronTool extends NeuronToolPluginBase {
     $plugin_id,
     $plugin_definition,
     private readonly DraftingTurn $turn,
-    private readonly ConversationMessageStore $store,
+    private readonly MessageStoreInterface $store,
   ) {
     parent::__construct($configuration, $plugin_id, $plugin_definition);
   }
@@ -73,7 +72,7 @@ final class DraftGroupNeuronTool extends NeuronToolPluginBase {
       ]);
     }
 
-    $fields = $this->turn->draft($group, $definition['schemaSlice'], $this->task(), $this->parentTurn());
+    $fields = $this->turn->draft($group, $definition['schemaSlice'], $this->task());
     $collector->add($group, $fields);
 
     $result = [
@@ -108,13 +107,6 @@ final class DraftGroupNeuronTool extends NeuronToolPluginBase {
     }
 
     return $task . 'Generate content for the fields in the provided schema. Follow the conversation context.';
-  }
-
-  /**
-   * Returns the assistant turn that asked for the group, if recorded.
-   */
-  private function parentTurn(): ?AiConversationMessageInterface {
-    return $this->store->lastAssistant($this->turn->threadId());
   }
 
 }

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Drupal\Tests\oe_ai_assistant\ExistingSite;
 
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
+use Drupal\oe_ai_assistant\Neuron\Chat\History\SessionConversation;
 use Drupal\oe_ai_assistant_test\Plugin\AiProvider\MockAiProvider;
 use Drupal\oe_ai_assistant_test\Plugin\AiProvider\MockResponse;
 
@@ -14,7 +15,7 @@ use Drupal\oe_ai_assistant_test\Plugin\AiProvider\MockResponse;
  * Sends real HTTP POST requests to /api/ai/plugins/drafting/chat
  * with a mock AI provider and verifies the SSE response stream. The
  * conversation is scoped by an editorial session: history and turns
- * persist as ai_conversation_message rows hosted by the session.
+ * persist as the stored conversation of the session.
  */
 class DraftingPluginChatTest extends DraftingPluginTestBase {
 
@@ -51,9 +52,9 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
     $this->assertSame('drafting', $agentEvents[0]['data']['agent']);
     $this->assertTrue($agentEvents[0]['transient']);
     $this->assertSame(
-      ['event', 'user', 'assistant'],
+      ['user', 'assistant'],
       array_column($this->getMessages($session), 'role'),
-      'The transcript holds the session event and the turn, nothing else.',
+      'The transcript holds the turn and nothing else.',
     );
     $this->assertContains('finish', $types, 'SSE must include a finish event.');
 
@@ -76,18 +77,16 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
     $this->assertStringEndsWith("data: [DONE]\n\n", $result['body'],
       'The stream must end with the sentinel the decoder waits for.');
 
-    // The turn is persisted: a user row and an assistant row are hosted by
-    // the session, and get-messages returns them as the transcript.
-    $transcript = $this->loadTranscript($session);
-    $roles = array_map(fn($m) => $m->getRole(), $transcript);
+    // The turn is persisted: a user row and an assistant row on the session's
+    // thread, which get-messages returns as the transcript.
+    $roles = array_map(
+      fn($row) => $row->get('role')->value,
+      $this->loadTranscript($session),
+    );
     $this->assertContains('user', $roles, 'A user turn must be persisted.');
     $this->assertContains('assistant', $roles, 'An assistant turn must be persisted.');
 
-    // Events are exercised in EditorialEventsTest; filter here.
-    $messages = array_values(array_filter(
-      $this->getMessages($session),
-      fn($m) => $m['role'] !== 'event',
-    ));
+    $messages = $this->loadTurns($session);
     $this->assertSame('user', $messages[0]['role']);
     $this->assertSame('Hi there.', $messages[0]['content']);
     $this->assertSame('assistant', $messages[1]['role']);
@@ -193,39 +192,26 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
     $text = implode('', array_map(fn($e) => $e['textDelta'] ?? '', $events));
     $this->assertStringContainsString('Draft 1.0 is ready', $text);
 
-    // The sub-agent transcript is recorded: the calling turn has one system
-    // row per group nested under it, followed by the assistant rows.
-    $draftNode = $this->findDraftTurn($session);
-    $this->assertNotNull($draftNode,
-      'The draft_group turn is recorded as a root turn.');
-    $calls = $draftNode['message']->getToolCalls();
+    // The calling turn carries both calls, and the completing one the draft.
+    $draftTurn = $this->findDraftTurn($session);
+    $this->assertNotNull($draftTurn, 'The draft_group turn is recorded.');
+    $calls = $draftTurn['toolCalls'];
     $this->assertCount(2, $calls);
     $this->assertSame(1, $calls[1]['result']['draft']['version'],
       'The versioned draft is stored on the completing call.');
 
-    $childRoles = array_map(
-      fn($child) => $child['message']->getRole(),
-      $draftNode['children'],
-    );
-    $systemCount = count(array_filter($childRoles, fn($r) => $r === 'system'));
-    $assistantCount = count(
-      array_filter($childRoles, fn($r) => $r === 'assistant'),
-    );
-    $this->assertGreaterThan(0, $systemCount,
-      'Sub-agent system prompts are recorded under the draft turn.');
-    $this->assertGreaterThanOrEqual($systemCount, $assistantCount,
-      'Each sub-agent records its system row and at least one answer.');
-
-    // Each sub-agent row carries the agent id (the schema group id), and
-    // each group records its system prompt exactly once.
+    // Each drafter holds a thread of its own, named after the group it
+    // answered for, and its rows are related to the session.
+    $drafterRows = $this->loadDrafterRows($session);
+    $this->assertNotEmpty($drafterRows, 'Each drafter records its own run.');
     $agentIds = [];
-    foreach ($draftNode['children'] as $child) {
-      $agentId = $child['message']->get('agent_id')->value;
-      $this->assertNotEmpty($agentId, 'Sub-agent rows carry an agent id.');
+    foreach ($drafterRows as $row) {
+      $agentId = $row->get('agent_id')->value;
+      $this->assertNotEmpty($agentId, 'Drafter rows carry an agent id.');
       $agentIds[$agentId] = TRUE;
     }
-    $this->assertCount($systemCount, $agentIds,
-      'One system row is recorded per sub-agent run.');
+    $this->assertCount(2, $agentIds,
+      'One thread per group is recorded, named after the group.');
   }
 
   /**
@@ -272,7 +258,10 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
       'One error event per rejected answer.');
     foreach ($rejections as $rejection) {
       $this->assertStringContainsString('validation of main_fields failed', $rejection['data']['summary']);
-      $this->assertStringContainsString('The property body is not defined', $rejection['data']['summary']);
+      $this->assertStringContainsString(
+        'The property body is not defined',
+        json_encode($rejection['data']['payload']['violations'] ?? []),
+      );
       $this->assertSame('main_fields', $rejection['data']['agent']);
     }
   }
@@ -330,7 +319,6 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
     // The history numbers the revision under the draft it revises.
     /** @var \Drupal\oe_ai_assistant\Service\Drafting\DraftHistoryInterface $history */
     $history = \Drupal::service('Drupal\oe_ai_assistant\Service\Drafting\DraftHistoryInterface');
-    \Drupal::entityTypeManager()->getStorage('ai_conversation_message')->resetCache();
     $this->assertSame(['1.0', '1.1'], array_column($history->listDrafts($session), 'label'));
     $this->assertSame(['Draft 1.0', 'Draft 1.1'], array_column($history->listDrafts($session), 'name'));
   }
@@ -524,26 +512,25 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
     $this->assertEquals(200, $result['status'],
       'Expected 200. Body: ' . substr($result['body'], 0, 500));
 
-    // Find the draft_group turn and inspect its nested system rows.
-    $draftNode = $this->findDraftTurn($session);
-    $this->assertNotNull($draftNode, 'A draft_group turn is recorded.');
-
-    $systemRows = array_filter(
-      $draftNode['children'],
-      fn($child) => $child['message']->getRole() === 'system',
-    );
-    $this->assertNotEmpty($systemRows, 'Sub-agent system rows are recorded.');
-    foreach ($systemRows as $row) {
-      $content = (string) $row['message']->get('content')->value;
+    // Every drafter call carries the tone in its system prompt. The prompt is
+    // the drafter's instructions, which Neuron keeps out of the conversation,
+    // so the provider call log is where it is read back.
+    \Drupal::state()->resetCache();
+    $drafterPrompts = array_values(array_filter(
+      array_column(MockAiProvider::getCallLog(), 'system_prompt'),
+      fn(string $prompt) => str_contains($prompt, 'You are a content generator.'),
+    ));
+    $this->assertNotEmpty($drafterPrompts, 'Each drafter call carries a prompt.');
+    foreach ($drafterPrompts as $prompt) {
       $this->assertStringContainsString(
         'Use professional, institutional language.',
-        $content,
-        'Every sub-agent system prompt must contain the tone prompt.',
+        $prompt,
+        'Every drafter prompt must contain the tone prompt.',
       );
       $this->assertStringContainsString(
         'Tone: Formal',
-        $content,
-        'Every sub-agent system prompt must contain the tone label.',
+        $prompt,
+        'Every drafter prompt must contain the tone label.',
       );
     }
   }
@@ -661,31 +648,24 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
     // A tool row is not user-visible and must be filtered out.
     $this->seedMessage($session, 'tool', 'Tool payload.');
 
-    // Events are exercised in EditorialEventsTest; filter here.
-    $messages = array_values(array_filter(
-      $this->getMessages($session),
-      fn($m) => $m['role'] !== 'event',
-    ));
+    $messages = $this->loadTurns($session);
 
     // Timestamps must come from the persisted rows' created field.
-    $rows = array_values(array_filter(
-      $this->loadTranscript($session),
-      fn($row) => in_array($row->getRole(), ['user', 'assistant'], TRUE),
-    ));
+    $rows = array_values($this->loadTranscript($session));
 
     $this->assertSame(
       [
         [
           'role' => 'user',
           'content' => 'Draft a news article.',
-          'at' => $rows[0]->get('created')->date->format('c'),
+          'at' => $this->createdOf($rows[0]),
           'userId' => (string) $user->id(),
           'userName' => $user->getDisplayName(),
         ],
         [
           'role' => 'assistant',
           'content' => 'Here is a draft.',
-          'at' => $rows[1]->get('created')->date->format('c'),
+          'at' => $this->createdOf($rows[1]),
         ],
       ],
       $messages,
@@ -888,17 +868,11 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
     $this->assertEquals(200, $result['status'],
       'Expected 200. Body: ' . substr($result['body'], 0, 500));
 
-    // The tool result was recorded as a tool row scoped to OUR session.
-    $toolRows = array_values(array_filter(
-      array_map(
-        fn($n) => $n['message'],
-        \Drupal::entityTypeManager()
-          ->getStorage('ai_conversation_message')->loadTree($session),
-      ),
-      fn($m) => $m->getRole() === 'tool',
-    ));
-    $this->assertNotEmpty($toolRows, 'The tool result must be recorded.');
-    $payload = (string) $toolRows[0]->get('content')->value;
+    // The tool result is recorded on the call that asked for it, in the
+    // conversation of OUR session.
+    $result = $this->resultOfToolCall($session, 'get_draft_history');
+    $this->assertNotNull($result, 'The tool result must be recorded.');
+    $payload = json_encode($result);
     $this->assertStringContainsString('Draft 1', $payload);
     $this->assertStringContainsString('Draft 2', $payload);
     $this->assertStringContainsString('Formal', $payload);
@@ -912,23 +886,24 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
    *
    * A stored tool row cannot be re-linked to the assistant call that
    * produced it, and providers reject unpaired tool messages, so the
-   * reconstructed history must skip tool rows entirely.
+   * reconstructed history replays the call and its result together.
    */
-  public function testHistoryReconstructionSkipsToolRows(): void {
+  public function testHistoryReconstructionReplaysTheToolPair(): void {
     $user = $this->createUser(['use oe ai assistant']);
     $this->loginUser($user);
     $session = $this->createSession($user);
 
-    // Seed a turn that used a tool: the assistant row carries the call,
-    // the tool row carries the result, and a follow-up summarizes it.
+    // Seed a turn that used a tool: the assistant row carries the call and the
+    // row after it the result, which is how Neuron commits the pair, then a
+    // follow-up answer summarizes it.
     $this->seedMessage($session, 'user', 'Which tone produced draft 1?');
     $this->seedMessage($session, 'assistant', '', [
       [
         'type' => 'function',
         'function' => ['name' => 'get_draft_history', 'arguments' => '{}'],
+        'result' => ['drafts' => []],
       ],
     ]);
-    $this->seedMessage($session, 'tool', '{"drafts":[]}');
     $this->seedMessage($session, 'assistant', 'No drafts exist yet.');
 
     MockAiProvider::enqueue(new MockResponse(text: 'Noted.'));
@@ -941,9 +916,6 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
     \Drupal::state()->resetCache();
     $log = MockAiProvider::getCallLog();
     $this->assertCount(1, $log);
-    $roles = array_column($log[0]['messages'], 'role');
-    $this->assertNotContains('tool', $roles,
-      'Persisted tool rows must not be replayed to the provider.');
     $this->assertContains('No drafts exist yet.',
       array_column($log[0]['messages'], 'text'),
       'The assistant summary of the tool outcome stays in the history.');
@@ -970,19 +942,24 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
    *   The template id to record on every stored draft.
    */
   protected function repointDraftTemplate(AiEditorialSessionInterface $session, string $templateId): void {
-    foreach ($this->loadTranscript($session) as $message) {
-      $calls = $message->getToolCalls();
-      $changed = FALSE;
-      foreach ($calls as &$call) {
-        if (isset($call['result']['draft']['context']['template']['id'])) {
-          $call['result']['draft']['context']['template']['id'] = $templateId;
-          $changed = TRUE;
-        }
+    foreach ($this->loadTranscript($session) as $row) {
+      $meta = SessionConversation::decode($row, 'meta');
+      if (($meta['type'] ?? '') !== 'tool_call_result') {
+        continue;
       }
-      unset($call);
+      $changed = FALSE;
+      foreach ($meta['tools'] as &$tool) {
+        $result = SessionConversation::decodeResult($tool['result'] ?? NULL);
+        if (!isset($result['draft']['context']['template']['id'])) {
+          continue;
+        }
+        $result['draft']['context']['template']['id'] = $templateId;
+        $tool['result'] = json_encode($result);
+        $changed = TRUE;
+      }
+      unset($tool);
       if ($changed) {
-        $message->setToolCalls($calls);
-        $message->save();
+        $row->set('meta', json_encode($meta))->save();
       }
     }
   }
@@ -1048,17 +1025,16 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
    *   The tree node, or NULL when no turn drafted.
    */
   protected function findDraftTurn(AiEditorialSessionInterface $session): ?array {
-    $storage = \Drupal::entityTypeManager()->getStorage('ai_conversation_message');
-    $storage->resetCache();
-    $draftNode = NULL;
-    foreach ($storage->loadTree($session) as $node) {
-      foreach ($node['message']->getToolCalls() as $call) {
+    $found = NULL;
+    foreach ($this->loadTurns($session) as $turn) {
+      foreach ($turn['toolCalls'] ?? [] as $call) {
         if (($call['function']['name'] ?? '') === 'draft_group') {
-          $draftNode = $node;
+          $found = $turn;
         }
       }
     }
-    return $draftNode;
+
+    return $found;
   }
 
   /**
@@ -1072,8 +1048,8 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
    */
   protected function loadDraftResults(AiEditorialSessionInterface $session): array {
     $results = [];
-    foreach ($this->loadTranscript($session) as $message) {
-      foreach ($message->getToolCalls() as $call) {
+    foreach ($this->loadTurns($session) as $turn) {
+      foreach ($turn['toolCalls'] ?? [] as $call) {
         if (isset($call['result']['draft'])) {
           $results[] = $call['result']['draft'];
         }

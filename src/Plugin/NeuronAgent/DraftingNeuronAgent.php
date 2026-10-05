@@ -9,12 +9,10 @@ use Drupal\ai_neuron\Attribute\NeuronAgent;
 use Drupal\ai_neuron\Providers\ProviderFactoryInterface;
 use Drupal\ai_neuron\Tools\NeuronToolManagerInterface;
 use Drupal\Core\StringTranslation\TranslatableMarkup;
-use Drupal\oe_ai_assistant\Neuron\Chat\History\ConversationMessageStore;
 use Drupal\oe_ai_assistant\Neuron\Chat\History\ThreadAddress;
 use Drupal\oe_ai_assistant\Neuron\Chat\Messages\Stream\Adapters\UiMessageStreamAdapter;
 use Drupal\oe_ai_assistant\Neuron\Observability\RunListener;
 use Drupal\oe_ai_assistant\Service\Drafting\DraftingTurn;
-use Drupal\oe_ai_assistant\Service\MessageRecorderInterface;
 use NeuronAI\Agent\Agent;
 use NeuronAI\Agent\AgentInterface;
 use NeuronAI\Observability\ObservabilityEvent;
@@ -69,10 +67,9 @@ final class DraftingNeuronAgent extends NeuronAgentPluginBase {
       draft keeps the groups it was written with, which may differ;
       get_draft_history lists them per draft.
     - Answer questions about earlier drafts with get_draft_history.
-    - Answer questions about what the editor changed in the session, and
-      when or how often, with get_session_history. It lists the tone and
-      template the session started with, every later change to either, and
-      every draft saved.
+    - When the user asks to save a draft, call save_draft with its version
+      number. The editor confirms the save before it happens, so say what
+      the result reports rather than promising that it is saved.
     - Answer questions about the session itself, what it is about, what
       material is attached, what a document covers, by calling
       get_editorial_context first. Read one document in full with
@@ -86,11 +83,11 @@ final class DraftingNeuronAgent extends NeuronAgentPluginBase {
    */
   private const TOOLS = [
     'get_draft_history',
-    'get_session_history',
     'get_editorial_context',
     'read_document',
     'draft_group',
     'revise_draft',
+    'save_draft',
   ];
 
   public function __construct(
@@ -100,8 +97,6 @@ final class DraftingNeuronAgent extends NeuronAgentPluginBase {
     ProviderFactoryInterface $providers,
     private readonly NeuronToolManagerInterface $toolManager,
     private readonly DraftingTurn $turn,
-    private readonly ConversationMessageStore $store,
-    private readonly MessageRecorderInterface $recorder,
   ) {
     parent::__construct($configuration, $plugin_id, $plugin_definition, $providers);
   }
@@ -133,33 +128,32 @@ final class DraftingNeuronAgent extends NeuronAgentPluginBase {
   /**
    * {@inheritdoc}
    *
-   * Built here rather than by the base class, because a tool failure has to
-   * come back to the model as an answer and the conversation reads its own
-   * history.
+   * A tool answers the model in JSON, so a failure is reported the same way
+   * rather than as the sentence the base class returns.
+   */
+  protected function toolErrorHandler(): ?callable {
+    return static fn (\Throwable $exception, ToolCall $call): string => json_encode(['error' => $exception->getMessage()]);
+  }
+
+  /**
+   * {@inheritdoc}
+   *
+   * The base class sets the provider, the instructions, the tools and the
+   * middleware. What follows is the stream the app reads and the run the
+   * browser console shows.
    */
   public function getNeuron(?string $threadKey = NULL): AgentInterface {
-    // The base class sets the provider, the instructions, the tools and the
-    // middleware; what follows is what it does not reach.
     $agent = parent::getNeuron($threadKey);
     assert($agent instanceof Agent);
-    $threadId = (string) $agent->getThreadId();
 
-    $agent
-      // A tool that throws answers the model with the failure, so the
-      // conversation carries on instead of the run ending.
-      ->toolErrorHandler(static fn (\Throwable $e, ToolCall $call): string => json_encode(['error' => $e->getMessage()]))
-      // The app decodes its own dialect of the UI message stream, so the
-      // run yields those protocol events rather than Neuron's own.
-      ->setStreamAdapter(static fn (): UiMessageStreamAdapter => new UiMessageStreamAdapter());
+    // The app decodes its own dialect of the UI message stream, so the run
+    // yields those protocol events rather than Neuron's own.
+    $agent->setStreamAdapter(static fn (): UiMessageStreamAdapter => new UiMessageStreamAdapter());
 
-    $agent->subscribe(ObservabilityEvent::class, (new RunListener(
-      $this->recorder,
-      $this->turn->session(),
-      $this->getPluginId(),
-      $this->turn->events(),
-      $this->store,
-      $threadId,
-    ))->onEvent(...));
+    $agent->subscribe(
+      ObservabilityEvent::class,
+      (new RunListener($this->getPluginId(), $this->turn->events()))->onEvent(...),
+    );
 
     return $agent;
   }

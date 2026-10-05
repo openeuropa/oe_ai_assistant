@@ -39,24 +39,41 @@ reset:
             schema:
               $ref: "../../openapi.yaml#/components/schemas/DraftingResetResponse"
 
-save:
+getApprovals:
   post:
-    operationId: postDraftingSave
-    summary: Save a session draft version as an unpublished node
+    operationId: postDraftingGetApprovals
+    summary: List the tool calls waiting on the editor's decision
     tags: [Drafting]
     requestBody:
       required: true
       content:
         application/json:
           schema:
-            $ref: "../../openapi.yaml#/components/schemas/DraftingSaveRequest"
+            $ref: "../../openapi.yaml#/components/schemas/DraftingGetApprovalsRequest"
     responses:
       "200":
-        description: Created node details
+        description: The pending calls
         content:
           application/json:
             schema:
-              $ref: "../../openapi.yaml#/components/schemas/DraftingSaveResponse"
+              $ref: "../../openapi.yaml#/components/schemas/DraftingGetApprovalsResponse"
+
+submitApproval:
+  post:
+    operationId: postDraftingSubmitApproval
+    summary: Answer a waiting tool call and stream the rest of the turn
+    tags: [Drafting]
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: "../../openapi.yaml#/components/schemas/DraftingSubmitApprovalRequest"
+    responses:
+      "200":
+        description: SSE stream of UI message stream events
+        content:
+          text/event-stream: {}
 
 setTone:
   post:

@@ -20,10 +20,13 @@ import {
   Wrench,
   X,
 } from "lucide-react";
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Button } from "@/components/ui/button";
+import { eventBus } from "@/lib/events";
 import { type ParsedDraftResult, parseDraftResult } from "../draft-result";
 import { useSavedVersions } from "../saved-versions";
 import { openSessionDraft, useSessionDraft } from "../session-drafts";
+import type { SaveDraftResult } from "../types";
 import { DraftCard } from "./draft-card";
 import { EventChip } from "./event-chip";
 
@@ -360,21 +363,89 @@ export const GetDraftHistoryToolUI = makeAssistantToolUI<
 });
 
 /**
- * UI for the editorial_event tool call.
+ * UI for the save_draft tool call.
  *
- * Editorial events are injected into the transcript by the history adapter
- * so they appear at their chronological position in the thread. This renderer
- * converts the tool-call part into a compact, centered EventChip.
+ * A save is gated, so the call reaches the thread with no result and waits
+ * there until the editor answers it. The decision travels on the event bus,
+ * because a tool UI cannot reach the thread runtime that has to reload the
+ * conversation afterwards. A reload of the page shows the same buttons, since
+ * the waiting call is part of the stored conversation.
  */
-export const EditorialEventToolUI = makeAssistantToolUI<
-  { eventType: string; summary: string; at?: string },
-  unknown
+export const SaveDraftToolUI = makeAssistantToolUI<
+  { version?: number },
+  SaveDraftResult
 >({
-  toolName: "editorial_event",
-  render: ({ args }) => (
-    <EventChip eventType={args.eventType} summary={args.summary} at={args.at} />
-  ),
+  toolName: "save_draft",
+  render: ({ args, result, toolCallId }) => {
+    if (result?.nodeId !== undefined) {
+      return (
+        <EventChip
+          eventType="save"
+          summary={`${result.name ?? `Draft ${result.version}`} saved as unpublished revision`}
+        />
+      );
+    }
+    if (result?.error !== undefined) {
+      return <EventChip eventType="error" summary={result.error} />;
+    }
+
+    // No result at all means the call has not run, which for a gated tool
+    // means it is waiting for the editor. The status is not what decides it:
+    // the same call reads as complete once its turn ends, and the question
+    // still has to be asked after a reload.
+    return <SaveApprovalPrompt callId={toolCallId} version={args.version} />;
+  },
 });
+
+/**
+ * The buttons that answer a waiting save.
+ *
+ * Neither answer asks for anything else. A refusal is recorded on the call, so
+ * the model learns the save did not happen without the editor explaining it.
+ */
+function SaveApprovalPrompt({
+  callId,
+  version,
+}: {
+  callId: string;
+  version?: number;
+}) {
+  const [answered, setAnswered] = useState(false);
+  const decide = (decision: "approve" | "reject") => {
+    setAnswered(true);
+    eventBus.emit("approval:decide", { callId, decision });
+  };
+
+  return (
+    <div className="my-2 rounded-md border border-gray-200 bg-gray-50 p-3 text-sm">
+      <p className="mb-2 text-gray-900">
+        {version === undefined
+          ? "Save this draft to the content item?"
+          : `Save Draft ${version} to the content item?`}{" "}
+        It is written as an unpublished revision.
+      </p>
+      <div className="flex gap-2">
+        <Button
+          size="sm"
+          className="cursor-pointer"
+          disabled={answered}
+          onClick={() => decide("approve")}
+        >
+          Save it
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          className="cursor-pointer"
+          disabled={answered}
+          onClick={() => decide("reject")}
+        >
+          Not yet
+        </Button>
+      </div>
+    </div>
+  );
+}
 
 /**
  * Fallback renderer for any tool call not registered with makeAssistantToolUI.

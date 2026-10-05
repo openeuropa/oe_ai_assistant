@@ -7,8 +7,6 @@ namespace Drupal\oe_ai_assistant\Plugin\NeuronTool;
 use Drupal\ai_neuron\Attribute\NeuronTool;
 use Drupal\ai_neuron\Tools\NeuronToolPluginBase;
 use Drupal\Core\StringTranslation\TranslatableMarkup;
-use Drupal\oe_ai_assistant\Entity\AiConversationMessageInterface;
-use Drupal\oe_ai_assistant\Neuron\Chat\History\ConversationMessageStore;
 use Drupal\oe_ai_assistant\Service\Drafting\DraftCollector;
 use Drupal\oe_ai_assistant\Service\Drafting\DraftHistoryInterface;
 use Drupal\oe_ai_assistant\Service\Drafting\DraftingTurn;
@@ -43,7 +41,6 @@ final class ReviseDraftNeuronTool extends NeuronToolPluginBase {
     private readonly DraftHistoryInterface $draftHistory,
     private readonly DraftingSchemaProviderInterface $schemaProvider,
     private readonly DraftingTurn $turn,
-    private readonly ConversationMessageStore $store,
   ) {
     parent::__construct($configuration, $plugin_id, $plugin_definition);
   }
@@ -131,7 +128,6 @@ final class ReviseDraftNeuronTool extends NeuronToolPluginBase {
         $groupId,
         $definition['schemaSlice'],
         $this->task($collector->valuesOf($groupId, $base['fields']), $instruction),
-        $this->parentTurn(),
       ));
     }
 
@@ -151,13 +147,6 @@ final class ReviseDraftNeuronTool extends NeuronToolPluginBase {
       . "Requested change:\n" . $instruction . "\n\n"
       . 'Return the complete group with that change applied,'
       . ' and every other value exactly as it is now.';
-  }
-
-  /**
-   * Returns the assistant turn that asked for the revision, if recorded.
-   */
-  private function parentTurn(): ?AiConversationMessageInterface {
-    return $this->store->lastAssistant($this->turn->threadId());
   }
 
 }

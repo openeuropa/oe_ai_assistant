@@ -5,17 +5,27 @@ declare(strict_types=1);
 namespace Drupal\oe_ai_assistant\Service\Drafting;
 
 use Drupal\Core\Entity\EntityInterface;
-use Drupal\Core\Entity\EntityTypeManagerInterface;
-use Symfony\Component\DependencyInjection\Attribute\Autowire;
+use Drupal\oe_ai_assistant\Neuron\Chat\History\SessionConversation;
+use Drupal\oe_ai_assistant\Neuron\Chat\History\ThreadAddress;
 
 /**
  * Reads the drafts stored on the conversation of an editorial session.
  */
 final class DraftHistory implements DraftHistoryInterface {
 
+  /**
+   * The agent whose conversation the drafts were produced in.
+   */
+  private const AGENT_ID = 'drafting';
+
+  /**
+   * Class constructor.
+   *
+   * @param \Drupal\oe_ai_assistant\Neuron\Chat\History\SessionConversation $conversation
+   *   Reads the stored conversation the drafts were produced in.
+   */
   public function __construct(
-    #[Autowire(service: 'entity_type.manager')]
-    private readonly EntityTypeManagerInterface $entityTypeManager,
+    private readonly SessionConversation $conversation,
   ) {}
 
   /**
@@ -127,15 +137,14 @@ final class DraftHistory implements DraftHistoryInterface {
    *   The drafts shaped {version, major, minor, context, fields, revisionOf}.
    */
   private function collectDrafts(EntityInterface $session): array {
-    $storage = $this->entityTypeManager->getStorage('ai_conversation_message');
+    $thread = ThreadAddress::thread(self::AGENT_ID, (string) $session->id());
     $drafts = [];
-    foreach ($storage->loadTranscript($session) as $message) {
-      foreach ($message->getToolCalls() as $call) {
-        if (isset($call['result']['draft'])) {
-          $drafts[] = $call['result']['draft'];
-        }
+    foreach ($this->conversation->toolResults($thread) as $result) {
+      if (isset($result['result']['draft'])) {
+        $drafts[] = $result['result']['draft'];
       }
     }
+
     return $drafts;
   }
 

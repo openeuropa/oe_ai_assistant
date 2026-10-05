@@ -12,7 +12,8 @@ use Drupal\Core\Plugin\PluginBase;
 use Drupal\Core\Session\AccountInterface;
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
 use Drupal\oe_ai_assistant\Exception\ActionException;
-use Drupal\oe_ai_assistant\Service\MessageRecorderInterface;
+use Drupal\oe_ai_assistant\Neuron\Chat\History\SessionConversation;
+use Drupal\oe_ai_assistant\Neuron\Chat\History\ThreadAddress;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\Request;
@@ -45,18 +46,18 @@ abstract class AiAssistantPluginBase extends PluginBase implements AiAssistantPl
   protected AccountInterface $currentUser;
 
   /**
-   * The message recorder.
-   *
-   * @var \Drupal\oe_ai_assistant\Service\MessageRecorderInterface
-   */
-  protected MessageRecorderInterface $messageRecorder;
-
-  /**
    * Logger channel for oe_ai_assistant.
    *
    * @var \Psr\Log\LoggerInterface
    */
   protected LoggerInterface $logger;
+
+  /**
+   * Reads a stored conversation back.
+   *
+   * @var \Drupal\oe_ai_assistant\Neuron\Chat\History\SessionConversation
+   */
+  protected SessionConversation $conversation;
 
   /**
    * {@inheritdoc}
@@ -70,8 +71,8 @@ abstract class AiAssistantPluginBase extends PluginBase implements AiAssistantPl
     $instance = new static($configuration, $plugin_id, $plugin_definition);
     $instance->entityTypeManager = $container->get('entity_type.manager');
     $instance->currentUser = $container->get('current_user');
-    $instance->messageRecorder = $container->get(MessageRecorderInterface::class);
     $instance->logger = $container->get('logger.channel.oe_ai_assistant');
+    $instance->conversation = $container->get(SessionConversation::class);
     return $instance;
   }
 
@@ -125,76 +126,142 @@ abstract class AiAssistantPluginBase extends PluginBase implements AiAssistantPl
    */
   public function getMessages(Request $request): array {
     $session = $this->loadSession($this->decodeJsonBody($request));
-    $storage = $this->entityTypeManager->getStorage('ai_conversation_message');
-    $transcript = $storage->loadTranscript($session);
 
-    // Preload the authors of user turns in one query, grouped by uid, so
-    // each turn can carry the author's display name for avatars and the
-    // participants list.
-    $authorIds = [];
-    foreach ($transcript as $message) {
-      $uid = (int) $message->get('uid')->target_id;
-      if ($message->getRole() === 'user' && $uid > 0) {
-        $authorIds[$uid] = $uid;
-      }
-    }
-    $authors = $authorIds === []
-      ? []
-      : $this->entityTypeManager->getStorage('user')->loadMultiple($authorIds);
+    return ['messages' => $this->conversationEntries($session)];
+  }
 
-    $messages = [];
-    foreach ($transcript as $message) {
-      $role = $message->getRole();
-      // The created field is a datetime stored in UTC; expose it in RFC
-      // 3339 so clients can render local timestamps.
-      $at = (string) $message->get('created')->date?->format('c');
-      // Event rows surface as compact timeline entries.
-      if ($role === 'event') {
-        $metadata = $message->getMetadata();
-        $item = [
-          'role' => 'event',
-          'type' => (string) ($metadata['type'] ?? ''),
-          'summary' => (string) $message->get('content')->value,
-          'at' => $at,
-        ];
-        // Save events name the draft version they persisted, so clients
-        // can mark that version as saved.
-        if (isset($metadata['version'])) {
-          $item['version'] = (int) $metadata['version'];
+  /**
+   * Renders the conversation of one session for the client.
+   *
+   * @param \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $session
+   *   The session.
+   *
+   * @return array
+   *   The turns, in insertion order.
+   */
+  private function conversationEntries(AiEditorialSessionInterface $session): array {
+    $rows = $this->conversation->rows(ThreadAddress::thread($this->getPluginId(), (string) $session->id()));
+    $authors = $this->loadAuthors($rows);
+
+    $entries = [];
+    // Where each call was rendered, so the result that arrives in a later row
+    // can be put on it: the call id points at the entry and the call in it.
+    $calls = [];
+
+    foreach ($rows as $row) {
+      $meta = SessionConversation::decode($row, 'meta');
+      $created = (int) $row->get('created')->value;
+
+      // A tool result carries the user role, because Neuron's result message
+      // extends its user message. It is not something the editor said: its
+      // payload belongs on the call that asked for it.
+      if (($meta['type'] ?? '') === 'tool_call_result') {
+        foreach ($meta['tools'] ?? [] as $tool) {
+          $at = $calls[$tool['callId'] ?? ''] ?? NULL;
+          if ($at !== NULL) {
+            $entries[$at[0]]['toolCalls'][$at[1]]['result'] = SessionConversation::decodeResult($tool['result'] ?? NULL);
+          }
         }
-        $messages[] = $item;
         continue;
       }
-      // Only user and assistant turns are shown to the editor.
+
+      $role = (string) $row->get('role')->value;
       if (!in_array($role, ['user', 'assistant'], TRUE)) {
         continue;
       }
-      $content = (string) $message->get('content')->value;
-      $toolCalls = $message->getToolCalls();
-      // Skip empty turns that carry neither text nor a tool call.
-      if ($content === '' && !$toolCalls) {
+
+      $text = $this->renderText(SessionConversation::decode($row, 'content'));
+      $toolCalls = [];
+      foreach ($meta['tools'] ?? [] as $tool) {
+        $inputs = $tool['inputs'] ?? [];
+        $calls[$tool['callId'] ?? ''] = [count($entries), count($toolCalls)];
+        $toolCalls[] = [
+          'id' => $tool['callId'] ?? NULL,
+          'type' => 'function',
+          // An empty input list has to encode as an object, since the client
+          // parses the arguments of every call the same way.
+          'function' => [
+            'name' => $tool['name'] ?? '',
+            'arguments' => json_encode($inputs === [] ? new \stdClass() : $inputs),
+          ],
+        ];
+      }
+
+      // Skip a turn that carries neither text nor a call, such as the empty
+      // answer a model returns alongside its tool calls.
+      if ($text === '' && $toolCalls === []) {
         continue;
       }
+
       $item = [
         'role' => $role,
-        'content' => $content,
-        // Creation time of the turn, for client-side timestamps.
-        'at' => $at,
+        'content' => $text,
+        'at' => $this->formatTime($created),
       ];
-      // Attribute user turns to their author for shared sessions. The
-      // uid keeps same-named users apart; the display name is what the
-      // client renders.
-      $uid = (int) $message->get('uid')->target_id;
+      // Attribute user turns to their author for shared sessions. The uid
+      // keeps same-named users apart; the display name is what the client
+      // renders.
+      $uid = (int) $row->get('uid')->target_id;
       if ($role === 'user' && isset($authors[$uid])) {
         $item['userId'] = (string) $uid;
         $item['userName'] = (string) $authors[$uid]->getDisplayName();
       }
-      if ($toolCalls) {
+      if ($toolCalls !== []) {
         $item['toolCalls'] = $toolCalls;
       }
-      $messages[] = $item;
+
+      $entries[] = $item;
     }
-    return ['messages' => $messages];
+
+    return $entries;
+  }
+
+  /**
+   * Loads the authors of the user rows in one query.
+   *
+   * @param array $rows
+   *   The conversation rows.
+   *
+   * @return \Drupal\user\UserInterface[]
+   *   The accounts, keyed by uid.
+   */
+  private function loadAuthors(array $rows): array {
+    $ids = [];
+    foreach ($rows as $row) {
+      $uid = (int) $row->get('uid')->target_id;
+      if ($uid > 0) {
+        $ids[$uid] = $uid;
+      }
+    }
+
+    return $ids === [] ? [] : $this->entityTypeManager->getStorage('user')->loadMultiple($ids);
+  }
+
+  /**
+   * Joins the text of a message's content blocks.
+   *
+   * @param array $blocks
+   *   The decoded content column, which is a list of content blocks.
+   *
+   * @return string
+   *   The text, empty for a message that carries none.
+   */
+  private function renderText(array $blocks): string {
+    $text = '';
+    foreach ($blocks as $block) {
+      if (($block['type'] ?? '') === 'text') {
+        $text .= (string) ($block['content'] ?? '');
+      }
+    }
+
+    return $text;
+  }
+
+  /**
+   * Formats a timestamp as RFC 3339, so clients can render local times.
+   */
+  private function formatTime(int $timestamp): string {
+    return \DateTimeImmutable::createFromFormat('U', (string) $timestamp)->format('c');
   }
 
   /**

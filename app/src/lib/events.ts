@@ -18,6 +18,25 @@ export type AppEvents = {
     message: string;
   };
   "notification:clear": undefined;
+  /**
+   * The editor answered a tool call that was waiting for a decision.
+   *
+   * A tool UI renders the buttons but cannot reach the thread runtime, which
+   * is why the decision travels to the component that owns it.
+   */
+  /**
+   * A turn ended by asking the editor to decide on a tool call.
+   *
+   * Neuron writes the call to the conversation and then suspends without
+   * streaming it, so the thread has to be read back for the question to
+   * appear. The component holding the runtime does that.
+   */
+  "approval:requested": undefined;
+  "approval:decide": {
+    callId: string;
+    decision: "approve" | "reject";
+    reason?: string;
+  };
 };
 
 /** Singleton event bus shared across the entire application. */

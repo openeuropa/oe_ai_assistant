@@ -66,7 +66,8 @@ abstract class AiEditorialSessionKernelTestBase extends KernelTestBase {
     $this->installEntitySchema('user');
     $this->installEntitySchema('node');
     $this->installEntitySchema('ai_editorial_session');
-    $this->installEntitySchema('ai_conversation_message');
+    $this->installEntitySchema('neuron_message');
+    $this->installSchema('ai_neuron', ['neuron_workflow_store']);
 
     $this->installConfig(['system', 'user', 'node', 'oe_ai_assistant']);
 

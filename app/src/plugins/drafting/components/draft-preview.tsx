@@ -12,6 +12,7 @@
  * over the page.
  */
 
+import { useAuiState } from "@assistant-ui/react";
 import {
   CircleCheck,
   CircleDashed,
@@ -257,9 +258,16 @@ export function DraftPreview({
   // Without a configured template there is nothing to embed: fall
   // back to a data-only pane and hide the tab switcher.
   const hasLivePreview = urlTemplate !== "";
-  const previewUrl = hasLivePreview
-    ? buildPreviewUrl(urlTemplate, sessionId, versionId)
-    : "";
+  // The preview renders a stored draft, and a draft produced in this turn
+  // reaches the store when the turn commits the call that produced it. So the
+  // frame waits for the turn to end rather than asking the server for a draft
+  // it cannot see yet. The pane itself shows the draft from the stream
+  // meanwhile, and the Data tab stays readable throughout.
+  const isRunning = useAuiState((s) => s.thread.isRunning);
+  const previewUrl =
+    hasLivePreview && !isRunning
+      ? buildPreviewUrl(urlTemplate, sessionId, versionId)
+      : "";
 
   const [activeTab, setActiveTab] = useState<PreviewTab>(
     hasLivePreview ? defaultTab : "data",
@@ -382,13 +390,18 @@ export function DraftPreview({
       {/* Keyed on the URL and the reload count so switching draft
           versions or pressing reload remounts the frame and shows the
           spinner for the new document. */}
-      {hasLivePreview && (
+      {hasLivePreview && previewUrl !== "" && (
         <LivePreviewFrame
           key={`${reloadCount}:${previewUrl}`}
           url={previewUrl}
           hidden={activeTab !== "live"}
           width={VIEWPORT_WIDTHS[viewport]}
         />
+      )}
+      {hasLivePreview && previewUrl === "" && activeTab === "live" && (
+        <div className="flex flex-1 items-center justify-center">
+          <Loader2 className="size-5 animate-spin text-gray-400" />
+        </div>
       )}
 
       {activeTab === "data" && <ContentTableBody />}

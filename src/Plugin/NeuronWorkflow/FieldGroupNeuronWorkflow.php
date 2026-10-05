@@ -5,16 +5,15 @@ declare(strict_types=1);
 namespace Drupal\oe_ai_assistant\Plugin\NeuronWorkflow;
 
 use Drupal\ai_neuron\Attribute\NeuronWorkflow;
+use Drupal\ai_neuron\Chat\History\ContextualMessageStoreInterface;
 use Drupal\ai_neuron\Providers\ProviderFactoryInterface;
 use Drupal\ai_neuron\Workflow\NeuronWorkflowPluginBase;
 use Drupal\Core\StringTranslation\TranslatableMarkup;
 use Drupal\oe_ai_assistant\Neuron\Agent\Nodes\SchemaOutputNode;
 use Drupal\oe_ai_assistant\Neuron\Agent\Nodes\SchemaRetryNode;
-use Drupal\oe_ai_assistant\Neuron\Chat\History\ConversationMessageStore;
 use Drupal\oe_ai_assistant\Neuron\Chat\History\ThreadAddress;
 use Drupal\oe_ai_assistant\Neuron\Observability\RunListener;
 use Drupal\oe_ai_assistant\Service\Drafting\DraftingTurn;
-use Drupal\oe_ai_assistant\Service\MessageRecorderInterface;
 use NeuronAI\Agent\AgentResources;
 use NeuronAI\Agent\AgentRunOptions;
 use NeuronAI\Agent\AgentState;
@@ -26,9 +25,8 @@ use NeuronAI\Chat\Messages\SystemMessage;
 use NeuronAI\Chat\Messages\UserMessage;
 use NeuronAI\Observability\ObservabilityEvent;
 use NeuronAI\Workflow\Events\Event;
+use NeuronAI\Workflow\Workflow;
 use NeuronAI\Workflow\WorkflowInterface;
-use NeuronAI\Workflow\WorkflowResources;
-use NeuronAI\Workflow\WorkflowState;
 
 /**
  * Writes the field values of one field group against its JSON schema.
@@ -76,8 +74,7 @@ final class FieldGroupNeuronWorkflow extends NeuronWorkflowPluginBase {
     $plugin_definition,
     private readonly ProviderFactoryInterface $providers,
     private readonly DraftingTurn $turn,
-    private readonly ConversationMessageStore $store,
-    private readonly MessageRecorderInterface $recorder,
+    private readonly ContextualMessageStoreInterface $store,
   ) {
     parent::__construct($configuration, $plugin_id, $plugin_definition);
   }
@@ -100,34 +97,26 @@ final class FieldGroupNeuronWorkflow extends NeuronWorkflowPluginBase {
   }
 
   /**
-   * {@inheritdoc}
+   * What the run can use: the provider, the conversation and the prompt.
    *
-   * The nodes read the conversation and the provider off the resources an
-   * agent run would carry, so the run carries those.
+   * The nodes are an agent's, so they read an agent's resources.
+   *
+   * @param string $threadId
+   *   The thread this run holds its conversation under.
+   *
+   * @return \NeuronAI\Agent\AgentResources
+   *   The resources.
    */
-  protected function resources(): ?WorkflowResources {
+  private function resources(string $threadId): AgentResources {
     $group = $this->turn->pendingGroup();
 
     return new AgentResources(
       $this->providers->create(self::OPERATION_TYPE, [$this->tag(), $group['id']]),
-      new ChatHistory($this->store, $this->runId($this->runKey()), ChatHistory::DEFAULT_CONTEXT_WINDOW),
+      // The group names the run, so its rows say which group they answered
+      // for rather than naming the plugin every group shares.
+      new ChatHistory($this->store->forAgent($group['id']), $threadId, ChatHistory::DEFAULT_CONTEXT_WINDOW),
       new SystemMessage($this->instructions()),
     );
-  }
-
-  /**
-   * {@inheritdoc}
-   *
-   * The schema name stands in for an output class: nothing deserializes into
-   * it, but it is what routes the run to the structured branch.
-   */
-  protected function state(array $state): WorkflowState {
-    $agentState = new AgentState();
-    foreach ($state as $key => $value) {
-      $agentState->set($key, $value);
-    }
-
-    return $agentState;
   }
 
   /**
@@ -145,40 +134,47 @@ final class FieldGroupNeuronWorkflow extends NeuronWorkflowPluginBase {
   /**
    * {@inheritdoc}
    *
-   * The run writes under the turn that asked for the group, so its rows nest
-   * there rather than in the editor's conversation.
+   * One thread per group per chat turn, so a drafter is asked for one answer
+   * and never replays the answer it gave for an earlier draft.
    */
   protected function runKey(): string {
-    $group = $this->turn->pendingGroup();
-    $parent = $group['parent']?->id();
-
     return ThreadAddress::nested(
       (string) $this->turn->session()->id(),
-      $parent === NULL ? NULL : (string) $parent,
-      $group['id'],
+      $this->turn->token(),
+      $this->turn->pendingGroup()['id'],
     );
   }
 
   /**
    * {@inheritdoc}
    *
-   * The base class builds the workflow; this adds the listener that records
-   * the drafter's rows under the turn that asked for them.
+   * Built here rather than by the base class, because the nodes are an
+   * agent's: they read an AgentState and the resources an agent run carries,
+   * and the base class builds a plain workflow with neither.
    */
   public function getNeuron(array $state = []): WorkflowInterface {
     $group = $this->turn->pendingGroup();
-    $workflow = parent::getNeuron($state);
+    $threadId = $this->runId($this->runKey());
 
-    $workflow->subscribe(ObservabilityEvent::class, (new RunListener(
-      $this->recorder,
-      $this->turn->session(),
-      $group['id'],
-      $this->turn->events(),
-      $this->store,
-      $this->runId($this->runKey()),
-      $group['parent'],
-      $this->instructions(),
-    ))->onEvent(...));
+    $agentState = new AgentState();
+    foreach ($state as $key => $value) {
+      $agentState->set($key, $value);
+    }
+
+    $workflow = Workflow::make($threadId, $agentState);
+    $resources = $this->resources($threadId);
+
+    $workflow
+      ->addNodes($this->nodes())
+      ->setStartEvent($this->startEvent())
+      ->setResources(static fn (): AgentResources => $resources);
+
+    $this->applyMiddleware($workflow);
+
+    $workflow->subscribe(
+      ObservabilityEvent::class,
+      (new RunListener($group['id'], $this->turn->events()))->onEvent(...),
+    );
 
     return $workflow;
   }

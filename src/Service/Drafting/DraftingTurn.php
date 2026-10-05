@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Drupal\oe_ai_assistant\Service\Drafting;
 
 use Drupal\ai_neuron\Workflow\NeuronWorkflowManagerInterface;
-use Drupal\oe_ai_assistant\Entity\AiConversationMessageInterface;
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
 use Drupal\oe_ai_assistant\Neuron\Chat\History\ThreadAddress;
 use Drupal\oe_ai_assistant\Neuron\Observability\AgentEventQueue;
@@ -67,9 +66,14 @@ final class DraftingTurn {
   private string $bundle = '';
 
   /**
+   * What tells this chat turn from another of the same session.
+   */
+  private string $token = '';
+
+  /**
    * The group a drafter is about to be built for.
    *
-   * @var array{id: string, schema: array, parent: \Drupal\oe_ai_assistant\Entity\AiConversationMessageInterface|null}|null
+   * @var array|null
    */
   private ?array $pendingGroup = NULL;
 
@@ -117,6 +121,16 @@ final class DraftingTurn {
     $this->entityTypeId = $entityTypeId;
     $this->bundle = $bundle;
     $this->pendingGroup = NULL;
+    // Hex of eight random bytes, which is short enough to read in a thread id
+    // and long enough that two turns of one session never collide.
+    $this->token = bin2hex(random_bytes(4));
+  }
+
+  /**
+   * Whether a turn is open, so the session and its context can be read.
+   */
+  public function isOpen(): bool {
+    return $this->session !== NULL;
   }
 
   /**
@@ -168,6 +182,16 @@ final class DraftingTurn {
    */
   public function threadId(): string {
     return 'drafting.' . ThreadAddress::key((string) $this->session()->id());
+  }
+
+  /**
+   * Returns what tells this chat turn from another of the same session.
+   *
+   * @throws \LogicException
+   *   When no turn is open.
+   */
+  public function token(): string {
+    return $this->token === '' ? throw new \LogicException('No drafting turn is open.') : $this->token;
   }
 
   /**
@@ -225,8 +249,8 @@ final class DraftingTurn {
    * Returns the group the drafter being built answers for.
    *
    * @return array
-   *   {id, schema, task, parent}: the group id, its JSON schema, what the
-   *   drafter is asked to write, and the turn its rows nest under.
+   *   {id, schema, task}: the group id, its JSON schema and what the drafter
+   *   is asked to write.
    *
    * @throws \LogicException
    *   When a drafter is built outside draft().
@@ -244,9 +268,6 @@ final class DraftingTurn {
    *   The JSON schema of the group.
    * @param string $task
    *   What the drafter is asked to write.
-   * @param \Drupal\oe_ai_assistant\Entity\AiConversationMessageInterface|null $parent
-   *   The turn the drafter's rows nest under, or NULL to leave them
-   *   unrecorded.
    *
    * @return array
    *   The decoded field values.
@@ -254,14 +275,13 @@ final class DraftingTurn {
    * @throws \Throwable
    *   When the provider call fails or no answer matches the schema.
    */
-  public function draft(string $groupId, array $schema, string $task, ?AiConversationMessageInterface $parent): array {
+  public function draft(string $groupId, array $schema, string $task): array {
     // The plugin reads the group while the manager builds it, since a
     // manager takes no arguments of its own.
     $this->pendingGroup = [
       'id' => $groupId,
       'schema' => $schema,
       'task' => $task,
-      'parent' => $parent,
     ];
     try {
       return $this->drafters->createWorkflow('field_group')->run()->get(SchemaOutputNode::OUTPUT_KEY) ?? [];
