@@ -16,7 +16,10 @@ test-results
 /docs
 composer.contrib-patches.lock.json
 ## DDEV
-/.ddev/web-build
+/.ddev/web-build/certs
+/.ddev/web-build/Dockerfile
+/.ddev/web-build/Dockerfile.example
+/.ddev/web-build/README.txt
 /phpstan-baseline.neon
 /phpstan.neon
 *.zip
