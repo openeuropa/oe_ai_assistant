@@ -23,6 +23,21 @@ describe("extractSavedVersions", () => {
     expect(extractSavedVersions(messages)).toEqual(new Set([1, 2]));
   });
 
+  it("reads a result the stream sent as text", () => {
+    const messages = [
+      {
+        content: [
+          {
+            type: "tool-call",
+            toolName: "save_draft",
+            result: '{"version":3,"nodeId":"7"}',
+          },
+        ],
+      },
+    ];
+    expect(extractSavedVersions(messages)).toEqual(new Set([3]));
+  });
+
   it("ignores waiting calls, refusals and other tools", () => {
     const messages = [
       // Still waiting for the editor's decision.

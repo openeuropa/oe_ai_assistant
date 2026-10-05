@@ -12,6 +12,7 @@ import { useAuiState } from "@assistant-ui/react";
 import { useMemo } from "react";
 import { type ParsedDraftResult, parseDraftResult } from "./draft-result";
 import { setDraftingState } from "./store";
+import { decodeToolResult } from "./tool-result";
 
 /** One entry in the session drafts index. */
 export interface SessionDraft extends ParsedDraftResult {
@@ -60,7 +61,7 @@ export function extractSessionDrafts(
       if (part.type !== "tool-call") {
         continue;
       }
-      const draft = draftOf(part.result);
+      const draft = draftOf(decodeToolResult(part.result));
       if (draft === undefined) {
         continue;
       }

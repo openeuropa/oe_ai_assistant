@@ -26,6 +26,7 @@ import { eventBus } from "@/lib/events";
 import { type ParsedDraftResult, parseDraftResult } from "../draft-result";
 import { useSavedVersions } from "../saved-versions";
 import { openSessionDraft, useSessionDraft } from "../session-drafts";
+import { decodeToolResult } from "../tool-result";
 import type { SaveDraftResult } from "../types";
 import { DraftCard } from "./draft-card";
 import { EventChip } from "./event-chip";
@@ -209,10 +210,11 @@ function ProducedDraftCard({ draft }: { draft: ParsedDraftResult }) {
  */
 export const DraftGroupToolUI = makeAssistantToolUI<
   { group?: string },
-  DraftGroupResult
+  unknown
 >({
   toolName: "draft_group",
-  render: ({ args, result, status }) => {
+  render: ({ args, result: raw, status }) => {
+    const result = decodeToolResult<DraftGroupResult>(raw);
     const draft = useParsedDraft(result?.draft);
     useProducedDraft(status, draft);
 
@@ -262,10 +264,11 @@ export const DraftGroupToolUI = makeAssistantToolUI<
  */
 export const ReviseDraftToolUI = makeAssistantToolUI<
   { groups?: string[]; version?: number },
-  ReviseDraftResult
+  unknown
 >({
   toolName: "revise_draft",
-  render: ({ args, result, status }) => {
+  render: ({ args, result: raw, status }) => {
+    const result = decodeToolResult<ReviseDraftResult>(raw);
     const draft = useParsedDraft(result?.draft);
     useProducedDraft(status, draft);
 
@@ -343,23 +346,27 @@ export const GetContentSchemaToolUI = makeAssistantToolUI<
  */
 export const GetDraftHistoryToolUI = makeAssistantToolUI<
   Record<string, never>,
-  { drafts?: unknown[] }
+  unknown
 >({
   toolName: "get_draft_history",
-  render: ({ result, status }) => (
-    <ToolCallCard
-      icon={History}
-      label={
-        status.type === "complete"
-          ? "Got draft history"
-          : "Getting draft history"
-      }
-      detail={
-        result?.drafts ? countLabel(result.drafts.length, "draft") : undefined
-      }
-      status={status}
-    />
-  ),
+  render: ({ result: raw, status }) => {
+    const result = decodeToolResult<{ drafts?: unknown[] }>(raw);
+
+    return (
+      <ToolCallCard
+        icon={History}
+        label={
+          status.type === "complete"
+            ? "Got draft history"
+            : "Getting draft history"
+        }
+        detail={
+          result?.drafts ? countLabel(result.drafts.length, "draft") : undefined
+        }
+        status={status}
+      />
+    );
+  },
 });
 
 /**
@@ -373,10 +380,11 @@ export const GetDraftHistoryToolUI = makeAssistantToolUI<
  */
 export const SaveDraftToolUI = makeAssistantToolUI<
   { version?: number },
-  SaveDraftResult
+  unknown
 >({
   toolName: "save_draft",
-  render: ({ args, result, toolCallId }) => {
+  render: ({ args, result: raw, toolCallId }) => {
+    const result = decodeToolResult<SaveDraftResult>(raw);
     if (result?.nodeId !== undefined) {
       return (
         <EventChip

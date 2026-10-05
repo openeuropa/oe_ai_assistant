@@ -58,7 +58,7 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
 
     // Reconstruct the full streamed text from all text-delta events.
     $fullText = implode('', array_map(
-      fn($e) => $e['textDelta'] ?? '',
+      fn($e) => $e['delta'] ?? '',
       $textDeltas,
     ));
     $this->assertStringContainsString('Hello', $fullText,
@@ -162,28 +162,32 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
     // One tool call per group, in the order the model requested them.
     $groupCalls = array_values(array_filter(
       $events,
-      fn($e) => $e['type'] === 'tool-call-start' && $e['toolName'] === 'draft_group',
+      fn($e) => $e['type'] === 'tool-input-start' && $e['toolName'] === 'draft_group',
     ));
     $this->assertSame(['call_1', 'call_2'], array_column($groupCalls, 'toolCallId'));
 
     // Each result names its group; the last one carries the versioned draft.
-    $results = array_values(array_filter(
-      $events,
-      fn($e) => $e['type'] === 'tool-result' && isset($e['result']['group']),
+    // The protocol sends a tool output as the string the tool returned.
+    $results = array_values(array_map(
+      fn($e) => (array) json_decode((string) $e['output'], TRUE),
+      array_filter(
+        $events,
+        fn($e) => $e['type'] === 'tool-output-available' && str_contains((string) $e['output'], '"group"'),
+      ),
     ));
     $this->assertSame(
       ['main_fields', 'field_content_paragraphs'],
-      array_column(array_column($results, 'result'), 'group'),
+      array_column($results, 'group'),
     );
-    $this->assertArrayNotHasKey('draft', $results[0]['result']);
-    $this->assertSame(['field_content_paragraphs'], $results[0]['result']['pending']);
-    $draft = $results[1]['result']['draft'];
+    $this->assertArrayNotHasKey('draft', $results[0]);
+    $this->assertSame(['field_content_paragraphs'], $results[0]['pending']);
+    $draft = $results[1]['draft'];
     $this->assertSame(1, $draft['version']);
     $this->assertArrayHasKey('title', $draft['fields'],
       'Consolidated fields should include title.');
 
     // The model's answer after the tools is streamed as text.
-    $text = implode('', array_map(fn($e) => $e['textDelta'] ?? '', $events));
+    $text = implode('', array_map(fn($e) => $e['delta'] ?? '', $events));
     $this->assertStringContainsString('Draft 1.0 is ready', $text);
 
     // The calling turn carries both calls, and the completing one the draft.

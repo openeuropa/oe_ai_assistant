@@ -8,12 +8,13 @@
 
 import { useAuiState } from "@assistant-ui/react";
 import { useMemo } from "react";
+import { decodeToolResult } from "./tool-result";
 
 /** Minimal shape of a thread message part this module inspects. */
 interface ToolPartLike {
   type?: string;
   toolName?: string;
-  result?: Record<string, unknown>;
+  result?: unknown;
 }
 
 /** Minimal shape of a thread message this module inspects. */
@@ -31,13 +32,11 @@ export function extractSavedVersions(
       if (part.type !== "tool-call" || part.toolName !== "save_draft") {
         continue;
       }
-      const version = part.result?.["version"];
+      const result = decodeToolResult(part.result);
+      const version = result?.["version"];
       // A call that was refused, or is still waiting for a decision, wrote
       // nothing: only a node id says the save happened.
-      if (
-        part.result?.["nodeId"] !== undefined &&
-        typeof version === "number"
-      ) {
+      if (result?.["nodeId"] !== undefined && typeof version === "number") {
         saved.add(version);
       }
     }

@@ -14,7 +14,6 @@ use Drupal\oe_ai_assistant\Annotation\AiEditorialAssistant;
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
 use Drupal\oe_ai_assistant\Exception\ActionException;
 use Drupal\ai_neuron\Agent\NeuronAgentManagerInterface;
-use Drupal\oe_ai_assistant\Neuron\Chat\Messages\Stream\Adapters\UiMessageStreamAdapter;
 use Drupal\oe_ai_assistant\Plugin\AiAssistantPluginBase;
 use Drupal\oe_ai_assistant\Service\AiEditorialContextInterface;
 use Drupal\oe_ai_assistant\Service\DraftAssemblerInterface;
@@ -28,6 +27,7 @@ use Drupal\oe_ai_assistant\Service\DraftingSchemaProviderInterface;
 use Drupal\oe_ai_assistant\Service\PreviewRendererInterface;
 use NeuronAI\Workflow\Streaming\ProtocolEvent;
 use NeuronAI\Workflow\Streaming\SSEEncoder;
+use NeuronAI\Agent\Adapters\VercelAIAdapter;
 use NeuronAI\Agent\AgentInterface;
 use NeuronAI\Agent\Interrupt\Action;
 use NeuronAI\Chat\Messages\UserMessage;
@@ -437,7 +437,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
    * into the stream.
    */
   private function streamRun(\Generator $run, AgentInterface $agent): Response {
-    $response = new AiStreamedResponse(NULL, 200, (new UiMessageStreamAdapter())->getHeaders());
+    $response = new AiStreamedResponse(NULL, 200, (new VercelAIAdapter())->getHeaders());
     $response->setCallback(function () use ($run, $agent): void {
       set_time_limit(0);
       $emit = static function (ProtocolEvent $event): void {

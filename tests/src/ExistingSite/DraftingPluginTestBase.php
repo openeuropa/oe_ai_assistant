@@ -325,8 +325,8 @@ abstract class DraftingPluginTestBase extends ExistingSiteBase {
     ]);
 
     foreach ($this->parseSseEvents($result['body']) as $event) {
-      if ($event['type'] === 'tool-result' && ($event['toolCallId'] ?? '') === $callId) {
-        return (array) $event['result'];
+      if ($event['type'] === 'tool-output-available' && ($event['toolCallId'] ?? '') === $callId) {
+        return (array) json_decode((string) $event['output'], TRUE);
       }
     }
 

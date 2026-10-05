@@ -10,8 +10,8 @@ use Drupal\ai_neuron\Providers\ProviderFactoryInterface;
 use Drupal\ai_neuron\Tools\NeuronToolManagerInterface;
 use Drupal\Core\StringTranslation\TranslatableMarkup;
 use Drupal\oe_ai_assistant\Neuron\Chat\History\ThreadAddress;
-use Drupal\oe_ai_assistant\Neuron\Chat\Messages\Stream\Adapters\UiMessageStreamAdapter;
 use Drupal\oe_ai_assistant\Service\Drafting\DraftingTurn;
+use NeuronAI\Agent\Adapters\VercelAIAdapter;
 use NeuronAI\Agent\Agent;
 use NeuronAI\Agent\AgentInterface;
 use NeuronAI\Tools\ToolCall;
@@ -126,28 +126,26 @@ final class DraftingNeuronAgent extends NeuronAgentPluginBase {
   /**
    * {@inheritdoc}
    *
-   * A tool answers the model in JSON, so a failure is reported the same way
-   * rather than as the sentence the base class returns.
+   * The base class sets the provider, the instructions, the tools and the
+   * middleware, and leaves a run yielding Neuron's own chunks. The app reads
+   * the Vercel protocol, so the run is asked for that.
    */
-  protected function toolErrorHandler(): ?callable {
-    return static fn (\Throwable $exception, ToolCall $call): string => json_encode(['error' => $exception->getMessage()]);
+  public function getNeuron(?string $threadKey = NULL): AgentInterface {
+    $agent = parent::getNeuron($threadKey);
+    assert($agent instanceof Agent);
+    $agent->setStreamAdapter(static fn (): VercelAIAdapter => new VercelAIAdapter());
+
+    return $agent;
   }
 
   /**
    * {@inheritdoc}
    *
-   * The base class sets the provider, the instructions, the tools and the
-   * middleware. What is left is the stream dialect the app reads.
+   * A tool answers the model in JSON, so a failure is reported the same way
+   * rather than as the sentence the base class returns.
    */
-  public function getNeuron(?string $threadKey = NULL): AgentInterface {
-    $agent = parent::getNeuron($threadKey);
-    assert($agent instanceof Agent);
-
-    // The app decodes its own dialect of the UI message stream, so the run
-    // yields those protocol events rather than Neuron's own.
-    $agent->setStreamAdapter(static fn (): UiMessageStreamAdapter => new UiMessageStreamAdapter());
-
-    return $agent;
+  protected function toolErrorHandler(): ?callable {
+    return static fn (\Throwable $exception, ToolCall $call): string => json_encode(['error' => $exception->getMessage()]);
   }
 
 }
