@@ -7,6 +7,8 @@ namespace Drupal\document_loader_tika;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\document_loader_tika\Exception\TikaException;
 use Symfony\Component\Process\ExecutableFinder;
+use Symfony\Component\Process\Exception\ProcessTimedOutException;
+use Symfony\Component\Process\Process;
 
 /**
  * Extracts document text by running the Apache Tika app JAR.
@@ -17,7 +19,6 @@ final class TikaExecutableClient implements TikaClientInterface {
 
   public function __construct(
     private readonly ConfigFactoryInterface $configFactory,
-    private readonly TikaProcessRunnerInterface $processRunner,
   ) {}
 
   /**
@@ -27,18 +28,20 @@ final class TikaExecutableClient implements TikaClientInterface {
     if (!is_file($path) || !is_readable($path)) {
       throw new TikaException(sprintf('The file %s could not be opened.', $path));
     }
-    $result = $this->processRunner->run(
-      $this->command($accept === 'text/html' ? '--xhtml' : '--text', $path),
-      $this->timeout(),
-      $this->environment(),
-    );
-    if ($result->timedOut) {
+    $command = $this->command($accept === 'text/html' ? '--xhtml' : '--text', $path);
+    try {
+      $process = $this->run($command, $this->timeout());
+    }
+    catch (ProcessTimedOutException) {
       throw new TikaException('The Tika executable timed out while extracting the document.');
     }
-    if (!$result->successful) {
+    catch (\Throwable $e) {
+      throw new TikaException('The Tika executable could not extract the document.', 0, $e);
+    }
+    if (!$process->isSuccessful()) {
       throw new TikaException('The Tika executable could not extract the document.');
     }
-    $content = trim($result->output);
+    $content = trim($process->getOutput());
     if ($content === '') {
       throw new TikaException('The Tika executable returned no text for the document.');
     }
@@ -51,19 +54,16 @@ final class TikaExecutableClient implements TikaClientInterface {
    */
   public function version(): ?string {
     try {
-      $result = $this->processRunner->run(
-        $this->command('--version'),
-        self::VERSION_TIMEOUT,
-        $this->environment(),
-      );
+      $command = $this->command('--version');
+      $process = $this->run($command, self::VERSION_TIMEOUT);
     }
-    catch (TikaException) {
+    catch (\Throwable) {
       return NULL;
     }
-    if (!$result->successful || $result->timedOut) {
+    if (!$process->isSuccessful()) {
       return NULL;
     }
-    $version = trim($result->output);
+    $version = trim($process->getOutput());
 
     return $version === '' ? NULL : $version;
   }
@@ -106,16 +106,17 @@ final class TikaExecutableClient implements TikaClientInterface {
   }
 
   /**
-   * Gets the UTF-8 process environment required for file paths.
-   *
-   * @return array<string, string>
-   *   The environment variables passed to the Java process.
+   * Runs a Tika command with the configured timeout and UTF-8 environment.
    */
-  private function environment(): array {
-    return [
+  private function run(array $command, float $timeout): Process {
+    $process = new Process($command, NULL, [
       'LANG' => 'C.UTF-8',
       'LC_ALL' => 'C.UTF-8',
-    ];
+    ]);
+    $process->setTimeout($timeout);
+    $process->run();
+
+    return $process;
   }
 
   /**

@@ -9,6 +9,3 @@ services:
   Drupal\document_loader_tika\TikaServerClient: ~
 
   Drupal\document_loader_tika\TikaExecutableClient: ~
-
-  Drupal\document_loader_tika\TikaProcessRunnerInterface:
-    class: Drupal\document_loader_tika\TikaProcessRunner
