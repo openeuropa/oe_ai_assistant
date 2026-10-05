@@ -11,7 +11,7 @@ use Drupal\ai_neuron\Tools\NeuronToolManagerInterface;
 use Drupal\Core\StringTranslation\TranslatableMarkup;
 use Drupal\oe_ai_assistant\Neuron\Chat\History\ThreadAddress;
 use Drupal\oe_ai_assistant\Service\Drafting\DraftingTurn;
-use NeuronAI\Agent\Adapters\VercelAIAdapter;
+use Drupal\oe_ai_assistant\Neuron\Chat\Messages\Stream\Adapters\ClosedToolInputAdapter;
 use NeuronAI\Agent\Agent;
 use NeuronAI\Agent\AgentInterface;
 use NeuronAI\Tools\ToolCall;
@@ -128,12 +128,13 @@ final class DraftingNeuronAgent extends NeuronAgentPluginBase {
    *
    * The base class sets the provider, the instructions, the tools and the
    * middleware, and leaves a run yielding Neuron's own chunks. The app reads
-   * the Vercel protocol, so the run is asked for that.
+   * the Vercel protocol, so the run is asked for that, with the one event
+   * Neuron leaves out of it.
    */
   public function getNeuron(?string $threadKey = NULL): AgentInterface {
     $agent = parent::getNeuron($threadKey);
     assert($agent instanceof Agent);
-    $agent->setStreamAdapter(static fn (): VercelAIAdapter => new VercelAIAdapter());
+    $agent->setStreamAdapter(static fn (): ClosedToolInputAdapter => new ClosedToolInputAdapter());
 
     return $agent;
   }
