@@ -54,8 +54,8 @@ class DocumentExtractionProcessorTest extends AiEditorialSessionKernelTestBase {
   /**
    * Creates a scheduled context document media with a text file.
    */
-  private function createDocument(string $name = 'brief.txt'): MediaInterface {
-    file_put_contents('public://' . $name, 'payload');
+  private function createDocument(string $name = 'brief.txt', string $contents = 'payload'): MediaInterface {
+    file_put_contents('public://' . $name, $contents);
     $file = File::create(['uri' => 'public://' . $name, 'filename' => $name, 'status' => 1]);
     $file->save();
     $media = Media::create([
@@ -95,9 +95,8 @@ class DocumentExtractionProcessorTest extends AiEditorialSessionKernelTestBase {
    * Tests that a full run stores the extract and the summary.
    */
   public function testFullRunEndsInDone(): void {
-    $this->tika->append(new Response(200, [], 'Full text'));
     MockAiProvider::enqueue(new MockResponse('A brief summary.'));
-    $media = $this->createDocument();
+    $media = $this->createDocument('brief.txt', 'Full text');
     $revisions = $this->countRevisions($media);
 
     $state = $this->processor()->process($media);
@@ -108,6 +107,7 @@ class DocumentExtractionProcessorTest extends AiEditorialSessionKernelTestBase {
     $this->assertSame('Full text', $fresh->get(DocumentExtractionProcessorInterface::EXTRACT_FIELD)->value);
     $this->assertSame('A brief summary.', $fresh->get(DocumentExtractionProcessorInterface::SUMMARY_FIELD)->value);
     $this->assertSame($revisions, $this->countRevisions($media));
+    $this->assertNull($this->tika->getLastRequest());
 
     $log = MockAiProvider::getCallLog();
     $this->assertCount(1, $log);
@@ -119,9 +119,8 @@ class DocumentExtractionProcessorTest extends AiEditorialSessionKernelTestBase {
    * Tests that a provider failure keeps the extract and ends in error.
    */
   public function testProviderFailureKeepsExtract(): void {
-    $this->tika->append(new Response(200, [], 'Full text'));
     MockAiProvider::enqueue(new MockResponse(error: new \RuntimeException('Provider down.')));
-    $media = $this->createDocument();
+    $media = $this->createDocument('brief.txt', 'Full text');
 
     $state = $this->processor()->process($media);
 
@@ -129,13 +128,14 @@ class DocumentExtractionProcessorTest extends AiEditorialSessionKernelTestBase {
     $fresh = $this->reload($media);
     $this->assertSame('Full text', $fresh->get(DocumentExtractionProcessorInterface::EXTRACT_FIELD)->value);
     $this->assertTrue($fresh->get(DocumentExtractionProcessorInterface::SUMMARY_FIELD)->isEmpty());
+    $this->assertNull($this->tika->getLastRequest());
   }
 
   /**
-   * Tests that every accepted extension goes through the loader as text.
+   * Tests that Word and PDF documents still go through Tika as text.
    */
-  #[DataProvider('extensionProvider')]
-  public function testExtractsAcceptedExtensions(string $name): void {
+  #[DataProvider('tikaExtensionProvider')]
+  public function testExtractsTikaExtensions(string $name): void {
     $this->tika->append(new Response(200, [], "Extracted\n"));
     MockAiProvider::enqueue(new MockResponse('Summary.'));
     $media = $this->createDocument($name);
@@ -146,15 +146,36 @@ class DocumentExtractionProcessorTest extends AiEditorialSessionKernelTestBase {
   }
 
   /**
-   * The accepted source field extensions.
+   * The source extensions extracted through Tika.
    */
-  public static function extensionProvider(): array {
+  public static function tikaExtensionProvider(): array {
     return [
-      'plain text' => ['brief.txt'],
-      'markdown' => ['brief.md'],
       'legacy word' => ['brief.doc'],
       'word' => ['brief.docx'],
       'pdf' => ['brief.pdf'],
+    ];
+  }
+
+  /**
+   * Tests that text and Markdown extract locally without a Tika request.
+   */
+  #[DataProvider('flatFileExtensionProvider')]
+  public function testExtractsFlatFileExtensions(string $name, string $contents): void {
+    MockAiProvider::enqueue(new MockResponse('Summary.'));
+    $media = $this->createDocument($name, $contents);
+
+    $this->assertSame(DocumentExtractionProcessorInterface::STATE_DONE, $this->processor()->process($media));
+    $this->assertSame(trim($contents), $this->reload($media)->get(DocumentExtractionProcessorInterface::EXTRACT_FIELD)->value);
+    $this->assertNull($this->tika->getLastRequest());
+  }
+
+  /**
+   * The source extensions extracted directly from local storage.
+   */
+  public static function flatFileExtensionProvider(): array {
+    return [
+      'plain text' => ['brief.txt', "Plain text\n"],
+      'markdown' => ['brief.md', "# Heading\n\nParagraph\n"],
     ];
   }
 
@@ -186,7 +207,7 @@ class DocumentExtractionProcessorTest extends AiEditorialSessionKernelTestBase {
    */
   public function testLoaderFailureEndsInError(): void {
     $this->tika->append(new Response(500, [], ''));
-    $media = $this->createDocument();
+    $media = $this->createDocument('brief.docx');
 
     $state = $this->processor()->process($media);
 
@@ -218,7 +239,7 @@ class DocumentExtractionProcessorTest extends AiEditorialSessionKernelTestBase {
   public function testReclaimRestartsInFlightDocument(): void {
     $this->tika->append(new Response(200, [], 'Again'));
     MockAiProvider::enqueue(new MockResponse('Summary again.'));
-    $media = $this->createDocument();
+    $media = $this->createDocument('brief.docx');
     $media->set(DocumentExtractionProcessorInterface::STATE_FIELD, DocumentExtractionProcessorInterface::STATE_EXTRACTING)->save();
 
     $this->assertSame(DocumentExtractionProcessorInterface::STATE_DONE, $this->processor()->process($media, TRUE));
@@ -326,8 +347,6 @@ class DocumentExtractionProcessorTest extends AiEditorialSessionKernelTestBase {
       ->condition('mid', $stale->id())
       ->execute();
 
-    $this->tika->append(new Response(200, [], 'One'));
-    $this->tika->append(new Response(200, [], 'Two'));
     MockAiProvider::enqueue(new MockResponse('Summary one.'));
     MockAiProvider::enqueue(new MockResponse('Summary two.'));
 
@@ -348,7 +367,7 @@ class DocumentExtractionProcessorTest extends AiEditorialSessionKernelTestBase {
    * a failure.
    */
   public function testDeletedDocumentStopsTheRunQuietly(): void {
-    $media = $this->createDocument();
+    $media = $this->createDocument('brief.docx');
     $id = $media->id();
     $storage = $this->container->get('entity_type.manager')->getStorage('media');
     // The Tika call is where a slow run spends its time: delete the

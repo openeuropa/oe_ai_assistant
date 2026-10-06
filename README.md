@@ -13,7 +13,8 @@ Drupal AI.
 - Content Moderation (core)
 - [Document Loader](https://www.drupal.org/project/document_loader) (^2.0)
 - [State Machine](https://www.drupal.org/project/state_machine) (^1.14)
-- An [Apache Tika](https://tika.apache.org/) server for document text extraction
+- An [Apache Tika](https://tika.apache.org/) server for Word and PDF document
+  text extraction
 
 ## Installation
 
@@ -149,20 +150,23 @@ git tag "$(ddev dev-tag)" && git push origin --tags
 Session documents are turned into text and summarised so the drafting prompts
 can use them. The pipeline runs server-side on the document media entity:
 
-- An Apache Tika server extracts the text through the `document_loader_tika`
-  submodule (a Document Loader plugin). In DDEV it runs as the `tika` service
-  from `.ddev/docker-compose.tika.yaml`, reachable from the web container at
-  `http://tika:9998`. `web/sites/default/settings.ai.php` sets the extraction
-  mode, that URL and the path of the Tika app JAR shipped in the web image, so
-  switching mode in that live copy and running `ddev drush cr` tests either
-  source. `ddev install` seeds it from `.ddev/settings.ai.php`, which is where
-  the default belongs. Check the server with
-  `ddev exec curl http://tika:9998/version`. The submodule itself ships no
-  URL, so other environments set it in `settings.php`:
+
+- Plain-text and Markdown files are read directly from Drupal's local file
+  storage by the `oe_ai_assistant:flat_file` Document Loader plugin; they do
+  not require Tika.
+- Word and PDF files are extracted through the `document_loader_tika`
+  submodule (an Apache Tika Document Loader plugin). In DDEV it runs as the
+  `tika` service from `.ddev/docker-compose.tika.yaml`, reachable from the web
+  container at `http://tika:9998`, the default of the submodule. Check it with
+  `ddev exec curl http://tika:9998/version`. Other environments override the
+  URL in `settings.php`:
 
   ```php
   $config['document_loader_tika.settings']['url'] = 'http://tika.internal:9998';
   ```
+
+  The default loader for each type can be reviewed or changed at
+  `/admin/config/media/document-loader`.
 
 - The default chat provider writes a brief summary of the extracted text.
 - A `state_machine` workflow (`oe_ai_document_extraction`) tracks each
