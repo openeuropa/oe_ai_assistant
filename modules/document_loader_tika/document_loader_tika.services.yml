@@ -2,7 +2,10 @@ services:
   _defaults:
     autowire: true
 
-  # HTTP client for the Tika server, shared by the loader plugin and the
-  # status report.
+  # Mode-selecting client shared by the loader plugin and status report.
   Drupal\document_loader_tika\TikaClientInterface:
     class: Drupal\document_loader_tika\TikaClient
+
+  Drupal\document_loader_tika\TikaServerClient: ~
+
+  Drupal\document_loader_tika\TikaExecutableClient: ~

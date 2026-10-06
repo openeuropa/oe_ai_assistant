@@ -1,0 +1,28 @@
+ARG BASE_IMAGE
+FROM $BASE_IMAGE
+
+USER root
+
+ARG TIKA_VERSION=3.3.2
+
+RUN apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+        default-jre-headless \
+        ca-certificates \
+        curl \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN curl \
+      --fail \
+      --location \
+      --show-error \
+      --retry 5 \
+      --retry-delay 2 \
+      --retry-all-errors \
+      "https://downloads.apache.org/tika/${TIKA_VERSION}/tika-app-${TIKA_VERSION}.jar" \
+      -o /usr/local/lib/tika-app.jar \
+    && chmod 0644 /usr/local/lib/tika-app.jar
+
+RUN printf '#!/bin/sh\nexec java -jar /usr/local/lib/tika-app.jar "$@"\n' \
+      > /usr/local/bin/tika \
+    && chmod +x /usr/local/bin/tika

@@ -132,13 +132,13 @@ class TikaLoaderTest extends KernelTestBase {
 
     $this->tika->append(new Response(200, [], 'Apache Tika 3.3.1'));
     $ok = $hooks->runtimeRequirements();
-    $this->assertSame(RequirementSeverity::OK, $ok['document_loader_tika']['severity']);
-    $this->assertSame('Apache Tika 3.3.1', (string) $ok['document_loader_tika']['value']);
+    $this->assertSame(RequirementSeverity::OK, $ok['document_loader_tika_server']['severity']);
+    $this->assertSame('Apache Tika 3.3.1', (string) $ok['document_loader_tika_server']['value']);
 
     $this->tika->append(new Response(503, [], ''));
     $down = $hooks->runtimeRequirements();
-    $this->assertSame(RequirementSeverity::Error, $down['document_loader_tika']['severity']);
-    $this->assertStringContainsString('http://tika:9998', (string) $down['document_loader_tika']['value']);
+    $this->assertSame(RequirementSeverity::Error, $down['document_loader_tika_server']['severity']);
+    $this->assertStringContainsString('http://tika:9998', (string) $down['document_loader_tika_server']['value']);
   }
 
 }
