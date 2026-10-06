@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Drupal\oe_ai_assistant\Neuron\Agent;
 
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
+use Drupal\oe_ai_assistant\Exception\GroupDraftingException;
 use Drupal\oe_ai_assistant\Neuron\Chat\History\ConversationChatHistory;
 use Drupal\oe_ai_assistant\Neuron\Tools\DraftGroupTool;
 use Drupal\oe_ai_assistant\Neuron\Tools\GetDraftHistoryTool;
@@ -16,6 +17,7 @@ use Drupal\oe_ai_assistant\Service\Drafting\DraftHistoryInterface;
 use Drupal\oe_ai_assistant\Service\Drafting\EditorialContext;
 use NeuronAI\Agent\Agent;
 use NeuronAI\Providers\AIProviderInterface;
+use NeuronAI\Tools\Tool;
 use NeuronAI\Tools\ToolInterface;
 
 /**
@@ -23,7 +25,8 @@ use NeuronAI\Tools\ToolInterface;
  *
  * The model decides when to call the history and group tools; the
  * group tool runs a drafter sub-agent per call. A tool failure is returned
- * to the model as an error payload, so the conversation continues.
+ * to the model as an error payload, so the conversation continues; an AI
+ * service failure while drafting a group ends the turn.
  */
 final class DraftingAgent extends Agent {
 
@@ -53,9 +56,11 @@ final class DraftingAgent extends Agent {
     - Call draft_group once for every group, all in the same turn,
       starting with main_fields. If a result still lists pending
       groups, call draft_group for each of them before answering.
-    - Once the draft is versioned, tell the user which draft is ready
-      and that they can review it on the right. Do not repeat the
-      field values.
+    - The editor sees the draft as soon as it is versioned; do not
+      announce it or repeat the field values. Comment only on the
+      choices you made and on open questions.
+    - A draft_group or revise_draft result with an error means no draft
+      was created. Say briefly what failed.
     - When the user asks to change something in a draft that already
       exists, call revise_draft rather than drafting again. Name the
       groups only when the change is limited to particular fields;
@@ -156,7 +161,17 @@ final class DraftingAgent extends Agent {
    * {@inheritdoc}
    */
   protected function resolveToolErrorHandler(): ?callable {
-    return static fn (\Throwable $e, ToolInterface $tool): string => json_encode(['error' => $e->getMessage()]);
+    return static function (\Throwable $e, ToolInterface $tool): string {
+      $error = json_encode(['error' => $e->getMessage()]);
+      if ($e instanceof GroupDraftingException && $e->endsTheTurn()) {
+        // The call stays on the transcript with its reason.
+        if ($tool instanceof Tool) {
+          $tool->setResult($error);
+        }
+        throw $e;
+      }
+      return $error;
+    };
   }
 
   /**

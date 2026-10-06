@@ -129,6 +129,7 @@ describe("toThreadMessages", () => {
           {
             type: "function",
             function: { name: "some_tool", arguments: "NOT JSON" },
+            result: {},
           },
         ],
       },

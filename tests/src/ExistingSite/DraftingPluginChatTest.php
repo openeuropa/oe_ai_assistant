@@ -326,6 +326,49 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
   }
 
   /**
+   * Tests that a group timing out three times ends the turn with no draft.
+   *
+   * The timeouts use up the two retries; the model is not asked again.
+   */
+  public function testTimedOutGroupEndsTheTurnWithoutDraft(): void {
+    $user = $this->createUser(['use oe ai assistant']);
+    $this->loginUser($user);
+    $session = $this->createSession($user);
+
+    $calls = [];
+    foreach (['main_fields', 'field_content_paragraphs'] as $index => $group) {
+      $calls[] = [
+        'id' => 'call_' . ($index + 1),
+        'type' => 'function',
+        'function' => ['name' => 'draft_group', 'arguments' => json_encode(['group' => $group])],
+      ];
+    }
+    MockAiProvider::enqueue(new MockResponse(toolCalls: $calls));
+    MockAiProvider::enqueue(new MockResponse(
+      text: '{"title": [{"value": "Test Title"}], "field_teaser": [{"value": "Test teaser."}]}',
+    ));
+    for ($attempt = 0; $attempt < 3; $attempt++) {
+      MockAiProvider::enqueue(new MockResponse(error: new \RuntimeException('Send timeout')));
+    }
+
+    $result = $this->httpPost('/api/ai/plugins/drafting/chat', [
+      'message' => 'Generate the draft now.',
+      'sessionId' => $session->id(),
+    ]);
+    $this->assertEquals(200, $result['status'],
+      'Expected 200. Body: ' . substr($result['body'], 0, 500));
+
+    $outcome = 'No new draft was created. The AI service did not respond in time while drafting Content paragraphs.';
+    $errors = array_values(array_filter($this->parseSseEvents($result['body']), fn($e) => $e['type'] === 'error'));
+    $this->assertSame($outcome, $errors[0]['errorText']);
+    $events = array_filter($this->getMessages($session), fn($m) => $m['role'] === 'event');
+    $this->assertSame($outcome, end($events)['summary']);
+    $this->assertCount(5, MockAiProvider::getCallLog());
+    $calls = $this->findDraftTurn($session)['message']->getToolCalls();
+    $this->assertSame('The AI service did not respond in time while drafting Content paragraphs.', $calls[1]['result']['error']);
+  }
+
+  /**
    * Tests that a revision reuses the stored draft and groups under it.
    *
    * The named group is drafted again, every other group is carried over,

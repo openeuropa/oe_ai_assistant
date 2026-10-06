@@ -14,6 +14,7 @@ use Drupal\oe_ai_assistant\Annotation\AiEditorialAssistant;
 use Drupal\oe_ai_assistant\Entity\AiConversationMessageInterface;
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
 use Drupal\oe_ai_assistant\Exception\ActionException;
+use Drupal\oe_ai_assistant\Exception\GroupDraftingException;
 use Drupal\oe_ai_assistant\Neuron\AgentFactory;
 use Drupal\oe_ai_assistant\Neuron\Chat\Messages\Stream\Adapters\UiMessageStreamAdapter;
 use Drupal\oe_ai_assistant\Neuron\Observability\AgentEventQueue;
@@ -329,21 +330,53 @@ class DraftingPlugin extends AiAssistantPluginBase {
     // for it; the collector versions the draft once the set is complete.
     $events = new AgentEventQueue();
     $contextPrompt = $editorialContext->toPrompt();
-    $versionDraft = fn (array $fields, ?int $revisionOf = NULL, ?array $inherited = NULL): array => $this->versionDraft($session, $editorialContext, $fields, $revisionOf, $inherited);
+    $labels = array_column($groups, 'label', 'groupId');
+    $failed = [];
+    $versionDraft = function (array $fields, ?int $revisionOf = NULL, ?array $inherited = NULL) use ($session, $editorialContext, &$failed): array {
+      $failed = [];
+      return $this->versionDraft($session, $editorialContext, $fields, $revisionOf, $inherited);
+    };
     $agent = $this->agentFactory->draftingAgent(
       $session,
       $routerContext,
       $editorialContext,
       new DraftCollector($groups, $versionDraft),
-      fn (string $groupId, array $schemaSlice, string $task, ?AiConversationMessageInterface $parent): array => $this->agentFactory
-        ->fieldGroupAgent($session, $parent, $groupId, $schemaSlice, $contextPrompt, $events)
-        ->structured(new UserMessage($task)),
+      function (string $groupId, array $schemaSlice, string $task, ?AiConversationMessageInterface $parent) use ($session, $contextPrompt, $events, $labels, &$failed): array {
+        $attempts = 0;
+        while (TRUE) {
+          try {
+            return $this->agentFactory
+              ->fieldGroupAgent($session, $parent, $groupId, $schemaSlice, $contextPrompt, $events)
+              ->structured(new UserMessage($task));
+          }
+          catch (\Throwable $e) {
+            // A timeout gets two more attempts.
+            if (GroupDraftingException::isTimeout($e) && ++$attempts < 3) {
+              continue;
+            }
+            $failed[$groupId] = new GroupDraftingException($labels[$groupId] ?? $groupId, $e);
+            throw $failed[$groupId];
+          }
+        }
+      },
       fn (?string $templateId): array => $this->schemaProvider->groups($context['entityTypeId'], $context['bundle'], $templateId),
       $versionDraft,
       $events,
     );
 
-    return $this->streamRun($agent->stream(new UserMessage($message)), $events);
+    $afterRun = function () use ($session, &$failed): ?string {
+      if ($failed === []) {
+        return NULL;
+      }
+      $summary = 'No new draft was created. ' . implode(' ', array_map(
+        static fn (GroupDraftingException $failure): string => $failure->getMessage(),
+        $failed,
+      ));
+      $this->messageRecorder->recordEvent($session, $summary, ['type' => 'error']);
+      return $summary;
+    };
+
+    return $this->streamRun($agent->stream(new UserMessage($message)), $events, $afterRun);
   }
 
   /**
@@ -352,11 +385,12 @@ class DraftingPlugin extends AiAssistantPluginBase {
    * Queued agent events are flushed before each chunk, so the thread shows
    * them where they happened. A failure mid-stream degrades into an error
    * event, since an exception would print an HTML page into the stream.
+   * The after-run closure returns the outcome to show as an error, or NULL.
    */
-  private function streamRun(AgentHandler $handler, AgentEventQueue $events): Response {
+  private function streamRun(AgentHandler $handler, AgentEventQueue $events, \Closure $afterRun): Response {
     $adapter = new UiMessageStreamAdapter();
     $response = new AiStreamedResponse(NULL, 200, $adapter->getHeaders());
-    $response->setCallback(function () use ($handler, $events, $adapter): void {
+    $response->setCallback(function () use ($handler, $events, $adapter, $afterRun): void {
       set_time_limit(0);
       $emit = static function (iterable $lines): void {
         foreach ($lines as $line) {
@@ -376,11 +410,15 @@ class DraftingPlugin extends AiAssistantPluginBase {
           $emit($adapter->transform($chunk));
         }
         $flushEvents();
+        $summary = $afterRun();
+        if ($summary !== NULL) {
+          $emit($adapter->error($summary));
+        }
       }
       catch (\Throwable $e) {
         $this->logger->error('Drafting turn failed: @message', ['@message' => $e->getMessage()]);
         $flushEvents();
-        $emit($adapter->error('The assistant request failed. Please try again.'));
+        $emit($adapter->error($afterRun() ?? 'The assistant request failed. Please try again.'));
       }
       $emit($adapter->end());
     });

@@ -73,7 +73,8 @@ export function toThreadMessage(
   let toolIndex = 0;
   for (const call of message.toolCalls ?? []) {
     const name = call.function?.name;
-    if (!name) continue;
+    // A call without a result never ran: the turn ended before it.
+    if (!name || !call.result) continue;
     // Forward the name, the safe-parsed arguments and the raw result; the
     // tool UI registered for the name reads what it needs from the result.
     parts.push({
@@ -81,7 +82,7 @@ export function toThreadMessage(
       toolCallId: `tool-${index}-${toolIndex++}`,
       toolName: name,
       args: safeParseArgs(call.function?.arguments),
-      result: call.result ?? {},
+      result: call.result,
     });
   }
 
