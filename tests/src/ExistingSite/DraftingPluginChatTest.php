@@ -202,13 +202,17 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
     // answered for, and its rows are related to the session.
     $drafterRows = $this->loadDrafterRows($session);
     $this->assertNotEmpty($drafterRows, 'Each drafter records its own run.');
-    $agentIds = [];
+    $threads = [];
     foreach ($drafterRows as $row) {
-      $agentId = $row->get('agent_id')->value;
-      $this->assertNotEmpty($agentId, 'Drafter rows carry an agent id.');
-      $agentIds[$agentId] = TRUE;
+      $this->assertSame('field_group', $row->get('agent_id')->value,
+        'Drafter rows name the agent that wrote them.');
+      $threads[(string) $row->get('thread_id')->value] = TRUE;
     }
-    $this->assertCount(2, $agentIds,
+    $groups = array_map(
+      static fn (string $thread): string => substr($thread, strrpos($thread, '.') + 1),
+      array_keys($threads),
+    );
+    $this->assertSame(['main_fields', 'field_content_paragraphs'], $groups,
       'One thread per group is recorded, named after the group.');
   }
 
