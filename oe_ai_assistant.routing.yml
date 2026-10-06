@@ -76,4 +76,3 @@ entity.ai_drafting_template.delete_form:
     _title: 'Delete an ai drafting template'
   requirements:
     _permission: 'administer ai_drafting_template'
-
