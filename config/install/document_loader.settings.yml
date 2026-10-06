@@ -1,0 +1,3 @@
+default_loaders:
+  document_loader_type:text: oe_ai_assistant:flat_file
+  document_loader_type:markdown: oe_ai_assistant:flat_file
