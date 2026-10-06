@@ -33,10 +33,10 @@ export function extractSavedVersions(
         continue;
       }
       const result = decodeToolResult(part.result);
-      const version = result?.["version"];
+      const version = result?.version;
       // A call that was refused, or is still waiting for a decision, wrote
       // nothing: only a node id says the save happened.
-      if (result?.["nodeId"] !== undefined && typeof version === "number") {
+      if (result?.nodeId !== undefined && typeof version === "number") {
         saved.add(version);
       }
     }

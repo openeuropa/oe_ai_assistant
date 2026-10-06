@@ -79,13 +79,13 @@ function normaliseDocuments(raw: unknown): DraftDocumentSnapshot[] {
 function normaliseContext(raw: unknown): DraftContext {
   const ctx = isPlainObject(raw) ? raw : {};
   return {
-    tone: isPlainObject(ctx["tone"])
-      ? (ctx["tone"] as unknown as DraftToneSnapshot)
+    tone: isPlainObject(ctx.tone)
+      ? (ctx.tone as unknown as DraftToneSnapshot)
       : null,
-    template: isPlainObject(ctx["template"])
-      ? (ctx["template"] as unknown as DraftTemplateSnapshot)
+    template: isPlainObject(ctx.template)
+      ? (ctx.template as unknown as DraftTemplateSnapshot)
       : null,
-    documents: normaliseDocuments(ctx["documents"]),
+    documents: normaliseDocuments(ctx.documents),
   };
 }
 
@@ -98,19 +98,19 @@ function normaliseContext(raw: unknown): DraftContext {
 export function parseDraftResult(result: unknown): ParsedDraftResult | null {
   if (
     !isPlainObject(result) ||
-    typeof result["version"] !== "number" ||
-    typeof result["major"] !== "number" ||
-    typeof result["minor"] !== "number" ||
-    !isPlainObject(result["fields"])
+    typeof result.version !== "number" ||
+    typeof result.major !== "number" ||
+    typeof result.minor !== "number" ||
+    !isPlainObject(result.fields)
   ) {
     return null;
   }
 
   return {
-    version: result["version"],
-    major: result["major"],
-    minor: result["minor"],
-    context: normaliseContext(result["context"]),
-    fields: result["fields"],
+    version: result.version,
+    major: result.major,
+    minor: result.minor,
+    context: normaliseContext(result.context),
+    fields: result.fields,
   };
 }
