@@ -4,12 +4,13 @@ declare(strict_types=1);
 
 namespace Drupal\oe_ai_assistant\Plugin\NeuronTool;
 
+use Drupal\ai_neuron\Agent\NeuronAgentManagerInterface;
 use Drupal\ai_neuron\Attribute\NeuronTool;
-use Drupal\ai_neuron\Tools\NeuronToolPluginBase;
+use Drupal\Core\Plugin\Context\EntityContextDefinition;
 use Drupal\Core\StringTranslation\TranslatableMarkup;
-use Drupal\oe_ai_assistant\Service\Drafting\DraftHistoryInterface;
-use Drupal\oe_ai_assistant\Service\Drafting\DraftingTurn;
 use Drupal\oe_ai_assistant\Service\DraftSaverInterface;
+use Drupal\oe_ai_assistant\Service\Drafting\DraftHistoryInterface;
+use Drupal\oe_ai_assistant\Service\Drafting\DraftingBriefInterface;
 use NeuronAI\Tools\PropertyType;
 use NeuronAI\Tools\ToolInterface;
 use NeuronAI\Tools\ToolProperty;
@@ -29,18 +30,25 @@ use NeuronAI\Tools\ToolProperty;
   . ' the drafts and their names. The editor confirms the save before it'
   . ' happens, so report what the result says rather than promising a save.',
   label: new TranslatableMarkup('Save draft'),
+  context_definitions: [
+    'session' => new EntityContextDefinition(
+      data_type: 'entity:ai_editorial_session',
+      label: new TranslatableMarkup('Editorial session'),
+    ),
+  ],
 )]
-final class SaveDraftNeuronTool extends NeuronToolPluginBase {
+final class SaveDraftNeuronTool extends DraftingToolBase {
 
   public function __construct(
     array $configuration,
     $plugin_id,
     $plugin_definition,
+    DraftingBriefInterface $brief,
+    NeuronAgentManagerInterface $agents,
     private readonly DraftHistoryInterface $draftHistory,
     private readonly DraftSaverInterface $draftSaver,
-    private readonly DraftingTurn $turn,
   ) {
-    parent::__construct($configuration, $plugin_id, $plugin_definition);
+    parent::__construct($configuration, $plugin_id, $plugin_definition, $brief, $agents);
   }
 
   /**
@@ -76,7 +84,7 @@ final class SaveDraftNeuronTool extends NeuronToolPluginBase {
    * Saves the named draft and reports the node it wrote.
    */
   public function __invoke(int $version): string {
-    $session = $this->turn->session();
+    $session = $this->session();
     $draft = $this->draftHistory->getDraftContent($session, $version);
     if ($draft === NULL || $draft['fields'] === []) {
       return json_encode([

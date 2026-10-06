@@ -266,7 +266,7 @@ abstract class DraftingPluginTestBase extends ExistingSiteBase {
    *   The stored message rows.
    */
   protected function loadTranscript(AiEditorialSessionInterface $session): array {
-    return \Drupal::service(SessionConversation::class)->rows($this->threadOf($session));
+    return \Drupal::service(SessionConversation::class)->rows($session, self::AGENT_ID);
   }
 
   /**

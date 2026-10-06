@@ -5,9 +5,8 @@ declare(strict_types=1);
 namespace Drupal\oe_ai_assistant\Plugin\NeuronTool;
 
 use Drupal\ai_neuron\Attribute\NeuronTool;
-use Drupal\ai_neuron\Tools\NeuronToolPluginBase;
+use Drupal\Core\Plugin\Context\EntityContextDefinition;
 use Drupal\Core\StringTranslation\TranslatableMarkup;
-use Drupal\oe_ai_assistant\Service\Drafting\DraftingTurn;
 
 /**
  * Describes what the editor set up for this session.
@@ -23,31 +22,30 @@ use Drupal\oe_ai_assistant\Service\Drafting\DraftingTurn;
   . ' title, processing state and summary. Call it to answer what the'
   . ' session is about, what material is attached or what it covers.',
   label: new TranslatableMarkup('Get editorial context'),
+  context_definitions: [
+    'session' => new EntityContextDefinition(
+      data_type: 'entity:ai_editorial_session',
+      label: new TranslatableMarkup('Editorial session'),
+    ),
+  ],
 )]
-final class GetEditorialContextNeuronTool extends NeuronToolPluginBase {
-
-  public function __construct(
-    array $configuration,
-    $plugin_id,
-    $plugin_definition,
-    private readonly DraftingTurn $turn,
-  ) {
-    parent::__construct($configuration, $plugin_id, $plugin_definition);
-  }
+final class GetEditorialContextNeuronTool extends DraftingToolBase {
 
   /**
    * Returns the tone, the template and the attached documents as JSON.
    */
   public function __invoke(): string {
-    $context = $this->turn->editorialContext();
+    $session = $this->session();
+    $tone = $this->brief->tone($session);
+    $template = $this->brief->template($session);
 
     return json_encode([
-      'tone' => $context->toneLabel === NULL ? NULL : [
-        'label' => $context->toneLabel,
-        'guidelines' => $context->tonePrompt,
+      'tone' => $tone === NULL ? NULL : [
+        'label' => $tone['label'],
+        'guidelines' => $tone['prompt'],
       ],
-      'template' => $context->templateLabel === NULL ? NULL : [
-        'label' => $context->templateLabel,
+      'template' => $template === NULL ? NULL : [
+        'label' => $template['label'],
       ],
       'documents' => array_map(
         static fn (array $document): array => [
@@ -57,7 +55,7 @@ final class GetEditorialContextNeuronTool extends NeuronToolPluginBase {
           'status' => $document['status'] ?? '',
           'summary' => $document['summary'] ?? '',
         ],
-        $context->contextDocuments,
+        $this->brief->documents($session),
       ),
     ]);
   }

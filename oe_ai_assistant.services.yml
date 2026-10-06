@@ -26,6 +26,11 @@ services:
   Drupal\oe_ai_assistant\Service\AiEditorialContextInterface: '@Drupal\oe_ai_assistant\Service\AiEditorialContext'
 
   Drupal\oe_ai_assistant\Service\Drafting\ContextDocumentRepository: {}
+
+  # Reads what a session drafts with: tone, template, documents, groups.
+  Drupal\oe_ai_assistant\Service\Drafting\DraftingBrief: {}
+  Drupal\oe_ai_assistant\Service\Drafting\DraftingBriefInterface: '@Drupal\oe_ai_assistant\Service\Drafting\DraftingBrief'
+
   Drupal\oe_ai_assistant\Service\TextFormatResolver: {}
 
   # Drives a document through extraction and summarisation.
@@ -53,10 +58,6 @@ services:
   Drupal\oe_ai_assistant\Neuron\Chat\History\EditorialMessageStore: {}
   Drupal\ai_neuron\Chat\History\ContextualMessageStoreInterface: '@Drupal\oe_ai_assistant\Neuron\Chat\History\EditorialMessageStore'
   NeuronAI\Chat\History\MessageStoreInterface: '@Drupal\oe_ai_assistant\Neuron\Chat\History\EditorialMessageStore'
-
-  # What one chat turn knows, read by the agent and tool plugins the turn
-  # builds. Per request: a turn is opened by the chat action.
-  Drupal\oe_ai_assistant\Service\Drafting\DraftingTurn: {}
 
   Drupal\oe_ai_assistant\Service\Drafting\DraftHistory: {}
   Drupal\oe_ai_assistant\Service\Drafting\DraftHistoryInterface: '@Drupal\oe_ai_assistant\Service\Drafting\DraftHistory'

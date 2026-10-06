@@ -49,6 +49,26 @@ final class ThreadAddress {
   }
 
   /**
+   * The session a thread belongs to, if it is one of this module's.
+   *
+   * The store is handed to every agent the site builds, this module's and
+   * another module's, so a thread it does not recognise has no session to
+   * read out of it.
+   *
+   * @param string $threadId
+   *   The thread id Neuron holds.
+   *
+   * @return string|null
+   *   The editorial session id, or NULL for a thread composed elsewhere.
+   */
+  public static function sessionOf(string $threadId): ?string {
+    $parts = explode('.', $threadId);
+    $key = $parts[1] ?? '';
+
+    return str_starts_with($key, self::PREFIX) ? substr($key, strlen(self::PREFIX)) : NULL;
+  }
+
+  /**
    * Builds the key of a run started by one chat turn.
    *
    * The turn segment is what keeps each run to a thread of its own. Two runs

@@ -5,12 +5,7 @@ declare(strict_types=1);
 namespace Drupal\oe_ai_assistant\Service\Drafting;
 
 /**
- * Gathers the group results of one drafting turn and versions the draft.
- *
- * One instance per turn, shared by the agent that reads the groups and the
- * tool that drafts them. The results live here rather than on that tool
- * because Neuron hands every tool call a clone of the registered tool:
- * only a shared object carries state from one call to the next.
+ * Gathers the group results of one drafting turn.
  *
  * Main fields merge flat, restricted to the group's own fields. A reference
  * group is read by field name; a bare item list is accepted as that field.
@@ -23,23 +18,14 @@ final class DraftCollector {
   private array $results = [];
 
   /**
-   * The versioned draft, once every group has been drafted.
-   */
-  private ?array $draft = NULL;
-
-  /**
    * DraftCollector constructor.
    *
    * @param array $groups
    *   The schema groups, each with groupId, label, fieldNames and
    *   schemaSlice, in drafting order.
-   * @param \Closure $versionDraft
-   *   Versions and stores the consolidated fields, called with them and
-   *   returning the draft shaped {version, major, minor, context, fields}.
    */
   public function __construct(
     private readonly array $groups,
-    private readonly \Closure $versionDraft,
   ) {}
 
   /**
@@ -122,21 +108,19 @@ final class DraftCollector {
   }
 
   /**
-   * Returns the versioned draft once every group is drafted, else NULL.
-   *
-   * The draft is versioned once; later calls return the same draft.
+   * Whether every group has been drafted, so the draft can be versioned.
    */
-  public function draft(): ?array {
-    if ($this->draft === NULL && $this->pending() === []) {
-      $this->draft = ($this->versionDraft)($this->consolidate());
-    }
-    return $this->draft;
+  public function complete(): bool {
+    return $this->pending() === [];
   }
 
   /**
-   * Merges the group results into one field map.
+   * Merges what has been drafted so far into one field map.
+   *
+   * @return array
+   *   The field values, keyed by field name.
    */
-  private function consolidate(): array {
+  public function fields(): array {
     $fields = [];
     foreach ($this->groups as $group) {
       $result = $this->results[$group['groupId']] ?? NULL;

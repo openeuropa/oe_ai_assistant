@@ -4,13 +4,14 @@ declare(strict_types=1);
 
 namespace Drupal\oe_ai_assistant\Plugin\NeuronTool;
 
+use Drupal\ai_neuron\Agent\NeuronAgentManagerInterface;
 use Drupal\ai_neuron\Attribute\NeuronTool;
-use Drupal\ai_neuron\Tools\NeuronToolPluginBase;
+use Drupal\Core\Plugin\Context\EntityContextDefinition;
 use Drupal\Core\StringTranslation\TranslatableMarkup;
+use Drupal\oe_ai_assistant\Service\DraftingSchemaProviderInterface;
 use Drupal\oe_ai_assistant\Service\Drafting\DraftCollector;
 use Drupal\oe_ai_assistant\Service\Drafting\DraftHistoryInterface;
-use Drupal\oe_ai_assistant\Service\Drafting\DraftingTurn;
-use Drupal\oe_ai_assistant\Service\DraftingSchemaProviderInterface;
+use Drupal\oe_ai_assistant\Service\Drafting\DraftingBriefInterface;
 use NeuronAI\Tools\ArrayProperty;
 use NeuronAI\Tools\PropertyType;
 use NeuronAI\Tools\ToolProperty;
@@ -31,18 +32,25 @@ use NeuronAI\Tools\ToolProperty;
   . ' next version, named after the draft it revises, such as "Draft'
   . ' 2.1" for the first revision of "Draft 2.0".',
   label: new TranslatableMarkup('Revise draft'),
+  context_definitions: [
+    'session' => new EntityContextDefinition(
+      data_type: 'entity:ai_editorial_session',
+      label: new TranslatableMarkup('Editorial session'),
+    ),
+  ],
 )]
-final class ReviseDraftNeuronTool extends NeuronToolPluginBase {
+final class ReviseDraftNeuronTool extends DraftingToolBase {
 
   public function __construct(
     array $configuration,
     $plugin_id,
     $plugin_definition,
+    DraftingBriefInterface $brief,
+    NeuronAgentManagerInterface $agents,
     private readonly DraftHistoryInterface $draftHistory,
     private readonly DraftingSchemaProviderInterface $schemaProvider,
-    private readonly DraftingTurn $turn,
   ) {
-    parent::__construct($configuration, $plugin_id, $plugin_definition);
+    parent::__construct($configuration, $plugin_id, $plugin_definition, $brief, $agents);
   }
 
   /**
@@ -76,7 +84,7 @@ final class ReviseDraftNeuronTool extends NeuronToolPluginBase {
    * Revises the named groups of a stored draft and versions the result.
    */
   public function __invoke(string $instruction, ?array $groups = NULL, ?int $version = NULL): string {
-    $session = $this->turn->session();
+    $session = $this->session();
     $drafts = $this->draftHistory->listDrafts($session);
     if ($drafts === []) {
       return json_encode(['error' => 'No draft has been generated yet, so there is nothing to revise.']);
@@ -97,14 +105,12 @@ final class ReviseDraftNeuronTool extends NeuronToolPluginBase {
     // The draft carries the groups it was written against, so a revision
     // keeps its structure whatever the session points at now. Drafts stored
     // before the groups travelled with them fall back to their template.
-    $collector = new DraftCollector(
-      $base['context']['groups'] ?? $this->schemaProvider->groups(
-        $this->turn->entityTypeId(),
-        $this->turn->bundle(),
-        $base['templateId'],
-      ),
-      fn (array $fields): array => $this->turn->version($fields, $version, $base['context']),
-    );
+    [$entityTypeId, $bundle] = $this->target();
+    $collector = new DraftCollector($base['context']['groups'] ?? $this->schemaProvider->groups(
+      $entityTypeId,
+      $bundle,
+      $base['templateId'],
+    ));
     // Without named groups the whole draft is revised, so a change meant
     // for every field reaches the groups this draft has rather than the
     // ones the session points at now.
@@ -124,7 +130,7 @@ final class ReviseDraftNeuronTool extends NeuronToolPluginBase {
     $collector->seedFrom($base['fields'], $revise);
     foreach ($revise as $groupId) {
       $definition = $collector->group($groupId);
-      $collector->add($groupId, $this->turn->draft(
+      $collector->add($groupId, $this->draftGroup(
         $groupId,
         $definition['schemaSlice'],
         $this->task($collector->valuesOf($groupId, $base['fields']), $instruction),
@@ -135,7 +141,12 @@ final class ReviseDraftNeuronTool extends NeuronToolPluginBase {
       'revised' => $revise,
       'groups' => $collector->groupIds(),
       'revisionOf' => $version,
-      'draft' => $collector->draft(),
+      // A revision inherits the snapshot of the draft it revises, since that
+      // context produced the content it starts from.
+      'draft' => $this->draftHistory->nextVersion($session, $version) + [
+        'context' => $base['context'],
+        'fields' => $collector->fields(),
+      ],
     ]);
   }
 

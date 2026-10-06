@@ -15,8 +15,8 @@ use Symfony\Component\DependencyInjection\Attribute\Autowire;
  * Neuron's own store answers with messages, which is what a model run needs.
  * The transcript the editor reads and the drafts the session holds need the
  * rows: when each one was written, who wrote it, and what a tool answered.
- * Removing a session needs every thread of it, the drafter runs included,
- * which is what the session reference on each row gives.
+ * Every read here is by the session reference the store stamps on each row, so
+ * nothing in here has to know how a thread id is spelled.
  */
 final class SessionConversation {
 
@@ -26,24 +26,31 @@ final class SessionConversation {
   ) {}
 
   /**
-   * The rows of one thread, oldest first.
+   * The rows of one session, oldest first.
    *
-   * A sub-agent run holds a thread of its own, so its rows are not in here.
+   * The session reference is what relates a row to its session, so a read needs
+   * no thread id: the store stamps the reference on every row it writes, in the
+   * editor's conversation and in a sub-agent run alike.
    *
-   * @param string $threadId
-   *   The thread, as ThreadAddress composes it.
+   * @param \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $session
+   *   The session.
+   * @param string|null $agentId
+   *   The agent to read, or NULL for every agent of the session.
    *
    * @return \Drupal\Core\Entity\ContentEntityInterface[]
    *   The rows.
    */
-  public function rows(string $threadId): array {
+  public function rows(AiEditorialSessionInterface $session, ?string $agentId = NULL): array {
     $storage = $this->entityTypeManager->getStorage('neuron_message');
     $storage->resetCache();
-    $ids = $storage->getQuery()
+    $query = $storage->getQuery()
       ->accessCheck(FALSE)
-      ->condition('thread_id', $threadId)
-      ->sort('id')
-      ->execute();
+      ->condition('oe_ai_session', (int) $session->id())
+      ->sort('id');
+    if ($agentId !== NULL) {
+      $query->condition('agent_id', $agentId);
+    }
+    $ids = $query->execute();
 
     return $ids === [] ? [] : $storage->loadMultiple($ids);
   }
@@ -62,16 +69,8 @@ final class SessionConversation {
    *   The rows, keyed by thread id, each thread oldest row first.
    */
   public function threads(AiEditorialSessionInterface $session): array {
-    $storage = $this->entityTypeManager->getStorage('neuron_message');
-    $storage->resetCache();
-    $ids = $storage->getQuery()
-      ->accessCheck(FALSE)
-      ->condition('oe_ai_session', (int) $session->id())
-      ->sort('id')
-      ->execute();
-
     $threads = [];
-    foreach ($storage->loadMultiple($ids) as $row) {
+    foreach ($this->rows($session) as $row) {
       $threads[(string) $row->get('thread_id')->value][] = $row;
     }
 
@@ -79,17 +78,20 @@ final class SessionConversation {
   }
 
   /**
-   * What every tool of one thread answered, in the order they ran.
+   * What the tools of one session answered, in the order they ran.
    *
-   * @param string $threadId
-   *   The thread, as ThreadAddress composes it.
+   * Every agent of the session counts: a drafter answers no tool call, so the
+   * calls are the editor's conversation whichever agent is asked.
+   *
+   * @param \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $session
+   *   The session.
    *
    * @return array
    *   One entry per settled call, shaped {name, result}, the result decoded.
    */
-  public function toolResults(string $threadId): array {
+  public function toolResults(AiEditorialSessionInterface $session): array {
     $results = [];
-    foreach ($this->rows($threadId) as $row) {
+    foreach ($this->rows($session) as $row) {
       $meta = self::decode($row, 'meta');
       if (($meta['type'] ?? '') !== 'tool_call_result') {
         continue;

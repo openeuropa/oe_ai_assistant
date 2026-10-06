@@ -39,24 +39,21 @@ class DraftCollectorTest extends TestCase {
   ];
 
   /**
-   * Builds a collector whose versioning wraps the fields as draft 3.
+   * Builds a collector of a news article's groups.
    */
   private function collector(): DraftCollector {
-    return new DraftCollector(self::GROUPS, static fn (array $fields): array => [
-      'version' => 3,
-      'context' => [],
-      'fields' => $fields,
-    ]);
+    return new DraftCollector(self::GROUPS);
   }
 
   /**
    * @covers ::pending
-   * @covers ::draft
+   * @covers ::complete
+   * @covers ::fields
    */
-  public function testDraftIsVersionedOnceEveryGroupIsDrafted(): void {
+  public function testTheSetIsCompleteOnceEveryGroupIsDrafted(): void {
     $collector = $this->collector();
     $this->assertSame(['main_fields', 'field_contacts', 'field_paragraphs'], $collector->pending());
-    $this->assertNull($collector->draft());
+    $this->assertFalse($collector->complete());
 
     $collector->add('main_fields', [
       'title' => [['value' => 'T']],
@@ -65,21 +62,17 @@ class DraftCollectorTest extends TestCase {
     ]);
     $collector->add('field_paragraphs', [['type' => 'oe_text']]);
     $this->assertSame(['field_contacts'], $collector->pending());
-    $this->assertNull($collector->draft());
+    $this->assertFalse($collector->complete());
 
     $collector->add('field_contacts', ['field_contacts' => [['target_uuid' => 'c1']]]);
     $this->assertSame([], $collector->pending());
+    $this->assertTrue($collector->complete());
     $this->assertSame([
-      'version' => 3,
-      'context' => [],
-      'fields' => [
-        'title' => [['value' => 'T']],
-        'field_teaser' => [['value' => 'S']],
-        'field_contacts' => [['target_uuid' => 'c1']],
-        'field_paragraphs' => [['type' => 'oe_text']],
-      ],
-    ], $collector->draft());
-    $this->assertSame($collector->draft(), $collector->draft(), 'The draft is versioned once.');
+      'title' => [['value' => 'T']],
+      'field_teaser' => [['value' => 'S']],
+      'field_contacts' => [['target_uuid' => 'c1']],
+      'field_paragraphs' => [['type' => 'oe_text']],
+    ], $collector->fields());
   }
 
   /**
@@ -102,15 +95,11 @@ class DraftCollectorTest extends TestCase {
     // The revised group replaces its values; the rest are carried over.
     $collector->add('main_fields', ['title' => [['value' => 'Shorter']], 'field_teaser' => [['value' => 'S']]]);
     $this->assertSame([
-      'version' => 3,
-      'context' => [],
-      'fields' => [
-        'title' => [['value' => 'Shorter']],
-        'field_teaser' => [['value' => 'S']],
-        'field_contacts' => [['target_uuid' => 'c1']],
-        'field_paragraphs' => [['type' => 'oe_text']],
-      ],
-    ], $collector->draft());
+      'title' => [['value' => 'Shorter']],
+      'field_teaser' => [['value' => 'S']],
+      'field_contacts' => [['target_uuid' => 'c1']],
+      'field_paragraphs' => [['type' => 'oe_text']],
+    ], $collector->fields());
   }
 
   /**

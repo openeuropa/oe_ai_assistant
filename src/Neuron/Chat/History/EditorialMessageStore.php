@@ -5,11 +5,7 @@ declare(strict_types=1);
 namespace Drupal\oe_ai_assistant\Neuron\Chat\History;
 
 use Drupal\ai_neuron\Chat\History\DrupalMessageStore;
-use Drupal\Component\Datetime\TimeInterface;
 use Drupal\Core\Entity\ContentEntityInterface;
-use Drupal\Core\Entity\EntityTypeManagerInterface;
-use Drupal\Core\Session\AccountInterface;
-use Drupal\oe_ai_assistant\Service\Drafting\DraftingTurn;
 use NeuronAI\Chat\Messages\Message;
 
 /**
@@ -19,6 +15,9 @@ use NeuronAI\Chat\Messages\Message;
  * it started, since each of those is a thread of its own. Querying the field
  * returns every message a session produced, which is what the back office
  * reads.
+ *
+ * The session is read out of the thread id, which every call names, so one
+ * instance serves every conversation of the process as the interface expects.
  */
 final class EditorialMessageStore extends DrupalMessageStore {
 
@@ -28,42 +27,42 @@ final class EditorialMessageStore extends DrupalMessageStore {
   private const BUNDLE = 'editorial_session';
 
   /**
-   * Class constructor.
-   *
-   * @param \Drupal\oe_ai_assistant\Service\Drafting\DraftingTurn $turn
-   *   Holds the session for the length of the request.
-   * @param \Drupal\Core\Entity\EntityTypeManagerInterface $entityTypeManager
-   *   Passed up to the store.
-   * @param \Drupal\Core\Session\AccountInterface $currentUser
-   *   Passed up to the store.
-   * @param \Drupal\Component\Datetime\TimeInterface $time
-   *   Passed up to the store.
+   * The session of the thread being written, for the length of one append.
    */
-  public function __construct(
-    private readonly DraftingTurn $turn,
-    EntityTypeManagerInterface $entityTypeManager,
-    AccountInterface $currentUser,
-    TimeInterface $time,
-  ) {
-    parent::__construct($entityTypeManager, $currentUser, $time);
+  private ?string $session = NULL;
+
+  /**
+   * {@inheritdoc}
+   *
+   * The parent hands its seams the message and the row, not the thread, so the
+   * session is read here and held until the row is written.
+   */
+  public function append(string $threadId, Message $message): void {
+    $this->session = ThreadAddress::sessionOf($threadId);
+    try {
+      parent::append($threadId, $message);
+    }
+    finally {
+      $this->session = NULL;
+    }
   }
 
   /**
    * {@inheritdoc}
    *
-   * An agent built outside a chat turn, such as the document summary, has no
-   * session to record, so its rows are written as the module's plain type.
+   * A thread this module did not compose, such as another module's agent, has
+   * no session to record, so its rows are written as the plain type.
    */
   protected function bundle(): string {
-    return $this->turn->isOpen() ? self::BUNDLE : parent::bundle();
+    return $this->session === NULL ? parent::bundle() : self::BUNDLE;
   }
 
   /**
    * {@inheritdoc}
    */
   protected function preSave(ContentEntityInterface $entity, Message $message): void {
-    if ($entity->bundle() === self::BUNDLE) {
-      $entity->set('oe_ai_session', $this->turn->session()->id());
+    if ($this->session !== NULL) {
+      $entity->set('oe_ai_session', $this->session);
     }
   }
 

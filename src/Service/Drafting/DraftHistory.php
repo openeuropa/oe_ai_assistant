@@ -6,7 +6,6 @@ namespace Drupal\oe_ai_assistant\Service\Drafting;
 
 use Drupal\Core\Entity\EntityInterface;
 use Drupal\oe_ai_assistant\Neuron\Chat\History\SessionConversation;
-use Drupal\oe_ai_assistant\Neuron\Chat\History\ThreadAddress;
 
 /**
  * Reads the drafts stored on the conversation of an editorial session.
@@ -137,9 +136,8 @@ final class DraftHistory implements DraftHistoryInterface {
    *   The drafts shaped {version, major, minor, context, fields, revisionOf}.
    */
   private function collectDrafts(EntityInterface $session): array {
-    $thread = ThreadAddress::thread(self::AGENT_ID, (string) $session->id());
     $drafts = [];
-    foreach ($this->conversation->toolResults($thread) as $result) {
+    foreach ($this->conversation->toolResults($session) as $result) {
       if (isset($result['result']['draft'])) {
         $drafts[] = $result['result']['draft'];
       }

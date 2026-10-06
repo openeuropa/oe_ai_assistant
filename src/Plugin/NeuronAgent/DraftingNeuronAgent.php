@@ -4,17 +4,17 @@ declare(strict_types=1);
 
 namespace Drupal\oe_ai_assistant\Plugin\NeuronAgent;
 
-use Drupal\ai_neuron\Agent\NeuronAgentPluginBase;
 use Drupal\ai_neuron\Attribute\NeuronAgent;
 use Drupal\ai_neuron\Providers\ProviderFactoryInterface;
 use Drupal\ai_neuron\Tools\NeuronToolManagerInterface;
+use Drupal\Core\Plugin\Context\EntityContextDefinition;
 use Drupal\Core\StringTranslation\TranslatableMarkup;
-use Drupal\oe_ai_assistant\Neuron\Chat\History\ThreadAddress;
-use Drupal\oe_ai_assistant\Service\Drafting\DraftingTurn;
+use Drupal\oe_ai_assistant\Service\Drafting\DraftingBriefInterface;
 use Drupal\oe_ai_assistant\Neuron\Chat\Messages\Stream\Adapters\ClosedToolInputAdapter;
 use NeuronAI\Agent\Agent;
 use NeuronAI\Agent\AgentInterface;
 use NeuronAI\Tools\ToolCall;
+use NeuronAI\Tools\ToolInterface;
 
 /**
  * The agent that talks to the editor and drafts through tools.
@@ -23,9 +23,15 @@ use NeuronAI\Tools\ToolCall;
   id: 'drafting',
   label: new TranslatableMarkup('Drafting'),
   description: new TranslatableMarkup('Gathers requirements in conversation and drafts content per field group.'),
-  operationType: 'chat_with_tools',
+  operation_type: 'chat_with_tools',
+  context_definitions: [
+    'session' => new EntityContextDefinition(
+      data_type: 'entity:ai_editorial_session',
+      label: new TranslatableMarkup('Editorial session'),
+    ),
+  ],
 )]
-final class DraftingNeuronAgent extends NeuronAgentPluginBase {
+final class DraftingNeuronAgent extends EditorialSessionAgentBase {
 
   /**
    * The instructions every run starts from.
@@ -93,34 +99,55 @@ final class DraftingNeuronAgent extends NeuronAgentPluginBase {
     $plugin_id,
     $plugin_definition,
     ProviderFactoryInterface $providers,
+    DraftingBriefInterface $brief,
     private readonly NeuronToolManagerInterface $toolManager,
-    private readonly DraftingTurn $turn,
   ) {
-    parent::__construct($configuration, $plugin_id, $plugin_definition, $providers);
+    parent::__construct($configuration, $plugin_id, $plugin_definition, $providers, $brief);
+  }
+
+  /**
+   * Renders what the agent is told about the content type it drafts.
+   *
+   * The documents are in here so the agent can answer questions about the
+   * material and warn about one still being processed. The tone is not: it
+   * steers the drafted groups rather than the conversation.
+   *
+   * @return string
+   *   The prompt.
+   */
+  private function contentTypePrompt(): string {
+    $bundle = $this->session()->getContentType();
+    $prompt = "Content type context:\n"
+      . 'bundle: ' . $bundle . "\n"
+      . 'entity_type_id: ' . DraftingBriefInterface::ENTITY_TYPE_ID . "\n";
+
+    if ($bundle !== '') {
+      $prompt .= "\nAvailable field groups:\n" . json_encode($this->brief->groups($this->session())) . "\n";
+    }
+
+    $documents = self::documentsPrompt($this->brief->documents($this->session()));
+
+    return $documents === '' ? $prompt : $prompt . "\n\n" . $documents;
   }
 
   /**
    * {@inheritdoc}
    */
   protected function instructions(): string {
-    return self::INSTRUCTIONS . "\n\n" . $this->turn->agentPrompt() . "\n";
+    return self::INSTRUCTIONS . "\n\n" . $this->contentTypePrompt() . "\n";
   }
 
   /**
    * {@inheritdoc}
    */
   protected function tools(): array {
-    return $this->toolManager->createTools(self::TOOLS);
-  }
+    // Every tool serves this agent's session, and reads the rest off it.
+    $context = ['session' => $this->session()];
 
-  /**
-   * {@inheritdoc}
-   *
-   * The editorial session is the conversation, so a turn picks up where
-   * the last one left off.
-   */
-  protected function threadKey(): string {
-    return ThreadAddress::key((string) $this->turn->session()->id());
+    return array_map(
+      fn (string $id): ToolInterface => $this->toolManager->createTool($id, $context),
+      self::TOOLS,
+    );
   }
 
   /**
@@ -131,8 +158,8 @@ final class DraftingNeuronAgent extends NeuronAgentPluginBase {
    * the Vercel protocol, so the run is asked for that, with the one event
    * Neuron leaves out of it.
    */
-  public function getNeuron(?string $threadKey = NULL): AgentInterface {
-    $agent = parent::getNeuron($threadKey);
+  public function getNeuron(): AgentInterface {
+    $agent = parent::getNeuron();
     assert($agent instanceof Agent);
     $agent->setStreamAdapter(static fn (): ClosedToolInputAdapter => new ClosedToolInputAdapter());
 

@@ -15,7 +15,7 @@ use Drupal\Core\StringTranslation\TranslatableMarkup;
   id: 'document_summary',
   label: new TranslatableMarkup('Document summary'),
   description: new TranslatableMarkup('Writes a short summary of an extracted document.'),
-  operationType: 'chat',
+  operation_type: 'chat',
 )]
 final class SummaryNeuronAgent extends NeuronAgentPluginBase {
 

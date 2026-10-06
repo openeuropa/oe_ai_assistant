@@ -9,7 +9,6 @@ use Drupal\Core\Cache\RefinableCacheableDependencyInterface;
 use Drupal\Core\Url;
 use Drupal\file\Upload\InputStreamFileWriterInterface;
 use Drupal\file\Upload\InputStreamUploadedFile;
-use Drupal\oe_ai_assistant\AiDraftingTemplateInterface;
 use Drupal\oe_ai_assistant\Annotation\AiEditorialAssistant;
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
 use Drupal\oe_ai_assistant\Exception\ActionException;
@@ -19,10 +18,7 @@ use Drupal\oe_ai_assistant\Service\AiEditorialContextInterface;
 use Drupal\oe_ai_assistant\Service\DraftAssemblerInterface;
 use Drupal\oe_ai_assistant\Service\Drafting\ContextDocumentRepository;
 use Drupal\oe_ai_assistant\Service\Drafting\DocumentRepositoryInterface;
-use Drupal\oe_ai_assistant\Service\Drafting\DraftCollector;
-use Drupal\oe_ai_assistant\Service\Drafting\DraftingTurn;
 use Drupal\oe_ai_assistant\Service\Drafting\DraftHistoryInterface;
-use Drupal\oe_ai_assistant\Service\Drafting\EditorialContext;
 use Drupal\oe_ai_assistant\Service\DraftingSchemaProviderInterface;
 use Drupal\oe_ai_assistant\Service\PreviewRendererInterface;
 use NeuronAI\Workflow\Streaming\ProtocolEvent;
@@ -81,13 +77,6 @@ class DraftingPlugin extends AiAssistantPluginBase {
   protected NeuronAgentManagerInterface $agentManager;
 
   /**
-   * What the chat turn being served knows.
-   *
-   * @var \Drupal\oe_ai_assistant\Service\Drafting\DraftingTurn
-   */
-  protected DraftingTurn $turn;
-
-  /**
    * The editorial tone context service.
    *
    * @var \Drupal\oe_ai_assistant\Service\AiEditorialContextInterface
@@ -141,7 +130,6 @@ class DraftingPlugin extends AiAssistantPluginBase {
     $instance = parent::create($container, $configuration, $plugin_id, $plugin_definition);
     $instance->schemaProvider = $container->get(DraftingSchemaProviderInterface::class);
     $instance->agentManager = $container->get(NeuronAgentManagerInterface::class);
-    $instance->turn = $container->get(DraftingTurn::class);
     $instance->aiEditorialContext = $container->get(AiEditorialContextInterface::class);
     $instance->draftHistory = $container->get(DraftHistoryInterface::class);
     $instance->contextDocumentRepository = $container->get(ContextDocumentRepository::class);
@@ -294,74 +282,37 @@ class DraftingPlugin extends AiAssistantPluginBase {
       );
     }
 
-    $this->openTurn($body);
-
-    $agent = $this->agentManager->createAgent('drafting');
+    $agent = $this->buildAgent($body);
 
     return $this->streamRun($agent->stream(new UserMessage($message)), $agent);
   }
 
   /**
-   * Opens the turn every agent and tool of the request reads.
+   * Builds the drafting agent for the session the request names.
    *
    * The agent and its tools are plugins, so a manager builds them and no
-   * caller can hand them the session, the schema groups or the collector of
-   * the turn in progress. They read all of it from the turn service.
+   * caller can hand them anything: the session travels as the configuration
+   * the manager passes on, and the agent reads the rest off it.
    *
    * @param array $body
    *   The decoded request body, which names the session.
    *
+   * @return \NeuronAI\Agent\AgentInterface
+   *   The agent.
+   *
    * @throws \Drupal\oe_ai_assistant\Exception\ActionException
-   *   When the session is unknown, or its stored template is not valid.
+   *   When the session is unknown, or its stored template or tone is not one
+   *   the bundle can draft with.
    */
-  private function openTurn(array $body): void {
+  private function buildAgent(array $body): AgentInterface {
     $session = $this->loadSession($body);
-    $context = $this->buildContext($session);
 
-    // Resolve the session's template and pin its id for the prompt, the
-    // schema tool and the groups. An invalid stored template is a 400.
     try {
-      $template = $this->schemaProvider->resolveTemplate(
-        $context['entityTypeId'], $context['bundle'], $context['template']
-      );
+      return $this->agentManager->createAgent('drafting', ['session' => $session]);
     }
     catch (\InvalidArgumentException $e) {
       throw new ActionException('invalid_request', $e->getMessage(), 400);
     }
-    $context['template'] = $template?->id();
-
-    $groups = $this->schemaProvider->groups(
-      $context['entityTypeId'], $context['bundle'], $context['template']
-    );
-    $routerContext = $this->buildRouterContext($context, $groups);
-
-    // Resolve the full editorial context once: tone (id, label, prompt),
-    // template (id, label), context documents (extracts and summaries) and
-    // the schema groups. The drafters receive it for prompt injection and
-    // it becomes the provenance snapshot of the produced draft.
-    $editorialContext = $this->buildEditorialContext($session, $template, $groups);
-
-    // The agent needs the context documents to answer questions about the
-    // material and to warn about documents still being processed. The tone
-    // stays out of its instructions; it only steers the drafted groups.
-    $contextDocumentsPrompt = $editorialContext->toContextDocumentsPrompt();
-    if ($contextDocumentsPrompt !== '') {
-      $routerContext .= "\n\n" . $contextDocumentsPrompt;
-    }
-
-    // Every group is drafted by its own sub-agent, under the turn that asked
-    // for it; the collector versions the draft once the set is complete.
-    // The agent and its tools are plugins, so what this turn knows reaches
-    // them through the turn service rather than through their constructors.
-    $this->turn->open(
-      $session,
-      $editorialContext,
-      new DraftCollector($groups, fn (array $fields): array => $this->turn->version($fields)),
-      $routerContext,
-      $editorialContext->toPrompt(),
-      $context['entityTypeId'],
-      $context['bundle'],
-    );
   }
 
   /**
@@ -379,8 +330,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
    */
   public function getApprovals(Request $request): array {
     $body = $this->decodeJsonBody($request);
-    $this->openTurn($body);
-    $agent = $this->agentManager->createAgent('drafting');
+    $agent = $this->buildAgent($body);
 
     return [
       'approvals' => array_map(
@@ -413,8 +363,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
       throw new ActionException('invalid_request', 'A decision must be approve or reject.', 400);
     }
 
-    $this->openTurn($body);
-    $agent = $this->agentManager->createAgent('drafting');
+    $agent = $this->buildAgent($body);
 
     $pending = array_map(static fn (Action $action): string => $action->id, $agent->pendingApprovals());
     if (!in_array($callId, $pending, TRUE)) {
@@ -784,72 +733,6 @@ class DraftingPlugin extends AiAssistantPluginBase {
       'bundle' => $session->getContentType(),
       'template' => (string) $session->get(static::TEMPLATE_FIELD)->target_id,
     ];
-  }
-
-  /**
-   * Resolves the editorial context for one drafting request.
-   *
-   * The tone is resolved through AiEditorialContext, which stays the single
-   * source of tone wording; an invalid stored tone is a 400 exactly as the
-   * former router prompt injection made it. Labels are captured at request
-   * time so the provenance snapshot survives later renames. Context
-   * documents come from their repository with their extracts, so the
-   * prompts reflect the latest state on every call.
-   *
-   * @param \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $session
-   *   The session hosting the conversation.
-   * @param \Drupal\oe_ai_assistant\AiDraftingTemplateInterface|null $template
-   *   The resolved drafting template, or NULL without one.
-   * @param array $groups
-   *   The schema groups the draft will be written against.
-   *
-   * @return \Drupal\oe_ai_assistant\Service\Drafting\EditorialContext
-   *   The immutable per-request editorial context.
-   *
-   * @throws \Drupal\oe_ai_assistant\Exception\ActionException
-   *   When the stored tone is invalid or not prompt-ready.
-   */
-  private function buildEditorialContext(AiEditorialSessionInterface $session, ?AiDraftingTemplateInterface $template, array $groups): EditorialContext {
-    $toneId = (string) $session->get(static::TONE_FIELD)->target_id;
-    $tone = NULL;
-    if ($toneId !== '') {
-      try {
-        $tone = $this->aiEditorialContext->getTone($toneId);
-      }
-      catch (\InvalidArgumentException $e) {
-        throw new ActionException('invalid_context', $e->getMessage(), 400);
-      }
-    }
-    return new EditorialContext(
-      toneId: $tone['id'] ?? NULL,
-      toneLabel: $tone['label'] ?? NULL,
-      tonePrompt: $tone['prompt'] ?? NULL,
-      templateId: $template?->id(),
-      templateLabel: $template?->label(),
-      contextDocuments: $this->contextDocumentRepository->describe($session),
-      groups: $groups,
-    );
-  }
-
-  /**
-   * Renders the content type context and the field groups for the router.
-   *
-   * @param array $context
-   *   The session context with the entity type id, bundle and template.
-   * @param array $groups
-   *   The schema groups available for drafting.
-   */
-  private function buildRouterContext(array $context, array $groups): string {
-    $prompt = "Content type context:\n"
-      . "bundle: " . $context['bundle'] . "\n"
-      . "entity_type_id: " . $context['entityTypeId'] . "\n";
-
-    if (!empty($context['bundle'])) {
-      $prompt .= "\nAvailable field groups:\n"
-        . json_encode($groups) . "\n";
-    }
-
-    return $prompt;
   }
 
 }

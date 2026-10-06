@@ -13,7 +13,6 @@ use Drupal\Core\Session\AccountInterface;
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
 use Drupal\oe_ai_assistant\Exception\ActionException;
 use Drupal\oe_ai_assistant\Neuron\Chat\History\SessionConversation;
-use Drupal\oe_ai_assistant\Neuron\Chat\History\ThreadAddress;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\Request;
@@ -140,7 +139,7 @@ abstract class AiAssistantPluginBase extends PluginBase implements AiAssistantPl
    *   The turns, in insertion order.
    */
   private function conversationEntries(AiEditorialSessionInterface $session): array {
-    $rows = $this->conversation->rows(ThreadAddress::thread($this->getPluginId(), (string) $session->id()));
+    $rows = $this->conversation->rows($session, $this->getPluginId());
     $authors = $this->loadAuthors($rows);
 
     $entries = [];

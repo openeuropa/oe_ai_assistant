@@ -20,6 +20,15 @@ class DraftingPluginSetTemplateTest extends AiEditorialSessionKernelTestBase {
    */
   protected function setUp(): void {
     parent::setUp();
+    $this->enableModules(['oe_ai_assistant_test']);
+    // The drafting agent publishes tools, so building it resolves the tool
+    // calling provider before it reads the session.
+    $this->config('ai.settings')
+      ->set('default_providers', [
+        'chat_with_tools' => ['provider_id' => 'mock_ai', 'model_id' => 'mock-model'],
+      ])
+      ->save();
+
     $storage = $this->container->get('entity_type.manager')
       ->getStorage('ai_drafting_template');
     $storage->create([
