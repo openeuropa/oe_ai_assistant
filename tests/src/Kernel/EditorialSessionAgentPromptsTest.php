@@ -2,30 +2,34 @@
 
 declare(strict_types=1);
 
-namespace Drupal\Tests\oe_ai_assistant\Unit;
+namespace Drupal\Tests\oe_ai_assistant\Kernel;
 
+use Drupal\ai_neuron\Agent\NeuronAgentManagerInterface;
+use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
 use Drupal\oe_ai_assistant\Plugin\NeuronAgent\EditorialSessionAgentBase;
-use Drupal\Tests\UnitTestCase;
+use Drupal\oe_ai_assistant\Service\Drafting\DraftingBrief;
+use Drupal\oe_ai_assistant\Service\Drafting\DraftingBriefInterface;
 
 /**
  * Tests the prompt blocks an editorial session agent injects.
  *
- * The renderers read nothing, so what the editor set up is passed to them as
- * the pieces the brief answers with.
+ * An agent renders what the editor set up, so the blocks are read off the
+ * instructions a built agent carries. What the session holds is the brief's
+ * business, which a stub stands in for here.
  *
- * @coversDefaultClass \Drupal\oe_ai_assistant\Plugin\NeuronAgent\EditorialSessionAgentBase
+ * @group oe_ai_assistant
  */
-class EditorialSessionAgentPromptsTest extends UnitTestCase {
+class EditorialSessionAgentPromptsTest extends AiEditorialSessionKernelTestBase {
 
   /**
    * Tests that the prompt block is built from tone label and guidelines.
    */
   public function testTonePromptCarriesLabelAndGuidelines(): void {
-    $prompt = EditorialSessionAgentBase::tonePrompt([
+    $prompt = $this->instructions([
       'id' => '3',
       'label' => 'Formal',
       'prompt' => 'Use professional, institutional language.',
-    ]);
+    ], []);
 
     $this->assertStringContainsString(
       'Editorial context selected by the editor for this draft:',
@@ -43,28 +47,20 @@ class EditorialSessionAgentPromptsTest extends UnitTestCase {
   }
 
   /**
-   * Tests that nothing set renders nothing.
+   * Tests that nothing set up adds no block to the instructions.
    */
-  public function testNothingSetRendersNothing(): void {
-    $this->assertSame('', EditorialSessionAgentBase::tonePrompt(NULL));
-    $this->assertSame('', EditorialSessionAgentBase::tonePrompt(['id' => '3', 'label' => 'Formal', 'prompt' => '']));
-    $this->assertSame('', EditorialSessionAgentBase::documentsPrompt([]));
-  }
+  public function testNothingSetUpRendersNoBlock(): void {
+    $instructions = $this->instructions(NULL, []);
 
-  /**
-   * Builds a context document descriptor.
-   */
-  private static function document(string $id, string $status, ?string $extract, string $summary = ''): array {
-    return [
-      'id' => $id,
-      'title' => 'Document ' . $id,
-      'category' => 'context',
-      'status' => $status,
-      'filename' => 'doc-' . $id . '.pdf',
-      'summary' => $summary,
-      'meta' => ['type' => 'pdf', 'size' => 10],
-      'extract' => $extract,
-    ];
+    $this->assertStringContainsString('You are a content generator', $instructions);
+    $this->assertStringNotContainsString('Editorial context selected by the editor', $instructions);
+    $this->assertStringNotContainsString('Context documents', $instructions);
+
+    // A tone the editor never wrote guidelines for is nothing to follow.
+    $this->assertStringNotContainsString(
+      'Editorial context selected by the editor',
+      $this->instructions(['id' => '3', 'label' => 'Formal', 'prompt' => ''], []),
+    );
   }
 
   /**
@@ -74,7 +70,7 @@ class EditorialSessionAgentPromptsTest extends UnitTestCase {
    * apart when the editor refers to one by name.
    */
   public function testDocumentsPromptInjectsExtracts(): void {
-    $prompt = EditorialSessionAgentBase::documentsPrompt([
+    $prompt = $this->instructions(NULL, [
       self::document('1', 'done', 'Full text of one.', 'Summary one.'),
     ]);
 
@@ -90,7 +86,7 @@ Full text of one.", $prompt);
    * Tests that unprocessed and failed documents are announced, not read.
    */
   public function testDocumentsPromptAnnouncesPendingDocuments(): void {
-    $prompt = EditorialSessionAgentBase::documentsPrompt([
+    $prompt = $this->instructions(NULL, [
       self::document('1', 'extracting', NULL),
       self::document('2', 'error', NULL),
       self::document('3', 'error', 'Kept text.'),
@@ -106,14 +102,14 @@ Kept text.", $prompt);
     $this->assertStringContainsString('retry them', $prompt);
 
     // Waiting never helps a failed document: alone, it only asks for a retry.
-    $prompt = EditorialSessionAgentBase::documentsPrompt([
+    $prompt = $this->instructions(NULL, [
       self::document('1', 'error', NULL),
     ]);
     $this->assertStringContainsString('retry them', $prompt);
     $this->assertStringNotContainsString('wait a moment', $prompt);
 
     // A pending document alone never asks for a retry.
-    $prompt = EditorialSessionAgentBase::documentsPrompt([
+    $prompt = $this->instructions(NULL, [
       self::document('1', 'scheduled', NULL),
     ]);
     $this->assertStringContainsString('wait a moment', $prompt);
@@ -124,45 +120,45 @@ Kept text.", $prompt);
    * Tests the per-document and total caps on injected text.
    */
   public function testDocumentsPromptCapsText(): void {
-    $long = str_repeat('a', EditorialSessionAgentBase::MAX_DOCUMENT_CHARS + 10);
-    $prompt = EditorialSessionAgentBase::documentsPrompt([
+    $long = str_repeat('~', EditorialSessionAgentBase::MAX_DOCUMENT_CHARS + 10);
+    $prompt = $this->instructions(NULL, [
       self::document('1', 'done', $long),
     ]);
-    $this->assertStringContainsString(str_repeat('a', EditorialSessionAgentBase::MAX_DOCUMENT_CHARS) . "
+    $this->assertStringContainsString(str_repeat('~', EditorialSessionAgentBase::MAX_DOCUMENT_CHARS) . "
 [truncated]", $prompt);
-    $this->assertStringNotContainsString(str_repeat('a', EditorialSessionAgentBase::MAX_DOCUMENT_CHARS + 1), $prompt);
+    $this->assertStringNotContainsString(str_repeat('~', EditorialSessionAgentBase::MAX_DOCUMENT_CHARS + 1), $prompt);
 
     // Once the total budget is spent, later documents fall back to summary.
     $count = intdiv(EditorialSessionAgentBase::MAX_TOTAL_CHARS, EditorialSessionAgentBase::MAX_DOCUMENT_CHARS) + 1;
     $documents = [];
     for ($i = 1; $i <= $count; $i++) {
-      $documents[] = self::document((string) $i, 'done', str_repeat('b', EditorialSessionAgentBase::MAX_DOCUMENT_CHARS), 'Summary ' . $i);
+      $documents[] = self::document((string) $i, 'done', str_repeat('%', EditorialSessionAgentBase::MAX_DOCUMENT_CHARS), 'Summary ' . $i);
     }
-    $prompt = EditorialSessionAgentBase::documentsPrompt($documents);
+    $prompt = $this->instructions(NULL, $documents);
     $this->assertStringContainsString("### Document $count (file: doc-$count.pdf)
 Summary only: Summary $count", $prompt);
     $this->assertStringContainsString("### Document 1 (file: doc-1.pdf)
-bbb", $prompt);
+%%%", $prompt);
 
     // A document that does not fit in the remaining budget also falls back
     // to summary, so the total never exceeds the budget.
     $documents = [];
     for ($i = 1; $i <= $count; $i++) {
-      $documents[] = self::document((string) $i, 'done', str_repeat('x', EditorialSessionAgentBase::MAX_DOCUMENT_CHARS - 1), 'Summary ' . $i);
+      $documents[] = self::document((string) $i, 'done', str_repeat('^', EditorialSessionAgentBase::MAX_DOCUMENT_CHARS - 1), 'Summary ' . $i);
     }
-    $prompt = EditorialSessionAgentBase::documentsPrompt($documents);
+    $prompt = $this->instructions(NULL, $documents);
     $this->assertStringContainsString("### Document $count (file: doc-$count.pdf)
 Summary only: Summary $count", $prompt);
-    $this->assertLessThanOrEqual(EditorialSessionAgentBase::MAX_TOTAL_CHARS, substr_count($prompt, 'x'));
+    $this->assertLessThanOrEqual(EditorialSessionAgentBase::MAX_TOTAL_CHARS, substr_count($prompt, '^'));
 
     // Test the scenario where every document is longer than the per-document
     // cap, and there are exactly as many as the total budget can hold.
     $documents = [];
     $fitting = intdiv(EditorialSessionAgentBase::MAX_TOTAL_CHARS, EditorialSessionAgentBase::MAX_DOCUMENT_CHARS);
     for ($i = 1; $i <= $fitting; $i++) {
-      $documents[] = self::document((string) $i, 'done', str_repeat('~', EditorialSessionAgentBase::MAX_DOCUMENT_CHARS + 10), 'Summary ' . $i);
+      $documents[] = self::document((string) $i, 'done', str_repeat('|', EditorialSessionAgentBase::MAX_DOCUMENT_CHARS + 10), 'Summary ' . $i);
     }
-    $prompt = EditorialSessionAgentBase::documentsPrompt($documents);
+    $prompt = $this->instructions(NULL, $documents);
     // The budget counts document text only, not the truncation marker, so
     // every document is injected truncated.
     $this->assertSame($fitting, substr_count($prompt, "\n[truncated]"));
@@ -170,7 +166,7 @@ Summary only: Summary $count", $prompt);
     $this->assertStringNotContainsString('Summary only:', $prompt);
     // The injected text fills the budget exactly. The tilde appears nowhere
     // else in the prompt, so counting it counts the document text.
-    $this->assertSame(EditorialSessionAgentBase::MAX_TOTAL_CHARS, substr_count($prompt, '~'));
+    $this->assertSame(EditorialSessionAgentBase::MAX_TOTAL_CHARS, substr_count($prompt, '|'));
   }
 
   /**
@@ -184,14 +180,14 @@ Summary only: Summary $count", $prompt);
     $filler = [];
     $documentCount = intdiv(EditorialSessionAgentBase::MAX_TOTAL_CHARS, EditorialSessionAgentBase::MAX_DOCUMENT_CHARS);
     for ($i = 1; $i <= $documentCount; $i++) {
-      $filler[] = self::document((string) $i, 'done', str_repeat('b', EditorialSessionAgentBase::MAX_DOCUMENT_CHARS), 'Summary ' . $i);
+      $filler[] = self::document((string) $i, 'done', str_repeat('%', EditorialSessionAgentBase::MAX_DOCUMENT_CHARS), 'Summary ' . $i);
     }
     $last = $documentCount + 1;
 
     // Test the scenario where an additional document is still in the pipeline
     // and its summary is not there yet.
     foreach (['extracted', 'summarizing'] as $status) {
-      $prompt = EditorialSessionAgentBase::documentsPrompt([
+      $prompt = $this->instructions(NULL, [
         ...$filler,
         // An extra document with defined content but empty summary.
         self::document((string) $last, $status, 'Overflow text.'),
@@ -212,7 +208,7 @@ Summary only: Summary $count", $prompt);
 
     // Test the scenario where the additional document failed while being
     // summarized, so its summary never comes without a retry.
-    $prompt = EditorialSessionAgentBase::documentsPrompt([
+    $prompt = $this->instructions(NULL, [
       ...$filler,
       // An extra document with defined content, empty summary and error status.
       self::document((string) $last, 'error', 'Overflow text.'),
@@ -227,7 +223,7 @@ Summary only: Summary $count", $prompt);
 
     // Test the scenario where the same failed document is alone, so the
     // budget is free and its text fits.
-    $prompt = EditorialSessionAgentBase::documentsPrompt([
+    $prompt = $this->instructions(NULL, [
       self::document('1', 'error', 'Overflow text.'),
     ]);
     // The text is injected despite the error status.
@@ -235,6 +231,106 @@ Summary only: Summary $count", $prompt);
 Overflow text.", $prompt);
     // Its content is available, so there is nothing to retry.
     $this->assertStringNotContainsString('retry them', $prompt);
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  protected function setUp(): void {
+    parent::setUp();
+    $this->enableModules(['oe_ai_assistant_test']);
+    // Building the drafter resolves a provider for its operation type.
+    $this->config('ai.settings')
+      ->set('default_providers', [
+        'chat_with_structured_response' => ['provider_id' => 'mock_ai', 'model_id' => 'mock-model'],
+      ])
+      ->save();
+  }
+
+  /**
+   * The instructions the drafter is built with, on a stubbed brief.
+   *
+   * The drafter is told the tone and the documents, so both blocks are in what
+   * it carries.
+   *
+   * @param array|null $tone
+   *   The tone the brief answers with.
+   * @param array $documents
+   *   The documents the brief answers with.
+   *
+   * @return string
+   *   The instructions.
+   */
+  private function instructions(?array $tone, array $documents): string {
+    // The interface is an alias of the class, and an alias resolves first, so
+    // the stub goes in under the class.
+    $this->container->set(DraftingBrief::class, new class($tone, $documents) implements DraftingBriefInterface {
+
+      /**
+       * @param array|null $tone
+       *   The tone every session is set up with.
+       * @param array $documents
+       *   The documents every session is set up with.
+       */
+      public function __construct(
+        private readonly ?array $tone,
+        private readonly array $documents,
+      ) {}
+
+      /**
+       * {@inheritdoc}
+       */
+      public function tone(AiEditorialSessionInterface $session): ?array {
+        return $this->tone;
+      }
+
+      /**
+       * {@inheritdoc}
+       */
+      public function template(AiEditorialSessionInterface $session): ?array {
+        return NULL;
+      }
+
+      /**
+       * {@inheritdoc}
+       */
+      public function documents(AiEditorialSessionInterface $session): array {
+        return $this->documents;
+      }
+
+      /**
+       * {@inheritdoc}
+       */
+      public function groups(AiEditorialSessionInterface $session): array {
+        return [];
+      }
+
+    });
+
+    $agent = $this->container->get(NeuronAgentManagerInterface::class)->createAgent('field_group', [
+      'session' => $this->createSession($this->createUser()),
+      'group' => 'main_fields',
+      'schema' => ['type' => 'object'],
+      'task' => 'Write it.',
+    ]);
+
+    return $agent->getInstructions()->getContent();
+  }
+
+  /**
+   * Builds a context document descriptor.
+   */
+  private static function document(string $id, string $status, ?string $extract, string $summary = ''): array {
+    return [
+      'id' => $id,
+      'title' => 'Document ' . $id,
+      'category' => 'context',
+      'status' => $status,
+      'filename' => 'doc-' . $id . '.pdf',
+      'summary' => $summary,
+      'meta' => ['type' => 'pdf', 'size' => 10],
+      'extract' => $extract,
+    ];
   }
 
 }

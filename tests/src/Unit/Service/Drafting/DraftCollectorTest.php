@@ -39,13 +39,6 @@ class DraftCollectorTest extends TestCase {
   ];
 
   /**
-   * Builds a collector of a news article's groups.
-   */
-  private function collector(): DraftCollector {
-    return new DraftCollector(self::GROUPS);
-  }
-
-  /**
    * @covers ::pending
    * @covers ::complete
    * @covers ::fields
@@ -113,6 +106,13 @@ class DraftCollectorTest extends TestCase {
     $this->assertNull($collector->mainFields());
     $collector->add('main_fields', ['title' => [['value' => 'T']]]);
     $this->assertSame(['title' => [['value' => 'T']]], $collector->mainFields());
+  }
+
+  /**
+   * Builds a collector of a news article's groups.
+   */
+  private function collector(): DraftCollector {
+    return new DraftCollector(self::GROUPS);
   }
 
 }

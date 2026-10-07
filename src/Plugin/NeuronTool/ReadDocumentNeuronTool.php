@@ -33,21 +33,6 @@ use NeuronAI\Tools\ToolProperty;
 final class ReadDocumentNeuronTool extends DraftingToolBase {
 
   /**
-   * {@inheritdoc}
-   */
-  protected function properties(): array {
-    return [
-      new ToolProperty(
-        'document',
-        PropertyType::STRING,
-        'The id of the document to read.',
-        TRUE,
-        array_column($this->brief->documents($this->session()), 'id'),
-      ),
-    ];
-  }
-
-  /**
    * Returns the text of the document, or why it is not available.
    */
   public function __invoke(string $document): string {
@@ -73,6 +58,21 @@ final class ReadDocumentNeuronTool extends DraftingToolBase {
         implode(', ', array_column($documents, 'id')) ?: 'none',
       ),
     ]);
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  protected function properties(): array {
+    return [
+      new ToolProperty(
+        'document',
+        PropertyType::STRING,
+        'The id of the document to read.',
+        TRUE,
+        array_column($this->brief->documents($this->session()), 'id'),
+      ),
+    ];
   }
 
 }

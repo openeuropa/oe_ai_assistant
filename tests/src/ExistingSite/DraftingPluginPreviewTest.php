@@ -14,14 +14,6 @@ namespace Drupal\Tests\oe_ai_assistant\ExistingSite;
 class DraftingPluginPreviewTest extends DraftingPluginTestBase {
 
   /**
-   * Counts existing nodes, to assert preview never creates one.
-   */
-  protected function countNodes(): int {
-    return (int) \Drupal::entityTypeManager()->getStorage('node')
-      ->getQuery()->accessCheck(FALSE)->count()->execute();
-  }
-
-  /**
    * Renders a themed HTML document and never persists a node.
    *
    * Also exercises the template-defaults merge: field_teaser is absent from
@@ -174,6 +166,14 @@ class DraftingPluginPreviewTest extends DraftingPluginTestBase {
 
     $this->assertEquals(400, $result['status']);
     $this->assertEquals('invalid_request', json_decode($result['body'], TRUE)['code']);
+  }
+
+  /**
+   * Counts existing nodes, to assert preview never creates one.
+   */
+  protected function countNodes(): int {
+    return (int) \Drupal::entityTypeManager()->getStorage('node')
+      ->getQuery()->accessCheck(FALSE)->count()->execute();
   }
 
 }

@@ -54,27 +54,6 @@ class DraftAssemblerTest extends KernelTestBase {
   ];
 
   /**
-   * {@inheritdoc}
-   */
-  protected function setUp(): void {
-    parent::setUp();
-    $this->installEntitySchema('node');
-    $this->installEntitySchema('user');
-    $this->installEntitySchema('paragraph');
-    $this->installEntitySchema('content_moderation_state');
-    $this->installEntitySchema('file');
-    $this->installEntitySchema('taxonomy_term');
-    $this->installSchema('node', ['node_access']);
-    $this->installConfig([
-      'system',
-      'field',
-      'filter',
-      'node',
-      'oe_ai_assistant_test',
-    ]);
-  }
-
-  /**
    * Keeps the existing item's text format when the payload omits it.
    */
   public function testUpdatePreservesExistingTextFormat(): void {
@@ -116,6 +95,27 @@ class DraftAssemblerTest extends KernelTestBase {
 
     $this->assertSame('<p>Rewritten body.</p>', $assembled->get('field_body')->value);
     $this->assertSame('oe_test_rich', $assembled->get('field_body')->format);
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  protected function setUp(): void {
+    parent::setUp();
+    $this->installEntitySchema('node');
+    $this->installEntitySchema('user');
+    $this->installEntitySchema('paragraph');
+    $this->installEntitySchema('content_moderation_state');
+    $this->installEntitySchema('file');
+    $this->installEntitySchema('taxonomy_term');
+    $this->installSchema('node', ['node_access']);
+    $this->installConfig([
+      'system',
+      'field',
+      'filter',
+      'node',
+      'oe_ai_assistant_test',
+    ]);
   }
 
 }

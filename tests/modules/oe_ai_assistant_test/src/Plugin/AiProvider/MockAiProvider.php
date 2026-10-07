@@ -93,27 +93,6 @@ class MockAiProvider extends AiProviderClientBase implements ChatInterface {
   }
 
   /**
-   * Dequeues the next mock response.
-   *
-   * @return \Drupal\oe_ai_assistant_test\Plugin\AiProvider\MockResponse
-   *   The next queued response.
-   *
-   * @throws \RuntimeException
-   *   When the queue is empty.
-   */
-  protected static function dequeue(): MockResponse {
-    $state = \Drupal::state();
-    $queue = $state->get(static::QUEUE_KEY, []);
-    if (empty($queue)) {
-      throw new \RuntimeException('MockAiProvider: no more responses in queue.');
-    }
-    $serialized = array_shift($queue);
-    $state->set(static::QUEUE_KEY, $queue);
-    // phpcs:ignore -- MockResponse is a known safe class from this module.
-    return unserialize($serialized, ['allowed_classes' => [MockResponse::class]]);
-  }
-
-  /**
    * {@inheritdoc}
    */
   public function chat(array|string|ChatInput $input, string $model_id, array $tags = []): ChatOutput {
@@ -215,6 +194,27 @@ class MockAiProvider extends AiProviderClientBase implements ChatInterface {
    */
   public function getModelSettings(string $model_id, array $generalConfig = []): array {
     return $generalConfig;
+  }
+
+  /**
+   * Dequeues the next mock response.
+   *
+   * @return \Drupal\oe_ai_assistant_test\Plugin\AiProvider\MockResponse
+   *   The next queued response.
+   *
+   * @throws \RuntimeException
+   *   When the queue is empty.
+   */
+  protected static function dequeue(): MockResponse {
+    $state = \Drupal::state();
+    $queue = $state->get(static::QUEUE_KEY, []);
+    if (empty($queue)) {
+      throw new \RuntimeException('MockAiProvider: no more responses in queue.');
+    }
+    $serialized = array_shift($queue);
+    $state->set(static::QUEUE_KEY, $queue);
+    // phpcs:ignore -- MockResponse is a known safe class from this module.
+    return unserialize($serialized, ['allowed_classes' => [MockResponse::class]]);
   }
 
 }

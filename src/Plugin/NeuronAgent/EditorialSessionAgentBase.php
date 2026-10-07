@@ -4,12 +4,18 @@ declare(strict_types=1);
 
 namespace Drupal\oe_ai_assistant\Plugin\NeuronAgent;
 
+use Drupal\ai_neuron\Agent\NeuronAgentDefinition;
 use Drupal\ai_neuron\Agent\NeuronAgentPluginBase;
 use Drupal\ai_neuron\Providers\ProviderFactoryInterface;
+use Drupal\ai_neuron\Tools\NeuronToolManagerInterface;
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
-use Drupal\oe_ai_assistant\Neuron\Chat\History\ThreadAddress;
+use Drupal\oe_ai_assistant\Neuron\Chat\History\EditorialMessageStore;
+use Drupal\oe_ai_assistant\Neuron\Chat\Messages\Stream\Adapters\ClosedToolInputAdapter;
 use Drupal\oe_ai_assistant\Service\Drafting\DocumentExtractionProcessorInterface;
 use Drupal\oe_ai_assistant\Service\Drafting\DraftingBriefInterface;
+use NeuronAI\Tools\ToolCall;
+use NeuronAI\Tools\ToolInterface;
+use NeuronAI\Workflow\Streaming\Adapter\StreamAdapterInterface;
 
 /**
  * Base class for the agents that serve one editorial session.
@@ -18,11 +24,9 @@ use Drupal\oe_ai_assistant\Service\Drafting\DraftingBriefInterface;
  * drafts with off that. A subclass declares the session context on its own
  * attribute, because an attribute is not inherited.
  *
- * The session is also what names an agent's conversation, so the thread key is
- * decided here. Every agent prompts a model with what the editor set up, so the
- * blocks they inject are rendered here as well. The renderers take the pieces
- * the brief answers with and read nothing themselves, so a prompt rule is
- * checked on its own.
+ * The session is also what names an agent's conversation, so a thread id is
+ * composed here. Every agent prompts a model with what the editor set up, so
+ * the blocks they inject are rendered here as well.
  */
 abstract class EditorialSessionAgentBase extends NeuronAgentPluginBase {
 
@@ -39,28 +43,89 @@ abstract class EditorialSessionAgentBase extends NeuronAgentPluginBase {
    */
   public const int MAX_TOTAL_CHARS = 60000;
 
-  /**
-   * Class constructor.
-   *
-   * @param array $configuration
-   *   The plugin configuration.
-   * @param string $plugin_id
-   *   The plugin id.
-   * @param mixed $plugin_definition
-   *   The plugin definition.
-   * @param \Drupal\ai_neuron\Providers\ProviderFactoryInterface $providers
-   *   Resolves the provider the site configured for this agent.
-   * @param \Drupal\oe_ai_assistant\Service\Drafting\DraftingBriefInterface $brief
-   *   Reads what the session drafts with.
-   */
   public function __construct(
     array $configuration,
     $plugin_id,
     $plugin_definition,
     ProviderFactoryInterface $providers,
+    NeuronToolManagerInterface $toolManager,
     protected readonly DraftingBriefInterface $brief,
   ) {
-    parent::__construct($configuration, $plugin_id, $plugin_definition, $providers);
+    parent::__construct($configuration, $plugin_id, $plugin_definition, $providers, $toolManager);
+  }
+
+  /**
+   * {@inheritdoc}
+   *
+   * The attribute names the tools, and every one of them serves this agent's
+   * session: it reads what it needs off that rather than being handed it, so
+   * they are built on the session context instead of on nothing.
+   */
+  protected function tools(): array {
+    $definition = $this->getPluginDefinition();
+    assert($definition instanceof NeuronAgentDefinition);
+    $context = ['session' => $this->session()];
+
+    return array_map(
+      fn (string $id): ToolInterface => $this->toolManager->createTool($id, $context),
+      $definition->tools,
+    );
+  }
+
+  /**
+   * {@inheritdoc}
+   *
+   * The declared protocol is Vercel's, which is what the app reads, and
+   * Neuron's adapter for it leaves out the event that closes a tool call's
+   * input. The app holds a call back until its input is closed, so the stream
+   * is shaped by the subclass that adds it.
+   */
+  protected function streamAdapter(string $threadId): ?StreamAdapterInterface {
+    return new ClosedToolInputAdapter();
+  }
+
+  /**
+   * {@inheritdoc}
+   *
+   * A tool answers the model in JSON, so a failure is reported the same way
+   * rather than as the sentence the base class returns. The call names itself
+   * in it, with what it was given, so a model that called several tools in one
+   * turn is told which of them failed and on what.
+   */
+  protected function toolErrorHandler(): ?callable {
+    return static fn (\Throwable $exception, ToolCall $call): string => json_encode([
+      'error' => $exception->getMessage(),
+      'tool' => $call->getName(),
+      'description' => $call->getDescription(),
+      'inputs' => $call->getInputs(),
+    ]);
+  }
+
+  /**
+   * {@inheritdoc}
+   *
+   * The session leads, because a reader of the store groups by it: every thread
+   * of one session sorts together, the editor's conversation and the runs it
+   * started. The agent follows, and then whatever tells one of its runs from
+   * another. Each segment says what it names, so a drafter run reads
+   * "session_12.agent_field_group.run_a1b2c3d4.group_main_fields".
+   */
+  protected function runId(string $key): string {
+    $thread = EditorialMessageStore::SESSION_PREFIX . $this->session()->id()
+      . '.' . EditorialMessageStore::AGENT_PREFIX . $this->getPluginId();
+
+    return $key === '' ? $thread : $thread . '.' . $key;
+  }
+
+  /**
+   * {@inheritdoc}
+   *
+   * The session and the agent are the whole of the thread, so a turn picks up
+   * the conversation the last one left. An agent that answers one question per
+   * run names what tells its runs apart instead.
+   */
+  protected function threadKey(): string {
+    return '';
   }
 
   /**
@@ -81,13 +146,11 @@ abstract class EditorialSessionAgentBase extends NeuronAgentPluginBase {
   /**
    * Renders the tone guidelines the drafters follow.
    *
-   * @param array $tone
-   *   The tone, as tone() answers it, or NULL when none is selected.
-   *
    * @return string
    *   The prompt block, or an empty string without a tone.
    */
-  public static function tonePrompt(?array $tone): string {
+  protected function tonePrompt(): string {
+    $tone = $this->brief->tone($this->session());
     $prompt = trim((string) ($tone['prompt'] ?? ''));
     if ($prompt === '') {
       return '';
@@ -115,13 +178,11 @@ abstract class EditorialSessionAgentBase extends NeuronAgentPluginBase {
    * contributes its summary instead, and counts as not available while it
    * has none.
    *
-   * @param array $documents
-   *   The descriptors, as documents() answers them.
-   *
    * @return string
    *   The prompt block, or an empty string without context documents.
    */
-  public static function documentsPrompt(array $documents): string {
+  protected function documentsPrompt(): string {
+    $documents = $this->brief->documents($this->session());
     if ($documents === []) {
       return '';
     }
@@ -180,17 +241,6 @@ abstract class EditorialSessionAgentBase extends NeuronAgentPluginBase {
     }
 
     return implode("\n", $lines);
-  }
-
-  /**
-   * {@inheritdoc}
-   *
-   * The editorial session is the conversation, so a turn picks up where the
-   * last one left off. An agent that answers one question per run names its
-   * own thread instead.
-   */
-  protected function threadKey(): string {
-    return ThreadAddress::key((string) $this->session()->id());
   }
 
 }

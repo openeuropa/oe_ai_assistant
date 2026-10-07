@@ -19,19 +19,6 @@ use PHPUnit\Framework\TestCase;
 class ClosedToolInputAdapterTest extends TestCase {
 
   /**
-   * Renders protocol events as the arrays the wire carries.
-   */
-  private function frames(iterable $events): array {
-    $frames = [];
-    foreach ($events as $event) {
-      assert($event instanceof ProtocolEvent);
-      $frames[] = json_decode((string) json_encode($event), TRUE);
-    }
-
-    return $frames;
-  }
-
-  /**
    * Tests that a call's input is opened, streamed and then closed.
    *
    * A client renders a call once its input is complete, so the closing event
@@ -86,6 +73,19 @@ class ClosedToolInputAdapterTest extends TestCase {
 
     $this->assertSame(['tool-output-available'], $types,
       'A call already opened and closed only reports its output.');
+  }
+
+  /**
+   * Renders protocol events as the arrays the wire carries.
+   */
+  private function frames(iterable $events): array {
+    $frames = [];
+    foreach ($events as $event) {
+      assert($event instanceof ProtocolEvent);
+      $frames[] = json_decode((string) json_encode($event), TRUE);
+    }
+
+    return $frames;
   }
 
 }

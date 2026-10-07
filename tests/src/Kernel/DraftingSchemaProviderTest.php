@@ -49,34 +49,6 @@ class DraftingSchemaProviderTest extends KernelTestBase {
   ];
 
   /**
-   * {@inheritdoc}
-   */
-  protected function setUp(): void {
-    parent::setUp();
-    $this->installEntitySchema('user');
-    $this->installEntitySchema('node');
-    $this->installEntitySchema('paragraph');
-    $this->installEntitySchema('content_moderation_state');
-    $this->installEntitySchema('file');
-    $this->installEntitySchema('taxonomy_term');
-    $this->installConfig(['oe_ai_assistant_test']);
-  }
-
-  /**
-   * Returns the provider under test.
-   */
-  private function provider(): DraftingSchemaProviderInterface {
-    return $this->container->get(DraftingSchemaProviderInterface::class);
-  }
-
-  /**
-   * Returns the main_fields field names from a groups result.
-   */
-  private function mainFields(array $groups): array {
-    return array_column($groups, 'fieldNames', 'groupId')['main_fields'] ?? [];
-  }
-
-  /**
    * A matching template prunes the groups to its fields.
    */
   public function testMatchingTemplateReturnsFilteredGroups(): void {
@@ -235,6 +207,34 @@ class DraftingSchemaProviderTest extends KernelTestBase {
     $main = $this->mainFields($this->provider()->groups('node', 'oe_news', ''));
 
     $this->assertSame(['title'], $main);
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  protected function setUp(): void {
+    parent::setUp();
+    $this->installEntitySchema('user');
+    $this->installEntitySchema('node');
+    $this->installEntitySchema('paragraph');
+    $this->installEntitySchema('content_moderation_state');
+    $this->installEntitySchema('file');
+    $this->installEntitySchema('taxonomy_term');
+    $this->installConfig(['oe_ai_assistant_test']);
+  }
+
+  /**
+   * Returns the provider under test.
+   */
+  private function provider(): DraftingSchemaProviderInterface {
+    return $this->container->get(DraftingSchemaProviderInterface::class);
+  }
+
+  /**
+   * Returns the main_fields field names from a groups result.
+   */
+  private function mainFields(array $groups): array {
+    return array_column($groups, 'fieldNames', 'groupId')['main_fields'] ?? [];
   }
 
 }

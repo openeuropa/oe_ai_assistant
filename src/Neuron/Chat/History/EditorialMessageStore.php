@@ -18,8 +18,25 @@ use NeuronAI\Chat\Messages\Message;
  *
  * The session is read out of the thread id, which every call names, so one
  * instance serves every conversation of the process as the interface expects.
+ * Reading it is why a key is prefixed: this store is handed to every agent the
+ * site builds, and a key that is a bare session id could be any of theirs.
  */
 final class EditorialMessageStore extends DrupalMessageStore {
+
+  /**
+   * What marks a thread segment as one of this module's editorial sessions.
+   *
+   * Every segment of a thread id says what it names. An agent of this module
+   * leads with the session it serves, so the editor's conversation reads
+   * "session_12.agent_drafting" and a drafter run
+   * "session_12.agent_field_group.run_a1b2c3d4.group_main_fields".
+   */
+  public const string SESSION_PREFIX = 'session_';
+
+  /**
+   * What marks a thread segment as the agent holding the conversation.
+   */
+  public const string AGENT_PREFIX = 'agent_';
 
   /**
    * The message type carrying the session reference.
@@ -38,7 +55,7 @@ final class EditorialMessageStore extends DrupalMessageStore {
    * session is read here and held until the row is written.
    */
   public function append(string $threadId, Message $message): void {
-    $this->session = ThreadAddress::sessionOf($threadId);
+    $this->session = self::sessionOf($threadId);
     try {
       parent::append($threadId, $message);
     }
@@ -64,6 +81,23 @@ final class EditorialMessageStore extends DrupalMessageStore {
     if ($this->session !== NULL) {
       $entity->set('oe_ai_session', $this->session);
     }
+  }
+
+  /**
+   * The session a thread belongs to, if it is one of this module's.
+   *
+   * @param string $threadId
+   *   The thread id Neuron holds.
+   *
+   * @return string|null
+   *   The editorial session id, or NULL for a thread composed elsewhere.
+   */
+  private static function sessionOf(string $threadId): ?string {
+    $key = explode('.', $threadId)[0];
+
+    return str_starts_with($key, self::SESSION_PREFIX)
+      ? substr($key, strlen(self::SESSION_PREFIX))
+      : NULL;
   }
 
 }

@@ -17,13 +17,6 @@ final class DraftCollector {
    */
   private array $results = [];
 
-  /**
-   * DraftCollector constructor.
-   *
-   * @param array $groups
-   *   The schema groups, each with groupId, label, fieldNames and
-   *   schemaSlice, in drafting order.
-   */
   public function __construct(
     private readonly array $groups,
   ) {}

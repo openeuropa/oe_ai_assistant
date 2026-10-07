@@ -28,15 +28,6 @@ class DraftingPluginSaveTest extends DraftingPluginTestBase {
   /**
    * {@inheritdoc}
    */
-  protected function setUp(): void {
-    parent::setUp();
-    $this->trackEntityType('node');
-    $this->trackEntityType('paragraph');
-  }
-
-  /**
-   * {@inheritdoc}
-   */
   public function tearDown(): void {
     $this->deleteTestEntities();
     parent::tearDown();
@@ -198,22 +189,6 @@ class DraftingPluginSaveTest extends DraftingPluginTestBase {
       'decision' => 'approve',
     ]);
     $this->assertEquals(400, $result['status']);
-  }
-
-  /**
-   * Reloads a session, so a field written by a request is read back.
-   *
-   * @param \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $session
-   *   The session.
-   *
-   * @return \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface
-   *   The reloaded session.
-   */
-  private function reloadSession(AiEditorialSessionInterface $session): AiEditorialSessionInterface {
-    $storage = \Drupal::entityTypeManager()->getStorage('ai_editorial_session');
-    $storage->resetCache([$session->id()]);
-
-    return $storage->load($session->id());
   }
 
   /**
@@ -531,6 +506,15 @@ class DraftingPluginSaveTest extends DraftingPluginTestBase {
   }
 
   /**
+   * {@inheritdoc}
+   */
+  protected function setUp(): void {
+    parent::setUp();
+    $this->trackEntityType('node');
+    $this->trackEntityType('paragraph');
+  }
+
+  /**
    * Records existing entity IDs so test-created entities can be cleaned up.
    */
   protected function trackEntityType(string $entityType): void {
@@ -553,6 +537,22 @@ class DraftingPluginSaveTest extends DraftingPluginTestBase {
         $storage->delete($storage->loadMultiple($newIds));
       }
     }
+  }
+
+  /**
+   * Reloads a session, so a field written by a request is read back.
+   *
+   * @param \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $session
+   *   The session.
+   *
+   * @return \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface
+   *   The reloaded session.
+   */
+  private function reloadSession(AiEditorialSessionInterface $session): AiEditorialSessionInterface {
+    $storage = \Drupal::entityTypeManager()->getStorage('ai_editorial_session');
+    $storage->resetCache([$session->id()]);
+
+    return $storage->load($session->id());
   }
 
 }

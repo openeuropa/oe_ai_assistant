@@ -49,39 +49,6 @@ class DrafterGraphTest extends TestCase {
   ];
 
   /**
-   * An answer the schema rejects, since it names a property it forbids.
-   */
-  private function rejected(): AssistantMessage {
-    return new AssistantMessage('{"title": [{"value": "T"}], "hallucinated": true}');
-  }
-
-  /**
-   * Builds the drafter the way the field group plugin does.
-   */
-  private function drafter(FakeAIProvider $provider): Workflow {
-    $resources = new AgentResources(
-      $provider,
-      new ChatHistory(new InMemoryMessageStore(), 'field_group.session-1.2.main_fields'),
-      new SystemMessage('Write the group.'),
-    );
-    $workflow = Workflow::make('field_group.session-1.2.main_fields', new AgentState());
-    $workflow
-      ->addNodes([
-        new AgentStartNode(),
-        new SchemaOutputNode('main_fields', self::SCHEMA),
-        new SchemaRetryNode(),
-        new AgentEndNode(),
-      ])
-      ->setStartEvent(new AgentStartEvent(
-        [new UserMessage('Write about broadband.')],
-        new AgentRunOptions(outputClass: 'main_fields', maxRetries: self::MAX_RETRIES),
-      ))
-      ->setResources(static fn (): WorkflowResources => $resources);
-
-    return $workflow;
-  }
-
-  /**
    * @covers ::__invoke
    */
   public function testRetriesUntilTheAnswerMatches(): void {
@@ -116,6 +83,39 @@ class DrafterGraphTest extends TestCase {
       $this->assertStringContainsString('does not match its schema', $e->getMessage());
     }
     $provider->assertCallCount(self::MAX_RETRIES + 1);
+  }
+
+  /**
+   * An answer the schema rejects, since it names a property it forbids.
+   */
+  private function rejected(): AssistantMessage {
+    return new AssistantMessage('{"title": [{"value": "T"}], "hallucinated": true}');
+  }
+
+  /**
+   * Builds the drafter the way the field group plugin does.
+   */
+  private function drafter(FakeAIProvider $provider): Workflow {
+    $resources = new AgentResources(
+      $provider,
+      new ChatHistory(new InMemoryMessageStore(), 'field_group.session-1.2.main_fields'),
+      new SystemMessage('Write the group.'),
+    );
+    $workflow = Workflow::make('field_group.session-1.2.main_fields', new AgentState());
+    $workflow
+      ->addNodes([
+        new AgentStartNode(),
+        new SchemaOutputNode('main_fields', self::SCHEMA),
+        new SchemaRetryNode(),
+        new AgentEndNode(),
+      ])
+      ->setStartEvent(new AgentStartEvent(
+        [new UserMessage('Write about broadband.')],
+        new AgentRunOptions(outputClass: 'main_fields', maxRetries: self::MAX_RETRIES),
+      ))
+      ->setResources(static fn (): WorkflowResources => $resources);
+
+    return $workflow;
   }
 
 }

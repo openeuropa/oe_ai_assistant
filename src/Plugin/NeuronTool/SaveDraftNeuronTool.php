@@ -53,20 +53,6 @@ final class SaveDraftNeuronTool extends DraftingToolBase {
 
   /**
    * {@inheritdoc}
-   */
-  protected function properties(): array {
-    return [
-      new ToolProperty(
-        'version',
-        PropertyType::INTEGER,
-        'The version number of the draft to save.',
-        TRUE,
-      ),
-    ];
-  }
-
-  /**
-   * {@inheritdoc}
    *
    * A save writes to the content item, which is the editor's to authorise and
    * not the model's. The policy is set on the Neuron tool rather than declared
@@ -98,6 +84,20 @@ final class SaveDraftNeuronTool extends DraftingToolBase {
       'version' => $version,
       'name' => $draft['name'],
     ] + $saved);
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  protected function properties(): array {
+    return [
+      new ToolProperty(
+        'version',
+        PropertyType::INTEGER,
+        'The version number of the draft to save.',
+        TRUE,
+      ),
+    ];
   }
 
 }

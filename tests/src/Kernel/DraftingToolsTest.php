@@ -58,6 +58,75 @@ class DraftingToolsTest extends AiEditorialSessionKernelTestBase {
   ];
 
   /**
+   * @covers \Drupal\oe_ai_assistant\Plugin\NeuronTool\GetEditorialContextNeuronTool::__invoke
+   */
+  public function testTheContextReportsSummariesAndNotTheText(): void {
+    $reported = json_decode(($this->contextTool())(), TRUE);
+
+    $this->assertSame('Formal', $reported['tone']['label']);
+    $this->assertSame('Use professional, institutional language.', $reported['tone']['guidelines']);
+    $this->assertSame('News default', $reported['template']['label']);
+    $this->assertSame([
+      [
+        'id' => '12',
+        'title' => 'Climate briefing',
+        'filename' => 'climate.pdf',
+        'status' => 'done',
+        'summary' => 'Key figures on EU emissions.',
+      ],
+      [
+        'id' => '15',
+        'title' => 'Draft speech',
+        'filename' => 'speech.docx',
+        'status' => 'scheduled',
+        'summary' => '',
+      ],
+    ], $reported['documents'], 'The listing carries summaries, never the extracted text.');
+  }
+
+  /**
+   * @covers \Drupal\oe_ai_assistant\Plugin\NeuronTool\GetEditorialContextNeuronTool::__invoke
+   */
+  public function testNothingSetUpReportsNothing(): void {
+    $reported = json_decode(($this->tool('get_editorial_context'))(), TRUE);
+
+    $this->assertNull($reported['tone']);
+    $this->assertNull($reported['template']);
+    $this->assertSame([], $reported['documents']);
+  }
+
+  /**
+   * @covers \Drupal\oe_ai_assistant\Plugin\NeuronTool\ReadDocumentNeuronTool::__invoke
+   */
+  public function testReadingOneDocumentReturnsItsTextOrItsState(): void {
+    $tool = $this->documentTool();
+
+    $read = json_decode($tool('12'), TRUE);
+    $this->assertSame('Climate briefing', $read['title']);
+    $this->assertSame('Emissions fell by 8 percent in 2025.', $read['text']);
+
+    // A document still in the pipeline reports its state, not a failure.
+    $pending = json_decode($tool('15'), TRUE);
+    $this->assertNull($pending['text']);
+    $this->assertSame('scheduled', $pending['status']);
+
+    $missing = json_decode($tool('99'), TRUE);
+    $this->assertStringContainsString('No document 99', $missing['error']);
+    $this->assertStringContainsString('12, 15', $missing['error']);
+  }
+
+  /**
+   * @covers \Drupal\oe_ai_assistant\Plugin\NeuronTool\ReadDocumentNeuronTool::properties
+   */
+  public function testTheDocumentArgumentOffersTheAttachedIds(): void {
+    $properties = $this->documentTool()->getProperties();
+
+    $this->assertCount(1, $properties);
+    $this->assertSame('document', $properties[0]->getName());
+    $this->assertSame(['12', '15'], $properties[0]->getJsonSchema()['enum']);
+  }
+
+  /**
    * Builds a tool on a session the stubbed brief answers for.
    *
    * @param string $id
@@ -138,75 +207,6 @@ class DraftingToolsTest extends AiEditorialSessionKernelTestBase {
    */
   private function documentTool(): ToolInterface {
     return $this->tool('read_document', self::TONE, self::TEMPLATE, self::DOCUMENTS);
-  }
-
-  /**
-   * @covers \Drupal\oe_ai_assistant\Plugin\NeuronTool\GetEditorialContextNeuronTool::__invoke
-   */
-  public function testTheContextReportsSummariesAndNotTheText(): void {
-    $reported = json_decode(($this->contextTool())(), TRUE);
-
-    $this->assertSame('Formal', $reported['tone']['label']);
-    $this->assertSame('Use professional, institutional language.', $reported['tone']['guidelines']);
-    $this->assertSame('News default', $reported['template']['label']);
-    $this->assertSame([
-      [
-        'id' => '12',
-        'title' => 'Climate briefing',
-        'filename' => 'climate.pdf',
-        'status' => 'done',
-        'summary' => 'Key figures on EU emissions.',
-      ],
-      [
-        'id' => '15',
-        'title' => 'Draft speech',
-        'filename' => 'speech.docx',
-        'status' => 'scheduled',
-        'summary' => '',
-      ],
-    ], $reported['documents'], 'The listing carries summaries, never the extracted text.');
-  }
-
-  /**
-   * @covers \Drupal\oe_ai_assistant\Plugin\NeuronTool\GetEditorialContextNeuronTool::__invoke
-   */
-  public function testNothingSetUpReportsNothing(): void {
-    $reported = json_decode(($this->tool('get_editorial_context'))(), TRUE);
-
-    $this->assertNull($reported['tone']);
-    $this->assertNull($reported['template']);
-    $this->assertSame([], $reported['documents']);
-  }
-
-  /**
-   * @covers \Drupal\oe_ai_assistant\Plugin\NeuronTool\ReadDocumentNeuronTool::__invoke
-   */
-  public function testReadingOneDocumentReturnsItsTextOrItsState(): void {
-    $tool = $this->documentTool();
-
-    $read = json_decode($tool('12'), TRUE);
-    $this->assertSame('Climate briefing', $read['title']);
-    $this->assertSame('Emissions fell by 8 percent in 2025.', $read['text']);
-
-    // A document still in the pipeline reports its state, not a failure.
-    $pending = json_decode($tool('15'), TRUE);
-    $this->assertNull($pending['text']);
-    $this->assertSame('scheduled', $pending['status']);
-
-    $missing = json_decode($tool('99'), TRUE);
-    $this->assertStringContainsString('No document 99', $missing['error']);
-    $this->assertStringContainsString('12, 15', $missing['error']);
-  }
-
-  /**
-   * @covers \Drupal\oe_ai_assistant\Plugin\NeuronTool\ReadDocumentNeuronTool::properties
-   */
-  public function testTheDocumentArgumentOffersTheAttachedIds(): void {
-    $properties = $this->documentTool()->getProperties();
-
-    $this->assertCount(1, $properties);
-    $this->assertSame('document', $properties[0]->getName());
-    $this->assertSame(['12', '15'], $properties[0]->getJsonSchema()['enum']);
   }
 
 }

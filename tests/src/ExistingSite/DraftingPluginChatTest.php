@@ -212,7 +212,7 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
       static fn (string $thread): string => substr($thread, strrpos($thread, '.') + 1),
       array_keys($threads),
     );
-    $this->assertSame(['main_fields', 'field_content_paragraphs'], $groups,
+    $this->assertSame(['group_main_fields', 'group_field_content_paragraphs'], $groups,
       'One thread per group is recorded, named after the group.');
   }
 
@@ -583,27 +583,6 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
       $this->assertStringContainsString('Alpha briefing content for the draft.', $call['system_prompt']);
       $this->assertStringContainsString('Not processed yet', $call['system_prompt']);
     }
-  }
-
-  /**
-   * Uploads a context document and returns its id and stored title.
-   *
-   * The title is read back because core renames an upload whose file name
-   * already exists in the private directory.
-   *
-   * @return array
-   *   The document id and title.
-   */
-  private function uploadDocument($session, string $filename, string $contents): array {
-    $query = http_build_query(['sessionId' => $session->id(), 'category' => 'context', 'filename' => $filename]);
-    $added = $this->httpPostRaw('/api/ai/plugins/drafting/add-document?' . $query, $contents);
-    $this->assertSame(200, $added['status'], $added['body']);
-    $document = json_decode($added['body'], TRUE)['document'];
-    $media = \Drupal::entityTypeManager()->getStorage('media')->load($document['id']);
-    $this->markEntityForCleanup($media);
-    $this->markEntityForCleanup($media->get('oe_ai_context_document')->entity);
-
-    return [(string) $document['id'], (string) $document['title']];
   }
 
   /**
@@ -1059,6 +1038,27 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
       }
     }
     return $results;
+  }
+
+  /**
+   * Uploads a context document and returns its id and stored title.
+   *
+   * The title is read back because core renames an upload whose file name
+   * already exists in the private directory.
+   *
+   * @return array
+   *   The document id and title.
+   */
+  private function uploadDocument($session, string $filename, string $contents): array {
+    $query = http_build_query(['sessionId' => $session->id(), 'category' => 'context', 'filename' => $filename]);
+    $added = $this->httpPostRaw('/api/ai/plugins/drafting/add-document?' . $query, $contents);
+    $this->assertSame(200, $added['status'], $added['body']);
+    $document = json_decode($added['body'], TRUE)['document'];
+    $media = \Drupal::entityTypeManager()->getStorage('media')->load($document['id']);
+    $this->markEntityForCleanup($media);
+    $this->markEntityForCleanup($media->get('oe_ai_context_document')->entity);
+
+    return [(string) $document['id'], (string) $document['title']];
   }
 
 }

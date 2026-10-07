@@ -5,16 +5,9 @@ declare(strict_types=1);
 namespace Drupal\oe_ai_assistant\Plugin\NeuronAgent;
 
 use Drupal\ai_neuron\Attribute\NeuronAgent;
-use Drupal\ai_neuron\Providers\ProviderFactoryInterface;
-use Drupal\ai_neuron\Tools\NeuronToolManagerInterface;
 use Drupal\Core\Plugin\Context\EntityContextDefinition;
 use Drupal\Core\StringTranslation\TranslatableMarkup;
 use Drupal\oe_ai_assistant\Service\Drafting\DraftingBriefInterface;
-use Drupal\oe_ai_assistant\Neuron\Chat\Messages\Stream\Adapters\ClosedToolInputAdapter;
-use NeuronAI\Agent\Agent;
-use NeuronAI\Agent\AgentInterface;
-use NeuronAI\Tools\ToolCall;
-use NeuronAI\Tools\ToolInterface;
 
 /**
  * The agent that talks to the editor and drafts through tools.
@@ -24,6 +17,14 @@ use NeuronAI\Tools\ToolInterface;
   label: new TranslatableMarkup('Drafting'),
   description: new TranslatableMarkup('Gathers requirements in conversation and drafts content per field group.'),
   operation_type: 'chat_with_tools',
+  tools: [
+    'get_draft_history',
+    'get_editorial_context',
+    'read_document',
+    'draft_group',
+    'revise_draft',
+    'save_draft',
+  ],
   context_definitions: [
     'session' => new EntityContextDefinition(
       data_type: 'entity:ai_editorial_session',
@@ -34,11 +35,11 @@ use NeuronAI\Tools\ToolInterface;
 final class DraftingNeuronAgent extends EditorialSessionAgentBase {
 
   /**
-   * The instructions every run starts from.
-   *
-   * The tools describe themselves; this is the policy for using them.
+   * {@inheritdoc}
    */
-  public const INSTRUCTIONS = <<<'PROMPT'
+  protected function instructions(): string {
+    // The tools describe themselves; this is the policy for using them.
+    $instructions = <<<'PROMPT'
     You are a content drafting assistant for a CMS editorial workflow.
 
     Workflow:
@@ -82,27 +83,7 @@ final class DraftingNeuronAgent extends EditorialSessionAgentBase {
     - You can have normal conversations with the user at any point.
     PROMPT;
 
-  /**
-   * The tools the agent publishes, by plugin id.
-   */
-  private const TOOLS = [
-    'get_draft_history',
-    'get_editorial_context',
-    'read_document',
-    'draft_group',
-    'revise_draft',
-    'save_draft',
-  ];
-
-  public function __construct(
-    array $configuration,
-    $plugin_id,
-    $plugin_definition,
-    ProviderFactoryInterface $providers,
-    DraftingBriefInterface $brief,
-    private readonly NeuronToolManagerInterface $toolManager,
-  ) {
-    parent::__construct($configuration, $plugin_id, $plugin_definition, $providers, $brief);
+    return $instructions . "\n\n" . $this->contentTypePrompt() . "\n";
   }
 
   /**
@@ -125,55 +106,9 @@ final class DraftingNeuronAgent extends EditorialSessionAgentBase {
       $prompt .= "\nAvailable field groups:\n" . json_encode($this->brief->groups($this->session())) . "\n";
     }
 
-    $documents = self::documentsPrompt($this->brief->documents($this->session()));
+    $documents = $this->documentsPrompt();
 
     return $documents === '' ? $prompt : $prompt . "\n\n" . $documents;
-  }
-
-  /**
-   * {@inheritdoc}
-   */
-  protected function instructions(): string {
-    return self::INSTRUCTIONS . "\n\n" . $this->contentTypePrompt() . "\n";
-  }
-
-  /**
-   * {@inheritdoc}
-   */
-  protected function tools(): array {
-    // Every tool serves this agent's session, and reads the rest off it.
-    $context = ['session' => $this->session()];
-
-    return array_map(
-      fn (string $id): ToolInterface => $this->toolManager->createTool($id, $context),
-      self::TOOLS,
-    );
-  }
-
-  /**
-   * {@inheritdoc}
-   *
-   * The base class sets the provider, the instructions, the tools and the
-   * middleware, and leaves a run yielding Neuron's own chunks. The app reads
-   * the Vercel protocol, so the run is asked for that, with the one event
-   * Neuron leaves out of it.
-   */
-  public function getNeuron(): AgentInterface {
-    $agent = parent::getNeuron();
-    assert($agent instanceof Agent);
-    $agent->setStreamAdapter(static fn (): ClosedToolInputAdapter => new ClosedToolInputAdapter());
-
-    return $agent;
-  }
-
-  /**
-   * {@inheritdoc}
-   *
-   * A tool answers the model in JSON, so a failure is reported the same way
-   * rather than as the sentence the base class returns.
-   */
-  protected function toolErrorHandler(): ?callable {
-    return static fn (\Throwable $exception, ToolCall $call): string => json_encode(['error' => $exception->getMessage()]);
   }
 
 }

@@ -53,6 +53,41 @@ class DraftableNodeTypeSelectionTest extends KernelTestBase {
   ];
 
   /**
+   * Only bundles with an enabled template are referenceable.
+   */
+  public function testReturnsOnlyBundlesWithEnabledTemplate(): void {
+    $this->assertSame(['oe_contact', 'oe_news'], $this->referenceableTypeIds());
+  }
+
+  /**
+   * Disabling all templates of a bundle removes it from the result.
+   */
+  public function testDisablingAllBundleTemplatesRemovesIt(): void {
+    $storage = $this->container->get('entity_type.manager')->getStorage('ai_drafting_template');
+    /** @var \Drupal\oe_ai_assistant\Entity\AiDraftingTemplate $template */
+    foreach ($storage->loadByProperties(['content_type' => 'oe_contact']) as $template) {
+      $template->set('status', FALSE);
+      $template->save();
+    }
+
+    $this->assertSame(['oe_news'], $this->referenceableTypeIds());
+  }
+
+  /**
+   * No bundle is referenceable when no template is enabled.
+   */
+  public function testNoEnabledTemplateReturnsNothing(): void {
+    $storage = $this->container->get('entity_type.manager')->getStorage('ai_drafting_template');
+    /** @var \Drupal\oe_ai_assistant\Entity\AiDraftingTemplate $template */
+    foreach ($storage->loadMultiple() as $template) {
+      $template->set('status', FALSE);
+      $template->save();
+    }
+
+    $this->assertSame([], $this->referenceableTypeIds());
+  }
+
+  /**
    * {@inheritdoc}
    */
   protected function setUp(): void {
@@ -87,41 +122,6 @@ class DraftableNodeTypeSelectionTest extends KernelTestBase {
     $ids = array_keys($referenceable['node_type'] ?? []);
     sort($ids);
     return $ids;
-  }
-
-  /**
-   * Only bundles with an enabled template are referenceable.
-   */
-  public function testReturnsOnlyBundlesWithEnabledTemplate(): void {
-    $this->assertSame(['oe_contact', 'oe_news'], $this->referenceableTypeIds());
-  }
-
-  /**
-   * Disabling all templates of a bundle removes it from the result.
-   */
-  public function testDisablingAllBundleTemplatesRemovesIt(): void {
-    $storage = $this->container->get('entity_type.manager')->getStorage('ai_drafting_template');
-    /** @var \Drupal\oe_ai_assistant\Entity\AiDraftingTemplate $template */
-    foreach ($storage->loadByProperties(['content_type' => 'oe_contact']) as $template) {
-      $template->set('status', FALSE);
-      $template->save();
-    }
-
-    $this->assertSame(['oe_news'], $this->referenceableTypeIds());
-  }
-
-  /**
-   * No bundle is referenceable when no template is enabled.
-   */
-  public function testNoEnabledTemplateReturnsNothing(): void {
-    $storage = $this->container->get('entity_type.manager')->getStorage('ai_drafting_template');
-    /** @var \Drupal\oe_ai_assistant\Entity\AiDraftingTemplate $template */
-    foreach ($storage->loadMultiple() as $template) {
-      $template->set('status', FALSE);
-      $template->save();
-    }
-
-    $this->assertSame([], $this->referenceableTypeIds());
   }
 
 }

@@ -47,30 +47,6 @@ class DraftingPluginDocumentsTest extends AiEditorialSessionKernelTestBase {
   }
 
   /**
-   * {@inheritdoc}
-   */
-  protected function setUpFilesystem(): void {
-    parent::setUpFilesystem();
-    $privatePath = $this->siteDirectory . '/private';
-    mkdir($privatePath);
-    $this->setSetting('file_private_path', $privatePath);
-  }
-
-  /**
-   * {@inheritdoc}
-   */
-  protected function setUp(): void {
-    parent::setUp();
-    $this->installSchema('file', ['file_usage']);
-    $this->installConfig(['document_loader_tika']);
-    $this->enableModules(['oe_ai_assistant_test']);
-    $this->config('ai.settings')
-      ->set('default_providers', ['chat' => ['provider_id' => 'mock_ai', 'model_id' => 'mock-model']])
-      ->save();
-    MockAiProvider::reset();
-  }
-
-  /**
    * Tests adding, listing, and removing context documents.
    */
   public function testDocumentActions(): void {
@@ -592,6 +568,30 @@ class DraftingPluginDocumentsTest extends AiEditorialSessionKernelTestBase {
     $this->assertSame(500, $response->getStatusCode());
     $payload = json_decode($response->getContent(), TRUE, 512, JSON_THROW_ON_ERROR);
     $this->assertSame('upload_failed', $payload['code']);
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  protected function setUpFilesystem(): void {
+    parent::setUpFilesystem();
+    $privatePath = $this->siteDirectory . '/private';
+    mkdir($privatePath);
+    $this->setSetting('file_private_path', $privatePath);
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  protected function setUp(): void {
+    parent::setUp();
+    $this->installSchema('file', ['file_usage']);
+    $this->installConfig(['document_loader_tika']);
+    $this->enableModules(['oe_ai_assistant_test']);
+    $this->config('ai.settings')
+      ->set('default_providers', ['chat' => ['provider_id' => 'mock_ai', 'model_id' => 'mock-model']])
+      ->save();
+    MockAiProvider::reset();
   }
 
   /**

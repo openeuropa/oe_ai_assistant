@@ -16,74 +16,6 @@ use Symfony\Component\HttpFoundation\Request;
 class DraftingPluginSetTemplateTest extends AiEditorialSessionKernelTestBase {
 
   /**
-   * {@inheritdoc}
-   */
-  protected function setUp(): void {
-    parent::setUp();
-    $this->enableModules(['oe_ai_assistant_test']);
-    // The drafting agent publishes tools, so building it resolves the tool
-    // calling provider before it reads the session.
-    $this->config('ai.settings')
-      ->set('default_providers', [
-        'chat_with_tools' => ['provider_id' => 'mock_ai', 'model_id' => 'mock-model'],
-      ])
-      ->save();
-
-    $storage = $this->container->get('entity_type.manager')
-      ->getStorage('ai_drafting_template');
-    $storage->create([
-      'id' => 'news_a',
-      'label' => 'News A',
-      'content_type' => 'oe_news',
-      'fields' => ['title' => ['prompt' => 'x']],
-    ])->save();
-    $storage->create([
-      'id' => 'news_disabled',
-      'label' => 'News disabled',
-      'status' => FALSE,
-      'content_type' => 'oe_news',
-      'fields' => ['title' => ['prompt' => 'x']],
-    ])->save();
-    $storage->create([
-      'id' => 'contact_a',
-      'label' => 'Contact A',
-      'content_type' => 'oe_contact',
-      'fields' => ['title' => ['prompt' => 'x']],
-    ])->save();
-  }
-
-  /**
-   * Runs the set-template action.
-   */
-  private function setTemplate(string $sessionId, string $template): array {
-    $plugin = $this->container->get(AiAssistantPluginManager::class)
-      ->createInstance('drafting');
-    $request = Request::create('/', 'POST', content: json_encode([
-      'sessionId' => $sessionId,
-      'template' => $template,
-    ]));
-    return $plugin->executeAction('set-template', $request);
-  }
-
-  /**
-   * Creates an oe_news session owned by the acting user.
-   */
-  private function ownedSession(): string {
-    $owner = $this->createUser(['use oe ai assistant', 'view_update own sessions']);
-    $this->container->get('current_user')->setAccount($owner);
-    return (string) $this->createSession($owner)->id();
-  }
-
-  /**
-   * Reloads the stored template id for a session.
-   */
-  private function storedTemplate(string $sessionId): ?string {
-    $session = $this->container->get('entity_type.manager')
-      ->getStorage('ai_editorial_session')->loadUnchanged($sessionId);
-    return $session->get('template')->target_id;
-  }
-
-  /**
    * A valid template is persisted on the session.
    */
   public function testSetTemplatePersistsOnSession(): void {
@@ -155,6 +87,74 @@ class DraftingPluginSetTemplateTest extends AiEditorialSessionKernelTestBase {
     $this->expectException(ActionException::class);
     $this->expectExceptionMessage('Drafting template "news_a" not found.');
     $plugin->executeAction('chat', $request);
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  protected function setUp(): void {
+    parent::setUp();
+    $this->enableModules(['oe_ai_assistant_test']);
+    // The drafting agent publishes tools, so building it resolves the tool
+    // calling provider before it reads the session.
+    $this->config('ai.settings')
+      ->set('default_providers', [
+        'chat_with_tools' => ['provider_id' => 'mock_ai', 'model_id' => 'mock-model'],
+      ])
+      ->save();
+
+    $storage = $this->container->get('entity_type.manager')
+      ->getStorage('ai_drafting_template');
+    $storage->create([
+      'id' => 'news_a',
+      'label' => 'News A',
+      'content_type' => 'oe_news',
+      'fields' => ['title' => ['prompt' => 'x']],
+    ])->save();
+    $storage->create([
+      'id' => 'news_disabled',
+      'label' => 'News disabled',
+      'status' => FALSE,
+      'content_type' => 'oe_news',
+      'fields' => ['title' => ['prompt' => 'x']],
+    ])->save();
+    $storage->create([
+      'id' => 'contact_a',
+      'label' => 'Contact A',
+      'content_type' => 'oe_contact',
+      'fields' => ['title' => ['prompt' => 'x']],
+    ])->save();
+  }
+
+  /**
+   * Runs the set-template action.
+   */
+  private function setTemplate(string $sessionId, string $template): array {
+    $plugin = $this->container->get(AiAssistantPluginManager::class)
+      ->createInstance('drafting');
+    $request = Request::create('/', 'POST', content: json_encode([
+      'sessionId' => $sessionId,
+      'template' => $template,
+    ]));
+    return $plugin->executeAction('set-template', $request);
+  }
+
+  /**
+   * Creates an oe_news session owned by the acting user.
+   */
+  private function ownedSession(): string {
+    $owner = $this->createUser(['use oe ai assistant', 'view_update own sessions']);
+    $this->container->get('current_user')->setAccount($owner);
+    return (string) $this->createSession($owner)->id();
+  }
+
+  /**
+   * Reloads the stored template id for a session.
+   */
+  private function storedTemplate(string $sessionId): ?string {
+    $session = $this->container->get('entity_type.manager')
+      ->getStorage('ai_editorial_session')->loadUnchanged($sessionId);
+    return $session->get('template')->target_id;
   }
 
 }

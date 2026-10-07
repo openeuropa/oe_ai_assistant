@@ -58,48 +58,6 @@ class AiDraftingTemplateCrudTest extends KernelTestBase {
   ];
 
   /**
-   * {@inheritdoc}
-   */
-  protected function setUp(): void {
-    parent::setUp();
-
-    $this->installEntitySchema('user');
-    $this->installEntitySchema('node');
-    $this->installEntitySchema('paragraph');
-    $this->installEntitySchema('content_moderation_state');
-    $this->installEntitySchema('file');
-    $this->installEntitySchema('taxonomy_term');
-    $this->installConfig(['oe_ai_assistant_test']);
-    $this->container->get('config.typed')->clearCachedDefinitions();
-  }
-
-  /**
-   * {@inheritdoc}
-   */
-  protected function tearDown(): void {
-    $ids = [
-      'test_news_crud',
-      'test_paragraphs_crud',
-      'test_contacts_crud',
-      'test_news_sync_invalid',
-      'test_default_covered',
-      'test_callback_covered',
-      'test_field_strip',
-      'test_required_field_strip',
-      'test_default_strip',
-      'test_bundle_strip',
-      'test_bundle_strip_siblings',
-    ];
-    foreach ($ids as $id) {
-      $template = AiDraftingTemplate::load($id);
-      if ($template) {
-        $template->delete();
-      }
-    }
-    parent::tearDown();
-  }
-
-  /**
    * Tests creating a template and loading by ID with all properties intact.
    */
   public function testCreateAndLoadTemplate(): void {
@@ -1122,6 +1080,48 @@ class AiDraftingTemplateCrudTest extends KernelTestBase {
     $this->assertSame($contacts, $fields['field_contacts']);
     $this->assertCount(1, $fields['field_content_paragraphs']['items']);
     $this->assertSame('text_block', $fields['field_content_paragraphs']['items'][0]['bundle']);
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  protected function setUp(): void {
+    parent::setUp();
+
+    $this->installEntitySchema('user');
+    $this->installEntitySchema('node');
+    $this->installEntitySchema('paragraph');
+    $this->installEntitySchema('content_moderation_state');
+    $this->installEntitySchema('file');
+    $this->installEntitySchema('taxonomy_term');
+    $this->installConfig(['oe_ai_assistant_test']);
+    $this->container->get('config.typed')->clearCachedDefinitions();
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  protected function tearDown(): void {
+    $ids = [
+      'test_news_crud',
+      'test_paragraphs_crud',
+      'test_contacts_crud',
+      'test_news_sync_invalid',
+      'test_default_covered',
+      'test_callback_covered',
+      'test_field_strip',
+      'test_required_field_strip',
+      'test_default_strip',
+      'test_bundle_strip',
+      'test_bundle_strip_siblings',
+    ];
+    foreach ($ids as $id) {
+      $template = AiDraftingTemplate::load($id);
+      if ($template) {
+        $template->delete();
+      }
+    }
+    parent::tearDown();
   }
 
   /**

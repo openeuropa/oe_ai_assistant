@@ -15,14 +15,6 @@ use NeuronAI\Workflow\Events\Event;
  */
 final class SchemaViolationEvent implements Event {
 
-  /**
-   * SchemaViolationEvent constructor.
-   *
-   * @param string $schema
-   *   The name of the schema the answer was validated against.
-   * @param string[] $violations
-   *   The validation errors, one line each, as the validator reports them.
-   */
   public function __construct(
     public readonly string $schema,
     public readonly array $violations,

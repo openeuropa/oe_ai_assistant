@@ -30,14 +30,6 @@ class AiConversationHistoryController extends ControllerBase {
    */
   private const COLUMN_COUNT = 6;
 
-  /**
-   * Constructs the controller.
-   *
-   * @param \Drupal\oe_ai_assistant\Neuron\Chat\History\SessionConversation $conversation
-   *   Reads the stored conversations of the session.
-   * @param \Drupal\Core\Datetime\DateFormatterInterface $dateFormatter
-   *   The date formatter.
-   */
   public function __construct(
     private readonly SessionConversation $conversation,
     private readonly DateFormatterInterface $dateFormatter,

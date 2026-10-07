@@ -17,12 +17,6 @@ final class DraftHistory implements DraftHistoryInterface {
    */
   private const AGENT_ID = 'drafting';
 
-  /**
-   * Class constructor.
-   *
-   * @param \Drupal\oe_ai_assistant\Neuron\Chat\History\SessionConversation $conversation
-   *   Reads the stored conversation the drafts were produced in.
-   */
   public function __construct(
     private readonly SessionConversation $conversation,
   ) {}

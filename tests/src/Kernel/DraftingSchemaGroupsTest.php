@@ -52,41 +52,6 @@ class DraftingSchemaGroupsTest extends KernelTestBase {
   ];
 
   /**
-   * {@inheritdoc}
-   */
-  protected function setUp(): void {
-    parent::setUp();
-    $this->installEntitySchema('node');
-    $this->installEntitySchema('user');
-    $this->installEntitySchema('paragraph');
-    $this->installEntitySchema('content_moderation_state');
-    $this->installEntitySchema('file');
-    $this->installEntitySchema('taxonomy_term');
-    $this->installConfig([
-      'system',
-      'field',
-      'filter',
-      'node',
-    ]);
-
-    $this->installConfig(['oe_ai_assistant_test']);
-  }
-
-  /**
-   * Returns the composer service from the container.
-   */
-  private function composer(): EntityJsonSchemaComposer {
-    return $this->container->get(EntityJsonSchemaComposer::class);
-  }
-
-  /**
-   * Resolves the groups for a content type and template.
-   */
-  private function resolveGroups(string $entityTypeId, string $bundle, ?string $templateId = NULL): array {
-    return $this->container->get(DraftingSchemaProviderInterface::class)->groups($entityTypeId, $bundle, $templateId);
-  }
-
-  /**
    * An explicit template context restricts the groups to its fields.
    */
   public function testExecuteWithTemplateUsesThatTemplate(): void {
@@ -192,6 +157,41 @@ class DraftingSchemaGroupsTest extends KernelTestBase {
     $this->assertContains('field_news_image',
       $mainGroup['fieldNames'],
       'Image/file reference should stay in main_fields.');
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  protected function setUp(): void {
+    parent::setUp();
+    $this->installEntitySchema('node');
+    $this->installEntitySchema('user');
+    $this->installEntitySchema('paragraph');
+    $this->installEntitySchema('content_moderation_state');
+    $this->installEntitySchema('file');
+    $this->installEntitySchema('taxonomy_term');
+    $this->installConfig([
+      'system',
+      'field',
+      'filter',
+      'node',
+    ]);
+
+    $this->installConfig(['oe_ai_assistant_test']);
+  }
+
+  /**
+   * Returns the composer service from the container.
+   */
+  private function composer(): EntityJsonSchemaComposer {
+    return $this->container->get(EntityJsonSchemaComposer::class);
+  }
+
+  /**
+   * Resolves the groups for a content type and template.
+   */
+  private function resolveGroups(string $entityTypeId, string $bundle, ?string $templateId = NULL): array {
+    return $this->container->get(DraftingSchemaProviderInterface::class)->groups($entityTypeId, $bundle, $templateId);
   }
 
 }

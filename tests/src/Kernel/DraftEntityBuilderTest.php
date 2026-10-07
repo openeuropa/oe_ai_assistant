@@ -61,33 +61,6 @@ class DraftEntityBuilderTest extends KernelTestBase {
   ];
 
   /**
-   * {@inheritdoc}
-   */
-  protected function setUp(): void {
-    parent::setUp();
-    $this->installEntitySchema('node');
-    $this->installEntitySchema('user');
-    $this->installEntitySchema('paragraph');
-    $this->installEntitySchema('content_moderation_state');
-    $this->installEntitySchema('file');
-    $this->installEntitySchema('taxonomy_term');
-    $this->installConfig([
-      'system',
-      'field',
-      'filter',
-      'node',
-      'oe_ai_assistant_test',
-    ]);
-  }
-
-  /**
-   * Returns the builder service from the container.
-   */
-  private function builder(): DraftEntityBuilder {
-    return $this->container->get(DraftEntityBuilder::class);
-  }
-
-  /**
    * Builds an unsaved node and populates scalar fields.
    */
   public function testBuildsUnsavedNodeWithScalarFields(): void {
@@ -269,6 +242,33 @@ class DraftEntityBuilderTest extends KernelTestBase {
     $this->expectException(\InvalidArgumentException::class);
     $this->expectExceptionMessage('Entity type "user" has no bundle key');
     $this->builder()->fromLlmFields('user', 'user', []);
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  protected function setUp(): void {
+    parent::setUp();
+    $this->installEntitySchema('node');
+    $this->installEntitySchema('user');
+    $this->installEntitySchema('paragraph');
+    $this->installEntitySchema('content_moderation_state');
+    $this->installEntitySchema('file');
+    $this->installEntitySchema('taxonomy_term');
+    $this->installConfig([
+      'system',
+      'field',
+      'filter',
+      'node',
+      'oe_ai_assistant_test',
+    ]);
+  }
+
+  /**
+   * Returns the builder service from the container.
+   */
+  private function builder(): DraftEntityBuilder {
+    return $this->container->get(DraftEntityBuilder::class);
   }
 
 }

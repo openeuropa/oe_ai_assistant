@@ -19,20 +19,6 @@ use Drupal\oe_ai_assistant\Service\Drafting\DraftingBriefInterface;
  */
 abstract class DraftingToolBase extends NeuronToolPluginBase {
 
-  /**
-   * Class constructor.
-   *
-   * @param array $configuration
-   *   The plugin configuration.
-   * @param string $plugin_id
-   *   The plugin id.
-   * @param mixed $plugin_definition
-   *   The plugin definition.
-   * @param \Drupal\oe_ai_assistant\Service\Drafting\DraftingBriefInterface $brief
-   *   Reads what the session drafts with.
-   * @param \Drupal\ai_neuron\Agent\NeuronAgentManagerInterface $agents
-   *   Builds the drafter a group is written by.
-   */
   public function __construct(
     array $configuration,
     $plugin_id,
@@ -41,6 +27,39 @@ abstract class DraftingToolBase extends NeuronToolPluginBase {
     private readonly NeuronAgentManagerInterface $agents,
   ) {
     parent::__construct($configuration, $plugin_id, $plugin_definition);
+  }
+
+  /**
+   * Shapes what the editor set up into the snapshot stored on a draft.
+   *
+   * Ids travel with the labels read at request time, so a draft keeps what the
+   * editor saw even if a term or a template is renamed later. The groups travel
+   * with it as well, so a draft can be revised against the structure it was
+   * written with. The file name and the extracted text stay out: a draft
+   * records which documents were used, not their contents.
+   *
+   * @param array|null $tone
+   *   The tone the editor selected, or NULL when none is.
+   * @param array|null $template
+   *   The template the editor selected, or NULL when none is.
+   * @param array $documents
+   *   The documents the editor attached.
+   * @param array $groups
+   *   The groups the draft is written against.
+   *
+   * @return array
+   *   The snapshot.
+   */
+  public static function snapshot(?array $tone, ?array $template, array $documents, array $groups): array {
+    return [
+      'tone' => $tone,
+      'template' => $template,
+      'documents' => array_map(static function (array $document): array {
+        unset($document['filename'], $document['extract']);
+        return $document;
+      }, $documents),
+      'groups' => $groups,
+    ];
   }
 
   /**
@@ -112,39 +131,6 @@ abstract class DraftingToolBase extends NeuronToolPluginBase {
       $this->brief->documents($session),
       $this->brief->groups($session),
     );
-  }
-
-  /**
-   * Shapes what the editor set up into the snapshot stored on a draft.
-   *
-   * Ids travel with the labels read at request time, so a draft keeps what the
-   * editor saw even if a term or a template is renamed later. The groups travel
-   * with it as well, so a draft can be revised against the structure it was
-   * written with. The file name and the extracted text stay out: a draft
-   * records which documents were used, not their contents.
-   *
-   * @param array|null $tone
-   *   The tone the editor selected, or NULL when none is.
-   * @param array|null $template
-   *   The template the editor selected, or NULL when none is.
-   * @param array $documents
-   *   The documents the editor attached.
-   * @param array $groups
-   *   The groups the draft is written against.
-   *
-   * @return array
-   *   The snapshot.
-   */
-  public static function snapshot(?array $tone, ?array $template, array $documents, array $groups): array {
-    return [
-      'tone' => $tone,
-      'template' => $template,
-      'documents' => array_map(static function (array $document): array {
-        unset($document['filename'], $document['extract']);
-        return $document;
-      }, $documents),
-      'groups' => $groups,
-    ];
   }
 
 }

@@ -9,7 +9,6 @@ use Drupal\Core\Plugin\Context\ContextDefinition;
 use Drupal\Core\Plugin\Context\EntityContextDefinition;
 use Drupal\Core\StringTranslation\TranslatableMarkup;
 use Drupal\oe_ai_assistant\Neuron\Agent\SchemaAgent;
-use Drupal\oe_ai_assistant\Neuron\Chat\History\ThreadAddress;
 use NeuronAI\Agent\AgentInterface;
 use NeuronAI\Agent\AgentRunOptions;
 use NeuronAI\Agent\Events\AgentStartEvent;
@@ -53,67 +52,14 @@ final class FieldGroupNeuronAgent extends EditorialSessionAgentBase {
   private const MAX_SCHEMA_RETRIES = 5;
 
   /**
-   * The instructions every run starts from.
+   * What marks a thread segment as one run of this drafter.
    */
-  public const INSTRUCTIONS = <<<'PROMPT'
-    You are a content generator. You will receive a JSON schema and
-    instructions describing what content to produce. Generate a JSON
-    object that conforms exactly to the given schema. Return ONLY
-    valid JSON with no markdown fencing, no explanation, no commentary.
-
-    Every field value is an array of items, each item an object with
-    the property keys the schema lists, for example
-    "field_teaser": [{"value": "Short teaser"}]. Use only the property
-    names the schema defines, exactly as written, and match its
-    array, object and property shape.
-
-    For formatted text fields, produce clean HTML.
-    Match the language and tone described in the instructions.
-    PROMPT;
+  private const RUN_PREFIX = 'run_';
 
   /**
-   * The group this run answers for.
-   *
-   * @return string
-   *   The group id, which names the run and routes its structured output.
+   * What marks a thread segment as the group a run answered for.
    */
-  private function group(): string {
-    return (string) $this->getContextValue('group');
-  }
-
-  /**
-   * {@inheritdoc}
-   *
-   * The tone steers what the drafter writes, and the documents are the
-   * material it writes from, so a drafter is told both.
-   */
-  protected function instructions(): string {
-    $session = $this->session();
-    $blocks = array_filter([
-      self::tonePrompt($this->brief->tone($session)),
-      self::documentsPrompt($this->brief->documents($session)),
-    ]);
-
-    return $blocks === []
-      ? self::INSTRUCTIONS
-      : self::INSTRUCTIONS . "\n\n" . implode("\n\n", $blocks) . "\n";
-  }
-
-  /**
-   * {@inheritdoc}
-   *
-   * One thread per run, so a drafter is asked for one answer and never replays
-   * the answer it gave for an earlier draft. The random segment is what keeps
-   * two runs of one group apart; the session and the group are there so a
-   * reader can tell whose run it was.
-   */
-  protected function threadKey(): string {
-    return ThreadAddress::nested(
-      (string) $this->session()->id(),
-      bin2hex(random_bytes(4)),
-      $this->group(),
-    );
-  }
+  private const GROUP_PREFIX = 'group_';
 
   /**
    * {@inheritdoc}
@@ -139,6 +85,58 @@ final class FieldGroupNeuronAgent extends EditorialSessionAgentBase {
     $this->applyMiddleware($agent);
 
     return $agent;
+  }
+
+  /**
+   * {@inheritdoc}
+   *
+   * The tone steers what the drafter writes, and the documents are the
+   * material it writes from, so a drafter is told both.
+   */
+  protected function instructions(): string {
+    $instructions = <<<'PROMPT'
+    You are a content generator. You will receive a JSON schema and
+    instructions describing what content to produce. Generate a JSON
+    object that conforms exactly to the given schema. Return ONLY
+    valid JSON with no markdown fencing, no explanation, no commentary.
+
+    Every field value is an array of items, each item an object with
+    the property keys the schema lists, for example
+    "field_teaser": [{"value": "Short teaser"}]. Use only the property
+    names the schema defines, exactly as written, and match its
+    array, object and property shape.
+
+    For formatted text fields, produce clean HTML.
+    Match the language and tone described in the instructions.
+    PROMPT;
+
+    $blocks = array_filter([$this->tonePrompt(), $this->documentsPrompt()]);
+
+    return $blocks === []
+      ? $instructions
+      : $instructions . "\n\n" . implode("\n\n", $blocks) . "\n";
+  }
+
+  /**
+   * {@inheritdoc}
+   *
+   * One thread per run, so a drafter is asked for one answer and never replays
+   * the answer it gave for an earlier draft. The random segment is what keeps
+   * two runs of one group apart; the session and the group are there so a
+   * reader can tell whose run it was.
+   */
+  protected function threadKey(): string {
+    return self::RUN_PREFIX . bin2hex(random_bytes(4)) . '.' . self::GROUP_PREFIX . $this->group();
+  }
+
+  /**
+   * The group this run answers for.
+   *
+   * @return string
+   *   The group id, which names the run and routes its structured output.
+   */
+  private function group(): string {
+    return (string) $this->getContextValue('group');
   }
 
 }

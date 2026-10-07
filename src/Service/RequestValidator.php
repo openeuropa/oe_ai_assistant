@@ -97,6 +97,26 @@ class RequestValidator {
   }
 
   /**
+   * Formats the errors of a finished validation, one line each.
+   *
+   * @param \JsonSchema\Validator $validator
+   *   The validator after validate() ran.
+   *
+   * @return string[]
+   *   Human-readable messages, empty when the data was valid. Each is
+   *   prefixed with the dot-notation JSON path of the failing field when
+   *   there is one (e.g. "fields.title: ..."); a root-level error has none.
+   */
+  public static function formatErrors(Validator $validator): array {
+    $errors = [];
+    foreach ($validator->getErrors() as $error) {
+      $path = $error['property'] ? $error['property'] . ': ' : '';
+      $errors[] = $path . $error['message'];
+    }
+    return $errors;
+  }
+
+  /**
    * Validates decoded data against a named schema.
    *
    * @param mixed $data
@@ -126,26 +146,6 @@ class RequestValidator {
     $validator->validate($data, $schema, $checkMode);
 
     return self::formatErrors($validator);
-  }
-
-  /**
-   * Formats the errors of a finished validation, one line each.
-   *
-   * @param \JsonSchema\Validator $validator
-   *   The validator after validate() ran.
-   *
-   * @return string[]
-   *   Human-readable messages, empty when the data was valid. Each is
-   *   prefixed with the dot-notation JSON path of the failing field when
-   *   there is one (e.g. "fields.title: ..."); a root-level error has none.
-   */
-  public static function formatErrors(Validator $validator): array {
-    $errors = [];
-    foreach ($validator->getErrors() as $error) {
-      $path = $error['property'] ? $error['property'] . ': ' : '';
-      $errors[] = $path . $error['message'];
-    }
-    return $errors;
   }
 
   /**

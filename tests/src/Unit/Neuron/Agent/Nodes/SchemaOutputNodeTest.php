@@ -46,53 +46,6 @@ class SchemaOutputNodeTest extends TestCase {
   ];
 
   /**
-   * Builds the state and resources a run of the node reads.
-   *
-   * @return array
-   *   The agent state and the agent resources.
-   */
-  private function context(FakeAIProvider $provider, int $maxRetries = 1): array {
-    $state = new AgentState();
-    $state->request = new InferenceRequest(
-      new SystemMessage('Draft the fields.'),
-      [new UserMessage('Write about broadband.')],
-    );
-    $state->request->options->maxRetries = $maxRetries;
-    $state->request->options->outputClass = 'main_fields';
-
-    $resources = new AgentResources(
-      $provider,
-      new ChatHistory(new InMemoryMessageStore(), 'test.1'),
-      $state->request->instructions,
-    );
-
-    return [$state, $resources];
-  }
-
-  /**
-   * Drives the two nodes the way the agent graph routes between them.
-   *
-   * A violation event returns to the retry node, which either asks the
-   * model again through a fresh inference event or gives up.
-   */
-  private function runNodes(FakeAIProvider $provider, int $maxRetries = 1): AgentState {
-    [$state, $resources] = $this->context($provider, $maxRetries);
-    $output = new SchemaOutputNode('main_fields', self::SCHEMA);
-    $retry = new SchemaRetryNode();
-    $event = new StructuredInferenceEvent();
-
-    while (TRUE) {
-      $result = $output($event, $state, $resources);
-      if ($result instanceof AgentOutputEvent) {
-        return $state;
-      }
-      $this->assertInstanceOf(SchemaViolationEvent::class, $result);
-      $event = $retry($result, $state);
-      $this->assertInstanceOf(StructuredInferenceEvent::class, $event);
-    }
-  }
-
-  /**
    * @covers ::__invoke
    */
   public function testMatchingAnswerIsDecodedAndSchemaIsQuoted(): void {
@@ -161,6 +114,53 @@ class SchemaOutputNodeTest extends TestCase {
     $this->expectException(AgentException::class);
     $this->expectExceptionMessage('does not match its schema');
     $this->runNodes($provider);
+  }
+
+  /**
+   * Builds the state and resources a run of the node reads.
+   *
+   * @return array
+   *   The agent state and the agent resources.
+   */
+  private function context(FakeAIProvider $provider, int $maxRetries = 1): array {
+    $state = new AgentState();
+    $state->request = new InferenceRequest(
+      new SystemMessage('Draft the fields.'),
+      [new UserMessage('Write about broadband.')],
+    );
+    $state->request->options->maxRetries = $maxRetries;
+    $state->request->options->outputClass = 'main_fields';
+
+    $resources = new AgentResources(
+      $provider,
+      new ChatHistory(new InMemoryMessageStore(), 'test.1'),
+      $state->request->instructions,
+    );
+
+    return [$state, $resources];
+  }
+
+  /**
+   * Drives the two nodes the way the agent graph routes between them.
+   *
+   * A violation event returns to the retry node, which either asks the
+   * model again through a fresh inference event or gives up.
+   */
+  private function runNodes(FakeAIProvider $provider, int $maxRetries = 1): AgentState {
+    [$state, $resources] = $this->context($provider, $maxRetries);
+    $output = new SchemaOutputNode('main_fields', self::SCHEMA);
+    $retry = new SchemaRetryNode();
+    $event = new StructuredInferenceEvent();
+
+    while (TRUE) {
+      $result = $output($event, $state, $resources);
+      if ($result instanceof AgentOutputEvent) {
+        return $state;
+      }
+      $this->assertInstanceOf(SchemaViolationEvent::class, $result);
+      $event = $retry($result, $state);
+      $this->assertInstanceOf(StructuredInferenceEvent::class, $event);
+    }
   }
 
 }

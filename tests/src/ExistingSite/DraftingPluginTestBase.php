@@ -8,7 +8,7 @@ use Drupal\Core\Entity\ContentEntityInterface;
 use Drupal\Core\Url;
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
 use Drupal\oe_ai_assistant\Neuron\Chat\History\SessionConversation;
-use Drupal\oe_ai_assistant\Neuron\Chat\History\ThreadAddress;
+use Drupal\oe_ai_assistant\Neuron\Chat\History\EditorialMessageStore;
 use Drupal\oe_ai_assistant_test\Plugin\AiProvider\MockAiProvider;
 use Drupal\oe_ai_assistant_test\Plugin\AiProvider\MockResponse;
 use Drupal\Tests\oe_ai_assistant\Traits\ExistingSiteConfigBackupTrait;
@@ -175,43 +175,6 @@ abstract class DraftingPluginTestBase extends ExistingSiteBase {
   }
 
   /**
-   * Writes one row of the session's drafting thread.
-   *
-   * @param \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $session
-   *   The session hosting the conversation.
-   * @param string $role
-   *   The Neuron message role.
-   * @param string $content
-   *   The message text, which becomes its one text block.
-   * @param array $meta
-   *   Everything the message serializes other than its role and content.
-   * @param int|null $uid
-   *   The author, or NULL for a row nobody wrote.
-   */
-  private function seedRow(AiEditorialSessionInterface $session, string $role, string $content, array $meta, ?int $uid): void {
-    $storage = \Drupal::entityTypeManager()->getStorage('neuron_message');
-    $threadId = $this->threadOf($session);
-    // A row the editor wrote opens a turn; a tool result joins the turn that
-    // called it, which is the distinction the store itself makes.
-    $opensTurn = $role === 'user' && ($meta['type'] ?? '') !== 'tool_call_result';
-
-    $this->seeded[] = $id = sprintf('msg_seed_%s_%d', $session->id(), count($this->seeded));
-    $storage->create([
-      'bundle' => 'editorial_session',
-      'oe_ai_session' => (int) $session->id(),
-      'thread_id' => $threadId,
-      'message_id' => $id,
-      'role' => $role,
-      'content' => json_encode([['type' => 'text', 'content' => $content, 'meta' => []]]),
-      'meta' => $meta === [] ? NULL : json_encode($meta + ['__id' => $id]),
-      'turn' => $storage->nextTurn($threadId, $opensTurn),
-      'complete' => TRUE,
-      'agent_id' => self::AGENT_ID,
-      'uid' => $uid,
-    ])->save();
-  }
-
-  /**
    * Seeds a stored draft on the transcript, as the drafting flow records it.
    *
    * An assistant turn carrying a draft_group tool call whose result holds
@@ -356,7 +319,8 @@ abstract class DraftingPluginTestBase extends ExistingSiteBase {
    *   The thread id.
    */
   protected function threadOf(AiEditorialSessionInterface $session): string {
-    return ThreadAddress::thread(self::AGENT_ID, (string) $session->id());
+    return EditorialMessageStore::SESSION_PREFIX . $session->id()
+      . '.' . EditorialMessageStore::AGENT_PREFIX . self::AGENT_ID;
   }
 
   /**
@@ -604,6 +568,43 @@ abstract class DraftingPluginTestBase extends ExistingSiteBase {
     }
 
     return NULL;
+  }
+
+  /**
+   * Writes one row of the session's drafting thread.
+   *
+   * @param \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $session
+   *   The session hosting the conversation.
+   * @param string $role
+   *   The Neuron message role.
+   * @param string $content
+   *   The message text, which becomes its one text block.
+   * @param array $meta
+   *   Everything the message serializes other than its role and content.
+   * @param int|null $uid
+   *   The author, or NULL for a row nobody wrote.
+   */
+  private function seedRow(AiEditorialSessionInterface $session, string $role, string $content, array $meta, ?int $uid): void {
+    $storage = \Drupal::entityTypeManager()->getStorage('neuron_message');
+    $threadId = $this->threadOf($session);
+    // A row the editor wrote opens a turn; a tool result joins the turn that
+    // called it, which is the distinction the store itself makes.
+    $opensTurn = $role === 'user' && ($meta['type'] ?? '') !== 'tool_call_result';
+
+    $this->seeded[] = $id = sprintf('msg_seed_%s_%d', $session->id(), count($this->seeded));
+    $storage->create([
+      'bundle' => 'editorial_session',
+      'oe_ai_session' => (int) $session->id(),
+      'thread_id' => $threadId,
+      'message_id' => $id,
+      'role' => $role,
+      'content' => json_encode([['type' => 'text', 'content' => $content, 'meta' => []]]),
+      'meta' => $meta === [] ? NULL : json_encode($meta + ['__id' => $id]),
+      'turn' => $storage->nextTurn($threadId, $opensTurn),
+      'complete' => TRUE,
+      'agent_id' => self::AGENT_ID,
+      'uid' => $uid,
+    ])->save();
   }
 
 }

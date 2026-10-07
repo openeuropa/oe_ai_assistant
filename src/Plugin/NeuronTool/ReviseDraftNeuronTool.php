@@ -54,33 +54,6 @@ final class ReviseDraftNeuronTool extends DraftingToolBase {
   }
 
   /**
-   * {@inheritdoc}
-   */
-  protected function properties(): array {
-    return [
-      new ToolProperty(
-        'instruction',
-        PropertyType::STRING,
-        'The change to apply, in the terms the user asked for it.',
-        TRUE,
-      ),
-      new ArrayProperty(
-        'groups',
-        'The ids of the field groups the change is limited to. Leave it out'
-        . ' to apply the change to the whole draft, which is what a request'
-        . ' that does not point at particular fields means.',
-        FALSE,
-        new ToolProperty('group', PropertyType::STRING),
-      ),
-      new ToolProperty(
-        'version',
-        PropertyType::INTEGER,
-        'The version to revise. Defaults to the most recent draft.',
-      ),
-    ];
-  }
-
-  /**
    * Revises the named groups of a stored draft and versions the result.
    */
   public function __invoke(string $instruction, ?array $groups = NULL, ?int $version = NULL): string {
@@ -148,6 +121,33 @@ final class ReviseDraftNeuronTool extends DraftingToolBase {
         'fields' => $collector->fields(),
       ],
     ]);
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  protected function properties(): array {
+    return [
+      new ToolProperty(
+        'instruction',
+        PropertyType::STRING,
+        'The change to apply, in the terms the user asked for it.',
+        TRUE,
+      ),
+      new ArrayProperty(
+        'groups',
+        'The ids of the field groups the change is limited to. Leave it out'
+        . ' to apply the change to the whole draft, which is what a request'
+        . ' that does not point at particular fields means.',
+        FALSE,
+        new ToolProperty('group', PropertyType::STRING),
+      ),
+      new ToolProperty(
+        'version',
+        PropertyType::INTEGER,
+        'The version to revise. Defaults to the most recent draft.',
+      ),
+    ];
   }
 
   /**

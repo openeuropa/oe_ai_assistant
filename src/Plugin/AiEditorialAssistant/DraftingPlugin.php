@@ -239,26 +239,6 @@ class DraftingPlugin extends AiAssistantPluginBase {
   }
 
   /**
-   * Serializes internal prompt-ready tone options for frontend bootstrap.
-   *
-   * @param array<int, array{id: string, label: string, description: string, oe_ai_prompt: string}> $options
-   *   The prompt-ready service options.
-   *
-   * @return array<int, array{id: string, label: string, description: string}>
-   *   Frontend-safe tone options.
-   */
-  private function serializeToneOptions(array $options): array {
-    return array_map(
-      static fn (array $option): array => [
-        'id' => $option['id'],
-        'label' => $option['label'],
-        'description' => $option['description'],
-      ],
-      $options,
-    );
-  }
-
-  /**
    * Streams an AI chat response via SSE.
    *
    * The turn workflow routes the message, drafts on the router's signal and
@@ -285,34 +265,6 @@ class DraftingPlugin extends AiAssistantPluginBase {
     $agent = $this->buildAgent($body);
 
     return $this->streamRun($agent->stream(new UserMessage($message)), $agent);
-  }
-
-  /**
-   * Builds the drafting agent for the session the request names.
-   *
-   * The agent and its tools are plugins, so a manager builds them and no
-   * caller can hand them anything: the session travels as the configuration
-   * the manager passes on, and the agent reads the rest off it.
-   *
-   * @param array $body
-   *   The decoded request body, which names the session.
-   *
-   * @return \NeuronAI\Agent\AgentInterface
-   *   The agent.
-   *
-   * @throws \Drupal\oe_ai_assistant\Exception\ActionException
-   *   When the session is unknown, or its stored template or tone is not one
-   *   the bundle can draft with.
-   */
-  private function buildAgent(array $body): AgentInterface {
-    $session = $this->loadSession($body);
-
-    try {
-      return $this->agentManager->createAgent('drafting', ['session' => $session]);
-    }
-    catch (\InvalidArgumentException $e) {
-      throw new ActionException('invalid_request', $e->getMessage(), 400);
-    }
   }
 
   /**
@@ -375,65 +327,6 @@ class DraftingPlugin extends AiAssistantPluginBase {
     $answer = $decision === 'reject' && $reason !== '' ? ['reject', $reason] : $decision;
 
     return $this->streamRun($agent->submitApprovalDecisions([$callId => $answer])->events(), $agent);
-  }
-
-  /**
-   * Streams an agent run as UI message stream events.
-   *
-   * Neuron yields the protocol events and frames them; the response, the
-   * flush and what is sent after the run are the host's. A failure mid-stream
-   * degrades into an error event, since an exception would print an HTML page
-   * into the stream.
-   */
-  private function streamRun(\Generator $run, AgentInterface $agent): Response {
-    $response = new AiStreamedResponse(NULL, 200, (new VercelAIAdapter())->getHeaders());
-    $response->setCallback(function () use ($run, $agent): void {
-      set_time_limit(0);
-      $emit = static function (ProtocolEvent $event): void {
-        echo SSEEncoder::frame($event);
-        flush();
-      };
-
-      // The event closing the stream is held back: the app stops reading the
-      // message once it arrives, and a suspended run has a question to ask
-      // first.
-      $terminal = NULL;
-      try {
-        foreach ($run as $protocolEvent) {
-          if (in_array($protocolEvent->type, ['finish', 'error'], TRUE)) {
-            $terminal = $protocolEvent;
-            continue;
-          }
-          $emit($protocolEvent);
-        }
-      }
-      catch (\Throwable $e) {
-        $this->logger->error('Drafting turn failed: @message', ['@message' => $e->getMessage()]);
-        $terminal = new ProtocolEvent('error', ['errorText' => 'The assistant request failed. Please try again.']);
-      }
-
-      // A gated tool call suspends the run with no part of its own in the
-      // stream, so the request is sent here rather than left for the app to go
-      // and ask for.
-      $approvals = array_map(
-        static fn (Action $action): array => $action->jsonSerialize(),
-        $agent->pendingApprovals(),
-      );
-      if ($approvals !== []) {
-        $emit(new ProtocolEvent('data-approval-request', ['data' => ['approvals' => $approvals]]));
-      }
-      if ($terminal instanceof ProtocolEvent) {
-        $emit($terminal);
-      }
-
-      // Neuron stopped sending the sentinel, since a protocol does not get to
-      // decide how a transport ends. The decoder the app runs still reads a
-      // stream without it as truncated, so the transport sends it.
-      echo "data: [DONE]\n\n";
-      flush();
-    });
-
-    return $response;
   }
 
   /**
@@ -664,6 +557,113 @@ class DraftingPlugin extends AiAssistantPluginBase {
     [$repository, $session, $documentId] = $this->resolveDocumentRequest($request);
 
     return ['status' => $repository->extract($session, $documentId)];
+  }
+
+  /**
+   * Serializes internal prompt-ready tone options for frontend bootstrap.
+   *
+   * @param array<int, array{id: string, label: string, description: string, oe_ai_prompt: string}> $options
+   *   The prompt-ready service options.
+   *
+   * @return array<int, array{id: string, label: string, description: string}>
+   *   Frontend-safe tone options.
+   */
+  private function serializeToneOptions(array $options): array {
+    return array_map(
+      static fn (array $option): array => [
+        'id' => $option['id'],
+        'label' => $option['label'],
+        'description' => $option['description'],
+      ],
+      $options,
+    );
+  }
+
+  /**
+   * Builds the drafting agent for the session the request names.
+   *
+   * The agent and its tools are plugins, so a manager builds them and no
+   * caller can hand them anything: the session travels as the configuration
+   * the manager passes on, and the agent reads the rest off it.
+   *
+   * @param array $body
+   *   The decoded request body, which names the session.
+   *
+   * @return \NeuronAI\Agent\AgentInterface
+   *   The agent.
+   *
+   * @throws \Drupal\oe_ai_assistant\Exception\ActionException
+   *   When the session is unknown, or its stored template or tone is not one
+   *   the bundle can draft with.
+   */
+  private function buildAgent(array $body): AgentInterface {
+    $session = $this->loadSession($body);
+
+    try {
+      return $this->agentManager->createAgent('drafting', ['session' => $session]);
+    }
+    catch (\InvalidArgumentException $e) {
+      throw new ActionException('invalid_request', $e->getMessage(), 400);
+    }
+  }
+
+  /**
+   * Streams an agent run as UI message stream events.
+   *
+   * Neuron yields the protocol events and frames them; the response, the
+   * flush and what is sent after the run are the host's. A failure mid-stream
+   * degrades into an error event, since an exception would print an HTML page
+   * into the stream.
+   */
+  private function streamRun(\Generator $run, AgentInterface $agent): Response {
+    $response = new AiStreamedResponse(NULL, 200, (new VercelAIAdapter())->getHeaders());
+    $response->setCallback(function () use ($run, $agent): void {
+      set_time_limit(0);
+      $emit = static function (ProtocolEvent $event): void {
+        echo SSEEncoder::frame($event);
+        flush();
+      };
+
+      // The event closing the stream is held back: the app stops reading the
+      // message once it arrives, and a suspended run has a question to ask
+      // first.
+      $terminal = NULL;
+      try {
+        foreach ($run as $protocolEvent) {
+          if (in_array($protocolEvent->type, ['finish', 'error'], TRUE)) {
+            $terminal = $protocolEvent;
+            continue;
+          }
+          $emit($protocolEvent);
+        }
+      }
+      catch (\Throwable $e) {
+        $this->logger->error('Drafting turn failed: @message', ['@message' => $e->getMessage()]);
+        $terminal = new ProtocolEvent('error', ['errorText' => 'The assistant request failed. Please try again.']);
+      }
+
+      // A gated tool call suspends the run with no part of its own in the
+      // stream, so the request is sent here rather than left for the app to go
+      // and ask for.
+      $approvals = array_map(
+        static fn (Action $action): array => $action->jsonSerialize(),
+        $agent->pendingApprovals(),
+      );
+      if ($approvals !== []) {
+        $emit(new ProtocolEvent('data-approval-request', ['data' => ['approvals' => $approvals]]));
+      }
+      if ($terminal instanceof ProtocolEvent) {
+        $emit($terminal);
+      }
+
+      // Neuron stopped sending the sentinel, since a protocol does not get to
+      // decide how a transport ends. The decoder the app runs still reads a
+      // stream without it as truncated, so the transport sends it.
+      echo "data: [DONE]\n\n";
+      flush();
+    });
+
+    return $response;
   }
 
   /**

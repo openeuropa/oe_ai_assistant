@@ -9,7 +9,7 @@ use Drupal\ai_neuron\Attribute\NeuronTool;
 use Drupal\Core\Plugin\Context\EntityContextDefinition;
 use Drupal\Core\StringTranslation\TranslatableMarkup;
 use NeuronAI\Chat\History\MessageStoreInterface;
-use Drupal\oe_ai_assistant\Neuron\Chat\History\ThreadAddress;
+use Drupal\oe_ai_assistant\Neuron\Chat\History\EditorialMessageStore;
 use Drupal\oe_ai_assistant\Service\Drafting\DraftCollector;
 use Drupal\oe_ai_assistant\Service\Drafting\DraftHistoryInterface;
 use Drupal\oe_ai_assistant\Service\Drafting\DraftingBriefInterface;
@@ -72,21 +72,6 @@ final class DraftGroupNeuronTool extends DraftingToolBase {
   }
 
   /**
-   * {@inheritdoc}
-   */
-  protected function properties(): array {
-    return [
-      new ToolProperty(
-        'group',
-        PropertyType::STRING,
-        'The id of the field group to draft.',
-        TRUE,
-        $this->collector()->groupIds(),
-      ),
-    ];
-  }
-
-  /**
    * Drafts the group and reports the values, pending groups and draft.
    */
   public function __invoke(string $group): string {
@@ -113,6 +98,21 @@ final class DraftGroupNeuronTool extends DraftingToolBase {
     }
 
     return json_encode($result);
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  protected function properties(): array {
+    return [
+      new ToolProperty(
+        'group',
+        PropertyType::STRING,
+        'The id of the field group to draft.',
+        TRUE,
+        $this->collector()->groupIds(),
+      ),
+    ];
   }
 
   /**
@@ -144,7 +144,10 @@ final class DraftGroupNeuronTool extends DraftingToolBase {
    */
   private function task(): string {
     $lines = [];
-    $thread = ThreadAddress::thread('drafting', (string) $this->session()->id());
+    // What the editor and the agent said, read from the thread the drafting
+    // agent holds its conversation under: the session and then the agent.
+    $thread = EditorialMessageStore::SESSION_PREFIX . $this->session()->id()
+      . '.' . EditorialMessageStore::AGENT_PREFIX . 'drafting';
     foreach ($this->store->loadActive($thread) as $message) {
       foreach ($message->getTextBlocks() as $block) {
         $lines[] = $message->getRole() . ': ' . $block->content;
