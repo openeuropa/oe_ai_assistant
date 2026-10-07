@@ -264,8 +264,16 @@ export function DraftPreview({
   // it cannot see yet. The pane itself shows the draft from the stream
   // meanwhile, and the Data tab stays readable throughout.
   const isRunning = useAuiState((s) => s.thread.isRunning);
+  // Waited for once per draft: a later turn is about something else, and
+  // emptying the URL again would reload the frame for no reason.
+  const [storedVersion, setStoredVersion] = useState<number | null>(null);
+  useEffect(() => {
+    if (!isRunning) {
+      setStoredVersion(versionId);
+    }
+  }, [isRunning, versionId]);
   const previewUrl =
-    hasLivePreview && !isRunning
+    hasLivePreview && storedVersion === versionId
       ? buildPreviewUrl(urlTemplate, sessionId, versionId)
       : "";
 
