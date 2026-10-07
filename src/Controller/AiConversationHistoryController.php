@@ -135,7 +135,7 @@ class AiConversationHistoryController extends ControllerBase {
    *   The rows of the thread, oldest first.
    *
    * @return array
-   *   The table render array.
+   *   The heading and the table of the thread.
    */
   private function buildThread(string $threadId, array $rows): array {
     $tableRows = [];
@@ -144,23 +144,30 @@ class AiConversationHistoryController extends ControllerBase {
     }
 
     return [
-      '#type' => 'table',
-      '#caption' => $this->t('@thread (@count messages, @tokens tokens)', [
-        '@thread' => $threadId,
-        '@count' => count($rows),
-        '@tokens' => $this->sumTokens($rows),
-      ]),
-      '#header' => [
-        $this->t('Role'),
-        $this->t('Turn'),
-        $this->t('Agent'),
-        $this->t('Author'),
-        $this->t('Created'),
-        $this->t('Content'),
+      '#type' => 'container',
+      'title' => [
+        '#type' => 'html_tag',
+        '#tag' => 'h4',
+        '#value' => $this->t('@thread (@count messages, @tokens tokens)', [
+          '@thread' => $threadId,
+          '@count' => count($rows),
+          '@tokens' => $this->sumTokens($rows),
+        ]),
       ],
-      '#rows' => $tableRows,
-      '#sticky' => TRUE,
-      '#attributes' => ['class' => ['ai-history-table']],
+      'table' => [
+        '#type' => 'table',
+        '#header' => [
+          $this->t('Role'),
+          $this->t('Turn'),
+          $this->t('Agent'),
+          $this->t('Author'),
+          $this->t('Created'),
+          $this->t('Content'),
+        ],
+        '#rows' => $tableRows,
+        '#sticky' => TRUE,
+        '#attributes' => ['class' => ['ai-history-table']],
+      ],
     ];
   }
 
