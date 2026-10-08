@@ -19,6 +19,7 @@ use Drupal\document_loader\Service\DocumentLoaderManager;
 use Drupal\file\FileInterface;
 use Drupal\media\MediaInterface;
 use Drupal\oe_ai_assistant\Exception\DocumentExtractionException;
+use Drupal\oe_ai_assistant\Service\MessageRecorderInterface;
 use Drupal\state_machine\Plugin\Field\FieldType\StateItemInterface;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
@@ -74,6 +75,7 @@ final class DocumentExtractionProcessor implements DocumentExtractionProcessorIn
     #[Autowire(service: 'logger.channel.oe_ai_assistant')]
     private readonly LoggerInterface $logger,
     private readonly TimeInterface $time,
+    private readonly MessageRecorderInterface $messageRecorder,
   ) {}
 
   /**
@@ -230,7 +232,7 @@ final class DocumentExtractionProcessor implements DocumentExtractionProcessorIn
         $this->transition($media, 'claim_summarize');
       }
 
-      $summary = $this->summarize((string) $media->get(self::EXTRACT_FIELD)->value);
+      $summary = $this->summarize($media, (string) $media->get(self::EXTRACT_FIELD)->value);
       if ($this->isDeleted($media)) {
         return self::STATE_SUMMARIZING;
       }
@@ -300,7 +302,7 @@ final class DocumentExtractionProcessor implements DocumentExtractionProcessorIn
    * The call is not streamed and the extract is capped so a long document
    * never overflows the model context.
    */
-  private function summarize(string $text): string {
+  private function summarize(MediaInterface $media, string $text): string {
     $defaults = $this->aiProviderManager->getDefaultProviderForOperationType('chat');
     if (empty($defaults['provider_id']) || empty($defaults['model_id'])) {
       throw new DocumentExtractionException('No default chat provider is configured.');
@@ -315,6 +317,14 @@ final class DocumentExtractionProcessor implements DocumentExtractionProcessorIn
     if ($summary === '') {
       throw new DocumentExtractionException('The provider returned an empty summary.');
     }
+
+    $this->messageRecorder->recordAssistant(
+      $media,
+      $output,
+      'document_summary',
+      $defaults['provider_id'],
+      $defaults['model_id'],
+    );
 
     return $summary;
   }
