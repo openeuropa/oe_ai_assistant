@@ -150,16 +150,19 @@ git tag "$(ddev dev-tag)" && git push origin --tags
 Session documents are turned into text and summarised so the drafting prompts
 can use them. The pipeline runs server-side on the document media entity:
 
-
 - Plain-text and Markdown files are read directly from Drupal's local file
   storage by the `oe_ai_assistant:flat_file` Document Loader plugin; they do
   not require Tika.
-- Word and PDF files are extracted through the `document_loader_tika`
-  submodule (an Apache Tika Document Loader plugin). In DDEV it runs as the
-  `tika` service from `.ddev/docker-compose.tika.yaml`, reachable from the web
-  container at `http://tika:9998`, the default of the submodule. Check it with
-  `ddev exec curl http://tika:9998/version`. Other environments override the
-  URL in `settings.php`:
+- An Apache Tika server extracts the text through the `document_loader_tika`
+  submodule (a Document Loader plugin). In DDEV it runs as the `tika` service
+  from `.ddev/docker-compose.tika.yaml`, reachable from the web container at
+  `http://tika:9998`. `web/sites/default/settings.ai.php` sets the extraction
+  mode, that URL and the path of the Tika app JAR shipped in the web image, so
+  switching mode in that live copy and running `ddev drush cr` tests either
+  source. `ddev install` seeds it from `.ddev/settings.ai.php`, which is where
+  the default belongs. Check the server with
+  `ddev exec curl http://tika:9998/version`. The submodule itself ships no
+  URL, so other environments set it in `settings.php`:
 
   ```php
   $config['document_loader_tika.settings']['url'] = 'http://tika.internal:9998';
