@@ -17,7 +17,6 @@ use Drupal\file\Upload\UploadedFileInterface;
 use Drupal\oe_ai_assistant\Service\Drafting\ContextDocumentRepository;
 use Drupal\oe_ai_assistant_test\Plugin\AiProvider\MockAiProvider;
 use Drupal\oe_ai_assistant_test\Plugin\AiProvider\MockResponse;
-use GuzzleHttp\Psr7\Response;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
@@ -31,8 +30,6 @@ use Symfony\Component\HttpFoundation\Request;
  */
 #[Group('oe_ai_assistant')]
 class DraftingPluginDocumentsTest extends AiEditorialSessionKernelTestBase {
-
-  use TikaMockTrait;
 
   /**
    * {@inheritdoc}
@@ -345,8 +342,6 @@ class DraftingPluginDocumentsTest extends AiEditorialSessionKernelTestBase {
    * Tests that add and list report the status and extract-document runs it.
    */
   public function testExtractDocumentAction(): void {
-    $tika = $this->mockTika();
-    $tika->append(new Response(200, [], 'Brief text'));
     MockAiProvider::enqueue(new MockResponse('Brief summary.'));
     $owner = $this->createUser();
     $this->container->get('current_user')->setAccount($owner);
