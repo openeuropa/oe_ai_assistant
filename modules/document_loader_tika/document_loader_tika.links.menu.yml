@@ -1,5 +1,0 @@
-document_loader_tika.settings:
-  title: 'Apache Tika server'
-  parent: document_loader.settings
-  description: 'Configure the Tika server used to extract document text'
-  route_name: document_loader_tika.settings_form
