@@ -26,7 +26,7 @@ drush en document_loader_tika
 
 ## Configuration
 
-Configure the extraction mode and timeout at Administration > Configuration > Media > Document Loader > Apache Tika
+Configure the extraction mode and timeout on the **Apache Tika** tab of the Document Loader settings
 (`/admin/config/media/document-loader/tika`). The default mode is **Tika server** with a 30-second timeout. The
 server URL and the app JAR path are empty, so set the one the chosen mode needs.
 
@@ -95,8 +95,9 @@ Document Loader settings.
 
 In server mode, an unreachable server, a non-200 response, or an empty body raises a `DocumentLoaderException` from
 the manager. In executable mode, the same happens when Java or the JAR cannot run, the command times out, exits
-unsuccessfully, or returns no text. The plugin reports itself unavailable when the selected source cannot return a
-version.
+unsuccessfully, or returns no text. The plugin reports itself unavailable when the selected source is not
+configured; it does not probe the source. A configured but unreachable source reports available and fails on
+extraction, which is what the status report entries are for.
 
 ## Logging
 
