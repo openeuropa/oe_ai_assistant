@@ -28,3 +28,11 @@ edit ai conversation message:
 
 delete ai conversation message:
   title: 'Delete AI conversation messages'
+
+administer ai content provenance:
+  title: 'Administer AI content provenance'
+  description: 'View, edit, and delete any AI content provenance record.'
+
+view ai content provenance:
+  title: 'View AI content provenance'
+  description: 'View which revisions were produced with AI assistance and their usage snapshot.'
