@@ -1,4 +1,4 @@
 mode: server
-url: 'http://tika:9998'
+url: ''
 jar_path: ''
 timeout: 30

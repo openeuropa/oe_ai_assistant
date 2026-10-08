@@ -27,8 +27,8 @@ drush en document_loader_tika
 ## Configuration
 
 Configure the extraction mode and timeout at Administration > Configuration > Media > Document Loader > Apache Tika
-(`/admin/config/media/document-loader/tika`). The default mode is **Tika server**, with URL `http://tika:9998` and a
-30-second timeout.
+(`/admin/config/media/document-loader/tika`). The default mode is **Tika server** with a 30-second timeout. The
+server URL and the app JAR path are empty, so set the one the chosen mode needs.
 
 ### Tika server
 

@@ -2,7 +2,7 @@
 
 /**
  * @file
- * AI provider configuration via environment variables.
+ * AI provider and document extraction configuration for this installation.
  *
  * Overrides the default AI provider and model settings using
  * environment variables. Set these in .ddev/.env:
@@ -13,6 +13,16 @@
  *
  * This file is included from settings.php during ddev install.
  */
+
+// Point the Tika document loader at the services of this installation: the
+// tika container from .ddev/docker-compose.tika.yaml and the app JAR baked
+// into the web image by .ddev/web-build/Dockerfile.tika. Both sources are
+// configured, so switching mode between 'server' and 'executable' below and
+// running "drush cr" is enough to test either one. The settings form shows
+// these three values as overridden and cannot change them.
+$config['document_loader_tika.settings']['mode'] = 'server';
+$config['document_loader_tika.settings']['url'] = 'http://tika:9998';
+$config['document_loader_tika.settings']['jar_path'] = '/usr/local/lib/tika-app.jar';
 
 // Skip AI provider overrides during automated tests. When
 // OE_AI_SKIP_PROVIDER_OVERRIDE is set, tests control the provider

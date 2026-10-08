@@ -48,6 +48,10 @@ class TikaLoaderTest extends KernelTestBase {
   protected function setUp(): void {
     parent::setUp();
     $this->installConfig(['document_loader_tika']);
+    // The shipped config carries no URL, so point it at the fake server.
+    $this->config('document_loader_tika.settings')
+      ->set('url', 'http://tika:9998')
+      ->save();
     $this->tika = new MockHandler();
     $stack = HandlerStack::create($this->tika);
     $stack->push(Middleware::history($this->history));
