@@ -36,16 +36,32 @@ export interface DraftingSetToneResponse {
   status: "ok";
 }
 
-/** Request body for saving a draft version (sessionId added by the helper). */
-export interface DraftingSaveRequest {
-  /** The draft version to save, as shown in the version rail. */
-  version: number;
+/**
+ * Request body for answering a waiting tool call.
+ *
+ * The sessionId is added by the helper.
+ */
+export interface DraftingSubmitApprovalRequest {
+  /** The tool call being answered. */
+  callId: string;
+  /** The editor's decision. */
+  decision: "approve" | "reject";
+  /** Why the call was rejected, which reaches the model. */
+  reason?: string;
 }
 
-/** Response body for the drafting save endpoint. */
-export interface DraftingSaveResponse {
-  nodeId: string;
-  previewUrl: string;
+/** What the save_draft tool answers with, as the thread carries it. */
+export interface SaveDraftResult {
+  /** The draft version that was written. */
+  version?: number;
+  /** The name of that draft, such as "Draft 2.0". */
+  name?: string;
+  /** The node the save wrote. */
+  nodeId?: string;
+  /** Where to preview that node. */
+  previewUrl?: string;
+  /** Why the save did not happen. */
+  error?: string;
 }
 
 /** Request body for setting the selected template. */

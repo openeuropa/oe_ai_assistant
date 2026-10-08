@@ -68,7 +68,7 @@ class CoreJsonSchemaTest extends KernelTestBase {
     'options',
     'key',
     'ai',
-    'ai_agents',
+    'ai_neuron',
     'oe_ai_assistant',
     'state_machine',
     'document_loader',
@@ -80,34 +80,6 @@ class CoreJsonSchemaTest extends KernelTestBase {
    * Directory under sys_get_temp_dir() where probe artifacts are written.
    */
   private const PROBE_DIR = '/oe-ai-assistant-plan/probe';
-
-  /**
-   * {@inheritdoc}
-   */
-  protected function setUp(): void {
-    parent::setUp();
-
-    $this->installEntitySchema('node');
-    $this->installEntitySchema('user');
-    $this->installEntitySchema('paragraph');
-    $this->installEntitySchema('content_moderation_state');
-    $this->installEntitySchema('file');
-    $this->installEntitySchema('taxonomy_term');
-
-    $this->installConfig([
-      'system',
-      'field',
-      'filter',
-      'node',
-      'oe_ai_assistant_test',
-    ]);
-
-    // Make sure the probe artifact directory exists for every test.
-    $probe_dir = sys_get_temp_dir() . self::PROBE_DIR;
-    if (!is_dir($probe_dir)) {
-      mkdir($probe_dir, 0777, TRUE);
-    }
-  }
 
   /**
    * Establishes the real Drupal core 11.3 JSON Schema API.
@@ -187,52 +159,6 @@ class CoreJsonSchemaTest extends KernelTestBase {
       json_encode($schema, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)
     );
     $this->assertFileExists($artifact_path);
-  }
-
-  /**
-   * Build a populated oe_news node so probe tests have realistic typed data.
-   *
-   * Uses NodeInterface::save() so computed values, defaults and constraints
-   * have been applied before we ask for normalization.
-   *
-   * @return \Drupal\node\NodeInterface
-   *   The persisted node.
-   */
-  private function buildOeNewsNode() {
-    $node = Node::create([
-      'type' => 'oe_news',
-      'title' => 'Probe title',
-      'field_body' => [
-        'value' => '<p>Probe body</p>',
-        'summary' => 'Probe summary',
-        'format' => 'plain_text',
-      ],
-      'field_teaser' => 'Probe teaser.',
-      'field_news_type' => 'announcement',
-      'field_publication_date' => '2026-04-17T08:00:00',
-    ]);
-    $node->save();
-    return $node;
-  }
-
-  /**
-   * Write a normalization probe result and return the path it was written to.
-   *
-   * @param string $name
-   *   File-name slug (no extension).
-   * @param mixed $result
-   *   The data returned by the normalizer.
-   *
-   * @return string
-   *   Absolute path to the JSON file written.
-   */
-  private function dumpProbe(string $name, mixed $result): string {
-    $path = sys_get_temp_dir() . self::PROBE_DIR . '/' . $name . '.json';
-    file_put_contents(
-      $path,
-      json_encode($result, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)
-    );
-    return $path;
   }
 
   /**
@@ -581,6 +507,80 @@ class CoreJsonSchemaTest extends KernelTestBase {
       'Inline paragraph data is silently dropped by core 11.3.8. ' .
       'If this assertion fails, core has landed inline paragraph creation; ' .
       'simplify DraftingPlugin::save() to drop the InlineEntityHydrator delegation.');
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  protected function setUp(): void {
+    parent::setUp();
+
+    $this->installEntitySchema('node');
+    $this->installEntitySchema('user');
+    $this->installEntitySchema('paragraph');
+    $this->installEntitySchema('content_moderation_state');
+    $this->installEntitySchema('file');
+    $this->installEntitySchema('taxonomy_term');
+
+    $this->installConfig([
+      'system',
+      'field',
+      'filter',
+      'node',
+      'oe_ai_assistant_test',
+    ]);
+
+    // Make sure the probe artifact directory exists for every test.
+    $probe_dir = sys_get_temp_dir() . self::PROBE_DIR;
+    if (!is_dir($probe_dir)) {
+      mkdir($probe_dir, 0777, TRUE);
+    }
+  }
+
+  /**
+   * Build a populated oe_news node so probe tests have realistic typed data.
+   *
+   * Uses NodeInterface::save() so computed values, defaults and constraints
+   * have been applied before we ask for normalization.
+   *
+   * @return \Drupal\node\NodeInterface
+   *   The persisted node.
+   */
+  private function buildOeNewsNode() {
+    $node = Node::create([
+      'type' => 'oe_news',
+      'title' => 'Probe title',
+      'field_body' => [
+        'value' => '<p>Probe body</p>',
+        'summary' => 'Probe summary',
+        'format' => 'plain_text',
+      ],
+      'field_teaser' => 'Probe teaser.',
+      'field_news_type' => 'announcement',
+      'field_publication_date' => '2026-04-17T08:00:00',
+    ]);
+    $node->save();
+    return $node;
+  }
+
+  /**
+   * Write a normalization probe result and return the path it was written to.
+   *
+   * @param string $name
+   *   File-name slug (no extension).
+   * @param mixed $result
+   *   The data returned by the normalizer.
+   *
+   * @return string
+   *   Absolute path to the JSON file written.
+   */
+  private function dumpProbe(string $name, mixed $result): string {
+    $path = sys_get_temp_dir() . self::PROBE_DIR . '/' . $name . '.json';
+    file_put_contents(
+      $path,
+      json_encode($result, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)
+    );
+    return $path;
   }
 
 }

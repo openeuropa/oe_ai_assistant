@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\oe_ai_assistant_test\Plugin\AiProvider;
 
+use Drupal\ai\OperationType\Chat\ChatOutput;
 use Drupal\ai\OperationType\Chat\StreamedChatMessageIterator;
 use Drupal\ai\OperationType\Chat\Tools\ToolsFunctionOutput;
 
@@ -119,6 +120,24 @@ class MockChatMessageIterator extends StreamedChatMessageIterator {
 
       yield $streamedMessage;
     }
+  }
+
+  /**
+   * {@inheritdoc}
+   *
+   * The base class assembles tool calls from the OpenAI delta format, which
+   * the mock never produces, and does so in a private method both accessors
+   * share. Setting them on the reconstructed message makes a consumer that
+   * reads the reconstruction see what getTools() reports.
+   */
+  public function reconstructChatOutput(): ChatOutput {
+    $output = parent::reconstructChatOutput();
+    $tools = $this->getTools();
+    if ($tools !== []) {
+      $output->getNormalized()->setTools($tools);
+    }
+
+    return $output;
   }
 
   /**

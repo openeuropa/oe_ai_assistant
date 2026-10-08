@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Drupal\Tests\oe_ai_assistant\ExistingSite;
 
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
+use Drupal\oe_ai_assistant\Neuron\Chat\History\SessionConversation;
 use Drupal\oe_ai_assistant_test\Plugin\AiProvider\MockAiProvider;
 use Drupal\oe_ai_assistant_test\Plugin\AiProvider\MockResponse;
 
@@ -14,7 +15,7 @@ use Drupal\oe_ai_assistant_test\Plugin\AiProvider\MockResponse;
  * Sends real HTTP POST requests to /api/ai/plugins/drafting/chat
  * with a mock AI provider and verifies the SSE response stream. The
  * conversation is scoped by an editorial session: history and turns
- * persist as ai_conversation_message rows hosted by the session.
+ * persist as the stored conversation of the session.
  */
 class DraftingPluginChatTest extends DraftingPluginTestBase {
 
@@ -43,8 +44,12 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
     // Verify SSE lifecycle events are present.
     $types = array_column($events, 'type');
     $this->assertContains('start', $types, 'SSE must include a start event.');
-    $this->assertContains('start-step', $types, 'SSE must include a start-step event.');
-    $this->assertContains('finish-step', $types, 'SSE must include a finish-step event.');
+
+    $this->assertSame(
+      ['user', 'assistant'],
+      array_column($this->getMessages($session), 'role'),
+      'The transcript holds the turn and nothing else.',
+    );
     $this->assertContains('finish', $types, 'SSE must include a finish event.');
 
     // Verify text-delta events contain the mock response text.
@@ -53,28 +58,29 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
 
     // Reconstruct the full streamed text from all text-delta events.
     $fullText = implode('', array_map(
-      fn($e) => $e['textDelta'] ?? '',
+      fn($e) => $e['delta'] ?? '',
       $textDeltas,
     ));
     $this->assertStringContainsString('Hello', $fullText,
       'Streamed text should contain the mock response.');
 
-    // Verify [DONE] terminator is present.
-    $this->assertStringContainsString('[DONE]', $result['body'],
-      'SSE stream must end with [DONE].');
+    // The last decoded event is the finish, and the raw stream still ends
+    // with the sentinel the app's decoder waits for.
+    $this->assertSame('finish', end($events)['type'],
+      'The last event must be the finish.');
+    $this->assertStringEndsWith("data: [DONE]\n\n", $result['body'],
+      'The stream must end with the sentinel the decoder waits for.');
 
-    // The turn is persisted: a user row and an assistant row are hosted by
-    // the session, and get-messages returns them as the transcript.
-    $transcript = $this->loadTranscript($session);
-    $roles = array_map(fn($m) => $m->getRole(), $transcript);
+    // The turn is persisted: a user row and an assistant row on the session's
+    // thread, which get-messages returns as the transcript.
+    $roles = array_map(
+      fn($row) => $row->get('role')->value,
+      $this->loadTranscript($session),
+    );
     $this->assertContains('user', $roles, 'A user turn must be persisted.');
     $this->assertContains('assistant', $roles, 'An assistant turn must be persisted.');
 
-    // Events are exercised in EditorialEventsTest; filter here.
-    $messages = array_values(array_filter(
-      $this->getMessages($session),
-      fn($m) => $m['role'] !== 'event',
-    ));
+    $messages = $this->loadTurns($session);
     $this->assertSame('user', $messages[0]['role']);
     $this->assertSame('Hi there.', $messages[0]['content']);
     $this->assertSame('assistant', $messages[1]['role']);
@@ -129,41 +135,19 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
   }
 
   /**
-   * Tests that draft_content triggers orchestration with sub-agents.
+   * Tests that draft_group calls run the sub-agents and version the draft.
    *
-   * The target content type comes from the session, not the request body. Each
-   * sub-agent's system prompt and answer are recorded as a nested pair under
-   * the draft_content turn.
+   * The target content type comes from the session, not the request body.
+   * Each group call streams its own tool call and result, the result of the
+   * last group carries the versioned draft, and each sub-agent's system
+   * prompt and answer are recorded nested under the calling turn.
    */
-  public function testDraftContentTriggersOrchestration(): void {
+  public function testDraftGroupCallsRunSubAgents(): void {
     $user = $this->createUser(['use oe ai assistant']);
     $this->loginUser($user);
     $session = $this->createSession($user);
 
-    // Router calls draft_content (the "I'm ready" signal).
-    MockAiProvider::enqueue(new MockResponse(
-      toolCalls: [
-        [
-          'id' => 'call_1',
-          'type' => 'function',
-          'function' => [
-            'name' => 'draft_content',
-            'arguments' => '{}',
-          ],
-        ],
-      ],
-    ));
-    // Sub-agent responses: one per group (main_fields,
-    // field_contacts, field_content_paragraphs).
-    MockAiProvider::enqueue(new MockResponse(
-      text: '{"title": [{"value": "Test Title"}], "field_body": [{"value": "<p>Body</p>", "format": "full_html"}]}',
-    ));
-    MockAiProvider::enqueue(new MockResponse(
-      text: '{"field_contacts": []}',
-    ));
-    MockAiProvider::enqueue(new MockResponse(
-      text: '{"field_content_paragraphs": []}',
-    ));
+    $this->enqueueDraftFlow();
 
     $result = $this->httpPost('/api/ai/plugins/drafting/chat', [
       'message' => 'Generate the draft now.',
@@ -175,62 +159,280 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
 
     $events = $this->parseSseEvents($result['body']);
 
-    // Should contain data-plan events.
-    $planEvents = array_filter(
+    // One tool call per group, in the order the model requested them.
+    $groupCalls = array_values(array_filter(
       $events,
-      fn($e) => $e['type'] === 'data-plan',
-    );
-    $this->assertNotEmpty($planEvents,
-      'Should emit data-plan events.');
+      fn($e) => $e['type'] === 'tool-input-start' && $e['toolName'] === 'draft_group',
+    ));
+    $this->assertSame(['call_1', 'call_2'], array_column($groupCalls, 'toolCallId'));
 
-    // Should contain data-drafted-fields.
-    $draftedEvents = array_filter(
-      $events,
-      fn($e) => $e['type'] === 'data-drafted-fields',
+    // Each result names its group; the last one carries the versioned draft.
+    // The protocol sends a tool output as the string the tool returned.
+    $results = array_values(array_map(
+      fn($e) => (array) json_decode((string) $e['output'], TRUE),
+      array_filter(
+        $events,
+        fn($e) => $e['type'] === 'tool-output-available' && str_contains((string) $e['output'], '"group"'),
+      ),
+    ));
+    $this->assertSame(
+      ['main_fields', 'field_content_paragraphs'],
+      array_column($results, 'group'),
     );
-    $this->assertNotEmpty($draftedEvents,
-      'Should emit data-drafted-fields event.');
-
-    // Verify consolidated fields contain title.
-    $draftedEvent = reset($draftedEvents);
-    $fields = $draftedEvent['data'] ?? [];
-    $this->assertArrayHasKey('title', $fields,
+    $this->assertArrayNotHasKey('draft', $results[0]);
+    $this->assertSame(['field_content_paragraphs'], $results[0]['pending']);
+    $draft = $results[1]['draft'];
+    $this->assertSame(1, $draft['version']);
+    $this->assertArrayHasKey('title', $draft['fields'],
       'Consolidated fields should include title.');
 
-    // The sub-agent transcript is recorded: the draft_content turn has system
-    // and assistant sub-agent rows nested under it, one pair per group.
-    $storage = \Drupal::entityTypeManager()
-      ->getStorage('ai_conversation_message');
-    $storage->resetCache();
-    $draftNode = NULL;
-    foreach ($storage->loadTree($session) as $node) {
-      foreach ($node['message']->getToolCalls() as $call) {
-        if (($call['function']['name'] ?? '') === 'draft_content') {
-          $draftNode = $node;
-        }
-      }
-    }
-    $this->assertNotNull($draftNode,
-      'A draft_content turn is recorded as a root turn.');
+    // The model's answer after the tools is streamed as text.
+    $text = implode('', array_map(fn($e) => $e['delta'] ?? '', $events));
+    $this->assertStringContainsString('Draft 1.0 is ready', $text);
 
-    $childRoles = array_map(
-      fn($child) => $child['message']->getRole(),
-      $draftNode['children'],
-    );
-    $systemCount = count(array_filter($childRoles, fn($r) => $r === 'system'));
-    $assistantCount = count(
-      array_filter($childRoles, fn($r) => $r === 'assistant'),
-    );
-    $this->assertGreaterThan(0, $systemCount,
-      'Sub-agent system prompts are recorded under the draft turn.');
-    $this->assertSame($systemCount, $assistantCount,
-      'Each sub-agent records both a system and an assistant row.');
+    // The calling turn carries both calls, and the completing one the draft.
+    $draftTurn = $this->findDraftTurn($session);
+    $this->assertNotNull($draftTurn, 'The draft_group turn is recorded.');
+    $calls = $draftTurn['toolCalls'];
+    $this->assertCount(2, $calls);
+    $this->assertSame(1, $calls[1]['result']['draft']['version'],
+      'The versioned draft is stored on the completing call.');
 
-    // Each sub-agent row carries the agent id (the schema group id).
-    foreach ($draftNode['children'] as $child) {
-      $this->assertNotEmpty($child['message']->get('agent_id')->value,
-        'Sub-agent rows carry an agent id.');
+    // Each drafter holds a thread of its own, named after the group it
+    // answered for, and its rows are related to the session.
+    $drafterRows = $this->loadDrafterRows($session);
+    $this->assertNotEmpty($drafterRows, 'Each drafter records its own run.');
+    $threads = [];
+    foreach ($drafterRows as $row) {
+      $this->assertSame('field_group', $row->get('agent_id')->value,
+        'Drafter rows name the agent that wrote them.');
+      $threads[(string) $row->get('thread_id')->value] = TRUE;
     }
+    $groups = array_map(
+      static fn (string $thread): string => substr($thread, strrpos($thread, '.') + 1),
+      array_keys($threads),
+    );
+    $this->assertSame(['group_main_fields', 'group_field_content_paragraphs'], $groups,
+      'One thread per group is recorded, named after the group.');
+  }
+
+  /**
+   * Tests that a rejected answer is asked for again until it matches.
+   *
+   * The drafter is corrected rather than failing, so two answers naming a
+   * property the schema forbids cost two more calls and the turn still
+   * produces the draft. The violations themselves go to the log.
+   */
+  public function testRejectedAnswerIsAskedForAgain(): void {
+    $user = $this->createUser(['use oe ai assistant']);
+    $this->loginUser($user);
+    $session = $this->createSession($user);
+
+    MockAiProvider::enqueue(new MockResponse(
+      toolCalls: [
+        [
+          'id' => 'call_1',
+          'type' => 'function',
+          'function' => ['name' => 'draft_group', 'arguments' => '{"group":"main_fields"}'],
+        ],
+      ],
+    ));
+    // Two answers naming a property the schema forbids, then a good one.
+    MockAiProvider::enqueue(new MockResponse(text: '{"title": [{"value": "T"}], "body": [{"value": "B"}]}'));
+    MockAiProvider::enqueue(new MockResponse(text: '{"title": [{"value": "T"}], "body": [{"value": "B"}]}'));
+    MockAiProvider::enqueue(new MockResponse(
+      text: '{"title": [{"value": "T"}], "field_teaser": [{"value": "S"}]}',
+    ));
+    MockAiProvider::enqueue(new MockResponse(text: 'The main fields are drafted.'));
+
+    $result = $this->httpPost('/api/ai/plugins/drafting/chat', [
+      'message' => 'Draft the main fields.',
+      'sessionId' => $session->id(),
+    ]);
+    $this->assertEquals(200, $result['status'],
+      'Expected 200. Body: ' . substr($result['body'], 0, 500));
+
+    // Four calls for the group: the turn that asked, the two answers the
+    // schema refused, and the one it accepted.
+    \Drupal::state()->resetCache();
+    $this->assertCount(5, MockAiProvider::getCallLog(),
+      'Each rejected answer costs one more call.');
+
+    // The accepted answer is what the group came back with. One group does
+    // not complete the set, so the turn versions no draft here.
+    $drafted = $this->resultOfToolCall($session, 'draft_group');
+    $this->assertNotNull($drafted, 'The corrected run still answers the call.');
+    $this->assertSame(
+      ['title', 'field_teaser'],
+      array_keys($drafted['fields']),
+      'The group holds the answer the schema accepted.',
+    );
+  }
+
+  /**
+   * Tests that a revision reuses the stored draft and groups under it.
+   *
+   * The named group is drafted again, every other group is carried over,
+   * the new version records the draft it revises, and the history numbers
+   * it as a revision of that draft.
+   */
+  public function testReviseDraftVersionsUnderTheDraftItRevises(): void {
+    $user = $this->createUser(['use oe ai assistant']);
+    $this->loginUser($user);
+    $session = $this->createSession($user);
+
+    $this->enqueueDraftFlow();
+    $this->httpPost('/api/ai/plugins/drafting/chat', [
+      'message' => 'Generate the draft now.',
+      'sessionId' => $session->id(),
+    ]);
+
+    // The agent revises the main fields of the latest draft.
+    $this->enqueueRevision(['instruction' => 'Make the title shorter.', 'groups' => ['main_fields']]);
+    MockAiProvider::enqueue(new MockResponse(
+      text: '{"title": [{"value": "Short"}], "field_teaser": [{"value": "Test teaser."}]}',
+    ));
+    MockAiProvider::enqueue(new MockResponse(text: 'Draft 1.1 is ready.'));
+
+    $result = $this->httpPost('/api/ai/plugins/drafting/chat', [
+      'message' => 'Make the title shorter.',
+      'sessionId' => $session->id(),
+    ]);
+    $this->assertEquals(200, $result['status'],
+      'Expected 200. Body: ' . substr($result['body'], 0, 500));
+
+    // The revision drafted one group only, after the two of the first turn.
+    $this->assertSame(3, $this->drafterCallCount(),
+      'Only the revised group is drafted again.');
+
+    $drafts = $this->loadDraftResults($session);
+    $this->assertCount(2, $drafts);
+    $this->assertSame(2, $drafts[1]['version']);
+    $this->assertSame(1, $drafts[1]['revisionOf'],
+      'The revision records the draft it started from.');
+    $this->assertSame('Short', $drafts[1]['fields']['title'][0]['value']);
+    $this->assertSame(
+      $drafts[0]['fields']['field_content_paragraphs'],
+      $drafts[1]['fields']['field_content_paragraphs'],
+      'A group left alone is carried over untouched.',
+    );
+    $this->assertSame($drafts[0]['context'], $drafts[1]['context'],
+      'The revision inherits the context that produced the draft.');
+
+    // The history numbers the revision under the draft it revises.
+    /** @var \Drupal\oe_ai_assistant\Service\Drafting\DraftHistoryInterface $history */
+    $history = \Drupal::service('Drupal\oe_ai_assistant\Service\Drafting\DraftHistoryInterface');
+    $this->assertSame(['1.0', '1.1'], array_column($history->listDrafts($session), 'label'));
+    $this->assertSame(['Draft 1.0', 'Draft 1.1'], array_column($history->listDrafts($session), 'name'));
+  }
+
+  /**
+   * Tests that a revision without named groups covers the whole draft.
+   *
+   * The session points at a template with one group by then, but the draft
+   * being revised has two, so both are drafted again.
+   */
+  public function testReviseWithoutGroupsCoversTheWholeDraft(): void {
+    $user = $this->createUser(['use oe ai assistant']);
+    $this->loginUser($user);
+    $session = $this->createSession($user);
+
+    $this->enqueueDraftFlow();
+    $this->httpPost('/api/ai/plugins/drafting/chat', [
+      'message' => 'Generate the draft now.',
+      'sessionId' => $session->id(),
+    ]);
+    $this->httpPost('/api/ai/plugins/drafting/set-template', [
+      'sessionId' => $session->id(),
+      'template' => 'news_default',
+    ]);
+
+    // The agent asks for a change to the whole draft, naming no group.
+    $this->enqueueRevision(['instruction' => 'Append FOO to every field.', 'version' => 1]);
+    MockAiProvider::enqueue(new MockResponse(
+      text: '{"title": [{"value": "Test Title FOO"}], "field_teaser": [{"value": "Test teaser. FOO"}]}',
+    ));
+    MockAiProvider::enqueue(new MockResponse(
+      text: '{"field_content_paragraphs": [{"type": [{"target_id": "text_block"}]}]}',
+    ));
+    MockAiProvider::enqueue(new MockResponse(text: 'Draft 1.1 is ready.'));
+
+    $this->httpPost('/api/ai/plugins/drafting/chat', [
+      'message' => 'Append FOO to every field of draft 1.',
+      'sessionId' => $session->id(),
+    ]);
+
+    // Both groups of the draft were drafted again: the two of the first
+    // turn plus two more.
+    $this->assertSame(4, $this->drafterCallCount(),
+      'Every group of the revised draft is drafted again.');
+
+    $drafts = $this->loadDraftResults($session);
+    $this->assertCount(2, $drafts);
+    $this->assertSame('Test Title FOO', $drafts[1]['fields']['title'][0]['value']);
+    $this->assertNotSame(
+      $drafts[0]['fields']['field_content_paragraphs'],
+      $drafts[1]['fields']['field_content_paragraphs'],
+      'The paragraphs of the revised draft are drafted again too.',
+    );
+  }
+
+  /**
+   * Tests that a revision keeps the structure its draft was written with.
+   *
+   * The session points at another template by the time the revision runs.
+   * The draft carries the groups it was written against, so the revised
+   * group keeps its own fields and the groups it never had stay out.
+   */
+  public function testReviseUsesTheGroupsTheDraftWasWrittenWith(): void {
+    $user = $this->createUser(['use oe ai assistant']);
+    $this->loginUser($user);
+    $session = $this->createSession($user);
+
+    // The first draft follows the latest template, with a paragraphs group.
+    $this->enqueueDraftFlow();
+    $this->httpPost('/api/ai/plugins/drafting/chat', [
+      'message' => 'Generate the draft now.',
+      'sessionId' => $session->id(),
+    ]);
+
+    // The editor then switches to a template whose main fields also carry
+    // field_body and which has no paragraphs group at all.
+    $switch = $this->httpPost('/api/ai/plugins/drafting/set-template', [
+      'sessionId' => $session->id(),
+      'template' => 'news_default',
+    ]);
+    $this->assertEquals(200, $switch['status'],
+      'Expected the template switch to succeed. Body: ' . substr($switch['body'], 0, 300));
+
+    // Point the stored draft at the new template while keeping the groups
+    // it was written with, so only the stored groups can explain the
+    // revision that follows.
+    $this->repointDraftTemplate($session, 'news_default');
+
+    $this->enqueueRevision(['instruction' => 'Make the title shorter.', 'groups' => ['main_fields']]);
+    // Answering the original main fields: against the session's current
+    // template this would miss field_body and be sent back for a retry.
+    MockAiProvider::enqueue(new MockResponse(
+      text: '{"title": [{"value": "Short"}], "field_teaser": [{"value": "Test teaser."}]}',
+    ));
+    MockAiProvider::enqueue(new MockResponse(text: 'Draft 1.1 is ready.'));
+
+    $this->httpPost('/api/ai/plugins/drafting/chat', [
+      'message' => 'Make the title shorter.',
+      'sessionId' => $session->id(),
+    ]);
+
+    $this->assertSame(3, $this->drafterCallCount(),
+      'The answer matched the original schema, so no correction was needed.');
+
+    $drafts = $this->loadDraftResults($session);
+    $this->assertCount(2, $drafts);
+    $this->assertSame('Short', $drafts[1]['fields']['title'][0]['value']);
+    $this->assertArrayHasKey('field_content_paragraphs', $drafts[1]['fields'],
+      'The revision keeps the group the draft was written with.');
+    $this->assertArrayNotHasKey('field_body', $drafts[1]['fields'],
+      'A field the new template added never enters the revision.');
   }
 
   /**
@@ -283,13 +485,13 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
     );
 
     $toolNames = $this->extractToolNames($log[0]['tools']);
-    $this->assertContains('draft_content', $toolNames);
+    $this->assertContains('draft_group', $toolNames);
   }
 
   /**
    * Tests that the resolved tone prompt reaches every sub-agent.
    *
-   * The recorded sub-agent system rows nested under the draft_content turn
+   * The recorded sub-agent system rows nested under the draft_group turn
    * must contain the tone prompt text, proving the orchestrator injected the
    * editorial context into the agents that produce the field values.
    */
@@ -303,21 +505,8 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
       'toneId' => $this->getTermIdByName('oe_ai_tone', 'Formal'),
     ]);
 
-    // Router signals draft_content, then one response per schema group.
-    MockAiProvider::enqueue(new MockResponse(
-      toolCalls: [
-        [
-          'id' => 'call_1',
-          'type' => 'function',
-          'function' => ['name' => 'draft_content', 'arguments' => '{}'],
-        ],
-      ],
-    ));
-    MockAiProvider::enqueue(new MockResponse(
-      text: '{"title": [{"value": "Test Title"}], "field_body": [{"value": "<p>Body</p>", "format": "full_html"}]}',
-    ));
-    MockAiProvider::enqueue(new MockResponse(text: '{"field_contacts": []}'));
-    MockAiProvider::enqueue(new MockResponse(text: '{"field_content_paragraphs": []}'));
+    // The agent calls draft_group per group, then one drafter answer each.
+    $this->enqueueDraftFlow();
 
     $result = $this->httpPost('/api/ai/plugins/drafting/chat', [
       'message' => 'Generate the draft now.',
@@ -326,36 +515,25 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
     $this->assertEquals(200, $result['status'],
       'Expected 200. Body: ' . substr($result['body'], 0, 500));
 
-    // Find the draft_content turn and inspect its nested system rows.
-    $storage = \Drupal::entityTypeManager()
-      ->getStorage('ai_conversation_message');
-    $storage->resetCache();
-    $draftNode = NULL;
-    foreach ($storage->loadTree($session) as $node) {
-      foreach ($node['message']->getToolCalls() as $call) {
-        if (($call['function']['name'] ?? '') === 'draft_content') {
-          $draftNode = $node;
-        }
-      }
-    }
-    $this->assertNotNull($draftNode, 'A draft_content turn is recorded.');
-
-    $systemRows = array_filter(
-      $draftNode['children'],
-      fn($child) => $child['message']->getRole() === 'system',
-    );
-    $this->assertNotEmpty($systemRows, 'Sub-agent system rows are recorded.');
-    foreach ($systemRows as $row) {
-      $content = (string) $row['message']->get('content')->value;
+    // Every drafter call carries the tone in its system prompt. The prompt is
+    // the drafter's instructions, which Neuron keeps out of the conversation,
+    // so the provider call log is where it is read back.
+    \Drupal::state()->resetCache();
+    $drafterPrompts = array_values(array_filter(
+      array_column(MockAiProvider::getCallLog(), 'system_prompt'),
+      fn(string $prompt) => str_contains($prompt, 'You are a content generator.'),
+    ));
+    $this->assertNotEmpty($drafterPrompts, 'Each drafter call carries a prompt.');
+    foreach ($drafterPrompts as $prompt) {
       $this->assertStringContainsString(
         'Use professional, institutional language.',
-        $content,
-        'Every sub-agent system prompt must contain the tone prompt.',
+        $prompt,
+        'Every drafter prompt must contain the tone prompt.',
       );
       $this->assertStringContainsString(
         'Tone: Formal',
-        $content,
-        'Every sub-agent system prompt must contain the tone label.',
+        $prompt,
+        'Every drafter prompt must contain the tone label.',
       );
     }
   }
@@ -383,21 +561,8 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
     $this->assertSame(['status' => 'done'], json_decode($result['body'], TRUE));
     MockAiProvider::reset();
 
-    // Router signals draft_content, then one response per schema group.
-    MockAiProvider::enqueue(new MockResponse(
-      toolCalls: [
-        [
-          'id' => 'call_1',
-          'type' => 'function',
-          'function' => ['name' => 'draft_content', 'arguments' => '{}'],
-        ],
-      ],
-    ));
-    MockAiProvider::enqueue(new MockResponse(
-      text: '{"title": [{"value": "Test Title"}], "field_body": [{"value": "<p>Body</p>", "format": "full_html"}]}',
-    ));
-    MockAiProvider::enqueue(new MockResponse(text: '{"field_contacts": []}'));
-    MockAiProvider::enqueue(new MockResponse(text: '{"field_content_paragraphs": []}'));
+    // The agent drafts every group, then closes with a text answer.
+    $this->enqueueDraftFlow();
 
     $result = $this->httpPost('/api/ai/plugins/drafting/chat', [
       'message' => 'Generate the draft now.',
@@ -407,38 +572,17 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
 
     \Drupal::state()->resetCache();
     $log = MockAiProvider::getCallLog();
-    $router = $log[0]['system_prompt'];
-    $this->assertStringContainsString("### $processedTitle (file: $processedTitle)\nAlpha briefing content for the draft.", $router);
-    $this->assertStringContainsString("### $pendingTitle (file: $pendingTitle)\nNot processed yet", $router);
-    $this->assertStringContainsString('wait a moment', $router);
+    $agentPrompt = $log[0]['system_prompt'];
+    $this->assertStringContainsString("### $processedTitle (file: $processedTitle)\nAlpha briefing content for the draft.", $agentPrompt);
+    $this->assertStringContainsString("### $pendingTitle (file: $pendingTitle)\nNot processed yet", $agentPrompt);
+    $this->assertStringContainsString('wait a moment', $agentPrompt);
 
-    // Every sub-agent call after the router carries the same block.
+    // Every call after the first carries the same block.
     $this->assertGreaterThan(1, count($log));
     foreach (array_slice($log, 1) as $call) {
       $this->assertStringContainsString('Alpha briefing content for the draft.', $call['system_prompt']);
       $this->assertStringContainsString('Not processed yet', $call['system_prompt']);
     }
-  }
-
-  /**
-   * Uploads a context document and returns its id and stored title.
-   *
-   * The title is read back because core renames an upload whose file name
-   * already exists in the private directory.
-   *
-   * @return array
-   *   The document id and title.
-   */
-  private function uploadDocument($session, string $filename, string $contents): array {
-    $query = http_build_query(['sessionId' => $session->id(), 'category' => 'context', 'filename' => $filename]);
-    $added = $this->httpPostRaw('/api/ai/plugins/drafting/add-document?' . $query, $contents);
-    $this->assertSame(200, $added['status'], $added['body']);
-    $document = json_decode($added['body'], TRUE)['document'];
-    $media = \Drupal::entityTypeManager()->getStorage('media')->load($document['id']);
-    $this->markEntityForCleanup($media);
-    $this->markEntityForCleanup($media->get('oe_ai_context_document')->entity);
-
-    return [(string) $document['id'], (string) $document['title']];
   }
 
   /**
@@ -486,31 +630,24 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
     // A tool row is not user-visible and must be filtered out.
     $this->seedMessage($session, 'tool', 'Tool payload.');
 
-    // Events are exercised in EditorialEventsTest; filter here.
-    $messages = array_values(array_filter(
-      $this->getMessages($session),
-      fn($m) => $m['role'] !== 'event',
-    ));
+    $messages = $this->loadTurns($session);
 
     // Timestamps must come from the persisted rows' created field.
-    $rows = array_values(array_filter(
-      $this->loadTranscript($session),
-      fn($row) => in_array($row->getRole(), ['user', 'assistant'], TRUE),
-    ));
+    $rows = array_values($this->loadTranscript($session));
 
     $this->assertSame(
       [
         [
           'role' => 'user',
           'content' => 'Draft a news article.',
-          'at' => $rows[0]->get('created')->date->format('c'),
+          'at' => $this->createdOf($rows[0]),
           'userId' => (string) $user->id(),
           'userName' => $user->getDisplayName(),
         ],
         [
           'role' => 'assistant',
           'content' => 'Here is a draft.',
-          'at' => $rows[1]->get('created')->date->format('c'),
+          'at' => $this->createdOf($rows[1]),
         ],
       ],
       $messages,
@@ -518,9 +655,9 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
   }
 
   /**
-   * Tests that get-messages surfaces a draft_content tool call and result.
+   * Tests that get-messages surfaces a draft_group tool call and result.
    *
-   * The drafted fields are stored as the result of the draft_content call so
+   * The drafted fields are stored as the result of the draft_group call so
    * the transcript can render a clickable trace that repopulates the artifact.
    */
   public function testGetMessagesReturnsDraftToolCall(): void {
@@ -529,13 +666,13 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
     $session = $this->createSession($user);
 
     $this->seedMessage($session, 'user', 'Draft a news article.');
-    // An assistant turn that triggered drafting: empty text, draft_content
-    // tool call carrying the consolidated fields as its result.
-    $fields = ['title' => [['value' => 'Test Title']]];
+    // An assistant turn that drafted: empty text, a draft_group tool call
+    // carrying the group fields as its result.
+    $fields = ['group' => 'main_fields', 'fields' => ['title' => [['value' => 'Test Title']]]];
     $this->seedMessage($session, 'assistant', '', [
       [
         'type' => 'function',
-        'function' => ['name' => 'draft_content', 'arguments' => '{}'],
+        'function' => ['name' => 'draft_group', 'arguments' => '{"group":"main_fields"}'],
         'result' => $fields,
       ],
     ]);
@@ -553,7 +690,7 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
     $this->assertSame('assistant', $messages[1]['role']);
     $this->assertSame('', $messages[1]['content']);
     $this->assertArrayHasKey('toolCalls', $messages[1]);
-    $this->assertSame('draft_content', $messages[1]['toolCalls'][0]['function']['name']);
+    $this->assertSame('draft_group', $messages[1]['toolCalls'][0]['function']['name']);
     $this->assertSame($fields, $messages[1]['toolCalls'][0]['result']);
   }
 
@@ -578,48 +715,6 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
 
     $this->assertSame([], $this->loadTranscript($session),
       'Reset must delete every message hosted by the session.');
-  }
-
-  /**
-   * Parses SSE events from a raw response body string.
-   *
-   * Each SSE frame is a "data: <json>\n\n" block. This method splits
-   * the body, decodes the JSON, and returns structured event data.
-   *
-   * @param string $body
-   *   The raw SSE response body.
-   *
-   * @return array
-   *   Array of parsed event arrays, each with a 'type' key.
-   */
-  protected function parseSseEvents(string $body): array {
-    $events = [];
-    $frames = preg_split('/\n\n+/', trim($body));
-
-    foreach ($frames as $frame) {
-      $frame = trim($frame);
-      if ($frame === '') {
-        continue;
-      }
-
-      $data = '';
-      foreach (explode("\n", $frame) as $line) {
-        if (str_starts_with($line, 'data: ')) {
-          $data .= substr($line, 6);
-        }
-      }
-
-      if ($data === '' || $data === '[DONE]') {
-        continue;
-      }
-
-      $decoded = json_decode($data, TRUE);
-      if (is_array($decoded) && isset($decoded['type'])) {
-        $events[] = $decoded;
-      }
-    }
-
-    return $events;
   }
 
   /**
@@ -657,15 +752,15 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
     $this->assertSame([], $drafts[0]['context']['documents']);
     $this->assertArrayHasKey('title', $drafts[0]['fields']);
 
-    // The version reaches the model through the recorded confirmation.
-    $transcript = $this->loadTranscript($session);
-    $texts = array_map(
-      fn($m) => (string) $m->get('content')->value, $transcript,
-    );
+    // The version reaches the model through the tool result it answers to.
+    \Drupal::state()->resetCache();
+    $log = MockAiProvider::getCallLog();
+    $lastCall = end($log);
+    $toolTexts = array_column(array_filter($lastCall['messages'], fn($m) => $m['role'] === 'tool'), 'text');
     $this->assertNotEmpty(array_filter(
-      $texts,
-      fn($t) => str_contains($t, 'Draft 1 generated with'),
-    ), 'The confirmation must name the draft version.');
+      $toolTexts,
+      fn($t) => str_contains($t, '"version":1'),
+    ), 'The completing tool result must name the draft version.');
 
     // Second draft with a different tone.
     $this->httpPost('/api/ai/plugins/drafting/set-tone', [
@@ -721,35 +816,14 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
         'summary' => 'Funding lines and deadlines.',
       ],
     ];
-    $this->seedMessage($session, 'assistant', '', [
-      [
-        'type' => 'function',
-        'function' => ['name' => 'draft_content', 'arguments' => '{}'],
-        'result' => [
-          'version' => 1,
-          'context' => [
-            'tone' => ['id' => '1', 'label' => 'Formal', 'prompt' => 'Use professional, institutional language.'],
-            'template' => ['id' => 'news_default', 'label' => 'News default'],
-            'documents' => $documents,
-          ],
-          'fields' => ['title' => [['value' => 'First']]],
-        ],
-      ],
+    $this->seedDraft($session, 1, ['title' => [['value' => 'First']]], [
+      'tone' => ['id' => '1', 'label' => 'Formal', 'prompt' => 'Use professional, institutional language.'],
+      'template' => ['id' => 'news_default', 'label' => 'News default'],
+      'documents' => $documents,
     ]);
-    $this->seedMessage($session, 'assistant', '', [
-      [
-        'type' => 'function',
-        'function' => ['name' => 'draft_content', 'arguments' => '{}'],
-        'result' => [
-          'version' => 2,
-          'context' => [
-            'tone' => ['id' => '2', 'label' => 'Technical', 'prompt' => 'Use domain-specific terminology precisely.'],
-            'template' => ['id' => 'news_default', 'label' => 'News default'],
-            'documents' => [],
-          ],
-          'fields' => ['title' => [['value' => 'Second']]],
-        ],
-      ],
+    $this->seedDraft($session, 2, ['title' => [['value' => 'Second']]], [
+      'tone' => ['id' => '2', 'label' => 'Technical', 'prompt' => 'Use domain-specific terminology precisely.'],
+      'template' => ['id' => 'news_default', 'label' => 'News default'],
     ]);
 
     // The router calls the tool with a bogus session id, then answers.
@@ -776,17 +850,11 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
     $this->assertEquals(200, $result['status'],
       'Expected 200. Body: ' . substr($result['body'], 0, 500));
 
-    // The tool result was recorded as a tool row scoped to OUR session.
-    $toolRows = array_values(array_filter(
-      array_map(
-        fn($n) => $n['message'],
-        \Drupal::entityTypeManager()
-          ->getStorage('ai_conversation_message')->loadTree($session),
-      ),
-      fn($m) => $m->getRole() === 'tool',
-    ));
-    $this->assertNotEmpty($toolRows, 'The tool result must be recorded.');
-    $payload = (string) $toolRows[0]->get('content')->value;
+    // The tool result is recorded on the call that asked for it, in the
+    // conversation of OUR session.
+    $result = $this->resultOfToolCall($session, 'get_draft_history');
+    $this->assertNotNull($result, 'The tool result must be recorded.');
+    $payload = json_encode($result);
     $this->assertStringContainsString('Draft 1', $payload);
     $this->assertStringContainsString('Draft 2', $payload);
     $this->assertStringContainsString('Formal', $payload);
@@ -800,23 +868,24 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
    *
    * A stored tool row cannot be re-linked to the assistant call that
    * produced it, and providers reject unpaired tool messages, so the
-   * reconstructed history must skip tool rows entirely.
+   * reconstructed history replays the call and its result together.
    */
-  public function testHistoryReconstructionSkipsToolRows(): void {
+  public function testHistoryReconstructionReplaysTheToolPair(): void {
     $user = $this->createUser(['use oe ai assistant']);
     $this->loginUser($user);
     $session = $this->createSession($user);
 
-    // Seed a turn that used a tool: the assistant row carries the call,
-    // the tool row carries the result, and a follow-up summarizes it.
+    // Seed a turn that used a tool: the assistant row carries the call and the
+    // row after it the result, which is how Neuron commits the pair, then a
+    // follow-up answer summarizes it.
     $this->seedMessage($session, 'user', 'Which tone produced draft 1?');
     $this->seedMessage($session, 'assistant', '', [
       [
         'type' => 'function',
         'function' => ['name' => 'get_draft_history', 'arguments' => '{}'],
+        'result' => ['drafts' => []],
       ],
     ]);
-    $this->seedMessage($session, 'tool', '{"drafts":[]}');
     $this->seedMessage($session, 'assistant', 'No drafts exist yet.');
 
     MockAiProvider::enqueue(new MockResponse(text: 'Noted.'));
@@ -829,9 +898,6 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
     \Drupal::state()->resetCache();
     $log = MockAiProvider::getCallLog();
     $this->assertCount(1, $log);
-    $roles = array_column($log[0]['messages'], 'role');
-    $this->assertNotContains('tool', $roles,
-      'Persisted tool rows must not be replayed to the provider.');
     $this->assertContains('No drafts exist yet.',
       array_column($log[0]['messages'], 'text'),
       'The assistant summary of the tool outcome stays in the history.');
@@ -850,46 +916,149 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
   }
 
   /**
-   * Enqueues a full mock draft flow: router signal plus three sub-agents.
+   * Rewrites the template a stored draft names, keeping its groups.
+   *
+   * @param \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $session
+   *   The session hosting the conversation.
+   * @param string $templateId
+   *   The template id to record on every stored draft.
    */
-  protected function enqueueDraftFlow(): void {
-    MockAiProvider::enqueue(new MockResponse(
-      toolCalls: [
-        [
-          'id' => 'call_1',
-          'type' => 'function',
-          'function' => ['name' => 'draft_content', 'arguments' => '{}'],
-        ],
-      ],
-    ));
-    MockAiProvider::enqueue(new MockResponse(
-      text: '{"title": [{"value": "Test Title"}], "field_body": [{"value": "<p>Body</p>", "format": "full_html"}]}',
-    ));
-    MockAiProvider::enqueue(new MockResponse(text: '{"field_contacts": []}'));
-    MockAiProvider::enqueue(new MockResponse(text: '{"field_content_paragraphs": []}'));
+  protected function repointDraftTemplate(AiEditorialSessionInterface $session, string $templateId): void {
+    foreach ($this->loadTranscript($session) as $row) {
+      $meta = SessionConversation::decode($row, 'meta');
+      if (($meta['type'] ?? '') !== 'tool_call_result') {
+        continue;
+      }
+      $changed = FALSE;
+      foreach ($meta['tools'] as &$tool) {
+        $result = SessionConversation::decodeResult($tool['result'] ?? NULL);
+        if (!isset($result['draft']['context']['template']['id'])) {
+          continue;
+        }
+        $result['draft']['context']['template']['id'] = $templateId;
+        $tool['result'] = json_encode($result);
+        $changed = TRUE;
+      }
+      unset($tool);
+      if ($changed) {
+        $row->set('meta', json_encode($meta))->save();
+      }
+    }
   }
 
   /**
-   * Loads every stored draft_content result for a session, in order.
+   * Enqueues a full mock draft flow.
+   *
+   * The agent calls draft_group for the two groups of the session's
+   * template (news_with_paragraphs) in one turn, each drafter answers once,
+   * and the agent closes with a text answer.
+   */
+  protected function enqueueDraftFlow(): void {
+    $calls = [];
+    foreach (['main_fields', 'field_content_paragraphs'] as $index => $group) {
+      $calls[] = [
+        'id' => 'call_' . ($index + 1),
+        'type' => 'function',
+        'function' => ['name' => 'draft_group', 'arguments' => json_encode(['group' => $group])],
+      ];
+    }
+    MockAiProvider::enqueue(new MockResponse(toolCalls: $calls));
+    MockAiProvider::enqueue(new MockResponse(
+      text: '{"title": [{"value": "Test Title"}], "field_teaser": [{"value": "Test teaser."}]}',
+    ));
+    MockAiProvider::enqueue(new MockResponse(text: '{"field_content_paragraphs": []}'));
+    MockAiProvider::enqueue(new MockResponse(text: 'Draft 1.0 is ready. Review it on the right.'));
+  }
+
+  /**
+   * Enqueues a revise_draft request from the mock agent.
+   *
+   * @param array $arguments
+   *   The tool arguments: instruction, and optionally groups and version.
+   */
+  protected function enqueueRevision(array $arguments): void {
+    MockAiProvider::enqueue(new MockResponse(toolCalls: [
+      [
+        'id' => 'call_r1',
+        'type' => 'function',
+        'function' => ['name' => 'revise_draft', 'arguments' => json_encode($arguments)],
+      ],
+    ]));
+  }
+
+  /**
+   * Counts the calls made to the drafter sub-agents so far.
+   */
+  protected function drafterCallCount(): int {
+    \Drupal::state()->resetCache();
+    return count(array_filter(
+      MockAiProvider::getCallLog(),
+      fn($call) => str_contains($call['system_prompt'], 'You are a content generator'),
+    ));
+  }
+
+  /**
+   * Finds the root turn carrying the draft_group calls, with its children.
+   *
+   * @param \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $session
+   *   The session hosting the conversation.
+   *
+   * @return array|null
+   *   The tree node, or NULL when no turn drafted.
+   */
+  protected function findDraftTurn(AiEditorialSessionInterface $session): ?array {
+    $found = NULL;
+    foreach ($this->loadTurns($session) as $turn) {
+      foreach ($turn['toolCalls'] ?? [] as $call) {
+        if (($call['function']['name'] ?? '') === 'draft_group') {
+          $found = $turn;
+        }
+      }
+    }
+
+    return $found;
+  }
+
+  /**
+   * Loads every versioned draft on the transcript, in order.
    *
    * @param \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $session
    *   The session hosting the conversation.
    *
    * @return array
-   *   The result arrays stored on draft_content tool calls.
+   *   The drafts shaped {version, major, minor, context, fields, revisionOf}.
    */
   protected function loadDraftResults(AiEditorialSessionInterface $session): array {
     $results = [];
-    foreach ($this->loadTranscript($session) as $message) {
-      foreach ($message->getToolCalls() as $call) {
-        if (($call['function']['name'] ?? '') === 'draft_content'
-          && isset($call['result'])
-        ) {
-          $results[] = $call['result'];
+    foreach ($this->loadTurns($session) as $turn) {
+      foreach ($turn['toolCalls'] ?? [] as $call) {
+        if (isset($call['result']['draft'])) {
+          $results[] = $call['result']['draft'];
         }
       }
     }
     return $results;
+  }
+
+  /**
+   * Uploads a context document and returns its id and stored title.
+   *
+   * The title is read back because core renames an upload whose file name
+   * already exists in the private directory.
+   *
+   * @return array
+   *   The document id and title.
+   */
+  private function uploadDocument($session, string $filename, string $contents): array {
+    $query = http_build_query(['sessionId' => $session->id(), 'category' => 'context', 'filename' => $filename]);
+    $added = $this->httpPostRaw('/api/ai/plugins/drafting/add-document?' . $query, $contents);
+    $this->assertSame(200, $added['status'], $added['body']);
+    $document = json_decode($added['body'], TRUE)['document'];
+    $media = \Drupal::entityTypeManager()->getStorage('media')->load($document['id']);
+    $this->markEntityForCleanup($media);
+    $this->markEntityForCleanup($media->get('oe_ai_context_document')->entity);
+
+    return [(string) $document['id'], (string) $document['title']];
   }
 
 }

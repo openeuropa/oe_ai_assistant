@@ -4,32 +4,29 @@ declare(strict_types=1);
 
 namespace Drupal\oe_ai_assistant\Plugin\AiEditorialAssistant;
 
-use Drupal\ai\OperationType\Chat\ChatMessage;
-use Drupal\ai\OperationType\Chat\ChatOutput;
-use Drupal\ai\OperationType\Chat\Tools\ToolsFunctionInput;
-use Drupal\ai_agents\PluginManager\AiAgentManager;
+use Drupal\ai\Response\AiStreamedResponse;
 use Drupal\Core\Cache\RefinableCacheableDependencyInterface;
 use Drupal\Core\Url;
 use Drupal\file\Upload\InputStreamFileWriterInterface;
 use Drupal\file\Upload\InputStreamUploadedFile;
 use Drupal\oe_ai_assistant\Annotation\AiEditorialAssistant;
-use Drupal\oe_ai_assistant\Entity\AiConversationMessageInterface;
-use Drupal\oe_ai_assistant\AiDraftingTemplateInterface;
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
 use Drupal\oe_ai_assistant\Exception\ActionException;
-use Drupal\oe_ai_assistant\Service\Drafting\ContextDocumentRepository;
-use Drupal\oe_ai_assistant\Service\Drafting\DocumentRepositoryInterface;
-use Drupal\oe_ai_assistant\Service\Drafting\DraftHistoryInterface;
-use Drupal\oe_ai_assistant\Service\Drafting\EditorialContext;
+use Drupal\ai_neuron\Agent\NeuronAgentManagerInterface;
 use Drupal\oe_ai_assistant\Plugin\AiAssistantPluginBase;
 use Drupal\oe_ai_assistant\Service\AiEditorialContextInterface;
 use Drupal\oe_ai_assistant\Service\DraftAssemblerInterface;
-use Drupal\oe_ai_assistant\Service\DraftingOrchestratorInterface;
-use Drupal\oe_ai_assistant\Service\DraftSaverInterface;
+use Drupal\oe_ai_assistant\Service\Drafting\ContextDocumentRepository;
+use Drupal\oe_ai_assistant\Service\Drafting\DocumentRepositoryInterface;
+use Drupal\oe_ai_assistant\Service\Drafting\DraftHistoryInterface;
 use Drupal\oe_ai_assistant\Service\DraftingSchemaProviderInterface;
 use Drupal\oe_ai_assistant\Service\PreviewRendererInterface;
-use Drupal\oe_ai_assistant\Service\ToolExecutionLoopInterface;
-use Drupal\oe_ai_assistant\Service\UiMessageStreamInterface;
+use NeuronAI\Workflow\Streaming\ProtocolEvent;
+use NeuronAI\Workflow\Streaming\SSEEncoder;
+use NeuronAI\Agent\Adapters\VercelAIAdapter;
+use NeuronAI\Agent\AgentInterface;
+use NeuronAI\Agent\Interrupt\Action;
+use NeuronAI\Chat\Messages\UserMessage;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\File\Exception\FileException;
 use Symfony\Component\HttpFoundation\Request;
@@ -38,13 +35,13 @@ use Symfony\Component\HttpFoundation\Response;
 /**
  * Drafting plugin: AI-powered content drafting with SSE streaming.
  *
- * Uses a two-tool conversational flow:
- * 1. get_content_schema: LLM discovers available fields
- * 2. draft_content: LLM signals readiness, orchestrator dispatches
- *    sub-agents per field group.
+ * Each chat turn is one run of the drafting agent: it converses until it
+ * calls draft_group for every field group, each call drafts its group
+ * through a sub-agent, and the draft is versioned on the transcript once
+ * the set is complete.
  *
  * The conversation is scoped by an editorial session: the session hosts the
- * persisted ai_conversation_message rows, and its target content type drives
+ * persisted conversation rows, and its target content type drives
  * the drafting context. Turns are persisted by the message recorder, so any
  * user with access to the session sees the same conversation.
  */
@@ -66,13 +63,6 @@ class DraftingPlugin extends AiAssistantPluginBase {
   private const string TEMPLATE_FIELD = 'template';
 
   /**
-   * The AI agent plugin manager.
-   *
-   * @var \Drupal\ai_agents\PluginManager\AiAgentManager
-   */
-  protected AiAgentManager $aiAgentManager;
-
-  /**
    * The drafting schema provider.
    *
    * @var \Drupal\oe_ai_assistant\Service\DraftingSchemaProviderInterface
@@ -80,25 +70,11 @@ class DraftingPlugin extends AiAssistantPluginBase {
   protected DraftingSchemaProviderInterface $schemaProvider;
 
   /**
-   * The draft saver service.
+   * The agent plugin manager, which builds the drafting agent.
    *
-   * @var \Drupal\oe_ai_assistant\Service\DraftSaverInterface
+   * @var \Drupal\ai_neuron\Agent\NeuronAgentManagerInterface
    */
-  protected DraftSaverInterface $draftSaver;
-
-  /**
-   * The tool execution loop service.
-   *
-   * @var \Drupal\oe_ai_assistant\Service\ToolExecutionLoopInterface
-   */
-  protected ToolExecutionLoopInterface $toolLoop;
-
-  /**
-   * The orchestrator for sub-agent dispatch.
-   *
-   * @var \Drupal\oe_ai_assistant\Service\DraftingOrchestratorInterface
-   */
-  protected DraftingOrchestratorInterface $orchestrator;
+  protected NeuronAgentManagerInterface $agentManager;
 
   /**
    * The editorial tone context service.
@@ -152,11 +128,8 @@ class DraftingPlugin extends AiAssistantPluginBase {
     $plugin_definition,
   ): static {
     $instance = parent::create($container, $configuration, $plugin_id, $plugin_definition);
-    $instance->aiAgentManager = $container->get('plugin.manager.ai_agents');
     $instance->schemaProvider = $container->get(DraftingSchemaProviderInterface::class);
-    $instance->draftSaver = $container->get(DraftSaverInterface::class);
-    $instance->toolLoop = $container->get(ToolExecutionLoopInterface::class);
-    $instance->orchestrator = $container->get(DraftingOrchestratorInterface::class);
+    $instance->agentManager = $container->get(NeuronAgentManagerInterface::class);
     $instance->aiEditorialContext = $container->get(AiEditorialContextInterface::class);
     $instance->draftHistory = $container->get(DraftHistoryInterface::class);
     $instance->contextDocumentRepository = $container->get(ContextDocumentRepository::class);
@@ -174,7 +147,8 @@ class DraftingPlugin extends AiAssistantPluginBase {
     return parent::getActionMap() + [
       'chat' => $this->chat(...),
       'reset' => $this->reset(...),
-      'save' => $this->save(...),
+      'get-approvals' => $this->getApprovals(...),
+      'submit-approval' => $this->submitApproval(...),
       'set-tone' => $this->setTone(...),
       'set-template' => $this->setTemplate(...),
       'add-document' => $this->addDocument(...),
@@ -192,7 +166,8 @@ class DraftingPlugin extends AiAssistantPluginBase {
     // The base provides the get-messages schema.
     return parent::getRequestSchemas() + [
       'reset' => 'DraftingResetRequest',
-      'save' => 'DraftingSaveRequest',
+      'get-approvals' => 'DraftingGetApprovalsRequest',
+      'submit-approval' => 'DraftingSubmitApprovalRequest',
       'set-tone' => 'DraftingSetToneRequest',
       'set-template' => 'DraftingSetTemplateRequest',
       'add-document' => 'DraftingAddDocumentRequest',
@@ -264,33 +239,12 @@ class DraftingPlugin extends AiAssistantPluginBase {
   }
 
   /**
-   * Serializes internal prompt-ready tone options for frontend bootstrap.
-   *
-   * @param array<int, array{id: string, label: string, description: string, oe_ai_prompt: string}> $options
-   *   The prompt-ready service options.
-   *
-   * @return array<int, array{id: string, label: string, description: string}>
-   *   Frontend-safe tone options.
-   */
-  private function serializeToneOptions(array $options): array {
-    return array_map(
-      static fn (array $option): array => [
-        'id' => $option['id'],
-        'label' => $option['label'],
-        'description' => $option['description'],
-      ],
-      $options,
-    );
-  }
-
-  /**
    * Streams an AI chat response via SSE.
    *
-   * Supports a multi-turn tool flow: the LLM can call
-   * get_content_schema (executed by ai_agents), chat with the
-   * user, then call draft_content to trigger sub-agent
-   * orchestration. History and every turn are scoped to the
-   * editorial session named by the request.
+   * The turn workflow routes the message, drafts on the router's signal and
+   * versions the result; this action only maps its chunks onto the stream.
+   * History and every turn are scoped to the editorial session named by the
+   * request.
    *
    * @param \Symfony\Component\HttpFoundation\Request $request
    *   The incoming request with a chat message body.
@@ -308,175 +262,71 @@ class DraftingPlugin extends AiAssistantPluginBase {
       );
     }
 
-    $session = $this->loadSession($body);
-    $context = $this->buildContext($session);
+    $agent = $this->buildAgent($body);
 
-    // Resolve the session's template and pin its id for the prompt, tool, and
-    // orchestrator. An invalid stored template is a 400.
-    try {
-      $template = $this->schemaProvider->resolveTemplate(
-        $context['entityTypeId'], $context['bundle'], $context['template']
-      );
+    return $this->streamRun($agent->stream(new UserMessage($message)), $agent);
+  }
+
+  /**
+   * Lists the tool calls of the session waiting on the editor's decision.
+   *
+   * A gated call suspends the run until it is answered, and the run is durable,
+   * so a reload reads the request back rather than losing it.
+   *
+   * @param \Symfony\Component\HttpFoundation\Request $request
+   *   The request naming the session.
+   *
+   * @return array
+   *   An array with an `approvals` list, each {id, name, description, reason,
+   *   inputs}.
+   */
+  public function getApprovals(Request $request): array {
+    $body = $this->decodeJsonBody($request);
+    $agent = $this->buildAgent($body);
+
+    return [
+      'approvals' => array_map(
+        static fn (Action $action): array => $action->jsonSerialize(),
+        $agent->pendingApprovals(),
+      ),
+    ];
+  }
+
+  /**
+   * Answers one gated tool call and streams the rest of the run.
+   *
+   * @param \Symfony\Component\HttpFoundation\Request $request
+   *   The request naming the session, the call and the decision.
+   *
+   * @return \Symfony\Component\HttpFoundation\Response
+   *   The resumed run, as a UI message stream.
+   *
+   * @throws \Drupal\oe_ai_assistant\Exception\ActionException
+   *   When the call is unknown to the run, or the decision is not one of
+   *   approve and reject.
+   */
+  public function submitApproval(Request $request): Response {
+    $body = $this->decodeJsonBody($request);
+    $callId = (string) ($body['callId'] ?? '');
+    $decision = (string) ($body['decision'] ?? '');
+    $reason = (string) ($body['reason'] ?? '');
+
+    if ($decision !== 'approve' && $decision !== 'reject') {
+      throw new ActionException('invalid_request', 'A decision must be approve or reject.', 400);
     }
-    catch (\InvalidArgumentException $e) {
-      throw new ActionException('invalid_request', $e->getMessage(), 400);
-    }
-    $context['template'] = $template?->id();
 
-    // Resolve the full editorial context once: tone (id, label, prompt),
-    // template (id, label) and documents (extracts and summaries).
-    // Sub-agents receive it for prompt injection and it becomes the
-    // provenance snapshot of the produced draft.
-    $editorialContext = $this->buildEditorialContext($session, $template);
+    $agent = $this->buildAgent($body);
 
-    // Load the persisted transcript, then append the current user's message
-    // for this turn's LLM call and persist it as a user turn.
-    $history = $this->buildHistory($session);
-    $history[] = new ChatMessage('user', $message);
-    $this->messageRecorder->recordUser(
-      $session, $message, (int) $this->currentUser->id()
-    );
-
-    // Load the router agent config entity for system prompt and
-    // tools (get_content_schema is registered there).
-    $router = $this->aiAgentManager->createInstance('oe_drafting_router');
-
-    // Build the system prompt with schema groups appended, then the
-    // context documents: the router needs them to answer questions about
-    // the material and to warn about documents still being processed. The
-    // tone stays out of the router prompt; it only steers the sub-agents.
-    $systemPrompt = $this->buildSystemPrompt(
-      $router->getSystemPrompt(), $context
-    );
-    $contextDocumentsPrompt = $editorialContext->toContextDocumentsPrompt();
-    if ($contextDocumentsPrompt !== '') {
-      $systemPrompt .= "\n\n" . $contextDocumentsPrompt . "\n";
+    $pending = array_map(static fn (Action $action): string => $action->id, $agent->pendingApprovals());
+    if (!in_array($callId, $pending, TRUE)) {
+      throw new ActionException('invalid_request', 'No such call is waiting for a decision.', 400);
     }
 
-    // Collect tools: get_content_schema from agent config +
-    // inline draft_content signal tool.
-    $functions = $router->getFunctions();
-    $tools = [];
-    if (!empty($functions['normalized'])) {
-      $tools = $functions['normalized'];
-    }
-    $tools[] = $this->buildDraftTool();
+    // A rejection carries the editor's words to the model, so it can say what
+    // was turned down rather than retrying the same call.
+    $answer = $decision === 'reject' && $reason !== '' ? ['reject', $reason] : $decision;
 
-    // Resolve the provider for chat_with_tools.
-    $defaults = $this->aiProviderManager
-      ->getDefaultProviderForOperationType('chat_with_tools');
-    $provider = $this->aiProviderManager
-      ->createInstance($defaults['provider_id']);
-
-    // Persist each provider turn as it happens. The loop invokes this once
-    // per response, so the assistant turn (including the terminal
-    // draft_content turn) and its tool results are recorded without the loop
-    // knowing about entities. Keep the last assistant turn so the drafted
-    // fields can be attached to the triggering draft_content call afterwards.
-    $lastAssistant = NULL;
-    $recordTurn = function (ChatOutput $output, array $toolResults) use ($session, $defaults, &$lastAssistant): void {
-      $lastAssistant = $this->messageRecorder->recordAssistant(
-        $session, $output, 'orchestrator', $defaults['provider_id'], $defaults['model_id']
-      );
-      foreach ($toolResults as $toolMessage) {
-        $this->messageRecorder->recordTool($session, $toolMessage->getText());
-      }
-    };
-
-    // Stream the response using UiMessageStream. The callback
-    // delegates to ToolExecutionLoop which handles the multi-turn
-    // tool call flow (call LLM, execute tools, repeat).
-    return $this->uiMessageStream->respond(
-      function (UiMessageStreamInterface $stream) use (
-        $history, $context, $systemPrompt, $tools,
-        $defaults, $provider, $recordTurn, $session, &$lastAssistant,
-        $editorialContext,
-      ): void {
-        $stream->start();
-
-        // Run the tool execution loop. It handles streaming,
-        // non-terminal tool execution (e.g. get_content_schema),
-        // and stops when draft_content is called or the LLM
-        // responds with text. The schema tool is pinned to the
-        // entity type and bundle of the current editorial context:
-        // the LLM cannot supply them, and any user-injected values
-        // are overridden at execution time.
-        $result = $this->toolLoop->run(
-          $provider,
-          $defaults['model_id'],
-          $systemPrompt,
-          $tools,
-          $history,
-          $stream,
-          terminalToolNames: ['draft_content'],
-          tags: ['drafting'],
-          fixedToolContexts: [
-            'get_content_schema' => [
-              'entity_type_id' => $context['entityTypeId'],
-              'bundle' => $context['bundle'],
-              // The context definition is string-typed; NULL becomes ''.
-              'template' => $context['template'] ?? '',
-            ],
-            // Pin the session so the model cannot read another session's
-            // draft history.
-            'get_draft_history' => [
-              'session_id' => (string) $session->id(),
-            ],
-          ],
-          recordTurn: $recordTurn,
-        );
-
-        if ($result->hasTerminalTool()
-          && $result->terminalToolName === 'draft_content'
-        ) {
-          // Run the sub-agent orchestration and keep the consolidated fields.
-          // The draft_content turn is the parent each sub-agent turn nests
-          // under in the recorded transcript.
-          $drafted = $this->orchestrator->run(
-            $stream, $history,
-            $context['entityTypeId'], $context['bundle'],
-            $session, $lastAssistant,
-            $editorialContext
-          );
-          // Version the draft and snapshot the context that produced it.
-          // Prior drafts already carry a result; the current draft_content
-          // call does not yet, so the count is the number of earlier drafts.
-          $version = $this->draftHistory->countDrafts($session) + 1;
-          $draftResult = [
-            'version' => $version,
-            'context' => $editorialContext->toSnapshot(),
-            'fields' => $drafted,
-          ];
-          // Emit the draft_content tool call with its result so the card
-          // appears live, matching what a reload rehydrates.
-          $stream->toolCall('draft_content', [], $draftResult);
-          // Record the versioned result on the draft_content call so the
-          // transcript keeps a provenance trace that can repopulate the
-          // artifact.
-          if ($lastAssistant !== NULL) {
-            $this->attachDraftResult($lastAssistant, $draftResult);
-          }
-          // Stream and record a confirmation so it survives a reload. The
-          // draft name in the text is how the version reaches the model on
-          // later turns (the reconstructed history carries text rows only).
-          if ($drafted) {
-            $confirmation = sprintf(
-              'Draft %d generated with %d fields. Review the content on the right.',
-              $version,
-              count($drafted)
-            );
-            $stream->startStep('confirmation');
-            $stream->textDelta($confirmation);
-            $stream->finishStep('confirmation');
-            $this->messageRecorder->recordAssistantText(
-              $session, $confirmation, 'orchestrator'
-            );
-          }
-        }
-
-        $stream->finish($result->finishReason);
-      }
-    );
+    return $this->streamRun($agent->submitApprovalDecisions([$callId => $answer])->events(), $agent);
   }
 
   /**
@@ -490,52 +340,8 @@ class DraftingPlugin extends AiAssistantPluginBase {
    */
   public function reset(Request $request): array {
     $session = $this->loadSession($this->decodeJsonBody($request));
-    $this->entityTypeManager->getStorage('ai_conversation_message')
-      ->deleteForHost($session);
+    $this->conversation->deleteFor($session);
     return ['status' => 'ok'];
-  }
-
-  /**
-   * Saves one of the session's draft versions as an unpublished node.
-   *
-   * The request names a session and a draft version; the fields come from
-   * the session's own draft history, so clients can never save field data
-   * the session did not produce. The save is recorded as a durable
-   * timeline event on the transcript.
-   *
-   * @param \Symfony\Component\HttpFoundation\Request $request
-   *   The save request with `sessionId` and `version`.
-   *
-   * @return array<string, string>
-   *   An array with `nodeId` and `previewUrl`.
-   *
-   * @throws \Drupal\oe_ai_assistant\Exception\ActionException
-   *   On an unknown version, missing permission, or builder rejection.
-   */
-  public function save(Request $request): array {
-    $body = $this->decodeJsonBody($request);
-    $session = $this->loadSession($body);
-    $version = (int) ($body['version'] ?? 0);
-
-    $draft = $this->draftHistory->getDraftContent($session, $version);
-    if ($draft === NULL || $draft['fields'] === []) {
-      throw new ActionException(
-        'invalid_request',
-        sprintf('Draft %d does not exist in this session.', $version),
-        400,
-      );
-    }
-
-    $result = $this->draftSaver->save($session, $draft['fields'], $draft['templateId'], $version);
-
-    $this->messageRecorder->recordEvent(
-      $session,
-      sprintf('Draft %d saved as unpublished revision', $version),
-      ['type' => 'save', 'version' => $version, 'nodeId' => $result['nodeId']],
-      (int) $this->currentUser->id(),
-    );
-
-    return $result;
   }
 
   /**
@@ -605,10 +411,10 @@ class DraftingPlugin extends AiAssistantPluginBase {
     $body = $this->decodeJsonBody($request);
     $toneId = (string) ($body['toneId'] ?? '');
 
-    // Validate before any write; getTone throws the same exception as
-    // buildSelectedPrompt and also returns the label needed for the event.
+    // Validate before any write, with the same exception buildSelectedPrompt
+    // raises for a tone that is not prompt-ready.
     try {
-      $tone = $this->aiEditorialContext->getTone($toneId);
+      $this->aiEditorialContext->getTone($toneId);
     }
     catch (\InvalidArgumentException $e) {
       throw new ActionException(
@@ -619,28 +425,8 @@ class DraftingPlugin extends AiAssistantPluginBase {
     }
 
     $session = $this->loadSession($body);
-    $previous = $session->get(static::TONE_FIELD)->entity;
-    $from = $previous
-      ? ['id' => (string) $previous->id(), 'label' => (string) $previous->label()]
-      : NULL;
     $session->set(static::TONE_FIELD, $toneId);
     $session->save();
-
-    // Record the change as a durable timeline event; the summary names
-    // both tones when there was a previous one. Re-selecting the current
-    // tone is a no-op and must not record a misleading change event.
-    $to = ['id' => $tone['id'], 'label' => $tone['label']];
-    if ($from !== NULL && $from['id'] === $to['id']) {
-      return ['status' => 'ok'];
-    }
-    $summary = $from === NULL
-      ? sprintf('Tone changed to %s', $to['label'])
-      : sprintf('Tone changed from %s to %s', $from['label'], $to['label']);
-    $this->messageRecorder->recordEvent(
-      $session, $summary,
-      ['type' => 'tone', 'from' => $from, 'to' => $to],
-      (int) $this->currentUser->id(),
-    );
 
     return ['status' => 'ok'];
   }
@@ -665,10 +451,6 @@ class DraftingPlugin extends AiAssistantPluginBase {
     $templateId = (string) ($body['template'] ?? '');
 
     $session = $this->loadSession($body);
-    $previous = $session->get(static::TEMPLATE_FIELD)->entity;
-    $from = $previous
-      ? ['id' => (string) $previous->id(), 'label' => (string) $previous->label()]
-      : NULL;
     $session->set(static::TEMPLATE_FIELD, $templateId !== '' ? $templateId : NULL);
 
     $violations = $session->get(static::TEMPLATE_FIELD)->validate();
@@ -681,22 +463,6 @@ class DraftingPlugin extends AiAssistantPluginBase {
     }
 
     $session->save();
-
-    // Record the change as a durable timeline event. The field is mandatory
-    // and validated above, so the referenced template always exists here.
-    // Re-selecting the current template is a no-op and must not record a
-    // misleading change event.
-    $template = $session->get(static::TEMPLATE_FIELD)->entity;
-    $to = ['id' => (string) $template->id(), 'label' => (string) $template->label()];
-    if ($from !== NULL && $from['id'] === $to['id']) {
-      return ['status' => 'ok'];
-    }
-    $summary = sprintf('Template changed to %s', $to['label']);
-    $this->messageRecorder->recordEvent(
-      $session, $summary,
-      ['type' => 'template', 'from' => $from, 'to' => $to],
-      (int) $this->currentUser->id(),
-    );
 
     return ['status' => 'ok'];
   }
@@ -794,38 +560,110 @@ class DraftingPlugin extends AiAssistantPluginBase {
   }
 
   /**
-   * Attaches the drafted fields as the result of the draft_content call.
+   * Serializes internal prompt-ready tone options for frontend bootstrap.
    *
-   * The result is the output of the draft_content tool, produced by the
-   * orchestrator after the loop returns. Storing it on the tool call lets the
-   * transcript render a clickable trace that repopulates the artifact.
+   * @param array<int, array{id: string, label: string, description: string, oe_ai_prompt: string}> $options
+   *   The prompt-ready service options.
    *
-   * @param \Drupal\oe_ai_assistant\Entity\AiConversationMessageInterface $message
-   *   The assistant turn that triggered drafting.
-   * @param array $result
-   *   The versioned draft result: {version, context, fields}.
+   * @return array<int, array{id: string, label: string, description: string}>
+   *   Frontend-safe tone options.
    */
-  private function attachDraftResult(AiConversationMessageInterface $message, array $result): void {
-    $toolCalls = $message->getToolCalls();
-    $found = FALSE;
-    foreach ($toolCalls as &$call) {
-      if (($call['function']['name'] ?? '') === 'draft_content') {
-        $call['result'] = $result;
-        $found = TRUE;
+  private function serializeToneOptions(array $options): array {
+    return array_map(
+      static fn (array $option): array => [
+        'id' => $option['id'],
+        'label' => $option['label'],
+        'description' => $option['description'],
+      ],
+      $options,
+    );
+  }
+
+  /**
+   * Builds the drafting agent for the session the request names.
+   *
+   * The agent and its tools are plugins, so a manager builds them and no
+   * caller can hand them anything: the session travels as the configuration
+   * the manager passes on, and the agent reads the rest off it.
+   *
+   * @param array $body
+   *   The decoded request body, which names the session.
+   *
+   * @return \NeuronAI\Agent\AgentInterface
+   *   The agent.
+   *
+   * @throws \Drupal\oe_ai_assistant\Exception\ActionException
+   *   When the session is unknown, or its stored template or tone is not one
+   *   the bundle can draft with.
+   */
+  private function buildAgent(array $body): AgentInterface {
+    $session = $this->loadSession($body);
+
+    try {
+      return $this->agentManager->createAgent('drafting', ['session' => $session]);
+    }
+    catch (\InvalidArgumentException $e) {
+      throw new ActionException('invalid_request', $e->getMessage(), 400);
+    }
+  }
+
+  /**
+   * Streams an agent run as UI message stream events.
+   *
+   * Neuron yields the protocol events and frames them; the response, the
+   * flush and what is sent after the run are the host's. A failure mid-stream
+   * degrades into an error event, since an exception would print an HTML page
+   * into the stream.
+   */
+  private function streamRun(\Generator $run, AgentInterface $agent): Response {
+    $response = new AiStreamedResponse(NULL, 200, (new VercelAIAdapter())->getHeaders());
+    $response->setCallback(function () use ($run, $agent): void {
+      set_time_limit(0);
+      $emit = static function (ProtocolEvent $event): void {
+        echo SSEEncoder::frame($event);
+        flush();
+      };
+
+      // The event closing the stream is held back: the app stops reading the
+      // message once it arrives, and a suspended run has a question to ask
+      // first.
+      $terminal = NULL;
+      try {
+        foreach ($run as $protocolEvent) {
+          if (in_array($protocolEvent->type, ['finish', 'error'], TRUE)) {
+            $terminal = $protocolEvent;
+            continue;
+          }
+          $emit($protocolEvent);
+        }
       }
-    }
-    unset($call);
-    // Guarantee a draft_content trace even if the stream did not surface the
-    // call in the reconstructed tool list.
-    if (!$found) {
-      $toolCalls[] = [
-        'type' => 'function',
-        'function' => ['name' => 'draft_content', 'arguments' => '{}'],
-        'result' => $result,
-      ];
-    }
-    $message->setToolCalls($toolCalls);
-    $message->save();
+      catch (\Throwable $e) {
+        $this->logger->error('Drafting turn failed: @message', ['@message' => $e->getMessage()]);
+        $terminal = new ProtocolEvent('error', ['errorText' => 'The assistant request failed. Please try again.']);
+      }
+
+      // A gated tool call suspends the run with no part of its own in the
+      // stream, so the request is sent here rather than left for the app to go
+      // and ask for.
+      $approvals = array_map(
+        static fn (Action $action): array => $action->jsonSerialize(),
+        $agent->pendingApprovals(),
+      );
+      if ($approvals !== []) {
+        $emit(new ProtocolEvent('data-approval-request', ['data' => ['approvals' => $approvals]]));
+      }
+      if ($terminal instanceof ProtocolEvent) {
+        $emit($terminal);
+      }
+
+      // Neuron stopped sending the sentinel, since a protocol does not get to
+      // decide how a transport ends. The decoder the app runs still reads a
+      // stream without it as truncated, so the transport sends it.
+      echo "data: [DONE]\n\n";
+      flush();
+    });
+
+    return $response;
   }
 
   /**
@@ -881,27 +719,6 @@ class DraftingPlugin extends AiAssistantPluginBase {
   }
 
   /**
-   * Builds the draft_content signal tool definition.
-   *
-   * No arguments. When the LLM calls this, the orchestrator takes
-   * over and dispatches sub-agents per field group.
-   *
-   * @return \Drupal\ai\OperationType\Chat\Tools\ToolsFunctionInput
-   *   The draft_content tool definition.
-   */
-  private function buildDraftTool(): ToolsFunctionInput {
-    $tool = new ToolsFunctionInput();
-    $tool->setName('draft_content');
-    $tool->setDescription(
-      'Signal that you are ready to generate the content draft.'
-      . ' Call this after you have gathered enough information'
-      . ' from the user. The system will generate field values'
-      . ' automatically using sub-agents.'
-    );
-    return $tool;
-  }
-
-  /**
    * Builds drafting context from the editorial session.
    *
    * @param \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $session
@@ -916,73 +733,6 @@ class DraftingPlugin extends AiAssistantPluginBase {
       'bundle' => $session->getContentType(),
       'template' => (string) $session->get(static::TEMPLATE_FIELD)->target_id,
     ];
-  }
-
-  /**
-   * Resolves the editorial context for one drafting request.
-   *
-   * The tone is resolved through AiEditorialContext, which stays the single
-   * source of tone wording; an invalid stored tone is a 400 exactly as the
-   * former router prompt injection made it. Labels are captured at request
-   * time so the provenance snapshot survives later renames. Context
-   * documents come from their repository with their extracts, so the
-   * prompts reflect the latest state on every call.
-   *
-   * @param \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $session
-   *   The session hosting the conversation.
-   * @param \Drupal\oe_ai_assistant\AiDraftingTemplateInterface|null $template
-   *   The resolved drafting template, or NULL without one.
-   *
-   * @return \Drupal\oe_ai_assistant\Service\Drafting\EditorialContext
-   *   The immutable per-request editorial context.
-   *
-   * @throws \Drupal\oe_ai_assistant\Exception\ActionException
-   *   When the stored tone is invalid or not prompt-ready.
-   */
-  private function buildEditorialContext(AiEditorialSessionInterface $session, ?AiDraftingTemplateInterface $template): EditorialContext {
-    $toneId = (string) $session->get(static::TONE_FIELD)->target_id;
-    $tone = NULL;
-    if ($toneId !== '') {
-      try {
-        $tone = $this->aiEditorialContext->getTone($toneId);
-      }
-      catch (\InvalidArgumentException $e) {
-        throw new ActionException('invalid_context', $e->getMessage(), 400);
-      }
-    }
-    return new EditorialContext(
-      toneId: $tone['id'] ?? NULL,
-      toneLabel: $tone['label'] ?? NULL,
-      tonePrompt: $tone['prompt'] ?? NULL,
-      templateId: $template?->id(),
-      templateLabel: $template?->label(),
-      contextDocuments: $this->contextDocumentRepository->describe($session),
-    );
-  }
-
-  /**
-   * Builds the system prompt with content type context and schema.
-   *
-   * @param string $basePrompt
-   *   The initial prompt.
-   * @param array<int,mixed> $context
-   *   The context to add to the prompt.
-   */
-  private function buildSystemPrompt(string $basePrompt, array $context): string {
-    $prompt = $basePrompt
-      . "\n\nContent type context:\n"
-      . "bundle: " . $context['bundle'] . "\n"
-      . "entity_type_id: " . $context['entityTypeId'] . "\n";
-
-    if (!empty($context['bundle'])) {
-      $groups = $this->schemaProvider->groups(
-        $context['entityTypeId'], $context['bundle'], $context['template']
-      );
-      $prompt .= "\nAvailable field groups:\n"
-        . json_encode($groups) . "\n";
-    }
-
-    return $prompt;
   }
 
 }

@@ -36,7 +36,7 @@ class TemplateSchemaFilterTest extends KernelTestBase {
     'link',
     'taxonomy',
     'ai',
-    'ai_agents',
+    'ai_neuron',
     'entity_reference_revisions',
     'inline_entity_form',
     'key',
@@ -47,43 +47,6 @@ class TemplateSchemaFilterTest extends KernelTestBase {
     'document_loader_tika',
     'oe_ai_assistant_test',
   ];
-
-  /**
-   * {@inheritdoc}
-   */
-  protected function setUp(): void {
-    parent::setUp();
-    $this->installEntitySchema('user');
-    $this->installEntitySchema('node');
-    $this->installEntitySchema('paragraph');
-    $this->installEntitySchema('content_moderation_state');
-    $this->installEntitySchema('file');
-    $this->installEntitySchema('taxonomy_term');
-    $this->installConfig(['oe_ai_assistant_test']);
-  }
-
-  /**
-   * Returns the schema composer.
-   */
-  private function composer(): EntityJsonSchemaComposer {
-    return $this->container->get(EntityJsonSchemaComposer::class);
-  }
-
-  /**
-   * Returns the filter under test.
-   */
-  private function filter(): TemplateSchemaFilterInterface {
-    return $this->container->get(TemplateSchemaFilterInterface::class);
-  }
-
-  /**
-   * Loads a drafting template fixture by ID.
-   */
-  private function template(string $id): AiDraftingTemplate {
-    $template = AiDraftingTemplate::load($id);
-    $this->assertInstanceOf(AiDraftingTemplate::class, $template, "Template $id loaded.");
-    return $template;
-  }
 
   /**
    * Filtering keeps only the template's top-level fields, in template order.
@@ -351,6 +314,43 @@ class TemplateSchemaFilterTest extends KernelTestBase {
     $items = $filtered['properties']['field_content_paragraphs']['items'];
     $this->assertNotSame([], $items['oneOf'], 'oneOf must not be empty.');
     $this->assertCount(2, $items['oneOf'], 'Both composed variants survive.');
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  protected function setUp(): void {
+    parent::setUp();
+    $this->installEntitySchema('user');
+    $this->installEntitySchema('node');
+    $this->installEntitySchema('paragraph');
+    $this->installEntitySchema('content_moderation_state');
+    $this->installEntitySchema('file');
+    $this->installEntitySchema('taxonomy_term');
+    $this->installConfig(['oe_ai_assistant_test']);
+  }
+
+  /**
+   * Returns the schema composer.
+   */
+  private function composer(): EntityJsonSchemaComposer {
+    return $this->container->get(EntityJsonSchemaComposer::class);
+  }
+
+  /**
+   * Returns the filter under test.
+   */
+  private function filter(): TemplateSchemaFilterInterface {
+    return $this->container->get(TemplateSchemaFilterInterface::class);
+  }
+
+  /**
+   * Loads a drafting template fixture by ID.
+   */
+  private function template(string $id): AiDraftingTemplate {
+    $template = AiDraftingTemplate::load($id);
+    $this->assertInstanceOf(AiDraftingTemplate::class, $template, "Template $id loaded.");
+    return $template;
   }
 
   /**

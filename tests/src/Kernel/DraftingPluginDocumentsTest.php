@@ -4,17 +4,17 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\oe_ai_assistant\Kernel;
 
+use Drupal\field\FieldConfigInterface;
 use Drupal\file\FileInterface;
 use Drupal\file\Upload\InputStreamFileWriterInterface;
-use Drupal\field\FieldConfigInterface;
+use Drupal\file\Upload\InputStreamUploadedFile;
+use Drupal\file\Upload\UploadedFileInterface;
 use Drupal\media\MediaInterface;
 use Drupal\oe_ai_assistant\Controller\PluginController;
 use Drupal\oe_ai_assistant\Exception\ActionException;
 use Drupal\oe_ai_assistant\Plugin\AiAssistantPluginManager;
-use Drupal\oe_ai_assistant\Service\RequestValidator;
-use Drupal\file\Upload\InputStreamUploadedFile;
-use Drupal\file\Upload\UploadedFileInterface;
 use Drupal\oe_ai_assistant\Service\Drafting\ContextDocumentRepository;
+use Drupal\oe_ai_assistant\Service\RequestValidator;
 use Drupal\oe_ai_assistant_test\Plugin\AiProvider\MockAiProvider;
 use Drupal\oe_ai_assistant_test\Plugin\AiProvider\MockResponse;
 use GuzzleHttp\Psr7\Response;
@@ -22,8 +22,8 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Reference;
-use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\File\Exception\UploadException;
+use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 
 /**
@@ -44,30 +44,6 @@ class DraftingPluginDocumentsTest extends AiEditorialSessionKernelTestBase {
     // Raw upload bodies are read from php://input, which tests cannot feed.
     $container->register('file.input_stream_file_writer', TestInputStreamFileWriter::class)
       ->addArgument(new Reference('file_system'));
-  }
-
-  /**
-   * {@inheritdoc}
-   */
-  protected function setUpFilesystem(): void {
-    parent::setUpFilesystem();
-    $privatePath = $this->siteDirectory . '/private';
-    mkdir($privatePath);
-    $this->setSetting('file_private_path', $privatePath);
-  }
-
-  /**
-   * {@inheritdoc}
-   */
-  protected function setUp(): void {
-    parent::setUp();
-    $this->installSchema('file', ['file_usage']);
-    $this->installConfig(['document_loader_tika']);
-    $this->enableModules(['oe_ai_assistant_test']);
-    $this->config('ai.settings')
-      ->set('default_providers', ['chat' => ['provider_id' => 'mock_ai', 'model_id' => 'mock-model']])
-      ->save();
-    MockAiProvider::reset();
   }
 
   /**
@@ -592,6 +568,30 @@ class DraftingPluginDocumentsTest extends AiEditorialSessionKernelTestBase {
     $this->assertSame(500, $response->getStatusCode());
     $payload = json_decode($response->getContent(), TRUE, 512, JSON_THROW_ON_ERROR);
     $this->assertSame('upload_failed', $payload['code']);
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  protected function setUpFilesystem(): void {
+    parent::setUpFilesystem();
+    $privatePath = $this->siteDirectory . '/private';
+    mkdir($privatePath);
+    $this->setSetting('file_private_path', $privatePath);
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  protected function setUp(): void {
+    parent::setUp();
+    $this->installSchema('file', ['file_usage']);
+    $this->installConfig(['document_loader_tika']);
+    $this->enableModules(['oe_ai_assistant_test']);
+    $this->config('ai.settings')
+      ->set('default_providers', ['chat' => ['provider_id' => 'mock_ai', 'model_id' => 'mock-model']])
+      ->save();
+    MockAiProvider::reset();
   }
 
   /**

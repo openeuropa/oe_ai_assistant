@@ -14,12 +14,11 @@ import type { components } from "@/api/schema";
 import { getConfig } from "@/config";
 import type {
   DraftingChatRequest,
-  DraftingSaveRequest,
-  DraftingSaveResponse,
   DraftingSetTemplateRequest,
   DraftingSetTemplateResponse,
   DraftingSetToneRequest,
   DraftingSetToneResponse,
+  DraftingSubmitApprovalRequest,
 } from "../types";
 
 type DraftingCategory = components["schemas"]["DraftingDocumentCategory"];
@@ -89,26 +88,29 @@ export async function setDraftingTone(
 }
 
 /**
- * Saves one of the current session's draft versions as an unpublished
- * node. The backend resolves the drafted fields from its own draft
- * history, so the request only names the version.
+ * Answers one tool call that is waiting for the editor's decision.
+ *
+ * Approving runs the call and finishes the turn; rejecting skips it and tells
+ * the model why. The response is the rest of the turn as a stream, which this
+ * reads to completion and discards: the thread is reloaded from the stored
+ * conversation afterwards, which is also what a page refresh would show.
  */
-export async function saveDraftRevision(
-  request: DraftingSaveRequest,
-): Promise<DraftingSaveResponse> {
+export async function submitDraftingApproval(
+  request: DraftingSubmitApprovalRequest,
+): Promise<void> {
   const response = await apiFetch(
-    `${getConfig().apiBaseUrl}/plugins/drafting/save`,
+    `${getConfig().apiBaseUrl}/plugins/drafting/submit-approval`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      // Scope the save to the current editorial session.
+      // Scope the decision to the current editorial session.
       body: JSON.stringify({ ...request, sessionId: getConfig().sessionId }),
     },
   );
   if (!response.ok) {
-    throw new Error(`Drafting save error: ${response.status}`);
+    throw new Error(`Drafting approval error: ${response.status}`);
   }
-  return (await response.json()) as DraftingSaveResponse;
+  await response.text();
 }
 
 /** Sets the selected drafting template on the current session. */

@@ -1,9 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { extractSavedVersions } from "../saved-versions";
 
-/** Builds an editorial_event tool-call part in the assistant-ui shape. */
-function eventPart(args: Record<string, unknown>) {
-  return { type: "tool-call", toolName: "editorial_event", args };
+/** Builds a save_draft tool-call part in the assistant-ui shape. */
+function savePart(result?: Record<string, unknown>) {
+  return {
+    type: "tool-call",
+    toolName: "save_draft",
+    ...(result === undefined ? {} : { result }),
+  };
 }
 
 describe("extractSavedVersions", () => {
@@ -11,25 +15,43 @@ describe("extractSavedVersions", () => {
     expect(extractSavedVersions([])).toEqual(new Set());
   });
 
-  it("collects the versions named by save events", () => {
+  it("collects the versions a save wrote", () => {
     const messages = [
-      { content: [eventPart({ eventType: "save", version: 2 })] },
-      { content: [eventPart({ eventType: "save", version: 1 })] },
+      { content: [savePart({ version: 2, nodeId: "7" })] },
+      { content: [savePart({ version: 1, nodeId: "7" })] },
     ];
     expect(extractSavedVersions(messages)).toEqual(new Set([1, 2]));
   });
 
-  it("ignores other events, non-numeric versions and other tools", () => {
+  it("reads a result the stream sent as text", () => {
     const messages = [
-      { content: [eventPart({ eventType: "tone", version: 3 })] },
-      { content: [eventPart({ eventType: "save", version: "4" })] },
-      { content: [eventPart({ eventType: "save" })] },
       {
         content: [
           {
             type: "tool-call",
-            toolName: "draft_content",
-            args: { version: 5 },
+            toolName: "save_draft",
+            result: '{"version":3,"nodeId":"7"}',
+          },
+        ],
+      },
+    ];
+    expect(extractSavedVersions(messages)).toEqual(new Set([3]));
+  });
+
+  it("ignores waiting calls, refusals and other tools", () => {
+    const messages = [
+      // Still waiting for the editor's decision.
+      { content: [savePart()] },
+      // Refused, so nothing was written.
+      { content: [savePart({ version: 3, error: "Access denied." })] },
+      // A node without a version says nothing about which draft it was.
+      { content: [savePart({ nodeId: "7" })] },
+      {
+        content: [
+          {
+            type: "tool-call",
+            toolName: "draft_group",
+            result: { version: 5, nodeId: "7" },
           },
         ],
       },

@@ -2,14 +2,13 @@
  * Maps a persisted transcript into assistant-ui seed messages.
  *
  * Used by the drafting runtime's history adapter to rehydrate the thread on
- * mount. Text turns become text parts; tool calls become tool-call parts; event
- * items (role "event") become assistant messages carrying an editorial_event
- * tool-call part so they are visible in the thread.
+ * mount. Text turns become text parts and tool calls become tool-call parts
+ * carrying their stored result, or no result when the call is still waiting
+ * for the editor to answer it.
  */
 
 import type { ThreadMessageLike } from "@assistant-ui/react";
 import type { SessionMessage } from "@/api/session-messages";
-import { parseDraftResult } from "./draft-result";
 
 /**
  * Safe-parses a JSON string into a plain object.
@@ -36,34 +35,12 @@ function safeParseArgs(raw: string | undefined): Record<string, unknown> {
 /**
  * Maps a single transcript entry to an assistant-ui message.
  *
- * Returns null when the entry has nothing to show (no text, no tool calls,
- * and not an event item).
+ * Returns null when the entry has nothing to show: no text and no tool calls.
  */
 export function toThreadMessage(
   message: SessionMessage,
   index: number,
 ): ThreadMessageLike | null {
-  // Event items are surfaced as assistant messages with a single editorial_event
-  // tool-call part so they appear as annotated steps in the thread.
-  if (message.role === "event") {
-    const part = {
-      type: "tool-call",
-      toolCallId: `event-${index}`,
-      toolName: "editorial_event",
-      args: {
-        eventType: message.type,
-        summary: message.summary,
-        at: message.at,
-        ...(message.version !== undefined ? { version: message.version } : {}),
-      },
-      result: {},
-    };
-    return {
-      role: "assistant",
-      content: [part],
-    } as unknown as ThreadMessageLike;
-  }
-
   const parts: Array<Record<string, unknown>> = [];
 
   if (message.content) {
@@ -74,28 +51,19 @@ export function toThreadMessage(
   for (const call of message.toolCalls ?? []) {
     const name = call.function?.name;
     if (!name) continue;
-
-    if (name === "draft_content") {
-      // Parse the result so callers receive normalised fields in args; the
-      // raw result is forwarded as-is so the ToolUI renderer can parse it too.
-      const parsed = parseDraftResult(call.result);
-      parts.push({
-        type: "tool-call",
-        toolCallId: `draft-${index}-${toolIndex++}`,
-        toolName: "draft_content",
-        args: { fields: parsed.fields },
-        result: call.result ?? {},
-      });
-    } else {
-      // General tool call: forward name, safe-parsed args, and raw result.
-      parts.push({
-        type: "tool-call",
-        toolCallId: `tool-${index}-${toolIndex++}`,
-        toolName: name,
-        args: safeParseArgs(call.function?.arguments),
-        result: call.result ?? {},
-      });
-    }
+    // Forward the name, the safe-parsed arguments and the raw result; the
+    // tool UI registered for the name reads what it needs from the result.
+    // The stored call id is what a decision names, so it is kept as the part's
+    // id rather than generated. A call with no result is one that never ran:
+    // leaving the result unset is what tells its UI it is still waiting.
+    parts.push({
+      type: "tool-call",
+      toolCallId: call.id ?? `tool-${index}-${toolIndex}`,
+      toolName: name,
+      args: safeParseArgs(call.function?.arguments),
+      ...(call.result === undefined ? {} : { result: call.result }),
+    });
+    toolIndex += 1;
   }
 
   if (parts.length === 0) {

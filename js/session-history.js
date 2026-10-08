@@ -1,12 +1,13 @@
 /**
  * @file
- * Expand/collapse behavior for the session conversation history table.
+ * Expand/collapse behavior for the session conversation history tables.
  *
- * The server renders every message row and detail row visible so the page
- * stays fully readable without JavaScript. On attach this behavior collapses
- * the table to its default state (top-level turns visible, children and
- * detail rows hidden) and reveals the bulk toolbar, which is useless without
- * JavaScript and therefore server-rendered hidden.
+ * A session holds one table per thread, and every one of them is collapsed and
+ * wired on attach. The server renders every message row and detail row visible
+ * so the page stays fully readable without JavaScript. On attach this behavior
+ * collapses each table to its default state (top-level turns visible, children
+ * and detail rows hidden) and reveals the bulk toolbar, which is useless
+ * without JavaScript and therefore server-rendered hidden.
  *
  * A message row is itself the toggle for its detail row (click, or Enter or
  * Space while focused); the caret button nested in the role cell intercepts
@@ -163,38 +164,47 @@
     }
   }
 
+  /**
+   * Collapses one table to its default state and wires its toggles.
+   *
+   * A page holds one table per thread, so each is set up on its own.
+   */
+  function initTable(table) {
+    // Collapse to the default state: only top-level turns visible, all
+    // detail rows hidden, every toggle reported as collapsed.
+    table.querySelectorAll('tr.ai-history-message:not([data-parent-id=""])').forEach(function (row) {
+      row.hidden = true;
+    });
+    table.querySelectorAll('tr.ai-history-detail').forEach(function (row) {
+      row.hidden = true;
+    });
+    table.querySelectorAll('tr.ai-history-message, button[aria-expanded]').forEach(function (element) {
+      element.setAttribute('aria-expanded', 'false');
+    });
+
+    // One delegated listener serves every row and caret in the table;
+    // Enter and Space activate the focused row like a click.
+    table.addEventListener('click', function (event) {
+      onRowActivate(table, event);
+    });
+    table.addEventListener('keydown', function (event) {
+      if ((event.key === 'Enter' || event.key === ' ') && event.target.matches('tr.ai-history-message')) {
+        event.preventDefault();
+        onRowActivate(table, event);
+      }
+    });
+  }
+
   Drupal.behaviors.aiSessionHistory = {
     attach: function (context) {
       once('ai-session-history', '.ai-history', context).forEach(function (wrapper) {
-        var table = wrapper.querySelector('table.ai-history-table');
+        var tables = wrapper.querySelectorAll('table.ai-history-table');
         var toolbar = wrapper.querySelector('.ai-history-toolbar');
-        if (!table) {
+        if (tables.length === 0) {
           return;
         }
 
-        // Collapse to the default state: only top-level turns visible, all
-        // detail rows hidden, every toggle reported as collapsed.
-        table.querySelectorAll('tr.ai-history-message:not([data-parent-id=""])').forEach(function (row) {
-          row.hidden = true;
-        });
-        table.querySelectorAll('tr.ai-history-detail').forEach(function (row) {
-          row.hidden = true;
-        });
-        table.querySelectorAll('tr.ai-history-message, button[aria-expanded]').forEach(function (element) {
-          element.setAttribute('aria-expanded', 'false');
-        });
-
-        // One delegated listener serves every row and caret in the table;
-        // Enter and Space activate the focused row like a click.
-        table.addEventListener('click', function (event) {
-          onRowActivate(table, event);
-        });
-        table.addEventListener('keydown', function (event) {
-          if ((event.key === 'Enter' || event.key === ' ') && event.target.matches('tr.ai-history-message')) {
-            event.preventDefault();
-            onRowActivate(table, event);
-          }
-        });
+        tables.forEach(initTable);
 
         if (!toolbar) {
           return;
@@ -203,7 +213,7 @@
         toolbar.hidden = false;
 
         // The bulk buttons are command toggles: each flips its own state
-        // and label, then applies it to the whole table.
+        // and label, then applies it to every table of the session.
         toolbar.addEventListener('click', function (event) {
           var button = event.target.closest('button[aria-expanded]');
           if (!button) {
@@ -213,22 +223,24 @@
           button.setAttribute('aria-expanded', expand ? 'true' : 'false');
           button.textContent = expand ? button.dataset.labelHide : button.dataset.labelShow;
 
-          if (button.classList.contains('ai-history-expand-all')) {
-            if (expand) {
-              expandAll(table);
+          tables.forEach(function (table) {
+            if (button.classList.contains('ai-history-expand-all')) {
+              if (expand) {
+                expandAll(table);
+              }
+              else {
+                collapseAll(table);
+              }
             }
-            else {
-              collapseAll(table);
+            if (button.classList.contains('ai-history-details-all')) {
+              if (expand) {
+                showAllDetails(table);
+              }
+              else {
+                hideAllDetails(table);
+              }
             }
-          }
-          if (button.classList.contains('ai-history-details-all')) {
-            if (expand) {
-              showAllDetails(table);
-            }
-            else {
-              hideAllDetails(table);
-            }
-          }
+          });
         });
       });
     }

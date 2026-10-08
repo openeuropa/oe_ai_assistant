@@ -32,9 +32,10 @@ interface DraftSaverInterface {
    *   The drafting template id whose resolved defaults are merged over
    *   $fields before saving, or NULL to skip the merge (drafts with no
    *   template snapshot).
-   * @param int $version
-   *   The draft version being saved, recorded in the revision log message
-   *   when this save adds a revision to an existing node.
+   * @param string $draftName
+   *   The name of the draft being saved, such as "Draft 2.1", recorded in
+   *   the revision log message when this save adds a revision to an
+   *   existing node.
    *
    * @return array
    *   An array with 'nodeId' (string) and 'previewUrl' (string).
@@ -48,6 +49,6 @@ interface DraftSaverInterface {
    *   - 'invalid_payload' (400) if the entity builder rejects
    *     the payload.
    */
-  public function save(AiEditorialSessionInterface $session, array $fields, ?string $templateId, int $version): array;
+  public function save(AiEditorialSessionInterface $session, array $fields, ?string $templateId, string $draftName): array;
 
 }

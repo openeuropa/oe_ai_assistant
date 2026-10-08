@@ -40,7 +40,7 @@ class SchemaCommandsTest extends KernelTestBase {
     'link',
     'taxonomy',
     'ai',
-    'ai_agents',
+    'ai_neuron',
     'entity_reference_revisions',
     'inline_entity_form',
     'key',
@@ -51,6 +51,34 @@ class SchemaCommandsTest extends KernelTestBase {
     'document_loader_tika',
     'oe_ai_assistant_test',
   ];
+
+  /**
+   * An unknown bundle is rejected instead of composing a phantom schema.
+   */
+  public function testUnknownBundleThrows(): void {
+    $this->expectException(\InvalidArgumentException::class);
+    $this->expectExceptionMessage('Unknown node bundle "does_not_exist"');
+    $this->runCommand('does_not_exist');
+  }
+
+  /**
+   * An unknown template id is rejected.
+   */
+  public function testUnknownTemplateThrows(): void {
+    $this->expectException(\InvalidArgumentException::class);
+    $this->expectExceptionMessage('Drafting template "does_not_exist" not found');
+    $this->runCommand('oe_news', ['template' => 'does_not_exist']);
+  }
+
+  /**
+   * A template built for another content type is rejected.
+   */
+  public function testContentTypeMismatchThrows(): void {
+    // news_default targets oe_news, not oe_contact.
+    $this->expectException(\InvalidArgumentException::class);
+    $this->expectExceptionMessage('targets content type "oe_news", not "oe_contact"');
+    $this->runCommand('oe_contact', ['template' => 'news_default']);
+  }
 
   /**
    * {@inheritdoc}
@@ -87,34 +115,6 @@ class SchemaCommandsTest extends KernelTestBase {
       'template' => '',
       'groups' => FALSE,
     ]);
-  }
-
-  /**
-   * An unknown bundle is rejected instead of composing a phantom schema.
-   */
-  public function testUnknownBundleThrows(): void {
-    $this->expectException(\InvalidArgumentException::class);
-    $this->expectExceptionMessage('Unknown node bundle "does_not_exist"');
-    $this->runCommand('does_not_exist');
-  }
-
-  /**
-   * An unknown template id is rejected.
-   */
-  public function testUnknownTemplateThrows(): void {
-    $this->expectException(\InvalidArgumentException::class);
-    $this->expectExceptionMessage('Drafting template "does_not_exist" not found');
-    $this->runCommand('oe_news', ['template' => 'does_not_exist']);
-  }
-
-  /**
-   * A template built for another content type is rejected.
-   */
-  public function testContentTypeMismatchThrows(): void {
-    // news_default targets oe_news, not oe_contact.
-    $this->expectException(\InvalidArgumentException::class);
-    $this->expectExceptionMessage('targets content type "oe_news", not "oe_contact"');
-    $this->runCommand('oe_contact', ['template' => 'news_default']);
   }
 
 }

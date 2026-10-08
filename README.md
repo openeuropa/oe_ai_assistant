@@ -9,7 +9,6 @@ Drupal AI.
 - Drupal 11
 - PHP 8.3+
 - [AI module](https://www.drupal.org/project/ai) (^1.3)
-- [AI Agents](https://www.drupal.org/project/ai_agents) (^1.3)
 - Content Moderation (core)
 - [Document Loader](https://www.drupal.org/project/document_loader) (^2.0)
 - [State Machine](https://www.drupal.org/project/state_machine) (^1.14)
@@ -229,7 +228,7 @@ ddev phpcbf    # Auto-fix violations
 
 ## Patches
 
-This module patches `drupal/ai_agents` and `drupal/ai` via `cweagans/composer-patches`. Each patch is declared
+This module patches `drupal/ai` via `cweagans/composer-patches`. Each patch is declared
 with an absolute URL pinned to a commit in this repository, so it is applied automatically on projects that
 enable patches from dependencies.
 

@@ -12,6 +12,7 @@
  * over the page.
  */
 
+import { useAuiState } from "@assistant-ui/react";
 import {
   CircleCheck,
   CircleDashed,
@@ -36,6 +37,7 @@ import {
 import { getConfig } from "@/config";
 import { formatDraftDate } from "../format-draft-date";
 import { buildPreviewUrl } from "../preview-url";
+import { useDraftName } from "../session-drafts";
 import type { DraftingPluginConfig } from "../types";
 import { ContentTableBody, SaveConfirmDialog } from "./content-table";
 
@@ -66,8 +68,8 @@ interface DraftPreviewProps {
   isSaved: boolean;
   /** Tab shown on mount. Defaults to the live preview. */
   defaultTab?: PreviewTab;
-  /** Invoked after the user confirms the save dialog. */
-  onSave: () => void;
+  /** Invoked with the draft's name after the user confirms the save dialog. */
+  onSave: (name: string) => void;
 }
 
 /** A single tab button in the header switcher. */
@@ -247,6 +249,7 @@ export function DraftPreview({
   defaultTab = "live",
   onSave,
 }: DraftPreviewProps) {
+  const draftName = useDraftName(versionId);
   // The URL template comes from the host-provided plugin config.
   const draftingConfig = (getConfig().pluginConfig.drafting ??
     {}) as DraftingPluginConfig;
@@ -255,9 +258,24 @@ export function DraftPreview({
   // Without a configured template there is nothing to embed: fall
   // back to a data-only pane and hide the tab switcher.
   const hasLivePreview = urlTemplate !== "";
-  const previewUrl = hasLivePreview
-    ? buildPreviewUrl(urlTemplate, sessionId, versionId)
-    : "";
+  // The preview renders a stored draft, and a draft produced in this turn
+  // reaches the store when the turn commits the call that produced it. So the
+  // frame waits for the turn to end rather than asking the server for a draft
+  // it cannot see yet. The pane itself shows the draft from the stream
+  // meanwhile, and the Data tab stays readable throughout.
+  const isRunning = useAuiState((s) => s.thread.isRunning);
+  // Waited for once per draft: a later turn is about something else, and
+  // emptying the URL again would reload the frame for no reason.
+  const [storedVersion, setStoredVersion] = useState<number | null>(null);
+  useEffect(() => {
+    if (!isRunning) {
+      setStoredVersion(versionId);
+    }
+  }, [isRunning, versionId]);
+  const previewUrl =
+    hasLivePreview && storedVersion === versionId
+      ? buildPreviewUrl(urlTemplate, sessionId, versionId)
+      : "";
 
   const [activeTab, setActiveTab] = useState<PreviewTab>(
     hasLivePreview ? defaultTab : "data",
@@ -299,7 +317,7 @@ export function DraftPreview({
             />
           )}
           <h2 className="text-base font-semibold whitespace-nowrap text-gray-900">
-            Draft {versionId}
+            {draftName}
           </h2>
           {createdAt && (
             <span className="truncate text-xs text-gray-500">
@@ -380,13 +398,18 @@ export function DraftPreview({
       {/* Keyed on the URL and the reload count so switching draft
           versions or pressing reload remounts the frame and shows the
           spinner for the new document. */}
-      {hasLivePreview && (
+      {hasLivePreview && previewUrl !== "" && (
         <LivePreviewFrame
           key={`${reloadCount}:${previewUrl}`}
           url={previewUrl}
           hidden={activeTab !== "live"}
           width={VIEWPORT_WIDTHS[viewport]}
         />
+      )}
+      {hasLivePreview && previewUrl === "" && activeTab === "live" && (
+        <div className="flex flex-1 items-center justify-center">
+          <Loader2 className="size-5 animate-spin text-gray-400" />
+        </div>
       )}
 
       {activeTab === "data" && <ContentTableBody />}
@@ -395,7 +418,7 @@ export function DraftPreview({
         <SaveConfirmDialog
           onConfirm={() => {
             setShowConfirm(false);
-            onSave();
+            onSave(draftName);
           }}
           onCancel={() => setShowConfirm(false)}
         />

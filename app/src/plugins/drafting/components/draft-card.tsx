@@ -24,13 +24,10 @@ import { DocumentDetailsDialog } from "./document-details-dialog";
 
 /** Props for DraftCard. */
 export interface DraftCardProps {
-  /** Numeric draft version, or null for a legacy draft without version info. */
-  version: number | null;
-  /**
-   * The editorial context captured when the draft was generated. Null for
-   * legacy drafts that pre-date context tracking.
-   */
-  context: DraftContext | null;
+  /** The draft's name, e.g. "Draft 2.1". */
+  name: string;
+  /** The editorial context captured when the draft was generated. */
+  context: DraftContext;
   /** The drafted fields produced by the AI. */
   fields: Record<string, unknown>;
   /** Whether this version has been saved as a revision. */
@@ -39,15 +36,6 @@ export interface DraftCardProps {
   createdAt: Date | null;
   /** Called when the user clicks the card body to view this draft. */
   onOpen: () => void;
-}
-
-/**
- * Returns the card title based on the draft version.
- *
- * "Draft N" when a numeric version is available, plain "Draft" otherwise.
- */
-function draftTitle(version: number | null): string {
-  return version !== null ? `Draft ${version}` : "Draft";
 }
 
 /**
@@ -82,7 +70,7 @@ function ProvenanceRow({
  * detail dialog without triggering onOpen.
  */
 export function DraftCard({
-  version,
+  name,
   context,
   fields,
   isSaved,
@@ -94,9 +82,7 @@ export function DraftCard({
     useState<DraftDocumentSnapshot | null>(null);
 
   const fieldCount = Object.keys(fields).length;
-  const documents = context?.documents ?? [];
-  const tone = context?.tone ?? null;
-  const template = context?.template ?? null;
+  const { documents, tone, template } = context;
 
   const hasProvenance =
     createdAt !== null ||
@@ -157,9 +143,7 @@ export function DraftCard({
               onClick={onOpen}
             >
               <PenLine size={14} className="shrink-0 text-gray-400" />
-              <span className="text-sm font-medium text-gray-700">
-                {draftTitle(version)}
-              </span>
+              <span className="text-sm font-medium text-gray-700">{name}</span>
             </button>
 
             {/* Field count subline. */}

@@ -19,3 +19,4 @@ composer.contrib-patches.lock.json
 /.ddev/web-build
 /phpstan-baseline.neon
 /phpstan.neon
+*.zip

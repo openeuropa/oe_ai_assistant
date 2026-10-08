@@ -1,12 +1,12 @@
 {
-    "_hash": "2ea8c28291b0967ba6ef00f901bb22b0adddd09dd26261e6e6a0eee5f0b4ba10",
+    "_hash": "9897a75601103ba236da8c92af64a1753fc8f4c2f4f53fba6011a0f5ecc1ad34",
     "patches": {
-        "drupal/ai_agents": [
+        "drupal/ai": [
             {
-                "package": "drupal/ai_agents",
-                "description": "Keep setUserInterface extra tags on the entity wrapper (getExtraTags)",
-                "url": "patches/ai-agents-agent-wrapper-extra-tags.patch",
-                "sha256": "b63aef2114a66fb5b8580d34ae8a2ea355977a8c5557b1d093ac4cddc06fcef3",
+                "package": "drupal/ai",
+                "description": "HostnameFilter breaks HTML in JSON (@see https://git.drupalcode.org/project/ai/-/work_items/3586677)",
+                "url": "patches/ai-hostname-filter-handling-of-html-in-json.patch",
+                "sha256": "315b74283cbd15a07d7ce9a801b8b04a3f261237301dc4cfcd655c0433370014",
                 "depth": 1,
                 "extra": {
                     "provenance": "root"

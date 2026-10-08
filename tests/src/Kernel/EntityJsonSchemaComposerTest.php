@@ -43,40 +43,13 @@ class EntityJsonSchemaComposerTest extends KernelTestBase {
     'options',
     'key',
     'ai',
-    'ai_agents',
+    'ai_neuron',
     'oe_ai_assistant',
     'state_machine',
     'document_loader',
     'document_loader_tika',
     'oe_ai_assistant_test',
   ];
-
-  /**
-   * {@inheritdoc}
-   */
-  protected function setUp(): void {
-    parent::setUp();
-    $this->installEntitySchema('node');
-    $this->installEntitySchema('user');
-    $this->installEntitySchema('paragraph');
-    $this->installEntitySchema('content_moderation_state');
-    $this->installEntitySchema('file');
-    $this->installEntitySchema('taxonomy_term');
-    $this->installConfig([
-      'system',
-      'field',
-      'filter',
-      'node',
-      'oe_ai_assistant_test',
-    ]);
-  }
-
-  /**
-   * Returns the composer service from the container.
-   */
-  private function composer(): EntityJsonSchemaComposer {
-    return $this->container->get(EntityJsonSchemaComposer::class);
-  }
 
   /**
    * Asserts the composed schema exposes every oe_news field at the top level.
@@ -507,6 +480,33 @@ class EntityJsonSchemaComposerTest extends KernelTestBase {
         }
       }
     }
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  protected function setUp(): void {
+    parent::setUp();
+    $this->installEntitySchema('node');
+    $this->installEntitySchema('user');
+    $this->installEntitySchema('paragraph');
+    $this->installEntitySchema('content_moderation_state');
+    $this->installEntitySchema('file');
+    $this->installEntitySchema('taxonomy_term');
+    $this->installConfig([
+      'system',
+      'field',
+      'filter',
+      'node',
+      'oe_ai_assistant_test',
+    ]);
+  }
+
+  /**
+   * Returns the composer service from the container.
+   */
+  private function composer(): EntityJsonSchemaComposer {
+    return $this->container->get(EntityJsonSchemaComposer::class);
   }
 
 }

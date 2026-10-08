@@ -89,8 +89,10 @@ function DraftingChatPreview() {
               render: (close) => (
                 <DocumentsPanel
                   selected={documents.selected}
+                  extensions={documents.extensions}
                   uploads={documents.uploads}
                   onRemove={documents.removeDocument}
+                  onRetry={documents.retryDocument}
                   onUpload={documents.uploadFiles}
                   onDismissUpload={documents.dismissUpload}
                   onClose={close}

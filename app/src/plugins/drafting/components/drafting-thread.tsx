@@ -237,22 +237,21 @@ function MessageFooter({ className = "" }: { className?: string }) {
  * content arrives.
  *
  * Assistant responses sit directly on the chat surface with no
- * bubble; only user messages keep one. Event-only messages (all
- * parts are editorial_event tool-calls) render with a tighter
- * bottom margin so consecutive chips stay grouped.
+ * bubble; only user messages keep one. A message that is only a save chip
+ * renders with a tighter bottom margin so consecutive chips stay grouped.
  */
 function AssistantMessage() {
   const content = useAuiState((s) => s.message?.content ?? []);
   const hasContent = content.length > 0;
 
-  // Detect event-only messages: all parts are editorial_event tool-calls.
-  // These are injected by the history adapter and carry no text parts.
+  // Detect chip-only messages: a save_draft call renders as one chip once it
+  // has been answered, and carries no text part of its own.
   const isEventOnly =
     hasContent &&
     content.every(
       (part) =>
         part.type === "tool-call" &&
-        (part as { toolName?: string }).toolName === "editorial_event",
+        (part as { toolName?: string }).toolName === "save_draft",
     );
 
   // The copy/timestamp footer only makes sense under textual replies;

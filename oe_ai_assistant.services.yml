@@ -26,6 +26,11 @@ services:
   Drupal\oe_ai_assistant\Service\AiEditorialContextInterface: '@Drupal\oe_ai_assistant\Service\AiEditorialContext'
 
   Drupal\oe_ai_assistant\Service\Drafting\ContextDocumentRepository: {}
+
+  # Reads what a session drafts with: tone, template, documents, groups.
+  Drupal\oe_ai_assistant\Service\Drafting\DraftingBrief: {}
+  Drupal\oe_ai_assistant\Service\Drafting\DraftingBriefInterface: '@Drupal\oe_ai_assistant\Service\Drafting\DraftingBrief'
+
   Drupal\oe_ai_assistant\Service\TextFormatResolver: {}
 
   # Drives a document through extraction and summarisation.
@@ -39,27 +44,20 @@ services:
   Drupal\oe_ai_assistant\Service\DraftAssembler: {}
   Drupal\oe_ai_assistant\Service\DraftAssemblerInterface: '@Drupal\oe_ai_assistant\Service\DraftAssembler'
 
-  Drupal\oe_ai_assistant\Service\UiMessageStream: {}
-  Drupal\oe_ai_assistant\Service\UiMessageStreamInterface: '@Drupal\oe_ai_assistant\Service\UiMessageStream'
 
   Drupal\oe_ai_assistant\Service\DraftSaver: {}
   Drupal\oe_ai_assistant\Service\DraftSaverInterface: '@Drupal\oe_ai_assistant\Service\DraftSaver'
 
-  Drupal\oe_ai_assistant\Service\MessageRecorder: {}
-  Drupal\oe_ai_assistant\Service\MessageRecorderInterface: '@Drupal\oe_ai_assistant\Service\MessageRecorder'
 
-  # Records drafting sub-agent turns from the ai_agents response event. Tagged
-  # as an event subscriber automatically via autoconfigure.
-  Drupal\oe_ai_assistant\EventSubscriber\SubAgentMessageSubscriber: {}
+  # The conversation entities are where Neuron keeps its messages. The
+  # ai_neuron's own store, subclassed to record the session a conversation
+  # belongs to. Replacing both of its aliases is what puts it in front of the
+  # store ai_neuron would otherwise give every agent.
+  Drupal\oe_ai_assistant\Neuron\Chat\History\SessionConversation: {}
 
-  Drupal\oe_ai_assistant\Service\ToolExecutor: {}
-  Drupal\oe_ai_assistant\Service\ToolExecutorInterface: '@Drupal\oe_ai_assistant\Service\ToolExecutor'
-
-  Drupal\oe_ai_assistant\Service\ToolExecutionLoop: {}
-  Drupal\oe_ai_assistant\Service\ToolExecutionLoopInterface: '@Drupal\oe_ai_assistant\Service\ToolExecutionLoop'
-
-  Drupal\oe_ai_assistant\Service\DraftingOrchestrator: {}
-  Drupal\oe_ai_assistant\Service\DraftingOrchestratorInterface: '@Drupal\oe_ai_assistant\Service\DraftingOrchestrator'
+  Drupal\oe_ai_assistant\Neuron\Chat\History\EditorialMessageStore: {}
+  Drupal\ai_neuron\Chat\History\ContextualMessageStoreInterface: '@Drupal\oe_ai_assistant\Neuron\Chat\History\EditorialMessageStore'
+  NeuronAI\Chat\History\MessageStoreInterface: '@Drupal\oe_ai_assistant\Neuron\Chat\History\EditorialMessageStore'
 
   Drupal\oe_ai_assistant\Service\Drafting\DraftHistory: {}
   Drupal\oe_ai_assistant\Service\Drafting\DraftHistoryInterface: '@Drupal\oe_ai_assistant\Service\Drafting\DraftHistory'

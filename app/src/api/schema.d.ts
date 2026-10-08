@@ -85,7 +85,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Send a drafting message and receive AG-UI SSE stream */
+        /** Send a drafting message and receive the UI message stream */
         post: operations["postDraftingChat"];
         delete?: never;
         options?: never;
@@ -110,7 +110,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/plugins/drafting/save": {
+    "/plugins/drafting/get-approvals": {
         parameters: {
             query?: never;
             header?: never;
@@ -119,8 +119,25 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Save a session draft version as an unpublished node */
-        post: operations["postDraftingSave"];
+        /** List the tool calls waiting on the editor's decision */
+        post: operations["postDraftingGetApprovals"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/plugins/drafting/submit-approval": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Answer a waiting tool call and stream the rest of the turn */
+        post: operations["postDraftingSubmitApproval"];
         delete?: never;
         options?: never;
         head?: never;
@@ -445,18 +462,47 @@ export interface components {
             /** @description Confirmation status (e.g. "ok"). */
             status: string;
         };
-        /** @description Save one of the session's drafts as an unpublished revision. The backend resolves the target content type and the drafted field values from the session and its draft history, so the client only names the version being saved; a client can never save field data the session did not produce. */
-        DraftingSaveRequest: {
-            /** @description The editorial session that owns the draft. */
+        /** @description Read the tool calls of the session that are waiting on the editor's decision. A gated call suspends the run until it is answered, and the run is durable, so a reload reads the request back rather than losing it. */
+        DraftingGetApprovalsRequest: {
+            /** @description The editorial session holding the suspended run. */
             sessionId: string;
-            /** @description The draft version to save, matching the version of a draft_content result in the session transcript (the version shown in the artifact pane and the version rail). */
-            version: number;
         };
-        DraftingSaveResponse: {
-            /** @description The ID of the created node. */
-            nodeId: string;
-            /** @description URL to preview the created draft node. */
-            previewUrl: string;
+        DraftingGetApprovalsResponse: {
+            /** @description The pending calls, empty when the run waits for nothing. */
+            approvals: components["schemas"]["DraftingApproval"][];
+        };
+        /** @description One tool call awaiting a decision. */
+        DraftingApproval: {
+            /** @description The tool call id, which names the call in a decision. */
+            id: string;
+            /** @description The tool the model asked to run. */
+            name: string;
+            /** @description What the tool does, as the model reads it. */
+            description?: string | null;
+            /** @description The current state of the decision. */
+            decision?: string;
+            /** @description What the editor said when rejecting the call. */
+            feedback?: string | null;
+            /** @description Why the call needs a decision, declared by the tool. */
+            reason?: string | null;
+            /** @description The arguments the call would run with. */
+            inputs?: {
+                [key: string]: unknown;
+            };
+        };
+        /** @description Answer one waiting tool call. Approving runs it and streams the rest of the turn; rejecting skips it and tells the model why. */
+        DraftingSubmitApprovalRequest: {
+            /** @description The editorial session holding the suspended run. */
+            sessionId: string;
+            /** @description The tool call being answered. */
+            callId: string;
+            /**
+             * @description The editor's decision.
+             * @enum {string}
+             */
+            decision: "approve" | "reject";
+            /** @description Why the call was rejected, which reaches the model so it can say what was turned down. Ignored on an approval. */
+            reason?: string;
         };
         DraftingSetToneRequest: {
             /** @description The editorial session on which the selected tone is saved. */
@@ -776,7 +822,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description SSE stream of AG-UI protocol events */
+            /** @description SSE stream of UI message stream events */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -811,7 +857,7 @@ export interface operations {
             };
         };
     };
-    postDraftingSave: {
+    postDraftingGetApprovals: {
         parameters: {
             query?: never;
             header?: never;
@@ -820,17 +866,41 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["DraftingSaveRequest"];
+                "application/json": components["schemas"]["DraftingGetApprovalsRequest"];
             };
         };
         responses: {
-            /** @description Created node details */
+            /** @description The pending calls */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["DraftingSaveResponse"];
+                    "application/json": components["schemas"]["DraftingGetApprovalsResponse"];
+                };
+            };
+        };
+    };
+    postDraftingSubmitApproval: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DraftingSubmitApprovalRequest"];
+            };
+        };
+        responses: {
+            /** @description SSE stream of UI message stream events */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": unknown;
                 };
             };
         };
@@ -1053,7 +1123,7 @@ export interface operations {
             query: {
                 /** @description The editorial session hosting the draft to preview. */
                 sessionId: string;
-                /** @description The draft version to render, as returned by get_draft_history / the draft_content result (e.g. 1 for "Draft 1"). */
+                /** @description The draft version to render, as returned by get_draft_history / the draft stored on a draft_group result (e.g. 1 for "Draft 1"). */
                 version: number;
             };
             header?: never;

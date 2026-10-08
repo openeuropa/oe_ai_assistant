@@ -90,16 +90,6 @@ export type DataStreamLifecycleEvent =
   | FinishEvent
   | ErrorEvent;
 
-// -- Drafting plugin custom data events --
-
-/** Custom data event carrying drafted field values. */
-export interface DraftedFieldsEvent {
-  type: "data-drafted-fields";
-  data: Record<string, unknown>;
-  /** When true, this is a progressive update (not accumulated). */
-  transient?: true;
-}
-
 // -- Echo plugin custom data events (dev-only) --
 
 /** Custom data event for the echo stream. */
@@ -112,8 +102,28 @@ export interface EchoDataEvent {
   };
 }
 
+// -- Drafting plugin custom data events --
+
+/** One tool call of the run that is waiting for the editor's decision. */
+export interface ApprovalData {
+  /** The tool call id, which names the call in a decision. */
+  id: string;
+  /** The tool the model asked to run. */
+  name: string;
+  /** Why the call needs a decision, declared by the tool. */
+  reason?: string | null;
+  /** The arguments the call would run with. */
+  inputs?: Record<string, unknown>;
+}
+
+/** Data event sent when a turn ends by asking the editor to decide. */
+export interface ApprovalRequestEvent {
+  type: "data-approval-request";
+  data: { approvals: ApprovalData[] };
+}
+
 /** Union of all SSE events emitted by the drafting plugin. */
-export type DraftingSSEEvent = DataStreamLifecycleEvent | DraftedFieldsEvent;
+export type DraftingSSEEvent = DataStreamLifecycleEvent | ApprovalRequestEvent;
 
 /** Union of all SSE events emitted by the echo plugin. */
 export type EchoSSEEvent = StartEvent | FinishEvent | EchoDataEvent;

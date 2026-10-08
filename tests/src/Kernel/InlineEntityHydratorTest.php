@@ -52,40 +52,13 @@ class InlineEntityHydratorTest extends KernelTestBase {
     'options',
     'key',
     'ai',
-    'ai_agents',
+    'ai_neuron',
     'oe_ai_assistant',
     'state_machine',
     'document_loader',
     'document_loader_tika',
     'oe_ai_assistant_test',
   ];
-
-  /**
-   * {@inheritdoc}
-   */
-  protected function setUp(): void {
-    parent::setUp();
-    $this->installEntitySchema('node');
-    $this->installEntitySchema('user');
-    $this->installEntitySchema('paragraph');
-    $this->installEntitySchema('content_moderation_state');
-    $this->installEntitySchema('file');
-    $this->installEntitySchema('taxonomy_term');
-    $this->installConfig([
-      'system',
-      'field',
-      'filter',
-      'node',
-      'oe_ai_assistant_test',
-    ]);
-  }
-
-  /**
-   * Returns the hydrator service from the container.
-   */
-  private function hydrator(): InlineEntityHydrator {
-    return $this->container->get(InlineEntityHydrator::class);
-  }
 
   /**
    * Asserts splitInlineEntityFields peels revision-ref fields off a node map.
@@ -332,6 +305,33 @@ class InlineEntityHydratorTest extends KernelTestBase {
     $this->expectException(\InvalidArgumentException::class);
     $this->expectExceptionMessage('Inline entity item at index 0 is missing type[0][target_id].');
     $hydrator->buildInlineEntities([['field_text_body' => [['value' => 'x']]]], 'paragraph');
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  protected function setUp(): void {
+    parent::setUp();
+    $this->installEntitySchema('node');
+    $this->installEntitySchema('user');
+    $this->installEntitySchema('paragraph');
+    $this->installEntitySchema('content_moderation_state');
+    $this->installEntitySchema('file');
+    $this->installEntitySchema('taxonomy_term');
+    $this->installConfig([
+      'system',
+      'field',
+      'filter',
+      'node',
+      'oe_ai_assistant_test',
+    ]);
+  }
+
+  /**
+   * Returns the hydrator service from the container.
+   */
+  private function hydrator(): InlineEntityHydrator {
+    return $this->container->get(InlineEntityHydrator::class);
   }
 
 }

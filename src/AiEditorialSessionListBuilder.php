@@ -11,9 +11,9 @@ use Drupal\Core\Entity\EntityListBuilder;
 use Drupal\Core\Entity\EntityStorageInterface;
 use Drupal\Core\Entity\EntityTypeInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
+use Drupal\Core\Entity\Query\QueryInterface;
 use Drupal\Core\Routing\RedirectDestinationInterface;
 use Drupal\Core\Url;
-use Drupal\Core\Entity\Query\QueryInterface;
 use Drupal\node\NodeInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 
@@ -37,20 +37,6 @@ class AiEditorialSessionListBuilder extends EntityListBuilder {
    */
   protected ModerationInformationInterface $moderationInformation;
 
-  /**
-   * {@inheritdoc}
-   */
-  protected function getEntityListQuery(): QueryInterface {
-    return $this->getStorage()
-      ->getQuery()
-      ->accessCheck(TRUE)
-      ->sort('created', 'DESC')
-      ->pager($this->limit);
-  }
-
-  /**
-   * Constructs a new list builder.
-   */
   public function __construct(
     EntityTypeInterface $entity_type,
     EntityStorageInterface $storage,
@@ -142,6 +128,34 @@ class AiEditorialSessionListBuilder extends EntityListBuilder {
   }
 
   /**
+   * {@inheritdoc}
+   */
+  public function render(): array {
+    $build['add_new_session'] = [
+      '#type' => 'link',
+      '#title' => $this->t('Add new session'),
+      '#url' => Url::fromRoute('entity.ai_editorial_session.add_page'),
+      '#attributes' => [
+        'class' => ['button', 'button--action', 'button--primary'],
+      ],
+    ];
+    $build += parent::render();
+
+    return $build;
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  protected function getEntityListQuery(): QueryInterface {
+    return $this->getStorage()
+      ->getQuery()
+      ->accessCheck(TRUE)
+      ->sort('created', 'DESC')
+      ->pager($this->limit);
+  }
+
+  /**
    * Builds the node column cell: a link to the node, or empty.
    *
    * Empty when the session has no node, or the current user cannot view it.
@@ -167,23 +181,6 @@ class AiEditorialSessionListBuilder extends EntityListBuilder {
           : $node->toUrl('canonical'),
       ],
     ];
-  }
-
-  /**
-   * {@inheritdoc}
-   */
-  public function render(): array {
-    $build['add_new_session'] = [
-      '#type' => 'link',
-      '#title' => $this->t('Add new session'),
-      '#url' => Url::fromRoute('entity.ai_editorial_session.add_page'),
-      '#attributes' => [
-        'class' => ['button', 'button--action', 'button--primary'],
-      ],
-    ];
-    $build += parent::render();
-
-    return $build;
   }
 
   /**

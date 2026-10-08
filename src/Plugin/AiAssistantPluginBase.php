@@ -4,19 +4,15 @@ declare(strict_types=1);
 
 namespace Drupal\oe_ai_assistant\Plugin;
 
-use Drupal\ai\AiProviderPluginManager;
-use Drupal\ai\OperationType\Chat\ChatMessage;
 use Drupal\Component\Plugin\Exception\PluginException;
 use Drupal\Core\Cache\RefinableCacheableDependencyInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Plugin\ContainerFactoryPluginInterface;
 use Drupal\Core\Plugin\PluginBase;
 use Drupal\Core\Session\AccountInterface;
-use Drupal\oe_ai_assistant\Entity\AiConversationMessageInterface;
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
 use Drupal\oe_ai_assistant\Exception\ActionException;
-use Drupal\oe_ai_assistant\Service\MessageRecorderInterface;
-use Drupal\oe_ai_assistant\Service\UiMessageStreamInterface;
+use Drupal\oe_ai_assistant\Neuron\Chat\History\SessionConversation;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\Request;
@@ -27,32 +23,12 @@ use Symfony\Component\HttpFoundation\Response;
  *
  * Provides Drupal plugin dispatch (action routing, request
  * validation), HTTP utilities (JSON body decoding, user message
- * extraction), and shared AI infrastructure (provider, stream,
- * logger).
+ * extraction), and the shared logger and recorder.
  *
  * @see \Drupal\oe_ai_assistant\Plugin\AiAssistantPluginInterface
  * @see \Drupal\oe_ai_assistant\Plugin\AiAssistantPluginManager
  */
 abstract class AiAssistantPluginBase extends PluginBase implements AiAssistantPluginInterface, ContainerFactoryPluginInterface {
-
-  /**
-   * Maximum top-level turns replayed to the model as history.
-   */
-  protected const MAX_HISTORY = 40;
-
-  /**
-   * The AI provider plugin manager.
-   *
-   * @var \Drupal\ai\AiProviderPluginManager
-   */
-  protected AiProviderPluginManager $aiProviderManager;
-
-  /**
-   * The UI message stream service.
-   *
-   * @var \Drupal\oe_ai_assistant\Service\UiMessageStreamInterface
-   */
-  protected UiMessageStreamInterface $uiMessageStream;
 
   /**
    * The entity type manager.
@@ -69,18 +45,18 @@ abstract class AiAssistantPluginBase extends PluginBase implements AiAssistantPl
   protected AccountInterface $currentUser;
 
   /**
-   * The message recorder.
-   *
-   * @var \Drupal\oe_ai_assistant\Service\MessageRecorderInterface
-   */
-  protected MessageRecorderInterface $messageRecorder;
-
-  /**
    * Logger channel for oe_ai_assistant.
    *
    * @var \Psr\Log\LoggerInterface
    */
   protected LoggerInterface $logger;
+
+  /**
+   * Reads a stored conversation back.
+   *
+   * @var \Drupal\oe_ai_assistant\Neuron\Chat\History\SessionConversation
+   */
+  protected SessionConversation $conversation;
 
   /**
    * {@inheritdoc}
@@ -92,12 +68,10 @@ abstract class AiAssistantPluginBase extends PluginBase implements AiAssistantPl
     $plugin_definition,
   ): static {
     $instance = new static($configuration, $plugin_id, $plugin_definition);
-    $instance->aiProviderManager = $container->get('ai.provider');
-    $instance->uiMessageStream = $container->get(UiMessageStreamInterface::class);
     $instance->entityTypeManager = $container->get('entity_type.manager');
     $instance->currentUser = $container->get('current_user');
-    $instance->messageRecorder = $container->get(MessageRecorderInterface::class);
     $instance->logger = $container->get('logger.channel.oe_ai_assistant');
+    $instance->conversation = $container->get(SessionConversation::class);
     return $instance;
   }
 
@@ -151,76 +125,8 @@ abstract class AiAssistantPluginBase extends PluginBase implements AiAssistantPl
    */
   public function getMessages(Request $request): array {
     $session = $this->loadSession($this->decodeJsonBody($request));
-    $storage = $this->entityTypeManager->getStorage('ai_conversation_message');
-    $transcript = $storage->loadTranscript($session);
 
-    // Preload the authors of user turns in one query, grouped by uid, so
-    // each turn can carry the author's display name for avatars and the
-    // participants list.
-    $authorIds = [];
-    foreach ($transcript as $message) {
-      $uid = (int) $message->get('uid')->target_id;
-      if ($message->getRole() === 'user' && $uid > 0) {
-        $authorIds[$uid] = $uid;
-      }
-    }
-    $authors = $authorIds === []
-      ? []
-      : $this->entityTypeManager->getStorage('user')->loadMultiple($authorIds);
-
-    $messages = [];
-    foreach ($transcript as $message) {
-      $role = $message->getRole();
-      // The created field is a datetime stored in UTC; expose it in RFC
-      // 3339 so clients can render local timestamps.
-      $at = (string) $message->get('created')->date?->format('c');
-      // Event rows surface as compact timeline entries.
-      if ($role === 'event') {
-        $metadata = $message->getMetadata();
-        $item = [
-          'role' => 'event',
-          'type' => (string) ($metadata['type'] ?? ''),
-          'summary' => (string) $message->get('content')->value,
-          'at' => $at,
-        ];
-        // Save events name the draft version they persisted, so clients
-        // can mark that version as saved.
-        if (isset($metadata['version'])) {
-          $item['version'] = (int) $metadata['version'];
-        }
-        $messages[] = $item;
-        continue;
-      }
-      // Only user and assistant turns are shown to the editor.
-      if (!in_array($role, ['user', 'assistant'], TRUE)) {
-        continue;
-      }
-      $content = (string) $message->get('content')->value;
-      $toolCalls = $message->getToolCalls();
-      // Skip empty turns that carry neither text nor a tool call.
-      if ($content === '' && !$toolCalls) {
-        continue;
-      }
-      $item = [
-        'role' => $role,
-        'content' => $content,
-        // Creation time of the turn, for client-side timestamps.
-        'at' => $at,
-      ];
-      // Attribute user turns to their author for shared sessions. The
-      // uid keeps same-named users apart; the display name is what the
-      // client renders.
-      $uid = (int) $message->get('uid')->target_id;
-      if ($role === 'user' && isset($authors[$uid])) {
-        $item['userId'] = (string) $uid;
-        $item['userName'] = (string) $authors[$uid]->getDisplayName();
-      }
-      if ($toolCalls) {
-        $item['toolCalls'] = $toolCalls;
-      }
-      $messages[] = $item;
-    }
-    return ['messages' => $messages];
+    return ['messages' => $this->conversationEntries($session)];
   }
 
   /**
@@ -327,40 +233,137 @@ abstract class AiAssistantPluginBase extends PluginBase implements AiAssistantPl
   }
 
   /**
-   * Loads the persisted transcript as chat history for the model.
+   * Renders the conversation of one session for the client.
    *
    * @param \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $session
-   *   The session hosting the conversation.
+   *   The session.
    *
-   * @return \Drupal\ai\OperationType\Chat\ChatMessage[]
-   *   The capped top-level transcript as ChatMessage objects.
+   * @return array
+   *   The turns, in insertion order.
    */
-  protected function buildHistory(AiEditorialSessionInterface $session): array {
-    $storage = $this->entityTypeManager->getStorage('ai_conversation_message');
-    // Skip persisted tool results: a bare chat message cannot re-link
-    // them to the assistant call that produced them, and providers
-    // reject unpaired tool messages. The assistant's follow-up text
-    // already carries the outcome.
-    $entities = array_filter(
-      $storage->loadTranscript($session),
-      fn(AiConversationMessageInterface $message): bool => $message->getRole() !== AiConversationMessageInterface::ROLE_TOOL,
-    );
-    // Slice AFTER filtering so tool rows do not consume history slots.
-    $entities = array_slice($entities, -static::MAX_HISTORY);
-    return array_map(
-      function (AiConversationMessageInterface $message): ChatMessage {
-        $content = (string) $message->get('content')->value;
-        // Editorial events enter the history as compact notes.
-        // The user role is used because mid-history system messages are
-        // provider-dependent, and the bracket prefix marks the note as
-        // non-conversational.
-        if ($message->getRole() === AiConversationMessageInterface::ROLE_EVENT) {
-          return new ChatMessage('user', '[Editorial change] ' . $content);
+  private function conversationEntries(AiEditorialSessionInterface $session): array {
+    $rows = $this->conversation->rows($session, $this->getPluginId());
+    $authors = $this->loadAuthors($rows);
+
+    $entries = [];
+    // Where each call was rendered, so the result that arrives in a later row
+    // can be put on it: the call id points at the entry and the call in it.
+    $calls = [];
+
+    foreach ($rows as $row) {
+      $meta = SessionConversation::decode($row, 'meta');
+      $created = (int) $row->get('created')->value;
+
+      // A tool result carries the user role, because Neuron's result message
+      // extends its user message. It is not something the editor said: its
+      // payload belongs on the call that asked for it.
+      if (($meta['type'] ?? '') === 'tool_call_result') {
+        foreach ($meta['tools'] ?? [] as $tool) {
+          $at = $calls[$tool['callId'] ?? ''] ?? NULL;
+          if ($at !== NULL) {
+            $entries[$at[0]]['toolCalls'][$at[1]]['result'] = SessionConversation::decodeResult($tool['result'] ?? NULL);
+          }
         }
-        return new ChatMessage($message->getRole(), $content);
-      },
-      $entities,
-    );
+        continue;
+      }
+
+      $role = (string) $row->get('role')->value;
+      if (!in_array($role, ['user', 'assistant'], TRUE)) {
+        continue;
+      }
+
+      $text = $this->renderText(SessionConversation::decode($row, 'content'));
+      $toolCalls = [];
+      foreach ($meta['tools'] ?? [] as $tool) {
+        $inputs = $tool['inputs'] ?? [];
+        $calls[$tool['callId'] ?? ''] = [count($entries), count($toolCalls)];
+        $toolCalls[] = [
+          'id' => $tool['callId'] ?? NULL,
+          'type' => 'function',
+          // An empty input list has to encode as an object, since the client
+          // parses the arguments of every call the same way.
+          'function' => [
+            'name' => $tool['name'] ?? '',
+            'arguments' => json_encode($inputs === [] ? new \stdClass() : $inputs),
+          ],
+        ];
+      }
+
+      // Skip a turn that carries neither text nor a call, such as the empty
+      // answer a model returns alongside its tool calls.
+      if ($text === '' && $toolCalls === []) {
+        continue;
+      }
+
+      $item = [
+        'role' => $role,
+        'content' => $text,
+        'at' => $this->formatTime($created),
+      ];
+      // Attribute user turns to their author for shared sessions. The uid
+      // keeps same-named users apart; the display name is what the client
+      // renders.
+      $uid = (int) $row->get('uid')->target_id;
+      if ($role === 'user' && isset($authors[$uid])) {
+        $item['userId'] = (string) $uid;
+        $item['userName'] = (string) $authors[$uid]->getDisplayName();
+      }
+      if ($toolCalls !== []) {
+        $item['toolCalls'] = $toolCalls;
+      }
+
+      $entries[] = $item;
+    }
+
+    return $entries;
+  }
+
+  /**
+   * Loads the authors of the user rows in one query.
+   *
+   * @param array $rows
+   *   The conversation rows.
+   *
+   * @return \Drupal\user\UserInterface[]
+   *   The accounts, keyed by uid.
+   */
+  private function loadAuthors(array $rows): array {
+    $ids = [];
+    foreach ($rows as $row) {
+      $uid = (int) $row->get('uid')->target_id;
+      if ($uid > 0) {
+        $ids[$uid] = $uid;
+      }
+    }
+
+    return $ids === [] ? [] : $this->entityTypeManager->getStorage('user')->loadMultiple($ids);
+  }
+
+  /**
+   * Joins the text of a message's content blocks.
+   *
+   * @param array $blocks
+   *   The decoded content column, which is a list of content blocks.
+   *
+   * @return string
+   *   The text, empty for a message that carries none.
+   */
+  private function renderText(array $blocks): string {
+    $text = '';
+    foreach ($blocks as $block) {
+      if (($block['type'] ?? '') === 'text') {
+        $text .= (string) ($block['content'] ?? '');
+      }
+    }
+
+    return $text;
+  }
+
+  /**
+   * Formats a timestamp as RFC 3339, so clients can render local times.
+   */
+  private function formatTime(int $timestamp): string {
+    return \DateTimeImmutable::createFromFormat('U', (string) $timestamp)->format('c');
   }
 
 }

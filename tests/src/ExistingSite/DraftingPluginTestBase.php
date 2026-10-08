@@ -4,9 +4,13 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\oe_ai_assistant\ExistingSite;
 
+use Drupal\Core\Entity\ContentEntityInterface;
 use Drupal\Core\Url;
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
+use Drupal\oe_ai_assistant\Neuron\Chat\History\SessionConversation;
+use Drupal\oe_ai_assistant\Neuron\Chat\History\EditorialMessageStore;
 use Drupal\oe_ai_assistant_test\Plugin\AiProvider\MockAiProvider;
+use Drupal\oe_ai_assistant_test\Plugin\AiProvider\MockResponse;
 use Drupal\Tests\oe_ai_assistant\Traits\ExistingSiteConfigBackupTrait;
 use Drupal\user\UserInterface;
 use weitzman\DrupalTestTraits\ExistingSiteBase;
@@ -42,6 +46,18 @@ abstract class DraftingPluginTestBase extends ExistingSiteBase {
   protected ?string $csrfToken = NULL;
 
   /**
+   * The agent whose conversation the editor has.
+   */
+  private const AGENT_ID = 'drafting';
+
+  /**
+   * The message ids seeded so far, which keeps each one unique.
+   *
+   * @var string[]
+   */
+  private array $seeded = [];
+
+  /**
    * {@inheritdoc}
    */
   protected function setUp(): void {
@@ -62,6 +78,12 @@ abstract class DraftingPluginTestBase extends ExistingSiteBase {
           'provider_id' => 'mock_ai',
           'model_id' => 'mock-model',
         ],
+        // The group drafters answer with structured output, which ai_neuron
+        // resolves as its own operation type.
+        'chat_with_structured_response' => [
+          'provider_id' => 'mock_ai',
+          'model_id' => 'mock-model',
+        ],
       ])
       ->save();
 
@@ -72,11 +94,15 @@ abstract class DraftingPluginTestBase extends ExistingSiteBase {
    * {@inheritdoc}
    */
   protected function tearDown(): void {
-    // Remove any conversation messages persisted against the test sessions.
-    $storage = \Drupal::entityTypeManager()
-      ->getStorage('ai_conversation_message');
+    // Remove the conversations persisted against the test sessions, the
+    // drafter threads included.
+    $storage = \Drupal::entityTypeManager()->getStorage('neuron_message');
     foreach ($this->sessions as $session) {
-      $storage->deleteForHost($session);
+      $ids = $storage->getQuery()
+        ->accessCheck(FALSE)
+        ->condition('oe_ai_session', (int) $session->id())
+        ->execute();
+      $storage->delete($storage->loadMultiple($ids));
     }
 
     MockAiProvider::reset();
@@ -109,7 +135,11 @@ abstract class DraftingPluginTestBase extends ExistingSiteBase {
   }
 
   /**
-   * Seeds a conversation message hosted by the session.
+   * Seeds a conversation message on the session's drafting thread.
+   *
+   * Writes what a real run writes: a turn carrying tool calls is one assistant
+   * row with the calls and one tool result row with their results, which is
+   * how Neuron commits the pair.
    *
    * @param \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $session
    *   The session hosting the conversation.
@@ -118,39 +148,204 @@ abstract class DraftingPluginTestBase extends ExistingSiteBase {
    * @param string $content
    *   The message text.
    * @param array $toolCalls
-   *   Optional tool calls to store on the message.
+   *   Optional tool calls, in the shape the transcript exposes them:
+   *   {function: {name, arguments}, result}.
    * @param int|null $uid
    *   Optional author user ID, set on user turns.
    */
   protected function seedMessage(AiEditorialSessionInterface $session, string $role, string $content, array $toolCalls = [], ?int $uid = NULL): void {
-    /** @var \Drupal\oe_ai_assistant\Entity\AiConversationMessageInterface $message */
-    $message = \Drupal::entityTypeManager()->getStorage('ai_conversation_message')
-      ->create([
-        'host_entity_type' => $session->getEntityTypeId(),
-        'host_entity_id' => (int) $session->id(),
-        'role' => $role,
-        'content' => $content,
-      ] + ($uid !== NULL ? ['uid' => $uid] : []));
-    if ($toolCalls) {
-      $message->setToolCalls($toolCalls);
+    $tools = [];
+    foreach ($toolCalls as $index => $call) {
+      $arguments = $call['function']['arguments'] ?? '{}';
+      $tools[] = [
+        'callId' => sprintf('call_seed_%d_%d', count($this->seeded), $index),
+        'name' => $call['function']['name'] ?? '',
+        'deferred' => FALSE,
+        'inputs' => (array) json_decode((string) $arguments, TRUE),
+        'result' => json_encode($call['result'] ?? []),
+      ];
     }
-    $message->save();
+
+    $meta = $tools === [] ? [] : ['type' => 'tool_call', 'tools' => $tools];
+    $this->seedRow($session, $role, $content, $meta, $uid);
+
+    if ($tools !== []) {
+      $this->seedRow($session, 'user', '', ['type' => 'tool_call_result', 'tools' => $tools], NULL);
+    }
   }
 
   /**
-   * Loads the persisted top-level transcript for a session.
+   * Seeds a stored draft on the transcript, as the drafting flow records it.
+   *
+   * An assistant turn carrying a draft_group tool call whose result holds
+   * the draft, shaped {version, major, minor, context, fields}. Seeding
+   * bypasses the chat flow, which is tested on its own.
+   *
+   * @param \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $session
+   *   The session hosting the conversation.
+   * @param int $version
+   *   The draft version.
+   * @param array $fields
+   *   The drafted field values, keyed by field machine name.
+   * @param array $context
+   *   The context snapshot: tone, template and documents, each optional.
+   * @param int|null $major
+   *   The group number, or NULL to open a new group numbered as the version.
+   * @param int $minor
+   *   The position within the group.
+   */
+  protected function seedDraft(AiEditorialSessionInterface $session, int $version, array $fields, array $context = [], ?int $major = NULL, int $minor = 0): void {
+    // The request that asked for the draft, so the seeded turn reads back as a
+    // turn: Neuron refuses a conversation that does not start with one.
+    $this->seedMessage($session, 'user', 'Draft it.');
+    $this->seedMessage($session, 'assistant', '', [
+      [
+        'type' => 'function',
+        'function' => ['name' => 'draft_group', 'arguments' => '{"group":"main_fields"}'],
+        'result' => [
+          'group' => 'main_fields',
+          'draft' => [
+            'version' => $version,
+            'major' => $major ?? $version,
+            'minor' => $minor,
+            'context' => $context + ['tone' => NULL, 'template' => NULL, 'documents' => []],
+            'fields' => $fields,
+          ],
+        ],
+      ],
+    ]);
+    // The answer that closes the turn. A turn the model never answered leaves
+    // the conversation expecting one, which Neuron refuses to read.
+    $this->seedMessage($session, 'assistant', sprintf('Draft %d.0 is ready.', $major ?? $version));
+  }
+
+  /**
+   * Loads the stored conversation of a session, oldest row first.
    *
    * @param \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $session
    *   The session hosting the conversation.
    *
-   * @return \Drupal\oe_ai_assistant\Entity\AiConversationMessageInterface[]
-   *   The transcript entities.
+   * @return \Drupal\Core\Entity\ContentEntityInterface[]
+   *   The stored message rows.
    */
   protected function loadTranscript(AiEditorialSessionInterface $session): array {
-    $storage = \Drupal::entityTypeManager()
-      ->getStorage('ai_conversation_message');
+    return \Drupal::service(SessionConversation::class)->rows($session, self::AGENT_ID);
+  }
+
+  /**
+   * Loads the conversation as the editor reads it.
+   *
+   * @param \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $session
+   *   The session hosting the conversation.
+   *
+   * @return array
+   *   The turns, each {role, content, at} and toolCalls where there are any.
+   */
+  protected function loadTurns(AiEditorialSessionInterface $session): array {
+    return $this->getMessages($session);
+  }
+
+  /**
+   * Saves a draft the way the app does: the model asks, the editor approves.
+   *
+   * The save is a gated tool call, so the round trip is two requests: the turn
+   * that asks, and the decision that lets it run.
+   *
+   * @param \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $session
+   *   The session owning the draft.
+   * @param int $version
+   *   The draft version to save.
+   * @param string $callId
+   *   The id the call is made under, which the decision names.
+   *
+   * @return array
+   *   What the tool answered: the version, the name and the node it wrote, or
+   *   an error. Empty when the call never ran.
+   */
+  protected function approveSave(AiEditorialSessionInterface $session, int $version, string $callId = 'call_save'): array {
+    MockAiProvider::enqueue(new MockResponse(
+      toolCalls: [
+        [
+          'id' => $callId,
+          'type' => 'function',
+          'function' => [
+            'name' => 'save_draft',
+            'arguments' => json_encode(['version' => $version]),
+          ],
+        ],
+      ],
+    ));
+    MockAiProvider::enqueue(new MockResponse(text: 'Done.'));
+
+    $this->httpPost('/api/ai/plugins/drafting/chat', [
+      'message' => sprintf('Save draft %d.', $version),
+      'sessionId' => $session->id(),
+    ]);
+    $result = $this->httpPost('/api/ai/plugins/drafting/submit-approval', [
+      'sessionId' => $session->id(),
+      'callId' => $callId,
+      'decision' => 'approve',
+    ]);
+
+    foreach ($this->parseSseEvents($result['body']) as $event) {
+      if ($event['type'] === 'tool-output-available' && ($event['toolCallId'] ?? '') === $callId) {
+        return (array) json_decode((string) $event['output'], TRUE);
+      }
+    }
+
+    return [];
+  }
+
+  /**
+   * The RFC 3339 time a stored row was written, as the transcript exposes it.
+   *
+   * @param \Drupal\Core\Entity\ContentEntityInterface $row
+   *   The stored message.
+   *
+   * @return string
+   *   The timestamp.
+   */
+  protected function createdOf(ContentEntityInterface $row): string {
+    return \DateTimeImmutable::createFromFormat('U', (string) $row->get('created')->value)->format('c');
+  }
+
+  /**
+   * The thread the session's drafting conversation is held under.
+   *
+   * @param \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $session
+   *   The session.
+   *
+   * @return string
+   *   The thread id.
+   */
+  protected function threadOf(AiEditorialSessionInterface $session): string {
+    return EditorialMessageStore::SESSION_PREFIX . $session->id()
+      . '.' . EditorialMessageStore::AGENT_PREFIX . self::AGENT_ID;
+  }
+
+  /**
+   * The rows every drafter run of a session wrote, oldest first.
+   *
+   * A drafter holds a thread of its own, so these are not in the editor's
+   * conversation. The session reference is what relates them to it.
+   *
+   * @param \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $session
+   *   The session.
+   *
+   * @return \Drupal\Core\Entity\ContentEntityInterface[]
+   *   The rows.
+   */
+  protected function loadDrafterRows(AiEditorialSessionInterface $session): array {
+    $storage = \Drupal::entityTypeManager()->getStorage('neuron_message');
     $storage->resetCache();
-    return $storage->loadTranscript($session);
+    $ids = $storage->getQuery()
+      ->accessCheck(FALSE)
+      ->condition('oe_ai_session', (int) $session->id())
+      ->condition('thread_id', $this->threadOf($session), '<>')
+      ->sort('id')
+      ->execute();
+
+    return $ids === [] ? [] : $storage->loadMultiple($ids);
   }
 
   /**
@@ -308,6 +503,108 @@ abstract class DraftingPluginTestBase extends ExistingSiteBase {
       $this->fail(sprintf('Term "%s" was not found in "%s".', $name, $vid));
     }
     return (string) $term->id();
+  }
+
+  /**
+   * Parses SSE events from a raw response body string.
+   *
+   * Each SSE frame is a "data: <json>\n\n" block. This method splits
+   * the body, decodes the JSON, and returns structured event data.
+   *
+   * @param string $body
+   *   The raw SSE response body.
+   *
+   * @return array
+   *   Array of parsed event arrays, each with a 'type' key.
+   */
+  protected function parseSseEvents(string $body): array {
+    $events = [];
+    $frames = preg_split('/\n\n+/', trim($body));
+
+    foreach ($frames as $frame) {
+      $frame = trim($frame);
+      if ($frame === '') {
+        continue;
+      }
+
+      $data = '';
+      foreach (explode("\n", $frame) as $line) {
+        if (str_starts_with($line, 'data: ')) {
+          $data .= substr($line, 6);
+        }
+      }
+
+      if ($data === '' || $data === '[DONE]') {
+        continue;
+      }
+
+      $decoded = json_decode($data, TRUE);
+      if (is_array($decoded) && isset($decoded['type'])) {
+        $events[] = $decoded;
+      }
+    }
+
+    return $events;
+  }
+
+  /**
+   * The result the named tool answered with, as the transcript holds it.
+   *
+   * @param \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $session
+   *   The session hosting the conversation.
+   * @param string $name
+   *   The tool name.
+   *
+   * @return array|null
+   *   The decoded result, or NULL when the tool was not called.
+   */
+  protected function resultOfToolCall(AiEditorialSessionInterface $session, string $name): ?array {
+    foreach ($this->loadTurns($session) as $turn) {
+      foreach ($turn['toolCalls'] ?? [] as $call) {
+        if (($call['function']['name'] ?? '') === $name && isset($call['result'])) {
+          return $call['result'];
+        }
+      }
+    }
+
+    return NULL;
+  }
+
+  /**
+   * Writes one row of the session's drafting thread.
+   *
+   * @param \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $session
+   *   The session hosting the conversation.
+   * @param string $role
+   *   The Neuron message role.
+   * @param string $content
+   *   The message text, which becomes its one text block.
+   * @param array $meta
+   *   Everything the message serializes other than its role and content.
+   * @param int|null $uid
+   *   The author, or NULL for a row nobody wrote.
+   */
+  private function seedRow(AiEditorialSessionInterface $session, string $role, string $content, array $meta, ?int $uid): void {
+    $storage = \Drupal::entityTypeManager()->getStorage('neuron_message');
+    $threadId = $this->threadOf($session);
+    // A row the editor wrote opens a turn; a tool result joins the turn that
+    // called it, which is the distinction the store itself makes.
+    $opensTurn = $role === 'user' && ($meta['type'] ?? '') !== 'tool_call_result';
+
+    $this->seeded[] = $id = sprintf('msg_seed_%s_%d', $session->id(), count($this->seeded));
+    $storage->create([
+      'bundle' => 'editorial_session',
+      'oe_ai_session' => (int) $session->id(),
+      'thread_id' => $threadId,
+      'message_id' => $id,
+      'role' => $role,
+      'content' => json_encode([['type' => 'text', 'content' => $content, 'meta' => []]]),
+      'meta' => $meta === [] ? NULL : json_encode($meta + ['__id' => $id]),
+      'turn' => $storage->nextTurn($threadId, $opensTurn),
+      'complete' => TRUE,
+      'agent_id' => self::AGENT_ID,
+      'uid' => $uid,
+    ])->save();
   }
 
 }

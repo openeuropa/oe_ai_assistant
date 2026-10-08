@@ -49,6 +49,10 @@ class MockAiProvider extends AiProviderClientBase implements ChatInterface {
    */
   public static function enqueue(MockResponse $response): void {
     $state = \Drupal::state();
+    // The responses are consumed in the web server's process, so the queue
+    // this one cached before the last request is stale: reading it would
+    // put answers that have already been used back in the queue.
+    $state->resetCache();
     $queue = $state->get(static::QUEUE_KEY, []);
     $queue[] = serialize($response);
     $state->set(static::QUEUE_KEY, $queue);
@@ -86,27 +90,6 @@ class MockAiProvider extends AiProviderClientBase implements ChatInterface {
    */
   public static function getCallLog(): array {
     return \Drupal::state()->get(static::LOG_KEY, []);
-  }
-
-  /**
-   * Dequeues the next mock response.
-   *
-   * @return \Drupal\oe_ai_assistant_test\Plugin\AiProvider\MockResponse
-   *   The next queued response.
-   *
-   * @throws \RuntimeException
-   *   When the queue is empty.
-   */
-  protected static function dequeue(): MockResponse {
-    $state = \Drupal::state();
-    $queue = $state->get(static::QUEUE_KEY, []);
-    if (empty($queue)) {
-      throw new \RuntimeException('MockAiProvider: no more responses in queue.');
-    }
-    $serialized = array_shift($queue);
-    $state->set(static::QUEUE_KEY, $queue);
-    // phpcs:ignore -- MockResponse is a known safe class from this module.
-    return unserialize($serialized, ['allowed_classes' => [MockResponse::class]]);
   }
 
   /**
@@ -211,6 +194,27 @@ class MockAiProvider extends AiProviderClientBase implements ChatInterface {
    */
   public function getModelSettings(string $model_id, array $generalConfig = []): array {
     return $generalConfig;
+  }
+
+  /**
+   * Dequeues the next mock response.
+   *
+   * @return \Drupal\oe_ai_assistant_test\Plugin\AiProvider\MockResponse
+   *   The next queued response.
+   *
+   * @throws \RuntimeException
+   *   When the queue is empty.
+   */
+  protected static function dequeue(): MockResponse {
+    $state = \Drupal::state();
+    $queue = $state->get(static::QUEUE_KEY, []);
+    if (empty($queue)) {
+      throw new \RuntimeException('MockAiProvider: no more responses in queue.');
+    }
+    $serialized = array_shift($queue);
+    $state->set(static::QUEUE_KEY, $queue);
+    // phpcs:ignore -- MockResponse is a known safe class from this module.
+    return unserialize($serialized, ['allowed_classes' => [MockResponse::class]]);
   }
 
 }

@@ -3,42 +3,49 @@
  *
  * Split-panel layout: chat on the left, content artifact on the right.
  * DraftingChat owns the assistant-ui runtime, the tone/template/documents
- * hooks, and the tab construction. After a successful save it splices a
- * local event chip into the thread state via appendEventToThread so the
- * chip appears instantly without any remount or refetch.
+ * hooks, and the tab construction. Saving goes through the conversation: the
+ * Save button asks for it in words, the model calls save_draft, and the editor
+ * answers the call before anything is written.
  *
  * DraftingRoot is a thin shell that renders DraftingChat.
  */
 
-import { AssistantRuntimeProvider } from "@assistant-ui/react";
+import {
+  AssistantRuntimeProvider,
+  ExportedMessageRepository,
+} from "@assistant-ui/react";
 import { FileText, LayoutTemplate, Loader2, Megaphone } from "lucide-react";
-import { type ReactNode, useCallback } from "react";
+import { type ReactNode, useCallback, useEffect } from "react";
+import { getSessionMessages } from "@/api/session-messages";
 import { CardSelectPane } from "@/components/ui/card-select-pane";
 import type { PaneTabItem } from "@/components/ui/pane-tabs";
 import { getConfig } from "@/config";
+import { eventBus } from "@/lib/events";
 import { useAppStore } from "@/store";
-import { saveDraftRevision } from "./api/drafting-api";
+import { submitDraftingApproval } from "./api/drafting-api";
 import { ArtifactPane } from "./components/artifact-pane";
 import { ContentTable } from "./components/content-table";
 import { DocumentsPanel } from "./components/documents-panel";
 import { DraftPreview } from "./components/draft-preview";
 import { DraftRail } from "./components/draft-rail";
 import { DraftingThread } from "./components/drafting-thread";
-import { PlanSteps } from "./components/plan-steps";
 import {
-  DraftContentToolUI,
-  EditorialEventToolUI,
+  DraftGroupToolUI,
+  GetContentSchemaToolUI,
+  GetDraftHistoryToolUI,
+  ReviseDraftToolUI,
+  SaveDraftToolUI,
 } from "./components/tool-uis";
 import { useDraftingDocuments } from "./hooks/use-drafting-documents";
 import { useDraftingRuntime } from "./hooks/use-drafting-runtime";
 import { useDraftingTemplate } from "./hooks/use-drafting-template";
 import { useDraftingTone } from "./hooks/use-drafting-tone";
 import { useReportPendingWork } from "./hooks/use-report-pending-work";
+import { toThreadMessages } from "./hydrate-transcript";
 import { useReportParticipants } from "./participants";
 import { useSavedVersions } from "./saved-versions";
 import { useSessionDrafts } from "./session-drafts";
 import { getDraftingState, useDraftingSlice } from "./store";
-import { appendEventToThread } from "./thread-events";
 
 /** Bridges the runtime's pending state into the shell store. */
 function PendingWorkReporter() {
@@ -76,7 +83,7 @@ function VersionedDraftPreview({
   onSave,
 }: {
   version: number;
-  onSave: () => void;
+  onSave: (name: string) => void;
 }) {
   const sessionDrafts = useSessionDrafts();
   const savedVersions = useSavedVersions();
@@ -96,87 +103,91 @@ function VersionedDraftPreview({
  * Inner component that owns the assistant-ui runtime and all runtime-dependent
  * state, including tone/template/documents hooks and composer tab construction.
  *
- * Save handlers capture labels before calling submitValues() and splice a
- * local event chip (or error chip on failure) directly into the thread via
- * export/import. This avoids any remount or network refetch after a save.
+ * The Save button asks the assistant to save, in the words the editor would
+ * have used. The model then calls save_draft, which waits for the editor to
+ * answer it, so nothing is written without a confirmation.
  */
 function DraftingChat() {
-  const { draftedFields, plan, activeDraftVersion } = useDraftingSlice();
+  const { draftedFields, activeDraftVersion } = useDraftingSlice();
   const setPendingWork = useAppStore((s) => s.setPendingWork);
   const runtime = useDraftingRuntime();
   const tone = useDraftingTone();
   const documents = useDraftingDocuments();
   const template = useDraftingTemplate();
+  // The pane only exists once there is a draft to show; before that the
+  // chat takes the full workspace width.
   const hasFields = Object.keys(draftedFields).length > 0;
-  // The pane only exists once there is an artifact to show; before that
-  // the chat takes the full workspace width.
-  const hasArtifact = hasFields || plan.length > 0;
 
   /**
-   * Splices a local event chip (or error chip) into the thread.
+   * Asks the assistant to save the draft the artifact pane has open.
    *
-   * Memoised on runtime so the identity is stable across re-renders that do
-   * not change the runtime reference.
+   * The request is a message, because that is what it is: the editor asking
+   * for a save. The model answers it with a save_draft call, which waits for
+   * the editor to confirm before the node is written.
    */
-  const appendEvent = useCallback(
-    (eventType: string, summary: string, version?: number) =>
-      appendEventToThread(runtime.thread, { eventType, summary, version }),
+  const handleSave = useCallback(
+    (name: string) => {
+      if (getDraftingState().activeDraftVersion === null) {
+        return;
+      }
+      runtime.thread.append(`Save ${name}.`);
+    },
     [runtime],
   );
 
   /**
-   * Saves the draft version open in the artifact pane via the save
-   * endpoint. The backend resolves the fields for that version from its
-   * own draft history, so saving an older version saves exactly what
-   * the pane shows. The in-flight request reports pending work so the
-   * exit guard blocks navigation, and the outcome lands in the thread
-   * as a local event chip (the backend records the matching durable
-   * event row).
+   * Keeps the thread in step with a tool call that waits for a decision.
+   *
+   * Neuron writes a gated call to the conversation and then suspends without
+   * streaming it, so the question only exists in the store: the thread is read
+   * back when a turn ends by asking for one. Answering works the same way,
+   * since the reply to a decision is the rest of the turn. Both arrive on the
+   * event bus, because neither the runtime hook nor the tool UI that renders
+   * the buttons can reach the runtime held here.
    */
-  const handleSave = useCallback(async () => {
-    const version = getDraftingState().activeDraftVersion;
-    if (version === null) {
-      // Legacy unversioned drafts cannot be addressed by the contract.
-      appendEvent("error", "This draft has no version and cannot be saved");
-      return;
-    }
-    setPendingWork("drafting:save", true);
-    try {
-      await saveDraftRevision({ version });
-    } catch {
-      appendEvent("error", `Draft ${version} could not be saved`);
-      return;
-    } finally {
-      setPendingWork("drafting:save", false);
-    }
-    appendEvent(
-      "save",
-      `Draft ${version} saved as unpublished revision`,
-      version,
-    );
-  }, [appendEvent, setPendingWork]);
+  useEffect(() => {
+    const reload = async () =>
+      runtime.thread.import(
+        ExportedMessageRepository.fromArray(
+          toThreadMessages(await getSessionMessages("drafting")),
+        ),
+      );
+
+    const decide = async (decision: {
+      callId: string;
+      decision: "approve" | "reject";
+      reason?: string;
+    }) => {
+      setPendingWork("drafting:save", true);
+      try {
+        await submitDraftingApproval(decision);
+        await reload();
+      } finally {
+        setPendingWork("drafting:save", false);
+      }
+    };
+
+    eventBus.on("approval:decide", decide);
+    eventBus.on("approval:requested", reload);
+    return () => {
+      eventBus.off("approval:decide", decide);
+      eventBus.off("approval:requested", reload);
+    };
+  }, [runtime, setPendingWork]);
 
   /** Determine what the artifact pane shows. */
   function renderArtifact() {
-    if (hasFields) {
-      // Versioned drafts get the tabbed live preview pane; legacy
-      // unversioned drafts cannot be addressed by the preview
-      // endpoint and keep the plain data table.
-      if (activeDraftVersion !== null) {
-        return (
-          <VersionedDraftPreview
-            version={activeDraftVersion}
-            onSave={handleSave}
-          />
-        );
-      }
-      return <ContentTable onSave={handleSave} />;
+    // An open draft gets the tabbed live preview pane; otherwise the
+    // plain data table stands in.
+    if (activeDraftVersion !== null) {
+      return (
+        <VersionedDraftPreview
+          version={activeDraftVersion}
+          onSave={handleSave}
+        />
+      );
     }
-    return (
-      <div className="flex min-h-0 flex-1 flex-col p-4">
-        <PlanSteps steps={plan} />
-      </div>
-    );
+    return <ContentTable onSave={handleSave} />;
   }
 
   // Editorial context panels, shown as pill buttons under the composer.
@@ -199,24 +210,7 @@ function DraftingChat() {
           value={tone.value}
           onChange={tone.updateValue}
           onSave={async () => {
-            // Capture labels before saving so the summary matches the backend's.
-            const previous = tone.selectedLabel;
-            const next =
-              tone.options.find((option) => option.value === tone.value)
-                ?.label ?? tone.value;
-            try {
-              await tone.submitValues();
-            } catch (error) {
-              // The pane keeps its inline error; the chat records the failure.
-              appendEvent("error", "Tone change failed");
-              throw error;
-            }
-            appendEvent(
-              "tone",
-              previous
-                ? `Tone changed from ${previous} to ${next}`
-                : `Tone changed to ${next}`,
-            );
+            await tone.submitValues();
             close();
           }}
           onCancel={() => {
@@ -285,18 +279,7 @@ function DraftingChat() {
           value={template.value}
           onChange={template.updateValue}
           onSave={async () => {
-            // Capture label before saving so the summary matches the backend's.
-            const next =
-              template.options.find((option) => option.value === template.value)
-                ?.label ?? template.value;
-            try {
-              await template.submitValues();
-            } catch (error) {
-              // The pane keeps its inline error; the chat records the failure.
-              appendEvent("error", "Template change failed");
-              throw error;
-            }
-            appendEvent("template", `Template changed to ${next}`);
+            await template.submitValues();
             close();
           }}
           onCancel={() => {
@@ -313,8 +296,11 @@ function DraftingChat() {
   return (
     <AssistantRuntimeProvider runtime={runtime}>
       {/* Register tool call renderers so they appear inline in chat. */}
-      <DraftContentToolUI />
-      <EditorialEventToolUI />
+      <DraftGroupToolUI />
+      <ReviseDraftToolUI />
+      <GetContentSchemaToolUI />
+      <GetDraftHistoryToolUI />
+      <SaveDraftToolUI />
 
       {/* Feed the shell exit guard with this plugin's pending state.
           Panel saves report themselves via useCardSelection. */}
@@ -330,9 +316,8 @@ function DraftingChat() {
           <DraftingThread tabs={tabs} />
         </div>
 
-        {/* Middle panel appears once a plan or draft exists: plan steps
-            while generating, then the content table. */}
-        {hasArtifact && (
+        {/* Middle panel appears once a draft exists. */}
+        {hasFields && (
           <SessionArtifactPane>{renderArtifact()}</SessionArtifactPane>
         )}
 
