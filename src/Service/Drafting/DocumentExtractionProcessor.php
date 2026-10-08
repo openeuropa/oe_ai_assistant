@@ -18,6 +18,7 @@ use Drupal\document_loader\DocumentLoaderType\Input\WordInput;
 use Drupal\document_loader\Service\DocumentLoaderManager;
 use Drupal\file\FileInterface;
 use Drupal\media\MediaInterface;
+use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
 use Drupal\oe_ai_assistant\Exception\DocumentExtractionException;
 use Drupal\oe_ai_assistant\Service\MessageRecorderInterface;
 use Drupal\state_machine\Plugin\Field\FieldType\StateItemInterface;
@@ -317,9 +318,12 @@ final class DocumentExtractionProcessor implements DocumentExtractionProcessorIn
     if ($summary === '') {
       throw new DocumentExtractionException('The provider returned an empty summary.');
     }
-
+    $session = $media->get(DocumentRepositoryBase::SESSION_FIELD)->entity;
+    if (!$session instanceof AiEditorialSessionInterface) {
+      throw new DocumentExtractionException('The document has no editorial session.');
+    }
     $this->messageRecorder->recordAssistant(
-      $media,
+      $session,
       $output,
       'document_summary',
       $defaults['provider_id'],
