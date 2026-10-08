@@ -158,10 +158,7 @@ class TikaExecutableClientTest extends KernelTestBase {
    * Creates the executable-mode settings form.
    */
   private function settingsForm(): TikaSettingsForm {
-    $form = new TikaSettingsForm(
-      $this->container->get('config.factory'),
-      $this->container->get('config.typed'),
-    );
+    $form = TikaSettingsForm::create($this->container);
     $form->setStringTranslation($this->container->get('string_translation'));
 
     return $form;

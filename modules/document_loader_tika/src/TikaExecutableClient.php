@@ -28,7 +28,7 @@ final class TikaExecutableClient implements TikaClientInterface {
     if (!is_file($path) || !is_readable($path)) {
       throw new TikaException(sprintf('The file %s could not be opened.', $path));
     }
-    $command = $this->command($accept === 'text/html' ? '--xhtml' : '--text', $path);
+    $command = $this->command($accept === 'text/html' ? '--xhtml' : '--text', $this->jarPath(), $path);
     try {
       $process = $this->run($command, $this->timeout());
     }
@@ -54,18 +54,39 @@ final class TikaExecutableClient implements TikaClientInterface {
    */
   public function version(): ?string {
     try {
-      $command = $this->command('--version');
+      return $this->probe($this->jarPath());
+    }
+    catch (TikaException) {
+      return NULL;
+    }
+  }
+
+  /**
+   * Returns the version reported by the JAR at the given path.
+   *
+   * Takes the path as an argument so a path that is not stored in
+   * configuration yet can be checked, which is what the settings form needs.
+   *
+   * @throws \Drupal\document_loader_tika\Exception\TikaException
+   *   When java is missing, the JAR cannot be read, or it reports no version.
+   */
+  public function probe(string $jar_path): string {
+    $command = $this->command('--version', $jar_path);
+    try {
       $process = $this->run($command, self::VERSION_TIMEOUT);
     }
-    catch (\Throwable) {
-      return NULL;
+    catch (\Throwable $e) {
+      throw new TikaException('Java could not run the Tika app JAR.', 0, $e);
     }
     if (!$process->isSuccessful()) {
-      return NULL;
+      throw new TikaException('Java could not run the Tika app JAR.');
     }
     $version = trim($process->getOutput());
+    if ($version === '') {
+      throw new TikaException('The Tika app JAR reported no version.');
+    }
 
-    return $version === '' ? NULL : $version;
+    return $version;
   }
 
   /**
@@ -76,19 +97,18 @@ final class TikaExecutableClient implements TikaClientInterface {
   }
 
   /**
-   * Builds an argument-safe Java command for the configured JAR.
+   * Builds an argument-safe Java command for the given JAR.
    *
    * @return string[]
    *   The Java command and arguments.
    */
-  private function command(string $command, ?string $path = NULL): array {
+  private function command(string $command, string $jar_path, ?string $path = NULL): array {
+    if (!is_file($jar_path) || !is_readable($jar_path)) {
+      throw new TikaException('The Tika app JAR cannot be read.');
+    }
     $java = (new ExecutableFinder())->find('java');
     if ($java === NULL) {
       throw new TikaException('The java executable was not found on PATH.');
-    }
-    $jar_path = (string) $this->configFactory->get('document_loader_tika.settings')->get('jar_path');
-    if (!is_file($jar_path) || !is_readable($jar_path)) {
-      throw new TikaException('The configured Tika app JAR cannot be read.');
     }
     $arguments = [
       $java,
@@ -117,6 +137,13 @@ final class TikaExecutableClient implements TikaClientInterface {
     $process->run();
 
     return $process;
+  }
+
+  /**
+   * Reads the configured Tika app JAR path.
+   */
+  private function jarPath(): string {
+    return (string) $this->configFactory->get('document_loader_tika.settings')->get('jar_path');
   }
 
   /**

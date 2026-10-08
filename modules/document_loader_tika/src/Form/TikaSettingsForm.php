@@ -6,13 +6,29 @@ namespace Drupal\document_loader_tika\Form;
 
 use Drupal\Core\Form\ConfigFormBase;
 use Drupal\Core\Form\FormStateInterface;
-use Symfony\Component\Process\ExecutableFinder;
-use Symfony\Component\Process\Process;
+use Drupal\document_loader_tika\Exception\TikaException;
+use Drupal\document_loader_tika\TikaExecutableClient;
+use Symfony\Component\DependencyInjection\ContainerInterface;
 
 /**
  * Settings form for the Tika extraction source.
  */
 final class TikaSettingsForm extends ConfigFormBase {
+
+  /**
+   * Probes the submitted JAR path on behalf of the validation.
+   */
+  protected TikaExecutableClient $executableClient;
+
+  /**
+   * {@inheritdoc}
+   */
+  public static function create(ContainerInterface $container): static {
+    $instance = parent::create($container);
+    $instance->executableClient = $container->get(TikaExecutableClient::class);
+
+    return $instance;
+  }
 
   /**
    * {@inheritdoc}
@@ -103,39 +119,15 @@ final class TikaSettingsForm extends ConfigFormBase {
       $form_state->setErrorByName('jar_path', $this->t('Enter the path to the tika-app JAR.'));
       return;
     }
-    if (!is_file($jar_path) || !is_readable($jar_path)) {
-      $form_state->setErrorByName('jar_path', $this->t('The Tika app JAR path must be a readable file.'));
-      return;
-    }
-
-    $java = (new ExecutableFinder())->find('java');
-    if ($java === NULL) {
-      $form_state->setErrorByName('jar_path', $this->t('The java executable was not found on PATH.'));
-      return;
-    }
-
-    $process = new Process([
-      $java,
-      '-Djava.awt.headless=true',
-      '-Dfile.encoding=UTF-8',
-      '-jar',
-      $jar_path,
-      '--version',
-    ], NULL, [
-      'LANG' => 'C.UTF-8',
-      'LC_ALL' => 'C.UTF-8',
-    ]);
-    $process->setTimeout(2.0);
 
     try {
-      $process->run();
+      $this->executableClient->probe($jar_path);
     }
-    catch (\Throwable) {
-      $form_state->setErrorByName('jar_path', $this->t('Java could not run the Tika app JAR.'));
-      return;
-    }
-    if (!$process->isSuccessful()) {
-      $form_state->setErrorByName('jar_path', $this->t('Java could not run the Tika app JAR.'));
+    catch (TikaException $e) {
+      $form_state->setErrorByName('jar_path', $this->t('Tika cannot use @path: @reason', [
+        '@path' => $jar_path,
+        '@reason' => $e->getMessage(),
+      ]));
     }
   }
 
