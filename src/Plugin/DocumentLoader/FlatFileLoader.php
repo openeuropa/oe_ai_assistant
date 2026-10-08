@@ -80,7 +80,7 @@ final class FlatFileLoader extends DocumentLoaderBase {
       throw new DocumentLoaderException(sprintf('The file %s could not be read from local storage.', $uri));
     }
 
-    return $this->typeFactory->createOutput('text', $content, [
+    return $this->typeFactory->createOutput($output_format, $content, [
       'source' => $uri,
       'loader' => $this->getPluginId(),
     ]);
