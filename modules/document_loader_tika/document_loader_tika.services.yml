@@ -3,8 +3,9 @@ services:
     autowire: true
 
   # Mode-selecting client shared by the loader plugin and status report.
-  Drupal\document_loader_tika\TikaClientInterface:
-    class: Drupal\document_loader_tika\TikaClient
+  Drupal\document_loader_tika\TikaClient: ~
+
+  Drupal\document_loader_tika\TikaClientInterface: '@Drupal\document_loader_tika\TikaClient'
 
   Drupal\document_loader_tika\TikaServerClient: ~
 

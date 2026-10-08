@@ -125,20 +125,30 @@ class TikaLoaderTest extends KernelTestBase {
   }
 
   /**
-   * Tests that the status report reflects the server availability.
+   * Tests that one reachable source is enough for the status report.
    */
-  public function testRuntimeRequirements(): void {
+  public function testRuntimeRequirementsOneSourceIsEnough(): void {
     $hooks = $this->container->get(RequirementsHooks::class);
 
+    // The server answers, the app JAR is not configured.
     $this->tika->append(new Response(200, [], 'Apache Tika 3.3.1'));
     $ok = $hooks->runtimeRequirements();
     $this->assertSame(RequirementSeverity::OK, $ok['document_loader_tika_server']['severity']);
     $this->assertSame('Apache Tika 3.3.1', (string) $ok['document_loader_tika_server']['value']);
+    $this->assertSame(RequirementSeverity::Info, $ok['document_loader_tika_app']['severity']);
+  }
+
+  /**
+   * Tests that the status report fails when no source is reachable.
+   */
+  public function testRuntimeRequirementsNoSource(): void {
+    $hooks = $this->container->get(RequirementsHooks::class);
 
     $this->tika->append(new Response(503, [], ''));
     $down = $hooks->runtimeRequirements();
     $this->assertSame(RequirementSeverity::Error, $down['document_loader_tika_server']['severity']);
     $this->assertStringContainsString('http://tika:9998', (string) $down['document_loader_tika_server']['value']);
+    $this->assertSame(RequirementSeverity::Error, $down['document_loader_tika_app']['severity']);
   }
 
 }
