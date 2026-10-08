@@ -12,8 +12,6 @@ use Drupal\oe_ai_assistant\Entity\AiConversationMessageInterface;
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
 use Drupal\oe_ai_assistant\Entity\Storage\AiContentProvenanceStorageInterface;
 use Drupal\Tests\oe_ai_assistant\Traits\AiConversationMessageTrait;
-use Drupal\views\EntityViewsData;
-use Drupal\views\Views;
 use PHPUnit\Framework\Attributes\Group;
 
 /**
@@ -105,28 +103,6 @@ class AiContentProvenanceTest extends AiEditorialSessionKernelTestBase {
 
     $this->assertTrue($record->access('view', $this->createUser(['view ai content provenance'])));
     $this->assertTrue($record->access('delete', $this->createUser(['administer ai content provenance'])));
-  }
-
-  /**
-   * Tests the default Views listing and its access permission.
-   */
-  public function testViewsListing(): void {
-    $owner = $this->createUser();
-    $session = $this->createSession($owner);
-    $record = $this->createRecord(99, 123, $owner->id(), $session, $this->createDraftTurn($session));
-
-    $entity_type = $this->container->get('entity_type.manager')->getDefinition('ai_content_provenance');
-    $this->assertSame(EntityViewsData::class, $entity_type->getHandlerClass('views_data'));
-
-    $view = Views::getView('ai_content_provenance');
-    $this->assertNotNull($view);
-    $this->assertFalse($view->access('page_1', $owner));
-    $this->assertTrue($view->access('page_1', $this->createUser(['view ai content provenance'])));
-
-    $view->setDisplay('page_1');
-    $view->execute();
-    $this->assertCount(1, $view->result);
-    $this->assertSame((int) $record->id(), (int) $view->result[0]->id);
   }
 
   /**

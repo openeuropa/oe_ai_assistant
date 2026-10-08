@@ -12,13 +12,6 @@ oe_ai_assistant.dashboard:
   parent: oe_ai_assistant.admin_settings
   weight: 20
 
-oe_ai_assistant.content_provenance:
-  title: 'AI content provenance'
-  description: 'Review AI-assisted content revision provenance.'
-  route_name: view.ai_content_provenance.page_1
-  parent: oe_ai_assistant.admin_settings
-  weight: 25
-
 entity.ai_drafting_template.collection:
   title: 'AI Drafting Templates'
   description: 'Manage templates that define field structure and prompts for AI content generation.'

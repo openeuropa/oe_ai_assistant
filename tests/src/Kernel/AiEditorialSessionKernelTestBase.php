@@ -37,7 +37,6 @@ abstract class AiEditorialSessionKernelTestBase extends KernelTestBase {
     'system',
     'taxonomy',
     'user',
-    'views',
     'key',
     'workflows',
     'serialization',

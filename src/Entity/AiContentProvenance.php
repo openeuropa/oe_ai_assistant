@@ -27,7 +27,6 @@ use Drupal\user\EntityOwnerTrait;
  *     "storage" = "Drupal\oe_ai_assistant\Entity\Storage\AiContentProvenanceStorage",
  *     "storage_schema" = "Drupal\oe_ai_assistant\Entity\Storage\AiContentProvenanceStorageSchema",
  *     "access" = "Drupal\oe_ai_assistant\AiContentProvenanceAccessControlHandler",
- *     "views_data" = "Drupal\views\EntityViewsData",
  *   },
  *   entity_keys = {
  *     "id" = "id",
