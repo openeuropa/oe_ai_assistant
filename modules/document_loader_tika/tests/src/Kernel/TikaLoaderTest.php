@@ -195,14 +195,14 @@ class TikaLoaderTest extends KernelTestBase {
     $this->load();
 
     $messages = array_column($logger->records, 'message');
-    $this->assertContains('Tika extraction started: @mode mode, @path.', $messages);
+    $this->assertContains('Tika extraction started: @mode mode, @file.', $messages);
     $this->assertContains(
-      'Tika extraction succeeded: @mode mode, @path, @characters characters in @seconds seconds.',
+      'Tika extraction succeeded: @mode mode, @file, @characters characters in @seconds seconds.',
       $messages,
     );
     $done = end($logger->records);
     $this->assertSame('server', $done['context']['@mode']);
-    $this->assertStringEndsWith('brief.txt', $done['context']['@path']);
+    $this->assertSame('brief.txt', $done['context']['@file']);
     $this->assertSame(14, $done['context']['@characters']);
   }
 
@@ -222,7 +222,7 @@ class TikaLoaderTest extends KernelTestBase {
 
     $failure = end($logger->records);
     $this->assertSame(
-      'Tika extraction failed: @mode mode, @path, after @seconds seconds: @message',
+      'Tika extraction failed: @mode mode, @file, after @seconds seconds: @message',
       $failure['message'],
     );
     $this->assertSame('server', $failure['context']['@mode']);

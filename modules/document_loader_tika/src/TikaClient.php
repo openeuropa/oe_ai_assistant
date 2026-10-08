@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Drupal\document_loader_tika;
 
 use Drupal\Core\Config\ConfigFactoryInterface;
-use Drupal\document_loader_tika\Exception\TikaException;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 
@@ -27,28 +26,31 @@ final class TikaClient implements TikaClientInterface {
    */
   public function extract(string $path, string $accept = 'text/plain'): string {
     $mode = $this->mode();
-    $this->logger->info('Tika extraction started: @mode mode, @path.', [
+    // Only the file name: the log is readable by roles that have no access to
+    // the file, and the full path discloses the private filesystem layout.
+    $file = basename($path);
+    $this->logger->info('Tika extraction started: @mode mode, @file.', [
       '@mode' => $mode,
-      '@path' => $path,
+      '@file' => $file,
     ]);
-    $started = microtime(TRUE);
+    $started = hrtime(TRUE);
 
     try {
       $content = $this->client()->extract($path, $accept);
     }
-    catch (TikaException $e) {
-      $this->logger->error('Tika extraction failed: @mode mode, @path, after @seconds seconds: @message', [
+    catch (\Throwable $e) {
+      $this->logger->error('Tika extraction failed: @mode mode, @file, after @seconds seconds: @message', [
         '@mode' => $mode,
-        '@path' => $path,
+        '@file' => $file,
         '@seconds' => $this->elapsed($started),
         '@message' => $e->getMessage(),
       ]);
       throw $e;
     }
 
-    $this->logger->info('Tika extraction succeeded: @mode mode, @path, @characters characters in @seconds seconds.', [
+    $this->logger->info('Tika extraction succeeded: @mode mode, @file, @characters characters in @seconds seconds.', [
       '@mode' => $mode,
-      '@path' => $path,
+      '@file' => $file,
       '@characters' => mb_strlen($content),
       '@seconds' => $this->elapsed($started),
     ]);
@@ -86,9 +88,12 @@ final class TikaClient implements TikaClientInterface {
 
   /**
    * Measures the seconds spent since a start time, for the log messages.
+   *
+   * @param int $started
+   *   The monotonic nanosecond reading taken when the extraction started.
    */
-  private function elapsed(float $started): string {
-    return number_format(microtime(TRUE) - $started, 2);
+  private function elapsed(int $started): string {
+    return sprintf('%.2f', (hrtime(TRUE) - $started) / 1_000_000_000);
   }
 
 }

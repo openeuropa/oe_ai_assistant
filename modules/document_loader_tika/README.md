@@ -101,8 +101,8 @@ version.
 ## Logging
 
 Every extraction is logged to the `document_loader_tika` channel, visible at Administration > Reports > Recent log
-messages. One entry records the start, naming the mode and the file. A second records the outcome: the character
-count and the elapsed seconds on success, the reason on failure.
+messages. One entry records the start, naming the mode and the file name. A second records the outcome: the
+character count and the elapsed seconds on success, the reason on failure.
 
 ## Maintainers
 
