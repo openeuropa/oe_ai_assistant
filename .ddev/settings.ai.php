@@ -17,9 +17,12 @@
 // Point the Tika document loader at the services of this installation: the
 // tika container from .ddev/docker-compose.tika.yaml and the app JAR baked
 // into the web image by .ddev/web-build/Dockerfile.tika. Both sources are
-// configured, so switching mode between 'server' and 'executable' below and
-// running "drush cr" is enough to test either one. The settings form shows
-// these three values as overridden and cannot change them.
+// configured, so switching mode between 'server' and 'executable' is enough
+// to test either one. Edit the live copy, web/sites/default/settings.ai.php,
+// and run "drush cr": "ddev install" seeds that copy from this file, so an
+// edit here takes effect only on the next install. The settings form keeps
+// showing the stored values and saves them, but these overrides win at
+// runtime.
 $config['document_loader_tika.settings']['mode'] = 'server';
 $config['document_loader_tika.settings']['url'] = 'http://tika:9998';
 $config['document_loader_tika.settings']['jar_path'] = '/usr/local/lib/tika-app.jar';
