@@ -98,6 +98,12 @@ the manager. In executable mode, the same happens when Java or the JAR cannot ru
 unsuccessfully, or returns no text. The plugin reports itself unavailable when the selected source cannot return a
 version.
 
+## Logging
+
+Every extraction is logged to the `document_loader_tika` channel, visible at Administration > Reports > Recent log
+messages. One entry records the start, naming the mode and the file. A second records the outcome: the character
+count and the elapsed seconds on success, the reason on failure.
+
 ## Maintainers
 
 - OpenEuropa team, European Commission

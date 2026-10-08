@@ -18,6 +18,7 @@ use GuzzleHttp\Middleware;
 use GuzzleHttp\Psr7\Request;
 use GuzzleHttp\Psr7\Response;
 use PHPUnit\Framework\Attributes\Group;
+use Psr\Log\AbstractLogger;
 
 /**
  * Tests the Tika document loader plugin against a mocked Tika server.
@@ -58,6 +59,35 @@ class TikaLoaderTest extends KernelTestBase {
     // The client is autowired from the core http_client service.
     $this->container->set('http_client', new Client(['handler' => $stack]));
     file_put_contents('public://brief.txt', 'Hello from the file.');
+  }
+
+  /**
+   * Registers a logger that collects every record of the run.
+   *
+   * @return object
+   *   The logger, with its records in a public $records property.
+   */
+  private function collectLogs(): object {
+    $logger = new class() extends AbstractLogger {
+
+      /**
+       * The captured log records, each as a message plus its context.
+       *
+       * @var array
+       */
+      public array $records = [];
+
+      /**
+       * {@inheritdoc}
+       */
+      public function log($level, string|\Stringable $message, array $context = []): void {
+        $this->records[] = ['message' => (string) $message, 'context' => $context];
+      }
+
+    };
+    $this->container->get('logger.factory')->addLogger($logger);
+
+    return $logger;
   }
 
   /**
@@ -153,6 +183,50 @@ class TikaLoaderTest extends KernelTestBase {
     $this->assertSame(RequirementSeverity::Error, $down['document_loader_tika_server']['severity']);
     $this->assertStringContainsString('http://tika:9998', (string) $down['document_loader_tika_server']['value']);
     $this->assertSame(RequirementSeverity::Error, $down['document_loader_tika_app']['severity']);
+  }
+
+  /**
+   * Tests that a successful extraction is logged start to finish.
+   */
+  public function testExtractionIsLogged(): void {
+    $logger = $this->collectLogs();
+    $this->tika->append(new Response(200, [], 'Extracted text'));
+
+    $this->load();
+
+    $messages = array_column($logger->records, 'message');
+    $this->assertContains('Tika extraction started: @mode mode, @path.', $messages);
+    $this->assertContains(
+      'Tika extraction succeeded: @mode mode, @path, @characters characters in @seconds seconds.',
+      $messages,
+    );
+    $done = end($logger->records);
+    $this->assertSame('server', $done['context']['@mode']);
+    $this->assertStringEndsWith('brief.txt', $done['context']['@path']);
+    $this->assertSame(14, $done['context']['@characters']);
+  }
+
+  /**
+   * Tests that a failed extraction is logged with the reason.
+   */
+  public function testFailedExtractionIsLogged(): void {
+    $logger = $this->collectLogs();
+    $this->tika->append(new Response(500, [], 'boom'));
+
+    try {
+      $this->load();
+    }
+    catch (DocumentLoaderException) {
+      // The failure itself is asserted by testFailuresThrow().
+    }
+
+    $failure = end($logger->records);
+    $this->assertSame(
+      'Tika extraction failed: @mode mode, @path, after @seconds seconds: @message',
+      $failure['message'],
+    );
+    $this->assertSame('server', $failure['context']['@mode']);
+    $this->assertStringContainsString('500', $failure['context']['@message']);
   }
 
 }
