@@ -1,4 +1,4 @@
 mode: server
-url: ''
+url: null
 jar_path: ''
 timeout: 30
