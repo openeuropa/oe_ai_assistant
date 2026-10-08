@@ -18,6 +18,7 @@ use GuzzleHttp\Middleware;
 use GuzzleHttp\Psr7\Request;
 use GuzzleHttp\Psr7\Response;
 use PHPUnit\Framework\Attributes\Group;
+use Psr\Log\AbstractLogger;
 
 /**
  * Tests the Tika document loader plugin against a mocked Tika server.
@@ -48,12 +49,45 @@ class TikaLoaderTest extends KernelTestBase {
   protected function setUp(): void {
     parent::setUp();
     $this->installConfig(['document_loader_tika']);
+    // The shipped config carries no URL, so point it at the fake server.
+    $this->config('document_loader_tika.settings')
+      ->set('url', 'http://tika:9998')
+      ->save();
     $this->tika = new MockHandler();
     $stack = HandlerStack::create($this->tika);
     $stack->push(Middleware::history($this->history));
     // The client is autowired from the core http_client service.
     $this->container->set('http_client', new Client(['handler' => $stack]));
     file_put_contents('public://brief.txt', 'Hello from the file.');
+  }
+
+  /**
+   * Registers a logger that collects every record of the run.
+   *
+   * @return object
+   *   The logger, with its records in a public $records property.
+   */
+  private function collectLogs(): object {
+    $logger = new class() extends AbstractLogger {
+
+      /**
+       * The captured log records, each as a message plus its context.
+       *
+       * @var array
+       */
+      public array $records = [];
+
+      /**
+       * {@inheritdoc}
+       */
+      public function log($level, string|\Stringable $message, array $context = []): void {
+        $this->records[] = ['message' => (string) $message, 'context' => $context];
+      }
+
+    };
+    $this->container->get('logger.factory')->addLogger($logger);
+
+    return $logger;
   }
 
   /**
@@ -125,20 +159,74 @@ class TikaLoaderTest extends KernelTestBase {
   }
 
   /**
-   * Tests that the status report reflects the server availability.
+   * Tests that one reachable source is enough for the status report.
    */
-  public function testRuntimeRequirements(): void {
+  public function testRuntimeRequirementsOneSourceIsEnough(): void {
     $hooks = $this->container->get(RequirementsHooks::class);
 
+    // The server answers, the app JAR is not configured.
     $this->tika->append(new Response(200, [], 'Apache Tika 3.3.1'));
     $ok = $hooks->runtimeRequirements();
-    $this->assertSame(RequirementSeverity::OK, $ok['document_loader_tika']['severity']);
-    $this->assertSame('Apache Tika 3.3.1', (string) $ok['document_loader_tika']['value']);
+    $this->assertSame(RequirementSeverity::OK, $ok['document_loader_tika_server']['severity']);
+    $this->assertSame('Apache Tika 3.3.1', (string) $ok['document_loader_tika_server']['value']);
+    $this->assertSame(RequirementSeverity::Info, $ok['document_loader_tika_app']['severity']);
+  }
+
+  /**
+   * Tests that the status report fails when no source is reachable.
+   */
+  public function testRuntimeRequirementsNoSource(): void {
+    $hooks = $this->container->get(RequirementsHooks::class);
 
     $this->tika->append(new Response(503, [], ''));
     $down = $hooks->runtimeRequirements();
-    $this->assertSame(RequirementSeverity::Error, $down['document_loader_tika']['severity']);
-    $this->assertStringContainsString('http://tika:9998', (string) $down['document_loader_tika']['value']);
+    $this->assertSame(RequirementSeverity::Error, $down['document_loader_tika_server']['severity']);
+    $this->assertStringContainsString('http://tika:9998', (string) $down['document_loader_tika_server']['value']);
+    $this->assertSame(RequirementSeverity::Error, $down['document_loader_tika_app']['severity']);
+  }
+
+  /**
+   * Tests that a successful extraction is logged start to finish.
+   */
+  public function testExtractionIsLogged(): void {
+    $logger = $this->collectLogs();
+    $this->tika->append(new Response(200, [], 'Extracted text'));
+
+    $this->load();
+
+    $messages = array_column($logger->records, 'message');
+    $this->assertContains('Tika extraction started: @mode mode, @file.', $messages);
+    $this->assertContains(
+      'Tika extraction succeeded: @mode mode, @file, @characters characters in @seconds seconds.',
+      $messages,
+    );
+    $done = end($logger->records);
+    $this->assertSame('server', $done['context']['@mode']);
+    $this->assertSame('brief.txt', $done['context']['@file']);
+    $this->assertSame(14, $done['context']['@characters']);
+  }
+
+  /**
+   * Tests that a failed extraction is logged with the reason.
+   */
+  public function testFailedExtractionIsLogged(): void {
+    $logger = $this->collectLogs();
+    $this->tika->append(new Response(500, [], 'boom'));
+
+    try {
+      $this->load();
+    }
+    catch (DocumentLoaderException) {
+      // The failure itself is asserted by testFailuresThrow().
+    }
+
+    $failure = end($logger->records);
+    $this->assertSame(
+      'Tika extraction failed: @mode mode, @file, after @seconds seconds: @message',
+      $failure['message'],
+    );
+    $this->assertSame('server', $failure['context']['@mode']);
+    $this->assertStringContainsString('500', $failure['context']['@message']);
   }
 
 }

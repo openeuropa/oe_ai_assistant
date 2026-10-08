@@ -5,58 +5,55 @@ declare(strict_types=1);
 namespace Drupal\document_loader_tika;
 
 use Drupal\Core\Config\ConfigFactoryInterface;
-use Drupal\document_loader_tika\Exception\TikaException;
-use GuzzleHttp\ClientInterface;
-use GuzzleHttp\Exception\GuzzleException;
+use Psr\Log\LoggerInterface;
+use Symfony\Component\DependencyInjection\Attribute\Autowire;
 
 /**
- * Guzzle-based Tika client reading its connection from module settings.
+ * Selects the configured Tika extraction source.
  */
 final class TikaClient implements TikaClientInterface {
 
-  /**
-   * Seconds allowed for the version probe.
-   *
-   * The status report and the availability check call it, so it must not
-   * wait the full extraction timeout on a server that is down.
-   */
-  private const float VERSION_TIMEOUT = 2.0;
-
   public function __construct(
-    private readonly ClientInterface $httpClient,
     private readonly ConfigFactoryInterface $configFactory,
+    private readonly TikaServerClient $serverClient,
+    private readonly TikaExecutableClient $executableClient,
+    #[Autowire(service: 'logger.channel.document_loader_tika')]
+    private readonly LoggerInterface $logger,
   ) {}
 
   /**
    * {@inheritdoc}
    */
   public function extract(string $path, string $accept = 'text/plain'): string {
-    $stream = @fopen($path, 'rb');
-    if ($stream === FALSE) {
-      throw new TikaException(sprintf('The file %s could not be opened.', $path));
-    }
+    $mode = $this->mode();
+    // Only the file name: the log is readable by roles that have no access to
+    // the file, and the full path discloses the private filesystem layout.
+    $file = basename($path);
+    $this->logger->info('Tika extraction started: @mode mode, @file.', [
+      '@mode' => $mode,
+      '@file' => $file,
+    ]);
+    $started = hrtime(TRUE);
 
-    // Guzzle wraps the resource in a PSR-7 stream and closes it when the
-    // request is released, so it is not closed here.
     try {
-      $response = $this->httpClient->request('PUT', $this->url('/tika'), [
-        'body' => $stream,
-        'headers' => ['Accept' => $accept],
-        'timeout' => $this->timeout(),
-        'http_errors' => FALSE,
-      ]);
+      $content = $this->client()->extract($path, $accept);
     }
-    catch (GuzzleException $e) {
-      throw new TikaException('The Tika server could not be reached: ' . $e->getMessage(), 0, $e);
+    catch (\Throwable $e) {
+      $this->logger->error('Tika extraction failed: @mode mode, @file, after @seconds seconds: @message', [
+        '@mode' => $mode,
+        '@file' => $file,
+        '@seconds' => $this->elapsed($started),
+        '@message' => $e->getMessage(),
+      ]);
+      throw $e;
     }
 
-    if ($response->getStatusCode() !== 200) {
-      throw new TikaException(sprintf('The Tika server answered with status %d.', $response->getStatusCode()));
-    }
-    $content = trim((string) $response->getBody());
-    if ($content === '') {
-      throw new TikaException('The Tika server returned no text for the document.');
-    }
+    $this->logger->info('Tika extraction succeeded: @mode mode, @file, @characters characters in @seconds seconds.', [
+      '@mode' => $mode,
+      '@file' => $file,
+      '@characters' => mb_strlen($content),
+      '@seconds' => $this->elapsed($started),
+    ]);
 
     return $content;
   }
@@ -65,44 +62,38 @@ final class TikaClient implements TikaClientInterface {
    * {@inheritdoc}
    */
   public function version(): ?string {
-    try {
-      $response = $this->httpClient->request('GET', $this->url('/version'), [
-        'timeout' => self::VERSION_TIMEOUT,
-        'http_errors' => FALSE,
-      ]);
-    }
-    catch (GuzzleException) {
-      return NULL;
-    }
-    if ($response->getStatusCode() !== 200) {
-      return NULL;
-    }
-    $version = trim((string) $response->getBody());
-
-    return $version === '' ? NULL : $version;
+    return $this->client()->version();
   }
 
   /**
    * {@inheritdoc}
    */
   public function isAvailable(): bool {
-    return $this->version() !== NULL;
+    return $this->client()->isAvailable();
   }
 
   /**
-   * Builds an endpoint URL from the configured server URL.
+   * Gets the client for the active extraction mode.
    */
-  private function url(string $endpoint): string {
-    $base = (string) $this->configFactory->get('document_loader_tika.settings')->get('url');
-
-    return rtrim($base, '/') . $endpoint;
+  public function client(): TikaClientInterface {
+    return $this->mode() === 'executable' ? $this->executableClient : $this->serverClient;
   }
 
   /**
-   * Reads the configured request timeout in seconds.
+   * Reads the configured extraction mode.
    */
-  private function timeout(): float {
-    return (float) ($this->configFactory->get('document_loader_tika.settings')->get('timeout') ?? 30);
+  private function mode(): string {
+    return (string) $this->configFactory->get('document_loader_tika.settings')->get('mode');
+  }
+
+  /**
+   * Measures the seconds spent since a start time, for the log messages.
+   *
+   * @param int $started
+   *   The monotonic nanosecond reading taken when the extraction started.
+   */
+  private function elapsed(int $started): string {
+    return sprintf('%.2f', (hrtime(TRUE) - $started) / 1_000_000_000);
   }
 
 }

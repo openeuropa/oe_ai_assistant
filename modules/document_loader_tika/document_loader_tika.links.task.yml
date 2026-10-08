@@ -1,0 +1,5 @@
+document_loader_tika.settings:
+  title: 'Apache Tika'
+  route_name: document_loader_tika.settings_form
+  base_route: document_loader.settings_form
+  weight: 20
