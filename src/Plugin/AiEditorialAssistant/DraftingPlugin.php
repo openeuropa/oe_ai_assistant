@@ -364,14 +364,22 @@ class DraftingPlugin extends AiAssistantPluginBase {
       $events,
     );
 
-    $afterRun = function () use ($session, &$failed): ?string {
-      if ($failed === []) {
+    $afterRun = function (?\Throwable $error = NULL) use ($session, &$failed): ?string {
+      if ($failed !== []) {
+        $summary = 'No new draft was created. ' . implode(' ', array_map(
+          static fn (GroupDraftingException $failure): string => $failure->getMessage(),
+          $failed,
+        ));
+      }
+      elseif ($error !== NULL && GroupDraftingException::isTimeout($error)) {
+        $summary = 'The AI service did not respond in time. Nothing was changed; try again later.';
+      }
+      elseif ($error !== NULL && GroupDraftingException::isUnreachable($error)) {
+        $summary = 'The AI service could not be reached. Nothing was changed; try again later.';
+      }
+      else {
         return NULL;
       }
-      $summary = 'No new draft was created. ' . implode(' ', array_map(
-        static fn (GroupDraftingException $failure): string => $failure->getMessage(),
-        $failed,
-      ));
       $this->messageRecorder->recordEvent($session, $summary, ['type' => 'error']);
       return $summary;
     };
@@ -385,7 +393,8 @@ class DraftingPlugin extends AiAssistantPluginBase {
    * Queued agent events are flushed before each chunk, so the thread shows
    * them where they happened. A failure mid-stream degrades into an error
    * event, since an exception would print an HTML page into the stream.
-   * The after-run closure returns the outcome to show as an error, or NULL.
+   * The after-run closure returns the outcome to show as an error, or NULL;
+   * it gets the failure when the run itself failed.
    */
   private function streamRun(AgentHandler $handler, AgentEventQueue $events, \Closure $afterRun): Response {
     $adapter = new UiMessageStreamAdapter();
@@ -418,7 +427,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
       catch (\Throwable $e) {
         $this->logger->error('Drafting turn failed: @message', ['@message' => $e->getMessage()]);
         $flushEvents();
-        $emit($adapter->error($afterRun() ?? 'The assistant request failed. Please try again.'));
+        $emit($adapter->error($afterRun($e) ?? 'The assistant request failed. Please try again.'));
       }
       $emit($adapter->end());
     });

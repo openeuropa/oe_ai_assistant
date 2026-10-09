@@ -369,6 +369,27 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
   }
 
   /**
+   * Tests that the agent's own call timing out is reported to the editor.
+   */
+  public function testTimedOutTurnIsReported(): void {
+    $user = $this->createUser(['use oe ai assistant']);
+    $this->loginUser($user);
+    $session = $this->createSession($user);
+    MockAiProvider::enqueue(new MockResponse(error: new \RuntimeException('Send timeout')));
+
+    $result = $this->httpPost('/api/ai/plugins/drafting/chat', [
+      'message' => 'Generate the draft now.',
+      'sessionId' => $session->id(),
+    ]);
+
+    $outcome = 'The AI service did not respond in time. Nothing was changed; try again later.';
+    $errors = array_values(array_filter($this->parseSseEvents($result['body']), fn($e) => $e['type'] === 'error'));
+    $this->assertSame($outcome, $errors[0]['errorText']);
+    $events = array_filter($this->getMessages($session), fn($m) => $m['role'] === 'event');
+    $this->assertSame($outcome, end($events)['summary']);
+  }
+
+  /**
    * Tests that a revision reuses the stored draft and groups under it.
    *
    * The named group is drafted again, every other group is carried over,

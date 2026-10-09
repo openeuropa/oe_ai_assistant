@@ -7,6 +7,7 @@ namespace Drupal\oe_ai_assistant\Exception;
 use Drupal\ai\Exception\AiQuotaException;
 use Drupal\ai\Exception\AiRateLimitException;
 use NeuronAI\Exceptions\AgentException;
+use Psr\Http\Client\NetworkExceptionInterface;
 
 /**
  * A field group that could not be drafted, with an editor-facing reason.
@@ -28,6 +29,18 @@ final class GroupDraftingException extends \RuntimeException {
   }
 
   /**
+   * Whether the AI service could not be reached at all.
+   */
+  public static function isUnreachable(\Throwable $e): bool {
+    for ($cause = $e; $cause !== NULL; $cause = $cause->getPrevious()) {
+      if ($cause instanceof NetworkExceptionInterface) {
+        return TRUE;
+      }
+    }
+    return FALSE;
+  }
+
+  /**
    * Whether the cause is the AI service rather than the drafted content.
    */
   public function endsTheTurn(): bool {
@@ -40,6 +53,9 @@ final class GroupDraftingException extends \RuntimeException {
   private static function reason(string $label, \Throwable $e): string {
     if (self::isTimeout($e)) {
       return "The AI service did not respond in time while drafting $label.";
+    }
+    if (self::isUnreachable($e)) {
+      return "The AI service could not be reached while drafting $label.";
     }
     if ($e instanceof AiRateLimitException) {
       return "The AI service is rate limited; try drafting $label again in a minute.";
