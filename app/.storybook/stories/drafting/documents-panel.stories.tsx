@@ -1,6 +1,9 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { DocumentsPanel } from "../../../src/plugins/drafting/components/documents-panel";
-import { useDraftingDocuments } from "../../../src/plugins/drafting/hooks/use-drafting-documents";
+import {
+  type DraftingDocument,
+  useDraftingDocuments,
+} from "../../../src/plugins/drafting/hooks/use-drafting-documents";
 
 const meta = {
   title: "Drafting/Documents panel",
@@ -13,11 +16,15 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
+/** File extensions the static stories accept for upload. */
+const acceptedExtensions = ["pdf", "docx", "txt"];
+
 /** Documents shown by the static upload state stories. */
-const attachedDocuments = [
+const attachedDocuments: DraftingDocument[] = [
   {
     id: "attached-brief",
     title: "EU AI Act briefing note.pdf",
+    status: "done",
     meta: { type: "pdf", size: 245760 },
   },
 ];
@@ -29,8 +36,10 @@ function InteractiveDocuments() {
     <div className="max-w-2xl border border-gray-200 bg-white">
       <DocumentsPanel
         selected={documents.selected}
+        extensions={documents.extensions}
         uploads={documents.uploads}
         onRemove={documents.removeDocument}
+        onRetry={documents.retryDocument}
         onUpload={documents.uploadFiles}
         onDismissUpload={documents.dismissUpload}
         onClose={() => {}}
@@ -49,8 +58,10 @@ export const Empty: Story = {
     <div className="max-w-2xl border border-gray-200 bg-white">
       <DocumentsPanel
         selected={[]}
+        extensions={acceptedExtensions}
         uploads={[]}
         onRemove={() => {}}
+        onRetry={() => {}}
         onUpload={() => {}}
         onDismissUpload={() => {}}
         onClose={() => {}}
@@ -65,8 +76,10 @@ export const Loading: Story = {
     <div className="max-w-2xl border border-gray-200 bg-white">
       <DocumentsPanel
         selected={[]}
+        extensions={acceptedExtensions}
         uploads={[]}
         onRemove={() => {}}
+        onRetry={() => {}}
         onUpload={() => {}}
         onDismissUpload={() => {}}
         onClose={() => {}}
@@ -85,6 +98,7 @@ export const Uploading: Story = {
     <div className="max-w-2xl border border-gray-200 bg-white">
       <DocumentsPanel
         selected={attachedDocuments}
+        extensions={acceptedExtensions}
         uploads={[
           {
             id: "upload-1",
@@ -100,6 +114,7 @@ export const Uploading: Story = {
           },
         ]}
         onRemove={() => {}}
+        onRetry={() => {}}
         onUpload={() => {}}
         onDismissUpload={() => {}}
         onClose={() => {}}
@@ -117,6 +132,7 @@ export const UploadFailed: Story = {
     <div className="max-w-2xl border border-gray-200 bg-white">
       <DocumentsPanel
         selected={attachedDocuments}
+        extensions={acceptedExtensions}
         uploads={[
           {
             id: "upload-1",
@@ -133,6 +149,7 @@ export const UploadFailed: Story = {
           },
         ]}
         onRemove={() => {}}
+        onRetry={() => {}}
         onUpload={() => {}}
         onDismissUpload={() => {}}
         onClose={() => {}}

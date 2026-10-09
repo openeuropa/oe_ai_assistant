@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace Drupal\oe_ai_assistant\Service\Drafting;
 
-use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
 use Drupal\file\Upload\UploadedFileInterface;
+use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
 
 /**
  * Manages the documents of one category attached to editorial sessions.

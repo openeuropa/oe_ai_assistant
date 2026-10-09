@@ -138,6 +138,45 @@ abstract class DraftingPluginTestBase extends ExistingSiteBase {
   }
 
   /**
+   * Seeds a stored draft on the transcript, as the drafting flow records it.
+   *
+   * An assistant turn carrying a draft_group tool call whose result holds
+   * the draft, shaped {version, major, minor, context, fields}. Seeding
+   * bypasses the chat flow, which is tested on its own.
+   *
+   * @param \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $session
+   *   The session hosting the conversation.
+   * @param int $version
+   *   The draft version.
+   * @param array $fields
+   *   The drafted field values, keyed by field machine name.
+   * @param array $context
+   *   The context snapshot: tone, template and documents, each optional.
+   * @param int|null $major
+   *   The group number, or NULL to open a new group numbered as the version.
+   * @param int $minor
+   *   The position within the group.
+   */
+  protected function seedDraft(AiEditorialSessionInterface $session, int $version, array $fields, array $context = [], ?int $major = NULL, int $minor = 0): void {
+    $this->seedMessage($session, 'assistant', '', [
+      [
+        'type' => 'function',
+        'function' => ['name' => 'draft_group', 'arguments' => '{"group":"main_fields"}'],
+        'result' => [
+          'group' => 'main_fields',
+          'draft' => [
+            'version' => $version,
+            'major' => $major ?? $version,
+            'minor' => $minor,
+            'context' => $context + ['tone' => NULL, 'template' => NULL, 'documents' => []],
+            'fields' => $fields,
+          ],
+        ],
+      ],
+    ]);
+  }
+
+  /**
    * Loads the persisted top-level transcript for a session.
    *
    * @param \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $session

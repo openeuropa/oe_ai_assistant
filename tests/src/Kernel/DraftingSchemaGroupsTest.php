@@ -1,0 +1,196 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Drupal\Tests\oe_ai_assistant\Kernel;
+
+use Drupal\KernelTests\KernelTestBase;
+use Drupal\oe_ai_assistant\Service\DraftingSchemaProviderInterface;
+use Drupal\oe_ai_assistant\Service\EntityJsonSchemaComposer;
+use PHPUnit\Framework\Attributes\Group;
+
+/**
+ * Tests the schema groups resolved for drafting and the splitting behind them.
+ *
+ * Uses the oe_news content type from the test fixture to verify
+ * that fields are correctly split into main_fields and per-entity
+ * reference groups.
+ */
+#[Group('oe_ai_assistant')]
+class DraftingSchemaGroupsTest extends KernelTestBase {
+
+  /**
+   * {@inheritdoc}
+   */
+  protected static $modules = [
+    'system',
+    'user',
+    'field',
+    'filter',
+    'text',
+    'node',
+    'serialization',
+    'datetime',
+    'entity_reference_revisions',
+    'paragraphs',
+    'file',
+    'image',
+    'link',
+    'taxonomy',
+    'inline_entity_form',
+    'content_moderation',
+    'workflows',
+    'options',
+    'key',
+    'ai',
+    'oe_ai_assistant',
+    'state_machine',
+    'document_loader',
+    'document_loader_tika',
+    'oe_ai_assistant_test',
+  ];
+
+  /**
+   * {@inheritdoc}
+   */
+  protected function setUp(): void {
+    parent::setUp();
+    $this->installEntitySchema('node');
+    $this->installEntitySchema('user');
+    $this->installEntitySchema('paragraph');
+    $this->installEntitySchema('content_moderation_state');
+    $this->installEntitySchema('file');
+    $this->installEntitySchema('taxonomy_term');
+    $this->installConfig([
+      'system',
+      'field',
+      'filter',
+      'node',
+    ]);
+
+    $this->installConfig(['oe_ai_assistant_test']);
+  }
+
+  /**
+   * Returns the composer service from the container.
+   */
+  private function composer(): EntityJsonSchemaComposer {
+    return $this->container->get(EntityJsonSchemaComposer::class);
+  }
+
+  /**
+   * Resolves the groups for a content type and template.
+   */
+  private function resolveGroups(string $entityTypeId, string $bundle, ?string $templateId = NULL): array {
+    return $this->container->get(DraftingSchemaProviderInterface::class)->groups($entityTypeId, $bundle, $templateId);
+  }
+
+  /**
+   * An explicit template context restricts the groups to its fields.
+   */
+  public function testExecuteWithTemplateUsesThatTemplate(): void {
+    // news_default lists title, field_teaser, field_body (all scalar).
+    $groups = $this->resolveGroups('node', 'oe_news', 'news_default');
+
+    $byId = array_column($groups, 'fieldNames', 'groupId');
+    $this->assertSame(['title', 'field_teaser', 'field_body'], $byId['main_fields']);
+    $this->assertArrayNotHasKey('field_content_paragraphs', $byId);
+    $this->assertNotContains('field_news_type', $byId['main_fields']);
+  }
+
+  /**
+   * An invalid template id is rejected before any group is resolved.
+   */
+  public function testInvalidTemplateIsRejected(): void {
+    $this->expectException(\InvalidArgumentException::class);
+    $this->expectExceptionMessage('not found');
+    $this->resolveGroups('node', 'oe_news', 'does_not_exist');
+  }
+
+  /**
+   * Without a template context, the latest template for the bundle is used.
+   */
+  public function testExecuteWithoutTemplateAutoPicksLatest(): void {
+    // oe_news' latest template is news_with_paragraphs (title, field_teaser,
+    // field_content_paragraphs), not the full schema.
+    $groups = $this->resolveGroups('node', 'oe_news');
+
+    $byId = array_column($groups, 'fieldNames', 'groupId');
+    $this->assertSame(['title', 'field_teaser'], $byId['main_fields']);
+    $this->assertArrayHasKey('field_content_paragraphs', $byId);
+    $this->assertNotContains('field_body', $byId['main_fields']);
+  }
+
+  /**
+   * Tests that oe_news schema splits into expected groups.
+   */
+  public function testSplitsOeNewsIntoGroups(): void {
+    $groups = $this->composer()->splitSchemaIntoGroups('node', 'oe_news');
+
+    $groupIds = array_column($groups, 'groupId');
+    $this->assertContains('main_fields', $groupIds,
+      'Should have a main_fields group.');
+
+    // field_content_paragraphs is entity_reference_revisions
+    // and should get its own group.
+    $this->assertContains('field_content_paragraphs', $groupIds,
+      'Paragraphs field should get its own group.');
+
+    // Main fields should contain title and body.
+    $mainGroup = $groups[array_search('main_fields', $groupIds)];
+    $this->assertContains('title', $mainGroup['fieldNames']);
+    $this->assertContains('field_body', $mainGroup['fieldNames']);
+
+    // Main fields should NOT contain the paragraph field.
+    $this->assertNotContains('field_content_paragraphs',
+      $mainGroup['fieldNames']);
+
+    // Taxonomy/media references should stay in main_fields.
+    $this->assertContains('field_news_tags',
+      $mainGroup['fieldNames'],
+      'Taxonomy reference should stay in main_fields.');
+
+    // Each group should have a schemaSlice with properties.
+    foreach ($groups as $group) {
+      $this->assertArrayHasKey('schemaSlice', $group);
+      $this->assertArrayHasKey('properties',
+        $group['schemaSlice']);
+    }
+  }
+
+  /**
+   * Tests that group labels come from Drupal field definitions.
+   */
+  public function testGroupLabelsFromFieldDefinitions(): void {
+    $groups = $this->composer()->splitSchemaIntoGroups('node', 'oe_news');
+
+    $groupIds = array_column($groups, 'groupId');
+    $paraIndex = array_search('field_content_paragraphs', $groupIds);
+    if ($paraIndex !== FALSE) {
+      $this->assertEquals(
+        'Content paragraphs',
+        $groups[$paraIndex]['label'],
+        'Group label should come from the Drupal field label.'
+      );
+    }
+  }
+
+  /**
+   * Tests that taxonomy and media references stay in main_fields.
+   */
+  public function testSimpleReferencesStayInMainFields(): void {
+    $groups = $this->composer()->splitSchemaIntoGroups('node', 'oe_news');
+    $groupIds = array_column($groups, 'groupId');
+
+    $mainGroup = $groups[array_search('main_fields', $groupIds)];
+
+    $this->assertContains('field_news_tags',
+      $mainGroup['fieldNames'],
+      'Taxonomy reference should stay in main_fields.');
+
+    $this->assertContains('field_news_image',
+      $mainGroup['fieldNames'],
+      'Image/file reference should stay in main_fields.');
+  }
+
+}

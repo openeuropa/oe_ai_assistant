@@ -36,6 +36,7 @@ import {
 import { getConfig } from "@/config";
 import { formatDraftDate } from "../format-draft-date";
 import { buildPreviewUrl } from "../preview-url";
+import { useDraftName } from "../session-drafts";
 import type { DraftingPluginConfig } from "../types";
 import { ContentTableBody, SaveConfirmDialog } from "./content-table";
 
@@ -66,8 +67,8 @@ interface DraftPreviewProps {
   isSaved: boolean;
   /** Tab shown on mount. Defaults to the live preview. */
   defaultTab?: PreviewTab;
-  /** Invoked after the user confirms the save dialog. */
-  onSave: () => void;
+  /** Invoked with the draft's name after the user confirms the save dialog. */
+  onSave: (name: string) => void;
 }
 
 /** A single tab button in the header switcher. */
@@ -247,6 +248,7 @@ export function DraftPreview({
   defaultTab = "live",
   onSave,
 }: DraftPreviewProps) {
+  const draftName = useDraftName(versionId);
   // The URL template comes from the host-provided plugin config.
   const draftingConfig = (getConfig().pluginConfig.drafting ??
     {}) as DraftingPluginConfig;
@@ -299,7 +301,7 @@ export function DraftPreview({
             />
           )}
           <h2 className="text-base font-semibold whitespace-nowrap text-gray-900">
-            Draft {versionId}
+            {draftName}
           </h2>
           {createdAt && (
             <span className="truncate text-xs text-gray-500">
@@ -395,7 +397,7 @@ export function DraftPreview({
         <SaveConfirmDialog
           onConfirm={() => {
             setShowConfirm(false);
-            onSave();
+            onSave(draftName);
           }}
           onCancel={() => setShowConfirm(false)}
         />

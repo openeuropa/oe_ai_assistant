@@ -4,11 +4,11 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\oe_ai_assistant\Kernel;
 
-use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
 use Drupal\KernelTests\KernelTestBase;
 use Drupal\node\Entity\Node;
 use Drupal\node\Entity\NodeType;
 use Drupal\node\NodeInterface;
+use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
 use Drupal\user\Entity\Role;
 use Drupal\user\Entity\User;
 use Drupal\user\UserInterface;
@@ -23,7 +23,6 @@ abstract class AiEditorialSessionKernelTestBase extends KernelTestBase {
    */
   protected static $modules = [
     'ai',
-    'ai_agents',
     'content_moderation',
     'datetime',
     'file',

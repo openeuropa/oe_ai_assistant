@@ -7,10 +7,10 @@ namespace Drupal\Tests\oe_ai_assistant\Functional;
 use Drupal\node\Entity\Node;
 use Drupal\node\Entity\NodeType;
 use Drupal\node\NodeInterface;
+use Drupal\oe_ai_assistant\Entity\AiEditorialSession;
 use Drupal\taxonomy\Entity\Term;
 use Drupal\Tests\BrowserTestBase;
 use Drupal\user\UserInterface;
-use Drupal\oe_ai_assistant\Entity\AiEditorialSession;
 
 /**
  * Base helpers for AI editorial session browser tests.

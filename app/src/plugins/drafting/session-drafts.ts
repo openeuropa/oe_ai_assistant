@@ -1,27 +1,24 @@
 /**
  * Session drafts index derived from the assistant-ui thread.
  *
- * Every completed draft_content tool call in the thread is one draft.
- * The thread is the single source of truth: it covers both the
- * rehydrated transcript and drafts produced live, so the index stays
- * correct during the session and after a reload.
+ * Every tool call whose result carries a versioned draft is one draft.
+ * The thread is the single source of truth: it covers both the rehydrated
+ * transcript and drafts produced live, so the index stays correct during
+ * the session and after a reload. The backend numbers revisions under the
+ * draft they revise, so a session reads 1.0, 1.1, 2.0.
  */
 
 import { useAuiState } from "@assistant-ui/react";
 import { useMemo } from "react";
-import { type DraftContext, parseDraftResult } from "./draft-result";
+import { type ParsedDraftResult, parseDraftResult } from "./draft-result";
 import { setDraftingState } from "./store";
 
 /** One entry in the session drafts index. */
-export interface SessionDraft {
-  /** Draft version number; null for legacy unversioned drafts. */
-  version: number | null;
-  /** Editorial context captured when the draft was generated. */
-  context: DraftContext | null;
-  /** The field values for this draft, keyed by field name. */
-  fields: Record<string, unknown>;
-  /** Menu label, e.g. "Draft 2"; plain "Draft" for legacy entries. */
+export interface SessionDraft extends ParsedDraftResult {
+  /** Compact grouped number, e.g. "2.1". */
   label: string;
+  /** Menu label, e.g. "Draft 2.1". */
+  name: string;
   /** When the thread message carrying the draft was created, if known. */
   createdAt: Date | null;
 }
@@ -41,20 +38,17 @@ interface ThreadMessageLikeShape {
 }
 
 /**
- * Returns true when the value is a plain object with at least one key.
+ * Returns the versioned draft stored on a group call result, if any.
  */
-function hasKeys(value: unknown): value is Record<string, unknown> {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    !Array.isArray(value) &&
-    Object.keys(value).length > 0
-  );
+function draftOf(result: unknown): unknown {
+  return typeof result === "object" && result !== null && "draft" in result
+    ? (result as { draft: unknown }).draft
+    : undefined;
 }
 
 /**
- * Extracts the drafts from thread messages, sorted by version with
- * legacy (unversioned) drafts kept in transcript order at the front.
+ * Extracts the drafts from thread messages, revisions under the draft they
+ * revise.
  */
 export function extractSessionDrafts(
   messages: readonly ThreadMessageLikeShape[],
@@ -63,29 +57,31 @@ export function extractSessionDrafts(
 
   for (const message of messages) {
     for (const part of message.content ?? []) {
-      if (part.type !== "tool-call" || part.toolName !== "draft_content") {
+      if (part.type !== "tool-call") {
         continue;
       }
-      // Prefer the persisted result; fall back to args.fields when a
-      // rehydrated trace stored an empty result (mirrors the tool UI).
-      const raw = hasKeys(part.result)
-        ? part.result
-        : (part.args?.["fields"] ?? {});
-      const parsed = parseDraftResult(raw);
-      if (Object.keys(parsed.fields).length === 0) {
+      const draft = draftOf(part.result);
+      if (draft === undefined) {
         continue;
       }
+      const parsed = parseDraftResult(draft);
+      if (parsed === null || Object.keys(parsed.fields).length === 0) {
+        continue;
+      }
+      const label = `${parsed.major}.${parsed.minor}`;
       drafts.push({
         ...parsed,
-        label: parsed.version !== null ? `Draft ${parsed.version}` : "Draft",
+        label,
+        name: `Draft ${label}`,
         createdAt: message.createdAt ?? null,
       });
     }
   }
 
-  // Version order; legacy drafts have no version and sort to the front
-  // in their original transcript order (stable sort).
-  return drafts.sort((a, b) => (a.version ?? 0) - (b.version ?? 0));
+  // Revisions follow the draft they belong to, whatever was drafted in
+  // between.
+  drafts.sort((a, b) => a.major - b.major || a.minor - b.minor);
+  return drafts;
 }
 
 /** Reads the drafts index from the current thread. */
@@ -97,8 +93,24 @@ export function useSessionDrafts(): SessionDraft[] {
   );
 }
 
+/** Reads one draft from the current thread, or null when it is not there. */
+export function useSessionDraft(version: number | null): SessionDraft | null {
+  const drafts = useSessionDrafts();
+  if (version === null) {
+    return null;
+  }
+  return drafts.find((draft) => draft.version === version) ?? null;
+}
+
+/** Reads the name of one draft from the current thread. */
+export function useDraftName(version: number | null): string {
+  return useSessionDraft(version)?.name ?? "Draft";
+}
+
 /** Opens a draft in the artifact pane, expanding the pane if needed. */
-export function openSessionDraft(draft: SessionDraft): void {
+export function openSessionDraft(
+  draft: Pick<SessionDraft, "fields" | "version">,
+): void {
   setDraftingState({
     draftedFields: draft.fields,
     activeDraftVersion: draft.version,

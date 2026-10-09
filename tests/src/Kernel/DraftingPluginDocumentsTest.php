@@ -4,17 +4,17 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\oe_ai_assistant\Kernel;
 
+use Drupal\field\FieldConfigInterface;
 use Drupal\file\FileInterface;
 use Drupal\file\Upload\InputStreamFileWriterInterface;
-use Drupal\field\FieldConfigInterface;
+use Drupal\file\Upload\InputStreamUploadedFile;
+use Drupal\file\Upload\UploadedFileInterface;
 use Drupal\media\MediaInterface;
 use Drupal\oe_ai_assistant\Controller\PluginController;
 use Drupal\oe_ai_assistant\Exception\ActionException;
 use Drupal\oe_ai_assistant\Plugin\AiAssistantPluginManager;
-use Drupal\oe_ai_assistant\Service\RequestValidator;
-use Drupal\file\Upload\InputStreamUploadedFile;
-use Drupal\file\Upload\UploadedFileInterface;
 use Drupal\oe_ai_assistant\Service\Drafting\ContextDocumentRepository;
+use Drupal\oe_ai_assistant\Service\RequestValidator;
 use Drupal\oe_ai_assistant_test\Plugin\AiProvider\MockAiProvider;
 use Drupal\oe_ai_assistant_test\Plugin\AiProvider\MockResponse;
 use GuzzleHttp\Psr7\Response;
@@ -22,8 +22,8 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Reference;
-use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\File\Exception\UploadException;
+use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 
 /**
