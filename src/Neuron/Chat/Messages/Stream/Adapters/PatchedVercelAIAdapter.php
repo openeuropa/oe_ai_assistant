@@ -9,7 +9,7 @@ use NeuronAI\Tools\ToolCall;
 use NeuronAI\Workflow\Streaming\ProtocolEvent;
 
 /**
- * Closes the input of a tool call, so a client can render it as it happens.
+ * Neuron's Vercel adapter, with the input of a locally executed call closed.
  *
  * The protocol opens a call's input with tool-input-start, streams it with
  * tool-input-delta and closes it with tool-input-available. Neuron sends the
@@ -20,7 +20,7 @@ use NeuronAI\Workflow\Streaming\ProtocolEvent;
  *
  * @todo Remove once Neuron closes the input of a locally executed call.
  */
-final class ClosedToolInputAdapter extends VercelAIAdapter {
+final class PatchedVercelAIAdapter extends VercelAIAdapter {
 
   /**
    * The calls whose input has been closed, so it is closed once.

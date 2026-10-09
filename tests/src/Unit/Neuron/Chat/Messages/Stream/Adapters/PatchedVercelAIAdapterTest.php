@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\oe_ai_assistant\Unit\Neuron\Chat\Messages\Stream\Adapters;
 
-use Drupal\oe_ai_assistant\Neuron\Chat\Messages\Stream\Adapters\ClosedToolInputAdapter;
+use Drupal\oe_ai_assistant\Neuron\Chat\Messages\Stream\Adapters\PatchedVercelAIAdapter;
 use NeuronAI\Chat\Messages\Stream\Chunks\ToolCallChunk;
 use NeuronAI\Chat\Messages\Stream\Chunks\ToolResultChunk;
 use NeuronAI\Tools\ToolCall;
@@ -14,9 +14,9 @@ use PHPUnit\Framework\TestCase;
 /**
  * Unit tests for the adapter that closes a tool call's input.
  *
- * @coversDefaultClass \Drupal\oe_ai_assistant\Neuron\Chat\Messages\Stream\Adapters\ClosedToolInputAdapter
+ * @coversDefaultClass \Drupal\oe_ai_assistant\Neuron\Chat\Messages\Stream\Adapters\PatchedVercelAIAdapter
  */
-class ClosedToolInputAdapterTest extends TestCase {
+class PatchedVercelAIAdapterTest extends TestCase {
 
   /**
    * Tests that a call's input is opened, streamed and then closed.
@@ -28,7 +28,7 @@ class ClosedToolInputAdapterTest extends TestCase {
    * @covers ::previewTool
    */
   public function testCallClosesItsInput(): void {
-    $adapter = new ClosedToolInputAdapter();
+    $adapter = new PatchedVercelAIAdapter();
     $call = ToolCall::make('draft_group', 'call_1', ['group' => 'main_fields']);
 
     $types = array_column($this->frames($adapter->transform(new ToolCallChunk('m1', $call))), 'type');
@@ -46,7 +46,7 @@ class ClosedToolInputAdapterTest extends TestCase {
    * @covers ::previewTool
    */
   public function testTheClosingEventCarriesTheInputs(): void {
-    $adapter = new ClosedToolInputAdapter();
+    $adapter = new PatchedVercelAIAdapter();
     $call = ToolCall::make('draft_group', 'call_1', ['group' => 'main_fields']);
 
     $frames = $this->frames($adapter->transform(new ToolCallChunk('m1', $call)));
@@ -64,7 +64,7 @@ class ClosedToolInputAdapterTest extends TestCase {
    * @covers ::previewTool
    */
   public function testTheInputIsClosedOnlyOnce(): void {
-    $adapter = new ClosedToolInputAdapter();
+    $adapter = new PatchedVercelAIAdapter();
     $call = ToolCall::make('draft_group', 'call_1', ['group' => 'main_fields'])
       ->setResult('{"group":"main_fields"}');
 

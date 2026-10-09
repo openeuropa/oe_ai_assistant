@@ -10,7 +10,7 @@ use Drupal\ai_neuron\Providers\ProviderFactoryInterface;
 use Drupal\ai_neuron\Tools\NeuronToolManagerInterface;
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
 use Drupal\oe_ai_assistant\Neuron\Chat\History\EditorialMessageStore;
-use Drupal\oe_ai_assistant\Neuron\Chat\Messages\Stream\Adapters\ClosedToolInputAdapter;
+use Drupal\oe_ai_assistant\Neuron\Chat\Messages\Stream\Adapters\PatchedVercelAIAdapter;
 use Drupal\oe_ai_assistant\Service\Drafting\DocumentExtractionProcessorInterface;
 use Drupal\oe_ai_assistant\Service\Drafting\DraftingBriefInterface;
 use NeuronAI\Tools\ToolCall;
@@ -81,7 +81,7 @@ abstract class EditorialSessionAgentBase extends NeuronAgentPluginBase {
    * is shaped by the subclass that adds it.
    */
   protected function streamAdapter(string $threadId): ?StreamAdapterInterface {
-    return new ClosedToolInputAdapter();
+    return new PatchedVercelAIAdapter();
   }
 
   /**
