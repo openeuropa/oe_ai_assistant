@@ -226,6 +226,26 @@ ddev phpcs
 ddev phpcbf    # Auto-fix violations
 ```
 
+### Logging provider requests
+
+Every request the module sends to the AI provider can be written to disk,
+to inspect a payload or hand it to the provider maintainer. Add this to
+`web/sites/default/settings.php`:
+
+```php
+$settings['oe_ai_assistant_log_requests'] = TRUE;
+```
+
+Each request lands in its own file under `private://ai-calls`, named after
+the moment it was sent and the host it went to, for example
+`2026-10-09_12-03-56.530922_api.tech.ec.europa.eu.http`. A file holds the
+request line, the headers and the body, so it can be replayed as is.
+Credentials are written as `[redacted]`, and a JSON body is indented for
+reading, which makes it longer than the `Content-Length` header reports.
+
+While the setting is on, every outgoing HTTP request is logged, not only
+the provider ones. Turn it off once the payload is captured.
+
 ## Patches
 
 This module patches `drupal/ai` via `cweagans/composer-patches`. Each patch is declared

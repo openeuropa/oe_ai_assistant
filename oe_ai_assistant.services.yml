@@ -12,6 +12,11 @@ services:
   Drupal\oe_ai_assistant\Plugin\AiAssistantPluginManager:
     parent: default_plugin_manager
 
+  # Dumps outgoing provider requests when settings.php asks for it.
+  Drupal\oe_ai_assistant\Http\ProviderCallLogger:
+    tags:
+      - { name: http_client_middleware }
+
   Drupal\oe_ai_assistant\Service\RequestValidator: {}
 
   Drupal\oe_ai_assistant\Service\EntityJsonSchemaComposer: {}

@@ -128,7 +128,7 @@ final class DrupalAiProvider implements AIProviderInterface {
    * {@inheritdoc}
    */
   public function structured(array|Message $messages, string $class, array $response_schema): Message {
-    $input = $this->input(is_array($messages) ? $messages : [$messages], FALSE);
+    $input = $this->input(is_array($messages) ? $messages : [$messages], TRUE);
     $input->setChatStructuredJsonSchema(['name' => $class, 'schema' => $response_schema]);
     $output = $this->provider->chat($input, $this->modelId, $this->tags);
     return $this->toMessage($this->drain($output));
