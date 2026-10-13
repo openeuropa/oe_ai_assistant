@@ -140,6 +140,21 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
     $this->loginUser($user);
     $session = $this->createSession($user);
 
+    // Tokens used to clarify the request before drafting belong to the
+    // provenance of the draft that follows.
+    MockAiProvider::enqueue(new MockResponse(
+      text: 'What audience should this target?',
+      tokenUsage: ['input' => 10, 'output' => 20],
+    ));
+    $chatResult = $this->httpPost('/api/ai/plugins/drafting/chat', [
+      'message' => 'Help me prepare a draft.',
+      'sessionId' => $session->id(),
+    ]);
+    $this->assertEquals(200, $chatResult['status']);
+    // The HTTP process updated the shared mock queue; discard the test
+    // process's cached state before adding the next responses.
+    \Drupal::state()->resetCache();
+
     // Router calls draft_content (the "I'm ready" signal).
     MockAiProvider::enqueue(new MockResponse(
       toolCalls: [
@@ -212,6 +227,20 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
     }
     $this->assertNotNull($draftNode,
       'A draft_content turn is recorded as a root turn.');
+
+    $provenance = \Drupal::entityTypeManager()
+      ->getStorage('ai_content_provenance')
+      ->loadPendingForMessage((int) $draftNode['message']->id());
+    $this->assertNotNull($provenance,
+      'The draft request creates pending provenance before a draft is saved.');
+    $this->assertNull($provenance->getTrackedEntityTypeId());
+    $this->assertNull($provenance->getTrackedRevisionId());
+    $this->assertSame((int) $session->id(), (int) $provenance->getSession()?->id());
+    $this->assertSame(
+      ['input' => 10, 'output' => 20, 'total' => 30],
+      $provenance->getTokenUsage(),
+      'Provenance includes tokens used by chat turns before drafting.',
+    );
 
     $childRoles = array_map(
       fn($child) => $child['message']->getRole(),
