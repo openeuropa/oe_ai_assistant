@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\oe_ai_assistant\Functional;
 
-use Drupal\Tests\BrowserTestBase;
 use Drupal\oe_ai_assistant\Entity\AiConversationMessage;
 use Drupal\oe_ai_assistant\Entity\AiConversationMessageInterface;
+use Drupal\Tests\BrowserTestBase;
 
 /**
  * Tests the AI conversation message overview dashboard and add form.

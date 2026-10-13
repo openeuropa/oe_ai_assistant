@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\oe_ai_assistant\ExistingSite;
 
-use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
-
 /**
  * Integration tests for the DraftingPlugin preview action.
  *
@@ -14,53 +12,6 @@ use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
  * error path from the design doc's error table.
  */
 class DraftingPluginPreviewTest extends DraftingPluginTestBase {
-
-  /**
-   * Seeds a versioned draft_content result directly on the transcript.
-   *
-   * Bypasses the chat/orchestrator flow entirely: preview only reads
-   * DraftHistory's stored results, so seeding them directly keeps this
-   * suite independent of the (separately tested) drafting conversation flow.
-   *
-   * @param \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $session
-   *   The session hosting the conversation.
-   * @param int $version
-   *   The draft version.
-   * @param array $fields
-   *   The drafted fields map.
-   * @param string|null $templateId
-   *   The template id to snapshot in context, or NULL for none.
-   */
-  protected function seedVersionedDraft(
-    AiEditorialSessionInterface $session,
-    int $version,
-    array $fields,
-    ?string $templateId,
-  ): void {
-    $storage = \Drupal::entityTypeManager()->getStorage('ai_conversation_message');
-    $message = $storage->create([
-      'host_entity_type' => $session->getEntityTypeId(),
-      'host_entity_id' => (int) $session->id(),
-      'role' => 'assistant',
-      'content' => '',
-    ]);
-    $message->setToolCalls([
-      [
-        'type' => 'function',
-        'function' => ['name' => 'draft_content', 'arguments' => '{}'],
-        'result' => [
-          'version' => $version,
-          'context' => [
-            'tone' => NULL,
-            'template' => $templateId !== NULL ? ['id' => $templateId, 'label' => $templateId] : NULL,
-            'documents' => [],
-          ],
-          'fields' => $fields,
-        ],
-      ],
-    ]);
-    $message->save();
-  }
 
   /**
    * Counts existing nodes, to assert preview never creates one.
@@ -82,11 +33,11 @@ class DraftingPluginPreviewTest extends DraftingPluginTestBase {
     $this->drupalLogin($user);
 
     $session = $this->createSession($user);
-    $this->seedVersionedDraft(
+    $this->seedDraft(
       $session,
       1,
       ['title' => [['value' => 'Preview Test Title']]],
-      'news_preview_defaults',
+      ['template' => ['id' => 'news_preview_defaults', 'label' => 'news_preview_defaults']],
     );
 
     $nodesBefore = $this->countNodes();
@@ -113,14 +64,14 @@ class DraftingPluginPreviewTest extends DraftingPluginTestBase {
     $this->drupalLogin($user);
 
     $session = $this->createSession($user);
-    $this->seedVersionedDraft(
+    $this->seedDraft(
       $session,
       1,
       [
         'title' => [['value' => 'Override Test Title']],
         'field_teaser' => [['value' => 'Drafted teaser.']],
       ],
-      'news_preview_defaults',
+      ['template' => ['id' => 'news_preview_defaults', 'label' => 'news_preview_defaults']],
     );
 
     $result = $this->httpGet('/api/ai/plugins/drafting/preview', [
@@ -145,8 +96,8 @@ class DraftingPluginPreviewTest extends DraftingPluginTestBase {
     $this->drupalLogin($user);
 
     $session = $this->createSession($user);
-    $this->seedVersionedDraft($session, 1, ['title' => [['value' => 'First Version Title']]], NULL);
-    $this->seedVersionedDraft($session, 2, ['title' => [['value' => 'Second Version Title']]], NULL);
+    $this->seedDraft($session, 1, ['title' => [['value' => 'First Version Title']]]);
+    $this->seedDraft($session, 2, ['title' => [['value' => 'Second Version Title']]]);
 
     $first = $this->httpGet('/api/ai/plugins/drafting/preview', [
       'sessionId' => $session->id(),
@@ -172,7 +123,7 @@ class DraftingPluginPreviewTest extends DraftingPluginTestBase {
     $this->drupalLogin($user);
 
     $session = $this->createSession($user);
-    $this->seedVersionedDraft($session, 1, ['title' => [['value' => 'x']]], NULL);
+    $this->seedDraft($session, 1, ['title' => [['value' => 'x']]]);
 
     $result = $this->httpGet('/api/ai/plugins/drafting/preview', [
       'sessionId' => $session->id(),
@@ -209,11 +160,11 @@ class DraftingPluginPreviewTest extends DraftingPluginTestBase {
     $this->drupalLogin($user);
 
     $session = $this->createSession($user);
-    $this->seedVersionedDraft(
+    $this->seedDraft(
       $session,
       1,
       ['title' => [['value' => 'x']]],
-      'template_does_not_exist',
+      ['template' => ['id' => 'template_does_not_exist', 'label' => 'template_does_not_exist']],
     );
 
     $result = $this->httpGet('/api/ai/plugins/drafting/preview', [

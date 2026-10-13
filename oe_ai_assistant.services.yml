@@ -12,6 +12,11 @@ services:
   Drupal\oe_ai_assistant\Plugin\AiAssistantPluginManager:
     parent: default_plugin_manager
 
+  # Dumps outgoing provider requests when settings.php asks for it.
+  Drupal\oe_ai_assistant\Http\ProviderCallLogger:
+    tags:
+      - { name: http_client_middleware }
+
   Drupal\oe_ai_assistant\Service\RequestValidator: {}
 
   Drupal\oe_ai_assistant\Service\EntityJsonSchemaComposer: {}
@@ -39,8 +44,6 @@ services:
   Drupal\oe_ai_assistant\Service\DraftAssembler: {}
   Drupal\oe_ai_assistant\Service\DraftAssemblerInterface: '@Drupal\oe_ai_assistant\Service\DraftAssembler'
 
-  Drupal\oe_ai_assistant\Service\UiMessageStream: {}
-  Drupal\oe_ai_assistant\Service\UiMessageStreamInterface: '@Drupal\oe_ai_assistant\Service\UiMessageStream'
 
   Drupal\oe_ai_assistant\Service\DraftSaver: {}
   Drupal\oe_ai_assistant\Service\DraftSaverInterface: '@Drupal\oe_ai_assistant\Service\DraftSaver'
@@ -48,18 +51,8 @@ services:
   Drupal\oe_ai_assistant\Service\MessageRecorder: {}
   Drupal\oe_ai_assistant\Service\MessageRecorderInterface: '@Drupal\oe_ai_assistant\Service\MessageRecorder'
 
-  # Records drafting sub-agent turns from the ai_agents response event. Tagged
-  # as an event subscriber automatically via autoconfigure.
-  Drupal\oe_ai_assistant\EventSubscriber\SubAgentMessageSubscriber: {}
-
-  Drupal\oe_ai_assistant\Service\ToolExecutor: {}
-  Drupal\oe_ai_assistant\Service\ToolExecutorInterface: '@Drupal\oe_ai_assistant\Service\ToolExecutor'
-
-  Drupal\oe_ai_assistant\Service\ToolExecutionLoop: {}
-  Drupal\oe_ai_assistant\Service\ToolExecutionLoopInterface: '@Drupal\oe_ai_assistant\Service\ToolExecutionLoop'
-
-  Drupal\oe_ai_assistant\Service\DraftingOrchestrator: {}
-  Drupal\oe_ai_assistant\Service\DraftingOrchestratorInterface: '@Drupal\oe_ai_assistant\Service\DraftingOrchestrator'
+  # Builds the Neuron agents and workflows on top of drupal/ai.
+  Drupal\oe_ai_assistant\Neuron\AgentFactory: {}
 
   Drupal\oe_ai_assistant\Service\Drafting\DraftHistory: {}
   Drupal\oe_ai_assistant\Service\Drafting\DraftHistoryInterface: '@Drupal\oe_ai_assistant\Service\Drafting\DraftHistory'

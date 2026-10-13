@@ -8,12 +8,12 @@ namespace Drupal\oe_ai_assistant\Service\Drafting;
  * Immutable editorial context for one drafting request.
  *
  * Resolved once per chat request from the editorial session, passed to the
- * orchestrator for sub-agent prompt injection, and flattened into the
+ * content-producing agents for prompt injection, and flattened into the
  * provenance snapshot stored on every draft result. Ids travel with the
  * labels resolved at request time so the snapshot preserves what the editor
  * saw even if a term or template is renamed later. The tone prompt string is
  * resolved by the AiEditorialContext service, which stays the single source
- * of tone wording; the orchestrator never resolves tones itself.
+ * of tone wording.
  */
 final class EditorialContext {
 
@@ -49,6 +49,9 @@ final class EditorialContext {
    *   category are injected into the prompts; publishable assets stay out of
    *   the context for now. The extract is the full text when the pipeline
    *   produced one, NULL otherwise.
+   * @param array $groups
+   *   The schema groups the draft is written against, each with groupId,
+   *   label, fieldNames and schemaSlice.
    */
   public function __construct(
     public readonly ?string $toneId,
@@ -57,15 +60,20 @@ final class EditorialContext {
     public readonly ?string $templateId,
     public readonly ?string $templateLabel,
     public readonly array $contextDocuments = [],
+    public readonly array $groups = [],
   ) {}
 
   /**
    * Flattens the context into the provenance snapshot stored on a draft.
    *
+   * The schema groups travel with it, so a draft can be revised against the
+   * structure it was written with rather than whatever the session points
+   * at later.
+   *
    * @return array
    *   An array with tone ({id, label, prompt} or NULL), template ({id, label}
-   *   or NULL) and documents (the context document descriptors without the
-   *   file name and the extracted text, possibly empty).
+   *   or NULL), documents (the context document descriptors without the file
+   *   name and the extracted text, possibly empty) and groups.
    */
   public function toSnapshot(): array {
     return [
@@ -79,6 +87,7 @@ final class EditorialContext {
         unset($document['filename'], $document['extract']);
         return $document;
       }, $this->contextDocuments),
+      'groups' => $this->groups,
     ];
   }
 

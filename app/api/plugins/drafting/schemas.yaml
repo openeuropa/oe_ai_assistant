@@ -1,7 +1,7 @@
 # Drafting plugin API schemas.
 #
 # Request/response types for the drafting endpoints.
-# The SSE stream uses AG-UI protocol events (not defined here
+# The SSE stream uses UI message stream events (not defined here
 # as they are a transport-level concern, not REST schemas).
 
 DraftingChatRequest:
@@ -57,7 +57,7 @@ DraftingSaveRequest:
       type: integer
       description: >
         The draft version to save, matching the version of a
-        draft_content result in the session transcript (the version
+        draft stored on a draft_group result in the session transcript (the version
         shown in the artifact pane and the version rail).
 
 DraftingSaveResponse:

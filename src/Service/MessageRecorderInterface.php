@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Drupal\oe_ai_assistant\Service;
 
-use Drupal\ai\OperationType\Chat\ChatOutput;
 use Drupal\Core\Entity\EntityInterface;
 use Drupal\oe_ai_assistant\Entity\AiConversationMessageInterface;
 
@@ -12,8 +11,8 @@ use Drupal\oe_ai_assistant\Entity\AiConversationMessageInterface;
  * Records conversation turns as ai_conversation_message rows.
  *
  * The write side of the conversation store: it creates a persisted message for
- * a user string, an assistant ChatOutput, a tool result, or an error, hosted by
- * the given entity and optionally nested under a parent turn.
+ * a user string, an assistant turn, a tool result, or an error, hosted by the
+ * given entity and optionally nested under a parent turn.
  */
 interface MessageRecorderInterface {
 
@@ -26,55 +25,45 @@ interface MessageRecorderInterface {
    *   The user message text.
    * @param int|null $uid
    *   The author user id, or NULL when unknown.
+   * @param \Drupal\oe_ai_assistant\Entity\AiConversationMessageInterface|null $parent
+   *   The parent turn for a task given to a drafter, or NULL for a top-level
+   *   turn.
+   * @param string $agentId
+   *   The agent the task is given to, or empty for an editor's turn.
    *
    * @return \Drupal\oe_ai_assistant\Entity\AiConversationMessageInterface
    *   The saved message.
    */
-  public function recordUser(EntityInterface $host, string $text, ?int $uid = NULL): AiConversationMessageInterface;
+  public function recordUser(EntityInterface $host, string $text, ?int $uid = NULL, ?AiConversationMessageInterface $parent = NULL, string $agentId = ''): AiConversationMessageInterface;
 
   /**
-   * Records an assistant turn from a provider ChatOutput.
-   *
-   * Normalizes the token usage into columns and captures the rendered tool
-   * calls. A streamed output is reconstructed into its final message first.
+   * Records an assistant turn produced by a model call.
    *
    * @param \Drupal\Core\Entity\EntityInterface $host
    *   The entity hosting the conversation.
-   * @param \Drupal\ai\OperationType\Chat\ChatOutput $output
-   *   The provider output for this turn.
+   * @param string $text
+   *   The answer text, empty when the turn only requested tools.
+   * @param array $toolCalls
+   *   The requested tool calls, each shaped {id, type, function: {name,
+   *   arguments}}, or an empty list.
+   * @param array $tokenUsage
+   *   Token counts keyed by input, output, total, reasoning and cached; any
+   *   key may be missing.
+   * @param string|null $finishReason
+   *   The provider finish reason, or NULL when not reported.
    * @param string $agentId
-   *   Which agent produced the turn (orchestrator or a sub-agent id).
+   *   Which agent produced the turn (orchestrator or a group id).
    * @param string $provider
    *   The AI provider id.
    * @param string $model
    *   The model id.
    * @param \Drupal\oe_ai_assistant\Entity\AiConversationMessageInterface|null $parent
-   *   The parent turn for a sub-agent call, or NULL for a top-level turn.
+   *   The parent turn for a drafter call, or NULL for a top-level turn.
    *
    * @return \Drupal\oe_ai_assistant\Entity\AiConversationMessageInterface
    *   The saved message.
    */
-  public function recordAssistant(EntityInterface $host, ChatOutput $output, string $agentId, string $provider, string $model, ?AiConversationMessageInterface $parent = NULL): AiConversationMessageInterface;
-
-  /**
-   * Records a plain assistant text turn.
-   *
-   * For assistant messages the plugin produces itself (e.g. a drafting
-   * confirmation), not sourced from a provider ChatOutput.
-   *
-   * @param \Drupal\Core\Entity\EntityInterface $host
-   *   The entity hosting the conversation.
-   * @param string $text
-   *   The assistant message text.
-   * @param string $agentId
-   *   Which agent produced the turn, if known.
-   * @param \Drupal\oe_ai_assistant\Entity\AiConversationMessageInterface|null $parent
-   *   The parent turn, or NULL for a top-level turn.
-   *
-   * @return \Drupal\oe_ai_assistant\Entity\AiConversationMessageInterface
-   *   The saved message.
-   */
-  public function recordAssistantText(EntityInterface $host, string $text, string $agentId = '', ?AiConversationMessageInterface $parent = NULL): AiConversationMessageInterface;
+  public function recordAssistantTurn(EntityInterface $host, string $text, array $toolCalls, array $tokenUsage, ?string $finishReason, string $agentId, string $provider, string $model, ?AiConversationMessageInterface $parent = NULL): AiConversationMessageInterface;
 
   /**
    * Records a system turn.

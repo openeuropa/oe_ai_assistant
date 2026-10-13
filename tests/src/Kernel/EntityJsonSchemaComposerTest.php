@@ -43,7 +43,6 @@ class EntityJsonSchemaComposerTest extends KernelTestBase {
     'options',
     'key',
     'ai',
-    'ai_agents',
     'oe_ai_assistant',
     'state_machine',
     'document_loader',

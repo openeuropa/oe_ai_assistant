@@ -90,16 +90,6 @@ export type DataStreamLifecycleEvent =
   | FinishEvent
   | ErrorEvent;
 
-// -- Drafting plugin custom data events --
-
-/** Custom data event carrying drafted field values. */
-export interface DraftedFieldsEvent {
-  type: "data-drafted-fields";
-  data: Record<string, unknown>;
-  /** When true, this is a progressive update (not accumulated). */
-  transient?: true;
-}
-
 // -- Echo plugin custom data events (dev-only) --
 
 /** Custom data event for the echo stream. */
@@ -112,8 +102,31 @@ export interface EchoDataEvent {
   };
 }
 
+// -- Drafting plugin custom data events --
+
+/** One observability event of the agent run. */
+export interface AgentEventData {
+  /** The Neuron event name, e.g. "inference-start". */
+  event: string;
+  /** The id of the agent that fired the event. */
+  agent: string;
+  /** One short line describing the event. */
+  summary: string;
+  /** The event data as JSON: prompts, answers, tool results. */
+  payload?: unknown;
+  /** "error" for a failure the editor should see, "info" otherwise. */
+  level?: "info" | "error";
+}
+
+/** Transient data event carrying an agent event; never part of a message. */
+export interface AgentEventEvent {
+  type: "data-agent-event";
+  data: AgentEventData;
+  transient: true;
+}
+
 /** Union of all SSE events emitted by the drafting plugin. */
-export type DraftingSSEEvent = DataStreamLifecycleEvent | DraftedFieldsEvent;
+export type DraftingSSEEvent = DataStreamLifecycleEvent | AgentEventEvent;
 
 /** Union of all SSE events emitted by the echo plugin. */
 export type EchoSSEEvent = StartEvent | FinishEvent | EchoDataEvent;

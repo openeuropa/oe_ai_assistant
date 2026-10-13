@@ -201,9 +201,11 @@ class EntityJsonSchemaComposer {
         }
       }
 
+      // A key outside the bundle's fields cannot be deserialized.
       $schema = [
         'type' => 'object',
         'properties' => $schemaProperties,
+        'additionalProperties' => FALSE,
       ];
       if (!empty($required)) {
         $schema['required'] = $required;
