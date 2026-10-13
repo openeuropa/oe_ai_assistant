@@ -52,6 +52,8 @@ class DocumentExtractionProcessorTest extends AiEditorialSessionKernelTestBase {
    * Creates a scheduled context document media with a text file.
    */
   private function createDocument(string $name = 'brief.txt'): MediaInterface {
+    $owner = $this->createUser();
+    $session = $this->createSession($owner);
     file_put_contents('public://' . $name, 'payload');
     $file = File::create(['uri' => 'public://' . $name, 'filename' => $name, 'status' => 1]);
     $file->save();
@@ -60,6 +62,7 @@ class DocumentExtractionProcessorTest extends AiEditorialSessionKernelTestBase {
       'name' => $name,
       'status' => 0,
       'oe_ai_context_document' => ['target_id' => $file->id()],
+      'oe_ai_session' => ['target_id' => $session->id()],
     ]);
     $media->save();
     return $media;
@@ -109,8 +112,8 @@ class DocumentExtractionProcessorTest extends AiEditorialSessionKernelTestBase {
     $messages = $this->container->get('entity_type.manager')
       ->getStorage('ai_conversation_message')
       ->loadByProperties([
-        'host_entity_type' => 'media',
-        'host_entity_id' => $media->id(),
+        'host_entity_type' => 'ai_editorial_session',
+        'agent_id' => 'document_summary',
       ]);
     $this->assertCount(1, $messages);
     $message = reset($messages);
