@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\oe_ai_assistant\Form;
 
+use Drupal\Core\Cache\CacheableMetadata;
 use Drupal\Core\Entity\ContentEntityForm;
 use Drupal\Core\Form\FormStateInterface;
 use Drupal\Core\Messenger\MessengerTrait;
@@ -52,7 +53,11 @@ class AiEditorialSessionAddForm extends ContentEntityForm {
       $this->entity->set('content_type', $chosenType);
       $this->entity->set('template', NULL);
     }
-
+    $form['transparency_notice'] = [
+      '#type' => 'container',
+      '#markup' => $this->config('oe_ai_assistant.settings')->get('transparency_notice'),
+      '#allowed_tags' => AiEditorialSettingsForm::ALLOWED_TAGS,
+    ];
     $form = parent::form($form, $form_state);
     $form['label'] = [
       '#type' => 'textfield',
@@ -70,6 +75,10 @@ class AiEditorialSessionAddForm extends ContentEntityForm {
     ];
     $form['template']['#prefix'] = '<div id="ai-editorial-session-template">';
     $form['template']['#suffix'] = '</div>';
+
+    CacheableMetadata::createFromRenderArray($form)
+      ->addCacheableDependency($this->config('oe_ai_assistant.settings'))
+      ->applyTo($form);
 
     return $form;
   }

@@ -62,4 +62,27 @@ class AiEditorialSessionAddFormTest extends AiEditorialSessionKernelTestBase {
     $this->assertNotContains('contact_x', $options);
   }
 
+  /**
+   * The add form displays the configured transparency notice and its cache tag.
+   */
+  public function testTransparencyNotice(): void {
+    $notice = '<strong>AI-generated content</strong>. <a href="https://example.com">Read more</a>.';
+    $this->config('oe_ai_assistant.settings')
+      ->set('transparency_notice', $notice)
+      ->save();
+
+    $entityTypeManager = $this->container->get('entity_type.manager');
+    $entity = $entityTypeManager->getStorage('ai_editorial_session')
+      ->create(['type' => 'content_creation']);
+    $formObject = $entityTypeManager->getFormObject('ai_editorial_session', 'add');
+    $formObject->setEntity($entity);
+
+    $formState = new FormState();
+    $form = $this->container->get('form_builder')
+      ->buildForm($formObject, $formState);
+
+    $this->assertSame($notice, $form['transparency_notice']['#markup']);
+    $this->assertContains('config:oe_ai_assistant.settings', $form['#cache']['tags'] ?? []);
+  }
+
 }
