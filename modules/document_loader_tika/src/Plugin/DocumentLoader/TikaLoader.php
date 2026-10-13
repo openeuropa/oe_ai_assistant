@@ -19,16 +19,16 @@ use Drupal\document_loader_tika\TikaClientInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 
 /**
- * Extracts file content through an Apache Tika server.
+ * Extracts file content through the configured Apache Tika source.
  *
- * The plugin sends the file to the Tika server and returns the text or
- * HTML in the response as the loader output. Tika does the parsing for
- * every supported document type, so there is no per-type logic here.
+ * The plugin returns the Tika text or XHTML response as the loader output.
+ * Tika does the parsing for every supported document type, so there is no
+ * per-type logic here.
  */
 #[DocumentLoader(
   id: 'document_loader_tika:tika',
-  label: new TranslatableMarkup('Apache Tika server'),
-  description: new TranslatableMarkup('Extracts text or XHTML from files through an Apache Tika server.'),
+  label: new TranslatableMarkup('Apache Tika'),
+  description: new TranslatableMarkup('Extracts text or XHTML from files through the configured Apache Tika source.'),
   document_loader_types: [
     'document_loader_type:word',
     'document_loader_type:pdf',
@@ -58,7 +58,7 @@ final class TikaLoader extends DocumentLoaderBase {
   protected DocumentLoaderTypeFactory $typeFactory;
 
   /**
-   * The config factory, for the availability check.
+   * The config factory, for the mode-aware availability check.
    */
   protected ConfigFactoryInterface $configFactory;
 
@@ -85,12 +85,19 @@ final class TikaLoader extends DocumentLoaderBase {
   /**
    * {@inheritdoc}
    *
-   * Availability is a configured server URL, not a live ping: the manager
-   * asks before every load, and a server that is down surfaces as a load
-   * failure and on the status report instead.
+   * This deliberately checks configuration rather than probing a source: the
+   * manager calls it before every load, so a failing source must instead
+   * surface as a load failure and on the status report.
    */
   public function isAvailable(): bool {
-    return trim((string) $this->configFactory->get('document_loader_tika.settings')->get('url')) !== '';
+    $settings = $this->configFactory->get('document_loader_tika.settings');
+    if ($settings->get('mode') === 'executable') {
+      $jar_path = trim((string) $settings->get('jar_path'));
+
+      return $jar_path !== '' && is_file($jar_path) && is_readable($jar_path);
+    }
+
+    return trim((string) $settings->get('url')) !== '';
   }
 
   /**

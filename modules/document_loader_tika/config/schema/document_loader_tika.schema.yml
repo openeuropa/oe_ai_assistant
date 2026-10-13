@@ -2,9 +2,15 @@ document_loader_tika.settings:
   type: config_object
   label: 'Document Loader Tika settings'
   mapping:
+    mode:
+      type: string
+      label: 'Tika extraction mode'
     url:
       type: uri
       label: 'Tika server URL'
+    jar_path:
+      type: string
+      label: 'Tika app JAR path'
     timeout:
       type: integer
       label: 'Request timeout in seconds'

@@ -1,6 +1,6 @@
 # Apache Tika server used for document text extraction.
-# The web container reaches it as http://tika:9998, which is the default
-# in document_loader_tika.settings. CI runs "ddev rebuild", so the same file
+# The web container reaches it as http://tika:9998, which settings.ai.php sets
+# as the document_loader_tika URL. CI runs "ddev rebuild", so the same file
 # covers the test job.
 services:
   tika:

@@ -36,6 +36,10 @@ class DocumentExtractionProcessorTest extends AiEditorialSessionKernelTestBase {
     parent::setUp();
     $this->installConfig(['document_loader_tika']);
     $this->installSchema('file', ['file_usage']);
+    // The Tika submodule ships no server URL, so point it at the mock.
+    $this->config('document_loader_tika.settings')
+      ->set('url', 'http://tika:9998')
+      ->save();
     // The mock provider plugin only needs the ai module at runtime; the
     // test module's install hook is not run and not needed here. Enabling
     // rebuilds the container, so the Tika mock is installed afterwards.

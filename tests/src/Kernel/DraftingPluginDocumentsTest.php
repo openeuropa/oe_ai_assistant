@@ -63,6 +63,10 @@ class DraftingPluginDocumentsTest extends AiEditorialSessionKernelTestBase {
     parent::setUp();
     $this->installSchema('file', ['file_usage']);
     $this->installConfig(['document_loader_tika']);
+    // The Tika submodule ships no server URL, so point it at the mock.
+    $this->config('document_loader_tika.settings')
+      ->set('url', 'http://tika:9998')
+      ->save();
     $this->enableModules(['oe_ai_assistant_test']);
     $this->config('ai.settings')
       ->set('default_providers', ['chat' => ['provider_id' => 'mock_ai', 'model_id' => 'mock-model']])
