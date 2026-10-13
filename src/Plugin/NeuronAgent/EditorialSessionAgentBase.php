@@ -75,12 +75,12 @@ abstract class EditorialSessionAgentBase extends NeuronAgentPluginBase {
   /**
    * {@inheritdoc}
    *
-   * The declared protocol is Vercel's, which is what the app reads, and
-   * Neuron's adapter for it leaves out the event that closes a tool call's
-   * input. The app holds a call back until its input is closed, so the stream
-   * is shaped by the subclass that adds it.
+   * The app reads the Vercel protocol, and Neuron's adapter for it leaves out
+   * the event that closes a tool call's input. The app holds a call back until
+   * its input is closed, so one adapter adds it for every agent below here
+   * that declares Custom.
    */
-  protected function streamAdapter(string $threadId): ?StreamAdapterInterface {
+  protected function customStreamAdapter(string $threadId): StreamAdapterInterface {
     return new PatchedVercelAIAdapter();
   }
 
