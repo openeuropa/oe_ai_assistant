@@ -54,9 +54,13 @@ class AiEditorialSessionAddForm extends ContentEntityForm {
       $this->entity->set('content_type', $chosenType);
       $this->entity->set('template', NULL);
     }
+    // Load the settings config once and reuse it for both the transparency
+    // notice markup and the cacheable dependency added at the end of the
+    // method.
+    $config = $this->config('oe_ai_assistant.settings');
     $form['transparency_notice'] = [
       '#type' => 'container',
-      '#markup' => $this->config('oe_ai_assistant.settings')->get('transparency_notice'),
+      '#markup' => $config->get('transparency_notice'),
       '#allowed_tags' => TransparencyNotice::ALLOWED_TAGS,
     ];
     $form = parent::form($form, $form_state);
@@ -78,7 +82,7 @@ class AiEditorialSessionAddForm extends ContentEntityForm {
     $form['template']['#suffix'] = '</div>';
 
     CacheableMetadata::createFromRenderArray($form)
-      ->addCacheableDependency($this->config('oe_ai_assistant.settings'))
+      ->addCacheableDependency($config)
       ->applyTo($form);
 
     return $form;
