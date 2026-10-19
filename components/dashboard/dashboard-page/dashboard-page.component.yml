@@ -1,0 +1,19 @@
+$schema: https://git.drupalcode.org/project/drupal/-/raw/HEAD/core/assets/schemas/v1/metadata.schema.json
+name: Dashboard page
+props:
+  type: object
+  properties: {}
+slots:
+  header: { title: Header }
+  filters: { title: Filters }
+  period_controls: { title: Period controls }
+  forecast: { title: Forecast }
+  metrics: { title: Metrics }
+  breakdowns: { title: Consumption breakdowns }
+  trends: { title: Consumption trends }
+  review: { title: Page review }
+  quality: { title: Content quality }
+  activity: { title: Nodes and sessions }
+  supplementary: { title: Optional widgets }
+  primary: { title: Primary content }
+  secondary: { title: Secondary content }

@@ -1,0 +1,10 @@
+.ai-dashboard-filter-bar { display: grid; gap: 1rem; }
+.ai-dashboard-filter-bar__controls { display: grid; grid-template-columns: minmax(16rem, 2fr) repeat(3, minmax(11rem, 1fr)); gap: 1rem; }
+.ai-dashboard-filter-bar__controls .form-item, .ai-dashboard-filter-bar__controls fieldset { min-width: 0; margin: 0; }
+.ai-dashboard-filter-bar__controls select, .ai-dashboard-filter-bar__controls input { width: 100%; min-height: 3.25rem; padding: .75rem; border: 1px solid #d9ddd9; border-radius: .75rem; background: #fff; }
+.ai-dashboard-filter-bar__date-range { display: grid; grid-template-columns: 1fr 1fr; gap: .5rem; padding: .5rem .75rem .75rem; border: 1px solid #d9ddd9; border-radius: .75rem; background: #fff; }
+.ai-dashboard-filter-bar__date-range legend { padding: 0; color: #5c665f; font-size: .75rem; }
+.ai-dashboard-filter-bar__date-range input { min-height: 2.25rem; padding: .25rem; border: 0; border-radius: 0; }
+.ai-dashboard-filter-bar__actions { display: flex; gap: .75rem; }
+@media (max-width: 64rem) { .ai-dashboard-filter-bar__controls { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 48rem) { .ai-dashboard-filter-bar__controls { grid-template-columns: 1fr; } }

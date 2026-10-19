@@ -1,0 +1,10 @@
+$schema: https://git.drupalcode.org/project/drupal/-/raw/HEAD/core/assets/schemas/v1/metadata.schema.json
+name: Dashboard card
+props:
+  type: object
+  properties:
+    title: { type: string }
+    subtitle: { type: string }
+slots:
+  actions: { title: Card actions }
+  content: { title: Card content }

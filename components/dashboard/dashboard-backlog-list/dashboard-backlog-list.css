@@ -1,0 +1,1 @@
+.ai-dashboard-backlog-list { display: grid; gap: .5rem; margin: 0; padding: 0; list-style: none; }.ai-dashboard-backlog-list li { display: flex; justify-content: space-between; gap: .75rem; padding: .75rem; border-radius: .5rem; background: #f3f1eb; }.ai-dashboard-backlog-list small { display: block; color: #5c665f; }

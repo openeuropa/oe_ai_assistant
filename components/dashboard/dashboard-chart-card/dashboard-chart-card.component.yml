@@ -1,0 +1,10 @@
+$schema: https://git.drupalcode.org/project/drupal/-/raw/HEAD/core/assets/schemas/v1/metadata.schema.json
+name: Dashboard chart card
+props:
+  type: object
+  properties:
+    title: { type: string }
+    subtitle: { type: string }
+slots:
+  chart: { title: Chart content }
+  legend: { title: Chart legend }

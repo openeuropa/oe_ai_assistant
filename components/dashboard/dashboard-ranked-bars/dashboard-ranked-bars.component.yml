@@ -1,0 +1,6 @@
+$schema: https://git.drupalcode.org/project/drupal/-/raw/HEAD/core/assets/schemas/v1/metadata.schema.json
+name: Dashboard ranked bars
+props:
+  type: object
+  properties:
+    items: { type: array }

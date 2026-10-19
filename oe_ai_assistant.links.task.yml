@@ -3,3 +3,9 @@ entity.ai_editorial_session.collection:
   title: 'AI Editorial Sessions'
   base_route: system.admin_content
   weight: 20
+
+oe_ai_assistant.usage_dashboard:
+  route_name: oe_ai_assistant.usage_dashboard
+  title: 'Site dashboard overview'
+  base_route: system.admin_content
+  weight: 21

@@ -1,0 +1,16 @@
+.ai-dashboard-forecast-card { display: grid; grid-template-columns: minmax(0, 3fr) minmax(22rem, 2fr); gap: 2rem; padding: 1.5rem; border: 1px solid #d9ddd9; border-radius: 1.25rem; background: #f0f7f6; }
+.ai-dashboard-forecast-card__eyebrow, .ai-dashboard-forecast-card__details p { margin: 0; color: #5c665f; font-size: .75rem; letter-spacing: .04em; text-transform: uppercase; }
+.ai-dashboard-forecast-card__heading { margin: .25rem 0 .75rem; font-size: 1.5rem; }
+.ai-dashboard-forecast-card__description { max-width: 48rem; margin: 0 0 1rem; color: #4b5750; line-height: 1.6; }
+.ai-dashboard-forecast-card__progress { width: 100%; height: .875rem; accent-color: #a94138; }
+.ai-dashboard-forecast-card__usage-summary { margin: .5rem 0 0; color: #4b5750; font-size: .875rem; }
+.ai-dashboard-forecast-card__details { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.5rem 2rem; align-content: center; padding: 1.5rem; border: 1px solid #d9ddd9; border-radius: 1rem; background: #fff; }
+.ai-dashboard-forecast-card__stat { display: grid; gap: .25rem; }
+.ai-dashboard-forecast-card__stat strong { font-size: 2rem; line-height: 1; }
+.ai-dashboard-forecast-card__trend { color: #26704c; font-size: .875rem; }
+.ai-dashboard-forecast-card__status { color: #9a6212; font-size: .875rem; }
+.ai-dashboard-forecast-card__action, .ai-dashboard-forecast-card__cycle { display: grid; gap: .5rem; align-content: start; }
+.ai-dashboard-forecast-card__action .button { margin: 0; justify-self: start; }
+.ai-dashboard-forecast-card__cycle span { color: #4b5750; font-size: .875rem; }
+@media (max-width: 60rem) { .ai-dashboard-forecast-card { grid-template-columns: 1fr; } }
+@media (max-width: 30rem) { .ai-dashboard-forecast-card__details { grid-template-columns: 1fr; } }

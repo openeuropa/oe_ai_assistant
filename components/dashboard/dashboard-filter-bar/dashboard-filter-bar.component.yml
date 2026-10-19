@@ -1,0 +1,8 @@
+$schema: https://git.drupalcode.org/project/drupal/-/raw/HEAD/core/assets/schemas/v1/metadata.schema.json
+name: Dashboard filter bar
+props:
+  type: object
+  properties: {}
+slots:
+  filters: { title: Filter controls }
+  actions: { title: Form actions }

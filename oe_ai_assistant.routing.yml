@@ -44,6 +44,14 @@ oe_ai_assistant.content_schema:
     entity_type_id: '[a-z][a-z0-9_]*'
     bundle: '[a-z][a-z0-9_]*'
 
+oe_ai_assistant.usage_dashboard:
+  path: '/admin/content/ai/usage-dashboard'
+  defaults:
+    _form: '\Drupal\oe_ai_assistant\Form\AiUsageDashboardForm'
+    _title: 'AI usage dashboard'
+  requirements:
+    _permission: 'access ai usage dashboard'
+
 # Templates
 entity.ai_drafting_template.collection:
   path: '/admin/config/ai-editorial/templates'

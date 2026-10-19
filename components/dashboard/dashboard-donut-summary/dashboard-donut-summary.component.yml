@@ -1,0 +1,10 @@
+$schema: https://git.drupalcode.org/project/drupal/-/raw/HEAD/core/assets/schemas/v1/metadata.schema.json
+name: Dashboard donut summary
+props:
+  type: object
+  properties:
+    total: { type: string }
+    label: { type: string }
+    items: { type: array }
+slots:
+  chart: { title: Donut chart }
