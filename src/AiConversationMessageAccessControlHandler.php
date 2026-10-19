@@ -48,7 +48,11 @@ class AiConversationMessageAccessControlHandler extends EntityAccessControlHandl
       ->getStorage('ai_editorial_session')
       ->load($entity->getHostEntityId());
     if (!$session instanceof AiEditorialSessionInterface) {
-      return $flat_access;
+      // The host entity type is a session, but the session itself is
+      // missing (e.g. a delete race); forbid rather than fall back to flat
+      // permissions, matching DocumentMediaHooks::mediaAccess().
+      return AccessResult::forbidden('The host editorial session could not be loaded.')
+        ->addCacheableDependency($entity);
     }
 
     $session_operation = $operation === 'view' || $operation === 'view label' ? 'view' : 'update';
