@@ -308,7 +308,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
       );
     }
 
-    $session = $this->loadSession($body);
+    $session = $this->loadSession($body, 'update');
     $context = $this->buildContext($session);
 
     // Resolve the session's template and pin its id for the prompt, tool, and
@@ -489,7 +489,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
    *   A confirmation response.
    */
   public function reset(Request $request): array {
-    $session = $this->loadSession($this->decodeJsonBody($request));
+    $session = $this->loadSession($this->decodeJsonBody($request), 'update');
     $this->entityTypeManager->getStorage('ai_conversation_message')
       ->deleteForHost($session);
     return ['status' => 'ok'];
@@ -514,7 +514,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
    */
   public function save(Request $request): array {
     $body = $this->decodeJsonBody($request);
-    $session = $this->loadSession($body);
+    $session = $this->loadSession($body, 'update');
     $version = (int) ($body['version'] ?? 0);
 
     $draft = $this->draftHistory->getDraftContent($session, $version);
@@ -618,7 +618,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
       );
     }
 
-    $session = $this->loadSession($body);
+    $session = $this->loadSession($body, 'update');
     $previous = $session->get(static::TONE_FIELD)->entity;
     $from = $previous
       ? ['id' => (string) $previous->id(), 'label' => (string) $previous->label()]
@@ -664,7 +664,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
     $body = $this->decodeJsonBody($request);
     $templateId = (string) ($body['template'] ?? '');
 
-    $session = $this->loadSession($body);
+    $session = $this->loadSession($body, 'update');
     $previous = $session->get(static::TEMPLATE_FIELD)->entity;
     $from = $previous
       ? ['id' => (string) $previous->id(), 'label' => (string) $previous->label()]
@@ -718,7 +718,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
   public function addDocument(Request $request): array {
     $params = $request->query->all();
     $repository = $this->resolveDocumentRepository($params['category'] ?? '');
-    $session = $this->loadSession($params);
+    $session = $this->loadSession($params, 'update');
 
     // Drop any path component, as core does for Content-Disposition names.
     $filename = basename($params['filename'] ?? '');
@@ -845,7 +845,8 @@ class DraftingPlugin extends AiAssistantPluginBase {
   private function resolveDocumentRequest(Request $request): array {
     $body = $this->decodeJsonBody($request);
     $repository = $this->resolveDocumentRepository($body['category'] ?? '');
-    $session = $this->loadSession($body);
+    // Shared by removeDocument() and extractDocument(), both mutating.
+    $session = $this->loadSession($body, 'update');
     $documentId = (string) ($body['documentId'] ?? '');
 
     if ($documentId === '') {
