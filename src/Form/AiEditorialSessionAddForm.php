@@ -142,6 +142,12 @@ class AiEditorialSessionAddForm extends ContentEntityForm {
   /**
    * Helper function to return the content_type options the widget will render.
    *
+   * Mirrors the widget's own selection handler (ai_draftable_node_type_selection):
+   * bundles with an enabled drafting template. No create-access filtering
+   * here, unlike checkTypesAccess() — the widget doesn't filter by it either,
+   * so adding it would make this report a single option when several still
+   * show in the select.
+   *
    * @return array<string, string>
    *   A map of node type IDs to labels.
    */
@@ -158,7 +164,7 @@ class AiEditorialSessionAddForm extends ContentEntityForm {
       }
     }
 
-    return $this->checkTypesAccess($options);
+    return $options;
   }
 
 }
