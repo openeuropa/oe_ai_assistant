@@ -17,7 +17,6 @@ use Drupal\Core\Routing\RedirectDestinationInterface;
 use Drupal\Core\Url;
 use Drupal\Core\Entity\Query\QueryInterface;
 use Drupal\node\NodeInterface;
-use Drupal\oe_ai_assistant\Form\AiEditorialSettingsForm;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 
 /**
@@ -197,7 +196,7 @@ class AiEditorialSessionListBuilder extends EntityListBuilder {
     $build['transparency_notice'] = [
       '#type' => 'container',
       '#markup' => $this->configFactory->get('oe_ai_assistant.settings')->get('transparency_notice'),
-      '#allowed_tags' => AiEditorialSettingsForm::ALLOWED_TAGS,
+      '#allowed_tags' => TransparencyNotice::ALLOWED_TAGS,
     ];
     $build += parent::render();
 

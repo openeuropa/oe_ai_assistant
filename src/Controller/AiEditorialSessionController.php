@@ -11,8 +11,8 @@ use Drupal\Core\Render\RendererInterface;
 use Drupal\Core\Url;
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionType;
-use Drupal\oe_ai_assistant\Form\AiEditorialSettingsForm;
 use Drupal\oe_ai_assistant\Plugin\AiAssistantPluginManager;
+use Drupal\oe_ai_assistant\TransparencyNotice;
 use Drupal\system\SystemManager;
 use Symfony\Component\HttpFoundation\RedirectResponse;
 use Symfony\Component\HttpFoundation\RequestStack;
@@ -126,7 +126,7 @@ class AiEditorialSessionController extends ControllerBase {
     $disclaimer = [
       '#type' => 'markup',
       '#markup' => $this->config('oe_ai_assistant.settings')->get('transparency_notice'),
-      '#allowed_tags' => AiEditorialSettingsForm::ALLOWED_TAGS,
+      '#allowed_tags' => TransparencyNotice::ALLOWED_TAGS,
     ];
     $disclaimer = (string) $this->renderer->renderInIsolation($disclaimer);
     // Build the configuration object that bootstraps the React app.
