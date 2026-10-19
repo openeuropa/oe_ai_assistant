@@ -9,6 +9,7 @@ use Drupal\Core\Entity\ContentEntityForm;
 use Drupal\Core\Form\FormStateInterface;
 use Drupal\Core\Messenger\MessengerTrait;
 use Drupal\Core\Session\AccountInterface;
+use Drupal\oe_ai_assistant\TransparencyNotice;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 
 /**
@@ -56,7 +57,7 @@ class AiEditorialSessionAddForm extends ContentEntityForm {
     $form['transparency_notice'] = [
       '#type' => 'container',
       '#markup' => $this->config('oe_ai_assistant.settings')->get('transparency_notice'),
-      '#allowed_tags' => AiEditorialSettingsForm::ALLOWED_TAGS,
+      '#allowed_tags' => TransparencyNotice::ALLOWED_TAGS,
     ];
     $form = parent::form($form, $form_state);
     $form['label'] = [

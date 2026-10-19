@@ -8,18 +8,12 @@ use Drupal\Component\Utility\Html;
 use Drupal\Component\Utility\Xss;
 use Drupal\Core\Form\ConfigFormBase;
 use Drupal\Core\Form\FormStateInterface;
+use Drupal\oe_ai_assistant\TransparencyNotice;
 
 /**
  * Settings form for the AI Editorial Assistant.
  */
 final class AiEditorialSettingsForm extends ConfigFormBase {
-
-  /**
-   * HTML tags supported in the transparency notice.
-   *
-   * @var string[]
-   */
-  public const ALLOWED_TAGS = ['b', 'i', 'a', 'strong', 'em'];
 
   /**
    * {@inheritdoc}
@@ -69,7 +63,7 @@ final class AiEditorialSettingsForm extends ConfigFormBase {
    * Determines whether filtering would remove markup from the notice.
    */
   private function containsUnsupportedMarkup(string $value): bool {
-    $filtered_value = Xss::filter($value, self::ALLOWED_TAGS);
+    $filtered_value = Xss::filter($value, TransparencyNotice::ALLOWED_TAGS);
     return Html::serialize(Html::load($value)) !== Html::serialize(Html::load($filtered_value));
   }
 
