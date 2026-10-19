@@ -45,9 +45,17 @@ class AiEditorialSessionAccessControlHandler extends EntityAccessControlHandler 
       return $admin_access;
     }
 
+    // Gate creation behind the same feature permission required to view or
+    // use a session afterwards, so a session is never left orphaned by a
+    // creator who cannot subsequently access it.
+    $feature_access = AccessResult::allowedIfHasPermission($account, 'use oe ai assistant');
+    if (!$feature_access->isAllowed()) {
+      return $feature_access;
+    }
+
     $content_type = $context['content_type'] ?? NULL;
     if (is_string($content_type) && $content_type !== '') {
-      return AccessResult::allowedIfHasPermission($account, sprintf('create %s content', $content_type));
+      return $feature_access->andIf(AccessResult::allowedIfHasPermission($account, sprintf('create %s content', $content_type)));
     }
 
     $result = AccessResult::neutral()->cachePerPermissions();
@@ -62,7 +70,7 @@ class AiEditorialSessionAccessControlHandler extends EntityAccessControlHandler 
       $result = $result->orIf(AccessResult::allowedIfHasPermission($account, sprintf('create %s content', $node_type->id())));
     }
 
-    return $result;
+    return $feature_access->andIf($result);
   }
 
   /**

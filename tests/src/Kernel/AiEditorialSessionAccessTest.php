@@ -19,7 +19,8 @@ class AiEditorialSessionAccessTest extends AiEditorialSessionKernelTestBase {
     $access_handler = $this->container->get('entity_type.manager')
       ->getAccessControlHandler('ai_editorial_session');
 
-    $author = $this->createUser(['create oe_news content']);
+    $author = $this->createUser(['use oe ai assistant', 'create oe_news content']);
+    $gateless_author = $this->createUser(['create oe_news content']);
     $viewer = $this->createUser();
     $admin = $this->createUser(['administer ai editorial sessions']);
 
@@ -28,6 +29,11 @@ class AiEditorialSessionAccessTest extends AiEditorialSessionKernelTestBase {
     $this->assertTrue($access_handler->createAccess('drafting', $author));
     $this->assertFalse($access_handler->createAccess('drafting', $viewer, ['content_type' => 'oe_news']));
     $this->assertTrue($access_handler->createAccess('drafting', $admin, ['content_type' => 'oe_news']));
+
+    // Without 'use oe ai assistant', content-type create permission alone no
+    // longer grants session create access, closing the orphaned-session gap.
+    $this->assertFalse($access_handler->createAccess('drafting', $gateless_author, ['content_type' => 'oe_news']));
+    $this->assertFalse($access_handler->createAccess('drafting', $gateless_author));
   }
 
   /**
@@ -168,7 +174,7 @@ class AiEditorialSessionAccessTest extends AiEditorialSessionKernelTestBase {
     $visible_node = $this->createPublishedNode('oe_news', 'Visible node');
 
     $own_session = $this->createSession($viewer);
-    $this->createSession($owner, $visible_node);
+    $shared_session = $this->createSession($owner, $visible_node);
     $private_session = $this->createSession($owner);
 
     $this->container->get('current_user')->setAccount($viewer);
@@ -181,6 +187,9 @@ class AiEditorialSessionAccessTest extends AiEditorialSessionKernelTestBase {
       ->execute();
 
     $this->assertArrayHasKey($own_session->id(), $ids);
+    // Collaboration via node access: $viewer does not own this session, but
+    // has 'access content' and the node is published and attached to it.
+    $this->assertArrayHasKey($shared_session->id(), $ids);
     $this->assertArrayNotHasKey($private_session->id(), $ids);
   }
 
