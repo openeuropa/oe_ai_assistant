@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\oe_ai_assistant\Form;
 
+use Drupal\Core\Entity\EntityReferenceSelection\SelectionPluginManagerInterface;
 use Drupal\Core\Entity\ContentEntityForm;
 use Drupal\Core\Form\FormStateInterface;
 use Drupal\Core\Messenger\MessengerTrait;
@@ -23,12 +24,18 @@ class AiEditorialSessionAddForm extends ContentEntityForm {
   protected AccountInterface $currentUserAccount;
 
   /**
+   * The entity reference selection plugin manager.
+   */
+  protected SelectionPluginManagerInterface $selectionPluginManager;
+
+  /**
    * {@inheritdoc}
    */
   public static function create(ContainerInterface $container): static {
     /** @var static $form */
     $form = parent::create($container);
     $form->currentUserAccount = $container->get('current_user');
+    $form->selectionPluginManager = $container->get('plugin.manager.entity_reference_selection');
     return $form;
   }
 
@@ -119,49 +126,22 @@ class AiEditorialSessionAddForm extends ContentEntityForm {
   }
 
   /**
-   * Returns node type options the current user can create.
+   * Returns the content_type options the widget will render.
    *
-   * @param array<string, string> $content_types
-   *   The content types to filter by create access permissions.
-   *
-   * @return array<string, string>
-   *   A map of node type IDs to labels.
-   */
-  protected function checkTypesAccess(array $content_types): array {
-    $accessHandler = $this->entityTypeManager->getAccessControlHandler('node');
-    $options = [];
-    foreach ($content_types as $type => $label) {
-      if ($accessHandler->createAccess($type)) {
-        $options[$type] = $label;
-      }
-    }
-
-    return $options;
-  }
-
-  /**
-   * Helper function to return the content_type options the widget will render.
-   *
-   * Mirrors the widget's own selection handler (ai_draftable_node_type_selection):
-   * bundles with an enabled drafting template. No create-access filtering
-   * here, unlike checkTypesAccess() — the widget doesn't filter by it either,
-   * so adding it would make this report a single option when several still
-   * show in the select.
+   * Delegates to the field's own selection handler
+   * (ai_draftable_node_type_selection) instead of re-implementing its query,
+   * so this always matches exactly what the real widget offers.
    *
    * @return array<string, string>
    *   A map of node type IDs to labels.
    */
   protected function getDraftableContentTypeOptions(): array {
-    $templateStorage = $this->entityTypeManager->getStorage('ai_drafting_template');
-    $ids = $templateStorage->getQuery()->accessCheck(FALSE)->condition('status', TRUE)->execute();
+    $field_definition = $this->entity->get('content_type')->getFieldDefinition();
+    $handler = $this->selectionPluginManager->getSelectionHandler($field_definition, $this->entity);
 
-    $nodeTypeStorage = $this->entityTypeManager->getStorage('node_type');
     $options = [];
-    foreach ($templateStorage->loadMultiple($ids) as $template) {
-      $bundle = $template->getContentType();
-      if (!isset($options[$bundle]) && ($nodeType = $nodeTypeStorage->load($bundle))) {
-        $options[$bundle] = $nodeType->label();
-      }
+    foreach ($handler->getReferenceableEntities() as $bundle_options) {
+      $options += $bundle_options;
     }
 
     return $options;
