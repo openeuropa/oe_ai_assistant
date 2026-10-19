@@ -83,8 +83,11 @@ final class DocumentMediaHooks {
 
     $session_operation = $operation === 'view' ? 'view' : 'update';
 
-    return AccessResult::forbiddenIf(!$session->access($session_operation, $account))
-      ->addCacheableDependency($session);
+    // Pass TRUE to keep the session's own cacheability instead of just the
+    // media entity's.
+    $session_access = $session->access($session_operation, $account, TRUE);
+    return AccessResult::forbiddenIf(!$session_access->isAllowed())
+      ->inheritCacheability($session_access);
   }
 
   /**

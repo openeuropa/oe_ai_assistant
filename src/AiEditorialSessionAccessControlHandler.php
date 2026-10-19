@@ -80,13 +80,17 @@ class AiEditorialSessionAccessControlHandler extends EntityAccessControlHandler 
 
     $node = $entity->getNode();
     if ($node !== NULL) {
-      $access = $access->orIf(
-        AccessResult::allowedIf($node->access($node_operation, $account))
-          ->addCacheableDependency($node)
-      );
+      // Keep the node result's cacheability (TRUE), but fold it in by its
+      // bool outcome rather than orIf()'ing the AccessResult directly: node
+      // access returns an authoritative forbidden for accounts lacking
+      // 'access content', which would otherwise veto the fallback tiers below.
+      $node_access = $node->access($node_operation, $account, TRUE);
+      $access = $access
+        ->orIf(AccessResult::allowedIf($node_access->isAllowed()))
+        ->addCacheableDependency($node_access);
     }
 
-    // If there is no node related with entity use session's content type for access check.
+    // Standing fallback alongside node access, not just pre-save.
     $content_type = $entity->getContentType();
     if ($content_type !== '') {
       $access = $access->orIf(AccessResult::allowedIfHasPermission($account, sprintf('create %s content', $content_type)));

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\oe_ai_assistant\Unit;
 
+use Drupal\Core\Access\AccessResult;
 use Drupal\Core\Field\EntityReferenceFieldItemListInterface;
 use Drupal\Core\Session\AccountInterface;
 use Drupal\media\MediaInterface;
@@ -37,7 +38,7 @@ class DocumentMediaHooksAccessTest extends UnitTestCase {
    */
   private function mockSession(bool $access): AiEditorialSessionInterface {
     $session = $this->createMock(AiEditorialSessionInterface::class);
-    $session->method('access')->willReturn($access);
+    $session->method('access')->willReturn($access ? AccessResult::allowed() : AccessResult::forbidden());
     $session->method('getCacheContexts')->willReturn([]);
     $session->method('getCacheTags')->willReturn([]);
     $session->method('getCacheMaxAge')->willReturn(-1);
@@ -118,7 +119,7 @@ class DocumentMediaHooksAccessTest extends UnitTestCase {
    */
   public function testNonViewOperationUsesSessionUpdate(): void {
     $session = $this->createMock(AiEditorialSessionInterface::class);
-    $session->expects($this->once())->method('access')->with('update', $this->anything())->willReturn(TRUE);
+    $session->expects($this->once())->method('access')->with('update', $this->anything(), TRUE)->willReturn(AccessResult::allowed());
     $session->method('getCacheContexts')->willReturn([]);
     $session->method('getCacheTags')->willReturn([]);
     $session->method('getCacheMaxAge')->willReturn(-1);
