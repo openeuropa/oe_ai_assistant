@@ -9,3 +9,4 @@ weight: 0
 is_admin: false
 permissions:
   - 'use oe ai assistant'
+  - 'view_update own sessions'
