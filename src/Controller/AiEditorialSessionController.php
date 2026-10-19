@@ -123,9 +123,12 @@ class AiEditorialSessionController extends ControllerBase {
         $pluginConfig[$pluginId] = $config;
       }
     }
+    // Load the settings config once and reuse it for both the disclaimer
+    // markup and the cacheable dependency added at the end of the method.
+    $settings = $this->config('oe_ai_assistant.settings');
     $disclaimer = [
       '#type' => 'markup',
-      '#markup' => $this->config('oe_ai_assistant.settings')->get('transparency_notice'),
+      '#markup' => $settings->get('transparency_notice'),
       '#allowed_tags' => TransparencyNotice::ALLOWED_TAGS,
     ];
     $disclaimer = (string) $this->renderer->renderInIsolation($disclaimer);
@@ -208,7 +211,7 @@ class AiEditorialSessionController extends ControllerBase {
     CacheableMetadata::createFromRenderArray($build)
       ->addCacheableDependency($session)
       ->addCacheableDependency($this->sessionEntityTypeManager->getStorage('ai_editorial_session_type')->load($session->bundle()))
-      ->addCacheableDependency($this->config('oe_ai_assistant.settings'))
+      ->addCacheableDependency($settings)
       ->merge($cacheability)
       ->applyTo($build);
 
