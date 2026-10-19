@@ -40,7 +40,12 @@ class AiEditorialSessionAccessTest extends AiEditorialSessionKernelTestBase {
    * Tests owners, collaborators, and admins get expected entity access.
    */
   public function testEntityAccess(): void {
-    $owner = $this->createUser(['use oe ai assistant', 'access content', 'create oe_news content', 'edit own oe_news content']);
+    $owner = $this->createUser([
+      'use oe ai assistant',
+      'access content',
+      'create oe_news content',
+      'edit own oe_news content',
+    ]);
     $collaborator = $this->createUser(['use oe ai assistant', 'access content', 'edit any oe_news content']);
     $viewer = $this->createUser(['access content']);
     $admin = $this->createUser(['administer ai editorial sessions']);
