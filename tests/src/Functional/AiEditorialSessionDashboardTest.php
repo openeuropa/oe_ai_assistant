@@ -267,6 +267,7 @@ class AiEditorialSessionDashboardTest extends AiEditorialSessionBrowserTestBase 
       ])->save();
 
     $user = $this->drupalCreateUser([
+      'use oe ai assistant',
       'create oe_news content',
     ]);
     $this->drupalLogin($user);
@@ -284,6 +285,7 @@ class AiEditorialSessionDashboardTest extends AiEditorialSessionBrowserTestBase 
    */
   public function testAddSessionContentTypeOptionsRespectDraftingTemplates(): void {
     $user = $this->drupalCreateUser([
+      'use oe ai assistant',
       'create oe_news content',
       'create oe_contact content',
     ]);
