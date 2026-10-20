@@ -1,4 +1,12 @@
 
+oe_ai_assistant.settings:
+  type: config_object
+  label: 'OpenEuropa AI Assistant settings'
+  mapping:
+    transparency_notice:
+      type: text
+      label: 'AI transparency notice'
+
 oe_ai_assistant.ai_editorial_session_type.*:
   type: config_entity
   label: 'AI editorial session type'
