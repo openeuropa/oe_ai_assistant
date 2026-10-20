@@ -12,7 +12,7 @@ use Drupal\Core\Url;
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionType;
 use Drupal\oe_ai_assistant\Plugin\AiAssistantPluginManager;
-use Drupal\oe_ai_assistant\TransparencyNotice;
+use Drupal\oe_ai_assistant\TransparencyNoticeFilteredMarkup;
 use Drupal\system\SystemManager;
 use Symfony\Component\HttpFoundation\RedirectResponse;
 use Symfony\Component\HttpFoundation\RequestStack;
@@ -126,12 +126,7 @@ class AiEditorialSessionController extends ControllerBase {
     // Load the settings config once and reuse it for both the disclaimer
     // markup and the cacheable dependency added at the end of the method.
     $settings = $this->config('oe_ai_assistant.settings');
-    $disclaimer = [
-      '#type' => 'markup',
-      '#markup' => $settings->get('transparency_notice'),
-      '#allowed_tags' => TransparencyNotice::ALLOWED_TAGS,
-    ];
-    $disclaimer = (string) $this->renderer->renderInIsolation($disclaimer);
+    $disclaimer = TransparencyNoticeFilteredMarkup::create($settings->get('transparency_notice'));
     // Build the configuration object that bootstraps the React app.
     // This data is serialised into window.drupalSettings.oeAiAssistant
     // and read by the React entry point before the first render.
