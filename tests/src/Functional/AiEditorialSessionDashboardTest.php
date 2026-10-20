@@ -156,12 +156,12 @@ class AiEditorialSessionDashboardTest extends AiEditorialSessionBrowserTestBase 
     ]);
     $this->drupalLogin($user);
 
-    $settings_url = Url::fromRoute('oe_ai_assistant.transparency_notice_settings');
+    $settings_url = Url::fromRoute('oe_ai_assistant.admin_settings.configuration');
     $this->drupalGet($settings_url);
 
     $this->assertSession()->statusCodeEquals(200);
     $this->assertSession()->fieldExists('transparency_notice');
-    $this->assertSession()->pageTextContains('Allowed HTML tags: b, i, a, strong, and em.');
+    $this->assertSession()->pageTextContains('Allowed HTML tags: <b> <i> <a> <strong> <em>');
 
     $notice = 'Tom & Jerry: <strong>AI-generated content</strong>. <a href="https://example.com/policy"  title="Read our policy">Read our policy</a>.';
     $this->submitForm(['transparency_notice' => $notice], 'Save configuration');
@@ -183,7 +183,7 @@ class AiEditorialSessionDashboardTest extends AiEditorialSessionBrowserTestBase 
     ]);
     $this->drupalLogin($user);
 
-    $this->drupalGet(Url::fromRoute('oe_ai_assistant.transparency_notice_settings'));
+    $this->drupalGet(Url::fromRoute('oe_ai_assistant.admin_settings.configuration'));
     $this->submitForm([
       'transparency_notice' => '<script>alert("unsafe");</script>',
     ], 'Save configuration');
@@ -199,11 +199,11 @@ class AiEditorialSessionDashboardTest extends AiEditorialSessionBrowserTestBase 
    * Tests that the transparency notice settings route requires permission.
    */
   public function testTransparencyNoticeSettingsAccess(): void {
-    $this->drupalGet(Url::fromRoute('oe_ai_assistant.transparency_notice_settings'));
+    $this->drupalGet(Url::fromRoute('oe_ai_assistant.admin_settings.configuration'));
     $this->assertSession()->statusCodeEquals(403);
 
     $this->drupalLogin($this->drupalCreateUser(['access administration pages']));
-    $this->drupalGet(Url::fromRoute('oe_ai_assistant.transparency_notice_settings'));
+    $this->drupalGet(Url::fromRoute('oe_ai_assistant.admin_settings.configuration'));
     $this->assertSession()->statusCodeEquals(403);
   }
 
