@@ -4,6 +4,7 @@ FROM $BASE_IMAGE
 USER root
 
 ARG TIKA_VERSION=3.3.2
+ARG TIKA_SHA512=88c2032cba0d45feea361e6eebd2918bd04707614cdda5d89a1b167da5503c98e7b4cd368336f0402d559abcaf5006fcc7c825c32c749ae0417ea2f3b8423aba
 
 RUN apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
@@ -12,6 +13,7 @@ RUN apt-get update \
         curl \
     && rm -rf /var/lib/apt/lists/*
 
+# Use Maven Central so pinned releases remain available after mirror rotation.
 RUN curl \
       --fail \
       --location \
@@ -19,8 +21,9 @@ RUN curl \
       --retry 5 \
       --retry-delay 2 \
       --retry-all-errors \
-      "https://downloads.apache.org/tika/${TIKA_VERSION}/tika-app-${TIKA_VERSION}.jar" \
+      "https://repo1.maven.org/maven2/org/apache/tika/tika-app/${TIKA_VERSION}/tika-app-${TIKA_VERSION}.jar" \
       -o /usr/local/lib/tika-app.jar \
+    && echo "${TIKA_SHA512}  /usr/local/lib/tika-app.jar" | sha512sum -c - \
     && chmod 0644 /usr/local/lib/tika-app.jar
 
 RUN printf '#!/bin/sh\nexec java -jar /usr/local/lib/tika-app.jar "$@"\n' \
