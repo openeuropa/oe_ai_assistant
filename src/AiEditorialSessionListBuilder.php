@@ -213,6 +213,19 @@ class AiEditorialSessionListBuilder extends EntityListBuilder {
       }
     }
 
+    // The Neuron-backed history tab, empty until ticket 3 moves the chat
+    // endpoint onto the Neuron agents.
+    if ($entity->hasLinkTemplate('neuron-history')) {
+      $neuron_history_url = $entity->toUrl('neuron-history');
+      if ($neuron_history_url->access()) {
+        $operations['neuron_history'] = [
+          'title' => $this->t('History (Neuron)'),
+          'weight' => 6,
+          'url' => $neuron_history_url,
+        ];
+      }
+    }
+
     return $operations;
   }
 

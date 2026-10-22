@@ -1,0 +1,19 @@
+langcode: en
+status: true
+dependencies:
+  module:
+    - ai_neuron
+    - oe_ai_assistant
+id: neuron_message.oe_ai_session
+field_name: oe_ai_session
+entity_type: neuron_message
+type: entity_reference
+settings:
+  target_type: ai_editorial_session
+module: core
+locked: true
+cardinality: 1
+translatable: false
+indexes: {  }
+persist_with_no_fields: false
+custom_storage: false

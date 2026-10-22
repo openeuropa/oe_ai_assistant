@@ -47,6 +47,7 @@ use Drupal\user\EntityOwnerTrait;
  *   links = {
  *     "canonical" = "/admin/content/ai/{ai_editorial_session}",
  *     "history" = "/admin/content/ai/{ai_editorial_session}/history",
+ *     "neuron-history" = "/admin/content/ai/{ai_editorial_session}/neuron-history",
  *     "add-page" = "/admin/content/ai/add",
  *     "add-form" = "/admin/content/ai/add/{ai_editorial_session_type}",
  *     "delete-form" = "/admin/content/ai/{ai_editorial_session}/delete",

@@ -10,6 +10,7 @@ use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Hook\Attribute\Hook;
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
 use Drupal\oe_ai_assistant\Entity\Storage\AiConversationMessageStorageInterface;
+use Drupal\oe_ai_assistant\Neuron\Chat\History\SessionConversation;
 use Drupal\oe_ai_assistant\Service\Drafting\ContextDocumentRepository;
 use Drupal\oe_ai_assistant\Service\MessageRecorderInterface;
 
@@ -24,6 +25,7 @@ final class EditorialSessionHooks {
     private readonly EntityTypeManagerInterface $entityTypeManager,
     private readonly MessageRecorderInterface $messageRecorder,
     private readonly ContextDocumentRepository $contextDocumentRepository,
+    private readonly SessionConversation $conversation,
   ) {}
 
   /**
@@ -83,6 +85,18 @@ final class EditorialSessionHooks {
     assert($storage instanceof AiConversationMessageStorageInterface);
 
     $storage->deleteForHost($entity);
+  }
+
+  /**
+   * Implements hook_ai_editorial_session_delete().
+   *
+   * A no-op until ticket 3 moves the chat endpoint onto the Neuron store.
+   */
+  #[Hook('ai_editorial_session_delete')]
+  public function deleteSessionNeuronMessages(EntityInterface $entity): void {
+    assert($entity instanceof AiEditorialSessionInterface);
+
+    $this->conversation->deleteFor($entity);
   }
 
   /**

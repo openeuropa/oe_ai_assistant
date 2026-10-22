@@ -1,0 +1,6 @@
+langcode: en
+status: true
+dependencies: {  }
+id: editorial_session
+label: 'Editorial session'
+description: 'Messages of one editorial session, the sub-agent runs included.'

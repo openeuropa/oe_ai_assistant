@@ -1,0 +1,20 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - ai_neuron.neuron_message_type.editorial_session
+    - field.storage.neuron_message.oe_ai_session
+id: neuron_message.editorial_session.oe_ai_session
+field_name: oe_ai_session
+entity_type: neuron_message
+bundle: editorial_session
+label: Session
+description: 'The editorial session the conversation belongs to.'
+required: true
+translatable: false
+default_value: {  }
+default_value_callback: ''
+settings:
+  handler: 'default:ai_editorial_session'
+  handler_settings: {  }
+field_type: entity_reference
