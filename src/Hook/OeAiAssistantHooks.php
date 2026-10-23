@@ -19,9 +19,11 @@ use Drupal\node\NodeTypeInterface;
 final class OeAiAssistantHooks {
 
   /**
-   * The updatable session node IDs.
+   * The updatable session node IDs, keyed by user ID.
+   *
+   * @var array<int,array<int,int>>
    */
-  private ?array $updatableSessionNodeIds = NULL;
+  private array $updatableSessionNodeIdsByUser = [];
 
   public function __construct(
     private readonly AccountProxyInterface $currentUser,
@@ -92,8 +94,9 @@ final class OeAiAssistantHooks {
    *   The accessible node IDs.
    */
   private function getUpdatableSessionNodeIds(): array {
-    if ($this->updatableSessionNodeIds !== NULL) {
-      return $this->updatableSessionNodeIds;
+    $uid = (int) $this->currentUser->id();
+    if (isset($this->updatableSessionNodeIdsByUser[$uid])) {
+      return $this->updatableSessionNodeIdsByUser[$uid];
     }
 
     $nids = $this->database->select('ai_editorial_session__node', 'session_node')
@@ -102,7 +105,7 @@ final class OeAiAssistantHooks {
       ->execute()
       ->fetchCol();
     if ($nids === []) {
-      return $this->updatableSessionNodeIds = [];
+      return $this->updatableSessionNodeIdsByUser[$uid] = [];
     }
 
     $accessible = [];
@@ -111,7 +114,7 @@ final class OeAiAssistantHooks {
         $accessible[] = (int) $node->id();
       }
     }
-    return $this->updatableSessionNodeIds = $accessible;
+    return $this->updatableSessionNodeIdsByUser[$uid] = $accessible;
   }
 
   /**
