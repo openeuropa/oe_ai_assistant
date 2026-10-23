@@ -129,4 +129,30 @@ class DocumentMediaHooksAccessTest extends UnitTestCase {
     $this->hooks->mediaAccess($media, 'delete', $account);
   }
 
+  /**
+   * Tests a non-ai_context_document bundle is neutral on create.
+   */
+  public function testCreateAccessNonContextDocumentBundleIsNeutral(): void {
+    $account = $this->createMock(AccountInterface::class);
+
+    $result = $this->hooks->mediaCreateAccess($account, [], 'image');
+
+    $this->assertTrue($result->isNeutral());
+  }
+
+  /**
+   * Tests ai_context_document creation is always forbidden through this gate.
+   *
+   * The drafting plugin's own upload flow never calls createAccess(), so
+   * this cannot block it; it only closes generic create routes (/media/add
+   * and similar) which have no session to validate a document against.
+   */
+  public function testCreateAccessContextDocumentBundleIsForbidden(): void {
+    $account = $this->createMock(AccountInterface::class);
+
+    $result = $this->hooks->mediaCreateAccess($account, [], 'ai_context_document');
+
+    $this->assertTrue($result->isForbidden());
+  }
+
 }

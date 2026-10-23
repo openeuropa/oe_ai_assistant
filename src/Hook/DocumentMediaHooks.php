@@ -91,6 +91,22 @@ final class DocumentMediaHooks {
   }
 
   /**
+   * Implements hook_ENTITY_TYPE_create_access() for media.
+   *
+   * Closes the generic /media/add route, which has no session to validate
+   * against. DocumentRepositoryBase saves this bundle directly and never
+   * calls createAccess(), so this can't block the plugin's own upload flow.
+   */
+  #[Hook('media_create_access')]
+  public function mediaCreateAccess(AccountInterface $account, array $context, $entity_bundle): AccessResultInterface {
+    if ($entity_bundle !== 'ai_context_document') {
+      return AccessResult::neutral();
+    }
+
+    return AccessResult::forbidden('Context documents can only be created through the AI editorial assistant plugin.');
+  }
+
+  /**
    * Checks whether the media source file target changed since the last save.
    */
   private function sourceFileChanged(MediaInterface $media): bool {
