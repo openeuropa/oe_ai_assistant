@@ -19,7 +19,7 @@ RUN curl \
       --retry 5 \
       --retry-delay 2 \
       --retry-all-errors \
-      "https://downloads.apache.org/tika/${TIKA_VERSION}/tika-app-${TIKA_VERSION}.jar" \
+      "https://archive.apache.org/dist/tika/${TIKA_VERSION}/tika-app-${TIKA_VERSION}.jar" \
       -o /usr/local/lib/tika-app.jar \
     && chmod 0644 /usr/local/lib/tika-app.jar
 

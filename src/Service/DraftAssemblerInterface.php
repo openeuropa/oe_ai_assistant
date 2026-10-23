@@ -21,7 +21,8 @@ interface DraftAssemblerInterface {
    *   The content type bundle machine name (e.g. "oe_news").
    * @param array $fields
    *   The LLM-produced fields map, keyed by field machine name. Values are
-   *   in the Drupal serialization format (arrays of items).
+   *   in the Drupal serialization format (arrays of items). A text format
+   *   the field is not configured for is replaced.
    * @param string|null $templateId
    *   The drafting template id whose resolved defaults are merged over
    *   $fields (a template default always wins on a key collision), or NULL to
