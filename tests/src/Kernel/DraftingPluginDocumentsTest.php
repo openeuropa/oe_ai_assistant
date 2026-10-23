@@ -78,7 +78,7 @@ class DraftingPluginDocumentsTest extends AiEditorialSessionKernelTestBase {
    * Tests adding, listing, and removing context documents.
    */
   public function testDocumentActions(): void {
-    $owner = $this->createUser();
+    $owner = $this->createUser(['use oe ai assistant']);
     $this->container->get('current_user')->setAccount($owner);
     $session = $this->createSession($owner);
     $plugin = $this->container->get(AiAssistantPluginManager::class)
@@ -138,7 +138,7 @@ class DraftingPluginDocumentsTest extends AiEditorialSessionKernelTestBase {
    * Tests document actions through the plugin controller.
    */
   public function testDocumentActionsThroughController(): void {
-    $owner = $this->createUser();
+    $owner = $this->createUser(['use oe ai assistant']);
     $this->container->get('current_user')->setAccount($owner);
     $session = $this->createSession($owner);
     $controller = $this->createPluginController();
@@ -185,7 +185,7 @@ class DraftingPluginDocumentsTest extends AiEditorialSessionKernelTestBase {
    */
   #[DataProvider('nonStringAddDocumentFieldProvider')]
   public function testAddDocumentRejectsNonStringFieldsThroughController(string $field): void {
-    $owner = $this->createUser();
+    $owner = $this->createUser(['use oe ai assistant']);
     $this->container->get('current_user')->setAccount($owner);
     $session = $this->createSession($owner);
     $controller = $this->createPluginController();
@@ -236,7 +236,7 @@ class DraftingPluginDocumentsTest extends AiEditorialSessionKernelTestBase {
    * name rather than the raw client-supplied one.
    */
   public function testDocumentTitleUsesSanitizedFilename(): void {
-    $owner = $this->createUser();
+    $owner = $this->createUser(['use oe ai assistant']);
     $this->container->get('current_user')->setAccount($owner);
     $session = $this->createSession($owner);
     $plugin = $this->container->get(AiAssistantPluginManager::class)
@@ -295,7 +295,7 @@ class DraftingPluginDocumentsTest extends AiEditorialSessionKernelTestBase {
     $fieldConfig->save();
     $this->container->get('entity_field.manager')->clearCachedFieldDefinitions();
 
-    $owner = $this->createUser();
+    $owner = $this->createUser(['use oe ai assistant']);
     $this->container->get('current_user')->setAccount($owner);
     $session = $this->createSession($owner);
     $plugin = $this->container->get(AiAssistantPluginManager::class)
@@ -320,7 +320,7 @@ class DraftingPluginDocumentsTest extends AiEditorialSessionKernelTestBase {
    * Tests document uploads reject unsupported extensions.
    */
   public function testDocumentUploadRejectsUnsupportedExtension(): void {
-    $owner = $this->createUser();
+    $owner = $this->createUser(['use oe ai assistant']);
     $this->container->get('current_user')->setAccount($owner);
     $session = $this->createSession($owner);
     $plugin = $this->container->get(AiAssistantPluginManager::class)
@@ -348,7 +348,7 @@ class DraftingPluginDocumentsTest extends AiEditorialSessionKernelTestBase {
     $tika = $this->mockTika();
     $tika->append(new Response(200, [], 'Brief text'));
     MockAiProvider::enqueue(new MockResponse('Brief summary.'));
-    $owner = $this->createUser();
+    $owner = $this->createUser(['use oe ai assistant']);
     $this->container->get('current_user')->setAccount($owner);
     $session = $this->createSession($owner);
     $plugin = $this->container->get(AiAssistantPluginManager::class)->createInstance('drafting');
@@ -373,7 +373,7 @@ class DraftingPluginDocumentsTest extends AiEditorialSessionKernelTestBase {
    * Tests that a document of another session cannot be processed.
    */
   public function testExtractDocumentRejectsForeignDocument(): void {
-    $owner = $this->createUser();
+    $owner = $this->createUser(['use oe ai assistant']);
     $this->container->get('current_user')->setAccount($owner);
     $session = $this->createSession($owner);
     $other = $this->createSession($owner);
@@ -421,7 +421,7 @@ class DraftingPluginDocumentsTest extends AiEditorialSessionKernelTestBase {
    */
   #[DataProvider('categorizedDocumentActionProvider')]
   public function testUnsupportedDocumentCategoryIsRejected(string $action): void {
-    $owner = $this->createUser();
+    $owner = $this->createUser(['use oe ai assistant']);
     $this->container->get('current_user')->setAccount($owner);
     $session = $this->createSession($owner);
     $plugin = $this->container->get(AiAssistantPluginManager::class)
@@ -474,7 +474,7 @@ class DraftingPluginDocumentsTest extends AiEditorialSessionKernelTestBase {
    * whatever Content-Type the client sends.
    */
   public function testControllerValidatesJsonBodyRegardlessOfContentType(): void {
-    $owner = $this->createUser();
+    $owner = $this->createUser(['use oe ai assistant']);
     $this->container->get('current_user')->setAccount($owner);
     $session = $this->createSession($owner);
     $controller = $this->createPluginController();
@@ -518,7 +518,7 @@ class DraftingPluginDocumentsTest extends AiEditorialSessionKernelTestBase {
    * must remove the staged copy under temporary://.
    */
   public function testRejectedUploadLeavesNoStagedFile(): void {
-    $owner = $this->createUser();
+    $owner = $this->createUser(['use oe ai assistant']);
     $this->container->get('current_user')->setAccount($owner);
     $session = $this->createSession($owner);
     $plugin = $this->container->get(AiAssistantPluginManager::class)
@@ -554,7 +554,7 @@ class DraftingPluginDocumentsTest extends AiEditorialSessionKernelTestBase {
    * not an uncaught exception.
    */
   public function testStreamWriterFailureIsReportedAsUploadFailed(): void {
-    $owner = $this->createUser();
+    $owner = $this->createUser(['use oe ai assistant']);
     $this->container->get('current_user')->setAccount($owner);
     $session = $this->createSession($owner);
 

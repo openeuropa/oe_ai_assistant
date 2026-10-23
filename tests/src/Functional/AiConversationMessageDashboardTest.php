@@ -84,7 +84,8 @@ class AiConversationMessageDashboardTest extends BrowserTestBase {
     $this->createMessage(42, 'assistant', ['input' => 20, 'output' => 8, 'total' => 28]);
     $this->createMessage(99, 'user', ['input' => 100, 'output' => 100, 'total' => 200]);
 
-    $this->drupalLogin($this->drupalCreateUser(['access ai conversation message overview']));
+    // Bypass session scoping; these host IDs aren't real sessions.
+    $this->drupalLogin($this->drupalCreateUser(['administer ai conversation messages']));
 
     // Unfiltered: total tokens sum across all three is 243.
     $this->drupalGet(self::COLLECTION);

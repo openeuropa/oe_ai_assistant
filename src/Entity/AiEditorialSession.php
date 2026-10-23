@@ -108,7 +108,7 @@ class AiEditorialSession extends ContentEntityBase implements AiEditorialSession
    * {@inheritdoc}
    */
   public function getContentType(): string {
-    return (string) $this->get('content_type')->target_id;
+    return $this->hasField('content_type') ? (string) $this->get('content_type')->target_id : '';
   }
 
   /**
@@ -130,6 +130,9 @@ class AiEditorialSession extends ContentEntityBase implements AiEditorialSession
    * {@inheritdoc}
    */
   public function getNode(): ?NodeInterface {
+    if (!$this->hasField('node')) {
+      return NULL;
+    }
     $entity = $this->get('node')->entity;
     return $entity instanceof NodeInterface ? $entity : NULL;
   }
