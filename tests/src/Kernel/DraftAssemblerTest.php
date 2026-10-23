@@ -7,10 +7,11 @@ namespace Drupal\Tests\oe_ai_assistant\Kernel;
 use Drupal\filter\Entity\FilterFormat;
 use Drupal\KernelTests\KernelTestBase;
 use Drupal\node\Entity\Node;
+use Drupal\oe_ai_assistant\Entity\AiDraftingTemplate;
 use Drupal\oe_ai_assistant\Service\DraftAssemblerInterface;
-use Drupal\user\Entity\Role;
-use Drupal\user\Entity\User;
+use Drupal\Tests\oe_ai_assistant\Traits\TextFormatUserTrait;
 use PHPUnit\Framework\Attributes\Group;
+use PHPUnit\Framework\Attributes\TestWith;
 
 /**
  * Tests the DraftAssembler service against an existing node.
@@ -20,6 +21,19 @@ use PHPUnit\Framework\Attributes\Group;
  */
 #[Group('oe_ai_assistant')]
 class DraftAssemblerTest extends KernelTestBase {
+
+  use TextFormatUserTrait;
+
+  /**
+   * What an editor of oe_news needs on top of text format permissions.
+   */
+  private const EDITOR_PERMISSIONS = [
+    'access content',
+    'create oe_news content',
+    'edit any oe_news content',
+    // Content moderation denies update access without a usable transition.
+    'use editorial transition create_new_draft',
+  ];
 
   /**
    * {@inheritdoc}
@@ -75,47 +89,95 @@ class DraftAssemblerTest extends KernelTestBase {
   }
 
   /**
-   * Keeps the existing item's text format when the payload omits it.
+   * Replaces a stored format that no longer exists or is disabled.
    */
-  public function testUpdatePreservesExistingTextFormat(): void {
-    // The user's default format (lowest weight) differs from the one stored
-    // on the node, so a resolver that ignores the existing item shows up as a
-    // format change.
-    FilterFormat::create(['format' => 'oe_test_basic', 'name' => 'Basic', 'weight' => -10])->save();
-    FilterFormat::create(['format' => 'oe_test_rich', 'name' => 'Rich', 'weight' => 0])->save();
+  #[TestWith(['html'])]
+  #[TestWith(['oe_test_disabled'])]
+  public function testUpdateReplacesInvalidStoredFormat(string $format): void {
+    $this->setUpBasicAndRichFormats();
+    FilterFormat::create(['format' => 'oe_test_disabled', 'name' => 'Disabled', 'weight' => -20, 'status' => FALSE])->save();
+    $this->setUserWithFormats(['oe_test_basic', 'oe_test_rich', 'oe_test_disabled'], self::EDITOR_PERMISSIONS);
+    $node = $this->createNewsWithBodyFormat($format);
 
-    Role::create(['id' => 'oe_test_editor', 'label' => 'Test editor'])
-      ->grantPermission('access content')
-      ->grantPermission('edit any oe_news content')
-      // Content moderation denies update access without a usable transition.
-      ->grantPermission('use editorial transition create_new_draft')
-      ->grantPermission('use text format oe_test_basic')
-      ->grantPermission('use text format oe_test_rich')
-      ->save();
-    // Uid 1 bypasses all permission checks; consume it so the real test user
-    // below is subject to the ordinary permission check the test exercises.
-    User::create(['name' => 'Uid 1 placeholder'])->save();
-    $user = User::create(['name' => 'Editor', 'roles' => ['oe_test_editor']]);
-    $user->save();
-    $this->container->get('current_user')->setAccount($user);
-
-    $node = Node::create([
-      'type' => 'oe_news',
-      'title' => 'Existing news',
-      'field_news_type' => 'announcement',
-      'field_body' => ['value' => '<p>Original body.</p>', 'format' => 'oe_test_rich'],
-    ]);
-    $node->save();
-
-    $assembled = $this->container->get(DraftAssemblerInterface::class)->assemble(
+    $assembled = $this->assembler()->assemble(
       'oe_news',
       ['field_body' => [['value' => '<p>Rewritten body.</p>']]],
       NULL,
       $node,
     );
 
-    $this->assertSame('<p>Rewritten body.</p>', $assembled->get('field_body')->value);
+    $this->assertSame('oe_test_basic', $assembled->get('field_body')->format);
+  }
+
+  /**
+   * Keeps a template default's format over the user's default format.
+   *
+   * A template refuses on save a default whose format is not valid.
+   */
+  public function testKeepsTemplateDefaultFormat(): void {
+    $this->setUpBasicAndRichFormats();
+    $this->setUserWithFormats(['oe_test_basic', 'oe_test_rich'], self::EDITOR_PERMISSIONS);
+    $template = AiDraftingTemplate::load('news_default');
+    $template->set('defaults', $template->get('defaults') + [
+      'field_body' => ['default_value' => [['value' => '<p>Template body.</p>', 'format' => 'oe_test_rich']]],
+    ]);
+    $template->save();
+
+    $assembled = $this->assembler()->assemble('oe_news', [
+      'title' => [['value' => 'New news']],
+      'field_news_type' => [['value' => 'announcement']],
+      'field_body' => [['value' => '<p>LLM body.</p>', 'format' => 'oe_test_basic']],
+    ], 'news_default');
+
+    $this->assertSame('<p>Template body.</p>', $assembled->get('field_body')->value);
     $this->assertSame('oe_test_rich', $assembled->get('field_body')->format);
+  }
+
+  /**
+   * Keeps a stored format the field allows, even one the user may not use.
+   */
+  public function testUpdateKeepsStoredFormatTheFieldAllows(): void {
+    $this->setUpBasicAndRichFormats();
+    $this->setUserWithFormats(['oe_test_basic'], self::EDITOR_PERMISSIONS);
+    $node = $this->createNewsWithBodyFormat('oe_test_rich');
+
+    $assembled = $this->assembler()->assemble(
+      'oe_news',
+      ['field_body' => [['value' => '<p>Rewritten body.</p>']]],
+      NULL,
+      $node,
+    );
+
+    $this->assertSame('oe_test_rich', $assembled->get('field_body')->format);
+  }
+
+  /**
+   * Returns the assembler service from the container.
+   */
+  private function assembler(): DraftAssemblerInterface {
+    return $this->container->get(DraftAssemblerInterface::class);
+  }
+
+  /**
+   * Creates a basic format, lightest, and a rich one.
+   */
+  private function setUpBasicAndRichFormats(): void {
+    FilterFormat::create(['format' => 'oe_test_basic', 'name' => 'Basic', 'weight' => -10])->save();
+    FilterFormat::create(['format' => 'oe_test_rich', 'name' => 'Rich', 'weight' => 0])->save();
+  }
+
+  /**
+   * Saves an oe_news node whose body is stored in the given format.
+   */
+  private function createNewsWithBodyFormat(string $format): Node {
+    $node = Node::create([
+      'type' => 'oe_news',
+      'title' => 'Existing news',
+      'field_news_type' => 'announcement',
+      'field_body' => ['value' => '<p>Original body.</p>', 'format' => $format],
+    ]);
+    $node->save();
+    return $node;
   }
 
 }

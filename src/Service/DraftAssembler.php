@@ -21,6 +21,7 @@ class DraftAssembler implements DraftAssemblerInterface {
     private readonly AccountProxyInterface $currentUser,
     private readonly DraftingSchemaProviderInterface $schemaProvider,
     private readonly DraftEntityBuilder $draftEntityBuilder,
+    private readonly TextFormatResolver $textFormatResolver,
     #[Autowire(service: 'logger.channel.oe_ai_assistant')]
     private readonly LoggerInterface $logger,
   ) {}
@@ -92,23 +93,14 @@ class DraftAssembler implements DraftAssemblerInterface {
       return $built;
     }
 
+    // The node's stored formats outrank the resolved ones while valid.
+    $this->textFormatResolver->resolveEntityFormats($built, array_keys($mergedFields), $existingNode);
+
     // Transplant only the merged fields' values onto the existing node, the
     // same field-by-field idiom core's EntityResource::patch() uses for
     // updates, so fields outside this draft are left untouched.
-    foreach ($mergedFields as $fieldName => $submitted) {
-      $values = $built->get($fieldName)->getValue();
-      $existingItems = $existingNode->get($fieldName);
-      if ($existingItems->getFieldDefinition()->getFieldStorageDefinition()->getPropertyDefinition('format')) {
-        // A format the payload did not supply was resolved for a new entity;
-        // the one already stored on the item takes precedence over it.
-        foreach (array_keys($values) as $delta) {
-          $existingFormat = $existingItems->get($delta)?->format;
-          if ($existingFormat && empty($submitted[$delta]['format'])) {
-            $values[$delta]['format'] = $existingFormat;
-          }
-        }
-      }
-      $existingNode->set($fieldName, $values);
+    foreach (array_keys($mergedFields) as $fieldName) {
+      $existingNode->set($fieldName, $built->get($fieldName)->getValue());
     }
     return $existingNode;
   }
