@@ -166,8 +166,8 @@ class InlineEntityHydrator {
         }
       }
 
-      // The LLM never supplies a format; deserialize() leaves it unset.
-      $this->textFormatResolver->resolveEntityFormats($entity);
+      // Every formatted-text item needs a format its field allows.
+      $this->textFormatResolver->resolveEntityFormats($entity, array_keys($ownFields));
 
       $entities[] = $entity;
     }
@@ -208,6 +208,50 @@ class InlineEntityHydrator {
       }
     }
     return $nonInlineFields;
+  }
+
+  /**
+   * Removes the text format from every formatted-text item of a fields map.
+   *
+   * Recurses into inline child entity items.
+   *
+   * @param array $fields
+   *   The fields map, keyed by field machine name.
+   * @param string $entityTypeId
+   *   The entity type whose field definitions to inspect.
+   * @param string $bundle
+   *   The bundle whose field definitions to inspect.
+   *
+   * @return array
+   *   The fields map without text formats.
+   */
+  public function withoutTextFormats(array $fields, string $entityTypeId, string $bundle): array {
+    $defs = $this->entityFieldManager->getFieldDefinitions($entityTypeId, $bundle);
+    foreach ($fields as $name => $items) {
+      if (!isset($defs[$name]) || !is_array($items)) {
+        continue;
+      }
+      if ($this->textFormatResolver->isFormatted($defs[$name])) {
+        foreach ($items as $delta => $item) {
+          if (is_array($item)) {
+            unset($fields[$name][$delta]['format']);
+          }
+        }
+        continue;
+      }
+      if ($defs[$name]->getType() !== 'entity_reference_revisions') {
+        continue;
+      }
+      $targetType = $defs[$name]->getFieldStorageDefinition()->getSetting('target_type');
+      $bundleKey = $this->entityTypeManager->getDefinition($targetType)->getKey('bundle');
+      foreach ($items as $delta => $item) {
+        $childBundle = is_array($item) && $bundleKey ? ($item[$bundleKey][0]['target_id'] ?? NULL) : NULL;
+        if (is_string($childBundle)) {
+          $fields[$name][$delta] = $this->withoutTextFormats($item, $targetType, $childBundle);
+        }
+      }
+    }
+    return $fields;
   }
 
 }
