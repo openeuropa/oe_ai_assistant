@@ -30,7 +30,7 @@ class AiEditorialSessionAccessControlHandler extends EntityAccessControlHandler 
     }
 
     return match ($operation) {
-      'view', 'view label', 'update' => $this->checkSessionAccess($entity, $account, $operation),
+      'view', 'view label', 'update' => $this->checkSessionAccess($entity, $account),
       'delete' => AccessResult::neutral()->addCacheableDependency($entity)->cachePerPermissions(),
       default => AccessResult::neutral()->addCacheableDependency($entity),
     };
@@ -76,23 +76,22 @@ class AiEditorialSessionAccessControlHandler extends EntityAccessControlHandler 
   /**
    * Checks access to an existing session.
    */
-  protected function checkSessionAccess(AiEditorialSessionInterface $entity, AccountInterface $account, string $operation): AccessResult {
+  protected function checkSessionAccess(AiEditorialSessionInterface $entity, AccountInterface $account): AccessResult {
     $feature_access = AccessResult::allowedIfHasPermission($account, 'use oe ai assistant');
     if (!$feature_access->isAllowed()) {
       return AccessResult::forbidden()->inheritCacheability($feature_access)->addCacheableDependency($entity);
     }
 
-    $node_operation = $operation === 'update' ? 'update' : 'view';
-
     $access = AccessResult::neutral()->addCacheableDependency($entity);
 
     $node = $entity->getNode();
     if ($node !== NULL) {
-      // Keep the node result's cacheability (TRUE), but fold it in by its
-      // bool outcome rather than orIf()'ing the AccessResult directly: node
+      // Always node 'update', even for the session 'view' op: the session
+      // hosts pre-publication drafts, so a plain node viewer must not read
+      // them. Fold in by bool outcome rather than orIf()'ing directly: node
       // access returns an authoritative forbidden for accounts lacking
-      // 'access content', which would otherwise veto the fallback tiers below.
-      $node_access = $node->access($node_operation, $account, TRUE);
+      // 'access content', which would veto the fallback tiers below.
+      $node_access = $node->access('update', $account, TRUE);
       $access = $access
         ->orIf(AccessResult::allowedIf($node_access->isAllowed()))
         ->addCacheableDependency($node_access);
@@ -109,7 +108,10 @@ class AiEditorialSessionAccessControlHandler extends EntityAccessControlHandler 
       AccessResult::allowedIf((int) $entity->getOwnerId() === (int) $account->id())->cachePerUser()
     );
 
-    return $access->isAllowed() ? $access : AccessResult::forbidden()->inheritCacheability($access);
+    // Neutral, not forbidden: forbidden() would win over an allowed from a
+    // downstream hook_ai_editorial_session_access() via orIf(), permanently
+    // locking it out.
+    return $access->isAllowed() ? $access : AccessResult::neutral()->inheritCacheability($access);
   }
 
 }

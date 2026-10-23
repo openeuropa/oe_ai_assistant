@@ -55,10 +55,27 @@ class AiConversationHistoryTest extends AiEditorialSessionBrowserTestBase {
     $this->drupalGet($url);
     $assert_session->statusCodeEquals(403);
 
-    // The overview permission plus node view access grants access, even
+    // Node *view* access alone is not enough either: the session hosts
+    // pre-publication drafts and chat transcripts, so collaboration mirrors
+    // node update rights, not merely being able to see the published node.
+    $viewOnlyReviewer = $this->createUser([
+      'use oe ai assistant',
+      'access ai conversation message overview',
+      'access content',
+    ]);
+    $this->drupalLogin($viewOnlyReviewer);
+    $this->drupalGet($url);
+    $assert_session->statusCodeEquals(403);
+
+    // The overview permission plus node *update* access grants access, even
     // though this reviewer does not own the session — but only alongside
     // 'use oe ai assistant', which now gates session access itself.
-    $reviewer = $this->createUser(['use oe ai assistant', 'access ai conversation message overview', 'access content']);
+    $reviewer = $this->createUser([
+      'use oe ai assistant',
+      'access ai conversation message overview',
+      'access content',
+      'edit any oe_news content',
+    ]);
     $this->drupalLogin($reviewer);
     $this->drupalGet($url);
     $assert_session->statusCodeEquals(200);
@@ -70,10 +87,15 @@ class AiConversationHistoryTest extends AiEditorialSessionBrowserTestBase {
     $this->drupalGet($url);
     $assert_session->statusCodeEquals(403);
 
-    // Combined with node view access, the message-admin permission grants
-    // access across sessions, as before — again requiring the feature
-    // permission for session access to succeed.
-    $messageAdmin = $this->createUser(['use oe ai assistant', 'administer ai conversation messages', 'access content']);
+    // Combined with node *update* access, the message-admin permission
+    // grants access across sessions, as before — again requiring the
+    // feature permission for session access to succeed.
+    $messageAdmin = $this->createUser([
+      'use oe ai assistant',
+      'administer ai conversation messages',
+      'access content',
+      'edit any oe_news content',
+    ]);
     $this->drupalLogin($messageAdmin);
     $this->drupalGet($url);
     $assert_session->statusCodeEquals(200);

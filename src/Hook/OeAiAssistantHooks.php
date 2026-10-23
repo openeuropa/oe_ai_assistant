@@ -4,11 +4,13 @@ declare(strict_types=1);
 
 namespace Drupal\oe_ai_assistant\Hook;
 
+use Drupal\Core\Database\Connection;
 use Drupal\Core\Database\Query\AlterableInterface;
 use Drupal\Core\Database\Query\SelectInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Hook\Attribute\Hook;
 use Drupal\Core\Session\AccountProxyInterface;
+use Drupal\node\NodeInterface;
 use Drupal\node\NodeTypeInterface;
 
 /**
@@ -19,17 +21,20 @@ final class OeAiAssistantHooks {
   public function __construct(
     private readonly AccountProxyInterface $currentUser,
     private readonly EntityTypeManagerInterface $entityTypeManager,
+    private readonly Connection $database,
   ) {}
 
   /**
    * Implements hook_query_ai_editorial_session_access_alter().
    *
-   * Mirrors AiEditorialSessionAccessControlHandler::checkSessionAccess() at
-   * the SQL level, so entity queries (admin collection, autocomplete, Views)
-   * surface the same sessions the entity-level access() check would allow:
-   * the owner, collaborators via the content_type create permission, and
-   * collaborators via node access (reusing Drupal's own node access grants
-   * system through the standard 'node_access' query tag).
+   * Mirrors AiEditorialSessionAccessControlHandler::checkSessionAccess(): the
+   * owner, collaborators via the content_type create permission, and
+   * collaborators with node update access.
+   *
+   * Node access goes through getUpdatableSessionNodeIds() rather than the
+   * 'node_access' query tag: adding that tag to $query from inside this same
+   * alter is a no-op, since Select::preExecute() already fixed the list of
+   * alter hooks to run before this one started.
    */
   #[Hook('query_ai_editorial_session_access_alter')]
   public function queryAiEditorialSessionAccessAlter(AlterableInterface $query): void {
@@ -62,10 +67,77 @@ final class OeAiAssistantHooks {
       $access->condition('session_content_type.content_type_target_id', $creatable_types, 'IN');
     }
 
-    $query->leftJoin('ai_editorial_session__node', 'session_node', '%alias.entity_id = base_table.id');
-    $query->leftJoin('node_field_data', 'session_node_data', '%alias.nid = session_node.node_target_id');
-    $access->condition('session_node_data.nid', NULL, 'IS NOT NULL');
-    $query->addTag('node_access')->addMetaData('base_table', 'node_field_data');
+    $updatable_nids = $this->getUpdatableSessionNodeIds();
+    if ($updatable_nids !== []) {
+      $query->leftJoin('ai_editorial_session__node', 'session_node', '%alias.entity_id = base_table.id');
+      $access->condition('session_node.node_target_id', $updatable_nids, 'IN');
+    }
+
+    $query->condition($access);
+  }
+
+  /**
+   * Resolves the nodes, among those attached to a session, the user may update.
+   *
+   * Uses the real node access handler instead of the node_access grants
+   * table directly, since that table alone doesn't cover the base
+   * 'edit own/any' permission.
+   *
+   * @return array<int,int>
+   *   The accessible node IDs.
+   */
+  private function getUpdatableSessionNodeIds(): array {
+    $nids = $this->database->select('ai_editorial_session__node', 'session_node')
+      ->fields('session_node', ['node_target_id'])
+      ->distinct()
+      ->execute()
+      ->fetchCol();
+    if ($nids === []) {
+      return [];
+    }
+
+    $accessible = [];
+    foreach ($this->entityTypeManager->getStorage('node')->loadMultiple($nids) as $node) {
+      if ($node instanceof NodeInterface && $node->access('update', $this->currentUser)) {
+        $accessible[] = (int) $node->id();
+      }
+    }
+    return $accessible;
+  }
+
+  /**
+   * Implements hook_query_ai_conversation_message_access_alter().
+   *
+   * Scopes the admin listing and its token totals to sessions the viewer can
+   * access, mirroring AiConversationMessageAccessControlHandler.
+   */
+  #[Hook('query_ai_conversation_message_access_alter')]
+  public function queryAiConversationMessageAccessAlter(AlterableInterface $query): void {
+    if (!$query instanceof SelectInterface) {
+      return;
+    }
+
+    if ($this->currentUser->hasPermission('administer ai conversation messages')) {
+      return;
+    }
+
+    if (!$this->currentUser->hasPermission('access ai conversation message overview')) {
+      $query->alwaysFalse();
+      return;
+    }
+
+    $accessible_session_ids = $this->entityTypeManager->getStorage('ai_editorial_session')
+      ->getQuery()
+      ->accessCheck(TRUE)
+      ->execute();
+
+    $access = $query->orConditionGroup()
+      ->condition('base_table.host_entity_type', 'ai_editorial_session', '!=');
+    if ($accessible_session_ids !== []) {
+      $access->condition($query->andConditionGroup()
+        ->condition('base_table.host_entity_type', 'ai_editorial_session')
+        ->condition('base_table.host_entity_id', array_values($accessible_session_ids), 'IN'));
+    }
 
     $query->condition($access);
   }

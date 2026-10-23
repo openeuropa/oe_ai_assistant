@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\oe_ai_assistant\Kernel;
 
+use Drupal\language\Entity\ConfigurableLanguage;
 use PHPUnit\Framework\Attributes\Group;
 
 /**
@@ -11,6 +12,11 @@ use PHPUnit\Framework\Attributes\Group;
  */
 #[Group('oe_ai_assistant')]
 class AiEditorialSessionAccessTest extends AiEditorialSessionKernelTestBase {
+
+  /**
+   * {@inheritdoc}
+   */
+  protected static $modules = ['language', 'content_translation'];
 
   /**
    * Tests create access follows target content type permissions.
@@ -174,15 +180,16 @@ class AiEditorialSessionAccessTest extends AiEditorialSessionKernelTestBase {
    */
   public function testEntityQueryFiltering(): void {
     $owner = $this->createUser();
-    $viewer = $this->createUser(['use oe ai assistant', 'access content']);
+    $editor = $this->createUser(['use oe ai assistant', 'access content', 'edit any oe_news content']);
+    $viewOnly = $this->createUser(['use oe ai assistant', 'access content']);
 
     $visible_node = $this->createPublishedNode('oe_news', 'Visible node');
 
-    $own_session = $this->createSession($viewer);
+    $own_session = $this->createSession($editor);
     $shared_session = $this->createSession($owner, $visible_node);
     $private_session = $this->createSession($owner);
 
-    $this->container->get('current_user')->setAccount($viewer);
+    $this->container->get('current_user')->setAccount($editor);
 
     $ids = $this->container->get('entity_type.manager')
       ->getStorage('ai_editorial_session')
@@ -192,10 +199,79 @@ class AiEditorialSessionAccessTest extends AiEditorialSessionKernelTestBase {
       ->execute();
 
     $this->assertArrayHasKey($own_session->id(), $ids);
-    // Collaboration via node access: $viewer does not own this session, but
-    // has 'access content' and the node is published and attached to it.
+    // Collaboration via node access: $editor does not own this session, but
+    // can edit the node attached to it.
     $this->assertArrayHasKey($shared_session->id(), $ids);
     $this->assertArrayNotHasKey($private_session->id(), $ids);
+
+    // Node view access alone does not collaborate; this mirrors the
+    // entity-level check, which requires update.
+    $this->container->get('current_user')->setAccount($viewOnly);
+    $view_only_ids = $this->container->get('entity_type.manager')
+      ->getStorage('ai_editorial_session')
+      ->getQuery()
+      ->accessCheck(TRUE)
+      ->execute();
+    $this->assertArrayNotHasKey($shared_session->id(), $view_only_ids);
+  }
+
+  /**
+   * Tests query filtering against real node access grants.
+   */
+  public function testEntityQueryFilteringRespectsNodeAccessGrants(): void {
+    $this->enableModules(['node_access_test']);
+
+    $creator = $this->createUser(['use oe ai assistant']);
+    // node_access_test grants the node owner update automatically, with no
+    // 'edit own/any' permission at all.
+    $nodeOwner = $this->createUser(['use oe ai assistant', 'access content']);
+    // node_access_test grants 'node test view' holders view only.
+    $viewGrantee = $this->createUser(['use oe ai assistant', 'access content', 'node test view']);
+
+    $node = $this->createPublishedNode('oe_news', 'Grant-governed node');
+    $node->setOwnerId((int) $nodeOwner->id())->save();
+
+    $session = $this->createSession($creator, $node);
+
+    $this->container->get('current_user')->setAccount($nodeOwner);
+    $owner_ids = $this->container->get('entity_type.manager')
+      ->getStorage('ai_editorial_session')
+      ->getQuery()
+      ->accessCheck(TRUE)
+      ->execute();
+    $this->assertArrayHasKey($session->id(), $owner_ids);
+
+    $this->container->get('current_user')->setAccount($viewGrantee);
+    $view_grantee_ids = $this->container->get('entity_type.manager')
+      ->getStorage('ai_editorial_session')
+      ->getQuery()
+      ->accessCheck(TRUE)
+      ->execute();
+    $this->assertArrayNotHasKey($session->id(), $view_grantee_ids);
+  }
+
+  /**
+   * Tests a node with translations does not inflate the session count.
+   */
+  public function testEntityQueryFilteringDoesNotDuplicateTranslatedNodes(): void {
+    ConfigurableLanguage::createFromLangcode('fr')->save();
+    \Drupal::service('content_translation.manager')->setEnabled('node', 'oe_news', TRUE);
+
+    $editor = $this->createUser(['use oe ai assistant', 'access content', 'edit any oe_news content']);
+    $node = $this->createPublishedNode('oe_news', 'Translatable node');
+    $node->addTranslation('fr', ['title' => 'Nœud traduit'])->save();
+
+    $this->createSession($editor, $node);
+
+    $this->container->get('current_user')->setAccount($editor);
+    $count = (int) $this->container->get('entity_type.manager')
+      ->getStorage('ai_editorial_session')
+      ->getQuery()
+      ->accessCheck(TRUE)
+      ->count()
+      ->execute();
+
+    $this->assertSame(1, $count);
   }
 
 }
