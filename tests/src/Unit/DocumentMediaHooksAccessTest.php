@@ -141,7 +141,7 @@ class DocumentMediaHooksAccessTest extends UnitTestCase {
   }
 
   /**
-   * Tests ai_context_document creation is always forbidden through this gate.
+   * Tests ai_context_document creation is forbidden through this gate.
    *
    * The drafting plugin's own upload flow never calls createAccess(), so
    * this cannot block it; it only closes generic create routes (/media/add
@@ -149,10 +149,23 @@ class DocumentMediaHooksAccessTest extends UnitTestCase {
    */
   public function testCreateAccessContextDocumentBundleIsForbidden(): void {
     $account = $this->createMock(AccountInterface::class);
+    $account->method('hasPermission')->willReturn(FALSE);
 
     $result = $this->hooks->mediaCreateAccess($account, [], 'ai_context_document');
 
     $this->assertTrue($result->isForbidden());
+  }
+
+  /**
+   * Tests session administrators keep a way through the gate.
+   */
+  public function testCreateAccessContextDocumentBundleIsNeutralForSessionAdmins(): void {
+    $account = $this->createMock(AccountInterface::class);
+    $account->method('hasPermission')->with('administer ai editorial sessions')->willReturn(TRUE);
+
+    $result = $this->hooks->mediaCreateAccess($account, [], 'ai_context_document');
+
+    $this->assertTrue($result->isNeutral());
   }
 
 }

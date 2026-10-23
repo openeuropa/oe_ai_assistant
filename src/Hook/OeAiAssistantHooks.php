@@ -18,6 +18,11 @@ use Drupal\node\NodeTypeInterface;
  */
 final class OeAiAssistantHooks {
 
+  /**
+   * The updatable session node IDs.
+   */
+  private ?array $updatableSessionNodeIds = NULL;
+
   public function __construct(
     private readonly AccountProxyInterface $currentUser,
     private readonly EntityTypeManagerInterface $entityTypeManager,
@@ -87,13 +92,17 @@ final class OeAiAssistantHooks {
    *   The accessible node IDs.
    */
   private function getUpdatableSessionNodeIds(): array {
+    if ($this->updatableSessionNodeIds !== NULL) {
+      return $this->updatableSessionNodeIds;
+    }
+
     $nids = $this->database->select('ai_editorial_session__node', 'session_node')
       ->fields('session_node', ['node_target_id'])
       ->distinct()
       ->execute()
       ->fetchCol();
     if ($nids === []) {
-      return [];
+      return $this->updatableSessionNodeIds = [];
     }
 
     $accessible = [];
@@ -102,7 +111,7 @@ final class OeAiAssistantHooks {
         $accessible[] = (int) $node->id();
       }
     }
-    return $accessible;
+    return $this->updatableSessionNodeIds = $accessible;
   }
 
   /**
