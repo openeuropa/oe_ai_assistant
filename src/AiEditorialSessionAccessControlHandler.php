@@ -94,13 +94,17 @@ class AiEditorialSessionAccessControlHandler extends EntityAccessControlHandler 
       $node_access = $node->access('update', $account, TRUE);
       $access = $access
         ->orIf(AccessResult::allowedIf($node_access->isAllowed()))
-        ->addCacheableDependency($node_access);
+        ->addCacheableDependency($node_access)
+        ->addCacheableDependency($node);
     }
 
-    // Standing fallback alongside node access, not just pre-save.
-    $content_type = $entity->getContentType();
-    if ($content_type !== '') {
-      $access = $access->orIf(AccessResult::allowedIfHasPermission($account, sprintf('create %s content', $content_type)));
+    // Standing fallback alongside node access, but only before publication:
+    // once a node is published, collaboration requires real node access.
+    if ($node === NULL || !$node->isPublished()) {
+      $content_type = $entity->getContentType();
+      if ($content_type !== '') {
+        $access = $access->orIf(AccessResult::allowedIfHasPermission($account, sprintf('create %s content', $content_type)));
+      }
     }
 
     // If content type cannot be determined for some reason - owner check.

@@ -70,8 +70,17 @@ final class OeAiAssistantHooks {
       }
     }
     if ($creatable_types !== []) {
+      // Mirrors checkSessionAccess(): the create-permission fallback only
+      // applies while the session's node is unpublished (or absent).
       $query->leftJoin('ai_editorial_session__content_type', 'session_content_type', '%alias.entity_id = base_table.id');
-      $access->condition('session_content_type.content_type_target_id', $creatable_types, 'IN');
+      $query->leftJoin('ai_editorial_session__node', 'content_type_node', '%alias.entity_id = base_table.id');
+      $query->leftJoin('node_field_data', 'content_type_node_data', '%alias.nid = content_type_node.node_target_id AND %alias.default_langcode = 1');
+      $access->condition($query->andConditionGroup()
+        ->condition('session_content_type.content_type_target_id', $creatable_types, 'IN')
+        ->condition($query->orConditionGroup()
+          ->isNull('content_type_node_data.status')
+          ->condition('content_type_node_data.status', 0)
+        ));
     }
 
     $updatable_nids = $this->getUpdatableSessionNodeIds();

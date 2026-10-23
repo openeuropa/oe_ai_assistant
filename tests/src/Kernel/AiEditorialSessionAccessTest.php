@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Drupal\Tests\oe_ai_assistant\Kernel;
 
 use Drupal\language\Entity\ConfigurableLanguage;
+use Drupal\node\Entity\Node;
 use PHPUnit\Framework\Attributes\Group;
 
 /**
@@ -81,14 +82,13 @@ class AiEditorialSessionAccessTest extends AiEditorialSessionKernelTestBase {
     $this->assertTrue($shared_session->access('view', $owner));
     $this->assertTrue($shared_session->access('update', $owner));
 
-    // The create-permission tier is a standing OR alongside node access,
-    // not only a pre-save fallback: an account with no node access at all
-    // (lacks 'access content') still collaborates via
-    // 'create oe_news content' once a node is attached, as long as it also
-    // holds 'use oe ai assistant'.
+    // The create-permission tier only falls back while the node is
+    // unpublished (see testContentTypeFallbackOnlyAppliesBeforePublication);
+    // $node here is published, so an account with no real node access is
+    // denied even though it holds 'create oe_news content'.
     $fallbackCollaborator = $this->createUser(['use oe ai assistant', 'create oe_news content']);
-    $this->assertTrue($shared_session->access('view', $fallbackCollaborator));
-    $this->assertTrue($shared_session->access('update', $fallbackCollaborator));
+    $this->assertFalse($shared_session->access('view', $fallbackCollaborator));
+    $this->assertFalse($shared_session->access('update', $fallbackCollaborator));
 
     $this->assertTrue($shared_session->access('view', $admin));
     $this->assertTrue($shared_session->access('update', $admin));
@@ -129,6 +129,41 @@ class AiEditorialSessionAccessTest extends AiEditorialSessionKernelTestBase {
     // The site-wide admin permission still bypasses the gate, unaffected.
     $this->assertTrue($shared_session->access('view', $admin));
     $this->assertTrue($shared_session->access('update', $admin));
+  }
+
+  /**
+   * Tests the content_type fallback only applies before publication.
+   */
+  public function testContentTypeFallbackOnlyAppliesBeforePublication(): void {
+    $creator = $this->createUser(['use oe ai assistant', 'create oe_news content']);
+    $fallbackCollaborator = $this->createUser(['use oe ai assistant', 'create oe_news content']);
+
+    $unpublished_node = Node::create(['type' => 'oe_news', 'title' => 'Draft node', 'status' => 0]);
+    $unpublished_node->save();
+    $unpublished_session = $this->createSession($creator, $unpublished_node);
+
+    $published_node = $this->createPublishedNode('oe_news', 'Published node');
+    $published_session = $this->createSession($creator, $published_node);
+
+    // No node access (lacks 'access content'), but the content_type
+    // permission still collaborates while the node is unpublished.
+    $this->assertTrue($unpublished_session->access('view', $fallbackCollaborator));
+    $this->assertTrue($unpublished_session->access('update', $fallbackCollaborator));
+
+    // Once the node is published, the content_type permission alone no
+    // longer suffices; real node access (or ownership) is required.
+    $this->assertFalse($published_session->access('view', $fallbackCollaborator));
+    $this->assertFalse($published_session->access('update', $fallbackCollaborator));
+
+    // Entity queries mirror the same restriction.
+    $this->container->get('current_user')->setAccount($fallbackCollaborator);
+    $ids = $this->container->get('entity_type.manager')
+      ->getStorage('ai_editorial_session')
+      ->getQuery()
+      ->accessCheck(TRUE)
+      ->execute();
+    $this->assertArrayHasKey($unpublished_session->id(), $ids);
+    $this->assertArrayNotHasKey($published_session->id(), $ids);
   }
 
   /**
