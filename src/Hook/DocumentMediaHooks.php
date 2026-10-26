@@ -6,6 +6,9 @@ namespace Drupal\oe_ai_assistant\Hook;
 
 use Drupal\Core\Access\AccessResult;
 use Drupal\Core\Access\AccessResultInterface;
+use Drupal\Core\Database\Connection;
+use Drupal\Core\Database\Query\AlterableInterface;
+use Drupal\Core\Database\Query\SelectInterface;
 use Drupal\Core\DependencyInjection\AutowireTrait;
 use Drupal\Core\Hook\Attribute\Hook;
 use Drupal\Core\Session\AccountInterface;
@@ -32,6 +35,8 @@ final class DocumentMediaHooks {
 
   public function __construct(
     private readonly DocumentExtractionProcessorInterface $processor,
+    private readonly Connection $database,
+    private readonly SessionAccessQueryAlterInterface $sessionAccessQueryAlter,
   ) {}
 
   /**
@@ -91,6 +96,28 @@ final class DocumentMediaHooks {
   }
 
   /**
+   * Implements hook_query_TAG_alter() for the 'media_access' tag.
+   *
+   * Covers listings; mediaAccess() above only covers single-entity access.
+   */
+  #[Hook('query_media_access_alter')]
+  public function queryMediaAccessAlter(AlterableInterface $query): void {
+    if (!$query instanceof SelectInterface) {
+      return;
+    }
+
+    $accessible_sessions = $this->database->select('ai_editorial_session', 'base_table')
+      ->fields('base_table', ['id']);
+    $this->sessionAccessQueryAlter->queryAiEditorialSessionAccessAlter($accessible_sessions);
+
+    $query->leftJoin('media__oe_ai_session', 'document_session', '%alias.entity_id = base_table.mid AND %alias.revision_id = base_table.vid');
+
+    $query->condition($query->orConditionGroup()
+      ->condition('base_table.bundle', 'ai_context_document', '!=')
+      ->condition('document_session.oe_ai_session_target_id', $accessible_sessions, 'IN'));
+  }
+
+  /**
    * Implements hook_ENTITY_TYPE_create_access() for media.
    *
    * Closes the generic /media/add route, which has no session to validate
@@ -103,10 +130,11 @@ final class DocumentMediaHooks {
     }
 
     if ($account->hasPermission('administer ai editorial sessions')) {
-      return AccessResult::neutral();
+      return AccessResult::neutral()->cachePerPermissions();
     }
 
-    return AccessResult::forbidden('Context documents can only be created through the AI editorial assistant plugin.');
+    return AccessResult::forbidden('Context documents can only be created through the AI editorial assistant plugin.')
+      ->cachePerPermissions();
   }
 
   /**

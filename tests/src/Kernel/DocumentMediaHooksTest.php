@@ -70,4 +70,39 @@ class DocumentMediaHooksTest extends AiEditorialSessionKernelTestBase {
     $this->assertTrue($media->get(DocumentExtractionProcessorInterface::SUMMARY_FIELD)->isEmpty());
   }
 
+  /**
+   * Tests the media listing excludes a context document of another session.
+   *
+   * Media has no query alter of its own for the base 'view media'/'access
+   * media overview' permission, so without this restriction an
+   * access-checked query returns every context document regardless of
+   * session.
+   */
+  public function testQueryFilteringExcludesInaccessibleContextDocuments(): void {
+    $owner = $this->createUser(['use oe ai assistant']);
+    $outsider = $this->createUser();
+
+    $session = $this->createSession($owner);
+
+    $file = $this->createFile('doc.txt', 'contents');
+    $media = Media::create([
+      'bundle' => 'ai_context_document',
+      'name' => 'doc.txt',
+      'status' => 1,
+      'oe_ai_context_document' => ['target_id' => $file->id()],
+      'oe_ai_session' => ['target_id' => $session->id()],
+    ]);
+    $media->save();
+
+    $storage = $this->container->get('entity_type.manager')->getStorage('media');
+
+    $this->container->get('current_user')->setAccount($owner);
+    $owner_ids = $storage->getQuery()->accessCheck(TRUE)->execute();
+    $this->assertArrayHasKey($media->id(), $owner_ids);
+
+    $this->container->get('current_user')->setAccount($outsider);
+    $outsider_ids = $storage->getQuery()->accessCheck(TRUE)->execute();
+    $this->assertArrayNotHasKey($media->id(), $outsider_ids);
+  }
+
 }

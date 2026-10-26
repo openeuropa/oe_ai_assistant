@@ -5,11 +5,14 @@ declare(strict_types=1);
 namespace Drupal\Tests\oe_ai_assistant\Unit;
 
 use Drupal\Core\Access\AccessResult;
+use Drupal\Core\Database\Connection;
+use Drupal\Core\DependencyInjection\ContainerBuilder;
 use Drupal\Core\Field\EntityReferenceFieldItemListInterface;
 use Drupal\Core\Session\AccountInterface;
 use Drupal\media\MediaInterface;
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
 use Drupal\oe_ai_assistant\Hook\DocumentMediaHooks;
+use Drupal\oe_ai_assistant\Hook\SessionAccessQueryAlterInterface;
 use Drupal\oe_ai_assistant\Service\Drafting\DocumentExtractionProcessorInterface;
 use Drupal\Tests\UnitTestCase;
 use PHPUnit\Framework\Attributes\Group;
@@ -30,7 +33,21 @@ class DocumentMediaHooksAccessTest extends UnitTestCase {
    */
   protected function setUp(): void {
     parent::setUp();
-    $this->hooks = new DocumentMediaHooks($this->createMock(DocumentExtractionProcessorInterface::class));
+    $this->hooks = new DocumentMediaHooks(
+      $this->createMock(DocumentExtractionProcessorInterface::class),
+      $this->createMock(Connection::class),
+      $this->createMock(SessionAccessQueryAlterInterface::class),
+    );
+
+    // mediaCreateAccess() calls cachePerPermissions(), whose assert()
+    // validates the context token through this service.
+    $cacheContextsManager = $this->getMockBuilder('Drupal\Core\Cache\Context\CacheContextsManager')
+      ->disableOriginalConstructor()
+      ->getMock();
+    $cacheContextsManager->method('assertValidTokens')->willReturn(TRUE);
+    $container = new ContainerBuilder();
+    $container->set('cache_contexts_manager', $cacheContextsManager);
+    \Drupal::setContainer($container);
   }
 
   /**
@@ -154,6 +171,7 @@ class DocumentMediaHooksAccessTest extends UnitTestCase {
     $result = $this->hooks->mediaCreateAccess($account, [], 'ai_context_document');
 
     $this->assertTrue($result->isForbidden());
+    $this->assertContains('user.permissions', $result->getCacheContexts());
   }
 
   /**
@@ -166,6 +184,7 @@ class DocumentMediaHooksAccessTest extends UnitTestCase {
     $result = $this->hooks->mediaCreateAccess($account, [], 'ai_context_document');
 
     $this->assertTrue($result->isNeutral());
+    $this->assertContains('user.permissions', $result->getCacheContexts());
   }
 
 }
