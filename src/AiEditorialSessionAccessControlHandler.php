@@ -98,9 +98,9 @@ class AiEditorialSessionAccessControlHandler extends EntityAccessControlHandler 
         ->addCacheableDependency($node);
     }
 
-    // Standing fallback alongside node access, but only before publication:
-    // once a node is published, collaboration requires real node access.
-    if ($node === NULL || !$node->isPublished()) {
+    // Standing fallback alongside node access, but only while the session has
+    // no node: once a node exists, collaboration requires real node access.
+    if ($node === NULL) {
       $content_type = $entity->getContentType();
       if ($content_type !== '') {
         $access = $access->orIf(AccessResult::allowedIfHasPermission($account, sprintf('create %s content', $content_type)));

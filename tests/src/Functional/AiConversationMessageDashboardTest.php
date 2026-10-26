@@ -7,6 +7,7 @@ namespace Drupal\Tests\oe_ai_assistant\Functional;
 use Drupal\Tests\BrowserTestBase;
 use Drupal\oe_ai_assistant\Entity\AiConversationMessage;
 use Drupal\oe_ai_assistant\Entity\AiConversationMessageInterface;
+use Drupal\oe_ai_assistant\Entity\AiEditorialSession;
 
 /**
  * Tests the AI conversation message overview dashboard and add form.
@@ -80,20 +81,29 @@ class AiConversationMessageDashboardTest extends BrowserTestBase {
    * Tests the token totals row and that filters constrain it.
    */
   public function testTotalsRowAndFilter(): void {
-    $this->createMessage(42, 'user', ['input' => 10, 'output' => 5, 'total' => 15]);
-    $this->createMessage(42, 'assistant', ['input' => 20, 'output' => 8, 'total' => 28]);
-    $this->createMessage(99, 'user', ['input' => 100, 'output' => 100, 'total' => 200]);
+    // Overview-only, not 'administer ai conversation messages': the totals
+    // still have to go through session scoping, not around it. Owning the
+    // sessions is what makes them accessible to this viewer.
+    $viewer = $this->drupalCreateUser(['access ai conversation message overview', 'use oe ai assistant']);
 
-    // Bypass session scoping; these host IDs aren't real sessions.
-    $this->drupalLogin($this->drupalCreateUser(['administer ai conversation messages']));
+    $session_a = AiEditorialSession::create(['type' => 'content_creation', 'uid' => $viewer->id()]);
+    $session_a->save();
+    $session_b = AiEditorialSession::create(['type' => 'content_creation', 'uid' => $viewer->id()]);
+    $session_b->save();
 
-    // Unfiltered: total tokens sum across all three is 243.
+    $this->createMessage((int) $session_a->id(), 'user', ['input' => 10, 'output' => 5, 'total' => 15]);
+    $this->createMessage((int) $session_a->id(), 'assistant', ['input' => 20, 'output' => 8, 'total' => 28]);
+    $this->createMessage((int) $session_b->id(), 'user', ['input' => 100, 'output' => 100, 'total' => 200]);
+
+    $this->drupalLogin($viewer);
+
+    // Unfiltered: total tokens sum across both sessions is 243.
     $this->drupalGet(self::COLLECTION);
     $this->assertSession()->pageTextContains('Totals (filtered)');
     $this->assertSession()->pageTextContains('243');
 
-    // Filtered to host 42: total tokens sum is 43, and 243 is gone.
-    $this->drupalGet(self::COLLECTION, ['query' => ['host_entity_id' => 42]]);
+    // Filtered to $session_a: total tokens sum is 43, and 243 is gone.
+    $this->drupalGet(self::COLLECTION, ['query' => ['host_entity_id' => $session_a->id()]]);
     $this->assertSession()->pageTextContains('43');
     $this->assertSession()->pageTextNotContains('243');
   }

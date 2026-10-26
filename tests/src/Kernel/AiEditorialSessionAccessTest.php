@@ -6,7 +6,11 @@ namespace Drupal\Tests\oe_ai_assistant\Kernel;
 
 use Drupal\language\Entity\ConfigurableLanguage;
 use Drupal\node\Entity\Node;
+use Drupal\oe_ai_assistant\Exception\ActionException;
+use Drupal\oe_ai_assistant\Plugin\AiAssistantPluginManager;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
+use Symfony\Component\HttpFoundation\Request;
 
 /**
  * Kernel tests for AI editorial session access control.
@@ -82,10 +86,10 @@ class AiEditorialSessionAccessTest extends AiEditorialSessionKernelTestBase {
     $this->assertTrue($shared_session->access('view', $owner));
     $this->assertTrue($shared_session->access('update', $owner));
 
-    // The create-permission tier only falls back while the node is
-    // unpublished (see testContentTypeFallbackOnlyAppliesBeforePublication);
-    // $node here is published, so an account with no real node access is
-    // denied even though it holds 'create oe_news content'.
+    // The create-permission tier only falls back while the session has no
+    // node (see testContentTypeFallbackOnlyAppliesBeforePublication); $node
+    // here exists, so an account with no real node access is denied even
+    // though it holds 'create oe_news content'.
     $fallbackCollaborator = $this->createUser(['use oe ai assistant', 'create oe_news content']);
     $this->assertFalse($shared_session->access('view', $fallbackCollaborator));
     $this->assertFalse($shared_session->access('update', $fallbackCollaborator));
@@ -132,11 +136,17 @@ class AiEditorialSessionAccessTest extends AiEditorialSessionKernelTestBase {
   }
 
   /**
-   * Tests the content_type fallback only applies before publication.
+   * Tests the content_type fallback only applies while there is no node.
    */
   public function testContentTypeFallbackOnlyAppliesBeforePublication(): void {
     $creator = $this->createUser(['use oe ai assistant', 'create oe_news content']);
     $fallbackCollaborator = $this->createUser(['use oe ai assistant', 'create oe_news content']);
+
+    $nodeless_session = $this->createSession($creator);
+
+    $deleted_node = $this->createPublishedNode('oe_news', 'Deleted node');
+    $deleted_node_session = $this->createSession($creator, $deleted_node);
+    $deleted_node->delete();
 
     $unpublished_node = Node::create(['type' => 'oe_news', 'title' => 'Draft node', 'status' => 0]);
     $unpublished_node->save();
@@ -145,13 +155,25 @@ class AiEditorialSessionAccessTest extends AiEditorialSessionKernelTestBase {
     $published_node = $this->createPublishedNode('oe_news', 'Published node');
     $published_session = $this->createSession($creator, $published_node);
 
-    // No node access (lacks 'access content'), but the content_type
-    // permission still collaborates while the node is unpublished.
-    $this->assertTrue($unpublished_session->access('view', $fallbackCollaborator));
-    $this->assertTrue($unpublished_session->access('update', $fallbackCollaborator));
+    // No node at all, or a reference to a node that no longer resolves: both
+    // read as getNode() === NULL, so the content_type permission still
+    // collaborates.
+    $this->assertNull($nodeless_session->getNode());
+    $this->assertTrue($nodeless_session->access('view', $fallbackCollaborator));
+    $this->assertTrue($nodeless_session->access('update', $fallbackCollaborator));
 
-    // Once the node is published, the content_type permission alone no
-    // longer suffices; real node access (or ownership) is required.
+    $this->assertNull($deleted_node_session->getNode());
+    $this->assertTrue($deleted_node_session->access('view', $fallbackCollaborator));
+    $this->assertTrue($deleted_node_session->access('update', $fallbackCollaborator));
+
+    // Once a node exists, even unpublished, the content_type permission
+    // alone no longer suffices; real node access (or ownership) is
+    // required. Without it, $fallbackCollaborator is denied even though
+    // the node is still a draft — this is what keeps a bundle-wide create
+    // permission from reading or resetting another editor's session.
+    $this->assertFalse($unpublished_session->access('view', $fallbackCollaborator));
+    $this->assertFalse($unpublished_session->access('update', $fallbackCollaborator));
+
     $this->assertFalse($published_session->access('view', $fallbackCollaborator));
     $this->assertFalse($published_session->access('update', $fallbackCollaborator));
 
@@ -162,7 +184,9 @@ class AiEditorialSessionAccessTest extends AiEditorialSessionKernelTestBase {
       ->getQuery()
       ->accessCheck(TRUE)
       ->execute();
-    $this->assertArrayHasKey($unpublished_session->id(), $ids);
+    $this->assertArrayHasKey($nodeless_session->id(), $ids);
+    $this->assertArrayHasKey($deleted_node_session->id(), $ids);
+    $this->assertArrayNotHasKey($unpublished_session->id(), $ids);
     $this->assertArrayNotHasKey($published_session->id(), $ids);
   }
 
@@ -286,13 +310,73 @@ class AiEditorialSessionAccessTest extends AiEditorialSessionKernelTestBase {
   }
 
   /**
+   * Tests query filtering respects 'edit own' against the real node owner.
+   */
+  public function testEntityQueryFilteringRespectsEditOwnPermission(): void {
+    $creator = $this->createUser(['use oe ai assistant']);
+    $nodeOwner = $this->createUser(['use oe ai assistant', 'access content', 'edit own oe_news content']);
+    $otherEditor = $this->createUser(['use oe ai assistant', 'access content', 'edit own oe_news content']);
+
+    $node = $this->createPublishedNode('oe_news', 'Owned node');
+    $node->setOwnerId((int) $nodeOwner->id())->save();
+
+    $session = $this->createSession($creator, $node);
+
+    $this->container->get('current_user')->setAccount($nodeOwner);
+    $owner_ids = $this->container->get('entity_type.manager')
+      ->getStorage('ai_editorial_session')
+      ->getQuery()
+      ->accessCheck(TRUE)
+      ->execute();
+    $this->assertArrayHasKey($session->id(), $owner_ids);
+
+    // Holding the same 'edit own' permission is not enough without owning
+    // the node it is attached to.
+    $this->container->get('current_user')->setAccount($otherEditor);
+    $other_ids = $this->container->get('entity_type.manager')
+      ->getStorage('ai_editorial_session')
+      ->getQuery()
+      ->accessCheck(TRUE)
+      ->execute();
+    $this->assertArrayNotHasKey($session->id(), $other_ids);
+  }
+
+  /**
+   * Tests 'bypass node access' grants session access on its own.
+   */
+  public function testEntityQueryFilteringRespectsBypassNodeAccess(): void {
+    $creator = $this->createUser(['use oe ai assistant']);
+    $node = $this->createPublishedNode('oe_news', 'Bypassed node');
+    $session = $this->createSession($creator, $node);
+
+    $bypasser = $this->createUser(['use oe ai assistant', 'bypass node access']);
+    $this->container->get('current_user')->setAccount($bypasser);
+
+    $ids = $this->container->get('entity_type.manager')
+      ->getStorage('ai_editorial_session')
+      ->getQuery()
+      ->accessCheck(TRUE)
+      ->execute();
+    $this->assertArrayHasKey($session->id(), $ids);
+  }
+
+  /**
    * Tests a node with translations does not inflate the session count.
    */
   public function testEntityQueryFilteringDoesNotDuplicateTranslatedNodes(): void {
     ConfigurableLanguage::createFromLangcode('fr')->save();
     \Drupal::service('content_translation.manager')->setEnabled('node', 'oe_news', TRUE);
 
-    $editor = $this->createUser(['use oe ai assistant', 'access content', 'edit any oe_news content']);
+    // 'create oe_news content' is what actually reaches the remaining
+    // content_type_node_data join (the content_type fallback tier); without
+    // it $creatable_types is empty and that join is never added to the
+    // query, so the de-duplication this test exists for goes untested.
+    $editor = $this->createUser([
+      'use oe ai assistant',
+      'access content',
+      'create oe_news content',
+      'edit any oe_news content',
+    ]);
     $node = $this->createPublishedNode('oe_news', 'Translatable node');
     $node->addTranslation('fr', ['title' => 'Nœud traduit'])->save();
 
@@ -307,6 +391,79 @@ class AiEditorialSessionAccessTest extends AiEditorialSessionKernelTestBase {
       ->execute();
 
     $this->assertSame(1, $count);
+  }
+
+  /**
+   * Tests chat, reset and document actions deny a view-only collaborator.
+   *
+   * $viewOnly can see the attached node ('access content') but not edit it,
+   * so it already fails access('view') and access('update') per
+   * testEntityAccess(). checkSessionAccess() checks node 'update' access for
+   * both the session 'view' and 'update' operations (there is no tier that
+   * grants one without the other), so 'list-documents', which only asks for
+   * session 'view', is denied here for the same reason as the rest.
+   */
+  #[DataProvider('viewOnlySessionActionProvider')]
+  public function testViewOnlyUserDeniedOnSessionActions(string $action): void {
+    $owner = $this->createUser(['use oe ai assistant', 'create oe_news content']);
+    $node = $this->createPublishedNode('oe_news', 'View-only gated node');
+    $session = $this->createSession($owner, $node);
+
+    $viewOnly = $this->createUser(['use oe ai assistant', 'access content']);
+    $this->container->get('current_user')->setAccount($viewOnly);
+
+    $plugin = $this->container->get(AiAssistantPluginManager::class)
+      ->createInstance('drafting');
+
+    try {
+      $plugin->executeAction($action, $this->createSessionActionRequest($action, (string) $session->id()));
+      $this->fail(sprintf('The %s action did not deny access.', $action));
+    }
+    catch (ActionException $e) {
+      $this->assertSame('forbidden', $e->errorCode);
+      $this->assertSame(403, $e->statusCode);
+    }
+  }
+
+  /**
+   * The actions a view-only collaborator must be refused.
+   *
+   * @return array<string, array{0: string}>
+   *   The action name, keyed and wrapped for the data provider.
+   */
+  public static function viewOnlySessionActionProvider(): array {
+    return [
+      'chat' => ['chat'],
+      'reset' => ['reset'],
+      'add-document' => ['add-document'],
+      'list-documents' => ['list-documents'],
+      'remove-document' => ['remove-document'],
+      'extract-document' => ['extract-document'],
+    ];
+  }
+
+  /**
+   * Builds the request each action needs to reach its own access check.
+   *
+   * Both resolveDocumentRepository() and extractUserMessage() run before
+   * loadSession(), so the body must clear those first or the action throws
+   * a 400 before the 403 this test is after.
+   */
+  private function createSessionActionRequest(string $action, string $sessionId): Request {
+    if ($action === 'add-document') {
+      $query = http_build_query(['sessionId' => $sessionId, 'category' => 'context', 'filename' => 'denied.txt']);
+      return Request::create('?' . $query, 'POST', [], [], [], ['CONTENT_TYPE' => 'application/octet-stream'], 'contents');
+    }
+
+    $body = ['sessionId' => $sessionId, 'category' => 'context'];
+    if ($action === 'chat') {
+      $body['message'] = 'Hello';
+    }
+    if ($action === 'remove-document' || $action === 'extract-document') {
+      $body['documentId'] = '1';
+    }
+
+    return Request::create('', 'POST', [], [], [], ['CONTENT_TYPE' => 'application/json'], json_encode($body, JSON_THROW_ON_ERROR));
   }
 
 }

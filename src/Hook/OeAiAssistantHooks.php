@@ -8,15 +8,15 @@ use Drupal\Core\Database\Connection;
 use Drupal\Core\Database\Query\AlterableInterface;
 use Drupal\Core\Database\Query\SelectInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
+use Drupal\Core\Extension\ModuleHandlerInterface;
 use Drupal\Core\Hook\Attribute\Hook;
 use Drupal\Core\Session\AccountProxyInterface;
-use Drupal\node\NodeInterface;
 use Drupal\node\NodeTypeInterface;
 
 /**
  * Hook implementations for the OpenEuropa AI Editorial Assistant module.
  */
-final class OeAiAssistantHooks {
+final class OeAiAssistantHooks implements SessionAccessQueryAlterInterface {
 
   /**
    * The updatable session node IDs, keyed by user ID.
@@ -29,6 +29,7 @@ final class OeAiAssistantHooks {
     private readonly AccountProxyInterface $currentUser,
     private readonly EntityTypeManagerInterface $entityTypeManager,
     private readonly Connection $database,
+    private readonly ModuleHandlerInterface $moduleHandler,
   ) {}
 
   /**
@@ -71,16 +72,17 @@ final class OeAiAssistantHooks {
     }
     if ($creatable_types !== []) {
       // Mirrors checkSessionAccess(): the create-permission fallback only
-      // applies while the session's node is unpublished (or absent).
+      // applies while the session has no node. Testing the joined
+      // node_field_data row rather than the raw node_target_id column is
+      // what makes a deleted node read the same as no node at all: the join
+      // finds no row for a nid that no longer exists, so it comes back NULL
+      // exactly as getNode() does.
       $query->leftJoin('ai_editorial_session__content_type', 'session_content_type', '%alias.entity_id = base_table.id');
       $query->leftJoin('ai_editorial_session__node', 'content_type_node', '%alias.entity_id = base_table.id');
       $query->leftJoin('node_field_data', 'content_type_node_data', '%alias.nid = content_type_node.node_target_id AND %alias.default_langcode = 1');
       $access->condition($query->andConditionGroup()
         ->condition('session_content_type.content_type_target_id', $creatable_types, 'IN')
-        ->condition($query->orConditionGroup()
-          ->isNull('content_type_node_data.status')
-          ->condition('content_type_node_data.status', 0)
-        ));
+        ->isNull('content_type_node_data.nid'));
     }
 
     $updatable_nids = $this->getUpdatableSessionNodeIds();
@@ -95,9 +97,15 @@ final class OeAiAssistantHooks {
   /**
    * Resolves the nodes, among those attached to a session, the user may update.
    *
-   * Uses the real node access handler instead of the node_access grants
-   * table directly, since that table alone doesn't cover the base
-   * 'edit own/any' permission.
+   * Built in SQL instead of loading every node and calling ->access() on
+   * each, since this runs once per user per request. The grants subquery is
+   * only added when a module implements hook_node_grants(), otherwise the
+   * node_access table has no update grants and an unconditional join would
+   * match every node; its preExecute() is called directly since a subquery
+   * used only as a condition value never reaches hook_query_node_access_alter()
+   * otherwise. Can't reflect a hook_node_access() implementation that forbids
+   * 'update' outside permissions/grants (e.g. content_moderation) -- accepted
+   * gap, the caller treats this as a fallback tier alongside real checks.
    *
    * @return array<int,int>
    *   The accessible node IDs.
@@ -117,12 +125,55 @@ final class OeAiAssistantHooks {
       return $this->updatableSessionNodeIdsByUser[$uid] = [];
     }
 
-    $accessible = [];
-    foreach ($this->entityTypeManager->getStorage('node')->loadMultiple($nids) as $node) {
-      if ($node instanceof NodeInterface && $node->access('update', $this->currentUser)) {
-        $accessible[] = (int) $node->id();
+    if ($this->currentUser->hasPermission('bypass node access')) {
+      return $this->updatableSessionNodeIdsByUser[$uid] = array_map('intval', $nids);
+    }
+
+    if (!$this->currentUser->hasPermission('access content')) {
+      return $this->updatableSessionNodeIdsByUser[$uid] = [];
+    }
+
+    $query = $this->database->select('node_field_data', 'n')
+      ->fields('n', ['nid'])
+      ->condition('n.nid', $nids, 'IN')
+      ->distinct();
+
+    $updatable = $query->orConditionGroup();
+    $has_tier = FALSE;
+    foreach ($this->entityTypeManager->getStorage('node_type')->loadMultiple() as $node_type) {
+      if (!$node_type instanceof NodeTypeInterface) {
+        continue;
+      }
+      $type_id = $node_type->id();
+      if ($this->currentUser->hasPermission('edit any ' . $type_id . ' content')) {
+        $updatable->condition('n.type', $type_id);
+        $has_tier = TRUE;
+      }
+      elseif ($this->currentUser->hasPermission('edit own ' . $type_id . ' content')) {
+        $updatable->condition($query->andConditionGroup()
+          ->condition('n.type', $type_id)
+          ->condition('n.uid', $uid));
+        $has_tier = TRUE;
       }
     }
+
+    if ($this->moduleHandler->hasImplementations('node_grants')) {
+      $grants = $this->database->select('node_field_data', 'g')
+        ->fields('g', ['nid'])
+        ->condition('g.nid', $nids, 'IN');
+      $grants->addTag('node_access');
+      $grants->addMetaData('op', 'update');
+      $grants->addMetaData('account', $this->currentUser);
+      $grants->preExecute();
+      $updatable->condition('n.nid', $grants, 'IN');
+      $has_tier = TRUE;
+    }
+
+    if (!$has_tier) {
+      return $this->updatableSessionNodeIdsByUser[$uid] = [];
+    }
+
+    $accessible = array_map('intval', $query->condition($updatable)->execute()->fetchCol());
     return $this->updatableSessionNodeIdsByUser[$uid] = $accessible;
   }
 
@@ -147,17 +198,25 @@ final class OeAiAssistantHooks {
       return;
     }
 
-    $accessible_session_ids = $this->entityTypeManager->getStorage('ai_editorial_session')
-      ->getQuery()
-      ->accessCheck(TRUE)
-      ->execute();
-
     $access = $query->orConditionGroup()
       ->condition('base_table.host_entity_type', 'ai_editorial_session', '!=');
-    if ($accessible_session_ids !== []) {
+
+    if ($this->currentUser->hasPermission('administer ai editorial sessions')) {
+      // Every session is accessible; no host_entity_id restriction needed.
+      $access->condition('base_table.host_entity_type', 'ai_editorial_session');
+    }
+    else {
+      // A subquery used as a condition value is never itself executed, so
+      // it never runs through hook_query_ai_editorial_session_access_alter.
+      // Calling the alter directly, rather than tagging the subquery, is
+      // what actually scopes it instead of matching every session.
+      $accessible_sessions = $this->database->select('ai_editorial_session', 'base_table')
+        ->fields('base_table', ['id']);
+      $this->queryAiEditorialSessionAccessAlter($accessible_sessions);
+
       $access->condition($query->andConditionGroup()
         ->condition('base_table.host_entity_type', 'ai_editorial_session')
-        ->condition('base_table.host_entity_id', array_values($accessible_session_ids), 'IN'));
+        ->condition('base_table.host_entity_id', $accessible_sessions, 'IN'));
     }
 
     $query->condition($access);

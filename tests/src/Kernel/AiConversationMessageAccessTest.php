@@ -142,6 +142,15 @@ class AiConversationMessageAccessTest extends AiEditorialSessionKernelTestBase {
     $this->container->get('current_user')->setAccount($noPermission);
     $ids = $storage->getQuery()->accessCheck(TRUE)->execute();
     $this->assertSame([], $ids);
+
+    // 'administer ai editorial sessions' skips the accessible-sessions
+    // subquery entirely: the session's message is visible with no node
+    // access, no ownership, and no content_type permission of its own.
+    $sessionAdmin = $this->createUser(['access ai conversation message overview', 'administer ai editorial sessions']);
+    $this->container->get('current_user')->setAccount($sessionAdmin);
+    $ids = $storage->getQuery()->accessCheck(TRUE)->execute();
+    $this->assertArrayHasKey($sessionMessage->id(), $ids);
+    $this->assertArrayHasKey($nonSessionMessage->id(), $ids);
   }
 
 }
