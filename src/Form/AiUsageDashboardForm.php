@@ -91,14 +91,14 @@ class AiUsageDashboardForm extends FormBase {
     ];
     $form['content_type'] = [
       '#type' => 'select',
-      '#title' => $this->t('Content types'),
+      '#title' => $this->t('Content type'),
       '#options' => $contentTypes,
       '#empty_option' => $this->t('All content types'),
       '#default_value' => $selectedContentType,
     ];
     $form['participant'] = [
       '#type' => 'select',
-      '#title' => $this->t('Users'),
+      '#title' => $this->t('Username'),
       '#options' => $users,
       '#empty_option' => $this->t('All users'),
       '#default_value' => $selectedUser,
@@ -230,6 +230,9 @@ class AiUsageDashboardForm extends FormBase {
    *   The render array
    */
   protected function dashboardFilters(array $form): array {
+    // Each control keeps its label but renders it inside the field box (an
+    // inset label) to match the design; the date range is a single field that
+    // holds the start and end inputs separated by a dash.
     return [
       '#type' => 'component',
       '#component' => 'oe_ai_assistant:dashboard-filter-bar',
@@ -238,14 +241,16 @@ class AiUsageDashboardForm extends FormBase {
         'date_range' => [
           '#type' => 'fieldset',
           '#title' => $this->t('Date range'),
-          '#attributes' => ['class' => ['ai-dashboard-filter-bar__date-range']],
+          '#attributes' => ['class' => ['ai-dashboard-filter-bar__field', 'ai-dashboard-filter-bar__date-range']],
           'start' => $form['start'] + ['#title_display' => 'invisible'],
           'end' => $form['end'] + ['#title_display' => 'invisible'],
         ],
-        'session_type' => $form['session_type'],
-        'content_type' => $form['content_type'],
-        'participant' => $form['participant'],
+        'session_type' => $form['session_type'] + ['#wrapper_attributes' => ['class' => ['ai-dashboard-filter-bar__field']]],
+        'content_type' => $form['content_type'] + ['#wrapper_attributes' => ['class' => ['ai-dashboard-filter-bar__field']]],
+        'participant' => $form['participant'] + ['#wrapper_attributes' => ['class' => ['ai-dashboard-filter-bar__field']]],
       ],
+      // The filter bar's own actions: "Apply filters" submits the selected
+      // filters, "Clear filters" resets them all.
       'actions' => $form['actions'],
     ];
   }

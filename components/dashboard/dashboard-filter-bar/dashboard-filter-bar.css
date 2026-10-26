@@ -1,10 +1,37 @@
+/* Filter bar: a single row of four balanced fields with inset labels. */
 .ai-dashboard-filter-bar { display: grid; gap: 1rem; }
-.ai-dashboard-filter-bar__controls { display: grid; grid-template-columns: minmax(16rem, 2fr) repeat(3, minmax(11rem, 1fr)); gap: 1rem; }
+
+/* The controls slot wraps the fields in a Drupal form-wrapper container; let
+ * that wrapper be the grid so the four fields sit on one line. */
+.ai-dashboard-filter-bar__controls { display: block; }
+.ai-dashboard-filter-bar__controls > .form-wrapper { display: grid; grid-template-columns: 1.3fr 1fr 1fr 1fr; gap: 1rem; align-items: stretch; }
 .ai-dashboard-filter-bar__controls .form-item, .ai-dashboard-filter-bar__controls fieldset { min-width: 0; margin: 0; }
-.ai-dashboard-filter-bar__controls select, .ai-dashboard-filter-bar__controls input { width: 100%; min-height: 3.25rem; padding: .75rem; border: 1px solid #d9ddd9; border-radius: .75rem; background: #fff; }
-.ai-dashboard-filter-bar__date-range { display: grid; grid-template-columns: 1fr 1fr; gap: .5rem; padding: .5rem .75rem .75rem; border: 1px solid #d9ddd9; border-radius: .75rem; background: #fff; }
-.ai-dashboard-filter-bar__date-range legend { padding: 0; color: #5c665f; font-size: .75rem; }
-.ai-dashboard-filter-bar__date-range input { min-height: 2.25rem; padding: .25rem; border: 0; border-radius: 0; }
+
+/* Each field is a bordered box; its label sits inside, at the top. */
+.ai-dashboard-filter-bar__field { position: relative; display: flex; flex-direction: column; justify-content: center; gap: .15rem; padding: .5rem .85rem; border: 1px solid #d9ddd9; border-radius: .75rem; background: #fff; }
+.ai-dashboard-filter-bar__field > label, .ai-dashboard-filter-bar__field > legend { padding: 0; margin: 0; color: #5c665f; font-size: .72rem; font-weight: 400; line-height: 1.4; }
+.ai-dashboard-filter-bar__field > legend .fieldset-legend { font-size: .72rem; font-weight: 400; text-transform: none; }
+
+/* Controls fill the box and shed their own frame (the box owns the border).
+ * The select arrow and gradient come from the admin theme; strip them with
+ * !important so every field reads as plain inset text. */
+.ai-dashboard-filter-bar__field select, .ai-dashboard-filter-bar__field input { width: 100%; min-height: 1.75rem; margin: 0; padding: 0; border: 0; border-radius: 0; box-shadow: none; font-size: .95rem; line-height: 1.5; color: #1a1a1a; }
+.ai-dashboard-filter-bar__field select { -webkit-appearance: none; -moz-appearance: none; appearance: none; background: none !important; background-image: none !important; text-shadow: none; cursor: pointer; }
+.ai-dashboard-filter-bar__field input { background: transparent; }
+.ai-dashboard-filter-bar__field select:focus, .ai-dashboard-filter-bar__field input:focus { outline: none; box-shadow: none; }
+
+/* Date range: two inputs reading as one range on a single baseline, with a
+ * dash between them; the inputs have no frame of their own. */
+.ai-dashboard-filter-bar__date-range { justify-content: center; }
+.ai-dashboard-filter-bar__date-range .fieldset-wrapper { display: flex; align-items: center; gap: .5rem; }
+.ai-dashboard-filter-bar__date-range .form-item { display: flex; align-items: center; margin: 0; min-width: 0; flex: 1 1 0; }
+.ai-dashboard-filter-bar__date-range .form-item + .form-item::before { content: "-"; margin-right: .5rem; color: #5c665f; }
+
+/* Actions row: "Apply filters" submits the selected filters, "Clear filters"
+ * resets them; both render as flat pills matching the header actions. */
 .ai-dashboard-filter-bar__actions { display: flex; gap: .75rem; }
-@media (max-width: 64rem) { .ai-dashboard-filter-bar__controls { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-@media (max-width: 48rem) { .ai-dashboard-filter-bar__controls { grid-template-columns: 1fr; } }
+.ai-dashboard-filter-bar__actions .button { margin: 0; padding: .55rem 1.25rem; border: 1px solid #d9ddd9; border-radius: 999px; background: #fcfcfa none; box-shadow: none; text-shadow: none; color: #1a1a1a; font-weight: 400; }
+.ai-dashboard-filter-bar__actions .button:hover, .ai-dashboard-filter-bar__actions .button:focus { border-color: #087d78; background: #fff none; box-shadow: none; color: #087d78; }
+
+@media (max-width: 64rem) { .ai-dashboard-filter-bar__controls > .form-wrapper { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 48rem) { .ai-dashboard-filter-bar__controls > .form-wrapper { grid-template-columns: 1fr; } }
