@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Drupal\oe_ai_assistant_test\Plugin\AiProvider;
 
 use Drupal\Core\Config\ImmutableConfig;
+use Drupal\Core\State\StateInterface;
 use Drupal\Core\StringTranslation\TranslatableMarkup;
 use Drupal\ai\Attribute\AiProvider;
 use Drupal\ai\Base\AiProviderClientBase;
@@ -13,6 +14,7 @@ use Drupal\ai\OperationType\Chat\ChatInput;
 use Drupal\ai\OperationType\Chat\ChatInterface;
 use Drupal\ai\OperationType\Chat\ChatMessage;
 use Drupal\ai\OperationType\Chat\ChatOutput;
+use Symfony\Component\DependencyInjection\ContainerInterface;
 
 /**
  * Programmable mock AI provider with FIFO response queue.
@@ -29,6 +31,13 @@ use Drupal\ai\OperationType\Chat\ChatOutput;
 class MockAiProvider extends AiProviderClientBase implements ChatInterface {
 
   /**
+   * The state service.
+   *
+   * @var \Drupal\Core\State\StateInterface
+   */
+  protected StateInterface $state;
+
+  /**
    * The Drupal state key for the response queue.
    */
   protected const QUEUE_KEY = 'mock_ai_provider.queue';
@@ -37,6 +46,21 @@ class MockAiProvider extends AiProviderClientBase implements ChatInterface {
    * The Drupal state key for the call log.
    */
   protected const LOG_KEY = 'mock_ai_provider.call_log';
+
+  /**
+   * {@inheritdoc}
+   */
+  public static function create(
+    ContainerInterface $container,
+    array $configuration,
+    $plugin_id,
+    $plugin_definition,
+  ): static {
+    /** @var static $instance */
+    $instance = parent::create($container, $configuration, $plugin_id, $plugin_definition);
+    $instance->state = $container->get('state');
+    return $instance;
+  }
 
   /**
    * Enqueues a mock response to the FIFO queue.
@@ -123,7 +147,7 @@ class MockAiProvider extends AiProviderClientBase implements ChatInterface {
 
     // Log the input for test assertions. Store a serializable summary
     // since ChatInput may not survive serialization across processes.
-    $state = \Drupal::state();
+    $state = $this->state;
     $log = $state->get(static::LOG_KEY, []);
     $log[] = [
       'system_prompt' => $input->getSystemPrompt() ?? '',

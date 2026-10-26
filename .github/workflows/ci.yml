@@ -40,6 +40,8 @@ jobs:
 
       - name: Check coding standards
         run: ddev phpcs
+      - name: Check static analysis
+        run: ddev phpstan
 
   drupal-test:
     name: Drupal Test

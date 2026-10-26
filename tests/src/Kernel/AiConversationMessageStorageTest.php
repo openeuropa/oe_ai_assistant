@@ -56,13 +56,6 @@ class AiConversationMessageStorageTest extends KernelTestBase {
   ];
 
   /**
-   * The conversation message storage handler.
-   *
-   * @var \Drupal\oe_ai_assistant\Entity\Storage\AiConversationMessageStorageInterface
-   */
-  protected $storage;
-
-  /**
    * {@inheritdoc}
    */
   protected function setUp(): void {
@@ -70,15 +63,15 @@ class AiConversationMessageStorageTest extends KernelTestBase {
 
     $this->installEntitySchema('user');
     $this->installEntitySchema('ai_conversation_message');
-
-    $this->storage = $this->container->get('entity_type.manager')
-      ->getStorage('ai_conversation_message');
   }
 
   /**
    * Tests the transcript query and host-wide deletion.
    */
   public function testLoadTranscriptAndDeleteForHost(): void {
+    $storage = $this->container->get('entity_type.manager')
+      ->getStorage('ai_conversation_message');
+
     $host = User::create(['name' => 'session-host']);
     $host->save();
     $other = User::create(['name' => 'other-host']);
@@ -99,7 +92,7 @@ class AiConversationMessageStorageTest extends KernelTestBase {
     $this->createMessage($other, AiConversationMessageInterface::ROLE_USER, 'Other host turn.');
 
     // The transcript is the host's non-error top-level rows, as entities.
-    $transcript = $this->storage->loadTranscript($host);
+    $transcript = $storage->loadTranscript($host);
     $this->assertContainsOnlyInstancesOf(AiConversationMessageInterface::class, $transcript);
     $this->assertSame(
       ['user', 'assistant', 'tool'],
@@ -109,15 +102,18 @@ class AiConversationMessageStorageTest extends KernelTestBase {
 
     // deleteForHost removes every row of the host, error rows included, and
     // leaves other hosts untouched.
-    $this->storage->deleteForHost($host);
-    $this->assertNull($this->storage->loadUnchanged((int) $error->id()));
-    $this->assertCount(1, $this->storage->loadTranscript($other));
+    $storage->deleteForHost($host);
+    $this->assertNull($storage->loadUnchanged((int) $error->id()));
+    $this->assertCount(1, $storage->loadTranscript($other));
   }
 
   /**
    * Tests that loadTree nests children under parents and keeps error rows.
    */
   public function testLoadTree(): void {
+    $storage = $this->container->get('entity_type.manager')
+      ->getStorage('ai_conversation_message');
+
     $host = User::create(['name' => 'session-host']);
     $host->save();
 
@@ -128,7 +124,7 @@ class AiConversationMessageStorageTest extends KernelTestBase {
     // A top-level error row is part of the debug tree.
     $this->createMessage($host, AiConversationMessageInterface::ROLE_ERROR, 'Boom.');
 
-    $tree = $this->storage->loadTree($host);
+    $tree = $storage->loadTree($host);
 
     // Two roots: the user turn and the error row.
     $this->assertCount(2, $tree);
