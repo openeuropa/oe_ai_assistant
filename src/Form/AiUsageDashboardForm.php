@@ -216,12 +216,6 @@ class AiUsageDashboardForm extends FormBase {
           '#value' => $this->t('Compare with previous month'),
           '#attributes' => ['class' => ['button'], 'type' => 'button'],
         ],
-        'export' => [
-          '#type' => 'html_tag',
-          '#tag' => 'button',
-          '#value' => $this->t('Export CSV'),
-          '#attributes' => ['class' => ['button'], 'type' => 'button'],
-        ],
       ],
     ];
   }
