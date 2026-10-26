@@ -46,20 +46,22 @@ final class UsageDashboardBuilder {
    *   The inclusive range start date in Y-m-d format.
    * @param string $endDate
    *   The inclusive range end date in Y-m-d format.
+   * @param \Drupal\oe_ai_assistant\Service\DashboardFilters $dataFilters
+   *   The content type and participant filters applied to the data queries.
    *
    * @return array
    *   The dashboard page component render array.
    */
-  public function build(array $header, array $filters, array $periodControls, string $startDate, string $endDate): array {
+  public function build(array $header, array $filters, array $periodControls, string $startDate, string $endDate, DashboardFilters $dataFilters): array {
     return [
       '#type' => 'component',
       '#component' => 'oe_ai_assistant:dashboard-page',
       'header' => $header,
       'filters' => $filters,
       'period_controls' => $periodControls,
-      'metrics' => $this->dashboardMetrics($startDate, $endDate),
-      'breakdowns' => $this->dashboardBreakdowns($startDate, $endDate),
-      'supplementary' => $this->dashboardSupplementary($startDate, $endDate),
+      'metrics' => $this->dashboardMetrics($startDate, $endDate, $dataFilters),
+      'breakdowns' => $this->dashboardBreakdowns($startDate, $endDate, $dataFilters),
+      'supplementary' => $this->dashboardSupplementary($startDate, $endDate, $dataFilters),
     ];
   }
 
@@ -91,23 +93,25 @@ final class UsageDashboardBuilder {
    *   The inclusive range start date in Y-m-d format.
    * @param string $endDate
    *   The inclusive range end date in Y-m-d format.
+   * @param \Drupal\oe_ai_assistant\Service\DashboardFilters $dataFilters
+   *   The content type and participant filters applied to the data queries.
    *
    * @return array
    *   The render array.
    */
-  private function dashboardMetrics(string $startDate, string $endDate): array {
-    $tokensPerSession = $this->tokenUsage->getAverageTokensPerSession($startDate, $endDate);
-    $tokensPerVersion = $this->tokenUsage->getAverageTokensPerMajorVersion($startDate, $endDate);
+  private function dashboardMetrics(string $startDate, string $endDate, DashboardFilters $dataFilters): array {
+    $tokensPerSession = $this->tokenUsage->getAverageTokensPerSession($startDate, $endDate, $dataFilters);
+    $tokensPerVersion = $this->tokenUsage->getAverageTokensPerMajorVersion($startDate, $endDate, $dataFilters);
     return [
       'tokens_consumed' => $this->dashboardComponent('metric-card', [
         'label' => (string) $this->t('Tokens consumed'),
-        'value' => number_format($this->tokenUsage->getTokensUsed($startDate, $endDate)),
+        'value' => number_format($this->tokenUsage->getTokensUsed($startDate, $endDate, $dataFilters)),
         'trend' => (string) $this->t('+18.4% vs previous month'),
         'trend_state' => 'positive',
       ]),
       'supported_nodes' => $this->dashboardComponent('metric-card', [
         'label' => (string) $this->t('AI supported nodes'),
-        'value' => number_format($this->tokenUsage->countSupportedNodes($startDate, $endDate)),
+        'value' => number_format($this->tokenUsage->countSupportedNodes($startDate, $endDate, $dataFilters)),
         'trend' => (string) $this->t('30-day cumulative trend, +22 nodes'),
         'trend_state' => 'positive',
       ]),
@@ -136,12 +140,14 @@ final class UsageDashboardBuilder {
    *   The inclusive range start date in Y-m-d format.
    * @param string $endDate
    *   The inclusive range end date in Y-m-d format.
+   * @param \Drupal\oe_ai_assistant\Service\DashboardFilters $dataFilters
+   *   The content type and participant filters applied to the data queries.
    *
    * @return array<int, array{label: string, percent: int, value: string}>
    *   The ranked-bar items, highest token usage first.
    */
-  private function contentTypeTokenItems(string $startDate, string $endDate): array {
-    $tokensByType = $this->tokenUsage->getTokensUsedByContentType($startDate, $endDate);
+  private function contentTypeTokenItems(string $startDate, string $endDate, DashboardFilters $dataFilters): array {
+    $tokensByType = $this->tokenUsage->getTokensUsedByContentType($startDate, $endDate, $dataFilters);
     if ($tokensByType === []) {
       return [];
     }
@@ -172,12 +178,14 @@ final class UsageDashboardBuilder {
    *   The inclusive range start date in Y-m-d format.
    * @param string $endDate
    *   The inclusive range end date in Y-m-d format.
+   * @param \Drupal\oe_ai_assistant\Service\DashboardFilters $dataFilters
+   *   The content type and participant filters applied to the data queries.
    *
    * @return array<int, array{label: string, percent: int, value: string}>
    *   The ranked-bar items, highest token usage first.
    */
-  private function userTokenItems(string $startDate, string $endDate): array {
-    $tokensByUser = $this->tokenUsage->getTokensUsedByUser($startDate, $endDate);
+  private function userTokenItems(string $startDate, string $endDate, DashboardFilters $dataFilters): array {
+    $tokensByUser = $this->tokenUsage->getTokensUsedByUser($startDate, $endDate, $dataFilters);
     if ($tokensByUser === []) {
       return [];
     }
@@ -206,11 +214,13 @@ final class UsageDashboardBuilder {
    *   The inclusive range start date in Y-m-d format.
    * @param string $endDate
    *   The inclusive range end date in Y-m-d format.
+   * @param \Drupal\oe_ai_assistant\Service\DashboardFilters $dataFilters
+   *   The content type and participant filters applied to the data queries.
    *
    * @return array
    *   The render array.
    */
-  private function dashboardBreakdowns(string $startDate, string $endDate): array {
+  private function dashboardBreakdowns(string $startDate, string $endDate, DashboardFilters $dataFilters): array {
     return [
       'consumption' => $this->dashboardComponent('card', [
         'title' => (string) $this->t('Consumption breakdown'),
@@ -218,7 +228,7 @@ final class UsageDashboardBuilder {
       ], [
         'content' => [
           'ranked' => $this->dashboardComponent('ranked-bars', [
-            'items' => $this->contentTypeTokenItems($startDate, $endDate),
+            'items' => $this->contentTypeTokenItems($startDate, $endDate, $dataFilters),
           ]),
         ],
       ]),
@@ -227,7 +237,7 @@ final class UsageDashboardBuilder {
         'subtitle' => (string) $this->t('Top tokens used and total sessions by user for the selected date range.'),
       ], [
         'content' => $this->dashboardComponent('ranked-bars', [
-          'items' => $this->userTokenItems($startDate, $endDate),
+          'items' => $this->userTokenItems($startDate, $endDate, $dataFilters),
         ]),
       ]),
     ];
@@ -243,17 +253,19 @@ final class UsageDashboardBuilder {
    *   The inclusive range start date in Y-m-d format.
    * @param string $endDate
    *   The inclusive range end date in Y-m-d format.
+   * @param \Drupal\oe_ai_assistant\Service\DashboardFilters $dataFilters
+   *   The content type and participant filters applied to the data queries.
    *
    * @return array<int, array{title: string, detail: string, value: string}>
    *   The list-card items, highest token usage first.
    */
-  private function templateTokenItems(string $startDate, string $endDate): array {
-    $tokensByTemplate = $this->tokenUsage->getTokensUsedByTemplate($startDate, $endDate);
+  private function templateTokenItems(string $startDate, string $endDate, DashboardFilters $dataFilters): array {
+    $tokensByTemplate = $this->tokenUsage->getTokensUsedByTemplate($startDate, $endDate, $dataFilters);
     if ($tokensByTemplate === []) {
       return [];
     }
 
-    $sessionsByTemplate = $this->tokenUsage->countSessionsByTemplate($startDate, $endDate);
+    $sessionsByTemplate = $this->tokenUsage->countSessionsByTemplate($startDate, $endDate, $dataFilters);
     $templateStorage = $this->entityTypeManager->getStorage('ai_drafting_template');
     $templates = $templateStorage->loadMultiple(array_keys($tokensByTemplate));
     $items = [];
@@ -277,16 +289,18 @@ final class UsageDashboardBuilder {
    *   The inclusive range start date in Y-m-d format.
    * @param string $endDate
    *   The inclusive range end date in Y-m-d format.
+   * @param \Drupal\oe_ai_assistant\Service\DashboardFilters $dataFilters
+   *   The content type and participant filters applied to the data queries.
    *
    * @return array
    *   The render array.
    */
-  private function dashboardSupplementary(string $startDate, string $endDate): array {
+  private function dashboardSupplementary(string $startDate, string $endDate, DashboardFilters $dataFilters): array {
     return [
       'templates' => $this->dashboardComponent('list-card', [
         'title' => (string) $this->t('Top templates'),
         'subtitle' => (string) $this->t('Optional view retained as a secondary widget.'),
-        'items' => $this->templateTokenItems($startDate, $endDate),
+        'items' => $this->templateTokenItems($startDate, $endDate, $dataFilters),
       ]),
     ];
   }

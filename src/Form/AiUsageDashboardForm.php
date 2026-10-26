@@ -6,6 +6,7 @@ use Drupal\Core\Entity\EntityTypeBundleInfoInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Form\FormBase;
 use Drupal\Core\Form\FormStateInterface;
+use Drupal\oe_ai_assistant\Service\DashboardFilters;
 use Drupal\oe_ai_assistant\Service\UsageDashboardBuilder;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\RequestStack;
@@ -135,6 +136,10 @@ class AiUsageDashboardForm extends FormBase {
       $this->dashboardPeriodControls($preset),
       $startDate,
       $endDate,
+      new DashboardFilters(
+        $selectedContentType !== '' ? $selectedContentType : NULL,
+        $selectedUser !== '' ? $selectedUser : NULL,
+      ),
     );
     unset(
       $form['start'],

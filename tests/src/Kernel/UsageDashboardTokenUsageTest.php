@@ -7,6 +7,7 @@ namespace Drupal\Tests\oe_ai_assistant\Kernel;
 use Drupal\node\Entity\Node;
 use Drupal\node\NodeInterface;
 use Drupal\oe_ai_assistant\Entity\AiContentProvenance;
+use Drupal\oe_ai_assistant\Service\DashboardFilters;
 use Drupal\oe_ai_assistant\Service\UsageDashboardTokenUsage;
 use Drupal\user\UserInterface;
 use PHPUnit\Framework\Attributes\Group;
@@ -130,6 +131,67 @@ class UsageDashboardTokenUsageTest extends AiEditorialSessionKernelTestBase {
   public function testTemplateMethodsEmpty(): void {
     $this->assertSame([], $this->service()->getTokensUsedByTemplate('2026-06-01', '2026-06-30'));
     $this->assertSame([], $this->service()->countSessionsByTemplate('2026-06-01', '2026-06-30'));
+  }
+
+  /**
+   * Tests that the participant filter restricts totals to one author.
+   */
+  public function testParticipantFilter(): void {
+    $userA = $this->createUser();
+    $userB = $this->createUser();
+
+    $nodeA = $this->createNode('oe_news', $userA);
+    $nodeB = $this->createNode('oe_contact', $userB);
+
+    $inRange = (new \DateTimeImmutable('2026-06-15', new \DateTimeZone('UTC')))->getTimestamp();
+    $this->createRecordAs($nodeA, $userA, 500, $inRange);
+    $this->createRecordAs($nodeB, $userB, 900, $inRange);
+
+    $filters = new DashboardFilters(NULL, (string) $userA->id());
+
+    // Only user A's 500 tokens are counted.
+    $this->assertSame(500, $this->service()->getTokensUsed('2026-06-01', '2026-06-30', $filters));
+    $this->assertSame(
+      [(int) $userA->id() => 500],
+      $this->service()->getTokensUsedByUser('2026-06-01', '2026-06-30', $filters),
+    );
+  }
+
+  /**
+   * Tests that the content type filter restricts totals to one node bundle.
+   */
+  public function testContentTypeFilter(): void {
+    $user = $this->createUser();
+
+    $news = $this->createNode('oe_news', $user);
+    $contact = $this->createNode('oe_contact', $user);
+
+    $inRange = (new \DateTimeImmutable('2026-06-15', new \DateTimeZone('UTC')))->getTimestamp();
+    $this->createRecord($news, 1000, $inRange);
+    $this->createRecord($contact, 2000, $inRange);
+
+    $filters = new DashboardFilters('oe_news', NULL);
+
+    // Only the news node's 1000 tokens are counted.
+    $this->assertSame(1000, $this->service()->getTokensUsed('2026-06-01', '2026-06-30', $filters));
+    $this->assertSame(
+      ['oe_news' => 1000],
+      $this->service()->getTokensUsedByContentType('2026-06-01', '2026-06-30', $filters),
+    );
+  }
+
+  /**
+   * Tests that a content type with no nodes yields an empty total.
+   */
+  public function testContentTypeFilterNoNodes(): void {
+    $user = $this->createUser();
+    $news = $this->createNode('oe_news', $user);
+    $inRange = (new \DateTimeImmutable('2026-06-15', new \DateTimeZone('UTC')))->getTimestamp();
+    $this->createRecord($news, 1000, $inRange);
+
+    // The contact type has no nodes, so nothing is counted.
+    $filters = new DashboardFilters('oe_contact', NULL);
+    $this->assertSame(0, $this->service()->getTokensUsed('2026-06-01', '2026-06-30', $filters));
   }
 
   /**

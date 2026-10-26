@@ -6,6 +6,7 @@ namespace Drupal\oe_ai_assistant\Service;
 
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
+use Drupal\Core\Entity\Query\QueryAggregateInterface;
 
 /**
  * Provides AI conversation token totals for dashboard periods.
@@ -23,13 +24,9 @@ final class UsageDashboardTokenUsage {
    * Dates must use the Y-m-d format produced by Drupal's date form element.
    * Message timestamps are stored in UTC.
    */
-  public function getTokensUsed(string $startDate, string $endDate): int {
+  public function getTokensUsed(string $startDate, string $endDate, ?DashboardFilters $filters = NULL): int {
     $totalAlias = 'tokens_used';
-    [$rangeStart, $rangeEnd] = $this->rangeTimestamps($startDate, $endDate);
-    $query = $this->entityTypeManager->getStorage('ai_content_provenance')
-      ->getAggregateQuery()
-      ->accessCheck(FALSE);
-    $query->condition('created', [$rangeStart, $rangeEnd], 'BETWEEN');
+    $query = $this->baseQuery($startDate, $endDate, $filters);
     $query->aggregate('tokens_total', 'SUM', NULL, $totalAlias);
     $result = $query->execute();
     return (int) ($result[0][$totalAlias] ?? 0);
@@ -38,15 +35,15 @@ final class UsageDashboardTokenUsage {
   /**
    * Returns the number of distinct sessions with provenance in a date range.
    */
-  public function countSessions(string $startDate, string $endDate): int {
-    return $this->countDistinct('session', $startDate, $endDate);
+  public function countSessions(string $startDate, string $endDate, ?DashboardFilters $filters = NULL): int {
+    return $this->countDistinct('session', $startDate, $endDate, $filters);
   }
 
   /**
    * Returns the number of distinct major versions with provenance in a range.
    */
-  public function countMajorVersions(string $startDate, string $endDate): int {
-    return $this->countDistinct('version_major', $startDate, $endDate);
+  public function countMajorVersions(string $startDate, string $endDate, ?DashboardFilters $filters = NULL): int {
+    return $this->countDistinct('version_major', $startDate, $endDate, $filters);
   }
 
   /**
@@ -55,12 +52,8 @@ final class UsageDashboardTokenUsage {
    * A node is AI-supported when it owns at least one provenance record in the
    * range; each distinct node is counted once.
    */
-  public function countSupportedNodes(string $startDate, string $endDate): int {
-    [$rangeStart, $rangeEnd] = $this->rangeTimestamps($startDate, $endDate);
-    $query = $this->entityTypeManager->getStorage('ai_content_provenance')
-      ->getAggregateQuery()
-      ->accessCheck(FALSE);
-    $query->condition('created', [$rangeStart, $rangeEnd], 'BETWEEN');
+  public function countSupportedNodes(string $startDate, string $endDate, ?DashboardFilters $filters = NULL): int {
+    $query = $this->baseQuery($startDate, $endDate, $filters);
     $query->condition('entity_type', 'node');
     $query->exists('entity_id');
     $query->groupBy('entity_id');
@@ -79,17 +72,15 @@ final class UsageDashboardTokenUsage {
    *   The inclusive range start date in Y-m-d format.
    * @param string $endDate
    *   The inclusive range end date in Y-m-d format.
+   * @param \Drupal\oe_ai_assistant\Service\DashboardFilters|null $filters
+   *   The optional content type and participant filters.
    *
    * @return array<string, int>
    *   Tokens used keyed by content type machine name, highest first.
    */
-  public function getTokensUsedByContentType(string $startDate, string $endDate): array {
+  public function getTokensUsedByContentType(string $startDate, string $endDate, ?DashboardFilters $filters = NULL): array {
     $tokensAlias = 'tokens_used';
-    [$rangeStart, $rangeEnd] = $this->rangeTimestamps($startDate, $endDate);
-    $query = $this->entityTypeManager->getStorage('ai_content_provenance')
-      ->getAggregateQuery()
-      ->accessCheck(FALSE);
-    $query->condition('created', [$rangeStart, $rangeEnd], 'BETWEEN');
+    $query = $this->baseQuery($startDate, $endDate, $filters);
     $query->condition('entity_type', 'node');
     $query->exists('entity_id');
     $query->aggregate('tokens_total', 'SUM', NULL, $tokensAlias);
@@ -127,17 +118,15 @@ final class UsageDashboardTokenUsage {
    *   The inclusive range start date in Y-m-d format.
    * @param string $endDate
    *   The inclusive range end date in Y-m-d format.
+   * @param \Drupal\oe_ai_assistant\Service\DashboardFilters|null $filters
+   *   The optional content type and participant filters.
    *
    * @return array<int, int>
    *   Tokens used keyed by user ID, highest first.
    */
-  public function getTokensUsedByUser(string $startDate, string $endDate): array {
+  public function getTokensUsedByUser(string $startDate, string $endDate, ?DashboardFilters $filters = NULL): array {
     $tokensAlias = 'tokens_used';
-    [$rangeStart, $rangeEnd] = $this->rangeTimestamps($startDate, $endDate);
-    $query = $this->entityTypeManager->getStorage('ai_content_provenance')
-      ->getAggregateQuery()
-      ->accessCheck(FALSE);
-    $query->condition('created', [$rangeStart, $rangeEnd], 'BETWEEN');
+    $query = $this->baseQuery($startDate, $endDate, $filters);
     $query->exists('uid');
     $query->aggregate('tokens_total', 'SUM', NULL, $tokensAlias);
     $query->groupBy('uid');
@@ -164,17 +153,15 @@ final class UsageDashboardTokenUsage {
    *   The inclusive range start date in Y-m-d format.
    * @param string $endDate
    *   The inclusive range end date in Y-m-d format.
+   * @param \Drupal\oe_ai_assistant\Service\DashboardFilters|null $filters
+   *   The optional content type and participant filters.
    *
    * @return array<string, int>
    *   Tokens used keyed by template ID, highest first.
    */
-  public function getTokensUsedByTemplate(string $startDate, string $endDate): array {
+  public function getTokensUsedByTemplate(string $startDate, string $endDate, ?DashboardFilters $filters = NULL): array {
     $tokensAlias = 'tokens_used';
-    [$rangeStart, $rangeEnd] = $this->rangeTimestamps($startDate, $endDate);
-    $query = $this->entityTypeManager->getStorage('ai_content_provenance')
-      ->getAggregateQuery()
-      ->accessCheck(FALSE);
-    $query->condition('created', [$rangeStart, $rangeEnd], 'BETWEEN');
+    $query = $this->baseQuery($startDate, $endDate, $filters);
     $query->exists('template');
     $query->aggregate('tokens_total', 'SUM', NULL, $tokensAlias);
     $query->groupBy('template');
@@ -200,16 +187,14 @@ final class UsageDashboardTokenUsage {
    *   The inclusive range start date in Y-m-d format.
    * @param string $endDate
    *   The inclusive range end date in Y-m-d format.
+   * @param \Drupal\oe_ai_assistant\Service\DashboardFilters|null $filters
+   *   The optional content type and participant filters.
    *
    * @return array<string, int>
    *   The distinct session count keyed by template ID.
    */
-  public function countSessionsByTemplate(string $startDate, string $endDate): array {
-    [$rangeStart, $rangeEnd] = $this->rangeTimestamps($startDate, $endDate);
-    $query = $this->entityTypeManager->getStorage('ai_content_provenance')
-      ->getAggregateQuery()
-      ->accessCheck(FALSE);
-    $query->condition('created', [$rangeStart, $rangeEnd], 'BETWEEN');
+  public function countSessionsByTemplate(string $startDate, string $endDate, ?DashboardFilters $filters = NULL): array {
+    $query = $this->baseQuery($startDate, $endDate, $filters);
     $query->exists('template');
     $query->exists('session');
     $query->groupBy('template');
@@ -231,9 +216,9 @@ final class UsageDashboardTokenUsage {
    * @return float
    *   The mean tokens per session, or 0.0 when there are no sessions.
    */
-  public function getAverageTokensPerSession(string $startDate, string $endDate): float {
-    $sessions = $this->countSessions($startDate, $endDate);
-    return $sessions > 0 ? $this->getTokensUsed($startDate, $endDate) / $sessions : 0.0;
+  public function getAverageTokensPerSession(string $startDate, string $endDate, ?DashboardFilters $filters = NULL): float {
+    $sessions = $this->countSessions($startDate, $endDate, $filters);
+    return $sessions > 0 ? $this->getTokensUsed($startDate, $endDate, $filters) / $sessions : 0.0;
   }
 
   /**
@@ -242,9 +227,9 @@ final class UsageDashboardTokenUsage {
    * @return float
    *   The mean tokens per major version, or 0.0 when there are none.
    */
-  public function getAverageTokensPerMajorVersion(string $startDate, string $endDate): float {
-    $versions = $this->countMajorVersions($startDate, $endDate);
-    return $versions > 0 ? $this->getTokensUsed($startDate, $endDate) / $versions : 0.0;
+  public function getAverageTokensPerMajorVersion(string $startDate, string $endDate, ?DashboardFilters $filters = NULL): float {
+    $versions = $this->countMajorVersions($startDate, $endDate, $filters);
+    return $versions > 0 ? $this->getTokensUsed($startDate, $endDate, $filters) / $versions : 0.0;
   }
 
   /**
@@ -256,19 +241,62 @@ final class UsageDashboardTokenUsage {
    *   The inclusive range start date in Y-m-d format.
    * @param string $endDate
    *   The inclusive range end date in Y-m-d format.
+   * @param \Drupal\oe_ai_assistant\Service\DashboardFilters|null $filters
+   *   The optional content type and participant filters.
    *
    * @return int
    *   The number of distinct non-empty values.
    */
-  private function countDistinct(string $field, string $startDate, string $endDate): int {
+  private function countDistinct(string $field, string $startDate, string $endDate, ?DashboardFilters $filters = NULL): int {
+    $query = $this->baseQuery($startDate, $endDate, $filters);
+    $query->exists($field);
+    $query->groupBy($field);
+    return count($query->execute());
+  }
+
+  /**
+   * Builds a provenance aggregate query scoped to a date range and filters.
+   *
+   * Every dashboard query shares the same base: an aggregate query on the
+   * provenance storage restricted to the created-date range. The optional
+   * filters narrow it further by author user (a direct uid condition) and by
+   * content type (resolved to node IDs, since the record stores the node ID
+   * but not its bundle).
+   *
+   * @param string $startDate
+   *   The inclusive range start date in Y-m-d format.
+   * @param string $endDate
+   *   The inclusive range end date in Y-m-d format.
+   * @param \Drupal\oe_ai_assistant\Service\DashboardFilters|null $filters
+   *   The optional content type and participant filters.
+   *
+   * @return \Drupal\Core\Entity\Query\QueryAggregateInterface
+   *   The configured aggregate query.
+   */
+  private function baseQuery(string $startDate, string $endDate, ?DashboardFilters $filters): QueryAggregateInterface {
     [$rangeStart, $rangeEnd] = $this->rangeTimestamps($startDate, $endDate);
     $query = $this->entityTypeManager->getStorage('ai_content_provenance')
       ->getAggregateQuery()
       ->accessCheck(FALSE);
     $query->condition('created', [$rangeStart, $rangeEnd], 'BETWEEN');
-    $query->exists($field);
-    $query->groupBy($field);
-    return count($query->execute());
+
+    if ($filters !== NULL && $filters->participant !== NULL) {
+      $query->condition('uid', $filters->participant);
+    }
+    if ($filters !== NULL && $filters->contentType !== NULL) {
+      // The record has no bundle column, so restrict to the node IDs of the
+      // selected type. An empty set is forced to node ID 0, which never
+      // matches, so the query returns no rows.
+      $nodeIds = $this->entityTypeManager->getStorage('node')
+        ->getQuery()
+        ->accessCheck(FALSE)
+        ->condition('type', $filters->contentType)
+        ->execute();
+      $query->condition('entity_type', 'node');
+      $query->condition('entity_id', $nodeIds ?: [0], 'IN');
+    }
+
+    return $query;
   }
 
   /**
@@ -286,63 +314,6 @@ final class UsageDashboardTokenUsage {
       (new \DateTimeImmutable($startDate, $timezone))->setTime(0, 0)->getTimestamp(),
       (new \DateTimeImmutable($endDate, $timezone))->setTime(23, 59, 59)->getTimestamp(),
     ];
-  }
-
-  /**
-   * Returns the cost per token for every month in an inclusive date range.
-   *
-   * Each result is keyed by YYYY-MM and contains the configured monthly cost,
-   * tokens used in the portion of that month covered by the range, and the
-   * calculated cost per token. The rate is NULL when the cost is not
-   * configured or the period contains no tokens.
-   *
-   * @return array<string, array{cost: float|null, tokens: int, cost_per_month: float|null}>
-   *   The monthly cost and token totals.
-   */
-  public function getCostPerTokenByMonth(string $startDate, string $endDate): array {
-    $timezone = new \DateTimeZone('UTC');
-    $start = new \DateTimeImmutable($startDate, $timezone);
-    $end = new \DateTimeImmutable($endDate, $timezone);
-    $budgets = $this->configFactory->get('oe_ai_assistant.usage_budget')->get('budgets') ?? [];
-    $budgets = is_array($budgets) ? $budgets : [];
-    $monthlyCosts = [];
-
-    for ($month = $start->modify('first day of this month')->setTime(0, 0); $month <= $end; $month = $month->modify('first day of next month')) {
-      $monthStart = max($start, $month);
-      $monthEnd = min($end, $month->modify('last day of this month')->setTime(23, 59, 59));
-      $year = $month->format('Y');
-      $monthNumber = $month->format('m');
-      $cost = $budgets[$year][$monthNumber]['cost'] ?? NULL;
-      $cost = is_numeric($cost) ? (float) $cost : NULL;
-      $tokens = $this->getTokensUsed(
-        $monthStart->format('Y-m-d'),
-        $monthEnd->format('Y-m-d'),
-      );
-
-      $monthlyCosts[$month->format('Y-m')] = [
-        'cost' => $cost,
-        'tokens' => $tokens,
-        'cost_per_month' => $cost !== NULL && $tokens > 0 ? $cost * $tokens : NULL,
-      ];
-    }
-
-    return $monthlyCosts;
-  }
-
-  /**
-   * Returns the configured total cost for an inclusive date range.
-   *
-   * @return float
-   *   The sum of the configured monthly costs. Months without a configured
-   *   cost contribute zero.
-   */
-  public function getTotalCost(string $startDate, string $endDate): float {
-    $totalCost = 0.0;
-    foreach ($this->getCostPerTokenByMonth($startDate, $endDate) as $monthlyCost) {
-      $totalCost += $monthlyCost['cost_per_month'] ?? 0.0;
-    }
-
-    return $totalCost;
   }
 
 }
