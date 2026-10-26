@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Drupal\Tests\oe_ai_assistant\Kernel;
 
 use Drupal\KernelTests\KernelTestBase;
+use Drupal\Tests\user\Traits\UserCreationTrait;
 use PHPUnit\Framework\Attributes\Group;
 
 /**
@@ -16,6 +17,8 @@ use PHPUnit\Framework\Attributes\Group;
  */
 #[Group('oe_ai_assistant')]
 class DraftableNodeTypeSelectionTest extends KernelTestBase {
+
+  use UserCreationTrait;
 
   /**
    * {@inheritdoc}
@@ -66,6 +69,10 @@ class DraftableNodeTypeSelectionTest extends KernelTestBase {
     $this->installEntitySchema('taxonomy_term');
     $this->installConfig(['oe_ai_assistant_test']);
     $this->container->get('config.typed')->clearCachedDefinitions();
+
+    // Full create access by default, so the other tests isolate the
+    // template dimension; testLimitedCreateAccessNarrowsResult overrides it.
+    $this->setUpCurrentUser([], ['access content', 'create oe_news content', 'create oe_contact content']);
   }
 
   /**
@@ -122,6 +129,26 @@ class DraftableNodeTypeSelectionTest extends KernelTestBase {
     }
 
     $this->assertSame([], $this->referenceableTypeIds());
+  }
+
+  /**
+   * A bundle with an enabled template still needs create access to be offered.
+   */
+  public function testLimitedCreateAccessNarrowsResult(): void {
+    $this->setUpCurrentUser([], ['access content', 'create oe_news content']);
+
+    $this->assertSame(['oe_news'], $this->referenceableTypeIds());
+  }
+
+  /**
+   * Validation also denies a bundle the user has no create access for.
+   */
+  public function testValidateReferenceableEntitiesDeniesUncreatableBundle(): void {
+    $this->setUpCurrentUser([], ['access content', 'create oe_news content']);
+
+    $valid = $this->handler()->validateReferenceableEntities(['oe_news', 'oe_contact']);
+
+    $this->assertSame(['oe_news'], array_values($valid));
   }
 
 }
