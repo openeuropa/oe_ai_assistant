@@ -57,8 +57,8 @@ interface DraftHistoryInterface {
    *
    * @return array|null
    *   {name: "Draft 2.1", fields: array, templateId: string|null, context:
-   *   array|null}, or NULL if no stored draft carries that version. The
-   *   name is the one listDrafts() gives the draft; templateId is NULL when
+   *   array|null, revision: int}, or NULL if the version is not stored.
+   *   The name is the one listDrafts() gives the draft; templateId is NULL when
    *   the draft's snapshot has no template.
    */
   public function getDraftContent(EntityInterface $session, int $version): ?array;

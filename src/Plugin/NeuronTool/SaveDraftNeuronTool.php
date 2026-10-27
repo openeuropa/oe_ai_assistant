@@ -8,6 +8,8 @@ use Drupal\ai_neuron\Agent\NeuronAgentManagerInterface;
 use Drupal\ai_neuron\Attribute\NeuronTool;
 use Drupal\Core\Plugin\Context\EntityContextDefinition;
 use Drupal\Core\StringTranslation\TranslatableMarkup;
+use Drupal\Core\Lock\LockBackendInterface;
+use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Drupal\oe_ai_assistant\Service\DraftSaverInterface;
 use Drupal\oe_ai_assistant\Service\Drafting\DraftHistoryInterface;
 use Drupal\oe_ai_assistant\Service\Drafting\DraftingBriefInterface;
@@ -47,6 +49,8 @@ final class SaveDraftNeuronTool extends DraftingToolBase {
     NeuronAgentManagerInterface $agents,
     private readonly DraftHistoryInterface $draftHistory,
     private readonly DraftSaverInterface $draftSaver,
+    #[Autowire(service: 'lock')]
+    private readonly LockBackendInterface $lock,
   ) {
     parent::__construct($configuration, $plugin_id, $plugin_definition, $brief, $agents);
   }
@@ -71,19 +75,29 @@ final class SaveDraftNeuronTool extends DraftingToolBase {
    */
   public function __invoke(int $version): string {
     $session = $this->session();
-    $draft = $this->draftHistory->getDraftContent($session, $version);
-    if ($draft === NULL || $draft['fields'] === []) {
-      return json_encode([
-        'error' => sprintf('Draft version %d does not exist in this session.', $version),
-      ]);
+    $lockName = 'oe_ai_assistant:draft:' . $session->id();
+    if (!$this->lock->acquire($lockName)) {
+      return json_encode(['error' => 'This draft is being updated. Please try again.']);
     }
+    try {
+      $draft = $this->draftHistory->getDraftContent($session, $version);
+      if ($draft === NULL || $draft['fields'] === []) {
+        return json_encode([
+          'error' => sprintf('Draft version %d does not exist in this session.', $version),
+        ]);
+      }
 
-    $saved = $this->draftSaver->save($session, $draft['fields'], $draft['templateId'], $draft['name']);
+      $saved = $this->draftSaver->save($session, $draft['fields'], $draft['templateId'], $draft['name']);
 
-    return json_encode([
-      'version' => $version,
-      'name' => $draft['name'],
-    ] + $saved);
+      return json_encode([
+        'version' => $version,
+        'name' => $draft['name'],
+        'editRevision' => $draft['revision'],
+      ] + $saved);
+    }
+    finally {
+      $this->lock->release($lockName);
+    }
   }
 
   /**

@@ -60,6 +60,7 @@ services:
   NeuronAI\Chat\History\MessageStoreInterface: '@Drupal\oe_ai_assistant\Neuron\Chat\History\EditorialMessageStore'
 
   Drupal\oe_ai_assistant\Service\Drafting\DraftHistory: {}
+  Drupal\oe_ai_assistant\Service\Drafting\DraftEditor: {}
   Drupal\oe_ai_assistant\Service\Drafting\DraftHistoryInterface: '@Drupal\oe_ai_assistant\Service\Drafting\DraftHistory'
 
   Drupal\oe_ai_assistant\Service\PreviewRenderer: {}

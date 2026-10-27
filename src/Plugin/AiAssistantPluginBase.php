@@ -261,7 +261,7 @@ abstract class AiAssistantPluginBase extends PluginBase implements AiAssistantPl
         foreach ($meta['tools'] ?? [] as $tool) {
           $at = $calls[$tool['callId'] ?? ''] ?? NULL;
           if ($at !== NULL) {
-            $entries[$at[0]]['toolCalls'][$at[1]]['result'] = SessionConversation::decodeResult($tool['result'] ?? NULL);
+            $entries[$at[0]]['toolCalls'][$at[1]]['result'] = SessionConversation::toolResult($row, $tool);
           }
         }
         continue;
