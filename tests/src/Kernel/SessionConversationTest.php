@@ -78,7 +78,7 @@ class SessionConversationTest extends AiEditorialSessionKernelTestBase {
     $rows = $this->conversation()->rows($session, 'field_group');
 
     $this->assertCount(1, $rows);
-    $this->assertSame('field_group', $rows[0]->get('agent_id')->value);
+    $this->assertSame('field_group', reset($rows)->get('agent_id')->value);
   }
 
   /**
