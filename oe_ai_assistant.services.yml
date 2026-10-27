@@ -66,3 +66,5 @@ services:
 
   Drupal\oe_ai_assistant\Service\PreviewRenderer: {}
   Drupal\oe_ai_assistant\Service\PreviewRendererInterface: '@Drupal\oe_ai_assistant\Service\PreviewRenderer'
+
+  Drupal\oe_ai_assistant\Hook\SessionAccessQueryAlterInterface: '@Drupal\oe_ai_assistant\Hook\OeAiAssistantHooks'

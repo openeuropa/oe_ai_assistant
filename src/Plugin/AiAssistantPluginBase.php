@@ -303,6 +303,9 @@ abstract class AiAssistantPluginBase extends PluginBase implements AiAssistantPl
    *
    * @param array $body
    *   The decoded request body.
+   * @param string $operation
+   *   The session access operation to check: 'view' for read-only actions,
+   *   'update' for anything that mutates the session or its data.
    *
    * @return \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface
    *   The session hosting the conversation.
@@ -310,7 +313,7 @@ abstract class AiAssistantPluginBase extends PluginBase implements AiAssistantPl
    * @throws \Drupal\oe_ai_assistant\Exception\ActionException
    *   When the sessionId is missing, unknown, or access is denied.
    */
-  protected function loadSession(array $body): AiEditorialSessionInterface {
+  protected function loadSession(array $body, string $operation = 'view'): AiEditorialSessionInterface {
     $sessionId = $body['sessionId'] ?? '';
     if ($sessionId === '') {
       throw new ActionException('invalid_request', 'A sessionId is required.', 400);
@@ -320,7 +323,7 @@ abstract class AiAssistantPluginBase extends PluginBase implements AiAssistantPl
     if (!$session instanceof AiEditorialSessionInterface) {
       throw new ActionException('invalid_request', 'The editorial session was not found.', 404);
     }
-    if (!$session->access('view', $this->currentUser)) {
+    if (!$session->access($operation, $this->currentUser)) {
       throw new ActionException('forbidden', 'Access to the editorial session is denied.', 403);
     }
     return $session;

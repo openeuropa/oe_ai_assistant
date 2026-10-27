@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\oe_ai_assistant\Form;
 
+use Drupal\Core\Entity\EntityReferenceSelection\SelectionPluginManagerInterface;
 use Drupal\Core\Entity\ContentEntityForm;
 use Drupal\Core\Form\FormStateInterface;
 use Drupal\Core\Messenger\MessengerTrait;
@@ -23,12 +24,18 @@ class AiEditorialSessionAddForm extends ContentEntityForm {
   protected AccountInterface $currentUserAccount;
 
   /**
+   * The entity reference selection plugin manager.
+   */
+  protected SelectionPluginManagerInterface $selectionPluginManager;
+
+  /**
    * {@inheritdoc}
    */
   public static function create(ContainerInterface $container): static {
     /** @var static $form */
     $form = parent::create($container);
     $form->currentUserAccount = $container->get('current_user');
+    $form->selectionPluginManager = $container->get('plugin.manager.entity_reference_selection');
     return $form;
   }
 
@@ -45,6 +52,17 @@ class AiEditorialSessionAddForm extends ContentEntityForm {
     if (is_array($chosenType)) {
       $chosenType = $chosenType[0]['target_id'] ?? ($chosenType['target_id'] ?? NULL);
     }
+
+    // A required select with exactly one valid option is pre-selected by
+    // the browser without firing 'change', so updateTemplateElement's AJAX
+    // is never triggered.
+    if ($chosenType === NULL && $this->entity->get('content_type')->isEmpty()) {
+      $options = $this->getDraftableContentTypeOptions();
+      if (count($options) === 1) {
+        $chosenType = array_key_first($options);
+      }
+    }
+
     // The select placeholder submits '_none'; treat it as no selection so
     // AJAX rebuilds (e.g. the context documents add-more button) do not
     // store it on the entity as a real content type.
@@ -54,6 +72,7 @@ class AiEditorialSessionAddForm extends ContentEntityForm {
     }
 
     $form = parent::form($form, $form_state);
+
     $form['label'] = [
       '#type' => 'textfield',
       '#title' => $this->t('Label'),
@@ -107,21 +126,22 @@ class AiEditorialSessionAddForm extends ContentEntityForm {
   }
 
   /**
-   * Returns node type options the current user can create.
+   * Returns the content_type options the widget will render.
    *
-   * @param array<string, string> $content_types
-   *   The content types to filter by create access permissions.
+   * Delegates to the field's own selection handler
+   * (ai_draftable_node_type_selection) instead of re-implementing its query,
+   * so this always matches exactly what the real widget offers.
    *
    * @return array<string, string>
    *   A map of node type IDs to labels.
    */
-  protected function checkTypesAccess(array $content_types): array {
-    $accessHandler = $this->entityTypeManager->getAccessControlHandler('node');
+  protected function getDraftableContentTypeOptions(): array {
+    $field_definition = $this->entity->get('content_type')->getFieldDefinition();
+    $handler = $this->selectionPluginManager->getSelectionHandler($field_definition, $this->entity);
+
     $options = [];
-    foreach ($content_types as $type => $label) {
-      if ($accessHandler->createAccess($type)) {
-        $options[$type] = $label;
-      }
+    foreach ($handler->getReferenceableEntities() as $bundle_options) {
+      $options += $bundle_options;
     }
 
     return $options;

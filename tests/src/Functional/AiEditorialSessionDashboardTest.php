@@ -101,6 +101,7 @@ class AiEditorialSessionDashboardTest extends AiEditorialSessionBrowserTestBase 
    */
   public function testDashboardAccessWithOverviewPermission(): void {
     $user = $this->drupalCreateUser([
+      'use oe ai assistant',
       'view_update own sessions',
       'access content',
     ]);
@@ -151,10 +152,12 @@ class AiEditorialSessionDashboardTest extends AiEditorialSessionBrowserTestBase 
    */
   public function testSessionPageRendersAppAndChecksAccess(): void {
     $owner = $this->drupalCreateUser([
+      'use oe ai assistant',
       'view_update own sessions',
       'access content',
     ]);
     $other_user = $this->drupalCreateUser([
+      'use oe ai assistant',
       'view_update own sessions',
       'access content',
     ]);
@@ -178,6 +181,7 @@ class AiEditorialSessionDashboardTest extends AiEditorialSessionBrowserTestBase 
   public function testSessionPageRendersEmptyEditorialContextOptions(): void {
     $this->deleteEditorialContextTerms();
     $owner = $this->drupalCreateUser([
+      'use oe ai assistant',
       'view_update own sessions',
       'access content',
     ]);
@@ -215,6 +219,7 @@ class AiEditorialSessionDashboardTest extends AiEditorialSessionBrowserTestBase 
    */
   public function testAddSessionFlow(): void {
     $user = $this->drupalCreateUser([
+      'use oe ai assistant',
       'create oe_news content',
     ]);
     $this->drupalLogin($user);
@@ -262,6 +267,7 @@ class AiEditorialSessionDashboardTest extends AiEditorialSessionBrowserTestBase 
       ])->save();
 
     $user = $this->drupalCreateUser([
+      'use oe ai assistant',
       'create oe_news content',
     ]);
     $this->drupalLogin($user);
@@ -279,6 +285,7 @@ class AiEditorialSessionDashboardTest extends AiEditorialSessionBrowserTestBase 
    */
   public function testAddSessionContentTypeOptionsRespectDraftingTemplates(): void {
     $user = $this->drupalCreateUser([
+      'use oe ai assistant',
       'create oe_news content',
       'create oe_contact content',
     ]);
