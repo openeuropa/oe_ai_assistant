@@ -24,13 +24,13 @@ interface ArtifactPaneProps {
 }
 
 export function ArtifactPane({ canCollapse, children }: ArtifactPaneProps) {
-  const { isArtifactCollapsed } = useDraftingSlice();
+  const { isArtifactCollapsed, isEditingField } = useDraftingSlice();
 
   // Escape collapses the expanded pane. Open modals own the Escape key:
   // Radix closes them on the same press, and at that moment the dialog
   // is still in the DOM, so the guard below skips the collapse.
   useEffect(() => {
-    if (isArtifactCollapsed || !canCollapse) {
+    if (isArtifactCollapsed || !canCollapse || isEditingField) {
       return;
     }
     const onKeyDown = (event: KeyboardEvent) => {
@@ -44,7 +44,7 @@ export function ArtifactPane({ canCollapse, children }: ArtifactPaneProps) {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [isArtifactCollapsed, canCollapse]);
+  }, [isArtifactCollapsed, canCollapse, isEditingField]);
 
   return (
     <div

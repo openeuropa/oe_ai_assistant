@@ -10,8 +10,10 @@
 import DOMPurify from "dompurify";
 import { Save } from "lucide-react";
 import { useMemo, useState } from "react";
+import { useDraftEditor } from "../hooks/use-draft-editor";
 import { useDraftName } from "../session-drafts";
 import { useDraftingSlice } from "../store";
+import { FieldValue } from "./field-value";
 
 /** Props for the content table. */
 interface ContentTableProps {
@@ -251,11 +253,32 @@ export function SaveConfirmDialog({
  * classic header or the tabbed preview header) can embed it directly.
  */
 export function ContentTableBody() {
-  const { draftedFields } = useDraftingSlice();
+  const { draftedFields, activeDraftVersion } = useDraftingSlice();
+  const editor = useDraftEditor(activeDraftVersion);
   const entries = Object.entries(draftedFields);
 
   return (
     <div className="min-h-0 flex-1 overflow-y-auto">
+      {editor.isLoading && (
+        <output className="block px-4 py-2 text-xs text-gray-500">
+          Loading field editors…
+        </output>
+      )}
+      {editor.isError && (
+        <div
+          role="alert"
+          className="flex items-center gap-2 px-4 py-2 text-sm text-red-700"
+        >
+          Field editing is unavailable. {editor.error.message}
+          <button
+            type="button"
+            onClick={() => void editor.refetch()}
+            className="underline"
+          >
+            Retry
+          </button>
+        </div>
+      )}
       <table className="w-full">
         <thead>
           <tr className="border-b border-gray-200 bg-gray-50">
@@ -270,7 +293,9 @@ export function ContentTableBody() {
         <tbody>
           {entries.map(([name, val]) => {
             const display = extractFieldDisplay(val);
-            if (display.text === "" && !display.isComplex) return null;
+            const schema = editor.data?.schema.properties?.[name];
+            if (!schema && display.text === "" && !display.isComplex)
+              return null;
             return (
               <tr
                 key={name}
@@ -278,19 +303,42 @@ export function ContentTableBody() {
               >
                 <td className="px-4 py-3 align-top">
                   <span className="text-sm font-medium text-gray-900">
-                    {labelFromName(name)}
+                    {schema?.title ?? labelFromName(name)}
                   </span>
                   <span className="ml-1.5 text-xs text-gray-400 block">
                     {name}
                   </span>
                 </td>
                 <td className="px-4 py-3 align-top">
-                  {display.isComplex && display.items ? (
+                  {schema ? (
+                    <FieldValue
+                      value={val}
+                      schema={schema}
+                      label={schema.title ?? labelFromName(name)}
+                      path={[]}
+                      readOnly={
+                        editor.isRunning || editor.data?.schema.readOnly
+                      }
+                      onReload={() => editor.refetch()}
+                      onApply={async (path, value) => {
+                        await editor.apply({
+                          field: name,
+                          path,
+                          value,
+                        });
+                      }}
+                    />
+                  ) : display.isComplex && display.items ? (
                     <InlineEntityItems items={display.items} />
                   ) : display.isHtml ? (
                     <HtmlValue html={display.text} />
                   ) : (
                     <p className="text-sm text-gray-700">{display.text}</p>
+                  )}
+                  {schema?.["x-read-only-reason"] && (
+                    <p className="mt-1 text-xs text-gray-500">
+                      {schema["x-read-only-reason"]}
+                    </p>
                   )}
                 </td>
               </tr>

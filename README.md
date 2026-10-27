@@ -54,6 +54,8 @@ exist until you also build the app yourself or pull the pre-built release artifa
 
 - **Plugin system** -- extensible architecture for AI-powered editorial tools
 - **Content drafting** -- AI-assisted content creation with structured field output
+- **Inline draft editing** -- individual field inputs, including rich text and nested content; validated edits persist
+  per draft and feed live preview and save while preserving the original AI output
 - **AI Drafting Templates** -- config entities defining field structure, per-slot prompts, and default values for
   each content type; managed at `/admin/config/ai-editorial/templates` with two-level validation (structural +
   Drupal field definitions)

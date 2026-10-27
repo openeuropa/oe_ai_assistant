@@ -11,7 +11,7 @@
 import { useAuiState } from "@assistant-ui/react";
 import { useMemo } from "react";
 import { type ParsedDraftResult, parseDraftResult } from "./draft-result";
-import { setDraftingState } from "./store";
+import { getDraftingState, setDraftingState, useDraftingSlice } from "./store";
 import { decodeToolResult } from "./tool-result";
 
 /** One entry in the session drafts index. */
@@ -88,9 +88,19 @@ export function extractSessionDrafts(
 /** Reads the drafts index from the current thread. */
 export function useSessionDrafts(): SessionDraft[] {
   const messages = useAuiState((s) => s.thread.messages);
+  const { editableDrafts } = useDraftingSlice();
   return useMemo(
-    () => extractSessionDrafts(messages as readonly ThreadMessageLikeShape[]),
-    [messages],
+    () =>
+      extractSessionDrafts(messages as readonly ThreadMessageLikeShape[]).map(
+        (draft) => ({
+          ...draft,
+          fields:
+            (draft.version !== null
+              ? editableDrafts[draft.version]?.fields
+              : undefined) ?? draft.fields,
+        }),
+      ),
+    [messages, editableDrafts],
   );
 }
 
@@ -112,8 +122,12 @@ export function useDraftName(version: number | null): string {
 export function openSessionDraft(
   draft: Pick<SessionDraft, "fields" | "version">,
 ): void {
+  if (getDraftingState().isEditingField) return;
   setDraftingState({
-    draftedFields: draft.fields,
+    draftedFields:
+      (draft.version !== null
+        ? getDraftingState().editableDrafts[draft.version]?.fields
+        : undefined) ?? draft.fields,
     activeDraftVersion: draft.version,
     isArtifactCollapsed: false,
   });

@@ -127,7 +127,10 @@ function DraftingChat() {
    */
   const handleSave = useCallback(
     (name: string) => {
-      if (getDraftingState().activeDraftVersion === null) {
+      if (
+        getDraftingState().isEditingField ||
+        getDraftingState().activeDraftVersion === null
+      ) {
         return;
       }
       runtime.thread.append(`Save ${name}.`);

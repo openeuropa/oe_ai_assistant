@@ -32,6 +32,7 @@ import { avatarColorClass, UserAvatar } from "@/components/ui/user-avatar";
 import { getConfig } from "@/config";
 import { useAppStore } from "@/store";
 import { resolveMessageAuthor } from "../participants";
+import { useDraftingSlice } from "../store";
 import { ContextButtons } from "./context-buttons";
 import { ToolFallbackCard } from "./tool-uis";
 
@@ -337,6 +338,7 @@ function Composer({
   tabs: PaneTabItem[];
   defaultActiveTabId?: string;
 }) {
+  const { isEditingField } = useDraftingSlice();
   return (
     <ComposerPrimitive.Root className="p-4 pt-2">
       <div className="rounded-xl border border-gray-300 bg-white shadow-sm focus-within:border-blue-500">
@@ -349,6 +351,7 @@ function Composer({
 
         {/* Text input on top, sized like the conversation messages. */}
         <ComposerPrimitive.Input
+          disabled={isEditingField}
           placeholder="Describe the content you want to draft..."
           className="w-full resize-none border-0 bg-transparent px-3 pt-3 text-base focus:outline-none"
           autoFocus
@@ -357,7 +360,10 @@ function Composer({
         {/* Bottom row: context pills left, send right. */}
         <div className="flex items-end justify-between gap-2 p-2 pl-3">
           <ContextButtons tabs={tabs} defaultActiveTabId={defaultActiveTabId} />
-          <ComposerPrimitive.Send className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50">
+          <ComposerPrimitive.Send
+            disabled={isEditingField}
+            className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+          >
             <SendHorizontal size={16} />
           </ComposerPrimitive.Send>
         </div>

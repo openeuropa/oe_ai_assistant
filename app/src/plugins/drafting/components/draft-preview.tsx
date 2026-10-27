@@ -35,9 +35,11 @@ import {
   useState,
 } from "react";
 import { getConfig } from "@/config";
+import { useAppStore } from "@/store";
 import { formatDraftDate } from "../format-draft-date";
 import { buildPreviewUrl } from "../preview-url";
 import { useDraftName } from "../session-drafts";
+import { useDraftingSlice } from "../store";
 import type { DraftingPluginConfig } from "../types";
 import { ContentTableBody, SaveConfirmDialog } from "./content-table";
 
@@ -250,6 +252,9 @@ export function DraftPreview({
   onSave,
 }: DraftPreviewProps) {
   const draftName = useDraftName(versionId);
+  const { editableDrafts, isEditingField } = useDraftingSlice();
+  const isSaving = useAppStore((state) => state.pendingWork["drafting:save"]);
+  const editRevision = editableDrafts[versionId]?.revision ?? 0;
   // The URL template comes from the host-provided plugin config.
   const draftingConfig = (getConfig().pluginConfig.drafting ??
     {}) as DraftingPluginConfig;
@@ -386,11 +391,11 @@ export function DraftPreview({
           <button
             type="button"
             onClick={() => setShowConfirm(true)}
-            disabled={isSaved}
+            disabled={isSaved || isEditingField || isSaving}
             className="flex h-7 cursor-pointer items-center gap-1.5 rounded-md bg-blue-600 px-3 text-xs font-medium whitespace-nowrap text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-gray-300 disabled:text-gray-500"
           >
             <Save size={12} />
-            {isSaved ? "Saved" : "Save draft"}
+            {isSaving ? "Saving…" : isSaved ? "Saved" : "Save draft"}
           </button>
         </div>
       </div>
@@ -400,7 +405,7 @@ export function DraftPreview({
           spinner for the new document. */}
       {hasLivePreview && previewUrl !== "" && (
         <LivePreviewFrame
-          key={`${reloadCount}:${previewUrl}`}
+          key={`${reloadCount}:${previewUrl}:${editRevision}`}
           url={previewUrl}
           hidden={activeTab !== "live"}
           width={VIEWPORT_WIDTHS[viewport]}
@@ -412,7 +417,14 @@ export function DraftPreview({
         </div>
       )}
 
-      {activeTab === "data" && <ContentTableBody />}
+      <div
+        hidden={activeTab !== "data"}
+        className={
+          activeTab === "data" ? "flex min-h-0 flex-1 flex-col" : "hidden"
+        }
+      >
+        <ContentTableBody key={versionId} />
+      </div>
 
       {showConfirm && (
         <SaveConfirmDialog

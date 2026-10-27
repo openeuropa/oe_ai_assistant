@@ -13,13 +13,54 @@ import { apiFetch } from "@/api/csrf-token";
 import type { components } from "@/api/schema";
 import { getConfig } from "@/config";
 import type {
+  DraftFieldEdit,
   DraftingChatRequest,
   DraftingSetTemplateRequest,
   DraftingSetTemplateResponse,
   DraftingSetToneRequest,
   DraftingSetToneResponse,
   DraftingSubmitApprovalRequest,
+  EditableDraft,
 } from "../types";
+
+/** Loads the effective draft and its schema without creating a CMS revision. */
+export async function getEditableDraft(
+  version: number,
+): Promise<EditableDraft> {
+  return draftEditorRequest("get-draft", { version });
+}
+
+/** Applies a single typed value, guarded by the last observed edit revision. */
+export async function editDraftField(
+  edit: DraftFieldEdit,
+): Promise<EditableDraft> {
+  return draftEditorRequest("edit-field", edit);
+}
+
+async function draftEditorRequest(
+  action: string,
+  body: { version: number },
+): Promise<EditableDraft> {
+  const response = await apiFetch(
+    `${getConfig().apiBaseUrl}/plugins/drafting/${action}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...body, sessionId: getConfig().sessionId }),
+    },
+  );
+  if (!response.ok) {
+    let message = `Draft editing failed (${response.status}).`;
+    try {
+      const error = await response.json();
+      if (typeof error.message === "string") message = error.message;
+    } catch {
+      // Keep the status fallback when a proxy does not return JSON.
+    }
+    throw new Error(message);
+  }
+  return response.json() as Promise<EditableDraft>;
+}
 
 type DraftingCategory = components["schemas"]["DraftingDocumentCategory"];
 type DraftingDocument = components["schemas"]["DraftingDocument"];
