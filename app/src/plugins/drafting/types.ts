@@ -64,6 +64,42 @@ export interface SaveDraftResult {
   error?: string;
 }
 
+/** Schema subset used by individual-value inputs, including inline entities. */
+export interface DraftFieldSchema {
+  type?: string;
+  title?: string;
+  description?: string;
+  properties?: Record<string, DraftFieldSchema>;
+  items?: DraftFieldSchema;
+  oneOf?: DraftFieldSchema[];
+  enum?: (string | number | boolean)[];
+  const?: unknown;
+  readOnly?: boolean;
+  format?: string;
+  maxLength?: number;
+  maxItems?: number;
+  minimum?: number;
+  maximum?: number;
+  "x-editor"?: "richtext" | "textarea";
+  "x-enum-labels"?: string[];
+  "x-field-type"?: string;
+  "x-read-only-reason"?: string;
+}
+
+export interface EditableDraft {
+  fields: Record<string, unknown>;
+  revision: number;
+  schema: DraftFieldSchema;
+}
+
+export interface DraftFieldEdit {
+  version: number;
+  field: string;
+  path: (string | number)[];
+  value: string | number | boolean | null;
+  revision: number;
+}
+
 /** Request body for setting the selected template. */
 export interface DraftingSetTemplateRequest {
   template: string;

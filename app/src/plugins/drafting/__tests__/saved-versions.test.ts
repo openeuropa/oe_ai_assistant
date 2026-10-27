@@ -11,6 +11,27 @@ function savePart(result?: Record<string, unknown>) {
 }
 
 describe("extractSavedVersions", () => {
+  it("requires saving the latest manual edit revision", () => {
+    const messages = [
+      {
+        content: [
+          {
+            type: "tool-call",
+            toolName: "draft_group",
+            result: { draft: { version: 1, editRevision: 1 } },
+          },
+        ],
+      },
+      { content: [savePart({ version: 1, nodeId: "7", editRevision: 0 })] },
+      { content: [savePart({ version: 2, nodeId: "7" })] },
+    ];
+    expect(extractSavedVersions(messages)).toEqual(new Set([2]));
+    messages.push({
+      content: [savePart({ version: 1, nodeId: "7", editRevision: 1 })],
+    });
+    expect(extractSavedVersions(messages)).toEqual(new Set([1, 2]));
+    expect(extractSavedVersions(messages, { 1: 2 })).toEqual(new Set([2]));
+  });
   it("returns an empty set for an empty thread", () => {
     expect(extractSavedVersions([])).toEqual(new Set());
   });

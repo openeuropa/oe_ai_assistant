@@ -41,8 +41,12 @@ function tabClasses(isActive: boolean, isSaved: boolean): string {
 export function DraftRail() {
   const drafts = useSessionDrafts();
   const savedVersions = useSavedVersions();
-  const { draftedFields, activeDraftVersion, isArtifactCollapsed } =
-    useDraftingSlice();
+  const {
+    draftedFields,
+    activeDraftVersion,
+    isArtifactCollapsed,
+    isEditingField,
+  } = useDraftingSlice();
   const hasFields = Object.keys(draftedFields).length > 0;
   const latest = drafts[drafts.length - 1];
 
@@ -86,6 +90,7 @@ export function DraftRail() {
         const tabButton = (
           <button
             type="button"
+            disabled={isEditingField}
             aria-label={isActive ? `Close ${draft.name}` : `Open ${draft.name}`}
             onClick={() =>
               isActive

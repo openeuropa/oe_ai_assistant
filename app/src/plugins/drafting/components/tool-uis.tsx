@@ -193,10 +193,10 @@ function ProducedDraftCard({ draft }: { draft: ParsedDraftResult }) {
     <DraftCard
       name={entry?.name ?? "Draft"}
       context={draft.context}
-      fields={draft.fields}
+      fields={entry?.fields ?? draft.fields}
       isSaved={savedVersions.has(draft.version)}
       createdAt={entry?.createdAt ?? null}
-      onOpen={() => openSessionDraft(draft)}
+      onOpen={() => openSessionDraft(entry ?? draft)}
     />
   );
 }

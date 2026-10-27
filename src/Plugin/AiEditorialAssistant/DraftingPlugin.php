@@ -19,6 +19,7 @@ use Drupal\oe_ai_assistant\Service\DraftAssemblerInterface;
 use Drupal\oe_ai_assistant\Service\Drafting\ContextDocumentRepository;
 use Drupal\oe_ai_assistant\Service\Drafting\DocumentRepositoryInterface;
 use Drupal\oe_ai_assistant\Service\Drafting\DraftHistoryInterface;
+use Drupal\oe_ai_assistant\Service\Drafting\DraftEditor;
 use Drupal\oe_ai_assistant\Service\DraftingSchemaProviderInterface;
 use Drupal\oe_ai_assistant\Service\PreviewRendererInterface;
 use NeuronAI\Workflow\Streaming\ProtocolEvent;
@@ -91,6 +92,11 @@ class DraftingPlugin extends AiAssistantPluginBase {
   protected DraftHistoryInterface $draftHistory;
 
   /**
+   * The individual-value draft editor.
+   */
+  protected DraftEditor $draftEditor;
+
+  /**
    * The context document repository.
    *
    * @var \Drupal\oe_ai_assistant\Service\Drafting\ContextDocumentRepository
@@ -132,6 +138,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
     $instance->agentManager = $container->get(NeuronAgentManagerInterface::class);
     $instance->aiEditorialContext = $container->get(AiEditorialContextInterface::class);
     $instance->draftHistory = $container->get(DraftHistoryInterface::class);
+    $instance->draftEditor = $container->get(DraftEditor::class);
     $instance->contextDocumentRepository = $container->get(ContextDocumentRepository::class);
     $instance->inputStreamFileWriter = $container->get(InputStreamFileWriterInterface::class);
     $instance->draftAssembler = $container->get(DraftAssemblerInterface::class);
@@ -147,6 +154,8 @@ class DraftingPlugin extends AiAssistantPluginBase {
     return parent::getActionMap() + [
       'chat' => $this->chat(...),
       'reset' => $this->reset(...),
+      'get-draft' => $this->getDraft(...),
+      'edit-field' => $this->editField(...),
       'get-approvals' => $this->getApprovals(...),
       'submit-approval' => $this->submitApproval(...),
       'set-tone' => $this->setTone(...),
@@ -166,6 +175,8 @@ class DraftingPlugin extends AiAssistantPluginBase {
     // The base provides the get-messages schema.
     return parent::getRequestSchemas() + [
       'reset' => 'DraftingResetRequest',
+      'get-draft' => 'DraftingGetDraftRequest',
+      'edit-field' => 'DraftingEditFieldRequest',
       'get-approvals' => 'DraftingGetApprovalsRequest',
       'submit-approval' => 'DraftingSubmitApprovalRequest',
       'set-tone' => 'DraftingSetToneRequest',
@@ -342,6 +353,29 @@ class DraftingPlugin extends AiAssistantPluginBase {
     $session = $this->loadSession($this->decodeJsonBody($request));
     $this->conversation->deleteFor($session);
     return ['status' => 'ok'];
+  }
+
+  /**
+   * Returns effective content and editor metadata for a stored draft.
+   */
+  public function getDraft(Request $request): array {
+    $body = $this->decodeJsonBody($request);
+    return $this->draftEditor->getDraft($this->loadSession($body), (int) $body['version']);
+  }
+
+  /**
+   * Applies one schema-declared field value to a draft.
+   */
+  public function editField(Request $request): array {
+    $body = $this->decodeJsonBody($request);
+    return $this->draftEditor->edit(
+      $this->loadSession($body),
+      (int) $body['version'],
+      $body['field'],
+      $body['path'],
+      $body['value'],
+      (int) $body['revision'],
+    );
   }
 
   /**

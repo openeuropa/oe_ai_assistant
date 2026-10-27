@@ -17,6 +17,7 @@
  * POST /api/plugins/drafting/remove-document - Remove a mock document
  */
 
+import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { Router } from "express";
@@ -25,6 +26,7 @@ import type {
   ChatOptions,
   DraftingService,
 } from "../services/drafting-service";
+import { MockDraftEditor } from "../services/mock-draft-editor";
 
 type MockDocumentStatus =
   | "scheduled"
@@ -94,6 +96,16 @@ function extensionFromFilename(filename: string): string {
   return extension && extension !== filename ? extension.toLowerCase() : "file";
 }
 
+function escapeHtml(value: string): string {
+  return value.replace(
+    /[&<>"']/g,
+    (character) =>
+      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[
+        character
+      ] ?? character,
+  );
+}
+
 async function readRequestBody(req: NodeJS.ReadableStream): Promise<Buffer> {
   const chunks: Buffer[] = [];
   for await (const chunk of req) {
@@ -129,6 +141,7 @@ function loadSchema(bundle: string): object | null {
  */
 export function createDraftingRouter(service: DraftingService): Router {
   const router = Router();
+  const editor = new MockDraftEditor();
   const documentsBySession = new Map<string, MockDocument[]>([
     ["dev-session", initialMockDocuments],
   ]);
@@ -191,6 +204,27 @@ export function createDraftingRouter(service: DraftingService): Router {
       schema ? "loaded" : "NOT FOUND",
     );
 
+    const requestedSave = message.match(/^Save Draft (\d+)\.0[.!]?$/i);
+    if (requestedSave) {
+      const version = Number(requestedSave[1]);
+      if (editor.get(sessionId, version)) {
+        const id = randomUUID();
+        editor.requestSave(sessionId, version, id);
+        setupSseResponse(res);
+        sendEvent(res, { type: "start", messageId: randomUUID() });
+        sendEvent(res, {
+          type: "data-approval-request",
+          data: {
+            approvals: [{ id, name: "save_draft", inputs: { version } }],
+          },
+        });
+        sendEvent(res, { type: "finish" });
+        sendDone(res);
+        res.end();
+        return;
+      }
+    }
+
     // Set up SSE response.
     setupSseResponse(res);
 
@@ -205,6 +239,17 @@ export function createDraftingRouter(service: DraftingService): Router {
         bundle,
         schema: schema as ChatOptions["schema"],
       })) {
+        if (
+          event.type === "tool-result" &&
+          event.result &&
+          typeof event.result === "object"
+        ) {
+          editor.record(
+            sessionId,
+            event.result as Record<string, unknown>,
+            schema ?? {},
+          );
+        }
         sendEvent(res, event);
         // Yield to the event loop after each write so the
         // SSE frame flushes to the client individually.
@@ -228,6 +273,7 @@ export function createDraftingRouter(service: DraftingService): Router {
         .json({ code: "bad_request", message: "sessionId is required" });
       return;
     }
+    editor.reset(sessionId);
     res.json(service.reset(sessionId));
   });
 
@@ -240,14 +286,113 @@ export function createDraftingRouter(service: DraftingService): Router {
         .json({ code: "bad_request", message: "sessionId is required" });
       return;
     }
-    res.json({ messages: service.getMessages(sessionId) });
+    res.json({
+      messages: [
+        ...service.getMessages(sessionId),
+        ...editor.messages(sessionId),
+      ],
+    });
+  });
+
+  router.post("/get-draft", (req, res) => {
+    const { sessionId, version } = req.body as {
+      sessionId: string;
+      version: number;
+    };
+    const draft = editor.get(sessionId, version);
+    if (!draft) {
+      res.status(404).json({
+        code: "not_found",
+        message: "The draft was not found in this session.",
+      });
+      return;
+    }
+    res.json(draft);
+  });
+
+  router.post("/edit-field", (req, res) => {
+    const { sessionId, version, field, path, value, revision } = req.body as {
+      sessionId: string;
+      version: number;
+      field: string;
+      path: (string | number)[];
+      value: unknown;
+      revision: number;
+    };
+    try {
+      res.json(editor.edit(sessionId, version, field, path, value, revision));
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "The value could not be updated.";
+      res
+        .status(message.includes("has changed") ? 409 : 400)
+        .json({ code: "invalid_value", message });
+    }
+  });
+
+  router.post("/get-approvals", (req, res) => {
+    const pending = editor.pending(req.body.sessionId);
+    res.json({
+      approvals: pending
+        ? [
+            {
+              id: pending.id,
+              name: "save_draft",
+              inputs: { version: pending.version },
+            },
+          ]
+        : [],
+    });
+  });
+
+  router.post("/submit-approval", (req, res) => {
+    const { sessionId, callId, decision } = req.body as {
+      sessionId: string;
+      callId: string;
+      decision: string;
+    };
+    const pending = editor.pending(sessionId);
+    if (
+      !pending ||
+      pending.id !== callId ||
+      !["approve", "reject"].includes(decision)
+    ) {
+      res.status(400).json({
+        code: "invalid_request",
+        message: "No such call is waiting for a decision.",
+      });
+      return;
+    }
+    const saved =
+      decision === "approve"
+        ? service.save({ sessionId, version: pending.version })
+        : null;
+    editor.finishSave(
+      sessionId,
+      saved
+        ? {
+            ...saved,
+            version: pending.version,
+            name: `Draft ${pending.version}.0`,
+            editRevision: editor.get(sessionId, pending.version)?.revision ?? 0,
+          }
+        : { error: "The save was not approved." },
+    );
+    setupSseResponse(res);
+    sendEvent(res, { type: "start", messageId: randomUUID() });
+    sendEvent(res, { type: "finish" });
+    sendDone(res);
+    res.end();
   });
 
   /** POST /save - Mock: save a session draft version as a node. */
   router.post("/save", (req, res) => {
-    const { sessionId, version } = req.body as {
+    const { sessionId, version, revision } = req.body as {
       sessionId?: string;
       version?: number;
+      revision?: number;
     };
 
     if (!sessionId || typeof version !== "number") {
@@ -258,6 +403,16 @@ export function createDraftingRouter(service: DraftingService): Router {
       return;
     }
 
+    if (
+      revision !== undefined &&
+      editor.get(sessionId, version)?.revision !== revision
+    ) {
+      res.status(409).json({
+        code: "conflict",
+        message: "This draft has changed. Reload the draft before saving it.",
+      });
+      return;
+    }
     const result = service.save({ sessionId, version });
     if (!result) {
       res.status(400).json({
@@ -474,7 +629,7 @@ export function createDraftingRouter(service: DraftingService): Router {
         .send(
           "<!DOCTYPE html><html><head><title>Draft preview</title></head>" +
             '<body style="font-family: sans-serif; margin: 2rem;">' +
-            `<h1>Draft ${version}</h1>` +
+            `<h1>${escapeHtml(String((editor.get(sessionId, version)?.fields.title as { value: string }[] | undefined)?.[0]?.value ?? `Draft ${version}`))}</h1>` +
             `<p>Mock live preview for session <strong>${sessionId}</strong>, ` +
             `version <strong>${version}</strong>.</p>` +
             "<p>The real backend renders the draft through the site theme.</p>" +

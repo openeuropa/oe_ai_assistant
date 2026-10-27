@@ -335,3 +335,67 @@ DraftingExtractDocumentResponse:
   properties:
     status:
       $ref: "../../openapi.yaml#/components/schemas/DraftingDocumentStatus"
+
+# Editing updates draft content; saving a Drupal revision remains separate.
+DraftingGetDraftRequest:
+  type: object
+  additionalProperties: false
+  required: [sessionId, version]
+  properties:
+    sessionId:
+      type: string
+      minLength: 1
+    version:
+      type: integer
+      minimum: 1
+
+DraftingEditFieldRequest:
+  type: object
+  additionalProperties: false
+  required: [sessionId, version, field, path, value, revision]
+  properties:
+    sessionId:
+      type: string
+      minLength: 1
+    version:
+      type: integer
+      minimum: 1
+    field:
+      type: string
+      minLength: 1
+    path:
+      type: array
+      minItems: 1
+      maxItems: 32
+      items:
+        oneOf:
+          - type: string
+            minLength: 1
+          - type: integer
+            minimum: 0
+    value:
+      oneOf:
+        - type: string
+        - type: number
+        - type: boolean
+        - type: "null"
+    revision:
+      type: integer
+      minimum: 0
+      description: Last observed edit revision; stale edits return 409.
+
+DraftingEditableDraft:
+  type: object
+  required: [fields, revision, schema]
+  properties:
+    fields:
+      type: object
+      additionalProperties: true
+      description: Effective generated fields including manual edits.
+    revision:
+      type: integer
+      minimum: 0
+    schema:
+      type: object
+      additionalProperties: true
+      description: Field schemas with labels, editor hints and read-only flags.

@@ -76,6 +76,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/plugins/drafting/get-draft": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Read effective draft content and editor metadata */
+        post: operations["postDraftingGetDraft"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/plugins/drafting/edit-field": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Apply an individual value edit to a draft */
+        post: operations["postDraftingEditField"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/plugins/drafting/chat": {
         parameters: {
             query?: never;
@@ -448,6 +482,30 @@ export interface components {
                 version?: number;
             }[];
         };
+        DraftingGetDraftRequest: {
+            sessionId: string;
+            version: number;
+        };
+        DraftingEditFieldRequest: {
+            sessionId: string;
+            version: number;
+            field: string;
+            path: (string | number)[];
+            value: string | number | boolean | null;
+            /** @description Last observed edit revision; stale edits return 409. */
+            revision: number;
+        };
+        DraftingEditableDraft: {
+            /** @description Effective generated fields including manual edits. */
+            fields: {
+                [key: string]: unknown;
+            };
+            revision: number;
+            /** @description Field schemas with labels, editor hints and read-only flags. */
+            schema: {
+                [key: string]: unknown;
+            };
+        };
         DraftingChatRequest: {
             /** @description The user's drafting prompt or instruction. */
             message: string;
@@ -806,6 +864,102 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["GetMessagesResponse"];
                 };
+            };
+        };
+    };
+    postDraftingGetDraft: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DraftingGetDraftRequest"];
+            };
+        };
+        responses: {
+            /** @description Effective draft content and editing schema. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DraftingEditableDraft"];
+                };
+            };
+            /** @description Invalid field, path, or value. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            403: components["responses"]["Forbidden"];
+            /** @description Draft not found in this session. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The draft changed since it was loaded; reload before retrying. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    postDraftingEditField: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DraftingEditFieldRequest"];
+            };
+        };
+        responses: {
+            /** @description Effective draft content and editing schema. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DraftingEditableDraft"];
+                };
+            };
+            /** @description Invalid field, path, or value. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            403: components["responses"]["Forbidden"];
+            /** @description Draft not found in this session. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The draft changed since it was loaded; reload before retrying. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

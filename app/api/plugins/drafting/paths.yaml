@@ -314,3 +314,65 @@ preview:
           application/json:
             schema:
               $ref: "../../openapi.yaml#/components/schemas/ApiError"
+
+getDraft:
+  post:
+    operationId: postDraftingGetDraft
+    summary: Read effective draft content and editor metadata
+    tags: [Drafting]
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: "../../openapi.yaml#/components/schemas/DraftingGetDraftRequest"
+    responses:
+      "200":
+        description: Effective draft content and editing schema.
+        content:
+          application/json:
+            schema:
+              $ref: "../../openapi.yaml#/components/schemas/DraftingEditableDraft"
+      "400":
+        description: Invalid field, path, or value.
+        content:
+          application/json:
+            schema:
+              $ref: "../../openapi.yaml#/components/schemas/ApiError"
+      "403":
+        $ref: "../../openapi.yaml#/components/responses/Forbidden"
+      "404":
+        description: Draft not found in this session.
+      "409":
+        description: The draft changed since it was loaded; reload before retrying.
+
+editField:
+  post:
+    operationId: postDraftingEditField
+    summary: Apply an individual value edit to a draft
+    tags: [Drafting]
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: "../../openapi.yaml#/components/schemas/DraftingEditFieldRequest"
+    responses:
+      "200":
+        description: Effective draft content and editing schema.
+        content:
+          application/json:
+            schema:
+              $ref: "../../openapi.yaml#/components/schemas/DraftingEditableDraft"
+      "400":
+        description: Invalid field, path, or value.
+        content:
+          application/json:
+            schema:
+              $ref: "../../openapi.yaml#/components/schemas/ApiError"
+      "403":
+        $ref: "../../openapi.yaml#/components/responses/Forbidden"
+      "404":
+        description: Draft not found in this session.
+      "409":
+        description: The draft changed since it was loaded; reload before retrying.

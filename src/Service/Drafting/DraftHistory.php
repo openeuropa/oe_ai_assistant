@@ -91,6 +91,7 @@ final class DraftHistory implements DraftHistoryInterface {
       'fields' => $draft['fields'] ?? [],
       'templateId' => $draft['context']['template']['id'] ?? NULL,
       'context' => $draft['context'] ?? NULL,
+      'revision' => $draft['editRevision'] ?? 0,
     ];
   }
 

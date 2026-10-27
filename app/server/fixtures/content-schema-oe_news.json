@@ -13,7 +13,9 @@
         "required": ["value"]
       },
       "maxItems": 1,
-      "description": "Published"
+      "description": "Published",
+      "title": "Published",
+      "readOnly": true
     },
     "title": {
       "type": "array",
@@ -28,7 +30,8 @@
         "required": ["value"]
       },
       "maxItems": 1,
-      "description": "Title"
+      "description": "Title",
+      "title": "Title"
     },
     "promote": {
       "type": "array",
@@ -42,7 +45,8 @@
         "required": ["value"]
       },
       "maxItems": 1,
-      "description": "Promoted to front page"
+      "description": "Promoted to front page",
+      "title": "Promoted to front page"
     },
     "sticky": {
       "type": "array",
@@ -56,7 +60,8 @@
         "required": ["value"]
       },
       "maxItems": 1,
-      "description": "Sticky at top of lists"
+      "description": "Sticky at top of lists",
+      "title": "Sticky at top of lists"
     },
     "moderation_state": {
       "type": "array",
@@ -71,7 +76,9 @@
         "required": ["value"]
       },
       "maxItems": 1,
-      "description": "The moderation state of this piece of content."
+      "description": "The moderation state of this piece of content.",
+      "title": "The moderation state of this piece of content.",
+      "readOnly": true
     },
     "body": {
       "type": "array",
@@ -79,7 +86,8 @@
         "type": "object",
         "properties": {
           "value": {
-            "type": "string"
+            "type": "string",
+            "x-editor": "richtext"
           },
           "format": {
             "oneOf": [
@@ -105,7 +113,8 @@
         "required": ["value"]
       },
       "maxItems": 1,
-      "description": "Body"
+      "description": "Body",
+      "title": "Body"
     },
     "field_contacts": {
       "type": "array",
@@ -124,7 +133,9 @@
               "required": ["value"]
             },
             "maxItems": 1,
-            "description": "Published"
+            "description": "Published",
+            "title": "Published",
+            "readOnly": true
           },
           "title": {
             "type": "array",
@@ -139,7 +150,8 @@
               "required": ["value"]
             },
             "maxItems": 1,
-            "description": "Title"
+            "description": "Title",
+            "title": "Title"
           },
           "promote": {
             "type": "array",
@@ -153,7 +165,8 @@
               "required": ["value"]
             },
             "maxItems": 1,
-            "description": "Promoted to front page"
+            "description": "Promoted to front page",
+            "title": "Promoted to front page"
           },
           "sticky": {
             "type": "array",
@@ -167,7 +180,8 @@
               "required": ["value"]
             },
             "maxItems": 1,
-            "description": "Sticky at top of lists"
+            "description": "Sticky at top of lists",
+            "title": "Sticky at top of lists"
           },
           "moderation_state": {
             "type": "array",
@@ -182,7 +196,9 @@
               "required": ["value"]
             },
             "maxItems": 1,
-            "description": "The moderation state of this piece of content."
+            "description": "The moderation state of this piece of content.",
+            "title": "The moderation state of this piece of content.",
+            "readOnly": true
           },
           "field_contact_email": {
             "type": "array",
@@ -197,7 +213,8 @@
               "required": ["value"]
             },
             "maxItems": 1,
-            "description": "Contact email"
+            "description": "Contact email",
+            "title": "Contact email"
           },
           "field_contact_name": {
             "type": "array",
@@ -212,7 +229,8 @@
               "required": ["value"]
             },
             "maxItems": 1,
-            "description": "Contact name"
+            "description": "Contact name",
+            "title": "Contact name"
           },
           "field_contact_role": {
             "type": "array",
@@ -227,7 +245,8 @@
               "required": ["value"]
             },
             "maxItems": 1,
-            "description": "Contact role"
+            "description": "Contact role",
+            "title": "Contact role"
           },
           "type": {
             "type": "array",
@@ -240,13 +259,15 @@
                 }
               }
             },
-            "maxItems": 1
+            "maxItems": 1,
+            "title": "Type"
           }
         },
         "required": ["title", "field_contact_name"],
         "x-targetType": "node"
       },
-      "description": "Contacts"
+      "description": "Contacts",
+      "title": "Contacts"
     },
     "field_content_paragraphs": {
       "type": "array",
@@ -268,7 +289,9 @@
                   "required": ["value"]
                 },
                 "maxItems": 1,
-                "description": "Published"
+                "description": "Published",
+                "title": "Published",
+                "readOnly": true
               },
               "parent_id": {
                 "type": "array",
@@ -283,7 +306,8 @@
                   "required": ["value"]
                 },
                 "maxItems": 1,
-                "description": "The ID of the parent entity of which this entity is referenced."
+                "description": "The ID of the parent entity of which this entity is referenced.",
+                "title": "The ID of the parent entity of which this entity is referenced."
               },
               "parent_type": {
                 "type": "array",
@@ -298,7 +322,8 @@
                   "required": ["value"]
                 },
                 "maxItems": 1,
-                "description": "The entity parent type to which this entity is referenced."
+                "description": "The entity parent type to which this entity is referenced.",
+                "title": "The entity parent type to which this entity is referenced."
               },
               "parent_field_name": {
                 "type": "array",
@@ -313,7 +338,8 @@
                   "required": ["value"]
                 },
                 "maxItems": 1,
-                "description": "The entity parent field name to which this entity is referenced."
+                "description": "The entity parent field name to which this entity is referenced.",
+                "title": "The entity parent field name to which this entity is referenced."
               },
               "behavior_settings": {
                 "type": "array",
@@ -327,7 +353,8 @@
                   "required": ["value"]
                 },
                 "maxItems": 1,
-                "description": "The behavior plugin settings"
+                "description": "The behavior plugin settings",
+                "title": "The behavior plugin settings"
               },
               "field_text_body": {
                 "type": "array",
@@ -335,7 +362,8 @@
                   "type": "object",
                   "properties": {
                     "value": {
-                      "type": "string"
+                      "type": "string",
+                      "x-editor": "richtext"
                     },
                     "format": {
                       "oneOf": [
@@ -351,7 +379,8 @@
                   "required": ["value"]
                 },
                 "maxItems": 1,
-                "description": "Text body"
+                "description": "Text body",
+                "title": "Text body"
               },
               "type": {
                 "type": "array",
@@ -364,7 +393,8 @@
                     }
                   }
                 },
-                "maxItems": 1
+                "maxItems": 1,
+                "title": "Type"
               }
             }
           },
@@ -383,7 +413,9 @@
                   "required": ["value"]
                 },
                 "maxItems": 1,
-                "description": "Published"
+                "description": "Published",
+                "title": "Published",
+                "readOnly": true
               },
               "parent_id": {
                 "type": "array",
@@ -398,7 +430,8 @@
                   "required": ["value"]
                 },
                 "maxItems": 1,
-                "description": "The ID of the parent entity of which this entity is referenced."
+                "description": "The ID of the parent entity of which this entity is referenced.",
+                "title": "The ID of the parent entity of which this entity is referenced."
               },
               "parent_type": {
                 "type": "array",
@@ -413,7 +446,8 @@
                   "required": ["value"]
                 },
                 "maxItems": 1,
-                "description": "The entity parent type to which this entity is referenced."
+                "description": "The entity parent type to which this entity is referenced.",
+                "title": "The entity parent type to which this entity is referenced."
               },
               "parent_field_name": {
                 "type": "array",
@@ -428,7 +462,8 @@
                   "required": ["value"]
                 },
                 "maxItems": 1,
-                "description": "The entity parent field name to which this entity is referenced."
+                "description": "The entity parent field name to which this entity is referenced.",
+                "title": "The entity parent field name to which this entity is referenced."
               },
               "behavior_settings": {
                 "type": "array",
@@ -442,7 +477,8 @@
                   "required": ["value"]
                 },
                 "maxItems": 1,
-                "description": "The behavior plugin settings"
+                "description": "The behavior plugin settings",
+                "title": "The behavior plugin settings"
               },
               "field_quote_attribution": {
                 "type": "array",
@@ -457,7 +493,8 @@
                   "required": ["value"]
                 },
                 "maxItems": 1,
-                "description": "Quote attribution"
+                "description": "Quote attribution",
+                "title": "Quote attribution"
               },
               "field_quote_text": {
                 "type": "array",
@@ -465,7 +502,8 @@
                   "type": "object",
                   "properties": {
                     "value": {
-                      "type": "string"
+                      "type": "string",
+                      "x-editor": "richtext"
                     },
                     "format": {
                       "oneOf": [
@@ -481,7 +519,8 @@
                   "required": ["value"]
                 },
                 "maxItems": 1,
-                "description": "Quote text"
+                "description": "Quote text",
+                "title": "Quote text"
               },
               "type": {
                 "type": "array",
@@ -494,14 +533,16 @@
                     }
                   }
                 },
-                "maxItems": 1
+                "maxItems": 1,
+                "title": "Type"
               }
             }
           }
         ],
         "x-targetType": "paragraph"
       },
-      "description": "Content paragraphs"
+      "description": "Content paragraphs",
+      "title": "Content paragraphs"
     },
     "field_keywords": {
       "type": "array",
@@ -516,7 +557,8 @@
         "required": ["value"]
       },
       "maxItems": 3,
-      "description": "Up to 3 keywords describing the article."
+      "description": "Up to 3 keywords describing the article.",
+      "title": "Up to 3 keywords describing the article."
     },
     "field_news_image": {
       "type": "array",
@@ -536,7 +578,8 @@
         "x-targetType": "file"
       },
       "maxItems": 1,
-      "description": "News image"
+      "description": "News image",
+      "title": "News image"
     },
     "field_news_link": {
       "type": "array",
@@ -570,7 +613,8 @@
         }
       },
       "maxItems": 1,
-      "description": "External link"
+      "description": "External link",
+      "title": "External link"
     },
     "field_news_tags": {
       "type": "array",
@@ -583,7 +627,8 @@
         },
         "x-targetType": "taxonomy_term"
       },
-      "description": "News tags"
+      "description": "News tags",
+      "title": "News tags"
     },
     "field_news_type": {
       "type": "array",
@@ -592,13 +637,15 @@
         "properties": {
           "value": {
             "type": "string",
-            "enum": ["press_release", "announcement", "update"]
+            "enum": ["press_release", "announcement", "update"],
+            "x-enum-labels": ["Press Release", "Announcement", "Update"]
           }
         },
         "required": ["value"]
       },
       "maxItems": 1,
-      "description": "News type"
+      "description": "News type",
+      "title": "News type"
     },
     "field_publication_date": {
       "type": "array",
@@ -613,7 +660,8 @@
         "required": ["value"]
       },
       "maxItems": 1,
-      "description": "Publication date"
+      "description": "Publication date",
+      "title": "Publication date"
     },
     "field_publication_datetime": {
       "type": "array",
@@ -628,7 +676,8 @@
         "required": ["value"]
       },
       "maxItems": 1,
-      "description": "Publication datetime"
+      "description": "Publication datetime",
+      "title": "Publication datetime"
     },
     "field_teaser": {
       "type": "array",
@@ -637,13 +686,15 @@
         "properties": {
           "value": {
             "type": "string",
-            "maxLength": 255
+            "maxLength": 255,
+            "x-editor": "textarea"
           }
         },
         "required": ["value"]
       },
       "maxItems": 1,
-      "description": "A short teaser for the news item."
+      "description": "A short teaser for the news item.",
+      "title": "A short teaser for the news item."
     }
   },
   "required": ["title"]

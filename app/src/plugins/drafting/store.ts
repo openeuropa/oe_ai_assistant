@@ -12,6 +12,7 @@ import {
   setPluginState,
   usePluginSlice,
 } from "@/store/plugin-store";
+import type { EditableDraft } from "./types";
 
 const PLUGIN_ID = "drafting";
 
@@ -24,6 +25,10 @@ export interface DraftingSliceState {
   isArtifactCollapsed: boolean;
   /** Version of the draft currently shown in the pane; null for none. */
   activeDraftVersion: number | null;
+  /** Server-confirmed content and editor metadata, scoped to each version. */
+  editableDrafts: Record<number, EditableDraft>;
+  /** An inline input is open; apply or cancel before changing drafts. */
+  isEditingField: boolean;
 }
 
 export const draftingSliceConfig: PluginSliceConfig<DraftingSliceState> = {
@@ -32,6 +37,8 @@ export const draftingSliceConfig: PluginSliceConfig<DraftingSliceState> = {
     selections: {},
     isArtifactCollapsed: false,
     activeDraftVersion: null,
+    editableDrafts: {},
+    isEditingField: false,
   },
   // Nothing is persisted client side. Confirmed selections are rehydrated
   // from the backend on mount, and the conversation lives server side.

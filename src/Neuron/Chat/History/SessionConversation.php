@@ -99,12 +99,30 @@ final class SessionConversation {
       foreach ($meta['tools'] ?? [] as $tool) {
         $results[] = [
           'name' => (string) ($tool['name'] ?? ''),
-          'result' => self::decodeResult($tool['result'] ?? NULL),
+          'result' => self::toolResult($row, $tool),
         ];
       }
     }
 
     return $results;
+  }
+
+  /**
+   * Reads a tool result with the editor's changes over its original draft.
+   *
+   * The original result stays intact in meta.tools; edits are held separately
+   * on its row so every consumer reads the same effective draft.
+   */
+  public static function toolResult(ContentEntityInterface $row, array $tool): array {
+    $result = self::decodeResult($tool['result'] ?? NULL);
+    if (isset($result['draft']['version'])) {
+      $edit = self::decode($row, 'meta')['draft_edits'][$result['draft']['version']] ?? [];
+      $result['draft']['fields'] = array_replace($result['draft']['fields'] ?? [], $edit['fields'] ?? []);
+      if ($edit !== []) {
+        $result['draft']['editRevision'] = $edit['revision'];
+      }
+    }
+    return $result;
   }
 
   /**
