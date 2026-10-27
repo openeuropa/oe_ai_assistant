@@ -72,11 +72,20 @@ abstract class DraftingPluginTestBase extends ExistingSiteBase {
    * {@inheritdoc}
    */
   protected function tearDown(): void {
-    // Remove any conversation messages persisted against the test sessions.
-    $storage = \Drupal::entityTypeManager()
+    // Remove provenance before the messages and sessions it references.
+    $entityTypeManager = \Drupal::entityTypeManager();
+    $provenanceStorage = $entityTypeManager->getStorage('ai_content_provenance');
+    $messageStorage = $entityTypeManager
       ->getStorage('ai_conversation_message');
     foreach ($this->sessions as $session) {
-      $storage->deleteForHost($session);
+      $ids = $provenanceStorage->getQuery()
+        ->accessCheck(FALSE)
+        ->condition('session', $session->id())
+        ->execute();
+      if ($ids) {
+        $provenanceStorage->delete($provenanceStorage->loadMultiple($ids));
+      }
+      $messageStorage->deleteForHost($session);
     }
 
     MockAiProvider::reset();
