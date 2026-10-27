@@ -27,11 +27,6 @@ final class EditorialMessageStore extends DrupalMessageStore {
   public const string SESSION_PREFIX = 'session_';
 
   /**
-   * Marks a thread segment as the agent holding the conversation.
-   */
-  public const string AGENT_PREFIX = 'agent_';
-
-  /**
    * The message type carrying the session reference.
    */
   private const BUNDLE = 'editorial_session';
@@ -87,10 +82,12 @@ final class EditorialMessageStore extends DrupalMessageStore {
    */
   private static function sessionOf(string $threadId): ?string {
     $key = explode('.', $threadId)[0];
+    if (!str_starts_with($key, self::SESSION_PREFIX)) {
+      return NULL;
+    }
+    $session = substr($key, strlen(self::SESSION_PREFIX));
 
-    return str_starts_with($key, self::SESSION_PREFIX)
-      ? substr($key, strlen(self::SESSION_PREFIX))
-      : NULL;
+    return $session === '' ? NULL : $session;
   }
 
 }

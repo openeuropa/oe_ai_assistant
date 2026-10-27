@@ -35,7 +35,6 @@ final class SessionConversation {
    */
   public function rows(AiEditorialSessionInterface $session, ?string $agentId = NULL): array {
     $storage = $this->entityTypeManager->getStorage('neuron_message');
-    $storage->resetCache();
     $query = $storage->getQuery()
       ->accessCheck(FALSE)
       ->condition('oe_ai_session', (int) $session->id())
@@ -44,8 +43,12 @@ final class SessionConversation {
       $query->condition('agent_id', $agentId);
     }
     $ids = $query->execute();
+    if ($ids === []) {
+      return [];
+    }
+    $storage->resetCache($ids);
 
-    return $ids === [] ? [] : $storage->loadMultiple($ids);
+    return $storage->loadMultiple($ids);
   }
 
   /**
