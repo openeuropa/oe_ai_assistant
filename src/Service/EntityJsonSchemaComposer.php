@@ -15,6 +15,7 @@ use Drupal\Core\Field\FieldItemListInterface;
 use Drupal\Core\Field\FieldStorageDefinitionInterface;
 use Drupal\Core\Field\Plugin\Field\FieldType\EntityReferenceItem;
 use Drupal\Core\TypedData\TypedDataInternalPropertiesHelper;
+use Drupal\filter\FilterFormatInterface;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Component\Serializer\SerializerInterface;
 
@@ -123,6 +124,7 @@ class EntityJsonSchemaComposer {
     private readonly EntityTypeManagerInterface $entityTypeManager,
     private readonly EntityTypeBundleInfoInterface $bundleInfo,
     private readonly EntityFieldManagerInterface $entityFieldManager,
+    private readonly TextFormatResolver $textFormatResolver,
   ) {}
 
   /**
@@ -455,15 +457,17 @@ class EntityJsonSchemaComposer {
    * Because the composer always wraps items as objects, the constraint must
    * live on the constrained property to be meaningful.
    *
-   * `description` is NOT injected here. composeField() attaches it to the
-   * array wrapper one level up.
+   * The field's `description` is NOT injected here. composeField() attaches
+   * it to the array wrapper one level up. enrichFormattedText() describes the
+   * allowed HTML tags on the properties a text format filters.
    *
    * @todo When adding constraints for property
    *   names other than `value` (e.g. text_long's `summary`, datetime's
    *   `end_value`), drop the isset() guards in favour of explicit
    *   property-name routing per field type. The current silent no-op is
-   *   intentional today (every type we support has its constraint on
-   *   `value`) but is a known foot-gun for the next round of enrichment.
+   *   intentional today (every other type we support has its constraint on
+   *   `value`; formatted text routes by the `text source` setting) but is a
+   *   known foot-gun for the next round of enrichment.
    *   To be done in: OEL-4692.
    *
    * @param array $itemSchema
@@ -503,7 +507,69 @@ class EntityJsonSchemaComposer {
       $itemSchema['properties']['value']['format'] = $datetimeType === 'date' ? 'date' : 'date-time';
     }
 
+    return $this->enrichFormattedText($itemSchema, $fieldDef);
+  }
+
+  /**
+   * Layers the allowed text formats onto a formatted-text item schema.
+   *
+   * Puts an enum of the allowed formats on properties.format, makes it
+   * required, and appends the tags each format allows to the description of
+   * every property the format filters, such as value and summary. Formats
+   * that allow no HTML tag are left out while one that does is allowed, as
+   * the drafted text is HTML.
+   *
+   * @param array $itemSchema
+   *   The per-item schema.
+   * @param \Drupal\Core\Field\FieldDefinitionInterface $fieldDef
+   *   The field definition.
+   *
+   * @return array
+   *   The item schema, unchanged unless the field holds formatted text.
+   */
+  private function enrichFormattedText(array $itemSchema, FieldDefinitionInterface $fieldDef): array {
+    if (!isset($itemSchema['properties']['format']) || !$this->textFormatResolver->isFormatted($fieldDef)) {
+      return $itemSchema;
+    }
+    $formats = $this->textFormatResolver->formatsFor($fieldDef);
+    if ($formats === []) {
+      return $itemSchema;
+    }
+    $formats = $this->textFormatResolver->preferredFormats($formats);
+
+    $itemSchema['properties']['format']['enum'] = array_map('strval', array_keys($formats));
+    $itemSchema['required'] = array_values(array_unique([...$itemSchema['required'] ?? [], 'format']));
+    $guidance = implode(' ', array_map($this->describeFormat(...), $formats));
+    foreach ($fieldDef->getFieldStorageDefinition()->getPropertyDefinitions() as $propDef) {
+      $source = $propDef->getSetting('text source');
+      if (is_string($source) && isset($itemSchema['properties'][$source])) {
+        $description = $itemSchema['properties'][$source]['description'] ?? '';
+        $itemSchema['properties'][$source]['description'] = ltrim($description . ' ' . $guidance);
+      }
+    }
     return $itemSchema;
+  }
+
+  /**
+   * Describes the HTML tags a text format allows.
+   *
+   * @param \Drupal\filter\FilterFormatInterface $format
+   *   The format.
+   *
+   * @return string
+   *   One sentence naming the format and its allowed tags.
+   */
+  private function describeFormat(FilterFormatInterface $format): string {
+    $tags = $this->textFormatResolver->allowedTags($format);
+    if ($tags === NULL) {
+      $forbidden = $this->textFormatResolver->forbiddenTags($format);
+      return $forbidden === []
+        ? sprintf('%s allows any HTML.', $format->id())
+        : sprintf('%s allows any HTML except these tags: %s.', $format->id(), implode(', ', $forbidden));
+    }
+    return $tags === []
+      ? sprintf('%s allows no HTML tags.', $format->id())
+      : sprintf('%s allows these HTML tags: %s.', $format->id(), implode(', ', $tags));
   }
 
   /**

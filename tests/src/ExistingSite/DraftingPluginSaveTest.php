@@ -137,10 +137,11 @@ class DraftingPluginSaveTest extends DraftingPluginTestBase {
     // The main_fields drafter ignores the schema and answers with "body",
     // then answers correctly once told what was wrong.
     MockAiProvider::enqueue(new MockResponse(
-      text: '{"title": [{"value": "Stray key title"}], "body": [{"value": "<p>Text</p>", "format": "full_html"}]}',
+      text: '{"title": [{"value": "Stray key title"}], "body": [{"value": "Text.", "format": "plain_text"}]}',
     ));
     MockAiProvider::enqueue(new MockResponse(
-      text: '{"title": [{"value": "Stray key title"}], "field_teaser": [{"value": "Teaser."}], "field_body": [{"value": "<p>Text</p>", "format": "full_html"}]}',
+      // Plain text is the only format the test user may use.
+      text: '{"title": [{"value": "Stray key title"}], "field_teaser": [{"value": "Teaser."}], "field_body": [{"value": "Text.", "format": "plain_text"}]}',
     ));
     MockAiProvider::enqueue(new MockResponse(text: 'Draft 1.0 is ready.'));
 

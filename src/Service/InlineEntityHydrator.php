@@ -166,7 +166,7 @@ class InlineEntityHydrator {
         }
       }
 
-      // The LLM never supplies a format; deserialize() leaves it unset.
+      // Every formatted-text item needs a format its field and user allow.
       $this->textFormatResolver->resolveEntityFormats($entity);
 
       $entities[] = $entity;
