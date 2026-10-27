@@ -90,13 +90,14 @@ export interface DraftingService {
  */
 export async function* emitDraftToolCall(
   result: Record<string, unknown>,
+  toolName = "draft_content",
 ): AsyncGenerator<StreamEvent> {
   const toolCallId = randomUUID();
   yield {
     type: "tool-call-start",
     id: toolCallId,
     toolCallId,
-    toolName: "draft_content",
+    toolName,
   };
   yield { type: "tool-call-delta", argsText: "{}" };
   yield { type: "tool-call-end" };

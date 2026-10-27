@@ -264,13 +264,22 @@ export class MockDraftingService implements DraftingService {
       data: selectedFields,
     };
 
-    // Emit the draft_content tool call so the clickable card appears
-    // inline, with the versioned result shape the Drupal backend uses.
-    yield* emitDraftToolCall({
-      version,
-      context: null,
-      fields: selectedFields,
-    });
+    // Emit the group call with the versioned draft Neuron's UI expects.
+    yield* emitDraftToolCall(
+      {
+        group: "main_fields",
+        label: "Content",
+        fields: selectedFields,
+        draft: {
+          version,
+          major: version,
+          minor: 0,
+          context: null,
+          fields: selectedFields,
+        },
+      },
+      "draft_group",
+    );
 
     // Confirmation text, matching the Drupal backend wording.
     const confirmText =
