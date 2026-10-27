@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\oe_ai_assistant\Kernel;
 
+use Drupal\filter\Entity\FilterFormat;
 use Drupal\KernelTests\KernelTestBase;
 use Drupal\oe_ai_assistant\Service\EntityJsonSchemaComposer;
+use Drupal\Tests\oe_ai_assistant\Traits\TextFormatUserTrait;
 use PHPUnit\Framework\Attributes\Group;
 
 /**
@@ -18,6 +20,8 @@ use PHPUnit\Framework\Attributes\Group;
  */
 #[Group('oe_ai_assistant')]
 class EntityJsonSchemaComposerTest extends KernelTestBase {
+
+  use TextFormatUserTrait;
 
   /**
    * {@inheritdoc}
@@ -144,6 +148,138 @@ class EntityJsonSchemaComposerTest extends KernelTestBase {
     $this->assertArrayHasKey('value', $body['items']['properties']);
     $this->assertArrayHasKey('format', $body['items']['properties']);
     $this->assertSame('string', $body['items']['properties']['value']['type']);
+  }
+
+  /**
+   * Asserts formatted text lists the field's formats and their tags.
+   */
+  public function testFormattedTextFieldListsAllowedFormats(): void {
+    $this->createFormats();
+    $this->restrictFormats('node', 'oe_news', 'field_body', ['oe_test_basic', 'oe_test_plain', 'full_html']);
+
+    $item = $this->bodyItemSchema();
+
+    // The user may use none of the field's formats, so all of them count,
+    // except plain text, as the drafted text is HTML.
+    $this->assertEqualsCanonicalizing(['oe_test_basic', 'full_html'], $item['properties']['format']['enum']);
+    $this->assertContains('format', $item['required']);
+    $description = $item['properties']['value']['description'];
+    $this->assertStringContainsString('oe_test_basic allows these HTML tags: p, a, strong.', $description);
+    // A format allowing any tag offers the whole list of described tags.
+    $this->assertStringContainsString('full_html allows these HTML tags: p, br, a, strong, em, ul, ol, li, h2, h3, h4, h5, h6, blockquote.', $description);
+    $this->assertStringNotContainsString('oe_test_plain', $description);
+    // The summary is filtered by the same format, so it gets the same tags.
+    $this->assertSame($description, $item['properties']['summary']['description']);
+  }
+
+  /**
+   * Asserts a field allowing any format lists only the user's formats.
+   */
+  public function testUnrestrictedFormattedTextFieldListsTheUserFormats(): void {
+    $this->createFormats();
+    $this->setUserWithFormats(['oe_test_basic']);
+
+    $item = $this->bodyItemSchema();
+
+    // Plain text, the fallback format every user may use, allows no tags.
+    $this->assertSame(['oe_test_basic'], $item['properties']['format']['enum']);
+  }
+
+  /**
+   * Asserts a filter_html format allowing no tags is treated as plain text.
+   */
+  public function testFilterHtmlFormatWithoutTagsCountsAsPlainText(): void {
+    $this->createFormats();
+    FilterFormat::create([
+      'format' => 'oe_test_no_tags',
+      'name' => 'No tags',
+      'filters' => [
+        'filter_html' => ['status' => TRUE, 'settings' => ['allowed_html' => '']],
+      ],
+    ])->save();
+    $this->restrictFormats('node', 'oe_news', 'field_body', ['oe_test_basic', 'oe_test_no_tags']);
+
+    $item = $this->bodyItemSchema();
+
+    $this->assertSame(['oe_test_basic'], $item['properties']['format']['enum']);
+  }
+
+  /**
+   * Asserts tags outside the described list are never named.
+   *
+   * The LLM cannot fill in tags tied to site features, such as drupal-media.
+   */
+  public function testFormatDescriptionLeavesOutSiteFeatureTags(): void {
+    FilterFormat::create([
+      'format' => 'oe_test_media',
+      'name' => 'Media',
+      'filters' => [
+        'filter_html' => [
+          'status' => TRUE,
+          'settings' => ['allowed_html' => '<p> <strong> <drupal-media data-entity-type data-entity-uuid>'],
+        ],
+      ],
+    ])->save();
+    $this->restrictFormats('node', 'oe_news', 'field_body', ['oe_test_media']);
+
+    $item = $this->bodyItemSchema();
+
+    $this->assertSame('oe_test_media allows these HTML tags: p, strong.', $item['properties']['value']['description']);
+  }
+
+  /**
+   * Asserts a field allowing only plain text still lists it.
+   */
+  public function testPlainTextOnlyFieldListsPlainText(): void {
+    $this->createFormats();
+    $this->restrictFormats('node', 'oe_news', 'field_body', ['oe_test_plain']);
+
+    $item = $this->bodyItemSchema();
+
+    $this->assertSame(['oe_test_plain'], $item['properties']['format']['enum']);
+    $this->assertSame('oe_test_plain allows no HTML tags.', $item['properties']['value']['description']);
+  }
+
+  /**
+   * Asserts formatted text lists only the formats the user may use.
+   */
+  public function testFormattedTextFieldListsFormatsTheUserMayUse(): void {
+    $this->createFormats();
+    $this->restrictFormats('node', 'oe_news', 'field_body', ['oe_test_basic', 'oe_test_plain', 'full_html']);
+    $this->setUserWithFormats(['oe_test_basic']);
+
+    $item = $this->bodyItemSchema();
+
+    $this->assertSame(['oe_test_basic'], $item['properties']['format']['enum']);
+    $this->assertSame('oe_test_basic allows these HTML tags: p, a, strong.', $item['properties']['value']['description']);
+  }
+
+  /**
+   * Returns the item schema of the news body field.
+   */
+  private function bodyItemSchema(): array {
+    return $this->composer()->compose('node', 'oe_news')['properties']['field_body']['items'];
+  }
+
+  /**
+   * Creates a basic format and a plain one.
+   */
+  private function createFormats(): void {
+    FilterFormat::create([
+      'format' => 'oe_test_basic',
+      'name' => 'Basic',
+      'filters' => [
+        'filter_html' => [
+          'status' => TRUE,
+          'settings' => ['allowed_html' => '<p> <a href> <strong>'],
+        ],
+      ],
+    ])->save();
+    FilterFormat::create([
+      'format' => 'oe_test_plain',
+      'name' => 'Plain',
+      'filters' => ['filter_html_escape' => ['status' => TRUE]],
+    ])->save();
   }
 
   /**

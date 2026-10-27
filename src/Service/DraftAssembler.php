@@ -77,7 +77,7 @@ class DraftAssembler implements DraftAssemblerInterface {
     }
 
     try {
-      $built = $this->draftEntityBuilder->fromLlmFields('node', $bundle, $mergedFields);
+      $built = $this->draftEntityBuilder->fromLlmFields('node', $bundle, $mergedFields, $existingNode);
     }
     catch (\Throwable $e) {
       $this->logger->error('Failed to build draft entity: @e', ['@e' => (string) $e]);
@@ -95,20 +95,8 @@ class DraftAssembler implements DraftAssemblerInterface {
     // Transplant only the merged fields' values onto the existing node, the
     // same field-by-field idiom core's EntityResource::patch() uses for
     // updates, so fields outside this draft are left untouched.
-    foreach ($mergedFields as $fieldName => $submitted) {
-      $values = $built->get($fieldName)->getValue();
-      $existingItems = $existingNode->get($fieldName);
-      if ($existingItems->getFieldDefinition()->getFieldStorageDefinition()->getPropertyDefinition('format')) {
-        // A format the payload did not supply was resolved for a new entity;
-        // the one already stored on the item takes precedence over it.
-        foreach (array_keys($values) as $delta) {
-          $existingFormat = $existingItems->get($delta)?->format;
-          if ($existingFormat && empty($submitted[$delta]['format'])) {
-            $values[$delta]['format'] = $existingFormat;
-          }
-        }
-      }
-      $existingNode->set($fieldName, $values);
+    foreach (array_keys($mergedFields) as $fieldName) {
+      $existingNode->set($fieldName, $built->get($fieldName)->getValue());
     }
     return $existingNode;
   }
