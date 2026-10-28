@@ -106,25 +106,25 @@ final class UsageDashboardBuilder {
       'tokens_consumed' => $this->dashboardComponent('metric-card', [
         'label' => (string) $this->t('Tokens consumed'),
         'value' => number_format($this->tokenUsage->getTokensUsed($startDate, $endDate, $dataFilters)),
-        'trend' => (string) $this->t('+18.4% vs previous month'),
+        'trend' => '',
         'trend_state' => 'positive',
       ]),
       'supported_nodes' => $this->dashboardComponent('metric-card', [
         'label' => (string) $this->t('AI supported nodes'),
         'value' => number_format($this->tokenUsage->countSupportedNodes($startDate, $endDate, $dataFilters)),
-        'trend' => (string) $this->t('30-day cumulative trend, +22 nodes'),
+        'trend' => '',
         'trend_state' => 'positive',
       ]),
       'cost_per_session' => $this->dashboardComponent('metric-card', [
         'label' => (string) $this->t('Average tokens used per session'),
         'value' => number_format($tokensPerSession, 2),
-        'trend' => (string) $this->t('-7% vs last 30 days'),
+        'trend' => '',
         'trend_state' => 'negative',
       ]),
       'cost_per_version' => $this->dashboardComponent('metric-card', [
         'label' => (string) $this->t('Average tokens used per major version'),
         'value' => number_format($tokensPerVersion, 2),
-        'trend' => (string) $this->t('+4.3% with 96 AI-supported major versions'),
+        'trend' => '',
         'trend_state' => 'positive',
       ]),
     ];
@@ -224,7 +224,7 @@ final class UsageDashboardBuilder {
     return [
       'consumption' => $this->dashboardComponent('card', [
         'title' => (string) $this->t('Consumption breakdown'),
-        'subtitle' => (string) $this->t('Top token categories, users, and AI session types.'),
+        'subtitle' => (string) $this->t('Tokens consumed by content type.'),
       ], [
         'content' => [
           'ranked' => $this->dashboardComponent('ranked-bars', [
@@ -234,7 +234,7 @@ final class UsageDashboardBuilder {
       ]),
       'users' => $this->dashboardComponent('card', [
         'title' => (string) $this->t('Users'),
-        'subtitle' => (string) $this->t('Top tokens used and total sessions by user for the selected date range.'),
+        'subtitle' => (string) $this->t('Tokens consumed by user.'),
       ], [
         'content' => $this->dashboardComponent('ranked-bars', [
           'items' => $this->userTokenItems($startDate, $endDate, $dataFilters),
@@ -299,7 +299,7 @@ final class UsageDashboardBuilder {
     return [
       'templates' => $this->dashboardComponent('list-card', [
         'title' => (string) $this->t('Top templates'),
-        'subtitle' => (string) $this->t('Optional view retained as a secondary widget.'),
+        'subtitle' => (string) $this->t('Tokens consumed by template.'),
         'items' => $this->templateTokenItems($startDate, $endDate, $dataFilters),
       ]),
     ];

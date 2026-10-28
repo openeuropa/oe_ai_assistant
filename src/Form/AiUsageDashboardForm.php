@@ -70,9 +70,16 @@ class AiUsageDashboardForm extends FormBase {
     natcasesort($contentTypes);
 
     $query = $this->dashboardRequestStack->getCurrentRequest()->query->all();
-    $startDate = isset($query['start']) && is_string($query['start']) ? $query['start'] : (new \DateTimeImmutable('first day of this month'))->format('Y-m-d');
-    $endDate = isset($query['end']) && is_string($query['end']) ? $query['end'] : (new \DateTimeImmutable('last day of this month'))->format('Y-m-d');
     $preset = isset($query['preset']) && is_string($query['preset']) ? $query['preset'] : '30-days';
+    // A named preset drives the date range directly; only the "custom" preset
+    // honours the explicit start/end dates submitted through the filter form.
+    if ($preset === 'custom') {
+      $startDate = isset($query['start']) && is_string($query['start']) ? $query['start'] : (new \DateTimeImmutable('first day of this month'))->format('Y-m-d');
+      $endDate = isset($query['end']) && is_string($query['end']) ? $query['end'] : (new \DateTimeImmutable('last day of this month'))->format('Y-m-d');
+    }
+    else {
+      [$startDate, $endDate] = $this->presetRange($preset);
+    }
     $selectedSessionType = isset($query['session_type']) && is_string($query['session_type']) && isset($sessionTypes[$query['session_type']]) ? $query['session_type'] : '';
     $selectedContentType = isset($query['content_type']) && is_string($query['content_type']) && isset($contentTypes[$query['content_type']]) ? $query['content_type'] : '';
 
@@ -133,7 +140,7 @@ class AiUsageDashboardForm extends FormBase {
     $form['dashboard'] = $this->dashboardBuilder->build(
       $this->dashboardHeader(),
       $this->dashboardFilters($form),
-      $this->dashboardPeriodControls($preset),
+      $this->dashboardPeriodControls($preset, $selectedContentType, $selectedUser),
       $startDate,
       $endDate,
       new DashboardFilters(
@@ -215,12 +222,6 @@ class AiUsageDashboardForm extends FormBase {
       'actions' => [
         '#type' => 'container',
         '#attributes' => ['class' => ['ai-dashboard__header-actions']],
-        'compare' => [
-          '#type' => 'html_tag',
-          '#tag' => 'button',
-          '#value' => $this->t('Compare with previous month'),
-          '#attributes' => ['class' => ['button'], 'type' => 'button'],
-        ],
       ],
     ];
   }
@@ -264,37 +265,75 @@ class AiUsageDashboardForm extends FormBase {
    * Build the periods render array.
    *
    * @param string $preset
-   *   The period preset.
+   *   The active period preset.
+   * @param string $contentType
+   *   The active content type filter, or an empty string for none.
+   * @param string $participant
+   *   The active participant filter, or an empty string for none.
    *
    * @return array
    *   The render array
    */
-  protected function dashboardPeriodControls(string $preset): array {
+  protected function dashboardPeriodControls(string $preset, string $contentType, string $participant): array {
+    // Each tab keeps the active content type and participant filters so that
+    // switching the period only changes the date range, not the other filters.
+    $carried = array_filter([
+      'content_type' => $contentType,
+      'participant' => $participant,
+    ], static fn (string $value): bool => $value !== '');
+    $url = static function (string $value) use ($carried): string {
+      return '?' . http_build_query(['preset' => $value] + $carried);
+    };
+
+    $presets = [
+      '30-days' => $this->t('Last 30 days'),
+      '3-months' => $this->t('Last 3 months'),
+      '6-months' => $this->t('Last 6 months'),
+      'year' => $this->t('Last year'),
+      'ytd' => $this->t('YTD'),
+    ];
+    $items = [];
+    foreach ($presets as $value => $label) {
+      $items[] = [
+        'label' => (string) $label,
+        'url' => $url($value),
+        'active' => $preset === $value,
+      ];
+    }
+
     return [
       '#type' => 'component',
       '#component' => 'oe_ai_assistant:dashboard-period-tabs',
-      '#props' => [
-        'items' => [
-          [
-            'label' => (string) $this->t('Last 30 days'),
-            'url' => '?preset=30-days',
-            'active' => $preset === '30-days',
-          ],
-          [
-            'label' => (string) $this->t('Last 3 months'),
-            'url' => '?preset=3-months',
-            'active' => $preset === '3-months',
-          ],
-          [
-            'label' => (string) $this->t('Last 6 months'),
-            'url' => '?preset=6-months',
-            'active' => $preset === '6-months',
-          ],
-          ['label' => (string) $this->t('Last year'), 'url' => '?preset=year', 'active' => $preset === 'year'],
-          ['label' => (string) $this->t('YTD'), 'url' => '?preset=ytd', 'active' => $preset === 'ytd'],
-        ],
-      ],
+      '#props' => ['items' => $items],
     ];
+  }
+
+  /**
+   * Resolves a named period preset to an inclusive start/end date range.
+   *
+   * All ranges end today; the named presets are trailing windows ending today
+   * except YTD, which starts on the first day of the current year. An unknown
+   * preset falls back to the last 30 days. Dates are UTC to match the token
+   * usage queries.
+   *
+   * @param string $preset
+   *   The period preset machine name.
+   *
+   * @return array{0: string, 1: string}
+   *   The inclusive start and end dates in Y-m-d format.
+   */
+  protected function presetRange(string $preset): array {
+    $timezone = new \DateTimeZone('UTC');
+    $today = new \DateTimeImmutable('today', $timezone);
+    $start = match ($preset) {
+      '3-months' => $today->modify('-3 months'),
+      '6-months' => $today->modify('-6 months'),
+      'year' => $today->modify('-1 year'),
+      'ytd' => $today->modify('first day of January this year'),
+      default => $today->modify('-30 days'),
+    };
+
+    return [$start->format('Y-m-d'), $today->format('Y-m-d')];
   }
 
 }

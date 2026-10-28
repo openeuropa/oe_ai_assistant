@@ -10,10 +10,6 @@ slots:
   forecast: { title: Forecast }
   metrics: { title: Metrics }
   breakdowns: { title: Consumption breakdowns }
-  trends: { title: Consumption trends }
-  review: { title: Page review }
-  quality: { title: Content quality }
-  activity: { title: Nodes and sessions }
   supplementary: { title: Optional widgets }
   primary: { title: Primary content }
   secondary: { title: Secondary content }
