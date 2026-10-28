@@ -1,4 +1,4 @@
-<div class="ai-dashboard">
+<div class="ai-dashboard{{ variant == 'table' ? ' ai-dashboard--table' : '' }}">
   <header class="ai-dashboard__header">{{ header }}</header>
   <div class="ai-dashboard__filters">{{ filters }}</div>
   <div class="ai-dashboard__period-controls">{{ period_controls }}</div>

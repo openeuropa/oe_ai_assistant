@@ -1,4 +1,4 @@
 <section class="ai-dashboard-card">
-  {% if title or actions %}<header class="ai-dashboard-card__header"><div>{% if title %}<h2 class="ai-dashboard-card__title">{{ title }}</h2>{% endif %}{% if subtitle %}<p class="ai-dashboard-card__subtitle">{{ subtitle }}</p>{% endif %}</div>{{ actions }}</header>{% endif %}
+  {% if title or actions or eyebrow %}<header class="ai-dashboard-card__header"><div>{% if eyebrow %}<p class="ai-dashboard-card__eyebrow">{{ eyebrow }}</p>{% endif %}{% if title %}<h2 class="ai-dashboard-card__title">{{ title }}</h2>{% endif %}{% if subtitle %}<p class="ai-dashboard-card__subtitle">{{ subtitle }}</p>{% endif %}</div>{{ actions }}</header>{% endif %}
   <div class="ai-dashboard-card__content">{{ content }}</div>
 </section>

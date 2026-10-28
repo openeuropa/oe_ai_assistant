@@ -2,7 +2,10 @@ $schema: https://git.drupalcode.org/project/drupal/-/raw/HEAD/core/assets/schema
 name: Dashboard page
 props:
   type: object
-  properties: {}
+  properties:
+    # "table" renders the single drill-down table card full width; any other
+    # value (or none) keeps the default multi-column overview layout.
+    variant: { type: string }
 slots:
   header: { title: Header }
   filters: { title: Filters }

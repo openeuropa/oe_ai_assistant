@@ -66,6 +66,325 @@ final class UsageDashboardBuilder {
   }
 
   /**
+   * Resolves a named period preset to an inclusive start/end date range.
+   *
+   * All ranges end today; the named presets are trailing windows ending today
+   * except YTD, which starts on the first day of the current year. An unknown
+   * preset falls back to the last 30 days. Dates are UTC to match the token
+   * usage queries. Shared by the dashboard form and the CSV export controller
+   * so both resolve presets identically.
+   *
+   * @param string $preset
+   *   The period preset machine name.
+   *
+   * @return array{0: string, 1: string}
+   *   The inclusive start and end dates in Y-m-d format.
+   */
+  public static function presetRange(string $preset): array {
+    $timezone = new \DateTimeZone('UTC');
+    $today = new \DateTimeImmutable('today', $timezone);
+    $start = match ($preset) {
+      '3-months' => $today->modify('-3 months'),
+      '6-months' => $today->modify('-6 months'),
+      'year' => $today->modify('-1 year'),
+      'ytd' => $today->modify('first day of January this year'),
+      default => $today->modify('-30 days'),
+    };
+
+    return [$start->format('Y-m-d'), $today->format('Y-m-d')];
+  }
+
+  /**
+   * Builds a drill-down table view (nodes, major versions, sessions, users).
+   *
+   * The table views reuse the dashboard chrome (header, filters, period tabs)
+   * but replace the overview body with an eyebrow banner and a single data
+   * table. The row data is produced by viewTable() so the CSV export can reuse
+   * the exact same header and rows.
+   *
+   * @param string $view
+   *   The view machine name: nodes, major-versions, sessions, or users.
+   * @param array $header
+   *   The header render array (export action).
+   * @param array $filters
+   *   The filter-bar render array built by the form.
+   * @param array $periodControls
+   *   The period-tabs render array built by the form.
+   * @param string $startDate
+   *   The inclusive range start date in Y-m-d format.
+   * @param string $endDate
+   *   The inclusive range end date in Y-m-d format.
+   * @param \Drupal\oe_ai_assistant\Service\DashboardFilters $dataFilters
+   *   The content type and participant filters applied to the data queries.
+   *
+   * @return array
+   *   The dashboard page component render array.
+   */
+  public function buildTable(string $view, array $header, array $filters, array $periodControls, string $startDate, string $endDate, DashboardFilters $dataFilters): array {
+    $definition = $this->viewDefinition($view);
+    [$headers, $rows] = $this->viewTable($view, $startDate, $endDate, $dataFilters);
+
+    return [
+      '#type' => 'component',
+      '#component' => 'oe_ai_assistant:dashboard-page',
+      '#props' => ['variant' => 'table'],
+      'header' => $header,
+      'filters' => $filters,
+      'period_controls' => $periodControls,
+      'metrics' => $this->dashboardComponent('card', [
+        'eyebrow' => $definition['eyebrow'],
+        'title' => $definition['title'],
+        'subtitle' => $definition['subtitle'],
+      ]),
+      'breakdowns' => $this->dashboardComponent('card', [
+        'title' => $definition['table_title'],
+        'subtitle' => $definition['table_subtitle'],
+      ], [
+        'content' => $this->dashboardComponent('data-table', [
+          'headers' => $headers,
+          'rows' => $rows,
+        ]),
+      ]),
+    ];
+  }
+
+  /**
+   * Returns the CSV header row and data rows for a drill-down view.
+   *
+   * The export controller calls this to serialise the same data the table
+   * view renders, honouring the active date range and filters.
+   *
+   * @param string $view
+   *   The view machine name: nodes, major-versions, sessions, or users.
+   * @param string $startDate
+   *   The inclusive range start date in Y-m-d format.
+   * @param string $endDate
+   *   The inclusive range end date in Y-m-d format.
+   * @param \Drupal\oe_ai_assistant\Service\DashboardFilters $dataFilters
+   *   The content type and participant filters applied to the data queries.
+   *
+   * @return array{0: array<int, string>, 1: array<int, array<int, string>>}
+   *   The header row and the data rows, each a flat array of cell strings.
+   */
+  public function viewTable(string $view, string $startDate, string $endDate, DashboardFilters $dataFilters): array {
+    return match ($view) {
+      'nodes' => $this->nodesTable($startDate, $endDate, $dataFilters),
+      'major-versions' => $this->majorVersionsTable($startDate, $endDate, $dataFilters),
+      'sessions' => $this->sessionsTable($startDate, $endDate, $dataFilters),
+      'users' => $this->usersTable($startDate, $endDate, $dataFilters),
+      default => [[], []],
+    };
+  }
+
+  /**
+   * Returns the banner labels for a drill-down view.
+   *
+   * @param string $view
+   *   The view machine name.
+   *
+   * @return array{eyebrow: string, title: string, subtitle: string, table_title: string, table_subtitle: string}
+   *   The banner and table labels.
+   */
+  private function viewDefinition(string $view): array {
+    return match ($view) {
+      'major-versions' => [
+        'eyebrow' => (string) $this->t('Major version view'),
+        'title' => (string) $this->t('Major versions per node'),
+        'subtitle' => (string) $this->t('For each node edited with AI, you can see major versions with their token usage and drill down further.'),
+        'table_title' => (string) $this->t('Major versions'),
+        'table_subtitle' => (string) $this->t('Major version number, node title, node ID, content type, participant, template used, total sessions, total tokens.'),
+      ],
+      'sessions' => [
+        'eyebrow' => (string) $this->t('Session view'),
+        'title' => (string) $this->t('Sessions per major version'),
+        'subtitle' => (string) $this->t('For each major version, drill down to all sessions with session ID and token usage.'),
+        'table_title' => (string) $this->t('Sessions'),
+        'table_subtitle' => (string) $this->t('Session ID, major version number, node title, node ID, content type, participant, template used, total tokens.'),
+      ],
+      'users' => [
+        'eyebrow' => (string) $this->t('User view'),
+        'title' => (string) $this->t('Tokens per user'),
+        'subtitle' => (string) $this->t('Sitewide list of users with aggregated tokens for sessions they authored.'),
+        'table_title' => (string) $this->t('Tokens per user'),
+        'table_subtitle' => (string) $this->t('Username, number of nodes edited with AI, number of sessions, total tokens.'),
+      ],
+      default => [
+        'eyebrow' => (string) $this->t('Node view'),
+        'title' => (string) $this->t('List of nodes supported with AI'),
+        'subtitle' => (string) $this->t('Ordered by total token usage over time and filterable by content type, participant and template used.'),
+        'table_title' => (string) $this->t('Nodes'),
+        'table_subtitle' => (string) $this->t('Node title, node ID, content type, participant, template used, major versions, total sessions, total tokens.'),
+      ],
+    };
+  }
+
+  /**
+   * Builds the nodes drill-down table.
+   */
+  private function nodesTable(string $startDate, string $endDate, DashboardFilters $dataFilters): array {
+    $headers = [
+      (string) $this->t('Node'),
+      (string) $this->t('ID'),
+      (string) $this->t('Type'),
+      (string) $this->t('Participant'),
+      (string) $this->t('Template'),
+      (string) $this->t('Majors'),
+      (string) $this->t('Sessions'),
+      (string) $this->t('Tokens'),
+    ];
+    $bundleLabels = $this->bundleLabels();
+    $userLabels = $this->userLabels();
+    $rows = [];
+    foreach ($this->tokenUsage->getNodeRows($startDate, $endDate, $dataFilters) as $row) {
+      $rows[] = [
+        $row['label'],
+        '#' . $row['node_id'],
+        $bundleLabels[$row['bundle']] ?? $row['bundle'],
+        $row['uid'] !== NULL ? ($userLabels[$row['uid']] ?? (string) $row['uid']) : '-',
+        $this->yesNo($row['template']),
+        (string) $row['majors'],
+        (string) $row['sessions'],
+        number_format($row['tokens']),
+      ];
+    }
+
+    return [$headers, $rows];
+  }
+
+  /**
+   * Builds the major-versions drill-down table.
+   */
+  private function majorVersionsTable(string $startDate, string $endDate, DashboardFilters $dataFilters): array {
+    $headers = [
+      (string) $this->t('Version'),
+      (string) $this->t('Node'),
+      (string) $this->t('ID'),
+      (string) $this->t('Type'),
+      (string) $this->t('Participant'),
+      (string) $this->t('Template'),
+      (string) $this->t('Sessions'),
+      (string) $this->t('Tokens'),
+    ];
+    $bundleLabels = $this->bundleLabels();
+    $userLabels = $this->userLabels();
+    $rows = [];
+    foreach ($this->tokenUsage->getMajorVersionRows($startDate, $endDate, $dataFilters) as $row) {
+      $rows[] = [
+        'v' . $row['major'],
+        $row['label'],
+        '#' . $row['node_id'],
+        $bundleLabels[$row['bundle']] ?? $row['bundle'],
+        $row['uid'] !== NULL ? ($userLabels[$row['uid']] ?? (string) $row['uid']) : '-',
+        $this->yesNo($row['template']),
+        (string) $row['sessions'],
+        number_format($row['tokens']),
+      ];
+    }
+
+    return [$headers, $rows];
+  }
+
+  /**
+   * Builds the sessions drill-down table.
+   */
+  private function sessionsTable(string $startDate, string $endDate, DashboardFilters $dataFilters): array {
+    $headers = [
+      (string) $this->t('Session ID'),
+      (string) $this->t('Version'),
+      (string) $this->t('Node'),
+      (string) $this->t('ID'),
+      (string) $this->t('Type'),
+      (string) $this->t('Participant'),
+      (string) $this->t('Template'),
+      (string) $this->t('Tokens'),
+    ];
+    $bundleLabels = $this->bundleLabels();
+    $userLabels = $this->userLabels();
+    $rows = [];
+    foreach ($this->tokenUsage->getSessionRows($startDate, $endDate, $dataFilters) as $row) {
+      $rows[] = [
+        'S-' . $row['session_id'],
+        $row['major'] !== NULL ? 'v' . $row['major'] : '-',
+        $row['label'],
+        '#' . $row['node_id'],
+        $bundleLabels[$row['bundle']] ?? $row['bundle'],
+        $row['uid'] !== NULL ? ($userLabels[$row['uid']] ?? (string) $row['uid']) : '-',
+        $this->yesNo($row['template']),
+        number_format($row['tokens']),
+      ];
+    }
+
+    return [$headers, $rows];
+  }
+
+  /**
+   * Builds the cost-per-user drill-down table.
+   */
+  private function usersTable(string $startDate, string $endDate, DashboardFilters $dataFilters): array {
+    $headers = [
+      (string) $this->t('Username'),
+      (string) $this->t('Nodes edited with AI'),
+      (string) $this->t('Sessions'),
+      (string) $this->t('Total tokens'),
+    ];
+    $userLabels = $this->userLabels();
+    $rows = [];
+    foreach ($this->tokenUsage->getUserRows($startDate, $endDate, $dataFilters) as $row) {
+      $rows[] = [
+        $userLabels[$row['uid']] ?? (string) $row['uid'],
+        (string) $row['nodes'],
+        (string) $row['sessions'],
+        number_format($row['tokens']),
+      ];
+    }
+
+    return [$headers, $rows];
+  }
+
+  /**
+   * Returns node bundle labels keyed by machine name.
+   *
+   * @return array<string, string>
+   *   The content type labels.
+   */
+  private function bundleLabels(): array {
+    $labels = [];
+    foreach ($this->entityTypeManager->getStorage('node_type')->loadMultiple() as $id => $type) {
+      $labels[(string) $id] = (string) $type->label();
+    }
+
+    return $labels;
+  }
+
+  /**
+   * Returns user labels keyed by user ID.
+   *
+   * @return array<int, string>
+   *   The user labels.
+   */
+  private function userLabels(): array {
+    $labels = [];
+    foreach ($this->entityTypeManager->getStorage('user')->loadMultiple() as $uid => $user) {
+      $labels[(int) $uid] = (string) $user->label();
+    }
+
+    return $labels;
+  }
+
+  /**
+   * Formats a boolean template flag as a Yes/No cell.
+   *
+   * @param bool $value
+   *   The template-usage flag.
+   *
+   * @return string
+   *   The localised Yes or No label.
+   */
+  private function yesNo(bool $value): string {
+    return $value ? (string) $this->t('Yes') : (string) $this->t('No');
+  }
+
+  /**
    * Builds a dashboard component render array.
    *
    * @param string $component

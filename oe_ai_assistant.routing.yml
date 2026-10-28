@@ -49,6 +49,28 @@ oe_ai_assistant.usage_dashboard:
   defaults:
     _form: '\Drupal\oe_ai_assistant\Form\AiUsageDashboardForm'
     _title: 'AI usage dashboard'
+    view: 'overview'
+  requirements:
+    _permission: 'access ai usage dashboard'
+
+# Drill-down views (nodes, major versions, sessions, users) reuse the same
+# form; the view is a path segment so the local tasks highlight correctly
+# (query-parameter tabs do not track active state reliably).
+oe_ai_assistant.usage_dashboard.view:
+  path: '/admin/content/ai/usage-dashboard/view/{view}'
+  defaults:
+    _form: '\Drupal\oe_ai_assistant\Form\AiUsageDashboardForm'
+    _title: 'AI usage dashboard'
+  requirements:
+    _permission: 'access ai usage dashboard'
+    view: 'nodes|major-versions|sessions|users'
+
+oe_ai_assistant.usage_dashboard.export:
+  path: '/admin/content/ai/usage-dashboard/export'
+  defaults:
+    _controller: '\Drupal\oe_ai_assistant\Controller\UsageDashboardExportController::export'
+    _title: 'Export AI usage dashboard'
+  methods: [GET]
   requirements:
     _permission: 'access ai usage dashboard'
 

@@ -1,1 +1,7 @@
-.ai-dashboard-data-table { overflow-x: auto; }.ai-dashboard-data-table table { width: 100%; border-collapse: collapse; }.ai-dashboard-data-table th, .ai-dashboard-data-table td { padding: .75rem; border-bottom: 1px solid #d9ddd9; text-align: left; white-space: nowrap; }.ai-dashboard-data-table th { color: #5c665f; font-size: .75rem; text-transform: uppercase; }
+/* Table fills the card width; auto layout sizes columns to their content so
+   short columns (ID, counts) stay narrow and the wide columns take the rest. */
+.ai-dashboard-data-table { overflow-x: auto; }
+.ai-dashboard-data-table table { width: 100%; border-collapse: collapse; }
+/* Wrap long cell content (notably node titles) instead of forcing one line. */
+.ai-dashboard-data-table th, .ai-dashboard-data-table td { padding: .75rem; border-bottom: 1px solid #d9ddd9; text-align: left; overflow-wrap: anywhere; }
+.ai-dashboard-data-table th { color: #5c665f; font-size: .75rem; text-transform: uppercase; }
