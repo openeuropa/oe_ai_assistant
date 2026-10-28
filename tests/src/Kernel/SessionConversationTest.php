@@ -37,8 +37,6 @@ class SessionConversationTest extends AiEditorialSessionKernelTestBase {
       'oe_ai_session' => (int) $session->id(),
       'thread_id' => $threadId,
       'message_id' => 'msg_' . $counter,
-      'host_entity_type' => 'ai_editorial_session',
-      'host_entity_id' => (int) $session->id(),
       'agent_id' => 'drafting',
       'role' => 'user',
       'turn' => 1,
