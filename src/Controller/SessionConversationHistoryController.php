@@ -4,13 +4,12 @@ declare(strict_types=1);
 
 namespace Drupal\oe_ai_assistant\Controller;
 
+use Drupal\ai_neuron\Entity\NeuronMessageInterface;
 use Drupal\Core\Cache\CacheableMetadata;
 use Drupal\Core\Controller\ControllerBase;
 use Drupal\Core\Datetime\DateFormatterInterface;
-use Drupal\Core\Entity\ContentEntityInterface;
 use Drupal\Core\StringTranslation\TranslatableMarkup;
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
-use Drupal\oe_ai_assistant\Neuron\Chat\History\NeuronMessageJson;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 
 /**
@@ -22,7 +21,7 @@ use Symfony\Component\DependencyInjection\ContainerInterface;
  *
  * @todo Remove the note above when the OEL-5066 epic is complete.
  */
-class SessionConversationHistoryController extends ControllerBase {
+final class SessionConversationHistoryController extends ControllerBase {
 
   /**
    * The number of table columns, used to span detail rows across the table.
@@ -202,12 +201,12 @@ class SessionConversationHistoryController extends ControllerBase {
    * The server renders both rows visible; the session_history behavior
    * collapses the details to their default state.
    *
-   * @param \Drupal\Core\Entity\ContentEntityInterface $message
+   * @param \Drupal\Core\Entity\NeuronMessageInterface $message
    *   The stored message.
    * @param array $rows
    *   The table rows built so far, modified by reference.
    */
-  private function buildRows(ContentEntityInterface $message, array &$rows): void {
+  private function buildRows(NeuronMessageInterface $message, array &$rows): void {
     $id = (int) $message->id();
     [$kind, $label] = $this->kindOf($message);
 
@@ -250,7 +249,7 @@ class SessionConversationHistoryController extends ControllerBase {
    * Neuron's tool result message extends its user message, so role alone
    * would credit the editor with what a tool answered.
    *
-   * @param \Drupal\Core\Entity\ContentEntityInterface $message
+   * @param \Drupal\Core\Entity\NeuronMessageInterface $message
    *   The stored message.
    *
    * @return array
@@ -258,10 +257,10 @@ class SessionConversationHistoryController extends ControllerBase {
    *   the store wrote is shown as it stands, the two derived labels are
    *   translated.
    */
-  private function kindOf(ContentEntityInterface $message): array {
+  private function kindOf(NeuronMessageInterface $message): array {
     $role = (string) $message->get('role')->value;
 
-    return match (NeuronMessageJson::decode($message, 'meta')['type'] ?? '') {
+    return match ($message->getMeta()['type'] ?? '') {
       'tool_call' => ['tool-call', $this->t('assistant (tool call)')],
       'tool_call_result' => ['tool-result', $this->t('tool result')],
       default => [$role, $role],
@@ -271,14 +270,14 @@ class SessionConversationHistoryController extends ControllerBase {
   /**
    * Formats the author column value for a message.
    *
-   * @param \Drupal\Core\Entity\ContentEntityInterface $message
+   * @param \Drupal\Core\Entity\NeuronMessageInterface $message
    *   The stored message.
    *
    * @return \Drupal\Core\StringTranslation\TranslatableMarkup|string
    *   The display name with the uid for correlation, or an empty string for a
    *   message the model produced.
    */
-  private function authorLine(ContentEntityInterface $message): TranslatableMarkup|string {
+  private function authorLine(NeuronMessageInterface $message): TranslatableMarkup|string {
     $uid = (int) $message->get('uid')->target_id;
     if ($uid === 0) {
       return '';
@@ -294,28 +293,28 @@ class SessionConversationHistoryController extends ControllerBase {
   /**
    * Formats the created column value for a message.
    *
-   * @param \Drupal\Core\Entity\ContentEntityInterface $message
+   * @param \Drupal\Core\Entity\NeuronMessageInterface $message
    *   The stored message.
    *
    * @return string
    *   The creation time in the date formatter's short format.
    */
-  private function formatCreated(ContentEntityInterface $message): string {
+  private function formatCreated(NeuronMessageInterface $message): string {
     return $this->dateFormatter->format((int) $message->get('created')->value, 'short');
   }
 
   /**
    * Builds the single-line content snippet for the content column.
    *
-   * @param \Drupal\Core\Entity\ContentEntityInterface $message
+   * @param \Drupal\Core\Entity\NeuronMessageInterface $message
    *   The stored message.
    *
    * @return string
    *   The whitespace-collapsed text, truncated to 80 characters.
    */
-  private function snippet(ContentEntityInterface $message): string {
+  private function snippet(NeuronMessageInterface $message): string {
     $text = '';
-    foreach (NeuronMessageJson::decode($message, 'content') as $block) {
+    foreach ($message->getContent() ?? [] as $block) {
       $text .= (string) ($block['content'] ?? '');
     }
     $snippet = trim((string) preg_replace('/\s+/', ' ', $text));
@@ -326,13 +325,13 @@ class SessionConversationHistoryController extends ControllerBase {
   /**
    * Builds the detail row items for a message.
    *
-   * @param \Drupal\Core\Entity\ContentEntityInterface $message
+   * @param \Drupal\Core\Entity\NeuronMessageInterface $message
    *   The stored message.
    *
    * @return array
    *   The render array, each item present only when the message carries it.
    */
-  private function buildDetailItems(ContentEntityInterface $message): array {
+  private function buildDetailItems(NeuronMessageInterface $message): array {
     $items = [];
 
     if ($author = $this->authorLine($message)) {
@@ -379,7 +378,7 @@ class SessionConversationHistoryController extends ControllerBase {
   /**
    * Builds the item showing one stored JSON column, pretty printed.
    *
-   * @param \Drupal\Core\Entity\ContentEntityInterface $message
+   * @param \Drupal\Core\Entity\NeuronMessageInterface $message
    *   The stored message.
    * @param string $field
    *   The column to render.
@@ -389,7 +388,7 @@ class SessionConversationHistoryController extends ControllerBase {
    * @return array
    *   The item keyed by the column, or nothing when the column is empty.
    */
-  private function buildJsonItem(ContentEntityInterface $message, string $field, TranslatableMarkup $label): array {
+  private function buildJsonItem(NeuronMessageInterface $message, string $field, TranslatableMarkup $label): array {
     $value = $message->get($field)->value;
     if ($value === NULL || $value === '') {
       return [];

@@ -10,7 +10,6 @@ use Drupal\Core\Entity\EntityStorageInterface;
 use Drupal\Core\Entity\EntityTypeInterface;
 use Drupal\Core\Field\BaseFieldDefinition;
 use Drupal\node\NodeInterface;
-use Drupal\oe_ai_assistant\Neuron\Chat\History\NeuronMessageJson;
 use Drupal\user\EntityOwnerTrait;
 
 /**
@@ -162,16 +161,7 @@ class AiEditorialSession extends ContentEntityBase implements AiEditorialSession
   public function conversationToolResults(): array {
     $results = [];
     foreach ($this->conversationRows() as $row) {
-      $meta = NeuronMessageJson::decode($row, 'meta');
-      if (($meta['type'] ?? '') !== 'tool_call_result') {
-        continue;
-      }
-      foreach ($meta['tools'] ?? [] as $tool) {
-        $results[] = [
-          'name' => (string) ($tool['name'] ?? ''),
-          'result' => NeuronMessageJson::decodeResult($tool['result'] ?? NULL),
-        ];
-      }
+      $results = array_merge($results, $row->getToolResults());
     }
 
     return $results;
@@ -191,7 +181,7 @@ class AiEditorialSession extends ContentEntityBase implements AiEditorialSession
    * Read by the reference the message store stamps on every row it writes, so
    * nothing here depends on how a thread ID is spelled.
    *
-   * @return \Drupal\Core\Entity\ContentEntityInterface[]
+   * @return \Drupal\ai_neuron\Entity\NeuronMessageInterface[]
    *   The stored messages.
    */
   private function conversationRows(): array {
