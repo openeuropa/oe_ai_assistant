@@ -285,23 +285,21 @@ class AiUsageDashboardForm extends FormBase {
       '#type' => 'container',
       '#attributes' => ['class' => ['ai-dashboard__header-actions']],
     ];
-    // The export link is only meaningful on the drill-down table views, which
-    // have tabular data to serialise. It carries the current view, period, and
-    // filters so the CSV matches exactly what is on screen.
-    if ($view !== 'overview') {
-      $exportQuery = array_filter([
-        'view' => $view,
-        'preset' => $preset,
-        'content_type' => $contentType,
-        'participant' => $participant,
-      ], static fn (string $value): bool => $value !== '');
-      $actions['export'] = [
-        '#type' => 'link',
-        '#title' => $this->t('Export CSV'),
-        '#url' => Url::fromRoute('oe_ai_assistant.usage_dashboard.export', [], ['query' => $exportQuery]),
-        '#attributes' => ['class' => ['button']],
-      ];
-    }
+    // The export link carries the current view, period, and filters so the CSV
+    // matches exactly what is on screen. The overview exports its metric and
+    // breakdown summary; the drill-down views export their data table.
+    $exportQuery = array_filter([
+      'view' => $view,
+      'preset' => $preset,
+      'content_type' => $contentType,
+      'participant' => $participant,
+    ], static fn (string $value): bool => $value !== '');
+    $actions['export'] = [
+      '#type' => 'link',
+      '#title' => $this->t('Export CSV'),
+      '#url' => Url::fromRoute('oe_ai_assistant.usage_dashboard.export', [], ['query' => $exportQuery]),
+      '#attributes' => ['class' => ['button']],
+    ];
 
     return [
       '#type' => 'container',

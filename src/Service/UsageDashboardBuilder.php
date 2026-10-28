@@ -168,12 +168,79 @@ final class UsageDashboardBuilder {
    */
   public function viewTable(string $view, string $startDate, string $endDate, DashboardFilters $dataFilters): array {
     return match ($view) {
+      'overview' => $this->overviewTable($startDate, $endDate, $dataFilters),
       'nodes' => $this->nodesTable($startDate, $endDate, $dataFilters),
       'major-versions' => $this->majorVersionsTable($startDate, $endDate, $dataFilters),
       'sessions' => $this->sessionsTable($startDate, $endDate, $dataFilters),
       'users' => $this->usersTable($startDate, $endDate, $dataFilters),
       default => [[], []],
     };
+  }
+
+  /**
+   * Builds the overview export table.
+   *
+   * The overview page is not a single table but a set of metric cards and
+   * breakdowns, so its CSV is a flat section/label/value sheet: the four
+   * headline metrics first, then one row per item in each breakdown
+   * (content type, user, template). This mirrors the data rendered by
+   * build(), honouring the same date range and filters.
+   *
+   * @param string $startDate
+   *   The inclusive range start date in Y-m-d format.
+   * @param string $endDate
+   *   The inclusive range end date in Y-m-d format.
+   * @param \Drupal\oe_ai_assistant\Service\DashboardFilters $dataFilters
+   *   The content type and participant filters applied to the data queries.
+   *
+   * @return array{0: array<int, string>, 1: array<int, array<int, string>>}
+   *   The header row and the data rows.
+   */
+  private function overviewTable(string $startDate, string $endDate, DashboardFilters $dataFilters): array {
+    $headers = [
+      (string) $this->t('Section'),
+      (string) $this->t('Label'),
+      (string) $this->t('Value'),
+    ];
+
+    $metrics = (string) $this->t('Metric');
+    $tokens = $this->tokenUsage->getTokensUsed($startDate, $endDate, $dataFilters);
+    $supportedNodes = $this->tokenUsage->countSupportedNodes($startDate, $endDate, $dataFilters);
+    $perSession = $this->tokenUsage->getAverageTokensPerSession($startDate, $endDate, $dataFilters);
+    $perVersion = $this->tokenUsage->getAverageTokensPerMajorVersion($startDate, $endDate, $dataFilters);
+    $rows = [
+      [$metrics, (string) $this->t('Tokens consumed'), number_format($tokens)],
+      [$metrics, (string) $this->t('AI supported nodes'), number_format($supportedNodes)],
+      [$metrics, (string) $this->t('Average tokens used per session'), number_format($perSession, 2)],
+      [$metrics, (string) $this->t('Average tokens used per major version'), number_format($perVersion, 2)],
+    ];
+
+    // Consumption by content type.
+    $typeStorage = $this->entityTypeManager->getStorage('node_type');
+    $consumption = (string) $this->t('Tokens by content type');
+    foreach ($this->tokenUsage->getTokensUsedByContentType($startDate, $endDate, $dataFilters) as $bundle => $tokens) {
+      $type = $typeStorage->load($bundle);
+      $rows[] = [$consumption, (string) ($type?->label() ?? $bundle), number_format($tokens)];
+    }
+
+    // Consumption by user.
+    $userLabels = $this->userLabels();
+    $byUser = (string) $this->t('Tokens by user');
+    foreach ($this->tokenUsage->getTokensUsedByUser($startDate, $endDate, $dataFilters) as $uid => $tokens) {
+      $rows[] = [$byUser, $userLabels[$uid] ?? (string) $uid, number_format($tokens)];
+    }
+
+    // Consumption by template.
+    $templateStorage = $this->entityTypeManager->getStorage('ai_drafting_template');
+    $tokensByTemplate = $this->tokenUsage->getTokensUsedByTemplate($startDate, $endDate, $dataFilters);
+    $templates = $templateStorage->loadMultiple(array_keys($tokensByTemplate));
+    $byTemplate = (string) $this->t('Tokens by template');
+    foreach ($tokensByTemplate as $templateId => $tokens) {
+      $template = $templates[$templateId] ?? NULL;
+      $rows[] = [$byTemplate, (string) ($template?->label() ?? $templateId), number_format($tokens)];
+    }
+
+    return [$headers, $rows];
   }
 
   /**

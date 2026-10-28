@@ -12,18 +12,20 @@ use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
- * Exports the current AI usage dashboard drill-down view as CSV.
+ * Exports the current AI usage dashboard view as CSV.
  *
  * Reads the same query parameters as the dashboard form (view, preset,
  * content_type, participant) and asks the builder for the exact header and
- * rows the on-screen table would render, then streams them as a CSV download.
+ * rows the on-screen view would render, then streams them as a CSV download.
+ * The overview exports a metric/breakdown summary; the drill-down views
+ * export their data table.
  */
 class UsageDashboardExportController extends ControllerBase {
 
   /**
    * The views this controller can export.
    */
-  private const VIEWS = ['nodes', 'major-versions', 'sessions', 'users'];
+  private const VIEWS = ['overview', 'nodes', 'major-versions', 'sessions', 'users'];
 
   /**
    * Constructs the controller.
@@ -56,8 +58,8 @@ class UsageDashboardExportController extends ControllerBase {
   public function export(Request $request): Response {
     $view = (string) $request->query->get('view', '');
     if (!in_array($view, self::VIEWS, TRUE)) {
-      // Default to the nodes view when the parameter is missing or unknown.
-      $view = 'nodes';
+      // Default to the overview when the parameter is missing or unknown.
+      $view = 'overview';
     }
 
     // Resolve the date range from the preset, mirroring the dashboard form.
