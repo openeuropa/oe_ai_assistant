@@ -10,6 +10,7 @@ use Drupal\Core\Entity\EntityStorageInterface;
 use Drupal\Core\Entity\EntityTypeInterface;
 use Drupal\Core\Field\BaseFieldDefinition;
 use Drupal\node\NodeInterface;
+use Drupal\oe_ai_assistant\Neuron\Chat\History\NeuronMessageJson;
 use Drupal\user\EntityOwnerTrait;
 
 /**
@@ -141,6 +142,66 @@ class AiEditorialSession extends ContentEntityBase implements AiEditorialSession
   public function setNode(int $nid): AiEditorialSessionInterface {
     $this->set('node', $nid);
     return $this;
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function conversationThreads(): array {
+    $threads = [];
+    foreach ($this->conversationRows() as $row) {
+      $threads[(string) $row->get('thread_id')->value][] = $row;
+    }
+
+    return $threads;
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function conversationToolResults(): array {
+    $results = [];
+    foreach ($this->conversationRows() as $row) {
+      $meta = NeuronMessageJson::decode($row, 'meta');
+      if (($meta['type'] ?? '') !== 'tool_call_result') {
+        continue;
+      }
+      foreach ($meta['tools'] ?? [] as $tool) {
+        $results[] = [
+          'name' => (string) ($tool['name'] ?? ''),
+          'result' => NeuronMessageJson::decodeResult($tool['result'] ?? NULL),
+        ];
+      }
+    }
+
+    return $results;
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function deleteConversation(): void {
+    $storage = \Drupal::entityTypeManager()->getStorage('neuron_message');
+    $storage->delete($storage->loadByProperties(['oe_ai_session' => (int) $this->id()]));
+  }
+
+  /**
+   * The stored messages of this session, oldest first.
+   *
+   * Read by the reference the message store stamps on every row it writes, so
+   * nothing here depends on how a thread ID is spelled.
+   *
+   * @return \Drupal\Core\Entity\ContentEntityInterface[]
+   *   The stored messages.
+   */
+  private function conversationRows(): array {
+    $rows = \Drupal::entityTypeManager()
+      ->getStorage('neuron_message')
+      ->loadByProperties(['oe_ai_session' => (int) $this->id()]);
+    // Keyed by row id, so sorting the keys is what puts the oldest first.
+    ksort($rows);
+
+    return $rows;
   }
 
   /**

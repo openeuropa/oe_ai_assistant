@@ -10,7 +10,6 @@ use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Hook\Attribute\Hook;
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
 use Drupal\oe_ai_assistant\Entity\Storage\AiConversationMessageStorageInterface;
-use Drupal\oe_ai_assistant\Neuron\Chat\History\SessionConversationInterface;
 use Drupal\oe_ai_assistant\Service\Drafting\ContextDocumentRepository;
 use Drupal\oe_ai_assistant\Service\MessageRecorderInterface;
 
@@ -25,7 +24,6 @@ final class EditorialSessionHooks {
     private readonly EntityTypeManagerInterface $entityTypeManager,
     private readonly MessageRecorderInterface $messageRecorder,
     private readonly ContextDocumentRepository $contextDocumentRepository,
-    private readonly SessionConversationInterface $conversation,
   ) {}
 
   /**
@@ -99,7 +97,7 @@ final class EditorialSessionHooks {
   public function deleteSessionNeuronMessages(EntityInterface $entity): void {
     assert($entity instanceof AiEditorialSessionInterface);
 
-    $this->conversation->deleteFor($entity);
+    $entity->deleteConversation();
   }
 
   /**

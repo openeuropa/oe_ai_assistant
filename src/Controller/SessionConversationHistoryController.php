@@ -10,8 +10,7 @@ use Drupal\Core\Datetime\DateFormatterInterface;
 use Drupal\Core\Entity\ContentEntityInterface;
 use Drupal\Core\StringTranslation\TranslatableMarkup;
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
-use Drupal\oe_ai_assistant\Neuron\Chat\History\SessionConversation;
-use Drupal\oe_ai_assistant\Neuron\Chat\History\SessionConversationInterface;
+use Drupal\oe_ai_assistant\Neuron\Chat\History\NeuronMessageJson;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 
 /**
@@ -31,7 +30,6 @@ class SessionConversationHistoryController extends ControllerBase {
   private const COLUMN_COUNT = 6;
 
   public function __construct(
-    private readonly SessionConversationInterface $conversation,
     private readonly DateFormatterInterface $dateFormatter,
   ) {}
 
@@ -40,7 +38,6 @@ class SessionConversationHistoryController extends ControllerBase {
    */
   public static function create(ContainerInterface $container): static {
     return new static(
-      $container->get(SessionConversationInterface::class),
       $container->get('date.formatter'),
     );
   }
@@ -68,7 +65,7 @@ class SessionConversationHistoryController extends ControllerBase {
    *   The render array: session totals followed by one table per thread.
    */
   public function view(AiEditorialSessionInterface $ai_editorial_session): array {
-    $threads = $this->conversation->threads($ai_editorial_session);
+    $threads = $ai_editorial_session->conversationThreads();
 
     $build = [];
 
@@ -264,7 +261,7 @@ class SessionConversationHistoryController extends ControllerBase {
   private function kindOf(ContentEntityInterface $message): array {
     $role = (string) $message->get('role')->value;
 
-    return match (SessionConversation::decode($message, 'meta')['type'] ?? '') {
+    return match (NeuronMessageJson::decode($message, 'meta')['type'] ?? '') {
       'tool_call' => ['tool-call', $this->t('assistant (tool call)')],
       'tool_call_result' => ['tool-result', $this->t('tool result')],
       default => [$role, $role],
@@ -318,7 +315,7 @@ class SessionConversationHistoryController extends ControllerBase {
    */
   private function snippet(ContentEntityInterface $message): string {
     $text = '';
-    foreach (SessionConversation::decode($message, 'content') as $block) {
+    foreach (NeuronMessageJson::decode($message, 'content') as $block) {
       $text .= (string) ($block['content'] ?? '');
     }
     $snippet = trim((string) preg_replace('/\s+/', ' ', $text));
