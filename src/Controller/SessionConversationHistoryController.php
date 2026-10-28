@@ -17,16 +17,11 @@ use Symfony\Component\DependencyInjection\ContainerInterface;
  *
  * Separate from AiConversationHistoryController, which keeps reading the
  * old ai_conversation_message entity until OEL-5072 removes it. This one
- * starts out empty: nothing writes to the Neuron store until then.
+ * is empty at first: nothing writes to the Neuron store until then.
  *
  * @todo Remove the note above when the OEL-5066 epic is complete.
  */
 final class SessionConversationHistoryController extends ControllerBase {
-
-  /**
-   * The number of table columns, used to span detail rows across the table.
-   */
-  private const COLUMN_COUNT = 6;
 
   public function __construct(
     private readonly DateFormatterInterface $dateFormatter,
@@ -45,7 +40,7 @@ final class SessionConversationHistoryController extends ControllerBase {
    * Returns the page title for the history route.
    *
    * @param \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $ai_editorial_session
-   *   The session whose conversations are displayed.
+   *   The session whose conversations this page shows.
    *
    * @return \Drupal\Core\StringTranslation\TranslatableMarkup
    *   The page title.
@@ -58,7 +53,7 @@ final class SessionConversationHistoryController extends ControllerBase {
    * Builds the conversation history page for a session.
    *
    * @param \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $ai_editorial_session
-   *   The session whose conversations are displayed.
+   *   The session whose conversations this page shows.
    *
    * @return array
    *   The render array: session totals followed by one table per thread.
@@ -68,7 +63,7 @@ final class SessionConversationHistoryController extends ControllerBase {
 
     $build = [];
 
-    // Invalidate when the session changes or any message is written.
+    // Invalidate when the session changes or the store writes a message.
     $definition = $this->entityTypeManager()->getDefinition('neuron_message');
     CacheableMetadata::createFromObject($ai_editorial_session)
       ->addCacheContexts($definition->getListCacheContexts())
@@ -82,18 +77,23 @@ final class SessionConversationHistoryController extends ControllerBase {
       return $build;
     }
 
-    $rows = array_merge(...array_values($threads));
+    $messages = 0;
+    $tokens = 0;
+    foreach ($threads as $thread) {
+      $messages += count($thread);
+      $tokens += $this->sumTokens($thread);
+    }
     $build['totals'] = [
       '#type' => 'item',
       '#title' => $this->t('Session totals'),
       '#plain_text' => $this->t('@messages messages in @threads conversations, @tokens tokens', [
-        '@messages' => count($rows),
+        '@messages' => $messages,
         '@threads' => count($threads),
-        '@tokens' => $this->sumTokens($rows),
+        '@tokens' => $tokens,
       ]),
     ];
 
-    // Rendered hidden: useless without JavaScript, which reveals it.
+    $show = $this->t('Show all details');
     $build['history'] = [
       '#type' => 'container',
       '#attributes' => ['class' => ['ai-history']],
@@ -101,13 +101,23 @@ final class SessionConversationHistoryController extends ControllerBase {
         '#type' => 'container',
         '#attributes' => [
           'class' => ['ai-history-toolbar'],
+          // Useless without JavaScript, which is what reveals it.
           'hidden' => 'hidden',
         ],
-        'details_all' => $this->buildToolbarButton(
-          'ai-history-details-all',
-          $this->t('Show all details'),
-          $this->t('Hide all details'),
-        ),
+        'details_all' => [
+          '#type' => 'html_tag',
+          '#tag' => 'button',
+          '#value' => $show,
+          '#attributes' => [
+            'type' => 'button',
+            'class' => ['button', 'button--small', 'ai-history-details-all'],
+            // The button starts collapsed. The behavior swaps its label from
+            // these attributes as it toggles.
+            'aria-expanded' => 'false',
+            'data-label-show' => $show,
+            'data-label-hide' => $this->t('Hide all details'),
+          ],
+        ],
       ],
       '#attached' => ['library' => ['oe_ai_assistant/session_history']],
     ];
@@ -120,20 +130,12 @@ final class SessionConversationHistoryController extends ControllerBase {
   }
 
   /**
-   * Builds the table of one thread.
-   *
-   * @param string $threadId
-   *   The thread ID, which names the conversation.
-   * @param array $rows
-   *   The rows of the thread, oldest first.
-   *
-   * @return array
-   *   The heading and the table of the thread.
+   * Builds the heading and the table of one thread, oldest message first.
    */
-  private function buildThread(string $threadId, array $rows): array {
+  private function buildThread(string $threadId, array $messages): array {
     $tableRows = [];
-    foreach ($rows as $row) {
-      $this->buildRows($row, $tableRows);
+    foreach ($messages as $message) {
+      array_push($tableRows, ...$this->buildRows($message));
     }
 
     return [
@@ -143,8 +145,8 @@ final class SessionConversationHistoryController extends ControllerBase {
         '#tag' => 'h4',
         '#value' => $this->t('@thread (@count messages, @tokens tokens)', [
           '@thread' => $threadId,
-          '@count' => count($rows),
-          '@tokens' => $this->sumTokens($rows),
+          '@count' => count($messages),
+          '@tokens' => $this->sumTokens($messages),
         ]),
       ],
       'table' => [
@@ -165,79 +167,46 @@ final class SessionConversationHistoryController extends ControllerBase {
   }
 
   /**
-   * Builds one bulk toggle button for the toolbar.
+   * Builds the message row and the detail row of one message.
    *
-   * The button starts in the collapsed state; the behavior swaps its label
-   * from the data attributes as it toggles.
-   *
-   * @param string $class
-   *   The behavior hook class for the button.
-   * @param \Drupal\Core\StringTranslation\TranslatableMarkup $show
-   *   The label while the button would reveal things.
-   * @param \Drupal\Core\StringTranslation\TranslatableMarkup $hide
-   *   The label while the button would hide things.
-   *
-   * @return array
-   *   The button render array.
-   */
-  private function buildToolbarButton(string $class, TranslatableMarkup $show, TranslatableMarkup $hide): array {
-    return [
-      '#type' => 'html_tag',
-      '#tag' => 'button',
-      '#value' => $show,
-      '#attributes' => [
-        'type' => 'button',
-        'class' => ['button', 'button--small', $class],
-        'aria-expanded' => 'false',
-        'data-label-show' => $show,
-        'data-label-hide' => $hide,
-      ],
-    ];
-  }
-
-  /**
-   * Appends the message row and the detail row of one message.
-   *
-   * The server renders both rows visible; the session_history behavior
+   * The server renders both rows visible. The session_history behavior then
    * collapses the details to their default state.
-   *
-   * @param \Drupal\Core\Entity\NeuronMessageInterface $message
-   *   The stored message.
-   * @param array $rows
-   *   The table rows built so far, modified by reference.
    */
-  private function buildRows(NeuronMessageInterface $message, array &$rows): void {
+  private function buildRows(NeuronMessageInterface $message): array {
     $id = (int) $message->id();
     [$kind, $label] = $this->kindOf($message);
 
-    // The whole row is the detail toggle: focusable and announcing its
-    // expanded state, so no dedicated inspect column is needed.
-    $rows[] = [
-      'id' => 'ai-history-message-' . $id,
-      'class' => ['ai-history-message', 'ai-history-role-' . $kind],
-      'data-message-id' => (string) $id,
-      'data-parent-id' => '',
-      'tabindex' => '0',
-      'aria-expanded' => 'true',
-      'aria-controls' => 'ai-history-detail-' . $id,
-      'data' => [
-        ['data' => ['#plain_text' => $label]],
-        ['data' => ['#plain_text' => (string) $message->get('turn')->value]],
-        ['data' => ['#plain_text' => (string) $message->get('agent_id')->value]],
-        ['data' => ['#plain_text' => $this->authorLine($message)]],
-        ['data' => ['#plain_text' => $this->formatCreated($message)]],
-        ['data' => ['#plain_text' => $this->snippet($message)]],
+    return [
+      // The whole row is the detail toggle. It takes focus and announces its
+      // expanded state, so the table needs no inspect column.
+      [
+        'id' => 'ai-history-message-' . $id,
+        'class' => ['ai-history-message', 'ai-history-role-' . $kind],
+        'data-message-id' => (string) $id,
+        // The behavior hides every row that names a parent, so a row of its
+        // own has to say it has none.
+        'data-parent-id' => '',
+        'tabindex' => '0',
+        'aria-expanded' => 'true',
+        'aria-controls' => 'ai-history-detail-' . $id,
+        'data' => [
+          ['data' => ['#plain_text' => $label]],
+          ['data' => ['#plain_text' => (string) $message->get('turn')->value]],
+          ['data' => ['#plain_text' => (string) $message->get('agent_id')->value]],
+          ['data' => ['#plain_text' => $this->authorLine($message)]],
+          ['data' => ['#plain_text' => $this->dateFormatter->format((int) $message->get('created')->value, 'short')]],
+          ['data' => ['#plain_text' => $this->snippet($message)]],
+        ],
       ],
-    ];
-
-    $rows[] = [
-      'id' => 'ai-history-detail-' . $id,
-      'class' => ['ai-history-detail'],
-      'data-detail-for' => (string) $id,
-      'data' => [
-        [
-          'colspan' => self::COLUMN_COUNT,
-          'data' => $this->buildDetailItems($message),
+      [
+        'id' => 'ai-history-detail-' . $id,
+        'class' => ['ai-history-detail'],
+        'data-detail-for' => (string) $id,
+        'data' => [
+          [
+            'colspan' => 6,
+            'data' => $this->buildDetailItems($message),
+          ],
         ],
       ],
     ];
@@ -248,14 +217,6 @@ final class SessionConversationHistoryController extends ControllerBase {
    *
    * Neuron's tool result message extends its user message, so role alone
    * would credit the editor with what a tool answered.
-   *
-   * @param \Drupal\Core\Entity\NeuronMessageInterface $message
-   *   The stored message.
-   *
-   * @return array
-   *   The class name for the row and the label the Role column shows. A role
-   *   the store wrote is shown as it stands, the two derived labels are
-   *   translated.
    */
   private function kindOf(NeuronMessageInterface $message): array {
     $role = (string) $message->get('role')->value;
@@ -268,21 +229,14 @@ final class SessionConversationHistoryController extends ControllerBase {
   }
 
   /**
-   * Formats the author column value for a message.
-   *
-   * @param \Drupal\Core\Entity\NeuronMessageInterface $message
-   *   The stored message.
-   *
-   * @return \Drupal\Core\StringTranslation\TranslatableMarkup|string
-   *   The display name with the uid for correlation, or an empty string for a
-   *   message the model produced.
+   * The author of a message, empty for a message the model produced.
    */
   private function authorLine(NeuronMessageInterface $message): TranslatableMarkup|string {
-    $uid = (int) $message->get('uid')->target_id;
-    if ($uid === 0) {
+    $uid = $message->getOwnerId();
+    if ($uid === NULL) {
       return '';
     }
-    $owner = $message->get('uid')->entity;
+    $owner = $message->getOwner();
 
     return $this->t('@name (uid @uid)', [
       '@name' => $owner ? $owner->getDisplayName() : $this->t('missing user'),
@@ -291,26 +245,7 @@ final class SessionConversationHistoryController extends ControllerBase {
   }
 
   /**
-   * Formats the created column value for a message.
-   *
-   * @param \Drupal\Core\Entity\NeuronMessageInterface $message
-   *   The stored message.
-   *
-   * @return string
-   *   The creation time in the date formatter's short format.
-   */
-  private function formatCreated(NeuronMessageInterface $message): string {
-    return $this->dateFormatter->format((int) $message->get('created')->value, 'short');
-  }
-
-  /**
-   * Builds the single-line content snippet for the content column.
-   *
-   * @param \Drupal\Core\Entity\NeuronMessageInterface $message
-   *   The stored message.
-   *
-   * @return string
-   *   The whitespace-collapsed text, truncated to 80 characters.
+   * The content of a message as one line, truncated to 80 characters.
    */
   private function snippet(NeuronMessageInterface $message): string {
     $text = '';
@@ -323,26 +258,10 @@ final class SessionConversationHistoryController extends ControllerBase {
   }
 
   /**
-   * Builds the detail row items for a message.
-   *
-   * @param \Drupal\Core\Entity\NeuronMessageInterface $message
-   *   The stored message.
-   *
-   * @return array
-   *   The render array, each item present only when the message carries it.
+   * Builds the detail row items, each present only when the message has it.
    */
   private function buildDetailItems(NeuronMessageInterface $message): array {
-    $items = [];
-
-    if ($author = $this->authorLine($message)) {
-      $items['author'] = [
-        '#type' => 'item',
-        '#title' => $this->t('Author'),
-        '#plain_text' => $author,
-      ];
-    }
-
-    $items += $this->buildJsonItem($message, 'content', $this->t('Content'));
+    $items = $this->buildJsonItem($message, 'content', $this->t('Content'));
     $items += $this->buildJsonItem($message, 'meta', $this->t('Meta'));
 
     // Per-message token usage, only the counters the provider reported.
@@ -376,17 +295,10 @@ final class SessionConversationHistoryController extends ControllerBase {
   }
 
   /**
-   * Builds the item showing one stored JSON column, pretty printed.
+   * Builds the item that shows one stored JSON column, pretty printed.
    *
-   * @param \Drupal\Core\Entity\NeuronMessageInterface $message
-   *   The stored message.
-   * @param string $field
-   *   The column to render.
-   * @param \Drupal\Core\StringTranslation\TranslatableMarkup $label
-   *   The item title.
-   *
-   * @return array
-   *   The item keyed by the column, or nothing when the column is empty.
+   * The key of the item is the column name, so a caller adds it to the items it
+   * holds. A column that holds no value gives nothing.
    */
   private function buildJsonItem(NeuronMessageInterface $message, string $field, TranslatableMarkup $label): array {
     $value = $message->get($field)->value;
@@ -411,40 +323,28 @@ final class SessionConversationHistoryController extends ControllerBase {
    * Pretty-prints a stored JSON value, nested JSON strings included.
    *
    * A tool call keeps its inputs and its result as JSON strings inside the
-   * metadata, so decoding those makes the detail row readable rather than one
-   * escaped line.
-   *
-   * @param string $value
-   *   The stored column value.
-   *
-   * @return string
-   *   The pretty-printed JSON, or the value unchanged when it is not JSON.
+   * metadata. This method decodes those, so the detail row reads as JSON and
+   * not as one escaped line. A value that is not JSON stays unchanged.
    */
   private function prettyPrint(string $value): string {
-    $decoded = json_decode($value);
-    if (!is_array($decoded) && !is_object($decoded)) {
+    $decoded = $this->decodeNestedJson($value);
+    if (is_string($decoded)) {
       return $value;
     }
 
     return json_encode(
-      $this->decodeNestedJson($decoded),
+      $decoded,
       JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE,
     ) ?: $value;
   }
 
   /**
    * Recursively decodes JSON structures stored as strings inside a value.
-   *
-   * @param mixed $value
-   *   The value to decode.
-   *
-   * @return mixed
-   *   The value with every nested JSON structure decoded.
    */
   private function decodeNestedJson(mixed $value): mixed {
     if (is_string($value)) {
-      // Decoding to objects rather than associative arrays keeps empty JSON
-      // objects rendering as {} instead of [].
+      // This decodes to objects, not to associative arrays. An empty JSON
+      // object then renders as {} and not as [].
       $decoded = json_decode($value);
 
       return is_array($decoded) || is_object($decoded) ? $this->decodeNestedJson($decoded) : $value;
@@ -462,18 +362,12 @@ final class SessionConversationHistoryController extends ControllerBase {
   }
 
   /**
-   * Sums the tokens a list of rows reported.
-   *
-   * @param array $rows
-   *   The stored messages.
-   *
-   * @return int
-   *   The token total.
+   * Sums the tokens a list of stored messages reported.
    */
-  private function sumTokens(array $rows): int {
+  private function sumTokens(array $messages): int {
     $total = 0;
-    foreach ($rows as $row) {
-      $total += (int) $row->get('tokens_total')->value;
+    foreach ($messages as $message) {
+      $total += (int) $message->get('tokens_total')->value;
     }
 
     return $total;
