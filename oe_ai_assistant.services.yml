@@ -68,6 +68,7 @@ services:
   Drupal\oe_ai_assistant\Service\PreviewRendererInterface: '@Drupal\oe_ai_assistant\Service\PreviewRenderer'
 
   Drupal\oe_ai_assistant\Neuron\Chat\History\SessionConversation: {}
+  Drupal\oe_ai_assistant\Neuron\Chat\History\SessionConversationInterface: '@Drupal\oe_ai_assistant\Neuron\Chat\History\SessionConversation'
 
   # Overrides both of ai_neuron's own aliases, so every agent gets this store.
   Drupal\oe_ai_assistant\Neuron\Chat\History\EditorialMessageStore: {}

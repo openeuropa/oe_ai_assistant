@@ -80,7 +80,8 @@ class EditorialMessageStoreTest extends AiEditorialSessionKernelTestBase {
 
     $rows = $this->rowsOf($threadId);
     $this->assertCount(1, $rows);
-    $this->assertNotSame('editorial_session', $rows[0]->bundle());
+    $this->assertSame('default', $rows[0]->bundle());
+    $this->assertFalse($rows[0]->hasField('oe_ai_session'));
   }
 
   /**

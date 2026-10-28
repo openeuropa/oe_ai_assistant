@@ -11,6 +11,7 @@ use Drupal\Core\Entity\ContentEntityInterface;
 use Drupal\Core\StringTranslation\TranslatableMarkup;
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
 use Drupal\oe_ai_assistant\Neuron\Chat\History\SessionConversation;
+use Drupal\oe_ai_assistant\Neuron\Chat\History\SessionConversationInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 
 /**
@@ -30,7 +31,7 @@ class SessionConversationHistoryController extends ControllerBase {
   private const COLUMN_COUNT = 6;
 
   public function __construct(
-    private readonly SessionConversation $conversation,
+    private readonly SessionConversationInterface $conversation,
     private readonly DateFormatterInterface $dateFormatter,
   ) {}
 
@@ -39,7 +40,7 @@ class SessionConversationHistoryController extends ControllerBase {
    */
   public static function create(ContainerInterface $container): static {
     return new static(
-      $container->get(SessionConversation::class),
+      $container->get(SessionConversationInterface::class),
       $container->get('date.formatter'),
     );
   }
@@ -116,7 +117,7 @@ class SessionConversationHistoryController extends ControllerBase {
     ];
 
     foreach ($threads as $threadId => $thread) {
-      $build['history'][$threadId] = $this->buildThread($threadId, $thread);
+      $build['history'][$threadId] = $this->buildThread((string) $threadId, $thread);
     }
 
     return $build;
@@ -256,14 +257,16 @@ class SessionConversationHistoryController extends ControllerBase {
    *   The stored message.
    *
    * @return array
-   *   The class name for the row and the label the Role column shows.
+   *   The class name for the row and the label the Role column shows. A role
+   *   the store wrote is shown as it stands, the two derived labels are
+   *   translated.
    */
   private function kindOf(ContentEntityInterface $message): array {
     $role = (string) $message->get('role')->value;
 
     return match (SessionConversation::decode($message, 'meta')['type'] ?? '') {
-      'tool_call' => ['tool-call', 'assistant (tool call)'],
-      'tool_call_result' => ['tool-result', 'tool result'],
+      'tool_call' => ['tool-call', $this->t('assistant (tool call)')],
+      'tool_call_result' => ['tool-result', $this->t('tool result')],
       default => [$role, $role],
     };
   }
@@ -274,18 +277,21 @@ class SessionConversationHistoryController extends ControllerBase {
    * @param \Drupal\Core\Entity\ContentEntityInterface $message
    *   The stored message.
    *
-   * @return string
+   * @return \Drupal\Core\StringTranslation\TranslatableMarkup|string
    *   The display name with the uid for correlation, or an empty string for a
    *   message the model produced.
    */
-  private function authorLine(ContentEntityInterface $message): string {
+  private function authorLine(ContentEntityInterface $message): TranslatableMarkup|string {
     $uid = (int) $message->get('uid')->target_id;
     if ($uid === 0) {
       return '';
     }
     $owner = $message->get('uid')->entity;
 
-    return sprintf('%s (uid %d)', $owner ? $owner->getDisplayName() : $this->t('missing user'), $uid);
+    return $this->t('@name (uid @uid)', [
+      '@name' => $owner ? $owner->getDisplayName() : $this->t('missing user'),
+      '@uid' => $uid,
+    ]);
   }
 
   /**
