@@ -213,8 +213,9 @@ class AiEditorialSessionListBuilder extends EntityListBuilder {
       }
     }
 
-    // The Neuron-backed history tab, empty until ticket 3 moves the chat
+    // The Neuron-backed history tab, empty until OEL-5072 moves the chat
     // endpoint onto the Neuron agents.
+    // @todo Remove the note above when the OEL-5066 epic is complete.
     if ($entity->hasLinkTemplate('neuron-history')) {
       $neuron_history_url = $entity->toUrl('neuron-history');
       if ($neuron_history_url->access()) {

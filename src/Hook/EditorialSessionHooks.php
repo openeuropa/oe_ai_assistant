@@ -91,7 +91,9 @@ final class EditorialSessionHooks {
    * Implements hook_ai_editorial_session_delete().
    *
    * Removes the session's neuron_message rows, which stay empty until
-   * ticket 3 moves the chat endpoint onto the Neuron store.
+   * OEL-5072 moves the chat endpoint onto the Neuron store.
+   *
+   * @todo Remove the note above when the OEL-5066 epic is complete.
    */
   #[Hook('ai_editorial_session_delete')]
   public function deleteSessionNeuronMessages(EntityInterface $entity): void {
