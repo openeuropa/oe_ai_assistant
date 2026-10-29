@@ -131,6 +131,14 @@ final class SessionConversationHistoryController extends ControllerBase {
 
   /**
    * Builds the heading and the table of one thread, oldest message first.
+   *
+   * @param string $threadId
+   *   The thread ID.
+   * @param array $messages
+   *   The thread's messages.
+   *
+   * @return array
+   *   The render array: a heading followed by the thread's table.
    */
   private function buildThread(string $threadId, array $messages): array {
     $tableRows = [];
@@ -171,6 +179,12 @@ final class SessionConversationHistoryController extends ControllerBase {
    *
    * The server renders both rows visible. The session_history behavior then
    * collapses the details to their default state.
+   *
+   * @param \Drupal\ai_neuron\Entity\NeuronMessageInterface $message
+   *   The message to render.
+   *
+   * @return array
+   *   The table rows: the message row followed by its detail row.
    */
   private function buildRows(NeuronMessageInterface $message): array {
     $id = (int) $message->id();
@@ -217,6 +231,12 @@ final class SessionConversationHistoryController extends ControllerBase {
    *
    * Neuron's tool result message extends its user message, so role alone
    * would credit the editor with what a tool answered.
+   *
+   * @param \Drupal\ai_neuron\Entity\NeuronMessageInterface $message
+   *   The message to classify.
+   *
+   * @return array
+   *   A 2-tuple of the CSS-safe kind and its human-readable label.
    */
   private function kindOf(NeuronMessageInterface $message): array {
     $role = (string) $message->get('role')->value;
@@ -230,6 +250,12 @@ final class SessionConversationHistoryController extends ControllerBase {
 
   /**
    * The author of a message, empty for a message the model produced.
+   *
+   * @param \Drupal\ai_neuron\Entity\NeuronMessageInterface $message
+   *   The message whose author to describe.
+   *
+   * @return \Drupal\Core\StringTranslation\TranslatableMarkup|string
+   *   The author's display name and user ID, or an empty string.
    */
   private function authorLine(NeuronMessageInterface $message): TranslatableMarkup|string {
     $uid = $message->getOwnerId();
@@ -246,6 +272,12 @@ final class SessionConversationHistoryController extends ControllerBase {
 
   /**
    * The content of a message as one line, truncated to 80 characters.
+   *
+   * @param \Drupal\ai_neuron\Entity\NeuronMessageInterface $message
+   *   The message whose content to summarize.
+   *
+   * @return string
+   *   The flattened, whitespace-collapsed, truncated content.
    */
   private function snippet(NeuronMessageInterface $message): string {
     $text = '';
@@ -259,6 +291,12 @@ final class SessionConversationHistoryController extends ControllerBase {
 
   /**
    * Builds the detail row items, each present only when the message has it.
+   *
+   * @param \Drupal\ai_neuron\Entity\NeuronMessageInterface $message
+   *   The message to build detail items for.
+   *
+   * @return array
+   *   The detail items, keyed by field name, present only when populated.
    */
   private function buildDetailItems(NeuronMessageInterface $message): array {
     $items = $this->buildJsonItem($message, 'content', $this->t('Content'));
@@ -299,6 +337,16 @@ final class SessionConversationHistoryController extends ControllerBase {
    *
    * The key of the item is the column name, so a caller adds it to the items it
    * holds. A column that holds no value gives nothing.
+   *
+   * @param \Drupal\ai_neuron\Entity\NeuronMessageInterface $message
+   *   The message that holds the column.
+   * @param string $field
+   *   The name of the JSON-holding field.
+   * @param \Drupal\Core\StringTranslation\TranslatableMarkup $label
+   *   The item's title.
+   *
+   * @return array
+   *   The item, keyed by field name, or an empty array if the field is empty.
    */
   private function buildJsonItem(NeuronMessageInterface $message, string $field, TranslatableMarkup $label): array {
     $value = $message->get($field)->value;
@@ -325,6 +373,12 @@ final class SessionConversationHistoryController extends ControllerBase {
    * A tool call keeps its inputs and its result as JSON strings inside the
    * metadata. This method decodes those, so the detail row reads as JSON and
    * not as one escaped line. A value that is not JSON stays unchanged.
+   *
+   * @param string $value
+   *   The stored value to pretty-print.
+   *
+   * @return string
+   *   The pretty-printed JSON, or the original value if it is not JSON.
    */
   private function prettyPrint(string $value): string {
     $decoded = $this->decodeNestedJson($value);
@@ -340,6 +394,13 @@ final class SessionConversationHistoryController extends ControllerBase {
 
   /**
    * Recursively decodes JSON structures stored as strings inside a value.
+   *
+   * @param mixed $value
+   *   The value to decode: a JSON string, an array, an object, or anything
+   *   else, which is returned unchanged.
+   *
+   * @return mixed
+   *   The value with every nested JSON string decoded.
    */
   private function decodeNestedJson(mixed $value): mixed {
     if (is_string($value)) {
@@ -363,6 +424,12 @@ final class SessionConversationHistoryController extends ControllerBase {
 
   /**
    * Sums the tokens a list of stored messages reported.
+   *
+   * @param array $messages
+   *   The messages to sum.
+   *
+   * @return int
+   *   The total token count.
    */
   private function sumTokens(array $messages): int {
     $total = 0;
