@@ -159,8 +159,16 @@ class DraftingOrchestrator implements DraftingOrchestratorInterface {
         continue;
       }
       foreach ($group['fieldNames'] as $fieldName) {
-        $consolidated[$fieldName] = $results[$stepId][$fieldName]
-          ?? $results[$stepId];
+        if (array_key_exists($fieldName, $results[$stepId])) {
+          $consolidated[$fieldName] = $results[$stepId][$fieldName];
+        }
+        elseif (array_is_list($results[$stepId])) {
+          // Some providers omit the single field wrapper and return its item
+          // list directly. Accept that legacy shape, but never treat an
+          // unrelated associative object as this field: doing so can pass
+          // another group's fields to InlineEntityHydrator.
+          $consolidated[$fieldName] = $results[$stepId];
+        }
       }
     }
     return $consolidated;

@@ -1,0 +1,10 @@
+langcode: en
+status: true
+dependencies:
+  module:
+    - paragraphs
+id: section
+label: Section
+icon_uuid: null
+icon_default: null
+description: 'Container for nested paragraphs.'

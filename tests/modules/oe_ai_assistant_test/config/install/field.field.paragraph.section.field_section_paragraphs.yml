@@ -1,0 +1,33 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - field.storage.paragraph.field_section_paragraphs
+    - paragraphs.paragraphs_type.hero
+    - paragraphs.paragraphs_type.section
+    - paragraphs.paragraphs_type.text_block
+id: paragraph.section.field_section_paragraphs
+field_name: field_section_paragraphs
+entity_type: paragraph
+bundle: section
+label: 'Section paragraphs'
+description: ''
+required: false
+translatable: true
+default_value: {  }
+default_value_callback: ''
+settings:
+  handler: 'default:paragraph'
+  handler_settings:
+    target_bundles:
+      text_block: text_block
+      hero: hero
+    negate: 0
+    target_bundles_drag_drop:
+      text_block:
+        enabled: true
+        weight: 0
+      hero:
+        enabled: true
+        weight: 1
+field_type: entity_reference_revisions
