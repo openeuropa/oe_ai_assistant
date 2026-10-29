@@ -6,6 +6,7 @@ package: OpenEuropa
 dependencies:
   - ai:ai
   - ai_agents:ai_agents
+  - ai_neuron:ai_neuron
   - drupal:content_moderation
   - drupal:datetime
   - document_loader:document_loader

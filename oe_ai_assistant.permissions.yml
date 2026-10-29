@@ -12,6 +12,10 @@ view_update own sessions:
 administer ai_drafting_template:
   title: 'Administer ai drafting template'
 
+access ai editorial session neuron history:
+  title: 'Access the Neuron conversation history of an AI editorial session'
+  description: 'View the Neuron-backed conversation history tab of an AI editorial session.'
+
 administer ai conversation messages:
   title: 'Administer AI conversation messages'
   description: 'View, create, edit, and delete any AI conversation message.'

@@ -47,6 +47,7 @@ use Drupal\user\EntityOwnerTrait;
  *   links = {
  *     "canonical" = "/admin/content/ai/{ai_editorial_session}",
  *     "history" = "/admin/content/ai/{ai_editorial_session}/history",
+ *     "neuron-history" = "/admin/content/ai/{ai_editorial_session}/neuron-history",
  *     "add-page" = "/admin/content/ai/add",
  *     "add-form" = "/admin/content/ai/add/{ai_editorial_session_type}",
  *     "delete-form" = "/admin/content/ai/{ai_editorial_session}/delete",
@@ -140,6 +141,57 @@ class AiEditorialSession extends ContentEntityBase implements AiEditorialSession
   public function setNode(int $nid): AiEditorialSessionInterface {
     $this->set('node', $nid);
     return $this;
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function conversationThreads(): array {
+    $threads = [];
+    foreach ($this->conversationRows() as $row) {
+      $threads[(string) $row->get('thread_id')->value][] = $row;
+    }
+
+    return $threads;
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function conversationToolResults(): array {
+    $results = [];
+    foreach ($this->conversationRows() as $row) {
+      $results = array_merge($results, $row->getToolResults());
+    }
+
+    return $results;
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function deleteConversation(): void {
+    $storage = \Drupal::entityTypeManager()->getStorage('neuron_message');
+    $storage->delete($storage->loadByProperties(['oe_ai_session' => (int) $this->id()]));
+  }
+
+  /**
+   * The stored messages of this session, oldest first.
+   *
+   * Read by the reference the message store stamps on every row it writes, so
+   * nothing here depends on how a thread ID is spelled.
+   *
+   * @return \Drupal\ai_neuron\Entity\NeuronMessageInterface[]
+   *   The stored messages.
+   */
+  private function conversationRows(): array {
+    $rows = \Drupal::entityTypeManager()
+      ->getStorage('neuron_message')
+      ->loadByProperties(['oe_ai_session' => (int) $this->id()]);
+    // Keyed by row id, so sorting the keys is what puts the oldest first.
+    ksort($rows);
+
+    return $rows;
   }
 
   /**

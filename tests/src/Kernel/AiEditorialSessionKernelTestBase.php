@@ -24,6 +24,7 @@ abstract class AiEditorialSessionKernelTestBase extends KernelTestBase {
   protected static $modules = [
     'ai',
     'ai_agents',
+    'ai_neuron',
     'content_moderation',
     'datetime',
     'file',
@@ -67,8 +68,10 @@ abstract class AiEditorialSessionKernelTestBase extends KernelTestBase {
     $this->installEntitySchema('node');
     $this->installEntitySchema('ai_editorial_session');
     $this->installEntitySchema('ai_conversation_message');
+    $this->installEntitySchema('neuron_message');
+    $this->installSchema('ai_neuron', ['neuron_workflow_store']);
 
-    $this->installConfig(['system', 'user', 'node', 'oe_ai_assistant']);
+    $this->installConfig(['system', 'user', 'node', 'ai_neuron', 'oe_ai_assistant']);
 
     $this->createContentType('oe_contact', 'Contact');
     $this->createContentType('oe_news', 'News');

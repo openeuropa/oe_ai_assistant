@@ -39,4 +39,25 @@ interface AiEditorialSessionInterface extends ContentEntityInterface, EntityChan
    */
   public function setNode(int $nid): self;
 
+  /**
+   * Returns the stored conversations of this session, grouped by thread.
+   *
+   * @return array
+   *   The stored messages, keyed by thread ID, each thread oldest row first.
+   */
+  public function conversationThreads(): array;
+
+  /**
+   * Returns what the tools of this session answered, in the order they ran.
+   *
+   * @return array
+   *   One entry per settled call, shaped {name, result}, the result decoded.
+   */
+  public function conversationToolResults(): array;
+
+  /**
+   * Removes every stored conversation of this session, sub-agent runs included.
+   */
+  public function deleteConversation(): void;
+
 }

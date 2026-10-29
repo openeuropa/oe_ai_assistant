@@ -41,6 +41,7 @@ class AiAgentExtraTagsPatchTest extends KernelTestBase {
     // Contrib.
     'ai',
     'ai_agents',
+    'ai_neuron',
     'entity_reference_revisions',
     'inline_entity_form',
     'key',
@@ -63,6 +64,8 @@ class AiAgentExtraTagsPatchTest extends KernelTestBase {
     $this->installEntitySchema('taxonomy_term');
     $this->installEntitySchema('user');
     $this->installEntitySchema('ai_editorial_session');
+    $this->installEntitySchema('neuron_message');
+    $this->installSchema('ai_neuron', ['neuron_workflow_store']);
     $this->installConfig(['oe_ai_assistant']);
   }
 
