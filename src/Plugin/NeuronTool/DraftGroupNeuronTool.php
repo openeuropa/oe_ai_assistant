@@ -10,6 +10,7 @@ use Drupal\Core\Plugin\Context\EntityContextDefinition;
 use Drupal\Core\StringTranslation\TranslatableMarkup;
 use NeuronAI\Chat\History\MessageStoreInterface;
 use Drupal\oe_ai_assistant\Neuron\Chat\History\EditorialMessageStore;
+use Drupal\oe_ai_assistant\Plugin\NeuronAgent\DraftingNeuronAgent;
 use Drupal\oe_ai_assistant\Service\Drafting\DraftCollector;
 use Drupal\oe_ai_assistant\Service\Drafting\DraftHistoryInterface;
 use Drupal\oe_ai_assistant\Service\Drafting\DraftingBriefInterface;
@@ -147,7 +148,7 @@ final class DraftGroupNeuronTool extends DraftingToolBase {
     // What the editor and the agent said, read from the thread the drafting
     // agent holds its conversation under: the session and then the agent.
     $thread = EditorialMessageStore::SESSION_PREFIX . $this->session()->id()
-      . '.' . EditorialMessageStore::AGENT_PREFIX . 'drafting';
+      . '.' . EditorialMessageStore::AGENT_PREFIX . DraftingNeuronAgent::PLUGIN_ID;
     foreach ($this->store->loadActive($thread) as $message) {
       foreach ($message->getTextBlocks() as $block) {
         $lines[] = $message->getRole() . ': ' . $block->content;

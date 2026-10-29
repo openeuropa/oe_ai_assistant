@@ -23,7 +23,7 @@ final class SchemaRetryNode extends Node {
   /**
    * The state key counting the corrections asked for in this run.
    */
-  private const ATTEMPTS_KEY = 'schema_retries';
+  public const string ATTEMPTS_KEY = 'schema_retries';
 
   /**
    * Feeds the violations back to the model, or gives up.

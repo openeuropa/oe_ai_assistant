@@ -171,12 +171,29 @@ class AiEditorialSession extends ContentEntityBase implements AiEditorialSession
         }
         $results[] = [
           'name' => $tool['name'],
-          'result' => json_decode((string) $tool['result'], TRUE),
+          'result' => self::decodeToolResult($tool['result']),
         ];
       }
     }
 
     return $results;
+  }
+
+  /**
+   * Decodes what a tool answered.
+   *
+   * A call serializes a result that is not an array as a JSON string, so a
+   * stored result is either shape. Only a string that decodes to an array
+   * carries structure to hand back.
+   */
+  private static function decodeToolResult(mixed $result): array {
+    if (is_array($result)) {
+      return $result;
+    }
+
+    $decoded = is_string($result) ? json_decode($result, TRUE) : NULL;
+
+    return is_array($decoded) ? $decoded : [];
   }
 
   /**

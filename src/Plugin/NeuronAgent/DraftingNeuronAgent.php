@@ -14,7 +14,7 @@ use Drupal\oe_ai_assistant\Service\Drafting\DraftingBriefInterface;
  * The agent that talks to the editor and drafts through tools.
  */
 #[NeuronAgent(
-  id: 'drafting',
+  id: DraftingNeuronAgent::PLUGIN_ID,
   label: new TranslatableMarkup('Drafting'),
   description: new TranslatableMarkup('Gathers requirements in conversation and drafts content per field group.'),
   operation_type: 'chat_with_tools',
@@ -31,6 +31,11 @@ use Drupal\oe_ai_assistant\Service\Drafting\DraftingBriefInterface;
   ],
 )]
 final class DraftingNeuronAgent extends EditorialSessionAgentBase {
+
+  /**
+   * The id this agent is registered under.
+   */
+  public const string PLUGIN_ID = 'drafting';
 
   /**
    * {@inheritdoc}

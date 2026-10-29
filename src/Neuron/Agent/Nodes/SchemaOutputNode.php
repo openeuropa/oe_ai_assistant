@@ -79,7 +79,7 @@ final class SchemaOutputNode extends InferenceNode {
     $last = clone end($messages);
 
     $this->emit(new InferenceStart($last));
-    $attempt = (int) $state->get('schema_retries', 0);
+    $attempt = (int) $state->get(SchemaRetryNode::ATTEMPTS_KEY, 0);
     $response = $this->memoize(
       "inference.{$attempt}",
       fn (): ProviderResponse => $resources->provider
@@ -90,7 +90,7 @@ final class SchemaOutputNode extends InferenceNode {
     $message = $response->message();
     $this->emit(new InferenceStop($last, $response));
 
-    $this->addToChatHistory($resources->history, $state, [...$inbound, $message], "history.{$attempt}");
+    $this->addToChatHistory($resources->history, $state, [...$inbound, $message]);
     $state->setResponse($response);
 
     $json = $this->extractor->getJson($message->getContent() ?? '');
