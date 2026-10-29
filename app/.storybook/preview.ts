@@ -4,11 +4,14 @@ import { developmentConfig } from "../src/development-config";
 import "../src/index.css";
 import "./preview.css";
 
-// Initialize the app config so stories whose hooks read getConfig()
-// (tone, template, ...) have the standalone development config available.
-// The live preview URL is overridden because Storybook has no mock API
-// server: the iframe loads a public placeholder page instead.
-setConfig({
+/**
+ * App config for stories, so hooks reading getConfig() (tone, template,
+ * ...) have the standalone development config available. The live preview
+ * URL is overridden because Storybook has no mock API server: the iframe
+ * loads a public page instead of a rendered draft. Stories that set their
+ * own config spread this one, keeping the override.
+ */
+export const storybookConfig = {
   ...developmentConfig,
   pluginConfig: {
     ...developmentConfig.pluginConfig,
@@ -19,7 +22,9 @@ setConfig({
       },
     },
   },
-});
+};
+
+setConfig(storybookConfig);
 
 const preview: Preview = {
   parameters: {

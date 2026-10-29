@@ -76,21 +76,17 @@ export function DraftRail() {
     // Vertical tab strip: no divider against the pane so the active white
     // tab reads as a continuation of the white draft pane on its left.
     <div className="flex w-12 shrink-0 flex-col items-stretch gap-1 overflow-y-auto bg-gray-100 py-2 pr-1.5">
-      {newestFirst.map((draft, index) => {
+      {newestFirst.map((draft) => {
         const isActive =
           hasFields &&
           !isArtifactCollapsed &&
           activeDraftVersion === draft.version;
-        const key = draft.version ?? `legacy-${index}`;
-        const isSaved =
-          draft.version !== null && savedVersions.has(draft.version);
+        const isSaved = savedVersions.has(draft.version);
 
         const tabButton = (
           <button
             type="button"
-            aria-label={
-              isActive ? `Close ${draft.label}` : `Open ${draft.label}`
-            }
+            aria-label={isActive ? `Close ${draft.name}` : `Open ${draft.name}`}
             onClick={() =>
               isActive
                 ? setDraftingState({ isArtifactCollapsed: true })
@@ -98,24 +94,18 @@ export function DraftRail() {
             }
             className={`flex h-9 w-full shrink-0 cursor-pointer items-center justify-center rounded-r-md border-y border-r text-xs font-medium transition-colors ${tabClasses(isActive, isSaved)}`}
           >
-            {isActive ? (
-              <X size={14} />
-            ) : draft.version !== null ? (
-              `v${draft.version}`
-            ) : (
-              "v?"
-            )}
+            {isActive ? <X size={14} /> : draft.label}
           </button>
         );
 
         // The open draft's tab is a close control: its content is
         // already on screen, so hovering the X shows no summary card.
         if (isActive) {
-          return <Fragment key={key}>{tabButton}</Fragment>;
+          return <Fragment key={draft.version}>{tabButton}</Fragment>;
         }
 
         return (
-          <HoverCard.Root key={key} openDelay={200} closeDelay={100}>
+          <HoverCard.Root key={draft.version} openDelay={200} closeDelay={100}>
             <HoverCard.Trigger asChild>{tabButton}</HoverCard.Trigger>
 
             {/* At-a-glance preview: the draft's chat card, floated to the
@@ -138,7 +128,7 @@ export function DraftRail() {
                   className="h-auto w-96 bg-transparent [&>button]:my-0 [&>button]:border-0"
                 >
                   <DraftCard
-                    version={draft.version}
+                    name={draft.name}
                     context={draft.context}
                     fields={draft.fields}
                     isSaved={isSaved}

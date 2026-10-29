@@ -49,6 +49,10 @@ class MockAiProvider extends AiProviderClientBase implements ChatInterface {
    */
   public static function enqueue(MockResponse $response): void {
     $state = \Drupal::state();
+    // The responses are consumed in the web server's process, so the queue
+    // this one cached before the last request is stale: reading it would
+    // put answers that have already been used back in the queue.
+    $state->resetCache();
     $queue = $state->get(static::QUEUE_KEY, []);
     $queue[] = serialize($response);
     $state->set(static::QUEUE_KEY, $queue);

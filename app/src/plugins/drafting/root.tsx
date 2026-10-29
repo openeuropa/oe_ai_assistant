@@ -24,10 +24,12 @@ import { DocumentsPanel } from "./components/documents-panel";
 import { DraftPreview } from "./components/draft-preview";
 import { DraftRail } from "./components/draft-rail";
 import { DraftingThread } from "./components/drafting-thread";
-import { PlanSteps } from "./components/plan-steps";
 import {
-  DraftContentToolUI,
+  DraftGroupToolUI,
   EditorialEventToolUI,
+  GetContentSchemaToolUI,
+  GetDraftHistoryToolUI,
+  ReviseDraftToolUI,
 } from "./components/tool-uis";
 import { useDraftingDocuments } from "./hooks/use-drafting-documents";
 import { useDraftingRuntime } from "./hooks/use-drafting-runtime";
@@ -76,7 +78,7 @@ function VersionedDraftPreview({
   onSave,
 }: {
   version: number;
-  onSave: () => void;
+  onSave: (name: string) => void;
 }) {
   const sessionDrafts = useSessionDrafts();
   const savedVersions = useSavedVersions();
@@ -101,16 +103,15 @@ function VersionedDraftPreview({
  * export/import. This avoids any remount or network refetch after a save.
  */
 function DraftingChat() {
-  const { draftedFields, plan, activeDraftVersion } = useDraftingSlice();
+  const { draftedFields, activeDraftVersion } = useDraftingSlice();
   const setPendingWork = useAppStore((s) => s.setPendingWork);
   const runtime = useDraftingRuntime();
   const tone = useDraftingTone();
   const documents = useDraftingDocuments();
   const template = useDraftingTemplate();
+  // The pane only exists once there is a draft to show; before that the
+  // chat takes the full workspace width.
   const hasFields = Object.keys(draftedFields).length > 0;
-  // The pane only exists once there is an artifact to show; before that
-  // the chat takes the full workspace width.
-  const hasArtifact = hasFields || plan.length > 0;
 
   /**
    * Splices a local event chip (or error chip) into the thread.
@@ -126,57 +127,47 @@ function DraftingChat() {
 
   /**
    * Saves the draft version open in the artifact pane via the save
-   * endpoint. The backend resolves the fields for that version from its
-   * own draft history, so saving an older version saves exactly what
-   * the pane shows. The in-flight request reports pending work so the
-   * exit guard blocks navigation, and the outcome lands in the thread
-   * as a local event chip (the backend records the matching durable
-   * event row).
+   * endpoint, called with the name the pane shows for it. The backend
+   * resolves the fields for that version from its own draft history, so
+   * saving an older version saves exactly what the pane shows. The
+   * in-flight request reports pending work so the exit guard blocks
+   * navigation, and the outcome lands in the thread as a local event
+   * chip (the backend records the matching durable event row).
    */
-  const handleSave = useCallback(async () => {
-    const version = getDraftingState().activeDraftVersion;
-    if (version === null) {
-      // Legacy unversioned drafts cannot be addressed by the contract.
-      appendEvent("error", "This draft has no version and cannot be saved");
-      return;
-    }
-    setPendingWork("drafting:save", true);
-    try {
-      await saveDraftRevision({ version });
-    } catch {
-      appendEvent("error", `Draft ${version} could not be saved`);
-      return;
-    } finally {
-      setPendingWork("drafting:save", false);
-    }
-    appendEvent(
-      "save",
-      `Draft ${version} saved as unpublished revision`,
-      version,
-    );
-  }, [appendEvent, setPendingWork]);
+  const handleSave = useCallback(
+    async (name: string) => {
+      const version = getDraftingState().activeDraftVersion;
+      if (version === null) {
+        appendEvent("error", "No draft is open to save");
+        return;
+      }
+      setPendingWork("drafting:save", true);
+      try {
+        await saveDraftRevision({ version });
+      } catch {
+        appendEvent("error", `${name} could not be saved`);
+        return;
+      } finally {
+        setPendingWork("drafting:save", false);
+      }
+      appendEvent("save", `${name} saved as unpublished revision`, version);
+    },
+    [appendEvent, setPendingWork],
+  );
 
   /** Determine what the artifact pane shows. */
   function renderArtifact() {
-    if (hasFields) {
-      // Versioned drafts get the tabbed live preview pane; legacy
-      // unversioned drafts cannot be addressed by the preview
-      // endpoint and keep the plain data table.
-      if (activeDraftVersion !== null) {
-        return (
-          <VersionedDraftPreview
-            version={activeDraftVersion}
-            onSave={handleSave}
-          />
-        );
-      }
-      return <ContentTable onSave={handleSave} />;
+    // An open draft gets the tabbed live preview pane; otherwise the
+    // plain data table stands in.
+    if (activeDraftVersion !== null) {
+      return (
+        <VersionedDraftPreview
+          version={activeDraftVersion}
+          onSave={handleSave}
+        />
+      );
     }
-    return (
-      <div className="flex min-h-0 flex-1 flex-col p-4">
-        <PlanSteps steps={plan} />
-      </div>
-    );
+    return <ContentTable onSave={handleSave} />;
   }
 
   // Editorial context panels, shown as pill buttons under the composer.
@@ -313,7 +304,10 @@ function DraftingChat() {
   return (
     <AssistantRuntimeProvider runtime={runtime}>
       {/* Register tool call renderers so they appear inline in chat. */}
-      <DraftContentToolUI />
+      <DraftGroupToolUI />
+      <ReviseDraftToolUI />
+      <GetContentSchemaToolUI />
+      <GetDraftHistoryToolUI />
       <EditorialEventToolUI />
 
       {/* Feed the shell exit guard with this plugin's pending state.
@@ -330,9 +324,8 @@ function DraftingChat() {
           <DraftingThread tabs={tabs} />
         </div>
 
-        {/* Middle panel appears once a plan or draft exists: plan steps
-            while generating, then the content table. */}
-        {hasArtifact && (
+        {/* Middle panel appears once a draft exists. */}
+        {hasFields && (
           <SessionArtifactPane>{renderArtifact()}</SessionArtifactPane>
         )}
 

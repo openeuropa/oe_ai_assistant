@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace Drupal\oe_ai_assistant\Service;
 
-use Drupal\ai\OperationType\Chat\ChatOutput;
-use Drupal\ai\OperationType\Chat\StreamedChatMessageIteratorInterface;
 use Drupal\Core\Entity\EntityInterface;
 use Drupal\Core\Entity\EntityStorageInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
@@ -29,10 +27,13 @@ class MessageRecorder implements MessageRecorderInterface {
   /**
    * {@inheritdoc}
    */
-  public function recordUser(EntityInterface $host, string $text, ?int $uid = NULL): AiConversationMessageInterface {
-    $values = $this->base($host, AiConversationMessageInterface::ROLE_USER) + [
+  public function recordUser(EntityInterface $host, string $text, ?int $uid = NULL, ?AiConversationMessageInterface $parent = NULL, string $agentId = ''): AiConversationMessageInterface {
+    $values = $this->base($host, AiConversationMessageInterface::ROLE_USER, $parent) + [
       'content' => $text,
     ];
+    if ($agentId !== '') {
+      $values['agent_id'] = $agentId;
+    }
     // The author is the Drupal owner, set for user turns only.
     if ($uid !== NULL) {
       $values['uid'] = $uid;
@@ -43,41 +44,21 @@ class MessageRecorder implements MessageRecorderInterface {
   /**
    * {@inheritdoc}
    */
-  public function recordAssistant(EntityInterface $host, ChatOutput $output, string $agentId, string $provider, string $model, ?AiConversationMessageInterface $parent = NULL): AiConversationMessageInterface {
-    // For a streamed response the final text, tool calls, and token usage
-    // live on the reconstructed output, not on the original one handed to
-    // the callback. Resolve it once and read everything from there.
-    $resolved = $this->resolveOutput($output);
-    $message = $resolved->getNormalized();
+  public function recordAssistantTurn(EntityInterface $host, string $text, array $toolCalls, array $tokenUsage, ?string $finishReason, string $agentId, string $provider, string $model, ?AiConversationMessageInterface $parent = NULL): AiConversationMessageInterface {
     /** @var \Drupal\oe_ai_assistant\Entity\AiConversationMessageInterface $row */
     $row = $this->storage()->create($this->base($host, AiConversationMessageInterface::ROLE_ASSISTANT, $parent) + [
       'agent_id' => $agentId,
       'provider' => $provider,
       'model' => $model,
-      'content' => $message->getText(),
-      'finish_reason' => $this->finishReason($output),
+      'content' => $text,
+      'finish_reason' => $finishReason,
     ]);
-    $row->setTokenUsage($resolved->getTokenUsage()->toArray());
-    // Capture the rendered tool calls when the turn requested any.
-    $tools = $message->getRenderedTools();
-    if ($tools) {
-      $row->setToolCalls($tools);
+    $row->setTokenUsage($tokenUsage);
+    if ($toolCalls !== []) {
+      $row->setToolCalls($toolCalls);
     }
     $row->save();
     return $row;
-  }
-
-  /**
-   * {@inheritdoc}
-   */
-  public function recordAssistantText(EntityInterface $host, string $text, string $agentId = '', ?AiConversationMessageInterface $parent = NULL): AiConversationMessageInterface {
-    $values = $this->base($host, AiConversationMessageInterface::ROLE_ASSISTANT, $parent) + [
-      'content' => $text,
-    ];
-    if ($agentId !== '') {
-      $values['agent_id'] = $agentId;
-    }
-    return $this->create($values);
   }
 
   /**
@@ -168,45 +149,6 @@ class MessageRecorder implements MessageRecorderInterface {
     $row = $this->storage()->create($values);
     $row->save();
     return $row;
-  }
-
-  /**
-   * Resolves a streamed output into its reconstructed final output.
-   *
-   * After the stream has been consumed, the reconstructed output carries the
-   * accumulated text, tool calls, and token usage. A non-streamed output is
-   * returned unchanged.
-   *
-   * @param \Drupal\ai\OperationType\Chat\ChatOutput $output
-   *   The provider output.
-   *
-   * @return \Drupal\ai\OperationType\Chat\ChatOutput
-   *   The resolved output to read the final message and token usage from.
-   */
-  protected function resolveOutput(ChatOutput $output): ChatOutput {
-    $normalized = $output->getNormalized();
-    if ($normalized instanceof StreamedChatMessageIteratorInterface) {
-      return $normalized->reconstructChatOutput();
-    }
-    return $output;
-  }
-
-  /**
-   * Extracts the provider finish reason defensively.
-   *
-   * @param \Drupal\ai\OperationType\Chat\ChatOutput $output
-   *   The provider output.
-   *
-   * @return string|null
-   *   The finish reason, or NULL when not reported.
-   */
-  protected function finishReason(ChatOutput $output): ?string {
-    $normalized = $output->getNormalized();
-    if ($normalized instanceof StreamedChatMessageIteratorInterface) {
-      return $normalized->getFinishReason();
-    }
-    $raw = $output->getRawOutput();
-    return is_array($raw) ? ($raw['choices'][0]['finish_reason'] ?? NULL) : NULL;
   }
 
   /**

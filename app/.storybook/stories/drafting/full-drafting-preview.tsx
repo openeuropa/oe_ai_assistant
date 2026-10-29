@@ -11,16 +11,18 @@
 
 import { AssistantRuntimeProvider, useLocalRuntime } from "@assistant-ui/react";
 import { FileText, LayoutTemplate, Megaphone } from "lucide-react";
-import { useState } from "react";
+import { type ReactNode, useState } from "react";
 import type { SessionMessage } from "../../../src/api/session-messages";
 import { CardSelectPane } from "../../../src/components/ui/card-select-pane";
+import { getConfig } from "../../../src/config";
 import { ArtifactPane } from "../../../src/plugins/drafting/components/artifact-pane";
 import { ContentTable } from "../../../src/plugins/drafting/components/content-table";
 import { DocumentsPanel } from "../../../src/plugins/drafting/components/documents-panel";
+import { DraftPreview } from "../../../src/plugins/drafting/components/draft-preview";
 import { DraftRail } from "../../../src/plugins/drafting/components/draft-rail";
 import { DraftingThread } from "../../../src/plugins/drafting/components/drafting-thread";
 import {
-  DraftContentToolUI,
+  DraftGroupToolUI,
   EditorialEventToolUI,
 } from "../../../src/plugins/drafting/components/tool-uis";
 import { useDraftingDocuments } from "../../../src/plugins/drafting/hooks/use-drafting-documents";
@@ -28,6 +30,8 @@ import { useDraftingTemplate } from "../../../src/plugins/drafting/hooks/use-dra
 import { useReportPendingWork } from "../../../src/plugins/drafting/hooks/use-report-pending-work";
 import { toThreadMessages } from "../../../src/plugins/drafting/hydrate-transcript";
 import { useReportParticipants } from "../../../src/plugins/drafting/participants";
+import { useSavedVersions } from "../../../src/plugins/drafting/saved-versions";
+import { useSessionDrafts } from "../../../src/plugins/drafting/session-drafts";
 import {
   draftingSliceConfig,
   setDraftingState,
@@ -186,6 +190,10 @@ const v8Fields = draftFields(
 /**
  * Builds the tool calls for one versioned draft revision so the
  * narrative fixture below stays compact.
+ *
+ * The agent drafts one group per call and the call completing the set
+ * carries the versioned draft. This fixture writes every draft in a single
+ * main_fields group, so each one opens its own group: 1.0, 2.0, 3.0.
  */
 function draftCall(
   version: number,
@@ -194,18 +202,29 @@ function draftCall(
 ) {
   return [
     {
-      function: { name: "draft_content" },
+      function: {
+        name: "draft_group",
+        arguments: JSON.stringify({ group: "main_fields" }),
+      },
       result: {
-        version,
-        context: {
-          tone: {
-            id: toneLabel.toLowerCase().replace(/\s+/g, "-"),
-            label: toneLabel,
-          },
-          template: { id: "news-article", label: "News article" },
-          documents: [],
-        },
+        group: "main_fields",
+        label: "Main fields",
         fields,
+        pending: [],
+        draft: {
+          version,
+          major: version,
+          minor: 0,
+          context: {
+            tone: {
+              id: toneLabel.toLowerCase().replace(/\s+/g, "-"),
+              label: toneLabel,
+            },
+            template: { id: "news-article", label: "News article" },
+            documents: [],
+          },
+          fields,
+        },
       },
     },
   ];
@@ -273,7 +292,7 @@ const transcript: SessionMessage[] = [
     content:
       "Done. The headline now leads with the legal effect starting today " +
       "and a standfirst sums up the risk-based approach in one line. " +
-      "Draft 2 is on the right.",
+      "Draft 2.0 is on the right.",
     toolCalls: draftCall(2, "Clear and professional", v2Fields),
   },
   {
@@ -288,7 +307,7 @@ const transcript: SessionMessage[] = [
     role: "assistant",
     content:
       "Understood. The session stays open and both drafts are in the " +
-      "version rail, so Maria can pick up right from Draft 2.",
+      "version rail, so Maria can pick up right from Draft 2.0.",
   },
 
   // Maria Rossi takes over: formal tone and institutional additions.
@@ -330,7 +349,7 @@ const transcript: SessionMessage[] = [
     content:
       "Added a two-sentence quote in the middle section on the immediate " +
       "obligations for providers, and a closing paragraph introducing the " +
-      "AI Office as the supervision and enforcement hub. Draft 4 is " +
+      "AI Office as the supervision and enforcement hub. Draft 4.0 is " +
       "ready for review.",
     toolCalls: draftCall(4, "Formal", v4Fields),
   },
@@ -366,7 +385,7 @@ const transcript: SessionMessage[] = [
   {
     role: "event",
     type: "save",
-    summary: "Draft 5 saved as unpublished revision",
+    summary: "Draft 5.0 saved as unpublished revision",
     at: "2026-08-19T10:25:00Z",
   },
 
@@ -410,7 +429,7 @@ const transcript: SessionMessage[] = [
       "and now goes straight into the obligations.\n" +
       "- The closing timeline is a four-item bullet list, one per " +
       "milestone, each starting with the date.\n\n" +
-      "Draft 7 is on the right.",
+      "Draft 7.0 is on the right.",
     toolCalls: draftCall(7, "Formal", v7Fields),
   },
 
@@ -431,14 +450,14 @@ const transcript: SessionMessage[] = [
       "months' where the body was corrected to twenty-four, one date was " +
       "written in US format, and the AI Office was introduced twice after " +
       "the restructuring. All aligned now, and the quote attribution " +
-      "matches the official title. This is Draft 8, ready for scheduling.",
+      "matches the official title. This is Draft 8.0, ready for scheduling.",
     toolCalls: draftCall(8, "Formal", v8Fields),
   },
   // Peter saves the final version through the pane's Save button.
   {
     role: "event",
     type: "save",
-    summary: "Draft 8 saved as unpublished revision",
+    summary: "Draft 8.0 saved as unpublished revision",
     at: "2026-08-19T12:40:00Z",
   },
 ];
@@ -484,15 +503,13 @@ function ParticipantsReporter() {
   return null;
 }
 
-/** Full drafting plugin UI preview; fills its parent flex container. */
-export function FullDraftingPreview() {
-  const [toneId, setToneId] = useState(defaultToneId);
-  const documents = useDraftingDocuments();
-  const template = useDraftingTemplate();
-  const { draftedFields } = useDraftingSlice();
-  // Mirror the root component: the pane only exists with an artifact.
-  const hasArtifact = Object.keys(draftedFields).length > 0;
-
+/**
+ * Mounts the fixture transcript as an assistant-ui thread.
+ *
+ * The drafts index is derived from the thread, so anything reading it, such
+ * as the draft pane resolving a version's name, needs this around it.
+ */
+export function DraftingPreviewThread({ children }: { children: ReactNode }) {
   const runtime = useLocalRuntime(
     {
       run: async () => ({
@@ -507,17 +524,53 @@ export function FullDraftingPreview() {
     { initialMessages: toThreadMessages(transcript) },
   );
 
+  return (
+    <AssistantRuntimeProvider runtime={runtime}>
+      {children}
+    </AssistantRuntimeProvider>
+  );
+}
+
+/**
+ * Preview pane for a versioned draft, stamped with its creation time, as
+ * the plugin root renders it. Reads the thread, so it belongs inside
+ * DraftingPreviewThread.
+ */
+function VersionedDraftPreview({ version }: { version: number }) {
+  const sessionDrafts = useSessionDrafts();
+  const savedVersions = useSavedVersions();
+  const activeDraft = sessionDrafts.find((draft) => draft.version === version);
+  return (
+    <DraftPreview
+      sessionId={getConfig().sessionId}
+      versionId={version}
+      createdAt={activeDraft?.createdAt ?? null}
+      isSaved={savedVersions.has(version)}
+      onSave={() => {}}
+    />
+  );
+}
+
+/** Full drafting plugin UI preview; fills its parent flex container. */
+export function FullDraftingPreview() {
+  const [toneId, setToneId] = useState(defaultToneId);
+  const documents = useDraftingDocuments();
+  const template = useDraftingTemplate();
+  const { draftedFields, activeDraftVersion } = useDraftingSlice();
+  // Mirror the root component: the pane only exists with an artifact.
+  const hasArtifact = Object.keys(draftedFields).length > 0;
+
   const toneLabel =
     toneOptions.find((option) => option.value === toneId)?.label ?? "Not set";
 
   return (
-    <AssistantRuntimeProvider runtime={runtime}>
+    <DraftingPreviewThread>
       {/* Feed the shell exit guard with the mock runtime's pending state. */}
       <PendingWorkReporter />
       {/* Feed the session header with the seeded participants. */}
       <ParticipantsReporter />
       {/* Register tool call renderers so they appear inline in chat. */}
-      <DraftContentToolUI />
+      <DraftGroupToolUI />
       <EditorialEventToolUI />
 
       <div className="flex min-h-0 flex-1 bg-white">
@@ -552,8 +605,10 @@ export function FullDraftingPreview() {
                 render: (close) => (
                   <DocumentsPanel
                     selected={documents.selected}
+                    extensions={documents.extensions}
                     uploads={documents.uploads}
                     onRemove={documents.removeDocument}
+                    onRetry={documents.retryDocument}
                     onUpload={documents.uploadFiles}
                     onDismissUpload={documents.dismissUpload}
                     onClose={close}
@@ -590,13 +645,19 @@ export function FullDraftingPreview() {
             transcript always carries drafts, so the rail can restore it. */}
         {hasArtifact && (
           <ArtifactPane canCollapse>
-            <ContentTable onSave={() => {}} />
+            {/* An open draft gets the tabbed live preview pane; otherwise
+                the plain data table stands in, as in the plugin root. */}
+            {activeDraftVersion !== null ? (
+              <VersionedDraftPreview version={activeDraftVersion} />
+            ) : (
+              <ContentTable onSave={() => {}} />
+            )}
           </ArtifactPane>
         )}
 
         {/* Right edge: the always-present draft rail. */}
         <DraftRail />
       </div>
-    </AssistantRuntimeProvider>
+    </DraftingPreviewThread>
   );
 }

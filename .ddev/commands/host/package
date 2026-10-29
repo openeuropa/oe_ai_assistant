@@ -1,0 +1,23 @@
+#!/bin/bash
+
+## Description: Package the module as a release-style zip (HEAD plus the built dist/) into the project root
+## Usage: package
+## Example: ddev package
+
+set -e
+
+cd "$DDEV_APPROOT"
+
+# Same content as the release workflow: the committed tree at HEAD plus the
+# built app bundle, which is gitignored and so absent from the archive.
+echo "Building app..."
+ddev build-app
+
+archive="oe_ai_assistant-$(ddev dev-tag).zip"
+
+echo "Packaging ${archive}..."
+git archive --format=zip --output="$archive" HEAD
+zip -r "$archive" dist
+
+echo ""
+echo "Package created: ${DDEV_APPROOT}/${archive}"
