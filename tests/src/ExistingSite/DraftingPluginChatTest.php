@@ -290,7 +290,8 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
       'field_content_paragraphs' => [
         [
           'type' => [['target_id' => 'text_block']],
-          $body_field => [['value' => 'Workers keep their rights abroad.']],
+          // Plain text is the only format the test user may use.
+          $body_field => [['value' => 'Workers keep their rights abroad.', 'format' => 'plain_text']],
         ],
       ],
     ]);

@@ -40,7 +40,10 @@ final class FieldGroupAgent extends Agent {
     names the schema defines, exactly as written, and match its
     array, object and property shape.
 
-    For formatted text fields, produce clean HTML.
+    For formatted text fields, produce clean HTML. Set "format" to one
+    of the formats the schema allows, and use only the HTML tags the
+    schema describes for that format; write plain text when it allows
+    none.
     Match the language and tone described in the instructions.
     PROMPT;
 

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\oe_ai_assistant\ExistingSite;
 
+use Drupal\filter\Entity\FilterFormat;
 use Drupal\oe_ai_assistant_test\Plugin\AiProvider\MockAiProvider;
 use Drupal\oe_ai_assistant_test\Plugin\AiProvider\MockResponse;
 
@@ -137,10 +138,11 @@ class DraftingPluginSaveTest extends DraftingPluginTestBase {
     // The main_fields drafter ignores the schema and answers with "body",
     // then answers correctly once told what was wrong.
     MockAiProvider::enqueue(new MockResponse(
-      text: '{"title": [{"value": "Stray key title"}], "body": [{"value": "<p>Text</p>", "format": "full_html"}]}',
+      text: '{"title": [{"value": "Stray key title"}], "body": [{"value": "Text.", "format": "plain_text"}]}',
     ));
     MockAiProvider::enqueue(new MockResponse(
-      text: '{"title": [{"value": "Stray key title"}], "field_teaser": [{"value": "Teaser."}], "field_body": [{"value": "<p>Text</p>", "format": "full_html"}]}',
+      // Plain text is the only format the test user may use.
+      text: '{"title": [{"value": "Stray key title"}], "field_teaser": [{"value": "Teaser."}], "field_body": [{"value": "Text.", "format": "plain_text"}]}',
     ));
     MockAiProvider::enqueue(new MockResponse(text: 'Draft 1.0 is ready.'));
 
@@ -172,6 +174,136 @@ class DraftingPluginSaveTest extends DraftingPluginTestBase {
     $node = \Drupal::entityTypeManager()->getStorage('node')->load($body['nodeId']);
     $this->assertNotNull($node, 'The created node should exist.');
     $this->assertEquals('Stray key title', $node->getTitle());
+  }
+
+  /**
+   * Tests that drafted HTML is saved in the HTML format the drafter chose.
+   */
+  public function testSaveKeepsHtmlFormatTheUserMayUse(): void {
+    // Create a text format with a lower weight than full_html, so that it would
+    // be the resolver's first choice.
+    $basic = FilterFormat::create([
+      'format' => 'oe_test_basic_html',
+      'name' => 'Test basic HTML',
+      'weight' => -10,
+      'filters' => [
+        'filter_html' => [
+          'status' => TRUE,
+          'settings' => ['allowed_html' => '<p> <strong>'],
+        ],
+      ],
+    ]);
+    $basic->save();
+    $this->markEntityForCleanup($basic);
+    $user = $this->createUser([
+      'use oe ai assistant',
+      'create oe_news content',
+      'use text format oe_test_basic_html',
+      'use text format full_html',
+    ]);
+    $this->loginUser($user);
+    $session = $this->createSession($user);
+    // Use the template needed for the mocked answers below.
+    $session->set('template', 'news_default')->save();
+
+    MockAiProvider::reset();
+    MockAiProvider::enqueue(new MockResponse(
+      toolCalls: [
+        [
+          'id' => 'call_1',
+          'type' => 'function',
+          'function' => ['name' => 'draft_group', 'arguments' => '{"group":"main_fields"}'],
+        ],
+      ],
+    ));
+    // The user may use full_html, so the schema check accepts it.
+    MockAiProvider::enqueue(new MockResponse(
+      text: '{"title": [{"value": "HTML body"}], "field_teaser": [{"value": "Teaser."}], "field_body": [{"value": "<p>Text with <strong>bold</strong>.</p>", "format": "full_html"}]}',
+    ));
+    MockAiProvider::enqueue(new MockResponse(text: 'Draft 1.0 is ready.'));
+
+    $chat = $this->httpPost('/api/ai/plugins/drafting/chat', [
+      'message' => 'Generate the draft now.',
+      'sessionId' => $session->id(),
+    ]);
+    $this->assertEquals(200, $chat['status'],
+      'Expected 200 from chat. Body: ' . substr($chat['body'], 0, 500));
+
+    $result = $this->httpPost('/api/ai/plugins/drafting/save', [
+      'sessionId' => $session->id(),
+      'version' => 1,
+    ]);
+    $this->assertEquals(200, $result['status'],
+      'Expected 200 from save. Body: ' . substr($result['body'], 0, 500));
+    $body = json_decode($result['body'], TRUE);
+    $node = \Drupal::entityTypeManager()->getStorage('node')->load($body['nodeId']);
+    $this->assertNotNull($node, 'The created node should exist.');
+    $this->assertSame('full_html', $node->get('field_body')->format);
+    $this->assertSame('<p>Text with <strong>bold</strong>.</p>', $node->get('field_body')->value);
+  }
+
+  /**
+   * Tests that the schema check rejects a format the user may not use.
+   */
+  public function testSaveRejectsFormatTheUserMayNotUse(): void {
+    // Plain text is the only format the user may use.
+    $user = $this->createUser([
+      'use oe ai assistant',
+      'create oe_news content',
+    ]);
+    $this->loginUser($user);
+    $session = $this->createSession($user);
+    $session->set('template', 'news_default')->save();
+
+    MockAiProvider::reset();
+    MockAiProvider::enqueue(new MockResponse(
+      toolCalls: [
+        [
+          'id' => 'call_1',
+          'type' => 'function',
+          'function' => ['name' => 'draft_group', 'arguments' => '{"group":"main_fields"}'],
+        ],
+      ],
+    ));
+    // The drafter answers in full_html, which the schema check must reject,
+    // then answers in plain_text once told what was wrong.
+    MockAiProvider::enqueue(new MockResponse(
+      text: '{"title": [{"value": "Format title"}], "field_teaser": [{"value": "Teaser."}], "field_body": [{"value": "<p>Text.</p>", "format": "full_html"}]}',
+    ));
+    MockAiProvider::enqueue(new MockResponse(
+      text: '{"title": [{"value": "Format title"}], "field_teaser": [{"value": "Teaser."}], "field_body": [{"value": "Text.", "format": "plain_text"}]}',
+    ));
+    MockAiProvider::enqueue(new MockResponse(text: 'Draft 1.0 is ready.'));
+
+    $chat = $this->httpPost('/api/ai/plugins/drafting/chat', [
+      'message' => 'Generate the draft now.',
+      'sessionId' => $session->id(),
+    ]);
+    $this->assertEquals(200, $chat['status'],
+      'Expected 200 from chat. Body: ' . substr($chat['body'], 0, 500));
+    // Four AI calls are expected: draft_group call, the rejected answer, the
+    // corrected one and the final reply.
+    $this->assertCount(4, MockAiProvider::getCallLog(), 'The rejected answer must be asked again.');
+
+    /** @var \Drupal\oe_ai_assistant\Service\Drafting\DraftHistoryInterface $history */
+    $history = \Drupal::service('Drupal\oe_ai_assistant\Service\Drafting\DraftHistoryInterface');
+    \Drupal::entityTypeManager()->getStorage('ai_conversation_message')->resetCache();
+    $draft = $history->getDraftContent($session, 1);
+    $this->assertNotNull($draft, 'Draft 1 must be recorded.');
+    $this->assertSame('plain_text', $draft['fields']['field_body'][0]['format'],
+      'The draft must carry the corrected answer, not the rejected one.');
+
+    $result = $this->httpPost('/api/ai/plugins/drafting/save', [
+      'sessionId' => $session->id(),
+      'version' => 1,
+    ]);
+    $this->assertEquals(200, $result['status'],
+      'Expected 200 from save. Body: ' . substr($result['body'], 0, 500));
+    $body = json_decode($result['body'], TRUE);
+    $node = \Drupal::entityTypeManager()->getStorage('node')->load($body['nodeId']);
+    $this->assertNotNull($node, 'The created node should exist.');
+    $this->assertSame('plain_text', $node->get('field_body')->format);
+    $this->assertSame('Text.', $node->get('field_body')->value);
   }
 
   /**
