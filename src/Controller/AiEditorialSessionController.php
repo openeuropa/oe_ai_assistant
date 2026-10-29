@@ -7,7 +7,6 @@ namespace Drupal\oe_ai_assistant\Controller;
 use Drupal\Core\Cache\CacheableMetadata;
 use Drupal\Core\Controller\ControllerBase;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
-use Drupal\Core\Render\RendererInterface;
 use Drupal\Core\Url;
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionType;
@@ -28,7 +27,6 @@ class AiEditorialSessionController extends ControllerBase {
     private readonly SystemManager $systemManager,
     private readonly RequestStack $requestStack,
     private readonly AiAssistantPluginManager $pluginManager,
-    private readonly RendererInterface $renderer,
   ) {}
 
   /**

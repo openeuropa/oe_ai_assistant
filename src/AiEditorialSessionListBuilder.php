@@ -87,7 +87,6 @@ class AiEditorialSessionListBuilder extends EntityListBuilder {
       $container->get('entity_type.manager'),
       $container->get('content_moderation.moderation_information'),
       $container->get('config.factory'),
-
     );
   }
 
@@ -193,14 +192,17 @@ class AiEditorialSessionListBuilder extends EntityListBuilder {
         'class' => ['button', 'button--action', 'button--primary'],
       ],
     ];
+    // Load the settings config once and reuse it for both the transparency
+    // notice markup and the cacheable dependency added below.
+    $config = $this->configFactory->get('oe_ai_assistant.settings');
     $build['transparency_notice'] = [
       '#type' => 'container',
-      '#markup' => TransparencyNoticeFilteredMarkup::create($this->configFactory->get('oe_ai_assistant.settings')->get('transparency_notice')),
+      '#markup' => TransparencyNoticeFilteredMarkup::create($config->get('transparency_notice')),
     ];
     $build += parent::render();
 
     CacheableMetadata::createFromRenderArray($build)
-      ->addCacheableDependency($this->configFactory->get('oe_ai_assistant.settings'))
+      ->addCacheableDependency($config)
       ->applyTo($build);
 
     return $build;

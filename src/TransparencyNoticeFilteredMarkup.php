@@ -12,15 +12,13 @@ use Drupal\Component\Utility\Xss;
 /**
  * Defines a safe string for the AI transparency notice.
  *
- * Modelled on core's FieldFilteredMarkup: it filters the string with a very
- * restrictive tag list when created, but uses a narrower list of its own and
- * does not depend on that @internal core class.
- *
  * @see \Drupal\Core\Field\FieldFilteredMarkup
  */
 final class TransparencyNoticeFilteredMarkup implements MarkupInterface, \Countable {
 
-  // Provides safe-string storage plus __toString() and jsonSerialize().
+  // Modelled on core's FieldFilteredMarkup, which is @internal, with a
+  // narrower tag list of its own. The trait provides safe-string storage plus
+  // __toString() and jsonSerialize().
   use MarkupTrait;
 
   /**
@@ -28,7 +26,7 @@ final class TransparencyNoticeFilteredMarkup implements MarkupInterface, \Counta
    *
    * @var string[]
    */
-  public const ALLOWED_TAGS = ['b', 'i', 'a', 'strong', 'em'];
+  private const ALLOWED_TAGS = ['b', 'i', 'a', 'strong', 'em'];
 
   /**
    * Overrides \Drupal\Component\Render\MarkupTrait::create().
@@ -36,10 +34,10 @@ final class TransparencyNoticeFilteredMarkup implements MarkupInterface, \Counta
    * @param string $string
    *   The raw, untrusted notice text.
    *
-   * @return string|\Drupal\Component\Render\MarkupInterface
+   * @return string|\Drupal\oe_ai_assistant\TransparencyNoticeFilteredMarkup
    *   A safe string filtered with the allowed tag list and normalized.
    *
-   * @see \Drupal\oe_ai_assistant\TransparencyNotice::allowedTags()
+   * @see \Drupal\oe_ai_assistant\TransparencyNoticeFilteredMarkup::allowedTags()
    * @see \Drupal\Component\Utility\Xss::filter()
    * @see \Drupal\Component\Utility\Html::normalize()
    */

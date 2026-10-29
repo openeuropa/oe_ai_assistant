@@ -103,10 +103,17 @@ class AiEditorialSessionDashboardTest extends AiEditorialSessionBrowserTestBase 
       ->set('transparency_notice', 'Updated notice.')
       ->save();
 
+    $this->drupalGet(Url::fromRoute('entity.ai_editorial_session.add_page'));
+    $this->assertSession()->pageTextContains('Updated notice.');
+    $this->assertSession()->responseNotContains($sanitized_notice);
+
     $this->drupalGet(Url::fromRoute('entity.ai_editorial_session.collection'));
     $this->assertSession()->pageTextContains('Updated notice.');
     $this->assertSession()->responseNotContains($sanitized_notice);
     $this->assertSession()->responseHeaderContains('X-Drupal-Cache-Tags', 'config:oe_ai_assistant.settings');
+
+    $this->drupalGet($session->toUrl('canonical'));
+    $this->assertSession()->responseContains('"disclaimer":"Updated notice."');
   }
 
   /**

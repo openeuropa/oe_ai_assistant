@@ -144,7 +144,7 @@ class AiEditorialSessionControllerTest extends AiEditorialSessionKernelTestBase 
     $session = $this->createSession($this->createUser());
 
     $build = $this->controller()->view($session);
-    $disclaimer = $build['#attached']['drupalSettings']['oeAiAssistant']['disclaimer']->__toString();
+    $disclaimer = (string) $build['#attached']['drupalSettings']['oeAiAssistant']['disclaimer'];
 
     $this->assertSame(
       '<strong>AI-generated content</strong>. <a href="https://example.com">Read more</a>.unsafe',
