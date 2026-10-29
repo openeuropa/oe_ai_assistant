@@ -195,8 +195,7 @@ class AiEditorialSessionListBuilder extends EntityListBuilder {
     ];
     $build['transparency_notice'] = [
       '#type' => 'container',
-      '#markup' => $this->configFactory->get('oe_ai_assistant.settings')->get('transparency_notice'),
-      '#allowed_tags' => TransparencyNoticeFilteredMarkup::ALLOWED_TAGS,
+      '#markup' => TransparencyNoticeFilteredMarkup::create($this->configFactory->get('oe_ai_assistant.settings')->get('transparency_notice')),
     ];
     $build += parent::render();
 

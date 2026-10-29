@@ -60,8 +60,7 @@ class AiEditorialSessionAddForm extends ContentEntityForm {
     $config = $this->config('oe_ai_assistant.settings');
     $form['transparency_notice'] = [
       '#type' => 'container',
-      '#markup' => $config->get('transparency_notice'),
-      '#allowed_tags' => TransparencyNoticeFilteredMarkup::ALLOWED_TAGS,
+      '#markup' => TransparencyNoticeFilteredMarkup::create($config->get('transparency_notice')),
     ];
     $form = parent::form($form, $form_state);
     $form['label'] = [

@@ -58,13 +58,6 @@ final class AiEditorialSettingsForm extends ConfigFormBase {
         $this->t('The transparency notice contains HTML tags or attributes that are not allowed. Allowed tags: %tags', ['%tags' => TransparencyNoticeFilteredMarkup::displayAllowedTags()]),
       );
     }
-    if (Html::serialize(Html::load($filtered_value)) !== $filtered_value) {
-      $form_state->setErrorByName(
-        'transparency_notice',
-        $this->t('The transparency notice is not well-formed.'),
-      );
-    }
-
   }
 
 }

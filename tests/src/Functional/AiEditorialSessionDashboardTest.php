@@ -174,6 +174,58 @@ class AiEditorialSessionDashboardTest extends AiEditorialSessionBrowserTestBase 
   }
 
   /**
+   * Tests that the settings form saves notices as browsers submit them.
+   */
+  public function testTransparencyNoticeSettingsAcceptsBrowserInput(): void {
+    $user = $this->drupalCreateUser([
+      'access administration pages',
+      'administer ai editorial sessions',
+    ]);
+    $this->drupalLogin($user);
+
+    $notices = [
+      // Browsers submit textarea line breaks as CRLF.
+      "Line one.\r\nLine two.\r\n",
+      'Caf&eacute; &quot;AI&quot; &#8364;',
+      "<STRONG>AI</STRONG> <a href='https://example.com/policy'>policy</a>",
+      '<strong>Unclosed notice',
+    ];
+    foreach ($notices as $notice) {
+      $this->drupalGet(Url::fromRoute('oe_ai_assistant.admin_settings.configuration'));
+      $this->submitForm(['transparency_notice' => $notice], 'Save configuration');
+
+      $this->assertSession()->pageTextContains('The configuration options have been saved.');
+      $this->assertSame(
+        $notice,
+        $this->config('oe_ai_assistant.settings')->get('transparency_notice')
+      );
+    }
+  }
+
+  /**
+   * Tests that unclosed notice tags are closed on the dashboard and add form.
+   */
+  public function testTransparencyNoticeClosesUnclosedTags(): void {
+    $this->config('oe_ai_assistant.settings')
+      ->set('transparency_notice', '<strong>AI notice')
+      ->save();
+
+    $user = $this->drupalCreateUser([
+      'access administration pages',
+      'access content overview',
+      'administer ai editorial sessions',
+      'create oe_news content',
+    ]);
+    $this->drupalLogin($user);
+
+    $this->drupalGet(Url::fromRoute('entity.ai_editorial_session.add_page'));
+    $this->assertSession()->responseContains('<strong>AI notice</strong>');
+
+    $this->drupalGet(Url::fromRoute('entity.ai_editorial_session.collection'));
+    $this->assertSession()->responseContains('<strong>AI notice</strong>');
+  }
+
+  /**
    * Tests that unsupported markup is rejected by the settings form.
    */
   public function testTransparencyNoticeSettingsRejectsUnsupportedMarkup(): void {
