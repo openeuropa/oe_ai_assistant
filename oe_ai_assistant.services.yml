@@ -14,6 +14,10 @@ services:
 
   Drupal\oe_ai_assistant\Service\RequestValidator: {}
 
+  Drupal\oe_ai_assistant\Service\UsageDashboardTokenUsage: {}
+
+  Drupal\oe_ai_assistant\Service\UsageDashboardBuilder: {}
+
   Drupal\oe_ai_assistant\Service\EntityJsonSchemaComposer: {}
 
   Drupal\oe_ai_assistant\Service\TemplateSchemaFilter: {}

@@ -3,3 +3,49 @@ entity.ai_editorial_session.collection:
   title: 'AI Editorial Sessions'
   base_route: system.admin_content
   weight: 20
+
+oe_ai_assistant.usage_dashboard:
+  route_name: oe_ai_assistant.usage_dashboard
+  title: 'Site dashboard overview'
+  base_route: system.admin_content
+  weight: 21
+
+# Secondary tabs: the overview plus the four drill-down views. The default
+# tab shares the primary route so it renders as the first secondary tab.
+oe_ai_assistant.usage_dashboard.overview:
+  route_name: oe_ai_assistant.usage_dashboard
+  title: 'Overview'
+  parent_id: oe_ai_assistant.usage_dashboard
+  weight: 0
+
+oe_ai_assistant.usage_dashboard.nodes:
+  route_name: oe_ai_assistant.usage_dashboard.view
+  route_parameters:
+    view: nodes
+  title: 'Nodes'
+  parent_id: oe_ai_assistant.usage_dashboard
+  weight: 1
+
+oe_ai_assistant.usage_dashboard.major_versions:
+  route_name: oe_ai_assistant.usage_dashboard.view
+  route_parameters:
+    view: major-versions
+  title: 'Major versions'
+  parent_id: oe_ai_assistant.usage_dashboard
+  weight: 2
+
+oe_ai_assistant.usage_dashboard.sessions:
+  route_name: oe_ai_assistant.usage_dashboard.view
+  route_parameters:
+    view: sessions
+  title: 'Sessions'
+  parent_id: oe_ai_assistant.usage_dashboard
+  weight: 3
+
+oe_ai_assistant.usage_dashboard.users:
+  route_name: oe_ai_assistant.usage_dashboard.view
+  route_parameters:
+    view: users
+  title: 'Cost per user'
+  parent_id: oe_ai_assistant.usage_dashboard
+  weight: 4

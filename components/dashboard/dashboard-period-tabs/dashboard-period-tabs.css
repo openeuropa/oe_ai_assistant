@@ -1,0 +1,4 @@
+.ai-dashboard-period-tabs { display: flex; flex-wrap: wrap; gap: .5rem; }
+.ai-dashboard-period-tabs__item { padding: .65rem 1rem; border: 1px solid #d9ddd9; border-radius: 999px; color: #4b5750; text-decoration: none; }
+.ai-dashboard-period-tabs__item:hover, .ai-dashboard-period-tabs__item:focus { border-color: #087d78; color: #087d78; }
+.ai-dashboard-period-tabs__item.is-active { border-color: #d8ece9; background: #d8ece9; color: #145e5a; font-weight: 700; }

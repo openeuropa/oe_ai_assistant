@@ -1,0 +1,3 @@
+.ai-dashboard-card { padding: 1rem; border: 1px solid #d9ddd9; border-radius: .75rem; background: #fff; }
+.ai-dashboard-card__header { display: flex; justify-content: space-between; gap: 1rem; margin-bottom: 1rem; }
+.ai-dashboard-card__title { margin: 0; font-size: 1rem; }.ai-dashboard-card__subtitle { margin: .25rem 0 0; color: #5c665f; font-size: .8125rem; }.ai-dashboard-card__eyebrow { margin: 0 0 .25rem; color: #5c665f; font-size: .75rem; text-transform: uppercase; letter-spacing: .05em; }

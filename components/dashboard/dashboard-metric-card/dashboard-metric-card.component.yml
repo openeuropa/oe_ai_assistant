@@ -1,0 +1,10 @@
+$schema: https://git.drupalcode.org/project/drupal/-/raw/HEAD/core/assets/schemas/v1/metadata.schema.json
+name: Dashboard metric card
+props:
+  type: object
+  required: [label, value]
+  properties:
+    label: { type: string }
+    value: { type: string }
+    trend: { type: string }
+    trend_state: { type: string, enum: [positive, negative, neutral] }

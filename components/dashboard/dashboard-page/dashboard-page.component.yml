@@ -1,0 +1,18 @@
+$schema: https://git.drupalcode.org/project/drupal/-/raw/HEAD/core/assets/schemas/v1/metadata.schema.json
+name: Dashboard page
+props:
+  type: object
+  properties:
+    # "table" renders the single drill-down table card full width; any other
+    # value (or none) keeps the default multi-column overview layout.
+    variant: { type: string }
+slots:
+  header: { title: Header }
+  filters: { title: Filters }
+  period_controls: { title: Period controls }
+  forecast: { title: Forecast }
+  metrics: { title: Metrics }
+  breakdowns: { title: Consumption breakdowns }
+  supplementary: { title: Optional widgets }
+  primary: { title: Primary content }
+  secondary: { title: Secondary content }

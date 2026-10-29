@@ -1,0 +1,16 @@
+.ai-dashboard { display: grid; gap: 1.5rem; max-width: 96rem; margin: 0 auto; }
+.ai-dashboard__header { display: flex; justify-content: space-between; gap: 1.5rem; align-items: center; }
+.ai-dashboard__header-content { display: flex; justify-content: space-between; gap: 1.5rem; align-items: center; width: 100%; }
+.ai-dashboard__header-content > * { margin: 0; }
+.ai-dashboard__eyebrow { color: #5c665f; font-size: .75rem; letter-spacing: .04em; text-transform: uppercase; }
+.ai-dashboard__title { margin-top: .25rem; font-size: clamp(1.5rem, 3vw, 2rem); }
+.ai-dashboard__header-actions { display: flex; flex-wrap: wrap; gap: .75rem; }
+/* Flat light pill, overriding the admin theme's 3D gradient button. */
+.ai-dashboard__header-actions .button { margin: 0; padding: .55rem 1.25rem; border: 1px solid #d9ddd9; border-radius: 999px; background: #fcfcfa none; box-shadow: none; text-shadow: none; color: #1a1a1a; font-weight: 400; }
+.ai-dashboard__header-actions .button:hover, .ai-dashboard__header-actions .button:focus { border-color: #087d78; background: #fff none; box-shadow: none; color: #087d78; }
+.ai-dashboard__metrics { display: grid; gap: 1rem; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.ai-dashboard__breakdowns, .ai-dashboard__trends, .ai-dashboard__review, .ai-dashboard__quality, .ai-dashboard__activity, .ai-dashboard__supplementary { display: grid; gap: 1.5rem; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+@media (max-width: 48rem) { .ai-dashboard__header, .ai-dashboard__header-content { align-items: stretch; flex-direction: column; } .ai-dashboard__metrics, .ai-dashboard__breakdowns, .ai-dashboard__trends, .ai-dashboard__review, .ai-dashboard__quality, .ai-dashboard__activity, .ai-dashboard__supplementary { grid-template-columns: 1fr; } }
+/* Drill-down table views hold a single banner card and a single table card;
+   both should span the full dashboard width rather than one grid column. */
+.ai-dashboard--table .ai-dashboard__metrics, .ai-dashboard--table .ai-dashboard__breakdowns { grid-template-columns: 1fr; }

@@ -1,0 +1,412 @@
+<?php
+
+namespace Drupal\oe_ai_assistant\Form;
+
+use Drupal\Core\Entity\EntityTypeBundleInfoInterface;
+use Drupal\Core\Entity\EntityTypeManagerInterface;
+use Drupal\Core\Form\FormBase;
+use Drupal\Core\Form\FormStateInterface;
+use Drupal\Core\Url;
+use Drupal\oe_ai_assistant\Service\DashboardFilters;
+use Drupal\oe_ai_assistant\Service\UsageDashboardBuilder;
+use Symfony\Component\DependencyInjection\ContainerInterface;
+use Symfony\Component\HttpFoundation\RequestStack;
+
+/**
+ * Provides filters for the AI usage dashboard.
+ */
+class AiUsageDashboardForm extends FormBase {
+
+  /**
+   * Constructs the form.
+   *
+   * @param \Drupal\Core\Entity\EntityTypeBundleInfoInterface $entityTypeBundleInfo
+   *   The entity type bundle information service.
+   * @param \Drupal\Core\Entity\EntityTypeManagerInterface $entityTypeManager
+   *   The entity type manager.
+   * @param \Symfony\Component\HttpFoundation\RequestStack $dashboardRequestStack
+   *   The request stack.
+   * @param \Drupal\oe_ai_assistant\Service\UsageDashboardBuilder $dashboardBuilder
+   *   The dashboard render array builder.
+   */
+  public function __construct(
+    protected EntityTypeBundleInfoInterface $entityTypeBundleInfo,
+    protected EntityTypeManagerInterface $entityTypeManager,
+    protected RequestStack $dashboardRequestStack,
+    protected UsageDashboardBuilder $dashboardBuilder,
+  ) {}
+
+  /**
+   * {@inheritdoc}
+   */
+  public static function create(ContainerInterface $container) {
+    return new static(
+      $container->get('entity_type.bundle.info'),
+      $container->get('entity_type.manager'),
+      $container->get('request_stack'),
+      $container->get(UsageDashboardBuilder::class),
+    );
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function getFormId() {
+    return 'ai_usage_dashboard__form';
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function buildForm(array $form, FormStateInterface $form_state, string $view = 'overview') {
+    $sessionTypes = array_map(
+      static fn (array $bundle): string => (string) $bundle['label'],
+      $this->entityTypeBundleInfo->getBundleInfo('ai_editorial_session'),
+    );
+    natcasesort($sessionTypes);
+    $contentTypes = array_map(
+      static fn (array $bundle): string => (string) $bundle['label'],
+      $this->entityTypeBundleInfo->getBundleInfo('node'),
+    );
+    natcasesort($contentTypes);
+
+    $query = $this->dashboardRequestStack->getCurrentRequest()->query->all();
+    $preset = isset($query['preset']) && is_string($query['preset']) ? $query['preset'] : '30-days';
+    // The active drill-down view comes from the route; "overview" renders the
+    // default metrics body, the other views render a single drill-down table.
+    if (!in_array($view, ['overview', 'nodes', 'major-versions', 'sessions', 'users'], TRUE)) {
+      $view = 'overview';
+    }
+    // A named preset drives the date range directly; only the "custom" preset
+    // honours the explicit start/end dates submitted through the filter form.
+    if ($preset === 'custom') {
+      $startDate = isset($query['start']) && is_string($query['start']) ? $query['start'] : (new \DateTimeImmutable('first day of this month'))->format('Y-m-d');
+      $endDate = isset($query['end']) && is_string($query['end']) ? $query['end'] : (new \DateTimeImmutable('last day of this month'))->format('Y-m-d');
+    }
+    else {
+      [$startDate, $endDate] = $this->presetRange($preset);
+    }
+    $selectedSessionType = isset($query['session_type']) && is_string($query['session_type']) && isset($sessionTypes[$query['session_type']]) ? $query['session_type'] : '';
+    $selectedContentType = isset($query['content_type']) && is_string($query['content_type']) && isset($contentTypes[$query['content_type']]) ? $query['content_type'] : '';
+
+    $users = [];
+    foreach ($this->entityTypeManager->getStorage('user')->loadMultiple() as $uid => $user) {
+      $users[(string) $uid] = (string) $user->label();
+    }
+    natcasesort($users);
+    $selectedUser = isset($query['participant']) && is_string($query['participant']) && isset($users[$query['participant']]) ? $query['participant'] : '';
+
+    $form['session_type'] = [
+      '#type' => 'select',
+      '#title' => $this->t('AI session type'),
+      '#options' => $sessionTypes,
+      '#empty_option' => $this->t('All session types'),
+      '#default_value' => $selectedSessionType,
+    ];
+    $form['content_type'] = [
+      '#type' => 'select',
+      '#title' => $this->t('Content type'),
+      '#options' => $contentTypes,
+      '#empty_option' => $this->t('All content types'),
+      '#default_value' => $selectedContentType,
+    ];
+    $form['participant'] = [
+      '#type' => 'select',
+      // The users view lists participants, so the author filter is labelled
+      // "Participants" there and "Username" on every other view.
+      '#title' => $view === 'users' ? $this->t('Participants') : $this->t('Username'),
+      '#options' => $users,
+      '#empty_option' => $view === 'users' ? $this->t('All participants') : $this->t('All users'),
+      '#default_value' => $selectedUser,
+    ];
+    $form['start'] = [
+      '#type' => 'date',
+      '#title' => $this->t('Start date'),
+      '#default_value' => $startDate,
+    ];
+    $form['end'] = [
+      '#type' => 'date',
+      '#title' => $this->t('End date'),
+      '#default_value' => $endDate,
+    ];
+
+    $form['actions'] = ['#type' => 'actions'];
+    $form['actions']['submit'] = [
+      '#type' => 'submit',
+      '#value' => $this->t('Apply filters'),
+    ];
+    $form['actions']['clear'] = [
+      '#type' => 'submit',
+      '#value' => $this->t('Clear filters'),
+      '#limit_validation_errors' => [],
+      '#submit' => ['::clearFilters'],
+    ];
+
+    // The builder owns the dashboard body; the form supplies the pieces that
+    // depend on FAPI elements (header, filter bar, period tabs) and the date
+    // range used by the live forecast card.
+    $dataFilters = new DashboardFilters(
+      $selectedContentType !== '' ? $selectedContentType : NULL,
+      $selectedUser !== '' ? $selectedUser : NULL,
+    );
+    $header = $this->dashboardHeader($view, $preset, $selectedContentType, $selectedUser);
+    $filters = $this->dashboardFilters($form);
+    $periodControls = $this->dashboardPeriodControls($preset, $selectedContentType, $selectedUser, $view);
+    if ($view === 'overview') {
+      $form['dashboard'] = $this->dashboardBuilder->build(
+        $header,
+        $filters,
+        $periodControls,
+        $startDate,
+        $endDate,
+        $dataFilters,
+      );
+    }
+    else {
+      $form['dashboard'] = $this->dashboardBuilder->buildTable(
+        $view,
+        $header,
+        $filters,
+        $periodControls,
+        $startDate,
+        $endDate,
+        $dataFilters,
+      );
+    }
+    unset(
+      $form['start'],
+      $form['end'],
+      $form['session_type'],
+      $form['content_type'],
+      $form['participant'],
+      $form['actions'],
+    );
+
+    return $form;
+  }
+
+  /**
+   * Builds a URL to a dashboard view, carrying filter query parameters.
+   *
+   * The overview uses the base dashboard route; the drill-down views use the
+   * {view} path-parameter route so their local tasks track active state.
+   *
+   * @param string $view
+   *   The view machine name.
+   * @param array $query
+   *   The query parameters to carry (preset, filters).
+   *
+   * @return \Drupal\Core\Url
+   *   The view URL.
+   */
+  protected function viewUrl(string $view, array $query = []): Url {
+    if ($view === 'overview') {
+      return Url::fromRoute('oe_ai_assistant.usage_dashboard', [], ['query' => $query]);
+    }
+    return Url::fromRoute('oe_ai_assistant.usage_dashboard.view', ['view' => $view], ['query' => $query]);
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function validateForm(array &$form, FormStateInterface $form_state) {
+    $startDate = $form_state->getValue('start');
+    $endDate = $form_state->getValue('end');
+
+    if (($startDate === '') !== ($endDate === '')) {
+      $form_state->setErrorByName('start', $this->t('Both start and end dates are required.'));
+    }
+    elseif ($startDate !== '' && $startDate > $endDate) {
+      $form_state->setErrorByName('end', $this->t('The end date must not be before the start date.'));
+    }
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function submitForm(array &$form, FormStateInterface $form_state) {
+    // Preserve the active drill-down view (a route path segment) across a
+    // filter submission.
+    $view = (string) $this->getRouteMatch()->getParameter('view');
+    if ($view === '') {
+      $view = 'overview';
+    }
+    $query = [
+      'session_type' => $form_state->getValue('session_type'),
+      'content_type' => $form_state->getValue('content_type'),
+      'participant' => $form_state->getValue('participant'),
+    ];
+    $query = array_filter($query, static fn (string $value): bool => $value !== '');
+    if ($form_state->getValue('start') !== '') {
+      $query += [
+        'preset' => 'custom',
+        'start' => $form_state->getValue('start'),
+        'end' => $form_state->getValue('end'),
+      ];
+    }
+
+    $form_state->setRedirectUrl($this->viewUrl($view, $query));
+  }
+
+  /**
+   * Redirects to the dashboard with no filter query parameters.
+   *
+   * @param array $form
+   *   The complete form array.
+   * @param \Drupal\Core\Form\FormStateInterface $form_state
+   *   The current form state.
+   */
+  public function clearFilters(array &$form, FormStateInterface $form_state): void {
+    // Clearing filters keeps the active view but drops every filter.
+    $view = (string) $this->getRouteMatch()->getParameter('view');
+    if ($view === '') {
+      $view = 'overview';
+    }
+    $form_state->setRedirectUrl($this->viewUrl($view));
+  }
+
+  /**
+   * Builds the dashboard header render array.
+   *
+   * @param string $view
+   *   The active view machine name.
+   * @param string $preset
+   *   The active period preset.
+   * @param string $contentType
+   *   The active content type filter, or an empty string for none.
+   * @param string $participant
+   *   The active participant filter, or an empty string for none.
+   *
+   * @return array
+   *   The render array.
+   */
+  protected function dashboardHeader(string $view, string $preset, string $contentType, string $participant): array {
+    $actions = [
+      '#type' => 'container',
+      '#attributes' => ['class' => ['ai-dashboard__header-actions']],
+    ];
+    // The export link carries the current view, period, and filters so the CSV
+    // matches exactly what is on screen. The overview exports its metric and
+    // breakdown summary; the drill-down views export their data table.
+    $exportQuery = array_filter([
+      'view' => $view,
+      'preset' => $preset,
+      'content_type' => $contentType,
+      'participant' => $participant,
+    ], static fn (string $value): bool => $value !== '');
+    $actions['export'] = [
+      '#type' => 'link',
+      '#title' => $this->t('Export CSV'),
+      '#url' => Url::fromRoute('oe_ai_assistant.usage_dashboard.export', [], ['query' => $exportQuery]),
+      '#attributes' => ['class' => ['button']],
+    ];
+
+    return [
+      '#type' => 'container',
+      'actions' => $actions,
+    ];
+  }
+
+  /**
+   * Build the filters render array.
+   *
+   * @param array $form
+   *   The complete form array.
+   *
+   * @return array
+   *   The render array
+   */
+  protected function dashboardFilters(array $form): array {
+    // Each control keeps its label but renders it inside the field box (an
+    // inset label) to match the design; the date range is a single field that
+    // holds the start and end inputs separated by a dash.
+    return [
+      '#type' => 'component',
+      '#component' => 'oe_ai_assistant:dashboard-filter-bar',
+      'filters' => [
+        '#type' => 'container',
+        'date_range' => [
+          '#type' => 'fieldset',
+          '#title' => $this->t('Date range'),
+          '#attributes' => ['class' => ['ai-dashboard-filter-bar__field', 'ai-dashboard-filter-bar__date-range']],
+          'start' => $form['start'] + ['#title_display' => 'invisible'],
+          'end' => $form['end'] + ['#title_display' => 'invisible'],
+        ],
+        'session_type' => $form['session_type'] + ['#wrapper_attributes' => ['class' => ['ai-dashboard-filter-bar__field']]],
+        'content_type' => $form['content_type'] + ['#wrapper_attributes' => ['class' => ['ai-dashboard-filter-bar__field']]],
+        'participant' => $form['participant'] + ['#wrapper_attributes' => ['class' => ['ai-dashboard-filter-bar__field']]],
+      ],
+      // The filter bar's own actions: "Apply filters" submits the selected
+      // filters, "Clear filters" resets them all.
+      'actions' => $form['actions'],
+    ];
+  }
+
+  /**
+   * Build the periods render array.
+   *
+   * @param string $preset
+   *   The active period preset.
+   * @param string $contentType
+   *   The active content type filter, or an empty string for none.
+   * @param string $participant
+   *   The active participant filter, or an empty string for none.
+   * @param string $view
+   *   The active view machine name, carried in each tab URL.
+   *
+   * @return array
+   *   The render array
+   */
+  protected function dashboardPeriodControls(string $preset, string $contentType, string $participant, string $view): array {
+    // Each tab keeps the active content type and participant filters so that
+    // switching the period only changes the date range, not the other filters.
+    // The view is a path segment, so it is carried through the route, not the
+    // query string.
+    $carried = array_filter([
+      'content_type' => $contentType,
+      'participant' => $participant,
+    ], static fn (string $value): bool => $value !== '');
+    $url = function (string $value) use ($carried, $view): string {
+      return $this->viewUrl($view, ['preset' => $value] + $carried)->toString();
+    };
+
+    $presets = [
+      '30-days' => $this->t('Last 30 days'),
+      '3-months' => $this->t('Last 3 months'),
+      '6-months' => $this->t('Last 6 months'),
+      'year' => $this->t('Last year'),
+      'ytd' => $this->t('YTD'),
+    ];
+    $items = [];
+    foreach ($presets as $value => $label) {
+      $items[] = [
+        'label' => (string) $label,
+        'url' => $url($value),
+        'active' => $preset === $value,
+      ];
+    }
+
+    return [
+      '#type' => 'component',
+      '#component' => 'oe_ai_assistant:dashboard-period-tabs',
+      '#props' => ['items' => $items],
+    ];
+  }
+
+  /**
+   * Resolves a named period preset to an inclusive start/end date range.
+   *
+   * Delegates to UsageDashboardBuilder::presetRange() so the form and the CSV
+   * export controller resolve presets identically.
+   *
+   * @param string $preset
+   *   The period preset machine name.
+   *
+   * @return array{0: string, 1: string}
+   *   The inclusive start and end dates in Y-m-d format.
+   */
+  protected function presetRange(string $preset): array {
+    return UsageDashboardBuilder::presetRange($preset);
+  }
+
+}

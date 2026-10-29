@@ -36,3 +36,6 @@ administer ai content provenance:
 view ai content provenance:
   title: 'View AI content provenance'
   description: 'View which revisions were produced with AI assistance and their usage snapshot.'
+
+access ai usage dashboard:
+  title: 'Monitor AI usage'
