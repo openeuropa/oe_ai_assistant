@@ -161,7 +161,19 @@ class AiEditorialSession extends ContentEntityBase implements AiEditorialSession
   public function conversationToolResults(): array {
     $results = [];
     foreach ($this->conversationRows() as $row) {
-      $results = array_merge($results, $row->getToolResults());
+      $meta = json_decode((string) $row->get('meta')->value, TRUE);
+      if (!is_array($meta) || ($meta['type'] ?? '') !== 'tool_call_result') {
+        continue;
+      }
+      foreach ($meta['tools'] ?? [] as $tool) {
+        if (!isset($tool['name'], $tool['result'])) {
+          continue;
+        }
+        $results[] = [
+          'name' => $tool['name'],
+          'result' => json_decode((string) $tool['result'], TRUE),
+        ];
+      }
     }
 
     return $results;

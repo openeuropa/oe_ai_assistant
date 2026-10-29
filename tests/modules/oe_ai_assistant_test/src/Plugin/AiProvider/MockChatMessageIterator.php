@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Drupal\oe_ai_assistant_test\Plugin\AiProvider;
 
+use Drupal\ai\OperationType\Chat\ChatMessage;
+use Drupal\ai\OperationType\Chat\ChatOutput;
 use Drupal\ai\OperationType\Chat\StreamedChatMessageIterator;
 use Drupal\ai\OperationType\Chat\Tools\ToolsFunctionOutput;
 
@@ -119,6 +121,39 @@ class MockChatMessageIterator extends StreamedChatMessageIterator {
 
       yield $streamedMessage;
     }
+  }
+
+  /**
+   * {@inheritdoc}
+   *
+   * The parent method assembles tool calls through assembleToolCalls(),
+   * which is private and expects the OpenAI incremental delta format, so
+   * it never sees the complete-at-once calls getTools() below builds.
+   * Rebuilt here to route through getTools() instead.
+   */
+  public function reconstructChatOutput(): ChatOutput {
+    $role = '';
+    $message_text = '';
+    $raw = [];
+    foreach ($this->messages as $message) {
+      if (!empty($message->getRole()) && empty($role)) {
+        $role = $message->getRole();
+      }
+      if (!empty($message->getText())) {
+        $message_text .= $message->getText();
+      }
+      if (!empty($message->getRaw())) {
+        $raw = array_merge($raw, $message->getRaw());
+      }
+      $this->setTokenUsageFromChunk($message);
+    }
+
+    $message = new ChatMessage($role, $message_text);
+    $message->setTools($this->getTools());
+
+    $output = new ChatOutput($message, $raw, []);
+
+    return $this->setTokenUsageOnChatOutput($output);
   }
 
   /**

@@ -34,6 +34,13 @@ class DraftHistory implements DraftHistoryInterface {
   /**
    * {@inheritdoc}
    */
+  public function nextVersion(EntityInterface $session): array {
+    return ['version' => $this->countDrafts($session) + 1];
+  }
+
+  /**
+   * {@inheritdoc}
+   */
   public function listDrafts(EntityInterface $session): array {
     $drafts = [];
     foreach ($this->collectResults($session) as $result) {
