@@ -61,6 +61,7 @@ class AiEditorialSessionAddForm extends ContentEntityForm {
     $form['transparency_notice'] = [
       '#type' => 'container',
       '#markup' => TransparencyNoticeFilteredMarkup::create($config->get('transparency_notice')),
+      '#weight' => -100,
     ];
     $form = parent::form($form, $form_state);
     $form['label'] = [
