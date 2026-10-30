@@ -6,7 +6,6 @@ namespace Drupal\oe_ai_assistant\Plugin\NeuronTool;
 
 use Drupal\ai_neuron\Agent\NeuronAgentManagerInterface;
 use Drupal\ai_neuron\Tools\NeuronToolPluginBase;
-use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
 use Drupal\oe_ai_assistant\Neuron\Agent\Nodes\SchemaOutputNode;
 use Drupal\oe_ai_assistant\Service\Drafting\DraftingBriefInterface;
 
@@ -79,24 +78,11 @@ abstract class DraftingToolBase extends NeuronToolPluginBase {
    */
   protected function draftGroup(string $group, array $schema, string $task): array {
     return $this->agents->createAgent('field_group', [
-      'session' => $this->session(),
+      'session' => $this->getContextValue('session'),
       'group' => $group,
       'schema' => $schema,
       'task' => $task,
     ])->run()->get(SchemaOutputNode::OUTPUT_KEY) ?? [];
-  }
-
-  /**
-   * The session the run belongs to.
-   *
-   * @return \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface
-   *   The session the agent was built for.
-   */
-  protected function session(): AiEditorialSessionInterface {
-    $session = $this->getContextValue('session');
-    assert($session instanceof AiEditorialSessionInterface);
-
-    return $session;
   }
 
   /**
@@ -108,7 +94,7 @@ abstract class DraftingToolBase extends NeuronToolPluginBase {
   protected function target(): array {
     return [
       DraftingBriefInterface::ENTITY_TYPE_ID,
-      $this->session()->getContentType(),
+      $this->getContextValue('session')->getContentType(),
     ];
   }
 
@@ -119,7 +105,7 @@ abstract class DraftingToolBase extends NeuronToolPluginBase {
    *   The snapshot, as snapshot() shapes it.
    */
   protected function draftContext(): array {
-    $session = $this->session();
+    $session = $this->getContextValue('session');
 
     return self::snapshot(
       $this->brief->tone($session),

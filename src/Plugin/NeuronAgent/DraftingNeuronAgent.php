@@ -81,13 +81,13 @@ final class DraftingNeuronAgent extends EditorialSessionAgentBase {
    *   The prompt.
    */
   private function contentTypePrompt(): string {
-    $bundle = $this->session()->getContentType();
+    $bundle = $this->getContextValue('session')->getContentType();
     $prompt = "Content type context:\n"
       . 'bundle: ' . $bundle . "\n"
       . 'entity_type_id: ' . DraftingBriefInterface::ENTITY_TYPE_ID . "\n";
 
     if ($bundle !== '') {
-      $prompt .= "\nAvailable field groups:\n" . json_encode($this->brief->groups($this->session())) . "\n";
+      $prompt .= "\nAvailable field groups:\n" . json_encode($this->brief->groups($this->getContextValue('session'))) . "\n";
     }
 
     return $prompt;

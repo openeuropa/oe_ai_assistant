@@ -49,7 +49,7 @@ final class GetDraftHistoryNeuronTool extends DraftingToolBase {
    * Returns the drafts of the session as JSON.
    */
   public function __invoke(): string {
-    return json_encode(['drafts' => $this->draftHistory->listDrafts($this->session())]);
+    return json_encode(['drafts' => $this->draftHistory->listDrafts($this->getContextValue('session'))]);
   }
 
 }

@@ -123,7 +123,7 @@ final class DraftGroupNeuronTool extends DraftingToolBase {
    * The collector every call of this run adds its group to.
    */
   private function collector(): DraftCollector {
-    return $this->collector ??= new DraftCollector($this->brief->groups($this->session()));
+    return $this->collector ??= new DraftCollector($this->brief->groups($this->getContextValue('session')));
   }
 
   /**
@@ -134,7 +134,7 @@ final class DraftGroupNeuronTool extends DraftingToolBase {
    */
   private function draft(): ?array {
     if ($this->draft === NULL && $this->collector()->complete()) {
-      $this->draft = $this->draftHistory->nextVersion($this->session()) + [
+      $this->draft = $this->draftHistory->nextVersion($this->getContextValue('session')) + [
         'context' => $this->draftContext(),
         'fields' => $this->collector()->fields(),
       ];

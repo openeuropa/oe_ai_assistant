@@ -9,7 +9,6 @@ use Drupal\Component\Plugin\Definition\ContextAwarePluginDefinitionInterface;
 use Drupal\ai_neuron\Agent\NeuronAgentPluginBase;
 use Drupal\ai_neuron\Providers\ProviderFactoryInterface;
 use Drupal\ai_neuron\Tools\NeuronToolManagerInterface;
-use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
 use Drupal\oe_ai_assistant\Neuron\Chat\Messages\Stream\Adapters\PatchedVercelAIAdapter;
 use Drupal\oe_ai_assistant\Service\Drafting\DocumentExtractionProcessorInterface;
 use Drupal\oe_ai_assistant\Service\Drafting\DraftingBriefInterface;
@@ -67,7 +66,7 @@ abstract class EditorialSessionAgentBase extends NeuronAgentPluginBase {
     $definition = $this->getPluginDefinition();
     assert($definition instanceof NeuronAgentDefinition);
     $context = [
-      'session' => $this->session(),
+      'session' => $this->getContextValue('session'),
       'thread' => $this->runId($this->threadKey()),
     ];
 
@@ -136,22 +135,7 @@ abstract class EditorialSessionAgentBase extends NeuronAgentPluginBase {
    * answers one question per run names what tells its runs apart instead.
    */
   protected function threadKey(): string {
-    return 'session_' . $this->session()->id();
-  }
-
-  /**
-   * The session this agent serves.
-   *
-   * The context is required, so the manager refused the build without it.
-   *
-   * @return \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface
-   *   The session the caller named when it asked for the agent.
-   */
-  protected function session(): AiEditorialSessionInterface {
-    $session = $this->getContextValue('session');
-    assert($session instanceof AiEditorialSessionInterface);
-
-    return $session;
+    return 'session_' . $this->getContextValue('session')->id();
   }
 
   /**
@@ -161,7 +145,7 @@ abstract class EditorialSessionAgentBase extends NeuronAgentPluginBase {
    *   The prompt block, or an empty string without a tone.
    */
   protected function tonePrompt(): string {
-    $tone = $this->brief->tone($this->session());
+    $tone = $this->brief->tone($this->getContextValue('session'));
     $prompt = trim((string) ($tone['prompt'] ?? ''));
     if ($prompt === '') {
       return '';
@@ -193,7 +177,7 @@ abstract class EditorialSessionAgentBase extends NeuronAgentPluginBase {
    *   The prompt block, or an empty string without context documents.
    */
   protected function documentsPrompt(): string {
-    $documents = $this->brief->documents($this->session());
+    $documents = $this->brief->documents($this->getContextValue('session'));
     if ($documents === []) {
       return '';
     }
