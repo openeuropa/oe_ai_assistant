@@ -1,0 +1,127 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Drupal\oe_ai_assistant\Plugin\NeuronAgent;
+
+use Drupal\ai_neuron\Attribute\NeuronAgent;
+use Drupal\ai_neuron\Providers\DrupalAiProvider;
+use Drupal\Core\Plugin\Context\ContextDefinition;
+use Drupal\Core\Plugin\Context\EntityContextDefinition;
+use Drupal\Core\StringTranslation\TranslatableMarkup;
+use NeuronAI\Providers\AIProviderInterface;
+
+/**
+ * Writes the field values of one field group against its JSON schema.
+ *
+ * One run answers one schema and holds no conversation: the task carries
+ * everything the model needs.
+ */
+#[NeuronAgent(
+  id: 'field_group',
+  label: new TranslatableMarkup('Field group drafter'),
+  description: new TranslatableMarkup('Writes the values of one field group against its JSON schema.'),
+  operation_type: 'chat_with_structured_response',
+  context_definitions: [
+    'session' => new EntityContextDefinition(
+      data_type: 'entity:ai_editorial_session',
+      label: new TranslatableMarkup('Editorial session'),
+    ),
+    'group' => new ContextDefinition(
+      data_type: 'string',
+      label: new TranslatableMarkup('Field group'),
+    ),
+    'schema' => new ContextDefinition(
+      data_type: 'any',
+      label: new TranslatableMarkup('Group schema'),
+    ),
+  ],
+)]
+final class FieldGroupNeuronAgent extends EditorialSessionAgentBase {
+
+  /**
+   * The key of this run, built once because it names one run of one group.
+   */
+  protected ?string $threadKey = NULL;
+
+  /**
+   * What marks a thread segment as one run of this drafter.
+   */
+  private const RUN_PREFIX = 'run_';
+
+  /**
+   * What marks a thread segment as the group a run answered for.
+   */
+  private const GROUP_PREFIX = 'group_';
+
+  /**
+   * {@inheritdoc}
+   *
+   * The drafter answers one group, so its calls carry that group's JSON
+   * schema and the model returns one JSON object of that shape. The tool that
+   * started the run checks the answer against the same schema.
+   */
+  protected function provider(): AIProviderInterface {
+    $provider = $this->providers->create($this->operationType(), [$this->tag(), $this->group()]);
+    // The site's provider is the only implementation, and the schema is its
+    // own addition rather than part of Neuron's interface.
+    assert($provider instanceof DrupalAiProvider);
+
+    return $provider->withStructuredSchema($this->group(), (array) $this->getContextValue('schema'));
+  }
+
+  /**
+   * {@inheritdoc}
+   *
+   * The tone steers what the drafter writes, and the documents are the
+   * material it writes from, so a drafter is told both.
+   */
+  protected function instructions(): string {
+    $instructions = <<<'PROMPT'
+    You are a content generator. You will receive a JSON schema and
+    instructions describing what content to produce. Generate a JSON
+    object that conforms exactly to the given schema. Return ONLY
+    valid JSON with no markdown fencing, no explanation, no commentary.
+
+    Every field value is an array of items, each item an object with
+    the property keys the schema lists, for example
+    "field_teaser": [{"value": "Short teaser"}]. Use only the property
+    names the schema defines, exactly as written, and match its
+    array, object and property shape.
+
+    For formatted text fields, produce clean HTML.
+    Match the language and tone described in the instructions.
+    PROMPT;
+
+    $blocks = array_filter([$this->tonePrompt(), $this->documentsPrompt()]);
+
+    return $blocks === []
+      ? $instructions
+      : $instructions . "\n\n" . implode("\n\n", $blocks) . "\n";
+  }
+
+  /**
+   * {@inheritdoc}
+   *
+   * One thread per run, so a drafter is asked for one answer and never replays
+   * the answer it gave for an earlier draft. The random segment is what keeps
+   * two runs of one group apart; the session and the group are there so a
+   * reader can tell whose run it was.
+   */
+  protected function threadKey(): string {
+    return $this->threadKey ??= parent::threadKey()
+      . '.' . self::RUN_PREFIX . bin2hex(random_bytes(4))
+      . '.' . self::GROUP_PREFIX . $this->group();
+  }
+
+  /**
+   * The group this run answers for.
+   *
+   * @return string
+   *   The group id, which names the run and routes its structured output.
+   */
+  private function group(): string {
+    return (string) $this->getContextValue('group');
+  }
+
+}

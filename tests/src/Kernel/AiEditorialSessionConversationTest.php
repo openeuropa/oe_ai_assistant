@@ -69,7 +69,7 @@ class AiEditorialSessionConversationTest extends AiEditorialSessionKernelTestBas
       'meta' => json_encode([
         'type' => 'tool_call_result',
         'tools' => [
-          ['name' => 'draft_group', 'result' => json_encode(['version' => '1.0'])],
+          ['name' => 'drafting_draft_group', 'result' => json_encode(['version' => '1.0'])],
         ],
       ]),
     ]);
@@ -79,7 +79,7 @@ class AiEditorialSessionConversationTest extends AiEditorialSessionKernelTestBas
     ]);
 
     $this->assertSame([
-      ['name' => 'draft_group', 'result' => ['version' => '1.0']],
+      ['name' => 'drafting_draft_group', 'result' => ['version' => '1.0']],
     ], $session->conversationToolResults());
   }
 

@@ -27,6 +27,20 @@ interface DraftHistoryInterface {
   public function countDrafts(EntityInterface $session): int;
 
   /**
+   * Numbers the draft about to be stored for a session.
+   *
+   * Centralises what countDrafts() otherwise leaves to each caller: the
+   * next draft takes the version after every draft stored so far.
+   *
+   * @param \Drupal\Core\Entity\EntityInterface $session
+   *   The session hosting the conversation.
+   *
+   * @return array
+   *   {version: N}, the version following the drafts already stored.
+   */
+  public function nextVersion(EntityInterface $session): array;
+
+  /**
    * Lists the stored drafts with their provenance snapshots.
    *
    * @param \Drupal\Core\Entity\EntityInterface $session

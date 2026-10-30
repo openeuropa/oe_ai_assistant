@@ -14,6 +14,13 @@
  * This file is included from settings.php during ddev install.
  */
 
+// Write every outgoing HTTP request to its own file under
+// private://ai-calls, to inspect a provider payload or hand it to the
+// provider maintainer. Credentials are redacted. Set to TRUE only while
+// capturing: it logs all outgoing requests, not just the AI ones.
+// @see README.md, "Logging provider requests"
+$settings['oe_ai_assistant_log_requests'] = FALSE;
+
 // Point the Tika document loader at the services of this installation: the
 // tika container from .ddev/docker-compose.tika.yaml and the app JAR baked
 // into the web image by .ddev/web-build/Dockerfile.tika. Both sources are
