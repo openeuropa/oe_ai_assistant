@@ -19,7 +19,7 @@ use Drupal\oe_ai_assistant\Service\Drafting\DraftingBriefInterface;
  * turn, so the model cannot read another session's history.
  */
 #[NeuronTool(
-  id: 'get_draft_history',
+  id: 'drafting_get_history',
   description: 'Returns the drafts generated in this session, one entry per version'
   . ' ("Draft 1", "Draft 2", and so on), each with the tone, template and'
   . ' documents that produced it. Refer to drafts by these names; the user'

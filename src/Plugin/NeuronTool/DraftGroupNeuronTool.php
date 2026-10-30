@@ -26,11 +26,11 @@ use NeuronAI\Tools\TrackByInputs;
  * same place.
  */
 #[NeuronTool(
-  id: 'draft_group',
+  id: 'drafting_draft_group',
   description: 'Drafts the field values of one field group through a sub-agent.'
   . ' The result lists the groups still pending; the call that completes'
   . ' the set carries the versioned draft. Drafts are named "Draft 1",'
-  . ' "Draft 2" and so on; get_draft_history lists their names.',
+  . ' "Draft 2" and so on; drafting_get_history lists their names.',
   label: new TranslatableMarkup('Draft group'),
   context_definitions: [
     'session' => new EntityContextDefinition(

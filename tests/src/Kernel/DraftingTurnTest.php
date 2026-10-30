@@ -46,20 +46,22 @@ class DraftingTurnTest extends AiEditorialSessionKernelTestBase {
    * A turn that drafts one group ends with a versioned draft and a transcript.
    *
    * The news_default template exposes title, field_teaser and field_body as
-   * a single main_fields group, so one draft_group call completes the draft.
+   * a single main_fields group, so one drafting_draft_group call completes
+   * the draft.
    */
   public function testWholeTurnDraftsAndVersionsTheGroup(): void {
     $session = $this->createSession($this->createUser());
     $session->set('template', 'news_default')->save();
 
     MockAiProvider::reset();
-    // The drafting agent calls draft_group for the only group there is.
+    // The drafting agent calls drafting_draft_group for the only group it
+    // has.
     MockAiProvider::enqueue(new MockResponse(
       toolCalls: [
         [
           'id' => 'call_1',
           'type' => 'function',
-          'function' => ['name' => 'draft_group', 'arguments' => '{"group":"main_fields"}'],
+          'function' => ['name' => 'drafting_draft_group', 'arguments' => '{"group":"main_fields"}'],
         ],
       ],
     ));
@@ -96,7 +98,7 @@ class DraftingTurnTest extends AiEditorialSessionKernelTestBase {
 
     $results = $session->conversationToolResults();
     $this->assertCount(1, $results);
-    $this->assertSame('draft_group', $results[0]['name']);
+    $this->assertSame('drafting_draft_group', $results[0]['name']);
     $this->assertSame([], $results[0]['result']['pending']);
     $this->assertSame([
       'title' => [['value' => 'T']],

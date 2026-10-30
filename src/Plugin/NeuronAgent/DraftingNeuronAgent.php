@@ -20,8 +20,8 @@ use Drupal\oe_ai_assistant\Service\Drafting\DraftingBriefInterface;
   operation_type: 'chat_with_tools',
   stream_adapter: NeuronStreamAdapter::Custom,
   tools: [
-    'get_draft_history',
-    'draft_group',
+    'drafting_get_history',
+    'drafting_draft_group',
   ],
   context_definitions: [
     'session' => new EntityContextDefinition(
@@ -51,23 +51,23 @@ final class DraftingNeuronAgent extends EditorialSessionAgentBase {
     - For each group, determine whether you have enough information
       from the conversation to generate meaningful content. If ANY
       field group lacks context, ask the user about it specifically.
-    - Do NOT call draft_group until you have addressed every field
+    - Do NOT call drafting_draft_group until you have addressed every field
       group. Ask the user about each group you are unsure about.
     - The user may tell you to skip certain fields, use your best
       judgment, or just go ahead. In that case, proceed with
-      draft_group using whatever context you have.
-    - Only call draft_group when either:
+      drafting_draft_group using whatever context you have.
+    - Only call drafting_draft_group when either:
       (a) you have gathered specific information for all field
           groups, or
       (b) the user has explicitly told you to proceed without it.
-    - Call draft_group once for every group, all in the same turn,
+    - Call drafting_draft_group once for every group, all in the same turn,
       starting with main_fields. If a result still lists pending
-      groups, call draft_group for each of them before answering.
+      groups, call drafting_draft_group for each of them before answering.
     - Once the draft is versioned, tell the user which draft is ready
       and that they can review it on the right. Do not repeat the
       field values.
     - The field groups below are the ones a new draft follows.
-    - Answer questions about earlier drafts with get_draft_history.
+    - Answer questions about earlier drafts with drafting_get_history.
     - You can have normal conversations with the user at any point.
     PROMPT;
 
