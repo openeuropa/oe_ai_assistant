@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Drupal\oe_ai_assistant\Plugin\NeuronTool;
 
 use Drupal\ai_neuron\Tools\NeuronToolPluginBase;
-use Drupal\oe_ai_assistant\Service\Drafting\DraftingBriefInterface;
+use Drupal\oe_ai_assistant\Entity\Bundle\ContentCreationSessionInterface;
 
 /**
  * Base class for the tools of one drafting run.
@@ -15,15 +15,6 @@ use Drupal\oe_ai_assistant\Service\Drafting\DraftingBriefInterface;
  * session is refused rather than failing part way through a call.
  */
 abstract class DraftingToolBase extends NeuronToolPluginBase {
-
-  public function __construct(
-    array $configuration,
-    $plugin_id,
-    $plugin_definition,
-    protected readonly DraftingBriefInterface $brief,
-  ) {
-    parent::__construct($configuration, $plugin_id, $plugin_definition);
-  }
 
   /**
    * Shapes what the editor set up into the snapshot stored on a draft.
@@ -62,7 +53,7 @@ abstract class DraftingToolBase extends NeuronToolPluginBase {
    */
   protected function target(): array {
     return [
-      DraftingBriefInterface::ENTITY_TYPE_ID,
+      ContentCreationSessionInterface::ENTITY_TYPE_ID,
       $this->getContextValue('session')->getContentType(),
     ];
   }
@@ -77,9 +68,9 @@ abstract class DraftingToolBase extends NeuronToolPluginBase {
     $session = $this->getContextValue('session');
 
     return self::snapshot(
-      $this->brief->tone($session),
-      $this->brief->template($session),
-      $this->brief->documents($session),
+      $session->getTone(),
+      $session->getTemplate(),
+      $session->getDocuments(),
     );
   }
 

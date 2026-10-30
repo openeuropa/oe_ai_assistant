@@ -7,8 +7,6 @@ namespace Drupal\oe_ai_assistant\Plugin\NeuronTool;
 use Drupal\ai_neuron\Attribute\NeuronTool;
 use Drupal\Core\Plugin\Context\EntityContextDefinition;
 use Drupal\Core\StringTranslation\TranslatableMarkup;
-use Drupal\oe_ai_assistant\Service\Drafting\DraftHistoryInterface;
-use Drupal\oe_ai_assistant\Service\Drafting\DraftingBriefInterface;
 
 /**
  * Lists the drafts generated in the session being served.
@@ -33,21 +31,11 @@ use Drupal\oe_ai_assistant\Service\Drafting\DraftingBriefInterface;
 )]
 final class GetDraftHistoryNeuronTool extends DraftingToolBase {
 
-  public function __construct(
-    array $configuration,
-    $plugin_id,
-    $plugin_definition,
-    DraftingBriefInterface $brief,
-    private readonly DraftHistoryInterface $draftHistory,
-  ) {
-    parent::__construct($configuration, $plugin_id, $plugin_definition, $brief);
-  }
-
   /**
    * Returns the drafts of the session as JSON.
    */
   public function __invoke(): string {
-    return json_encode(['drafts' => $this->draftHistory->listDrafts($this->getContextValue('session'))]);
+    return json_encode(['drafts' => $this->getContextValue('session')->listDrafts()]);
   }
 
 }

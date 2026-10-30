@@ -11,8 +11,6 @@ use Drupal\Core\Plugin\Context\EntityContextDefinition;
 use Drupal\Core\StringTranslation\TranslatableMarkup;
 use NeuronAI\Chat\History\MessageStoreInterface;
 use Drupal\oe_ai_assistant\Service\Drafting\DraftCollector;
-use Drupal\oe_ai_assistant\Service\Drafting\DraftHistoryInterface;
-use Drupal\oe_ai_assistant\Service\Drafting\DraftingBriefInterface;
 use Drupal\oe_ai_assistant\Neuron\Workflow\Nodes\ValidateNode;
 use NeuronAI\Tools\PropertyType;
 use NeuronAI\Tools\ToolProperty;
@@ -68,12 +66,10 @@ final class DraftGroupNeuronTool extends DraftingToolBase {
     array $configuration,
     $plugin_id,
     $plugin_definition,
-    DraftingBriefInterface $brief,
     private readonly NeuronWorkflowManagerInterface $workflows,
     private readonly MessageStoreInterface $store,
-    private readonly DraftHistoryInterface $draftHistory,
   ) {
-    parent::__construct($configuration, $plugin_id, $plugin_definition, $brief);
+    parent::__construct($configuration, $plugin_id, $plugin_definition);
   }
 
   /**
@@ -124,7 +120,7 @@ final class DraftGroupNeuronTool extends DraftingToolBase {
    * The collector every call of this run adds its group to.
    */
   private function collector(): DraftCollector {
-    return $this->collector ??= new DraftCollector($this->brief->groups($this->getContextValue('session')));
+    return $this->collector ??= new DraftCollector($this->getContextValue('session')->getFieldGroups());
   }
 
   /**
@@ -135,7 +131,7 @@ final class DraftGroupNeuronTool extends DraftingToolBase {
    */
   private function draft(): ?array {
     if ($this->draft === NULL && $this->collector()->complete()) {
-      $this->draft = $this->draftHistory->nextVersion($this->getContextValue('session')) + [
+      $this->draft = $this->getContextValue('session')->nextVersion() + [
         'context' => $this->draftContext(),
         'fields' => $this->collector()->fields(),
       ];

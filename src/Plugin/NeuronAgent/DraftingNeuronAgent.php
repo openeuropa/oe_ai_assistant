@@ -8,7 +8,7 @@ use Drupal\ai_neuron\Agent\NeuronStreamAdapter;
 use Drupal\ai_neuron\Attribute\NeuronAgent;
 use Drupal\Core\Plugin\Context\EntityContextDefinition;
 use Drupal\Core\StringTranslation\TranslatableMarkup;
-use Drupal\oe_ai_assistant\Service\Drafting\DraftingBriefInterface;
+use Drupal\oe_ai_assistant\Entity\Bundle\ContentCreationSessionInterface;
 
 /**
  * The agent that talks to the editor and drafts through tools.
@@ -84,10 +84,10 @@ final class DraftingNeuronAgent extends EditorialSessionAgentBase {
     $bundle = $this->getContextValue('session')->getContentType();
     $prompt = "Content type context:\n"
       . 'bundle: ' . $bundle . "\n"
-      . 'entity_type_id: ' . DraftingBriefInterface::ENTITY_TYPE_ID . "\n";
+      . 'entity_type_id: ' . ContentCreationSessionInterface::ENTITY_TYPE_ID . "\n";
 
     if ($bundle !== '') {
-      $prompt .= "\nAvailable field groups:\n" . json_encode($this->brief->groups($this->getContextValue('session'))) . "\n";
+      $prompt .= "\nAvailable field groups:\n" . json_encode($this->getContextValue('session')->getFieldGroups()) . "\n";
     }
 
     return $prompt;

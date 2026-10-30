@@ -7,11 +7,8 @@ namespace Drupal\oe_ai_assistant\Plugin\NeuronAgent;
 use Drupal\ai_neuron\Agent\NeuronAgentDefinition;
 use Drupal\Component\Plugin\Definition\ContextAwarePluginDefinitionInterface;
 use Drupal\ai_neuron\Agent\NeuronAgentPluginBase;
-use Drupal\ai_neuron\Providers\ProviderFactoryInterface;
-use Drupal\ai_neuron\Tools\NeuronToolManagerInterface;
 use Drupal\oe_ai_assistant\Neuron\Chat\Messages\Stream\Adapters\PatchedVercelAIAdapter;
 use Drupal\oe_ai_assistant\Service\Drafting\DocumentExtractionProcessorInterface;
-use Drupal\oe_ai_assistant\Service\Drafting\DraftingBriefInterface;
 use NeuronAI\Tools\ToolCall;
 use NeuronAI\Tools\ToolInterface;
 use NeuronAI\Workflow\Streaming\Adapter\StreamAdapterInterface;
@@ -41,17 +38,6 @@ abstract class EditorialSessionAgentBase extends NeuronAgentPluginBase {
    * contributes its summary instead.
    */
   public const int MAX_TOTAL_CHARS = 60000;
-
-  public function __construct(
-    array $configuration,
-    $plugin_id,
-    $plugin_definition,
-    ProviderFactoryInterface $providers,
-    NeuronToolManagerInterface $toolManager,
-    protected readonly DraftingBriefInterface $brief,
-  ) {
-    parent::__construct($configuration, $plugin_id, $plugin_definition, $providers, $toolManager);
-  }
 
   /**
    * {@inheritdoc}
@@ -145,7 +131,7 @@ abstract class EditorialSessionAgentBase extends NeuronAgentPluginBase {
    *   The prompt block, or an empty string without a tone.
    */
   protected function tonePrompt(): string {
-    $tone = $this->brief->tone($this->getContextValue('session'));
+    $tone = $this->getContextValue('session')->getTone();
     $prompt = trim((string) ($tone['prompt'] ?? ''));
     if ($prompt === '') {
       return '';
@@ -177,7 +163,7 @@ abstract class EditorialSessionAgentBase extends NeuronAgentPluginBase {
    *   The prompt block, or an empty string without context documents.
    */
   protected function documentsPrompt(): string {
-    $documents = $this->brief->documents($this->getContextValue('session'));
+    $documents = $this->getContextValue('session')->getDocuments();
     if ($documents === []) {
       return '';
     }

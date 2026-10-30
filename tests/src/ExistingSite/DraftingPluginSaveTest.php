@@ -152,10 +152,8 @@ class DraftingPluginSaveTest extends DraftingPluginTestBase {
       'Expected 200 from chat. Body: ' . substr($chat['body'], 0, 500));
 
     // The recorded draft must only contain fields from the template schema.
-    /** @var \Drupal\oe_ai_assistant\Service\Drafting\DraftHistoryInterface $history */
-    $history = \Drupal::service('Drupal\oe_ai_assistant\Service\Drafting\DraftHistoryInterface');
     \Drupal::entityTypeManager()->getStorage('ai_conversation_message')->resetCache();
-    $draft = $history->getDraftContent($session, 1);
+    $draft = $session->getDraftContent(1);
     $this->assertNotNull($draft, 'Draft 1 must be recorded.');
     $unknown = array_diff(array_keys($draft['fields']), ['title', 'field_teaser', 'field_body']);
     $this->assertSame([], array_values($unknown),

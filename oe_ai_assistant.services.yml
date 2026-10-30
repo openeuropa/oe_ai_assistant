@@ -33,8 +33,6 @@ services:
   Drupal\oe_ai_assistant\Service\Drafting\ContextDocumentRepository: {}
 
   # Reads what a session drafts with: tone, template, documents, groups.
-  Drupal\oe_ai_assistant\Service\Drafting\DraftingBrief: {}
-  Drupal\oe_ai_assistant\Service\Drafting\DraftingBriefInterface: '@Drupal\oe_ai_assistant\Service\Drafting\DraftingBrief'
 
   Drupal\oe_ai_assistant\Service\TextFormatResolver: {}
 
@@ -71,8 +69,6 @@ services:
   Drupal\oe_ai_assistant\Service\DraftingOrchestrator: {}
   Drupal\oe_ai_assistant\Service\DraftingOrchestratorInterface: '@Drupal\oe_ai_assistant\Service\DraftingOrchestrator'
 
-  Drupal\oe_ai_assistant\Service\Drafting\DraftHistory: {}
-  Drupal\oe_ai_assistant\Service\Drafting\DraftHistoryInterface: '@Drupal\oe_ai_assistant\Service\Drafting\DraftHistory'
 
   Drupal\oe_ai_assistant\Service\PreviewRenderer: {}
   Drupal\oe_ai_assistant\Service\PreviewRendererInterface: '@Drupal\oe_ai_assistant\Service\PreviewRenderer'

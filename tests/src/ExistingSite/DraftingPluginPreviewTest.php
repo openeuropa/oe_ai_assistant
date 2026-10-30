@@ -18,8 +18,8 @@ class DraftingPluginPreviewTest extends DraftingPluginTestBase {
   /**
    * Seeds a versioned draft_content result directly on the transcript.
    *
-   * Bypasses the chat/orchestrator flow entirely: preview only reads
-   * DraftHistory's stored results, so seeding them directly keeps this
+   * Bypasses the chat/orchestrator flow entirely: preview only reads the
+   * draft results stored on the session, so seeding them directly keeps this
    * suite independent of the (separately tested) drafting conversation flow.
    *
    * @param \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $session

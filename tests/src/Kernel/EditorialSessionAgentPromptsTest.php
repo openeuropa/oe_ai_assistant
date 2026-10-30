@@ -7,15 +7,17 @@ namespace Drupal\Tests\oe_ai_assistant\Kernel;
 use Drupal\ai_neuron\Agent\NeuronAgentManagerInterface;
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
 use Drupal\oe_ai_assistant\Plugin\NeuronAgent\EditorialSessionAgentBase;
-use Drupal\oe_ai_assistant\Service\Drafting\DraftingBrief;
-use Drupal\oe_ai_assistant\Service\Drafting\DraftingBriefInterface;
+use Drupal\oe_ai_assistant\Service\AiEditorialContext;
+use Drupal\oe_ai_assistant\Service\AiEditorialContextInterface;
+use Drupal\oe_ai_assistant\Service\Drafting\ContextDocumentRepository;
+use Drupal\oe_ai_assistant\Service\Drafting\DocumentRepositoryInterface;
 
 /**
  * Tests the prompt blocks an editorial session agent injects.
  *
  * An agent renders what the editor set up, so the blocks are read off the
- * instructions a built agent carries. What the session holds is the brief's
- * business, which a stub stands in for here.
+ * instructions a built agent carries. The session reads the tone and the
+ * documents through two services, which stubs stand in for here.
  *
  * @group oe_ai_assistant
  */
@@ -248,67 +250,38 @@ Overflow text.", $prompt);
   }
 
   /**
-   * The instructions the drafter is built with, on a stubbed brief.
+   * The instructions the drafter is built with, on a stubbed session.
    *
    * The drafter is told the tone and the documents, so both blocks are in what
    * it carries.
    *
    * @param array|null $tone
-   *   The tone the brief answers with.
+   *   The tone the session is set up with.
    * @param array $documents
-   *   The documents the brief answers with.
+   *   The documents the session is set up with.
    *
    * @return string
    *   The instructions.
    */
   private function instructions(?array $tone, array $documents): string {
-    // The interface is an alias of the class, and an alias resolves first, so
-    // the stub goes in under the class.
-    $this->container->set(DraftingBrief::class, new class($tone, $documents) implements DraftingBriefInterface {
+    // The session reads both through the container, and an interface is an
+    // alias of its class, so the stubs go in under the class.
+    $tones = $this->createMock(AiEditorialContextInterface::class);
+    $tones->method('getTone')->willReturn($tone ?? []);
+    $this->container->set(AiEditorialContext::class, $tones);
+    $repository = $this->createMock(DocumentRepositoryInterface::class);
+    $repository->method('describe')->willReturn($documents);
+    $this->container->set(ContextDocumentRepository::class, $repository);
 
-      /**
-       * @param array|null $tone
-       *   The tone every session is set up with.
-       * @param array $documents
-       *   The documents every session is set up with.
-       */
-      public function __construct(
-        private readonly ?array $tone,
-        private readonly array $documents,
-      ) {}
-
-      /**
-       * {@inheritdoc}
-       */
-      public function tone(AiEditorialSessionInterface $session): ?array {
-        return $this->tone;
-      }
-
-      /**
-       * {@inheritdoc}
-       */
-      public function template(AiEditorialSessionInterface $session): ?array {
-        return NULL;
-      }
-
-      /**
-       * {@inheritdoc}
-       */
-      public function documents(AiEditorialSessionInterface $session): array {
-        return $this->documents;
-      }
-
-      /**
-       * {@inheritdoc}
-       */
-      public function groups(AiEditorialSessionInterface $session): array {
-        return [];
-      }
-
-    });
+    $session = $this->createSession($this->createUser());
+    // A tone the session does not reference is never read, so the stub above
+    // only answers once the reference is set.
+    if ($tone !== NULL) {
+      $session->set('tone', 1)->save();
+    }
 
     $agent = $this->container->get(NeuronAgentManagerInterface::class)->createAgent('field_group', [
-      'session' => $this->createSession($this->createUser()),
+      'session' => $session,
       'group' => 'main_fields',
       'schema' => ['type' => 'object'],
     ]);
