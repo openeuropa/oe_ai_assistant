@@ -74,6 +74,13 @@ export interface DraftingSelectPanelConfig {
   selected?: string;
 }
 
+/** A file panel gated by the host; items are fetched after boot. */
+export interface DraftingDocumentsPanelConfig {
+  enabled?: boolean;
+  /** Accepted file extensions, without a leading dot. */
+  extensions?: string[];
+}
+
 export interface DraftingPluginConfig {
   entityTypeId?: string;
   bundle?: string;
@@ -82,7 +89,9 @@ export interface DraftingPluginConfig {
   /** Template panel: gate + available templates. */
   templates?: DraftingSelectPanelConfig;
   /** Documents panel gate; the list itself is fetched after boot. */
-  documents?: { enabled?: boolean };
+  documents?: DraftingDocumentsPanelConfig;
+  /** Publishable assets have their own gate and accepted extensions. */
+  publishableAssets?: DraftingDocumentsPanelConfig;
   /**
    * Live preview pane. The url is a template with {sessionId} and
    * {versionId} placeholders, resolved before loading the iframe.

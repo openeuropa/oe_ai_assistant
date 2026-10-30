@@ -8,7 +8,11 @@ import {
   removeDraftingDocument,
 } from "../api/drafting-api";
 import { countUnsettled, isDocumentSettled } from "../document-status";
-import type { DraftingDocument, DraftingDocumentCategory } from "../types";
+import type {
+  DraftingDocument,
+  DraftingDocumentCategory,
+  DraftingPluginConfig,
+} from "../types";
 
 export type { DraftingDocument } from "../types";
 
@@ -90,10 +94,12 @@ export interface DocumentUpload {
 export function useDraftingDocuments(
   category: DraftingDocumentCategory = "context",
 ) {
-  const draftingConfig = getConfig().pluginConfig.drafting ?? {};
-  const documentsConfig = draftingConfig.documents as
-    | { enabled?: boolean; extensions?: string[] }
-    | undefined;
+  const draftingConfig = (getConfig().pluginConfig.drafting ??
+    {}) as DraftingPluginConfig;
+  const documentsConfig =
+    category === "publishable"
+      ? draftingConfig.publishableAssets
+      : draftingConfig.documents;
   const enabled = documentsConfig?.enabled ?? false;
   // File extensions the backend accepts, driving the upload control.
   const extensions = documentsConfig?.extensions ?? [];
@@ -185,7 +191,9 @@ export function useDraftingDocuments(
           setLoadError(
             exception instanceof Error
               ? exception.message
-              : "The documents could not be loaded.",
+              : category === "publishable"
+                ? "The publishable assets could not be loaded."
+                : "The documents could not be loaded.",
           );
         }
       })
@@ -313,7 +321,9 @@ export function useDraftingDocuments(
                     error:
                       exception instanceof Error
                         ? exception.message
-                        : "The document could not be uploaded.",
+                        : category === "publishable"
+                          ? "The asset could not be uploaded."
+                          : "The document could not be uploaded.",
                   }
                 : upload,
             ),

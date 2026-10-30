@@ -124,7 +124,7 @@ DraftingSetTemplateResponse:
 
 DraftingDocumentCategory:
   type: string
-  enum: [context]
+  enum: [context, publishable]
   description: >
     Document category. The backend derives the session field, media bundle,
     and storage details from this category.
