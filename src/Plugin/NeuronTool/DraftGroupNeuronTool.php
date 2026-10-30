@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace Drupal\oe_ai_assistant\Plugin\NeuronTool;
 
-use Drupal\ai_neuron\Agent\NeuronAgentManagerInterface;
 use Drupal\ai_neuron\Attribute\NeuronTool;
+use Drupal\ai_neuron\Workflow\NeuronWorkflowManagerInterface;
 use Drupal\Core\Plugin\Context\ContextDefinition;
 use Drupal\Core\Plugin\Context\EntityContextDefinition;
 use Drupal\Core\StringTranslation\TranslatableMarkup;
@@ -13,6 +13,7 @@ use NeuronAI\Chat\History\MessageStoreInterface;
 use Drupal\oe_ai_assistant\Service\Drafting\DraftCollector;
 use Drupal\oe_ai_assistant\Service\Drafting\DraftHistoryInterface;
 use Drupal\oe_ai_assistant\Service\Drafting\DraftingBriefInterface;
+use Drupal\oe_ai_assistant\Neuron\Workflow\Nodes\ValidateNode;
 use NeuronAI\Tools\PropertyType;
 use NeuronAI\Tools\ToolProperty;
 use NeuronAI\Tools\TrackByInputs;
@@ -68,11 +69,11 @@ final class DraftGroupNeuronTool extends DraftingToolBase {
     $plugin_id,
     $plugin_definition,
     DraftingBriefInterface $brief,
-    NeuronAgentManagerInterface $agents,
+    private readonly NeuronWorkflowManagerInterface $workflows,
     private readonly MessageStoreInterface $store,
     private readonly DraftHistoryInterface $draftHistory,
   ) {
-    parent::__construct($configuration, $plugin_id, $plugin_definition, $brief, $agents);
+    parent::__construct($configuration, $plugin_id, $plugin_definition, $brief);
   }
 
   /**
@@ -163,6 +164,37 @@ final class DraftGroupNeuronTool extends DraftingToolBase {
     }
 
     return $task . 'Generate content for the fields in the provided schema. Follow the conversation context.';
+  }
+
+  /**
+   * Drafts one group through the drafter workflow.
+   *
+   * The workflow asks the drafter, checks the answer against the group schema
+   * and asks again while it breaks, so a violation is an event of the run
+   * rather than a turn of a loop here.
+   *
+   * @param string $group
+   *   The group to write, which names the run's conversation.
+   * @param array $schema
+   *   The JSON schema the answer is checked against.
+   * @param string $task
+   *   What the drafter is asked to write.
+   *
+   * @return array
+   *   The field values.
+   *
+   * @throws \RuntimeException
+   *   When no answer matches the schema.
+   */
+  private function draftGroup(string $group, array $schema, string $task): array {
+    $state = $this->workflows->createWorkflow('field_group_drafter', [], [
+      'session' => $this->getContextValue('session'),
+      'group' => $group,
+      'schema' => $schema,
+      'task' => $task,
+    ])->run();
+
+    return (array) $state->get(ValidateNode::FIELDS_KEY, []);
   }
 
 }

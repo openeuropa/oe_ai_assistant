@@ -311,7 +311,6 @@ Overflow text.", $prompt);
       'session' => $this->createSession($this->createUser()),
       'group' => 'main_fields',
       'schema' => ['type' => 'object'],
-      'task' => 'Write it.',
     ]);
 
     return $agent->getInstructions()->getContent();

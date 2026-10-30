@@ -5,14 +5,11 @@ declare(strict_types=1);
 namespace Drupal\oe_ai_assistant\Plugin\NeuronAgent;
 
 use Drupal\ai_neuron\Attribute\NeuronAgent;
+use Drupal\ai_neuron\Providers\DrupalAiProvider;
 use Drupal\Core\Plugin\Context\ContextDefinition;
 use Drupal\Core\Plugin\Context\EntityContextDefinition;
 use Drupal\Core\StringTranslation\TranslatableMarkup;
-use Drupal\oe_ai_assistant\Neuron\Agent\SchemaAgent;
-use NeuronAI\Agent\AgentInterface;
-use NeuronAI\Agent\AgentRunOptions;
-use NeuronAI\Agent\Events\AgentStartEvent;
-use NeuronAI\Chat\Messages\UserMessage;
+use NeuronAI\Providers\AIProviderInterface;
 
 /**
  * Writes the field values of one field group against its JSON schema.
@@ -38,10 +35,6 @@ use NeuronAI\Chat\Messages\UserMessage;
       data_type: 'any',
       label: new TranslatableMarkup('Group schema'),
     ),
-    'task' => new ContextDefinition(
-      data_type: 'string',
-      label: new TranslatableMarkup('Task'),
-    ),
   ],
 )]
 final class FieldGroupNeuronAgent extends EditorialSessionAgentBase {
@@ -50,11 +43,6 @@ final class FieldGroupNeuronAgent extends EditorialSessionAgentBase {
    * The key of this run, built once because it names one run of one group.
    */
   protected ?string $threadKey = NULL;
-
-  /**
-   * How many corrected answers to ask for before giving up.
-   */
-  private const MAX_SCHEMA_RETRIES = 5;
 
   /**
    * What marks a thread segment as one run of this drafter.
@@ -69,27 +57,17 @@ final class FieldGroupNeuronAgent extends EditorialSessionAgentBase {
   /**
    * {@inheritdoc}
    *
-   * Built here rather than by the base class, because the answer is validated
-   * against a schema composed at run time, which takes the place of the chat
-   * and tool nodes an agent runs by default. The task is the whole of what the
-   * model is asked, so the run starts from it.
+   * The drafter answers one group, so its calls carry that group's JSON
+   * schema and the model returns one JSON object of that shape. The tool that
+   * started the run checks the answer against the same schema.
    */
-  public function getNeuron(): AgentInterface {
-    $agent = SchemaAgent::make($this->runId($this->threadKey()))
-      ->forSchema($this->group(), (array) $this->getContextValue('schema'));
+  protected function provider(): AIProviderInterface {
+    $provider = $this->providers->create($this->operationType(), [$this->tag(), $this->group()]);
+    // The site's provider is the only implementation, and the schema is its
+    // own addition rather than part of Neuron's interface.
+    assert($provider instanceof DrupalAiProvider);
 
-    $agent->setAiProvider($this->providers->create($this->operationType(), [$this->tag(), $this->group()]));
-    $agent->setInstructions($this->instructions());
-    $agent->setStartEvent(new AgentStartEvent(
-      [new UserMessage((string) $this->getContextValue('task'))],
-      new AgentRunOptions(
-        outputClass: $this->group(),
-        maxRetries: self::MAX_SCHEMA_RETRIES,
-      ),
-    ));
-    $this->applyMiddleware($agent);
-
-    return $agent;
+    return $provider->withStructuredSchema($this->group(), (array) $this->getContextValue('schema'));
   }
 
   /**

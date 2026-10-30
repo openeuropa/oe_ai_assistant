@@ -4,9 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\oe_ai_assistant\Plugin\NeuronTool;
 
-use Drupal\ai_neuron\Agent\NeuronAgentManagerInterface;
 use Drupal\ai_neuron\Tools\NeuronToolPluginBase;
-use Drupal\oe_ai_assistant\Neuron\Agent\Nodes\SchemaOutputNode;
 use Drupal\oe_ai_assistant\Service\Drafting\DraftingBriefInterface;
 
 /**
@@ -23,7 +21,6 @@ abstract class DraftingToolBase extends NeuronToolPluginBase {
     $plugin_id,
     $plugin_definition,
     protected readonly DraftingBriefInterface $brief,
-    private readonly NeuronAgentManagerInterface $agents,
   ) {
     parent::__construct($configuration, $plugin_id, $plugin_definition);
   }
@@ -55,34 +52,6 @@ abstract class DraftingToolBase extends NeuronToolPluginBase {
         return $document;
       }, $documents),
     ];
-  }
-
-  /**
-   * Writes one group and returns its field values.
-   *
-   * A drafting tool and a revising tool both ask for the same run, so what that
-   * run is asked for lives here rather than in each.
-   *
-   * @param string $group
-   *   The group to write, which names the run's conversation.
-   * @param array $schema
-   *   The JSON schema the answer is validated against.
-   * @param string $task
-   *   What the drafter is asked to write.
-   *
-   * @return array
-   *   The field values, empty when the run produced none.
-   *
-   * @throws \Throwable
-   *   When the provider call fails, or no answer matches the schema.
-   */
-  protected function draftGroup(string $group, array $schema, string $task): array {
-    return $this->agents->createAgent('field_group', [
-      'session' => $this->getContextValue('session'),
-      'group' => $group,
-      'schema' => $schema,
-      'task' => $task,
-    ])->run()->get(SchemaOutputNode::OUTPUT_KEY) ?? [];
   }
 
   /**

@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Drupal\oe_ai_assistant\Plugin\NeuronTool;
 
-use Drupal\ai_neuron\Agent\NeuronAgentManagerInterface;
 use Drupal\ai_neuron\Attribute\NeuronTool;
 use Drupal\Core\Plugin\Context\EntityContextDefinition;
 use Drupal\Core\StringTranslation\TranslatableMarkup;
@@ -39,10 +38,9 @@ final class GetDraftHistoryNeuronTool extends DraftingToolBase {
     $plugin_id,
     $plugin_definition,
     DraftingBriefInterface $brief,
-    NeuronAgentManagerInterface $agents,
     private readonly DraftHistoryInterface $draftHistory,
   ) {
-    parent::__construct($configuration, $plugin_id, $plugin_definition, $brief, $agents);
+    parent::__construct($configuration, $plugin_id, $plugin_definition, $brief);
   }
 
   /**
