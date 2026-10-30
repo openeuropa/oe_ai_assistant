@@ -376,6 +376,16 @@ interface DraftingThreadProps {
   defaultActiveTabId?: string;
 }
 
+// Opens notice links in a new tab so editors don't leave the session. Separate
+// instance so the hook doesn't affect other DOMPurify callers.
+const noticePurifier = DOMPurify();
+noticePurifier.addHook("afterSanitizeAttributes", (node) => {
+  if (node instanceof HTMLAnchorElement) {
+    node.setAttribute("target", "_blank");
+    node.relList.add("noopener");
+  }
+});
+
 /**
  * Sanitizes the host-provided transparency notice and hardens its links.
  *
@@ -383,27 +393,7 @@ interface DraftingThreadProps {
  * only strip script vectors, because this value is rendered with innerHTML.
  */
 function sanitizeTransparencyNotice(value: string): string {
-  const clean = DOMPurify.sanitize(value);
-
-  if (typeof DOMParser === "undefined") {
-    return clean;
-  }
-
-  const document = new DOMParser().parseFromString(
-    `<div>${clean}</div>`,
-    "text/html",
-  );
-  const wrapper = document.body.firstElementChild;
-  if (!wrapper) {
-    return clean;
-  }
-
-  for (const link of wrapper.querySelectorAll("a")) {
-    link.setAttribute("target", "_blank");
-    link.setAttribute("rel", "noopener");
-  }
-
-  return wrapper.innerHTML;
+  return noticePurifier.sanitize(value);
 }
 
 /**
