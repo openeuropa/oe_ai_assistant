@@ -161,39 +161,10 @@ class AiEditorialSession extends ContentEntityBase implements AiEditorialSession
   public function conversationToolResults(): array {
     $results = [];
     foreach ($this->conversationRows() as $row) {
-      $meta = json_decode((string) $row->get('meta')->value, TRUE);
-      if (!is_array($meta) || ($meta['type'] ?? '') !== 'tool_call_result') {
-        continue;
-      }
-      foreach ($meta['tools'] ?? [] as $tool) {
-        if (!isset($tool['name'], $tool['result'])) {
-          continue;
-        }
-        $results[] = [
-          'name' => $tool['name'],
-          'result' => self::decodeToolResult($tool['result']),
-        ];
-      }
+      $results = array_merge($results, $row->getToolResults());
     }
 
     return $results;
-  }
-
-  /**
-   * Decodes what a tool answered.
-   *
-   * A call serializes a result that is not an array as a JSON string, so a
-   * stored result is either shape. Only a string that decodes to an array
-   * carries structure to hand back.
-   */
-  private static function decodeToolResult(mixed $result): array {
-    if (is_array($result)) {
-      return $result;
-    }
-
-    $decoded = is_string($result) ? json_decode($result, TRUE) : NULL;
-
-    return is_array($decoded) ? $decoded : [];
   }
 
   /**
