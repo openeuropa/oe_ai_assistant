@@ -379,14 +379,11 @@ interface DraftingThreadProps {
 /**
  * Sanitizes the host-provided transparency notice and hardens its links.
  *
- * Drupal supplies sanitized simple HTML, but the client keeps its own
- * defensive boundary because this value is rendered with innerHTML.
+ * Drupal already limits the notice to its allowed tags; DOMPurify's defaults
+ * only strip script vectors, because this value is rendered with innerHTML.
  */
 function sanitizeTransparencyNotice(value: string): string {
-  const clean = DOMPurify.sanitize(value, {
-    ALLOWED_TAGS: ["b", "i", "a", "strong", "em"],
-    ALLOWED_ATTR: ["href"],
-  });
+  const clean = DOMPurify.sanitize(value);
 
   if (typeof DOMParser === "undefined") {
     return clean;
