@@ -482,7 +482,7 @@ export interface components {
          * @description Document category. The backend derives the session field, media bundle, and storage details from this category.
          * @enum {string}
          */
-        DraftingDocumentCategory: "context";
+        DraftingDocumentCategory: "context" | "publishable";
         /**
          * @description Extraction state of a document. Scheduled, extracting, extracted and summarizing are transient; done and error are final. Error can be retried with extract-document.
          * @enum {string}

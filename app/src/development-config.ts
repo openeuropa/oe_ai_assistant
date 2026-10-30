@@ -60,6 +60,12 @@ export const developmentConfig = {
         enabled: true,
         extensions: ["txt", "doc", "docx", "pdf", "md"],
       },
+      publishableAssets: {
+        // Provisional UC-06 config, enabled only in standalone development.
+        // The separate asset list is seeded by the mock API.
+        enabled: true,
+        extensions: ["jpg", "jpeg", "png", "webp", "pdf", "doc", "docx"],
+      },
     },
   },
 } satisfies AppInitConfig;

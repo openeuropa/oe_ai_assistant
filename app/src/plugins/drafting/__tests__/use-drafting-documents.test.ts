@@ -186,6 +186,64 @@ describe("useDraftingDocuments", () => {
     expect(useDraftingDocuments().extensions).toEqual(["pdf", "docx"]);
   });
 
+  it("keeps publishable assets disabled when only context documents are enabled", async () => {
+    const { useDraftingDocuments } = await loadHook();
+    const assets = useDraftingDocuments("publishable");
+    await flushAsync();
+
+    expect(assets.enabled).toBe(false);
+    expect(assets.extensions).toEqual([]);
+    expect(assets.isLoading).toBe(false);
+    expect(apiMocks.listDraftingDocuments).not.toHaveBeenCalled();
+  });
+
+  it("uses the publishable configuration and category throughout the asset lifecycle", async () => {
+    setConfig({
+      userId: "editor",
+      sessionId: "session-42",
+      pluginConfig: {
+        drafting: {
+          documents: { enabled: false, extensions: ["txt"] },
+          publishableAssets: { enabled: true, extensions: ["jpg", "pdf"] },
+        },
+      },
+    });
+    const asset: DraftingDocument = {
+      id: "image-1",
+      title: "Building.jpg",
+      status: "done",
+      meta: { type: "jpg", size: 1024 },
+    };
+    apiMocks.listDraftingDocuments.mockResolvedValue([]);
+    apiMocks.addDraftingDocument.mockResolvedValue(asset);
+    const { useDraftingDocuments } = await loadHook();
+    const assets = useDraftingDocuments("publishable");
+    await flushAsync();
+
+    expect(assets.enabled).toBe(true);
+    expect(assets.extensions).toEqual(["jpg", "pdf"]);
+    expect(apiMocks.listDraftingDocuments).toHaveBeenCalledWith("publishable");
+
+    const file = new File(["image"], asset.title, { type: "image/jpeg" });
+    await assets.uploadFiles(fileList([file]));
+    expect(selectedState()).toEqual([asset]);
+    expect(apiMocks.addDraftingDocument).toHaveBeenCalledWith(
+      file,
+      "publishable",
+    );
+    expect(apiMocks.extractDraftingDocument).toHaveBeenCalledWith(
+      asset.id,
+      "publishable",
+    );
+
+    await assets.removeDocument(asset.id);
+    expect(apiMocks.removeDraftingDocument).toHaveBeenCalledWith(
+      asset.id,
+      "publishable",
+    );
+    expect(selectedState()).toEqual([]);
+  });
+
   it("surfaces initial list failures instead of the document list", async () => {
     apiMocks.listDraftingDocuments.mockRejectedValue(
       new Error("Drafting list-documents error: 500"),
