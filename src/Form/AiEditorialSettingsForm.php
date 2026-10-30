@@ -36,6 +36,7 @@ final class AiEditorialSettingsForm extends ConfigFormBase {
       '#title' => $this->t('AI transparency notice'),
       '#description' => $this->t('Notice shown to users during AI-assisted content creation. Allowed HTML tags: %tags. Other tags will be removed.', ['%tags' => TransparencyNoticeFilteredMarkup::displayAllowedTags()]),
       '#config_target' => 'oe_ai_assistant.settings:transparency_notice',
+      '#required' => TRUE,
       '#rows' => 4,
     ];
 
