@@ -161,7 +161,7 @@ class AiEditorialSessionDashboardTest extends AiEditorialSessionBrowserTestBase 
 
     $this->assertSession()->statusCodeEquals(200);
     $this->assertSession()->fieldExists('transparency_notice');
-    $this->assertSession()->pageTextContains('Allowed HTML tags: <b> <i> <a> <strong> <em>');
+    $this->assertSession()->pageTextContains('Allowed HTML tags: <b> <i> <a> <strong> <em>. Other tags will be removed.');
 
     $notice = 'Tom & Jerry: <strong>AI-generated content</strong>. <a href="https://example.com/policy"  title="Read our policy">Read our policy</a>.';
     $this->submitForm(['transparency_notice' => $notice], 'Save configuration');
@@ -189,6 +189,9 @@ class AiEditorialSessionDashboardTest extends AiEditorialSessionBrowserTestBase 
       'Caf&eacute; &quot;AI&quot; &#8364;',
       "<STRONG>AI</STRONG> <a href='https://example.com/policy'>policy</a>",
       '<strong>Unclosed notice',
+      'Answers may take < 5 s',
+      'We <3 AI',
+      'Trailing <',
     ];
     foreach ($notices as $notice) {
       $this->drupalGet(Url::fromRoute('oe_ai_assistant.admin_settings.configuration'));
@@ -223,28 +226,6 @@ class AiEditorialSessionDashboardTest extends AiEditorialSessionBrowserTestBase 
 
     $this->drupalGet(Url::fromRoute('entity.ai_editorial_session.collection'));
     $this->assertSession()->responseContains('<strong>AI notice</strong>');
-  }
-
-  /**
-   * Tests that unsupported markup is rejected by the settings form.
-   */
-  public function testTransparencyNoticeSettingsRejectsUnsupportedMarkup(): void {
-    $user = $this->drupalCreateUser([
-      'access administration pages',
-      'administer ai editorial sessions',
-    ]);
-    $this->drupalLogin($user);
-
-    $this->drupalGet(Url::fromRoute('oe_ai_assistant.admin_settings.configuration'));
-    $this->submitForm([
-      'transparency_notice' => '<script>alert("unsafe");</script>',
-    ], 'Save configuration');
-
-    $this->assertSession()->pageTextContains('The transparency notice contains HTML tags or attributes that are not allowed.');
-    $this->assertSame(
-      'AI assistant can make mistakes. Please double-check responses.',
-      $this->config('oe_ai_assistant.settings')->get('transparency_notice')
-    );
   }
 
   /**
