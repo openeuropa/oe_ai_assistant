@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\oe_ai_assistant\Kernel;
 
+use Drupal\ai_neuron\Agent\NeuronAgentManagerInterface;
+use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
 use Drupal\oe_ai_assistant\Neuron\Chat\History\EditorialMessageStore;
 use NeuronAI\Chat\History\MessageStoreInterface;
 use NeuronAI\Chat\Messages\AssistantMessage;
@@ -11,6 +13,9 @@ use NeuronAI\Chat\Messages\UserMessage;
 
 /**
  * Kernel tests for EditorialMessageStore, through the real append() path.
+ *
+ * The store reads the session off the agent plugin the manager bound to it,
+ * so every case here binds a real plugin rather than naming a thread.
  *
  * @group oe_ai_assistant
  */
@@ -24,6 +29,16 @@ class EditorialMessageStoreTest extends AiEditorialSessionKernelTestBase {
     $this->assertInstanceOf(EditorialMessageStore::class, $store);
 
     return $store;
+  }
+
+  /**
+   * Returns the store bound to a run of one agent, on the given session.
+   */
+  private function storeFor(string $pluginId, AiEditorialSessionInterface $session): EditorialMessageStore {
+    $plugin = $this->container->get(NeuronAgentManagerInterface::class)->createInstance($pluginId);
+    $plugin->setContextValue('session', $session);
+
+    return $this->store()->forAgentPlugin($plugin);
   }
 
   /**
@@ -41,44 +56,42 @@ class EditorialMessageStoreTest extends AiEditorialSessionKernelTestBase {
   }
 
   /**
-   * A thread this module composes is stamped with the session it names.
+   * A run of an editorial agent stamps the session on its rows.
    */
-  public function testAppendStampsTheSessionOnAnEditorialThread(): void {
+  public function testAppendStampsTheSessionOfTheRun(): void {
     $session = $this->createSession($this->createUser());
-    $threadId = 'session_' . $session->id() . '.agent_drafting';
 
-    $this->store()->append($threadId, new UserMessage('Draft the intro.'));
+    $this->storeFor('drafting', $session)->append('thread-1', new UserMessage('Draft the intro.'));
 
-    $rows = $this->rowsOf($threadId);
+    $rows = $this->rowsOf('thread-1');
     $this->assertCount(1, $rows);
     $this->assertSame('editorial_session', $rows[0]->bundle());
     $this->assertSame((int) $session->id(), (int) $rows[0]->get('oe_ai_session')->target_id);
+    $this->assertSame('drafting', $rows[0]->get('agent_id')->value);
   }
 
   /**
-   * A sub-agent run's own thread is stamped the same way as the editor's.
+   * A sub-agent run of the same session is stamped the same way.
    */
-  public function testAppendStampsTheSessionOnSubAgentThread(): void {
+  public function testSubAgentRunCarriesTheSameSession(): void {
     $session = $this->createSession($this->createUser());
-    $threadId = 'session_' . $session->id() . '.agent_field_group.run_a1b2c3d4.group_main_fields';
 
-    $this->store()->append($threadId, new AssistantMessage('{"title": "Draft"}'));
+    $this->storeFor('field_group', $session)->append('thread-2', new AssistantMessage('{"title": "Draft"}'));
 
-    $rows = $this->rowsOf($threadId);
+    $rows = $this->rowsOf('thread-2');
     $this->assertCount(1, $rows);
     $this->assertSame('editorial_session', $rows[0]->bundle());
     $this->assertSame((int) $session->id(), (int) $rows[0]->get('oe_ai_session')->target_id);
+    $this->assertSame('field_group', $rows[0]->get('agent_id')->value);
   }
 
   /**
-   * A thread this module did not compose is written as the plain bundle.
+   * A run with no session behind it is written as the plain message type.
    */
-  public function testAppendOfAnotherModulesThreadWritesThePlainBundle(): void {
-    $threadId = 'some_other_module.a_thread_id';
+  public function testRunWithoutSessionWritesThePlainBundle(): void {
+    $this->store()->append('thread-3', new UserMessage('Summarise this document.'));
 
-    $this->store()->append($threadId, new UserMessage('Summarise this document.'));
-
-    $rows = $this->rowsOf($threadId);
+    $rows = $this->rowsOf('thread-3');
     $this->assertCount(1, $rows);
     $this->assertSame('default', $rows[0]->bundle());
     $this->assertFalse($rows[0]->hasField('oe_ai_session'));
@@ -89,13 +102,12 @@ class EditorialMessageStoreTest extends AiEditorialSessionKernelTestBase {
    */
   public function testAppendStampsEveryMessageOfConversation(): void {
     $session = $this->createSession($this->createUser());
-    $threadId = 'session_' . $session->id() . '.agent_drafting';
+    $store = $this->storeFor('drafting', $session);
 
-    $store = $this->store();
-    $store->append($threadId, new UserMessage('Draft the intro.'));
-    $store->append($threadId, new AssistantMessage('Sure, give me a moment.'));
+    $store->append('thread-4', new UserMessage('Draft the intro.'));
+    $store->append('thread-4', new AssistantMessage('Sure, give me a moment.'));
 
-    $rows = $this->rowsOf($threadId);
+    $rows = $this->rowsOf('thread-4');
     $this->assertCount(2, $rows);
     foreach ($rows as $row) {
       $this->assertSame((int) $session->id(), (int) $row->get('oe_ai_session')->target_id);

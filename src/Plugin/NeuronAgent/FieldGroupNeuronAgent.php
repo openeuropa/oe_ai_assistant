@@ -47,6 +47,11 @@ use NeuronAI\Chat\Messages\UserMessage;
 final class FieldGroupNeuronAgent extends EditorialSessionAgentBase {
 
   /**
+   * The key of this run, built once because it names one run of one group.
+   */
+  protected ?string $threadKey = NULL;
+
+  /**
    * How many corrected answers to ask for before giving up.
    */
   private const MAX_SCHEMA_RETRIES = 5;
@@ -126,7 +131,9 @@ final class FieldGroupNeuronAgent extends EditorialSessionAgentBase {
    * reader can tell whose run it was.
    */
   protected function threadKey(): string {
-    return self::RUN_PREFIX . bin2hex(random_bytes(4)) . '.' . self::GROUP_PREFIX . $this->group();
+    return $this->threadKey ??= parent::threadKey()
+      . '.' . self::RUN_PREFIX . bin2hex(random_bytes(4))
+      . '.' . self::GROUP_PREFIX . $this->group();
   }
 
   /**

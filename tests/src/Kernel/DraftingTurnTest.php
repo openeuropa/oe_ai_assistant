@@ -79,13 +79,18 @@ class DraftingTurnTest extends AiEditorialSessionKernelTestBase {
 
     $threads = $session->conversationThreads();
     $this->assertCount(2, $threads, 'The editor thread and the drafter run both belong to the session.');
-    $editorThread = 'session_' . $session->id() . '.agent_drafting';
-    $this->assertArrayHasKey($editorThread, $threads);
+
+    // The store stamps the session off the agent plugin, so a thread is found
+    // by the agent that opened it rather than by the name it carries.
+    $editorRows = array_filter(
+      array_merge(...array_values($threads)),
+      static fn (object $row): bool => (string) $row->get('agent_id')->value === 'drafting',
+    );
 
     // The user message, the tool call, its result and the final answer.
     $roles = array_map(
       static fn (object $row): string => (string) $row->get('role')->value,
-      $threads[$editorThread],
+      array_values($editorRows),
     );
     $this->assertSame(['user', 'assistant', 'user', 'assistant'], $roles);
 

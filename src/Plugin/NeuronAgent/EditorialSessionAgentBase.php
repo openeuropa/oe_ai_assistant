@@ -5,11 +5,11 @@ declare(strict_types=1);
 namespace Drupal\oe_ai_assistant\Plugin\NeuronAgent;
 
 use Drupal\ai_neuron\Agent\NeuronAgentDefinition;
+use Drupal\Component\Plugin\Definition\ContextAwarePluginDefinitionInterface;
 use Drupal\ai_neuron\Agent\NeuronAgentPluginBase;
 use Drupal\ai_neuron\Providers\ProviderFactoryInterface;
 use Drupal\ai_neuron\Tools\NeuronToolManagerInterface;
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
-use Drupal\oe_ai_assistant\Neuron\Chat\History\EditorialMessageStore;
 use Drupal\oe_ai_assistant\Neuron\Chat\Messages\Stream\Adapters\PatchedVercelAIAdapter;
 use Drupal\oe_ai_assistant\Service\Drafting\DocumentExtractionProcessorInterface;
 use Drupal\oe_ai_assistant\Service\Drafting\DraftingBriefInterface;
@@ -59,17 +59,43 @@ abstract class EditorialSessionAgentBase extends NeuronAgentPluginBase {
    *
    * The attribute names the tools, and every one of them serves this agent's
    * session: it reads what it needs off that rather than being handed it, so
-   * they are built on the session context instead of on nothing.
+   * they are built on the session context instead of on nothing. The thread
+   * travels with it, so a tool that reads this conversation back is given the
+   * thread rather than composing it again.
    */
   protected function tools(): array {
     $definition = $this->getPluginDefinition();
     assert($definition instanceof NeuronAgentDefinition);
-    $context = ['session' => $this->session()];
+    $context = [
+      'session' => $this->session(),
+      'thread' => $this->runId($this->threadKey()),
+    ];
 
     return array_map(
-      fn (string $id): ToolInterface => $this->toolManager->createTool($id, $context),
+      fn (string $id): ToolInterface => $this->toolManager->createTool($id, $this->contextFor($id, $context)),
       $definition->tools,
     );
+  }
+
+  /**
+   * The part of the run context that one tool declares.
+   *
+   * Core refuses a context a plugin does not declare, so each tool is given
+   * what it asks for and nothing else.
+   *
+   * @param string $toolId
+   *   The tool to build.
+   * @param array $context
+   *   The whole run context of this agent.
+   *
+   * @return array
+   *   The entries the tool declares.
+   */
+  private function contextFor(string $toolId, array $context): array {
+    $definition = $this->toolManager->getDefinition($toolId);
+    assert($definition instanceof ContextAwarePluginDefinitionInterface);
+
+    return array_intersect_key($context, $definition->getContextDefinitions());
   }
 
   /**
@@ -104,29 +130,13 @@ abstract class EditorialSessionAgentBase extends NeuronAgentPluginBase {
   /**
    * {@inheritdoc}
    *
-   * The reader groups a session's rows by the oe_ai_session reference the
-   * store stamps on every row, not by parsing this string, so the shape here
-   * only has to stay readable and distinct per run. The session leads, the
-   * agent follows, and then whatever tells one of its runs from another, so
-   * a drafter run reads
-   * "session_12.agent_field_group.run_a1b2c3d4.group_main_fields".
-   */
-  protected function runId(string $key): string {
-    $thread = EditorialMessageStore::SESSION_PREFIX . $this->session()->id()
-      . '.' . EditorialMessageStore::AGENT_PREFIX . $this->getPluginId();
-
-    return $key === '' ? $thread : $thread . '.' . $key;
-  }
-
-  /**
-   * {@inheritdoc}
-   *
-   * The session and the agent are the whole of the thread, so a turn picks up
-   * the conversation the last one left. An agent that answers one question per
-   * run names what tells its runs apart instead.
+   * The session is the whole key, so the next turn continues the conversation
+   * the last one left. Nothing reads this string back: the store stamps the
+   * session reference on every row off the plugin context. An agent that
+   * answers one question per run names what tells its runs apart instead.
    */
   protected function threadKey(): string {
-    return '';
+    return 'session_' . $this->session()->id();
   }
 
   /**
