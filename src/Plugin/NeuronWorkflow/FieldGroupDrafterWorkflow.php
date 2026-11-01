@@ -40,6 +40,10 @@ use NeuronAI\Workflow\Events\Event;
       data_type: 'any',
       label: new TranslatableMarkup('Group schema'),
     ),
+    'run' => new ContextDefinition(
+      data_type: 'string',
+      label: new TranslatableMarkup('Drafting run'),
+    ),
     'task' => new ContextDefinition(
       data_type: 'string',
       label: new TranslatableMarkup('Task'),
@@ -60,20 +64,22 @@ final class FieldGroupDrafterWorkflow extends NeuronWorkflowPluginBase {
   /**
    * {@inheritdoc}
    *
-   * The drafter's provider carries the schema as the editor's template wrote
-   * it. The validator reads a closed copy, because a model that answers one
-   * property of a group answers the schema as written.
+   * The drafter's provider and the validator read one closed schema, so the
+   * run checks the answer against the shape it asked the model for.
    */
   protected function nodes(): array {
-    $schema = (array) $this->getContextValue('schema');
+    $schema = $this->closed((array) $this->getContextValue('schema'));
     $group = (string) $this->getContextValue('group');
 
     return [
-      new DraftNode($this->agents, $this->getContextValue('session'), $group, $schema),
-      new ValidateNode($group, $schema + [
-        'required' => array_keys($schema['properties'] ?? []),
-        'additionalProperties' => FALSE,
-      ]),
+      new DraftNode(
+        $this->agents,
+        $this->getContextValue('session'),
+        $group,
+        $schema,
+        (string) $this->getContextValue('run'),
+      ),
+      new ValidateNode($group, $schema),
       new RetryNode($group),
     ];
   }
@@ -86,6 +92,29 @@ final class FieldGroupDrafterWorkflow extends NeuronWorkflowPluginBase {
    */
   protected function startEvent(): Event {
     return new DraftRequestEvent((string) $this->getContextValue('task'));
+  }
+
+  /**
+   * Closes a schema slice, so the answer it asks for is the answer it checks.
+   *
+   * A group's answer must carry every field of the group and no other, which
+   * the slice itself does not say. Below the group the slice stands as the
+   * template wrote it: a nested shape that declares what it requires means
+   * it, and a model that fills more than that is not writing the group.
+   *
+   * @param array $schema
+   *   The schema slice of the group.
+   *
+   * @return array
+   *   The slice, with its own properties required and closed.
+   */
+  private function closed(array $schema): array {
+    $properties = $schema['properties'] ?? [];
+
+    return $schema + [
+      'required' => array_keys(is_array($properties) ? $properties : []),
+      'additionalProperties' => FALSE,
+    ];
   }
 
 }

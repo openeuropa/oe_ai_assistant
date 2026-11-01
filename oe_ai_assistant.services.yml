@@ -32,8 +32,6 @@ services:
 
   Drupal\oe_ai_assistant\Service\Drafting\ContextDocumentRepository: {}
 
-  # Reads what a session drafts with: tone, template, documents, groups.
-
   Drupal\oe_ai_assistant\Service\TextFormatResolver: {}
 
   # Drives a document through extraction and summarisation.

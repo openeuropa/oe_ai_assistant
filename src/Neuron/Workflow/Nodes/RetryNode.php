@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\oe_ai_assistant\Neuron\Workflow\Nodes;
 
+use Drupal\oe_ai_assistant\Exception\SchemaRetriesExhaustedException;
 use Drupal\oe_ai_assistant\Neuron\Workflow\Events\DraftRequestEvent;
 use Drupal\oe_ai_assistant\Neuron\Workflow\Events\SchemaViolationEvent;
 use NeuronAI\Workflow\Node;
@@ -35,7 +36,7 @@ final class RetryNode extends Node {
   /**
    * Feeds the violations back to the drafter.
    *
-   * @throws \RuntimeException
+   * @throws \Drupal\oe_ai_assistant\Exception\SchemaRetriesExhaustedException
    *   When no answer matched the schema within the allowed retries.
    */
   public function __invoke(SchemaViolationEvent $event, WorkflowState $state): DraftRequestEvent {
@@ -43,7 +44,7 @@ final class RetryNode extends Node {
     $state->set(self::ATTEMPTS_KEY, $attempts);
 
     if ($attempts > $this->maxRetries) {
-      throw new \RuntimeException(sprintf(
+      throw new SchemaRetriesExhaustedException(sprintf(
         'The "%s" answer does not match its schema: %s',
         $this->group,
         implode('; ', $event->violations),

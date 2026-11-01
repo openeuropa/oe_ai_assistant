@@ -21,7 +21,7 @@ use Drupal\oe_ai_assistant\Entity\Bundle\ContentCreationSessionInterface;
   stream_adapter: NeuronStreamAdapter::Custom,
   tools: [
     'drafting_get_history',
-    'drafting_draft_group',
+    'drafting_draft_content',
   ],
   context_definitions: [
     'session' => new EntityContextDefinition(
@@ -51,21 +51,22 @@ final class DraftingNeuronAgent extends EditorialSessionAgentBase {
     - For each group, determine whether you have enough information
       from the conversation to generate meaningful content. If ANY
       field group lacks context, ask the user about it specifically.
-    - Do NOT call drafting_draft_group until you have addressed every field
-      group. Ask the user about each group you are unsure about.
+    - Do NOT call drafting_draft_content until you have addressed every
+      field group. Ask the user about each group you are unsure about.
     - The user may tell you to skip certain fields, use your best
       judgment, or just go ahead. In that case, proceed with
-      drafting_draft_group using whatever context you have.
-    - Only call drafting_draft_group when either:
+      drafting_draft_content using whatever context you have.
+    - Only call drafting_draft_content when either:
       (a) you have gathered specific information for all field
           groups, or
       (b) the user has explicitly told you to proceed without it.
-    - Call drafting_draft_group once for every group, all in the same turn,
-      starting with main_fields. If a result still lists pending
-      groups, call drafting_draft_group for each of them before answering.
-    - Once the draft is versioned, tell the user which draft is ready
-      and that they can review it on the right. Do not repeat the
-      field values.
+    - Call drafting_draft_content once. It writes every field group and
+      answers with the name of the draft it stored.
+    - Tell the user which draft is ready and that they can review it on
+      the right. Do not repeat the field values.
+    - Only report a draft as ready when the result carries a draft. When
+      the result carries an error, say which group failed and what it
+      reported, and do not claim a draft is ready.
     - The field groups below are the ones a new draft follows.
     - Answer questions about earlier drafts with drafting_get_history.
     - You can have normal conversations with the user at any point.

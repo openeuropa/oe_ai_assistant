@@ -8,6 +8,7 @@ use Drupal\oe_ai_assistant\Entity\AiEditorialSession;
 use Drupal\oe_ai_assistant\Service\AiEditorialContextInterface;
 use Drupal\oe_ai_assistant\Service\Drafting\ContextDocumentRepository;
 use Drupal\oe_ai_assistant\Service\DraftingSchemaProviderInterface;
+use NeuronAI\Chat\History\MessageStoreInterface;
 
 /**
  * Bundle class for the content creation session.
@@ -22,6 +23,24 @@ class ContentCreationSession extends AiEditorialSession implements ContentCreati
    * What the editor set up, read on first use.
    */
   protected ?array $brief = NULL;
+
+  /**
+   * {@inheritdoc}
+   */
+  public function draftsThread(): string {
+    return 'drafts.session_' . $this->id();
+  }
+
+  /**
+   * {@inheritdoc}
+   *
+   * The drafts of a session go with its conversation, because a draft is what
+   * one run of the conversation wrote.
+   */
+  public function deleteConversation(): void {
+    \Drupal::service(MessageStoreInterface::class)->clear($this->draftsThread());
+    parent::deleteConversation();
+  }
 
   /**
    * {@inheritdoc}
@@ -60,9 +79,15 @@ class ContentCreationSession extends AiEditorialSession implements ContentCreati
 
   /**
    * {@inheritdoc}
+   *
+   * The number follows the highest version stored rather than the count, so a
+   * session that holds drafts from both paths still numbers the next one
+   * after the last the editor saw.
    */
   public function nextVersion(): array {
-    return ['version' => $this->countDrafts() + 1];
+    $versions = array_map(static fn (array $result): int => (int) $result['version'], $this->draftResults());
+
+    return ['version' => ($versions === [] ? 0 : max($versions)) + 1];
   }
 
   /**
@@ -138,17 +163,29 @@ class ContentCreationSession extends AiEditorialSession implements ContentCreati
   }
 
   /**
-   * Collects every stored draft result, oldest first.
+   * Collects every stored draft of this session, oldest first.
    *
-   * A draft is the result of a draft_content tool call in the transcript.
+   * The drafting agent writes a draft to the drafts thread of the session.
+   * The chat endpoint writes one as the result of a draft_content tool call
+   * in the stored transcript, so this reads both until OEL-5072 retires the
+   * second.
+   *
+   * @todo Drop the transcript branch when the OEL-5066 epic is complete.
    *
    * @return array
-   *   The result arrays.
+   *   One entry per draft, each {version, context, fields}.
    */
   private function draftResults(): array {
+    $results = [];
+    foreach (\Drupal::service(MessageStoreInterface::class)->loadAll($this->draftsThread()) as $message) {
+      $draft = json_decode((string) $message->getContent(), TRUE);
+      if (is_array($draft) && isset($draft['version'])) {
+        $results[] = $draft;
+      }
+    }
+
     /** @var \Drupal\oe_ai_assistant\Entity\Storage\AiConversationMessageStorageInterface $storage */
     $storage = \Drupal::entityTypeManager()->getStorage('ai_conversation_message');
-    $results = [];
     foreach ($storage->loadTranscript($this) as $message) {
       foreach ($message->getToolCalls() as $call) {
         if (($call['function']['name'] ?? '') === 'draft_content' && isset($call['result'])) {
@@ -156,6 +193,8 @@ class ContentCreationSession extends AiEditorialSession implements ContentCreati
         }
       }
     }
+
+    usort($results, static fn (array $a, array $b): int => (int) $a['version'] <=> (int) $b['version']);
 
     return $results;
   }

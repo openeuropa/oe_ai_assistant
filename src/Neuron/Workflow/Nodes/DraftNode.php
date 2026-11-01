@@ -36,12 +36,15 @@ final class DraftNode extends Node {
    *   The field group to draft.
    * @param array $schema
    *   The JSON schema the drafter's provider carries.
+   * @param string $run
+   *   The run this node drafts for, which names the drafter's conversation.
    */
   public function __construct(
     protected NeuronAgentManagerInterface $agents,
     protected AiEditorialSessionInterface $session,
     protected string $group,
     protected array $schema,
+    protected string $run,
   ) {}
 
   /**
@@ -61,6 +64,7 @@ final class DraftNode extends Node {
       'session' => $this->session,
       'group' => $this->group,
       'schema' => $this->schema,
+      'run' => $this->run,
     ]);
 
     $result = $this->agent->chat(new UserMessage($event->message), TRUE);

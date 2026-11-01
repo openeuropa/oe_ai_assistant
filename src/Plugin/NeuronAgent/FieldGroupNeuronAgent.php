@@ -35,24 +35,13 @@ use NeuronAI\Providers\AIProviderInterface;
       data_type: 'any',
       label: new TranslatableMarkup('Group schema'),
     ),
+    'run' => new ContextDefinition(
+      data_type: 'string',
+      label: new TranslatableMarkup('Drafting run'),
+    ),
   ],
 )]
 final class FieldGroupNeuronAgent extends EditorialSessionAgentBase {
-
-  /**
-   * The key of this run, built once because it names one run of one group.
-   */
-  protected ?string $threadKey = NULL;
-
-  /**
-   * What marks a thread segment as one run of this drafter.
-   */
-  private const RUN_PREFIX = 'run_';
-
-  /**
-   * What marks a thread segment as the group a run answered for.
-   */
-  private const GROUP_PREFIX = 'group_';
 
   /**
    * {@inheritdoc}
@@ -103,15 +92,15 @@ final class FieldGroupNeuronAgent extends EditorialSessionAgentBase {
   /**
    * {@inheritdoc}
    *
-   * One thread per run, so a drafter is asked for one answer and never replays
-   * the answer it gave for an earlier draft. The random segment is what keeps
-   * two runs of one group apart; the session and the group are there so a
-   * reader can tell whose run it was.
+   * One thread per group per run, so a drafter answers once and never
+   * replays the answer it gave for an earlier draft. The run names the
+   * draft it produces, so a reader of the stored conversation can tell which
+   * draft a run belongs to.
    */
   protected function threadKey(): string {
-    return $this->threadKey ??= parent::threadKey()
-      . '.' . self::RUN_PREFIX . bin2hex(random_bytes(4))
-      . '.' . self::GROUP_PREFIX . $this->group();
+    return parent::threadKey()
+      . '.' . (string) $this->getContextValue('run')
+      . '.group_' . $this->group();
   }
 
   /**

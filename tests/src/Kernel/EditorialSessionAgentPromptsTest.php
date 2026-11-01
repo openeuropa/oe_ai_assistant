@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Drupal\Tests\oe_ai_assistant\Kernel;
 
 use Drupal\ai_neuron\Agent\NeuronAgentManagerInterface;
-use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
 use Drupal\oe_ai_assistant\Plugin\NeuronAgent\EditorialSessionAgentBase;
 use Drupal\oe_ai_assistant\Service\AiEditorialContext;
 use Drupal\oe_ai_assistant\Service\AiEditorialContextInterface;
@@ -284,6 +283,7 @@ Overflow text.", $prompt);
       'session' => $session,
       'group' => 'main_fields',
       'schema' => ['type' => 'object'],
+      'run' => 'draft_1',
     ]);
 
     return $agent->getInstructions()->getContent();
