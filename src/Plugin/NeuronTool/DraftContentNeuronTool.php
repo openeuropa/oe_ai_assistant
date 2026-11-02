@@ -6,7 +6,7 @@ namespace Drupal\oe_ai_assistant\Plugin\NeuronTool;
 
 use Drupal\ai_neuron\Attribute\NeuronTool;
 use Drupal\ai_neuron\Workflow\NeuronWorkflowManagerInterface;
-use Drupal\Component\Datetime\TimeInterface;
+use Drupal\Component\Utility\Crypt;
 use Drupal\Core\Logger\LoggerChannelInterface;
 use Drupal\Core\Plugin\Context\ContextDefinition;
 use Drupal\Core\Plugin\Context\EntityContextDefinition;
@@ -16,6 +16,7 @@ use Drupal\oe_ai_assistant\Exception\SchemaRetriesExhaustedException;
 use Drupal\oe_ai_assistant\Neuron\Workflow\Nodes\ValidateNode;
 use NeuronAI\Chat\History\MessageStoreInterface;
 use NeuronAI\Chat\Messages\AssistantMessage;
+use Psr\Log\LogLevel;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 
 /**
@@ -52,13 +53,17 @@ final class DraftContentNeuronTool extends DraftingToolBase {
    */
   private const MAIN_GROUP = 'main_fields';
 
+  /**
+   * What this call answered, so one turn writes one draft.
+   */
+  private ?string $result = NULL;
+
   public function __construct(
     array $configuration,
     $plugin_id,
     $plugin_definition,
     private readonly NeuronWorkflowManagerInterface $workflows,
     private readonly MessageStoreInterface $store,
-    private readonly TimeInterface $time,
     #[Autowire(service: 'logger.channel.oe_ai_assistant')]
     private readonly LoggerChannelInterface $logger,
   ) {
@@ -67,36 +72,57 @@ final class DraftContentNeuronTool extends DraftingToolBase {
 
   /**
    * Drafts the whole set and reports the draft it stored.
+   *
+   * One call writes one draft, so a model that calls this twice in a turn is
+   * answered with the draft of the first call rather than drafting the set
+   * again.
    */
   public function __invoke(): string {
-    $session = $this->getContextValue('session');
-    assert($session instanceof ContentCreationSessionInterface);
-
-    $groups = $session->getFieldGroups();
-    $version = (int) $session->nextVersion()['version'];
-    $run = $this->runId($version);
-
-    $conversation = $this->conversation();
-    $answers = [];
-    foreach ($groups as $group) {
-      $groupId = (string) $group['groupId'];
-
-      try {
-        $answers[$groupId] = $this->draftGroup($group, $run, $this->task($conversation, $answers));
-      }
-      catch (\Throwable $e) {
-        // The set is incomplete, so there is no draft. The model is told
-        // which group stopped the run, and says so rather than reporting a
-        // draft the editor cannot open.
-        return $this->failed($e, $groupId, $run, (string) $session->id());
-      }
+    if ($this->result !== NULL) {
+      return $this->result;
     }
 
-    $this->storeDraft($session, $version, $run, $this->assemble($groups, $answers));
+    $session = $this->getContextValue('session');
+    assert($session instanceof ContentCreationSessionInterface);
+    $run = '';
+    $groupId = '';
 
-    // The model is told the name of the draft and reports that, so the field
-    // values never reach the conversation it replays each turn.
-    return $this->json(['draft' => sprintf('Draft %d', $version), 'version' => $version]);
+    // Every step of the run answers the model through failed(), so a failure
+    // of the session, the store or the assembly reaches the editor as the
+    // group that stopped rather than as what the site saw.
+    try {
+      $groups = $session->getFieldGroups();
+      if ($groups === []) {
+        throw new \RuntimeException(sprintf(
+          'The "%s" content type has no field group to draft.',
+          $session->getContentType(),
+        ));
+      }
+
+      $version = (int) $session->nextVersion()['version'];
+      $run = $this->runId($version);
+      $conversation = $this->conversation();
+      $answers = [];
+      foreach ($groups as $group) {
+        $groupId = (string) $group['groupId'];
+        $answers[$groupId] = $this->draftGroup($group, $run, $this->task($conversation, $answers));
+      }
+
+      $this->storeDraft($session, $version, $run, $this->assemble($groups, $answers));
+
+      // The model is told the name of the draft and reports that, so the
+      // field values never reach the conversation it replays each turn.
+      return $this->result = json_encode([
+        'draft' => sprintf('Draft %d', $version),
+        'version' => $version,
+      ]);
+    }
+    catch (\Throwable $e) {
+      // The set is incomplete, so there is no draft. The model is told which
+      // group stopped the run, and says so rather than reporting a draft the
+      // editor cannot open.
+      return $this->failed($e, $groupId, $run, (string) $session->id());
+    }
   }
 
   /**
@@ -120,35 +146,26 @@ final class DraftContentNeuronTool extends DraftingToolBase {
    *   The result of the call.
    */
   private function failed(\Throwable $exception, string $groupId, string $run, string $sessionId): string {
-    if ($exception instanceof SchemaRetriesExhaustedException) {
-      return $this->json(['error' => $exception->getMessage(), 'group' => $groupId]);
-    }
-
-    $this->logger->error('Drafting the "@group" group of session @session failed in run @run: @message', [
-      '@group' => $groupId,
+    $schema = $exception instanceof SchemaRetriesExhaustedException;
+    // Both kinds reach the log: a group no model can answer is as much a
+    // site problem as a provider that fails, and the operator needs the run
+    // either way. The exception travels with it, so the record keeps the
+    // file, the line and the trace.
+    $this->logger->log($schema ? LogLevel::WARNING : LogLevel::ERROR, 'Drafting @group of session @session failed in run @run: @message', [
+      '@group' => $groupId === '' ? 'the set' : sprintf('the "%s" group', $groupId),
       '@session' => $sessionId,
-      '@run' => $run,
+      '@run' => $run === '' ? 'none' : $run,
       '@message' => $exception->getMessage(),
+      'exception' => $exception,
     ]);
 
-    return $this->json(['error' => 'The group could not be drafted.', 'group' => $groupId]);
-  }
-
-  /**
-   * Encodes a result for the model.
-   *
-   * A model answers text of its own, so a value it wrote can hold a byte
-   * sequence JSON cannot carry. Such a byte becomes U+FFFD rather than an
-   * encode failure, which would leave the call with nothing to answer.
-   *
-   * @param array $result
-   *   What to tell the model.
-   *
-   * @return string
-   *   The JSON.
-   */
-  private function json(array $result): string {
-    return json_encode($result, JSON_THROW_ON_ERROR | JSON_INVALID_UTF8_SUBSTITUTE);
+    // What the drafter missed is the editor's business, because they wrote
+    // the template. Anything else is the site's, so the model is told only
+    // that the group failed.
+    return $this->result = json_encode([
+      'error' => $schema ? $exception->getMessage() : 'The group could not be drafted.',
+      'group' => $groupId,
+    ]);
   }
 
   /**
@@ -164,7 +181,7 @@ final class DraftContentNeuronTool extends DraftingToolBase {
    * @return array
    *   The field values the drafter wrote.
    *
-   * @throws \RuntimeException
+   * @throws \Drupal\oe_ai_assistant\Exception\SchemaRetriesExhaustedException
    *   When no answer of the drafter matched the group schema.
    */
   private function draftGroup(array $group, string $run, string $task): array {
@@ -183,9 +200,8 @@ final class DraftContentNeuronTool extends DraftingToolBase {
    * Names this run, so two runs of one draft never share a conversation.
    *
    * A run that failed leaves its drafter threads behind, and the next one
-   * takes the version it did not store. The time of the run is what tells
-   * the two apart. It carries no dot, because a dot separates the segments
-   * of the thread names built from it.
+   * takes the version it did not store. The random segment is what tells the
+   * two apart, and the version is what ties a run to the draft it wrote.
    *
    * @param int $version
    *   The version this run drafts.
@@ -194,10 +210,7 @@ final class DraftContentNeuronTool extends DraftingToolBase {
    *   The run id, which names the drafter conversations of this run.
    */
   private function runId(int $version): string {
-    $time = \DateTimeImmutable::createFromFormat('U.u', sprintf('%.6F', $this->time->getCurrentMicroTime()))
-      ->setTimezone(new \DateTimeZone('UTC'));
-
-    return sprintf('draft_%d.%s', $version, $time->format('Ymd\THisv\Z'));
+    return sprintf('draft_%d.%s', $version, Crypt::randomBytesBase64(4));
   }
 
   /**
@@ -221,7 +234,7 @@ final class DraftContentNeuronTool extends DraftingToolBase {
     string $run,
     array $fields,
   ): void {
-    $this->store->append($session->draftsThread(), new AssistantMessage($this->json([
+    $this->store->append($session->draftsThread(), new AssistantMessage(json_encode([
       'version' => $version,
       'run' => $run,
       'context' => $this->draftContext(),
@@ -278,9 +291,12 @@ final class DraftContentNeuronTool extends DraftingToolBase {
    */
   private function conversation(): string {
     $lines = [];
-    // The agent passes the thread it holds the conversation under, so nothing
-    // here composes a thread id.
-    foreach ($this->store->loadActive((string) $this->getContextValue('thread')) as $message) {
+    // The store closes a turn on the answer that ends it, and this call runs
+    // before that answer. loadActive() omits an open turn, so it hides the
+    // message that asked for the draft. This reads the whole thread instead.
+    // The agent passes the thread of its conversation, so nothing here
+    // composes a thread id.
+    foreach ($this->store->loadAll((string) $this->getContextValue('thread')) as $message) {
       $text = $message->getContent();
       if ($text !== NULL) {
         $lines[] = $message->getRole() . ': ' . $text;
@@ -307,7 +323,7 @@ final class DraftContentNeuronTool extends DraftingToolBase {
     // later group goes with them.
     if (isset($answers[self::MAIN_GROUP])) {
       $task .= "Main fields already generated:\n"
-        . $this->json($answers[self::MAIN_GROUP]) . "\n\n";
+        . json_encode($answers[self::MAIN_GROUP]) . "\n\n";
     }
 
     return $task . 'Generate content for the fields in the provided schema. Follow the conversation context.';

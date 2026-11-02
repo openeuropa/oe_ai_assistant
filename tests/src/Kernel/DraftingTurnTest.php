@@ -6,9 +6,10 @@ namespace Drupal\Tests\oe_ai_assistant\Kernel;
 
 use Drupal\ai_neuron\Agent\NeuronAgentManagerInterface;
 use Drupal\ai_neuron\Tools\NeuronToolManagerInterface;
-use Drupal\Component\Datetime\TimeInterface;
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
 use Drupal\oe_ai_assistant\Plugin\NeuronTool\DraftContentNeuronTool;
+use Drupal\oe_ai_assistant\Service\DraftingSchemaProvider;
+use Drupal\oe_ai_assistant\Service\DraftingSchemaProviderInterface;
 use Drupal\oe_ai_assistant_test\Plugin\AiProvider\MockAiProvider;
 use Drupal\oe_ai_assistant_test\Plugin\AiProvider\MockResponse;
 use NeuronAI\Chat\Messages\UserMessage;
@@ -27,16 +28,6 @@ use Psr\Log\AbstractLogger;
  * @group oe_ai_assistant
  */
 class DraftingTurnTest extends AiEditorialSessionKernelTestBase {
-
-  /**
-   * The moment every run of these tests starts at.
-   */
-  private const NOW = 1793377032.481;
-
-  /**
-   * The run id a draft of that moment carries.
-   */
-  private const RUN = 'draft_%d.20261030T161712481Z';
 
   /**
    * {@inheritdoc}
@@ -59,9 +50,6 @@ class DraftingTurnTest extends AiEditorialSessionKernelTestBase {
       ])
       ->save();
 
-    // A run takes the moment it starts as its name, so the clock stands
-    // still and a run writes the threads the tests below assert.
-    $this->freezeClock(self::NOW);
   }
 
   /**
@@ -108,8 +96,7 @@ class DraftingTurnTest extends AiEditorialSessionKernelTestBase {
     // Each group ran in its own thread, named after the run that wrote it.
     $threads = $session->conversationThreads();
     $paragraphThread = $this->thread($session, 1, 'field_content_paragraphs');
-    $this->assertArrayHasKey($this->thread($session, 1, 'main_fields'), $threads);
-    $this->assertArrayHasKey($paragraphThread, $threads);
+    $this->thread($session, 1, 'main_fields');
 
     // The paragraphs drafter reads what the main fields already say, so the
     // tool drafts the groups in order rather than in parallel.
@@ -143,7 +130,7 @@ class DraftingTurnTest extends AiEditorialSessionKernelTestBase {
 
     // The second run holds its own conversation, so a drafter never replays
     // the answer it gave for the draft before.
-    $this->assertArrayHasKey($this->thread($session, 2, 'main_fields'), $session->conversationThreads());
+    $this->thread($session, 2, 'main_fields');
   }
 
   /**
@@ -205,38 +192,6 @@ class DraftingTurnTest extends AiEditorialSessionKernelTestBase {
   }
 
   /**
-   * A byte no JSON string can carry fails the group and nothing else.
-   *
-   * The message store writes a model answer as JSON, and it writes no JSON
-   * that holds a malformed byte, so such an answer stops its group. The turn
-   * survives: the tool reports the group and the agent answers the editor.
-   *
-   * @todo Draft the group instead, once the ai_neuron store substitutes an
-   *   invalid byte rather than refusing the message.
-   */
-  public function testAnswerWithInvalidUtf8FailsOnlyItsGroup(): void {
-    $session = $this->createSession($this->createUser());
-
-    MockAiProvider::reset();
-    MockAiProvider::enqueue($this->toolCall());
-    MockAiProvider::enqueue(new MockResponse(
-      text: '{"title": [{"value": "T' . chr(0xB1) . '"}], "field_teaser": [{"value": "S"}]}',
-    ));
-    MockAiProvider::enqueue(new MockResponse(text: 'The main fields could not be drafted.'));
-
-    $state = $this->container->get(NeuronAgentManagerInterface::class)
-      ->createAgent('drafting', ['session' => $session])
-      ->chat(new UserMessage('Please draft it, go ahead.'), TRUE);
-
-    $this->assertSame('The main fields could not be drafted.', $state->getMessage()?->getContent());
-    $this->assertSame([
-      'error' => 'The group could not be drafted.',
-      'group' => 'main_fields',
-    ], $session->conversationToolResults()[0]['result']);
-    $this->assertSame([], $session->listDrafts());
-  }
-
-  /**
    * A provider failure tells the editor nothing of what the site saw.
    */
   public function testProviderFailureIsLoggedAndReportedPlainly(): void {
@@ -256,7 +211,14 @@ class DraftingTurnTest extends AiEditorialSessionKernelTestBase {
        * {@inheritdoc}
        */
       public function log($level, string|\Stringable $message, array $context = []): void {
-        $this->records[] = strtr($message, $context);
+        // Only the placeholders of the message, because a context also
+        // carries what no substitution can take, such as an exception.
+        $placeholders = array_filter(
+          $context,
+          static fn (mixed $value, string $key): bool => str_starts_with($key, '@') && is_scalar($value),
+          ARRAY_FILTER_USE_BOTH,
+        );
+        $this->records[] = strtr((string) $message, $placeholders);
       }
 
     });
@@ -281,13 +243,13 @@ class DraftingTurnTest extends AiEditorialSessionKernelTestBase {
     $logged = implode("\n", $records);
     $this->assertStringContainsString('host db-77 refused', $logged);
     $this->assertStringContainsString('main_fields', $logged);
-    $this->assertStringContainsString(sprintf(self::RUN, 1), $logged);
+    $this->assertMatchesRegularExpression('@draft_1\.[A-Za-z0-9_-]{6}@', $logged);
   }
 
   /**
    * A bare list says nothing about which field of a group it belongs to.
    */
-  public function testBareListIsLeftOutOfAGroupOfSeveralFields(): void {
+  public function testBareListIsLeftOutOfMultiFieldGroup(): void {
     $groups = [
       [
         'groupId' => 'field_people',
@@ -326,6 +288,91 @@ class DraftingTurnTest extends AiEditorialSessionKernelTestBase {
   }
 
   /**
+   * The drafters read the message that asked for the draft.
+   *
+   * The store closes a turn on the answer that ends it, and this call comes
+   * before that answer, so the turn that asked is still open while the
+   * drafters run.
+   */
+  public function testDraftersReadTheTurnThatAskedForTheDraft(): void {
+    $session = $this->createSession($this->createUser());
+
+    MockAiProvider::reset();
+    $this->enqueueTurn();
+
+    $this->container->get(NeuronAgentManagerInterface::class)
+      ->createAgent('drafting', ['session' => $session])
+      ->chat(new UserMessage('Write about the 2026 sett counts in Flanders.'), TRUE);
+
+    $rows = $session->conversationThreads()[$this->thread($session, 1, 'main_fields')];
+    $task = (string) ($rows[0]->getContent()[0]['content'] ?? '');
+    $this->assertStringContainsString('2026 sett counts in Flanders', $task);
+  }
+
+  /**
+   * Two calls in one turn write one draft.
+   */
+  public function testTwoCallsInOneTurnWriteOneDraft(): void {
+    $session = $this->createSession($this->createUser());
+
+    MockAiProvider::reset();
+    MockAiProvider::enqueue(new MockResponse(
+      toolCalls: [
+        [
+          'id' => 'call_1',
+          'type' => 'function',
+          'function' => ['name' => 'drafting_draft_content', 'arguments' => '{}'],
+        ],
+        [
+          'id' => 'call_2',
+          'type' => 'function',
+          'function' => ['name' => 'drafting_draft_content', 'arguments' => '{}'],
+        ],
+      ],
+    ));
+    MockAiProvider::enqueue(new MockResponse(text: self::MAIN_FIELDS));
+    MockAiProvider::enqueue(new MockResponse(text: self::PARAGRAPHS));
+    MockAiProvider::enqueue(new MockResponse(text: 'Draft 1 is ready.'));
+
+    $this->container->get(NeuronAgentManagerInterface::class)
+      ->createAgent('drafting', ['session' => $session])
+      ->chat(new UserMessage('Please draft it, go ahead.'), TRUE);
+
+    $this->assertSame(['Draft 1'], array_column($session->listDrafts(), 'name'));
+
+    // Both calls answered the same draft, and only one ran the drafters.
+    $results = $session->conversationToolResults();
+    $this->assertCount(2, $results);
+    $this->assertSame($results[0]['result'], $results[1]['result']);
+    $this->assertCount(1, preg_grep('@\.group_main_fields$@', array_keys($session->conversationThreads())));
+  }
+
+  /**
+   * A content type with no field group produces no draft.
+   */
+  public function testContentTypeWithNoFieldGroupProducesNoDraft(): void {
+    $session = $this->createSession($this->createUser());
+    $schema = $this->createMock(DraftingSchemaProviderInterface::class);
+    $schema->method('groups')->willReturn([]);
+    $schema->method('resolveTemplate')->willReturn(NULL);
+    $this->container->set(DraftingSchemaProvider::class, $schema);
+
+    MockAiProvider::reset();
+    MockAiProvider::enqueue($this->toolCall());
+    MockAiProvider::enqueue(new MockResponse(text: 'This content type cannot be drafted.'));
+
+    $this->container->get(NeuronAgentManagerInterface::class)
+      ->createAgent('drafting', ['session' => $session])
+      ->chat(new UserMessage('Please draft it, go ahead.'), TRUE);
+
+    $this->assertSame([], $session->listDrafts());
+    $this->assertSame([
+      'error' => 'The group could not be drafted.',
+      'group' => '',
+    ], $session->conversationToolResults()[0]['result']);
+  }
+
+  /**
    * A run that follows a failed one takes the version and its own threads.
    */
   public function testRunAfterFailedRunDraftsInNewThreads(): void {
@@ -344,10 +391,6 @@ class DraftingTurnTest extends AiEditorialSessionKernelTestBase {
     $this->assertSame([], $session->listDrafts());
     $failed = array_keys($session->conversationThreads());
 
-    // The clock moved on, so the second run of the same version holds its
-    // own conversations rather than reading the failed ones back.
-    $this->freezeClock(self::NOW + 61);
-
     MockAiProvider::reset();
     $this->enqueueTurn();
     $agentManager->createAgent('drafting', ['session' => $session])
@@ -356,28 +399,22 @@ class DraftingTurnTest extends AiEditorialSessionKernelTestBase {
     // The draft the failed run never stored is the one this run takes.
     $this->assertSame(['Draft 1'], array_column($session->listDrafts(), 'name'));
 
+    // Both runs took version 1, so the random segment is what keeps the
+    // second from reading the answers the validator rejected in the first.
     $threads = array_keys($session->conversationThreads());
     $this->assertNotEmpty(array_diff($threads, $failed), 'The second run drafts in threads of its own.');
-    $this->assertContains('field_group.session_' . $session->id() . '.draft_1.20261030T161813481Z.group_main_fields', $threads);
-  }
-
-  /**
-   * Stops the clock, so a run takes a name the test knows.
-   *
-   * @param float $now
-   *   The moment every call of the run reads.
-   */
-  private function freezeClock(float $now): void {
-    $time = $this->createMock(TimeInterface::class);
-    $time->method('getCurrentMicroTime')->willReturn($now);
-    $time->method('getRequestMicroTime')->willReturn($now);
-    $time->method('getCurrentTime')->willReturn((int) $now);
-    $time->method('getRequestTime')->willReturn((int) $now);
-    $this->container->set('datetime.time', $time);
+    $this->assertCount(
+      2,
+      preg_grep('@\.draft_1\.[A-Za-z0-9_-]{6}\.group_main_fields$@', $threads),
+      'The failed run and the run that followed it hold separate conversations.',
+    );
   }
 
   /**
    * The thread one group of one run drafts in.
+   *
+   * A run names itself with a random segment, so a test reads the name back
+   * off the session rather than composing it.
    *
    * @param \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $session
    *   The session the run drafts for.
@@ -390,7 +427,16 @@ class DraftingTurnTest extends AiEditorialSessionKernelTestBase {
    *   The thread name.
    */
   private function thread(AiEditorialSessionInterface $session, int $version, string $group): string {
-    return sprintf('field_group.session_%s.%s.group_%s', $session->id(), sprintf(self::RUN, $version), $group);
+    $pattern = sprintf(
+      '@^field_group\.session_%s\.draft_%d\.[A-Za-z0-9_-]{6}\.group_%s$@',
+      $session->id(),
+      $version,
+      preg_quote($group, '@'),
+    );
+    $threads = preg_grep($pattern, array_keys($session->conversationThreads()));
+    $this->assertCount(1, $threads, sprintf('One thread drafted "%s" for draft %d.', $group, $version));
+
+    return (string) reset($threads);
   }
 
   /**

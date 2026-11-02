@@ -88,7 +88,14 @@ final class DraftingNeuronAgent extends EditorialSessionAgentBase {
       . 'entity_type_id: ' . ContentCreationSessionInterface::ENTITY_TYPE_ID . "\n";
 
     if ($bundle !== '') {
-      $prompt .= "\nAvailable field groups:\n" . json_encode($this->getContextValue('session')->getFieldGroups()) . "\n";
+      // A group definition carries the schema of the group, which is large
+      // and grows with the content type. This agent only asks the editor
+      // about a group, and each drafter reads its own schema from the
+      // provider. So the prompt names the groups and stops there.
+      $prompt .= "\nAvailable field groups:\n";
+      foreach ($this->getContextValue('session')->getFieldGroups() as $group) {
+        $prompt .= sprintf("%s: %s\n", $group['groupId'], $group['label']);
+      }
     }
 
     return $prompt;

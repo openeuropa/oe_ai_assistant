@@ -98,9 +98,9 @@ final class FieldGroupDrafterWorkflow extends NeuronWorkflowPluginBase {
    * Closes a schema slice, so the answer it asks for is the answer it checks.
    *
    * A group's answer must carry every field of the group and no other, which
-   * the slice itself does not say. Below the group the slice stands as the
-   * template wrote it: a nested shape that declares what it requires means
-   * it, and a model that fills more than that is not writing the group.
+   * a slice that says nothing about it does not ask for. A slice that does
+   * say stands as the template wrote it, at the group level and below: what
+   * a shape declares it requires is what it requires.
    *
    * @param array $schema
    *   The schema slice of the group.
@@ -109,10 +109,8 @@ final class FieldGroupDrafterWorkflow extends NeuronWorkflowPluginBase {
    *   The slice, with its own properties required and closed.
    */
   private function closed(array $schema): array {
-    $properties = $schema['properties'] ?? [];
-
     return $schema + [
-      'required' => array_keys(is_array($properties) ? $properties : []),
+      'required' => array_keys($schema['properties'] ?? []),
       'additionalProperties' => FALSE,
     ];
   }

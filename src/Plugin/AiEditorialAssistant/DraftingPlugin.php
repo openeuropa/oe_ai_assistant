@@ -485,6 +485,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
     $session = $this->loadSession($this->decodeJsonBody($request));
     $this->entityTypeManager->getStorage('ai_conversation_message')
       ->deleteForHost($session);
+    $session->deleteConversation();
     return ['status' => 'ok'];
   }
 
