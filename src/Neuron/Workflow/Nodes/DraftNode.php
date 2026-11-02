@@ -69,7 +69,8 @@ final class DraftNode extends Node {
 
     $result = $this->agent->chat(new UserMessage($event->message), TRUE);
     if ($result instanceof \Generator) {
-      // Drained, because the state the generator returns carries the answer.
+      // Nobody reads the chunks, and a generator holds its return value
+      // until it finishes. So this drains it.
       iterator_to_array($result);
       $result = $result->getReturn();
     }

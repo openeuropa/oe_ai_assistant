@@ -34,8 +34,9 @@ class ContentCreationSession extends AiEditorialSession implements ContentCreati
   /**
    * {@inheritdoc}
    *
-   * The drafts of a session go with its conversation, because a draft is what
-   * one run of the conversation wrote.
+   * The rows of the drafts thread carry no session reference, so the delete
+   * of the parent cannot reach them. This clears the thread by name
+   * first.
    */
   public function deleteConversation(): void {
     \Drupal::service(MessageStoreInterface::class)->clear($this->draftsThread());
@@ -80,9 +81,9 @@ class ContentCreationSession extends AiEditorialSession implements ContentCreati
   /**
    * {@inheritdoc}
    *
-   * The number follows the highest version stored rather than the count, so a
-   * session that holds drafts from both paths still numbers the next one
-   * after the last the editor saw.
+   * Two paths write drafts of one session, and each numbers its own. A count
+   * would hand the editor a number they already saw, so the next version
+   * follows the highest one stored.
    */
   public function nextVersion(): array {
     $versions = array_map(static fn (array $result): int => (int) $result['version'], $this->draftResults());

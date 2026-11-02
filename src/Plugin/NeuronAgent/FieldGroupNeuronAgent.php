@@ -92,10 +92,10 @@ final class FieldGroupNeuronAgent extends EditorialSessionAgentBase {
   /**
    * {@inheritdoc}
    *
-   * One thread per group per run, so a drafter answers once and never
-   * replays the answer it gave for an earlier draft. The run names the
-   * draft it produces, so a reader of the stored conversation can tell which
-   * draft a run belongs to.
+   * A drafter that reuses a thread replays the answer it gave for an
+   * earlier draft. One thread per group per run keeps two runs apart. The
+   * run names the draft it wrote, so a reader of the conversation can tell
+   * which draft it belongs to.
    */
   protected function threadKey(): string {
     return parent::threadKey()

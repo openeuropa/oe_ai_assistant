@@ -73,9 +73,9 @@ final class DraftContentNeuronTool extends DraftingToolBase {
   /**
    * Drafts the whole set and reports the draft it stored.
    *
-   * One call writes one draft, so a model that calls this twice in a turn is
-   * answered with the draft of the first call rather than drafting the set
-   * again.
+   * A model can call one tool twice in a turn, and the second call would
+   * draft the whole set again. So a later call answers with the draft the
+   * first one wrote.
    */
   public function __invoke(): string {
     if ($this->result !== NULL) {
@@ -87,9 +87,9 @@ final class DraftContentNeuronTool extends DraftingToolBase {
     $run = '';
     $groupId = '';
 
-    // Every step of the run answers the model through failed(), so a failure
-    // of the session, the store or the assembly reaches the editor as the
-    // group that stopped rather than as what the site saw.
+    // A failure of the session, the store or the assembly would reach the
+    // editor as the message the site saw. One catch covers the whole run, so
+    // every failure answers the model through failed().
     try {
       $groups = $session->getFieldGroups();
       if ($groups === []) {
@@ -110,28 +110,24 @@ final class DraftContentNeuronTool extends DraftingToolBase {
 
       $this->storeDraft($session, $version, $run, $this->assemble($groups, $answers));
 
-      // The model is told the name of the draft and reports that, so the
-      // field values never reach the conversation it replays each turn.
+      // A draft holds every field of the content type, and this agent
+      // replays its thread on every turn. So the result names the draft,
+      // and the fields stay in the drafts thread.
       return $this->result = json_encode([
         'draft' => sprintf('Draft %d', $version),
         'version' => $version,
       ]);
     }
     catch (\Throwable $e) {
-      // The set is incomplete, so there is no draft. The model is told which
-      // group stopped the run, and says so rather than reporting a draft the
-      // editor cannot open.
+      // The set is incomplete, so this run writes no draft. The model needs
+      // the group that stopped it, because an editor who opens a draft of
+      // half a content type learns nothing.
       return $this->failed($e, $groupId, $run, (string) $session->id());
     }
   }
 
   /**
    * Reports a group the run could not write.
-   *
-   * A schema failure says which fields the drafter missed, which the editor
-   * can act on. Anything else is the site's business: it goes to the log,
-   * and the model is told only that the group failed, so a database error or
-   * a gateway response never reaches the editor.
    *
    * @param \Throwable $exception
    *   What stopped the group.
@@ -147,10 +143,10 @@ final class DraftContentNeuronTool extends DraftingToolBase {
    */
   private function failed(\Throwable $exception, string $groupId, string $run, string $sessionId): string {
     $schema = $exception instanceof SchemaRetriesExhaustedException;
-    // Both kinds reach the log: a group no model can answer is as much a
-    // site problem as a provider that fails, and the operator needs the run
-    // either way. The exception travels with it, so the record keeps the
-    // file, the line and the trace.
+    // An operator cannot tell a quiet session from a session whose every
+    // draft fails, unless both kinds of failure reach the log. The exception
+    // travels with the record, which keeps the file, the line and the
+    // trace.
     $this->logger->log($schema ? LogLevel::WARNING : LogLevel::ERROR, 'Drafting @group of session @session failed in run @run: @message', [
       '@group' => $groupId === '' ? 'the set' : sprintf('the "%s" group', $groupId),
       '@session' => $sessionId,
@@ -159,9 +155,10 @@ final class DraftContentNeuronTool extends DraftingToolBase {
       'exception' => $exception,
     ]);
 
-    // What the drafter missed is the editor's business, because they wrote
-    // the template. Anything else is the site's, so the model is told only
-    // that the group failed.
+    // A raw message can carry a database host or a gateway response, and
+    // this agent repeats to the editor what it reads. A schema miss names
+    // the fields of the editor's own template, so the model reads that one.
+    // Every other failure becomes one sentence.
     return $this->result = json_encode([
       'error' => $schema ? $exception->getMessage() : 'The group could not be drafted.',
       'group' => $groupId,
@@ -216,8 +213,10 @@ final class DraftContentNeuronTool extends DraftingToolBase {
   /**
    * Keeps the draft in a thread of its own.
    *
-   * The thread carries the id of the session, and nothing reads it back into
-   * a model, so the draft is as large as the content type needs.
+   * A draft holds every field of the content type, which no model needs to
+   * read back. Nothing runs an agent on this thread, so the draft is as
+   * large as the content type needs. Its name carries the id of the
+   * session.
    *
    * @param \Drupal\oe_ai_assistant\Entity\Bundle\ContentCreationSessionInterface $session
    *   The session the draft belongs to.
@@ -245,10 +244,9 @@ final class DraftContentNeuronTool extends DraftingToolBase {
   /**
    * Merges what each group answered into one field map.
    *
-   * A group answers for its own fields, and a model does not always key the
-   * answer the way the schema asks. The two shapes it returns instead are
-   * repaired here: a main group that carries fields of another group, and a
-   * reference group that answers a bare list rather than a keyed object.
+   * A model does not always key its answer the way the schema asks. Two
+   * shapes come back instead. A main group carries fields of another group,
+   * and a reference group answers a bare list. This repairs both.
    *
    * @param array $groups
    *   The field groups of the run, each with groupId and fieldNames.
@@ -272,9 +270,10 @@ final class DraftContentNeuronTool extends DraftingToolBase {
           $fields[$fieldName] = $answer[$fieldName];
         }
         elseif (array_is_list($answer) && count($group['fieldNames']) === 1) {
-          // A group of one field is the only one whose bare list can be read
-          // as that field. Of a group of several, a list says nothing about
-          // which field it belongs to, so the group contributes nothing.
+          // A model sometimes answers a bare list where the schema asks for
+          // an object keyed by field. A group of one field takes the list as
+          // the value of that field. A list names no field of a larger
+          // group, so such a group takes nothing.
           $fields[$fieldName] = $answer;
         }
       }
@@ -319,8 +318,8 @@ final class DraftContentNeuronTool extends DraftingToolBase {
    */
   private function task(string $conversation, array $answers): string {
     $task = "Conversation context:\n" . $conversation . "\n";
-    // The main fields are the title and the summary of the content, so every
-    // later group goes with them.
+    // A later group must fit the title and the summary the main group
+    // wrote, so the task carries them.
     if (isset($answers[self::MAIN_GROUP])) {
       $task .= "Main fields already generated:\n"
         . json_encode($answers[self::MAIN_GROUP]) . "\n\n";

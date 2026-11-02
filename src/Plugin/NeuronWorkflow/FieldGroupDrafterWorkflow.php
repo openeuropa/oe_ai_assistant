@@ -64,8 +64,10 @@ final class FieldGroupDrafterWorkflow extends NeuronWorkflowPluginBase {
   /**
    * {@inheritdoc}
    *
-   * The drafter's provider and the validator read one closed schema, so the
-   * run checks the answer against the shape it asked the model for.
+   * A model asked for one shape and checked against another misses the
+   * schema for reasons the editor cannot act on. The provider and the
+   * validator read one closed schema, so the run checks what it asked
+   * for.
    */
   protected function nodes(): array {
     $schema = $this->closed((array) $this->getContextValue('schema'));
@@ -97,10 +99,10 @@ final class FieldGroupDrafterWorkflow extends NeuronWorkflowPluginBase {
   /**
    * Closes a schema slice, so the answer it asks for is the answer it checks.
    *
-   * A group's answer must carry every field of the group and no other, which
-   * a slice that says nothing about it does not ask for. A slice that does
-   * say stands as the template wrote it, at the group level and below: what
-   * a shape declares it requires is what it requires.
+   * A slice says what each field of the group looks like. It does not say
+   * that the answer must carry every field of the group and no other, so
+   * this adds that. A slice that says it already stands as the template
+   * wrote it, at the group level and below.
    *
    * @param array $schema
    *   The schema slice of the group.

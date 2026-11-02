@@ -51,8 +51,9 @@ final class RetryNode extends Node {
       ));
     }
 
-    // The drafter's conversation already holds the answer to correct, so the
-    // next turn carries the violations and nothing else.
+    // The drafter reads its own conversation, which already holds the
+    // answer to correct. So this turn carries the violations and nothing
+    // else.
     return new DraftRequestEvent(
       "Your previous answer does not match the schema:\n- "
       . implode("\n- ", $event->violations)
