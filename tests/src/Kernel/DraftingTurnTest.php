@@ -373,6 +373,45 @@ class DraftingTurnTest extends AiEditorialSessionKernelTestBase {
   }
 
   /**
+   * The validator refuses a paragraph item shaped like a text field.
+   *
+   * A paragraph branch of the schema declares none of its fields as required,
+   * so an object of any other shape matches it unless the branch forbids a
+   * property it does not declare. A model that answers a text value for the
+   * paragraph field would otherwise write a draft the editor cannot save.
+   */
+  public function testTextShapeInParagraphFieldIsRefused(): void {
+    $session = $this->createSession($this->createUser());
+
+    MockAiProvider::reset();
+    MockAiProvider::enqueue($this->toolCall());
+    MockAiProvider::enqueue(new MockResponse(text: self::MAIN_FIELDS));
+    // The shape of a text field, in the field that holds paragraphs.
+    MockAiProvider::enqueue(new MockResponse(
+      text: '{"field_content_paragraphs": [{"value": "<p>B</p>"}]}',
+    ));
+    MockAiProvider::enqueue(new MockResponse(text: self::PARAGRAPHS));
+    MockAiProvider::enqueue(new MockResponse(text: 'Draft 1 is ready.'));
+
+    $this->container->get(NeuronAgentManagerInterface::class)
+      ->createAgent('drafting', ['session' => $session])
+      ->chat(new UserMessage('Please draft it, go ahead.'), TRUE);
+
+    // The run asked the group again, and the draft holds the paragraph of
+    // the second answer.
+    $rows = $session->conversationThreads()[$this->thread($session, 1, 'field_content_paragraphs')];
+    $this->assertCount(4, $rows);
+    $this->assertStringContainsString(
+      'does not match the schema',
+      (string) ($rows[2]->getContent()[0]['content'] ?? ''),
+    );
+    $this->assertSame(
+      [['field_text_body' => [['value' => '<p>B</p>']], 'type' => [['target_id' => 'text_block']]]],
+      $session->getDraftContent(1)['fields']['field_content_paragraphs'],
+    );
+  }
+
+  /**
    * A run that follows a failed one takes the version and its own threads.
    */
   public function testRunAfterFailedRunDraftsInNewThreads(): void {

@@ -97,24 +97,21 @@ final class FieldGroupDrafterWorkflow extends NeuronWorkflowPluginBase {
   }
 
   /**
-   * Closes a schema slice, so the answer it asks for is the answer it checks.
+   * Requires every field of the group.
    *
-   * A slice says what each field of the group looks like. It does not say
-   * that the answer must carry every field of the group and no other, so
-   * this adds that. A slice that says it already stands as the template
-   * wrote it, at the group level and below.
+   * A slice says what each field of the group looks like, and it forbids a
+   * property it does not declare. It leaves each field optional, because the
+   * field decides that for itself. This run asks a drafter for the whole
+   * group, so the run is what requires every field of it.
    *
    * @param array $schema
    *   The schema slice of the group.
    *
    * @return array
-   *   The slice, with its own properties required and closed.
+   *   The slice, with its own properties required.
    */
   private function closed(array $schema): array {
-    return $schema + [
-      'required' => array_keys($schema['properties'] ?? []),
-      'additionalProperties' => FALSE,
-    ];
+    return $schema + ['required' => array_keys($schema['properties'] ?? [])];
   }
 
 }
