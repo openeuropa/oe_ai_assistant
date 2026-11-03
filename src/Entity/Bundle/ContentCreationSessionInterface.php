@@ -1,0 +1,103 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Drupal\oe_ai_assistant\Entity\Bundle;
+
+use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
+
+/**
+ * Defines the interface for a session that drafts content.
+ */
+interface ContentCreationSessionInterface extends AiEditorialSessionInterface {
+
+  /**
+   * The entity type a session drafts for.
+   */
+  public const string ENTITY_TYPE_ID = 'node';
+
+  /**
+   * Returns the thread that holds the drafts of this session.
+   *
+   * No agent runs on this thread, so a draft never reaches a model through
+   * the conversation it replays.
+   */
+  public function draftsThread(): string;
+
+  /**
+   * Returns the tone the editor selected.
+   *
+   * @return array|null
+   *   The tone id, label and prompt, or NULL when the editor selected none.
+   *
+   * @throws \InvalidArgumentException
+   *   When the stored tone is not one the bundle can draft with.
+   */
+  public function getTone(): ?array;
+
+  /**
+   * Returns the drafting template the editor selected.
+   *
+   * @return array|null
+   *   The template id and label, or NULL without a template.
+   *
+   * @throws \InvalidArgumentException
+   *   When the stored template is not one the bundle can draft with.
+   */
+  public function getTemplate(): ?array;
+
+  /**
+   * Returns the documents the editor attached as background.
+   *
+   * @return array
+   *   The descriptors, each {id, title, category, status, filename, summary,
+   *   meta, extract}. The extract is the full text when the pipeline produced
+   *   one, NULL otherwise.
+   */
+  public function getDocuments(): array;
+
+  /**
+   * Returns the schema groups a new draft must match.
+   *
+   * @return array
+   *   The groups, each with groupId, label, fieldNames and schemaSlice, in
+   *   drafting order.
+   */
+  public function getFieldGroups(): array;
+
+  /**
+   * Counts the drafts already stored for this session.
+   */
+  public function countDrafts(): int;
+
+  /**
+   * Numbers the draft about to be stored.
+   *
+   * @return array
+   *   {version: N}, the version following the drafts already stored.
+   */
+  public function nextVersion(): array;
+
+  /**
+   * Lists the stored drafts with their provenance snapshots.
+   *
+   * @return array
+   *   One entry per draft, in version order: {name: "Draft N", version: N,
+   *   context: snapshot array}.
+   */
+  public function listDrafts(): array;
+
+  /**
+   * Returns the fields and template id of one stored draft.
+   *
+   * @param int $version
+   *   The draft version to look up, as listDrafts() reports it.
+   *
+   * @return array|null
+   *   {fields: array, templateId: string|null}, or NULL when no draft carries
+   *   that version. The template id is NULL when the draft's snapshot has no
+   *   template.
+   */
+  public function getDraftContent(int $version): ?array;
+
+}

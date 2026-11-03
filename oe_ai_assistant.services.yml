@@ -12,6 +12,11 @@ services:
   Drupal\oe_ai_assistant\Plugin\AiAssistantPluginManager:
     parent: default_plugin_manager
 
+  # Dumps outgoing provider requests when settings.php asks for it.
+  Drupal\oe_ai_assistant\Http\ProviderCallLogger:
+    tags:
+      - { name: http_client_middleware }
+
   Drupal\oe_ai_assistant\Service\RequestValidator: {}
 
   Drupal\oe_ai_assistant\Service\EntityJsonSchemaComposer: {}
@@ -26,6 +31,7 @@ services:
   Drupal\oe_ai_assistant\Service\AiEditorialContextInterface: '@Drupal\oe_ai_assistant\Service\AiEditorialContext'
 
   Drupal\oe_ai_assistant\Service\Drafting\ContextDocumentRepository: {}
+
   Drupal\oe_ai_assistant\Service\TextFormatResolver: {}
 
   # Drives a document through extraction and summarisation.
@@ -61,8 +67,6 @@ services:
   Drupal\oe_ai_assistant\Service\DraftingOrchestrator: {}
   Drupal\oe_ai_assistant\Service\DraftingOrchestratorInterface: '@Drupal\oe_ai_assistant\Service\DraftingOrchestrator'
 
-  Drupal\oe_ai_assistant\Service\Drafting\DraftHistory: {}
-  Drupal\oe_ai_assistant\Service\Drafting\DraftHistoryInterface: '@Drupal\oe_ai_assistant\Service\Drafting\DraftHistory'
 
   Drupal\oe_ai_assistant\Service\PreviewRenderer: {}
   Drupal\oe_ai_assistant\Service\PreviewRendererInterface: '@Drupal\oe_ai_assistant\Service\PreviewRenderer'

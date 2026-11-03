@@ -201,9 +201,13 @@ class EntityJsonSchemaComposer {
         }
       }
 
+      // A bundle has the fields it has. A key it does not declare is not a
+      // field of it, so an answer that carries one is not an answer for this
+      // bundle.
       $schema = [
         'type' => 'object',
         'properties' => $schemaProperties,
+        'additionalProperties' => FALSE,
       ];
       if (!empty($required)) {
         $schema['required'] = $required;
@@ -436,6 +440,7 @@ class EntityJsonSchemaComposer {
     $schema = [
       'type' => 'object',
       'properties' => $properties,
+      'additionalProperties' => FALSE,
     ];
     if (!empty($required)) {
       $schema['required'] = $required;
@@ -567,6 +572,7 @@ class EntityJsonSchemaComposer {
             'properties' => [
               'target_id' => ['type' => 'string', 'const' => $bundle],
             ],
+            'additionalProperties' => FALSE,
           ],
           'maxItems' => 1,
         ];
@@ -614,6 +620,7 @@ class EntityJsonSchemaComposer {
               'properties' => [
                 'target_id' => ['type' => 'string', 'const' => $bundle],
               ],
+              'additionalProperties' => FALSE,
             ],
             'maxItems' => 1,
           ];
@@ -652,6 +659,7 @@ class EntityJsonSchemaComposer {
     return [
       'type' => 'object',
       'properties' => $properties,
+      'additionalProperties' => FALSE,
       'x-targetType' => $targetType,
     ];
   }
@@ -762,6 +770,7 @@ class EntityJsonSchemaComposer {
           'schemaSlice' => [
             'type' => 'object',
             'properties' => [$fieldName => $fieldSchema],
+            'additionalProperties' => FALSE,
           ],
         ];
       }
@@ -780,6 +789,7 @@ class EntityJsonSchemaComposer {
         'schemaSlice' => [
           'type' => 'object',
           'properties' => $mainFields,
+          'additionalProperties' => FALSE,
         ],
       ];
     }

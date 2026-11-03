@@ -9,9 +9,12 @@ use Drupal\Core\Entity\EntityInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Hook\Attribute\Hook;
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
+use Drupal\oe_ai_assistant\Entity\Bundle\ContentCreationSession;
 use Drupal\oe_ai_assistant\Entity\Storage\AiConversationMessageStorageInterface;
 use Drupal\oe_ai_assistant\Service\Drafting\ContextDocumentRepository;
+use Drupal\oe_ai_assistant\Service\Drafting\DocumentRepositoryInterface;
 use Drupal\oe_ai_assistant\Service\MessageRecorderInterface;
+use Symfony\Component\DependencyInjection\Attribute\Autowire;
 
 /**
  * Contains hooks regarding editorial session entities.
@@ -23,8 +26,22 @@ final class EditorialSessionHooks {
   public function __construct(
     private readonly EntityTypeManagerInterface $entityTypeManager,
     private readonly MessageRecorderInterface $messageRecorder,
-    private readonly ContextDocumentRepository $contextDocumentRepository,
+    #[Autowire(service: ContextDocumentRepository::class)]
+    private readonly DocumentRepositoryInterface $contextDocumentRepository,
   ) {}
+
+  /**
+   * Implements hook_entity_bundle_info_alter().
+   *
+   * Gives the content creation session its bundle class, which answers what
+   * the session drafts with and what it has drafted.
+   */
+  #[Hook('entity_bundle_info_alter')]
+  public function setContentCreationBundleClass(array &$bundles): void {
+    if (isset($bundles['ai_editorial_session']['content_creation'])) {
+      $bundles['ai_editorial_session']['content_creation']['class'] = ContentCreationSession::class;
+    }
+  }
 
   /**
    * Implements hook_ai_editorial_session_insert() for content creation sessions.

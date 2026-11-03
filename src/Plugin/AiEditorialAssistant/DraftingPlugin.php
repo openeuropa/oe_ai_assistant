@@ -19,7 +19,7 @@ use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
 use Drupal\oe_ai_assistant\Exception\ActionException;
 use Drupal\oe_ai_assistant\Service\Drafting\ContextDocumentRepository;
 use Drupal\oe_ai_assistant\Service\Drafting\DocumentRepositoryInterface;
-use Drupal\oe_ai_assistant\Service\Drafting\DraftHistoryInterface;
+use Drupal\oe_ai_assistant\Entity\Bundle\ContentCreationSessionInterface;
 use Drupal\oe_ai_assistant\Service\Drafting\EditorialContext;
 use Drupal\oe_ai_assistant\Plugin\AiAssistantPluginBase;
 use Drupal\oe_ai_assistant\Service\AiEditorialContextInterface;
@@ -108,18 +108,11 @@ class DraftingPlugin extends AiAssistantPluginBase {
   protected AiEditorialContextInterface $aiEditorialContext;
 
   /**
-   * The draft history reader.
-   *
-   * @var \Drupal\oe_ai_assistant\Service\Drafting\DraftHistoryInterface
-   */
-  protected DraftHistoryInterface $draftHistory;
-
-  /**
    * The context document repository.
    *
-   * @var \Drupal\oe_ai_assistant\Service\Drafting\ContextDocumentRepository
+   * @var \Drupal\oe_ai_assistant\Service\Drafting\DocumentRepositoryInterface
    */
-  protected ContextDocumentRepository $contextDocumentRepository;
+  protected DocumentRepositoryInterface $contextDocumentRepository;
 
   /**
    * The input stream file writer, which stages raw upload bodies.
@@ -158,7 +151,6 @@ class DraftingPlugin extends AiAssistantPluginBase {
     $instance->toolLoop = $container->get(ToolExecutionLoopInterface::class);
     $instance->orchestrator = $container->get(DraftingOrchestratorInterface::class);
     $instance->aiEditorialContext = $container->get(AiEditorialContextInterface::class);
-    $instance->draftHistory = $container->get(DraftHistoryInterface::class);
     $instance->contextDocumentRepository = $container->get(ContextDocumentRepository::class);
     $instance->inputStreamFileWriter = $container->get(InputStreamFileWriterInterface::class);
     $instance->draftAssembler = $container->get(DraftAssemblerInterface::class);
@@ -441,7 +433,8 @@ class DraftingPlugin extends AiAssistantPluginBase {
           // Version the draft and snapshot the context that produced it.
           // Prior drafts already carry a result; the current draft_content
           // call does not yet, so the count is the number of earlier drafts.
-          $version = $this->draftHistory->countDrafts($session) + 1;
+          assert($session instanceof ContentCreationSessionInterface);
+          $version = $session->countDrafts() + 1;
           $draftResult = [
             'version' => $version,
             'context' => $editorialContext->toSnapshot(),
@@ -492,6 +485,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
     $session = $this->loadSession($this->decodeJsonBody($request));
     $this->entityTypeManager->getStorage('ai_conversation_message')
       ->deleteForHost($session);
+    $session->deleteConversation();
     return ['status' => 'ok'];
   }
 
@@ -517,7 +511,8 @@ class DraftingPlugin extends AiAssistantPluginBase {
     $session = $this->loadSession($body);
     $version = (int) ($body['version'] ?? 0);
 
-    $draft = $this->draftHistory->getDraftContent($session, $version);
+    assert($session instanceof ContentCreationSessionInterface);
+    $draft = $session->getDraftContent($version);
     if ($draft === NULL || $draft['fields'] === []) {
       throw new ActionException(
         'invalid_request',
@@ -571,7 +566,8 @@ class DraftingPlugin extends AiAssistantPluginBase {
       throw new ActionException('invalid_request', 'A positive version is required.', 400);
     }
 
-    $draft = $this->draftHistory->getDraftContent($session, $version);
+    assert($session instanceof ContentCreationSessionInterface);
+    $draft = $session->getDraftContent($version);
     if ($draft === NULL) {
       throw new ActionException(
         'invalid_request',

@@ -12,8 +12,7 @@ use Drupal\ai\Attribute\FunctionCall;
 use Drupal\ai\Base\FunctionCallBase;
 use Drupal\ai\Service\FunctionCalling\FunctionCallInterface;
 use Drupal\ai\Service\FunctionCalling\StructuredExecutableFunctionCallInterface;
-use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
-use Drupal\oe_ai_assistant\Service\Drafting\DraftHistoryInterface;
+use Drupal\oe_ai_assistant\Entity\Bundle\ContentCreationSessionInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 
 /**
@@ -40,13 +39,6 @@ use Symfony\Component\DependencyInjection\ContainerInterface;
   ],
 )]
 class GetDraftHistory extends FunctionCallBase implements StructuredExecutableFunctionCallInterface {
-
-  /**
-   * The draft history reader.
-   *
-   * @var \Drupal\oe_ai_assistant\Service\Drafting\DraftHistoryInterface
-   */
-  protected DraftHistoryInterface $draftHistory;
 
   /**
    * The entity type manager.
@@ -81,7 +73,6 @@ class GetDraftHistory extends FunctionCallBase implements StructuredExecutableFu
     $instance = parent::create(
       $container, $configuration, $plugin_id, $plugin_definition
     );
-    $instance->draftHistory = $container->get(DraftHistoryInterface::class);
     $instance->entityTypeManager = $container->get('entity_type.manager');
     $instance->currentUser = $container->get('current_user');
     return $instance;
@@ -99,14 +90,14 @@ class GetDraftHistory extends FunctionCallBase implements StructuredExecutableFu
       : NULL;
     // The id is pinned by the fixed tool context, so a miss means a broken
     // setup rather than model input; still fail closed with an access check.
-    if (!$session instanceof AiEditorialSessionInterface
+    if (!$session instanceof ContentCreationSessionInterface
       || !$session->access('view', $this->currentUser)
     ) {
       $this->output = ['error' => 'The editorial session is not available.'];
       return;
     }
 
-    $this->output = ['drafts' => $this->draftHistory->listDrafts($session)];
+    $this->output = ['drafts' => $session->listDrafts()];
   }
 
   /**
