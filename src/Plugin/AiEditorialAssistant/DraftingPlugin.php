@@ -298,7 +298,17 @@ class DraftingPlugin extends AiAssistantPluginBase {
       flush();
     };
     $channel = $this->channelManager->createChannel('sse', ['writer' => $write]);
-    $agent = $this->agentManager->createAgent('drafting', ['session' => $session], [], $channel);
+    // Building the agent resolves the session's template eagerly (its
+    // instructions() reads the schema groups), so a stale stored template
+    // surfaces here as the schema provider's InvalidArgumentException,
+    // which must become a clean 400 rather than reach the editor as an
+    // unhandled server error.
+    try {
+      $agent = $this->agentManager->createAgent('drafting', ['session' => $session], [], $channel);
+    }
+    catch (\InvalidArgumentException $e) {
+      throw new ActionException('invalid_request', $e->getMessage(), 400);
+    }
 
     $response = new StreamedResponse(function () use ($agent, $message, $write): void {
       set_time_limit(0);
