@@ -185,16 +185,6 @@ class ContentCreationSession extends AiEditorialSession implements ContentCreati
       }
     }
 
-    /** @var \Drupal\oe_ai_assistant\Entity\Storage\AiConversationMessageStorageInterface $storage */
-    $storage = \Drupal::entityTypeManager()->getStorage('ai_conversation_message');
-    foreach ($storage->loadTranscript($this) as $message) {
-      foreach ($message->getToolCalls() as $call) {
-        if (($call['function']['name'] ?? '') === 'draft_content' && isset($call['result'])) {
-          $results[] = $call['result'];
-        }
-      }
-    }
-
     usort($results, static fn (array $a, array $b): int => (int) $a['version'] <=> (int) $b['version']);
 
     return $results;

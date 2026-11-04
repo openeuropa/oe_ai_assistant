@@ -48,9 +48,6 @@ services:
   Drupal\oe_ai_assistant\Service\DraftSaver: {}
   Drupal\oe_ai_assistant\Service\DraftSaverInterface: '@Drupal\oe_ai_assistant\Service\DraftSaver'
 
-  Drupal\oe_ai_assistant\Service\MessageRecorder: {}
-  Drupal\oe_ai_assistant\Service\MessageRecorderInterface: '@Drupal\oe_ai_assistant\Service\MessageRecorder'
-
   Drupal\oe_ai_assistant\Service\PreviewRenderer: {}
   Drupal\oe_ai_assistant\Service\PreviewRendererInterface: '@Drupal\oe_ai_assistant\Service\PreviewRenderer'
 
