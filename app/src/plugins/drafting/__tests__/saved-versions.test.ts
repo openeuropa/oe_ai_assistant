@@ -28,7 +28,7 @@ describe("extractSavedVersions", () => {
         content: [
           {
             type: "tool-call",
-            toolName: "draft_content",
+            toolName: "drafting_draft_content",
             args: { version: 5 },
           },
         ],

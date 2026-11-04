@@ -259,7 +259,7 @@ preview:
           type: integer
         description: >
           The draft version to render, as returned by get_draft_history /
-          the draft_content result (e.g. 1 for "Draft 1").
+          the drafting_draft_content result (e.g. 1 for "Draft 1").
     responses:
       "200":
         description: >

@@ -57,7 +57,7 @@ DraftingSaveRequest:
       type: integer
       description: >
         The draft version to save, matching the version of a
-        draft_content result in the session transcript (the version
+        drafting_draft_content result in the session transcript (the version
         shown in the artifact pane and the version rail).
 
 DraftingSaveResponse:
@@ -169,7 +169,7 @@ DraftingDocument:
 DraftingDocumentSnapshot:
   description: >
     A document as captured in the provenance snapshot of a draft, stored
-    under context.documents of the draft_content tool result. Extends the
+    under context.documents of the drafting_draft_content tool result. Extends the
     listed document with its category and the summary produced by the
     extraction pipeline, so a draft records the material that steered it
     even after the document is removed from the session.

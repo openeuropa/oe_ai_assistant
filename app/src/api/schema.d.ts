@@ -449,7 +449,7 @@ export interface components {
         DraftingSaveRequest: {
             /** @description The editorial session that owns the draft. */
             sessionId: string;
-            /** @description The draft version to save, matching the version of a draft_content result in the session transcript (the version shown in the artifact pane and the version rail). */
+            /** @description The draft version to save, matching the version of a drafting_draft_content result in the session transcript (the version shown in the artifact pane and the version rail). */
             version: number;
         };
         DraftingSaveResponse: {
@@ -501,7 +501,7 @@ export interface components {
                 size: number;
             };
         };
-        /** @description A document as captured in the provenance snapshot of a draft, stored under context.documents of the draft_content tool result. Extends the listed document with its category and the summary produced by the extraction pipeline, so a draft records the material that steered it even after the document is removed from the session. */
+        /** @description A document as captured in the provenance snapshot of a draft, stored under context.documents of the drafting_draft_content tool result. Extends the listed document with its category and the summary produced by the extraction pipeline, so a draft records the material that steered it even after the document is removed from the session. */
         DraftingDocumentSnapshot: components["schemas"]["DraftingDocument"] & {
             category: components["schemas"]["DraftingDocumentCategory"];
             /** @description Summary produced by the extraction pipeline; empty until available. */
@@ -1053,7 +1053,7 @@ export interface operations {
             query: {
                 /** @description The editorial session hosting the draft to preview. */
                 sessionId: string;
-                /** @description The draft version to render, as returned by get_draft_history / the draft_content result (e.g. 1 for "Draft 1"). */
+                /** @description The draft version to render, as returned by get_draft_history / the drafting_draft_content result (e.g. 1 for "Draft 1"). */
                 version: number;
             };
             header?: never;

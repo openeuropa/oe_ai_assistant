@@ -194,7 +194,7 @@ function draftCall(
 ) {
   return [
     {
-      function: { name: "draft_content" },
+      function: { name: "drafting_draft_content" },
       result: {
         version,
         context: {

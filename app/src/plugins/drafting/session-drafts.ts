@@ -1,7 +1,7 @@
 /**
  * Session drafts index derived from the assistant-ui thread.
  *
- * Every completed draft_content tool call in the thread is one draft.
+ * Every completed drafting_draft_content tool call in the thread is one draft.
  * The thread is the single source of truth: it covers both the
  * rehydrated transcript and drafts produced live, so the index stays
  * correct during the session and after a reload.
@@ -63,7 +63,10 @@ export function extractSessionDrafts(
 
   for (const message of messages) {
     for (const part of message.content ?? []) {
-      if (part.type !== "tool-call" || part.toolName !== "draft_content") {
+      if (
+        part.type !== "tool-call" ||
+        part.toolName !== "drafting_draft_content"
+      ) {
         continue;
       }
       // Prefer the persisted result; fall back to args.fields when a

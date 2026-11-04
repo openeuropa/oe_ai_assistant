@@ -64,8 +64,15 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
 
     $events = $this->parseSseEvents($result['body']);
     $types = array_column($events, 'type');
-    $this->assertContains('start', $types, 'SSE must include a start event.');
-    $this->assertContains('finish', $types, 'SSE must include a finish event.');
+    // Exactly once each: the channel delivers every stream event in
+    // addition to this method's own driving of the generator, so a frame
+    // written twice (once directly, once through the channel) would
+    // double these counts without necessarily breaking the looser
+    // "contains" checks the rest of this test uses.
+    $this->assertSame(1, count(array_filter($types, static fn ($t) => $t === 'start')),
+      'SSE must include exactly one start event, not one per delivery path.');
+    $this->assertSame(1, count(array_filter($types, static fn ($t) => $t === 'finish')),
+      'SSE must include exactly one finish event, not one per delivery path.');
 
     $textDeltas = array_filter($events, fn($e) => $e['type'] === 'text-delta');
     $fullText = implode('', array_map(fn($e) => $e['delta'] ?? '', $textDeltas));
@@ -120,8 +127,13 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
 
     $events = $this->parseSseEvents($result['body']);
     $planEvents = array_values(array_filter($events, fn($e) => $e['type'] === 'data-plan'));
-    $this->assertGreaterThanOrEqual(3, count($planEvents),
-      'At least three plan frames: pending, in_progress and done for the one group drafted.');
+    // Exactly one initial all-pending frame, plus one in_progress and one
+    // done per group (two groups): 5. An exact count, not a floor, so a
+    // regression that delivers every frame twice (confirmed possible: the
+    // channel and this method's own stream iteration are two independent
+    // delivery paths) is caught here rather than only visible as a UI bug.
+    $this->assertCount(5, $planEvents,
+      'Exactly one pending frame plus one in_progress and one done per group.');
 
     // Every plan frame carries {stepId, label, status} per step, matching
     // what app/src/plugins/drafting/components/plan-steps.tsx expects.
@@ -701,6 +713,62 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
       'context' => $context,
       'fields' => $fields,
     ], $messages[1]['toolCalls'][0]['result']);
+  }
+
+  /**
+   * Tests that a settled call's own pending row is not rendered twice.
+   *
+   * The store is append-only: ToolNode commits the call and its result as
+   * a pair, and the call's own row stays in the thread beside its result
+   * row rather than being replaced. Without the suppression, this would
+   * surface as the drafting card plus a second, permanently "running"
+   * card for the same call.
+   */
+  public function testGetMessagesDoesNotDuplicateTheSettledCall(): void {
+    $user = $this->createUser(['use oe ai assistant']);
+    $this->loginUser($user);
+    $session = $this->createSession($user);
+    $thread = 'drafting.session_' . $session->id();
+
+    // The model's own call, committed first and never replaced.
+    $this->seedNeuronRow($session, $thread, [
+      'role' => 'assistant',
+      'meta' => json_encode([
+        'type' => 'tool_call',
+        'tools' => [
+          ['name' => 'drafting_draft_content', 'inputs' => []],
+        ],
+      ]),
+    ]);
+    // The settled pair, committed immediately after.
+    $this->seedNeuronRow($session, $thread, [
+      'role' => 'user',
+      'meta' => json_encode([
+        'type' => 'tool_call_result',
+        'tools' => [
+          ['name' => 'drafting_draft_content', 'result' => ['draft' => 'Draft 1', 'version' => 1]],
+        ],
+      ]),
+    ]);
+
+    assert($session instanceof ContentCreationSessionInterface);
+    \Drupal::service(MessageStoreInterface::class)->append($session->draftsThread(), new AssistantMessage(json_encode([
+      'version' => 1,
+      'run' => 'draft_1.abcdef',
+      'context' => ['tone' => NULL, 'template' => NULL, 'documents' => []],
+      'fields' => ['title' => [['value' => 'Test Title']]],
+    ])));
+
+    $messages = array_values(array_filter(
+      $this->getMessages($session),
+      fn($m) => $m['role'] !== 'event',
+    ));
+
+    // One message for the pair, not two: the pending row's own card must
+    // not appear beside the settled one.
+    $this->assertCount(1, $messages);
+    $this->assertArrayHasKey('toolCalls', $messages[0]);
+    $this->assertArrayHasKey('result', $messages[0]['toolCalls'][0]);
   }
 
   /**

@@ -76,12 +76,12 @@ function ToolCallCard({
   return <div className={base}>{body}</div>;
 }
 
-/** UI for the draft_content tool call. */
+/** UI for the drafting_draft_content tool call. */
 export const DraftContentToolUI = makeAssistantToolUI<
   { fields: Record<string, unknown> },
   Record<string, unknown>
 >({
-  toolName: "draft_content",
+  toolName: "drafting_draft_content",
   render: ({ args, result, status }) => {
     // Saved state and creation time come from the thread index, so the
     // card stays in step with the preview header and the rail.

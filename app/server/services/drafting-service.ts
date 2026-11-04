@@ -4,7 +4,7 @@
  *
  * Mirrors the Drupal backend's orchestration flow:
  * 1. Router LLM calls get_content_schema (schema splitting)
- * 2. Router LLM calls draft_content (orchestration signal)
+ * 2. Router LLM calls drafting_draft_content (orchestration signal)
  * 3. Orchestrator dispatches one Mistral call per field group
  * 4. Results consolidated and emitted as data-drafted-fields
  */
@@ -83,7 +83,7 @@ export interface DraftingService {
 }
 
 /**
- * Emits a completed draft_content tool call carrying the drafted fields.
+ * Emits a completed drafting_draft_content tool call carrying the drafted fields.
  *
  * Matches the Drupal UiMessageStream::toolCall() sequence so the drafting
  * card renders inline with the fields as its clickable result.
@@ -96,7 +96,7 @@ export async function* emitDraftToolCall(
     type: "tool-call-start",
     id: toolCallId,
     toolCallId,
-    toolName: "draft_content",
+    toolName: "drafting_draft_content",
   };
   yield { type: "tool-call-delta", argsText: "{}" };
   yield { type: "tool-call-end" };
@@ -188,9 +188,9 @@ type MistralApiMessage =
  *
  * Implements the two-tool conversational flow:
  * 1. Router LLM decides to call get_content_schema or
- *    draft_content based on conversation
+ *    drafting_draft_content based on conversation
  * 2. get_content_schema returns schema groups
- * 3. draft_content triggers sub-agent orchestration: one
+ * 3. drafting_draft_content triggers sub-agent orchestration: one
  *    Mistral call per schema group with structured output
  */
 export class MistralDraftingService implements DraftingService {
@@ -271,7 +271,7 @@ You have two tools available:
    with their types and descriptions. Use the bundle and
    entity_type_id values provided below.
 
-2. draft_content: Call this ONLY when you have gathered ALL the
+2. drafting_draft_content: Call this ONLY when you have gathered ALL the
    information needed to fill every field in the schema. This
    triggers the content generation process.
 
@@ -282,15 +282,15 @@ Workflow:
   whether you have enough information from the conversation to
   generate meaningful content. If ANY field group lacks context,
   ask the user about it specifically.
-- Do NOT proceed to draft_content until you have addressed every
+- Do NOT proceed to drafting_draft_content until you have addressed every
   field group. Ask the user about each group you are unsure about.
   For example: if there is a contacts group, ask the user for
   contact details. If there is a paragraphs group, ask what
   content sections they want.
 - The user may tell you to skip certain fields, use your best
   judgment, or just go ahead. In that case, proceed with
-  draft_content using whatever context you have.
-- Only call draft_content when either:
+  drafting_draft_content using whatever context you have.
+- Only call drafting_draft_content when either:
   (a) you have gathered specific information for all field groups, or
   (b) the user has explicitly told you to proceed without it.
 - You can have normal conversations with the user at any point.`;
@@ -332,7 +332,7 @@ Workflow:
       {
         type: "function" as const,
         function: {
-          name: "draft_content",
+          name: "drafting_draft_content",
           description:
             "Signal that you are ready to generate the content draft.",
           parameters: { type: "object" as const, properties: {} },
@@ -345,7 +345,7 @@ Workflow:
 
   /**
    * Runs the router LLM with a tool loop. Handles get_content_schema
-   * (returns schema groups) and draft_content (triggers orchestration).
+   * (returns schema groups) and drafting_draft_content (triggers orchestration).
    */
   private async *runRouterLoop(
     systemPrompt: string,
@@ -418,9 +418,9 @@ Workflow:
           function: { name: tc.name, arguments: tc.arguments },
         }));
 
-        // Check if draft_content was called.
+        // Check if drafting_draft_content was called.
         const draftCall = assembledTools.find(
-          (tc) => tc.name === "draft_content",
+          (tc) => tc.name === "drafting_draft_content",
         );
 
         if (draftCall) {
@@ -617,7 +617,7 @@ Workflow:
     // Emit data-drafted-fields.
     yield { type: "data-drafted-fields", data: consolidated };
 
-    // Emit the draft_content tool call with its result so the card appears
+    // Emit the drafting_draft_content tool call with its result so the card appears
     // live in the chat.
     yield* emitDraftToolCall(consolidated);
 

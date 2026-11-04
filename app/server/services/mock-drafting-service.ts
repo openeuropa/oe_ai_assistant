@@ -103,7 +103,7 @@ export class MockDraftingService implements DraftingService {
 
   /**
    * Draft history per session: fields keyed by version, mirroring the
-   * Drupal backend's draft_content result history. The save action
+   * Drupal backend's drafting_draft_content result history. The save action
    * resolves the requested version from here.
    */
   private readonly draftsBySession = new Map<
@@ -264,7 +264,7 @@ export class MockDraftingService implements DraftingService {
       data: selectedFields,
     };
 
-    // Emit the draft_content tool call so the clickable card appears
+    // Emit the drafting_draft_content tool call so the clickable card appears
     // inline, with the versioned result shape the Drupal backend uses.
     yield* emitDraftToolCall({
       version,

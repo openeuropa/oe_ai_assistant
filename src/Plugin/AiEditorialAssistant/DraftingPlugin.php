@@ -23,7 +23,6 @@ use Drupal\oe_ai_assistant\Service\DraftSaverInterface;
 use Drupal\oe_ai_assistant\Service\DraftingSchemaProviderInterface;
 use Drupal\oe_ai_assistant\Service\PreviewRendererInterface;
 use NeuronAI\Chat\Messages\UserMessage;
-use NeuronAI\Workflow\Streaming\SSEEncoder;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\File\Exception\FileException;
 use Symfony\Component\HttpFoundation\Request;
@@ -261,8 +260,9 @@ class DraftingPlugin extends AiAssistantPluginBase {
   /**
    * Streams an AI chat response via SSE.
    *
-   * Builds the drafting Neuron agent for the session and frames every
-   * protocol event its stream yields with SSEEncoder, ending with the
+   * Builds the drafting Neuron agent for the session and drives its
+   * stream to completion; the SSE channel built alongside it is what
+   * actually frames and writes every protocol event, ending with the
    * [DONE] sentinel the frontend's decoder waits for. The agent owns its
    * own conversation, tools, and per-turn drafting; this action only
    * carries its stream to the HTTP response.
@@ -288,11 +288,21 @@ class DraftingPlugin extends AiAssistantPluginBase {
     // SSEEncoder::frame() returns an already-framed "data: {...}\n\n"
     // string. Symfony's ServerEvent/EventStreamResponse frame raw data
     // themselves, so handing them a pre-framed string would double-wrap it;
-    // a plain StreamedResponse with the SSE headers set by hand, and a
-    // writer the channel shares, is what writes every frame to the wire
-    // untouched. The channel carries per-group progress and the drafted
-    // fields: a tool cannot stream into the agent's own generator, so
-    // DraftContentNeuronTool reports through it instead.
+    // a plain StreamedResponse with the SSE headers set by hand is what
+    // writes every frame to the wire untouched.
+    //
+    // The channel is the only writer. NeuronAI\Workflow\Streaming\
+    // SegmentOutput::deliver() sends every event the stream adapter
+    // transforms to the channel *and* yields it to the generator this
+    // method iterates (confirmed by reading SegmentOutput directly: with
+    // an adapter set, as this agent has, the channel is not limited to
+    // the segment lifecycle). Writing from this method's own foreach loop
+    // as well as from the channel's writer double-frames every event, so
+    // the loop below only drives the generator to completion; the channel
+    // is what actually reaches the wire, for both the main stream and
+    // DraftContentNeuronTool's own per-group progress (a tool cannot
+    // stream into the agent's own generator, so it reports through the
+    // channel directly instead).
     $write = static function (string $frame): void {
       echo $frame;
       flush();
@@ -317,9 +327,9 @@ class DraftingPlugin extends AiAssistantPluginBase {
       if (function_exists('apache_setenv')) {
         apache_setenv('no-gzip', '1');
       }
-      foreach ($agent->stream(new UserMessage($message)) as $event) {
-        $write(SSEEncoder::frame($event));
-      }
+      // The channel already wrote every event as it was produced; draining
+      // the generator is only what drives the agent's run to completion.
+      iterator_to_array($agent->stream(new UserMessage($message)), FALSE);
       $write("data: [DONE]\n\n");
     });
     $response->headers->set('Content-Type', 'text/event-stream');
@@ -365,8 +375,22 @@ class DraftingPlugin extends AiAssistantPluginBase {
       ? []
       : $this->entityTypeManager->getStorage('user')->loadMultiple($authorIds);
 
+    // The store is append-only: a settled call's own row stays in the
+    // thread beside its result, so without this a committed drafting turn
+    // would show as two bubbles — a "pending" card that never completes,
+    // immediately followed by the finished one. A name queued here, by
+    // position, is claimed by the first later settled result of the same
+    // name; what is left unclaimed is a call the run is genuinely still
+    // suspended on (an approval-gated tool with no answer yet).
+    $pendingToSuppress = [];
+    foreach ($thread as $index => $row) {
+      foreach ($row->getToolResults() as $result) {
+        $pendingToSuppress[$result['name']][] = $index;
+      }
+    }
+
     $messages = [];
-    foreach ($thread as $row) {
+    foreach ($thread as $index => $row) {
       // The 'created' field is a plain UNIX timestamp (the 'created' field
       // type has no computed date property, unlike 'datetime'); exposed in
       // RFC 3339 so clients can render local timestamps.
@@ -392,10 +416,26 @@ class DraftingPlugin extends AiAssistantPluginBase {
       }
 
       // A call the run suspends on (an approval-gated tool) has no result
-      // yet; the editor still sees it as a running card.
+      // yet; the editor still sees it as a running card. A call already
+      // settled by a later row in the thread is not rendered twice.
       $meta = $row->getMeta() ?? [];
       $pending = ($meta['type'] ?? '') === 'tool_call'
-        ? array_values(array_filter((array) ($meta['tools'] ?? []), static fn ($tool): bool => is_array($tool) && isset($tool['name'])))
+        ? array_values(array_filter(
+          (array) ($meta['tools'] ?? []),
+          function ($tool) use (&$pendingToSuppress, $index): bool {
+            if (!is_array($tool) || !isset($tool['name'])) {
+              return FALSE;
+            }
+            $name = (string) $tool['name'];
+            foreach ($pendingToSuppress[$name] ?? [] as $key => $settledIndex) {
+              if ($settledIndex > $index) {
+                unset($pendingToSuppress[$name][$key]);
+                return FALSE;
+              }
+            }
+            return TRUE;
+          },
+        ))
         : [];
       if ($pending !== []) {
         $messages[] = [

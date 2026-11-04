@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { extractSessionDrafts } from "../session-drafts";
 
-/** Builds a draft_content tool-call part in the assistant-ui shape. */
+/** Builds a drafting_draft_content tool-call part in the assistant-ui shape. */
 function draftPart(result: unknown, argsFields?: Record<string, unknown>) {
   return {
     type: "tool-call",
-    toolName: "draft_content",
+    toolName: "drafting_draft_content",
     args: { fields: argsFields ?? {} },
     result,
   };
