@@ -19,7 +19,8 @@ use Drupal\oe_ai_assistant_test\Plugin\AiProvider\MockResponse;
 class DraftingPluginChatTest extends DraftingPluginTestBase {
 
   /**
-   * Tests that a text response is streamed and persisted for the session.
+   * Tests that a text response is streamed as correctly framed SSE and
+   * persisted to the agent's own thread on the session.
    */
   public function testTextResponseStreamedAsSse(): void {
     $user = $this->createUser(['use oe ai assistant']);
@@ -38,47 +39,40 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
     $this->assertEquals(200, $result['status'],
       'Expected 200 response. Body: ' . substr($result['body'], 0, 500));
 
-    $events = $this->parseSseEvents($result['body']);
+    // Every frame is exactly one "data: <json>\n\n" block; a frame whose data
+    // decodes to something other than a JSON object means SSEEncoder's output
+    // was handed to something that re-framed it (double-wrapping), which this
+    // guards against directly rather than relying on parseSseEvents() finding
+    // nothing.
+    $frames = array_values(array_filter(
+      preg_split('/\n\n/', $result['body']),
+      fn(string $frame): bool => $frame !== '',
+    ));
+    $this->assertNotEmpty($frames, 'The stream must contain at least one frame.');
+    $this->assertSame('data: [DONE]', end($frames), 'The stream must end with the data: [DONE] sentinel.');
+    foreach (array_slice($frames, 0, -1) as $frame) {
+      $this->assertStringStartsWith('data: ', $frame);
+      $decoded = json_decode(substr($frame, strlen('data: ')), TRUE);
+      $this->assertIsArray($decoded, 'Each non-terminal frame must decode to a single JSON object: ' . $frame);
+      $this->assertArrayHasKey('type', $decoded);
+    }
 
-    // Verify SSE lifecycle events are present.
+    $events = $this->parseSseEvents($result['body']);
     $types = array_column($events, 'type');
     $this->assertContains('start', $types, 'SSE must include a start event.');
-    $this->assertContains('start-step', $types, 'SSE must include a start-step event.');
-    $this->assertContains('finish-step', $types, 'SSE must include a finish-step event.');
     $this->assertContains('finish', $types, 'SSE must include a finish event.');
 
-    // Verify text-delta events contain the mock response text.
     $textDeltas = array_filter($events, fn($e) => $e['type'] === 'text-delta');
-    $this->assertNotEmpty($textDeltas, 'SSE must include text-delta events.');
-
-    // Reconstruct the full streamed text from all text-delta events.
-    $fullText = implode('', array_map(
-      fn($e) => $e['textDelta'] ?? '',
-      $textDeltas,
-    ));
+    $fullText = implode('', array_map(fn($e) => $e['delta'] ?? '', $textDeltas));
     $this->assertStringContainsString('Hello', $fullText,
       'Streamed text should contain the mock response.');
 
-    // Verify [DONE] terminator is present.
-    $this->assertStringContainsString('[DONE]', $result['body'],
-      'SSE stream must end with [DONE].');
-
-    // The turn is persisted: a user row and an assistant row are hosted by
-    // the session, and get-messages returns them as the transcript.
-    $transcript = $this->loadTranscript($session);
-    $roles = array_map(fn($m) => $m->getRole(), $transcript);
+    // The turn is persisted on the agent's own Neuron thread for the session.
+    $threads = $session->conversationThreads();
+    $thread = $threads['drafting.session_' . $session->id()] ?? [];
+    $roles = array_map(fn($row) => $row->get('role')->value, $thread);
     $this->assertContains('user', $roles, 'A user turn must be persisted.');
     $this->assertContains('assistant', $roles, 'An assistant turn must be persisted.');
-
-    // Events are exercised in EditorialEventsTest; filter here.
-    $messages = array_values(array_filter(
-      $this->getMessages($session),
-      fn($m) => $m['role'] !== 'event',
-    ));
-    $this->assertSame('user', $messages[0]['role']);
-    $this->assertSame('Hi there.', $messages[0]['content']);
-    $this->assertSame('assistant', $messages[1]['role']);
-    $this->assertStringContainsString('Hello', $messages[1]['content']);
   }
 
   /**
