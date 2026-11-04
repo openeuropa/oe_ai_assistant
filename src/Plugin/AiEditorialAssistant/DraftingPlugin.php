@@ -16,18 +16,21 @@ use Drupal\oe_ai_assistant\Exception\ActionException;
 use Drupal\oe_ai_assistant\Service\Drafting\ContextDocumentRepository;
 use Drupal\oe_ai_assistant\Service\Drafting\DocumentRepositoryInterface;
 use Drupal\oe_ai_assistant\Entity\Bundle\ContentCreationSessionInterface;
+use Drupal\oe_ai_assistant\Exception\DraftingTemplateException;
 use Drupal\oe_ai_assistant\Plugin\AiAssistantPluginBase;
 use Drupal\oe_ai_assistant\Service\AiEditorialContextInterface;
 use Drupal\oe_ai_assistant\Service\DraftAssemblerInterface;
 use Drupal\oe_ai_assistant\Service\DraftSaverInterface;
 use Drupal\oe_ai_assistant\Service\DraftingSchemaProviderInterface;
 use Drupal\oe_ai_assistant\Service\PreviewRendererInterface;
+use Drupal\ai\Response\AiStreamedResponse;
 use NeuronAI\Chat\Messages\UserMessage;
+use NeuronAI\Workflow\Streaming\ProtocolEvent;
+use NeuronAI\Workflow\Streaming\SSEEncoder;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\File\Exception\FileException;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
-use Symfony\Component\HttpFoundation\StreamedResponse;
 
 /**
  * Drafting plugin: AI-powered content drafting with SSE streaming.
@@ -288,8 +291,11 @@ class DraftingPlugin extends AiAssistantPluginBase {
     // SSEEncoder::frame() returns an already-framed "data: {...}\n\n"
     // string. Symfony's ServerEvent/EventStreamResponse frame raw data
     // themselves, so handing them a pre-framed string would double-wrap it;
-    // a plain StreamedResponse with the SSE headers set by hand is what
-    // writes every frame to the wire untouched.
+    // AiStreamedResponse writes every frame to the wire untouched, and also
+    // drains every PHP output buffer before sending (see its sendContent()):
+    // without that, a non-zero output_buffering setting holds every echo in
+    // this callback until the buffer fills or the request ends, delivering
+    // the whole turn as one block and defeating the point of streaming.
     //
     // The channel is the only writer. NeuronAI\Workflow\Streaming\
     // SegmentOutput::deliver() sends every event the stream adapter
@@ -310,32 +316,51 @@ class DraftingPlugin extends AiAssistantPluginBase {
     $channel = $this->channelManager->createChannel('sse', ['writer' => $write]);
     // Building the agent resolves the session's template eagerly (its
     // instructions() reads the schema groups), so a stale stored template
-    // surfaces here as the schema provider's InvalidArgumentException,
-    // which must become a clean 400 rather than reach the editor as an
-    // unhandled server error.
+    // surfaces here as DraftingTemplateException, which must become a
+    // clean 400 rather than reach the editor as an unhandled server error.
+    // Catching the narrower subclass rather than the base
+    // \InvalidArgumentException matters: createAgent() also resolves the
+    // provider and the channel, and either can throw the base class for
+    // reasons that are a site misconfiguration, not the editor's — those
+    // must not be downgraded into a 400 that echoes their raw message.
     try {
       $agent = $this->agentManager->createAgent('drafting', ['session' => $session], [], $channel);
     }
-    catch (\InvalidArgumentException $e) {
+    catch (DraftingTemplateException $e) {
       throw new ActionException('invalid_request', $e->getMessage(), 400);
     }
 
-    $response = new StreamedResponse(function () use ($agent, $message, $write): void {
+    $response = new AiStreamedResponse(function () use ($agent, $message, $write): void {
       set_time_limit(0);
       ini_set('zlib.output_compression', '0');
       ini_set('implicit_flush', '1');
       if (function_exists('apache_setenv')) {
         apache_setenv('no-gzip', '1');
       }
-      // The channel already wrote every event as it was produced; draining
-      // the generator is only what drives the agent's run to completion.
-      iterator_to_array($agent->stream(new UserMessage($message)), FALSE);
+      try {
+        // The channel already wrote every event as it was produced; draining
+        // the generator is only what drives the agent's run to completion.
+        iterator_to_array($agent->stream(new UserMessage($message)), FALSE);
+      }
+      catch (\Throwable $e) {
+        // Never let an exception escape into the open SSE stream: Drupal's
+        // exception handler would print an HTML error page mid-stream. Log
+        // the details server-side and degrade into a protocol error event
+        // so the client can render it cleanly instead.
+        $this->logger->error('Drafting chat stream failed: @message', [
+          '@message' => $e->getMessage(),
+          'exception' => $e,
+        ]);
+        $write(SSEEncoder::frame(new ProtocolEvent('error', [
+          'errorText' => 'The assistant request failed. Please try again.',
+        ])));
+      }
       $write("data: [DONE]\n\n");
-    });
-    $response->headers->set('Content-Type', 'text/event-stream');
-    $response->headers->set('Cache-Control', 'no-cache');
-    $response->headers->set('X-Accel-Buffering', 'no');
-    $response->headers->set('x-vercel-ai-ui-message-stream', 'v1');
+    }, 200, [
+      'Content-Type' => 'text/event-stream',
+      'Cache-Control' => 'no-cache',
+      'x-vercel-ai-ui-message-stream' => 'v1',
+    ]);
 
     return $response;
   }

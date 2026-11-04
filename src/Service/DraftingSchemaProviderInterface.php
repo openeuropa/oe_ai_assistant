@@ -28,7 +28,7 @@ interface DraftingSchemaProviderInterface {
    *   Ordered groups, each with 'groupId', 'label', 'fieldNames', and
    *   'schemaSlice' keys.
    *
-   * @throws \InvalidArgumentException
+   * @throws \Drupal\oe_ai_assistant\Exception\DraftingTemplateException
    *   When an explicitly given template id cannot be used.
    */
   public function groups(string $entityTypeId, string $bundle, ?string $templateId = NULL): array;
@@ -50,7 +50,7 @@ interface DraftingSchemaProviderInterface {
    * @return \Drupal\oe_ai_assistant\AiDraftingTemplateInterface|null
    *   The template, or NULL when none applies (full schema).
    *
-   * @throws \InvalidArgumentException
+   * @throws \Drupal\oe_ai_assistant\Exception\DraftingTemplateException
    *   When an explicitly given template id cannot be used.
    */
   public function resolveTemplate(string $entityTypeId, string $bundle, ?string $templateId = NULL): ?AiDraftingTemplateInterface;

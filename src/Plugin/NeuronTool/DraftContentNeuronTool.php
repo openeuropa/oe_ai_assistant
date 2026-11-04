@@ -139,10 +139,17 @@ final class DraftContentNeuronTool extends DraftingToolBase implements ChannelAw
       // The drafted field values reach the editor's pane as a
       // data-drafted-fields part, because they are no longer in the tool
       // result; captured once so the channel and the drafts thread send and
-      // store the same value.
+      // store the same value. The channel carries the version and the
+      // context snapshot alongside the fields — the same shape
+      // getMessages() joins onto the tool-call result on reload — so the
+      // frontend can show the draft the moment this run finishes, without
+      // waiting for a reload to pick it up from the drafts thread.
       $fields = $this->assemble($groups, $answers);
-      $this->storeDraft($session, $version, $run, $fields);
-      $this->channel?->send(new ProtocolEvent('data-drafted-fields', ['data' => $fields]));
+      $context = $this->draftContext();
+      $this->storeDraft($session, $version, $run, $context, $fields);
+      $this->channel?->send(new ProtocolEvent('data-drafted-fields', [
+        'data' => ['version' => $version, 'context' => $context, 'fields' => $fields],
+      ]));
 
       // A draft holds every field of the content type, and this agent
       // replays its thread on every turn. So the result names the draft,
@@ -258,6 +265,8 @@ final class DraftContentNeuronTool extends DraftingToolBase implements ChannelAw
    *   The version of the draft.
    * @param string $run
    *   The run that wrote it, which names its drafter conversations.
+   * @param array $context
+   *   The editorial context snapshot, as draftContext() shapes it.
    * @param array $fields
    *   The field values, keyed by field name.
    */
@@ -265,12 +274,13 @@ final class DraftContentNeuronTool extends DraftingToolBase implements ChannelAw
     ContentCreationSessionInterface $session,
     int $version,
     string $run,
+    array $context,
     array $fields,
   ): void {
     $this->store->append($session->draftsThread(), new AssistantMessage(json_encode([
       'version' => $version,
       'run' => $run,
-      'context' => $this->draftContext(),
+      'context' => $context,
       'fields' => $fields,
     ])));
   }

@@ -150,13 +150,22 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
     $this->assertSame(['pending', 'in_progress', 'done'], array_values(array_unique($statusesByStep['main_fields'])));
 
     // Exactly one data-drafted-fields frame, after the last data-plan frame,
-    // carrying the whole assembled field map.
+    // carrying the version, the editorial context snapshot and the whole
+    // assembled field map — the same shape getMessages() joins onto the
+    // tool-call result on reload, so the live stream and a reload show the
+    // editor the same draft without a page refresh in between.
     $draftedFieldsEvents = array_values(array_filter($events, fn($e) => $e['type'] === 'data-drafted-fields'));
     $this->assertCount(1, $draftedFieldsEvents, 'Exactly one data-drafted-fields frame.');
     $lastPlanIndex = array_search(end($planEvents), $events, TRUE);
     $draftedFieldsIndex = array_search($draftedFieldsEvents[0], $events, TRUE);
     $this->assertGreaterThan($lastPlanIndex, $draftedFieldsIndex,
       'data-drafted-fields must arrive after the last data-plan frame.');
+    $this->assertSame(1, $draftedFieldsEvents[0]['data']['version']);
+    $this->assertArrayHasKey('template', $draftedFieldsEvents[0]['data']['context']);
+    $this->assertSame(['tone' => NULL, 'documents' => []], [
+      'tone' => $draftedFieldsEvents[0]['data']['context']['tone'],
+      'documents' => $draftedFieldsEvents[0]['data']['context']['documents'],
+    ]);
     $this->assertSame([
       'title' => [['value' => 'T']],
       'field_teaser' => [['value' => 'S']],
@@ -166,7 +175,7 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
           'type' => [['target_id' => 'text_block']],
         ],
       ],
-    ], $draftedFieldsEvents[0]['data']);
+    ], $draftedFieldsEvents[0]['data']['fields']);
   }
 
   /**

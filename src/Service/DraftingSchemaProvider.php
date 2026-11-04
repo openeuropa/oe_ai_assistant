@@ -6,6 +6,7 @@ namespace Drupal\oe_ai_assistant\Service;
 
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\oe_ai_assistant\AiDraftingTemplateInterface;
+use Drupal\oe_ai_assistant\Exception\DraftingTemplateException;
 
 /**
  * Resolves a drafting template and returns the (template-pruned) field groups.
@@ -54,7 +55,7 @@ class DraftingSchemaProvider implements DraftingSchemaProviderInterface {
   public function resolveTemplate(string $entityTypeId, string $bundle, ?string $templateId = NULL): ?AiDraftingTemplateInterface {
     if ($entityTypeId !== 'node') {
       if ($templateId !== NULL && $templateId !== '') {
-        throw new \InvalidArgumentException('Drafting templates only apply to node bundles.');
+        throw new DraftingTemplateException('Drafting templates only apply to node bundles.');
       }
       return NULL;
     }
@@ -64,13 +65,13 @@ class DraftingSchemaProvider implements DraftingSchemaProviderInterface {
     if ($templateId !== NULL && $templateId !== '') {
       $template = $storage->load($templateId);
       if (!$template instanceof AiDraftingTemplateInterface) {
-        throw new \InvalidArgumentException(sprintf('Drafting template "%s" not found.', $templateId));
+        throw new DraftingTemplateException(sprintf('Drafting template "%s" not found.', $templateId));
       }
       if (!$template->status()) {
-        throw new \InvalidArgumentException(sprintf('Drafting template "%s" is disabled.', $templateId));
+        throw new DraftingTemplateException(sprintf('Drafting template "%s" is disabled.', $templateId));
       }
       if ($template->getContentType() !== $bundle) {
-        throw new \InvalidArgumentException(sprintf(
+        throw new DraftingTemplateException(sprintf(
           'Drafting template "%s" targets content type "%s", not "%s".',
           $templateId,
           $template->getContentType(),

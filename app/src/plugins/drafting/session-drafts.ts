@@ -9,8 +9,12 @@
 
 import { useAuiState } from "@assistant-ui/react";
 import { useMemo } from "react";
-import { type DraftContext, parseDraftResult } from "./draft-result";
-import { setDraftingState } from "./store";
+import {
+  type DraftContext,
+  type ParsedDraftResult,
+  parseDraftResult,
+} from "./draft-result";
+import { setDraftingState, useDraftingSlice } from "./store";
 
 /** One entry in the session drafts index. */
 export interface SessionDraft {
@@ -55,9 +59,19 @@ function hasKeys(value: unknown): value is Record<string, unknown> {
 /**
  * Extracts the drafts from thread messages, sorted by version with
  * legacy (unversioned) drafts kept in transcript order at the front.
+ *
+ * `liveDrafts` carries drafts reported live through the data-drafted-fields
+ * channel event, keyed by version: the tool-call part's own result never
+ * carries the fields (the backend keeps it small so the LLM never replays a
+ * whole content type back to itself), so a draft produced in the current
+ * session is otherwise invisible until a reload rehydrates the thread with
+ * the join getMessages() performs server side. A version already present
+ * from the thread takes precedence, so a reload's real result is never
+ * shadowed by a stale live entry.
  */
 export function extractSessionDrafts(
   messages: readonly ThreadMessageLikeShape[],
+  liveDrafts?: Readonly<Record<number, ParsedDraftResult>>,
 ): SessionDraft[] {
   const drafts: SessionDraft[] = [];
 
@@ -86,6 +100,21 @@ export function extractSessionDrafts(
     }
   }
 
+  const knownVersions = new Set(drafts.map((d) => d.version));
+  for (const liveDraft of Object.values(liveDrafts ?? {})) {
+    if (
+      knownVersions.has(liveDraft.version) ||
+      Object.keys(liveDraft.fields).length === 0
+    ) {
+      continue;
+    }
+    drafts.push({
+      ...liveDraft,
+      label: `Draft ${liveDraft.version}`,
+      createdAt: null,
+    });
+  }
+
   // Version order; legacy drafts have no version and sort to the front
   // in their original transcript order (stable sort).
   return drafts.sort((a, b) => (a.version ?? 0) - (b.version ?? 0));
@@ -94,9 +123,14 @@ export function extractSessionDrafts(
 /** Reads the drafts index from the current thread. */
 export function useSessionDrafts(): SessionDraft[] {
   const messages = useAuiState((s) => s.thread.messages);
+  const liveDrafts = useDraftingSlice().liveDrafts;
   return useMemo(
-    () => extractSessionDrafts(messages as readonly ThreadMessageLikeShape[]),
-    [messages],
+    () =>
+      extractSessionDrafts(
+        messages as readonly ThreadMessageLikeShape[],
+        liveDrafts,
+      ),
+    [messages, liveDrafts],
   );
 }
 
