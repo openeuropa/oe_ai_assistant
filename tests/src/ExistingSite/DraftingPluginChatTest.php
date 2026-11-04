@@ -19,8 +19,10 @@ use Drupal\oe_ai_assistant_test\Plugin\AiProvider\MockResponse;
 class DraftingPluginChatTest extends DraftingPluginTestBase {
 
   /**
-   * Tests that a text response is streamed as correctly framed SSE and
-   * persisted to the agent's own thread on the session.
+   * Tests that a text response is correctly framed SSE and persisted.
+   *
+   * The response is streamed as correctly framed SSE and persisted to the
+   * agent's own thread on the session.
    */
   public function testTextResponseStreamedAsSse(): void {
     $user = $this->createUser(['use oe ai assistant']);
@@ -73,6 +75,83 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
     $roles = array_map(fn($row) => $row->get('role')->value, $thread);
     $this->assertContains('user', $roles, 'A user turn must be persisted.');
     $this->assertContains('assistant', $roles, 'An assistant turn must be persisted.');
+  }
+
+  /**
+   * Tests that drafting reports per-group progress and the drafted fields.
+   *
+   * The drafting tool call writes every group of the template in one call,
+   * so the stream would otherwise carry one tool part at the start and the
+   * next minutes later; the channel is what reports progress in between.
+   */
+  public function testDraftingReportsPerGroupProgressAndDraftedFields(): void {
+    $user = $this->createUser(['use oe ai assistant']);
+    $this->loginUser($user);
+    $session = $this->createSession($user);
+
+    MockAiProvider::enqueue(new MockResponse(
+      toolCalls: [
+        [
+          'id' => 'call_1',
+          'type' => 'function',
+          'function' => ['name' => 'drafting_draft_content', 'arguments' => '{}'],
+        ],
+      ],
+    ));
+    MockAiProvider::enqueue(new MockResponse(
+      text: '{"title": [{"value": "T"}], "field_teaser": [{"value": "S"}]}',
+    ));
+    MockAiProvider::enqueue(new MockResponse(
+      text: '{"field_content_paragraphs": [{"field_text_body": [{"value": "<p>B</p>"}],'
+        . ' "type": [{"target_id": "text_block"}]}]}',
+    ));
+    MockAiProvider::enqueue(new MockResponse(text: 'Draft 1 is ready.'));
+
+    $result = $this->httpPost('/api/ai/plugins/drafting/chat', [
+      'message' => 'Please draft it, go ahead.',
+      'sessionId' => $session->id(),
+    ]);
+
+    $this->assertEquals(200, $result['status'],
+      'Expected 200 response. Body: ' . substr($result['body'], 0, 500));
+
+    $events = $this->parseSseEvents($result['body']);
+    $planEvents = array_values(array_filter($events, fn($e) => $e['type'] === 'data-plan'));
+    $this->assertGreaterThanOrEqual(3, count($planEvents),
+      'At least three plan frames: pending, in_progress and done for the one group drafted.');
+
+    // Every plan frame carries {stepId, label, status} per step, matching
+    // what app/src/plugins/drafting/components/plan-steps.tsx expects.
+    $statusesByStep = [];
+    foreach ($planEvents as $event) {
+      foreach ($event['data'] as $step) {
+        $this->assertArrayHasKey('stepId', $step);
+        $this->assertArrayHasKey('label', $step);
+        $this->assertArrayHasKey('status', $step);
+        $statusesByStep[$step['stepId']][] = $step['status'];
+      }
+    }
+    $this->assertArrayHasKey('main_fields', $statusesByStep);
+    $this->assertSame(['pending', 'in_progress', 'done'], array_values(array_unique($statusesByStep['main_fields'])));
+
+    // Exactly one data-drafted-fields frame, after the last data-plan frame,
+    // carrying the whole assembled field map.
+    $draftedFieldsEvents = array_values(array_filter($events, fn($e) => $e['type'] === 'data-drafted-fields'));
+    $this->assertCount(1, $draftedFieldsEvents, 'Exactly one data-drafted-fields frame.');
+    $lastPlanIndex = array_search(end($planEvents), $events, TRUE);
+    $draftedFieldsIndex = array_search($draftedFieldsEvents[0], $events, TRUE);
+    $this->assertGreaterThan($lastPlanIndex, $draftedFieldsIndex,
+      'data-drafted-fields must arrive after the last data-plan frame.');
+    $this->assertSame([
+      'title' => [['value' => 'T']],
+      'field_teaser' => [['value' => 'S']],
+      'field_content_paragraphs' => [
+        [
+          'field_text_body' => [['value' => '<p>B</p>']],
+          'type' => [['target_id' => 'text_block']],
+        ],
+      ],
+    ], $draftedFieldsEvents[0]['data']);
   }
 
   /**

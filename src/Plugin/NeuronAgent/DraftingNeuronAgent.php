@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\oe_ai_assistant\Plugin\NeuronAgent;
 
-use Drupal\ai_neuron\Agent\NeuronStreamAdapter;
+use Drupal\ai_neuron\NeuronStreamAdapter;
 use Drupal\ai_neuron\Attribute\NeuronAgent;
 use Drupal\Core\Plugin\Context\EntityContextDefinition;
 use Drupal\Core\StringTranslation\TranslatableMarkup;

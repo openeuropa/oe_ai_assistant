@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Drupal\oe_ai_assistant\Plugin\AiEditorialAssistant;
 
 use Drupal\ai_neuron\Agent\NeuronAgentManagerInterface;
+use Drupal\ai_neuron\Channel\NeuronChannelManagerInterface;
 use Drupal\Core\Cache\RefinableCacheableDependencyInterface;
 use Drupal\Core\Url;
 use Drupal\file\Upload\InputStreamFileWriterInterface;
@@ -62,6 +63,13 @@ class DraftingPlugin extends AiAssistantPluginBase {
    * @var \Drupal\ai_neuron\Agent\NeuronAgentManagerInterface
    */
   protected NeuronAgentManagerInterface $agentManager;
+
+  /**
+   * The Neuron channel plugin manager.
+   *
+   * @var \Drupal\ai_neuron\Channel\NeuronChannelManagerInterface
+   */
+  protected NeuronChannelManagerInterface $channelManager;
 
   /**
    * The drafting schema provider.
@@ -123,6 +131,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
   ): static {
     $instance = parent::create($container, $configuration, $plugin_id, $plugin_definition);
     $instance->agentManager = $container->get(NeuronAgentManagerInterface::class);
+    $instance->channelManager = $container->get(NeuronChannelManagerInterface::class);
     $instance->schemaProvider = $container->get(DraftingSchemaProviderInterface::class);
     $instance->draftSaver = $container->get(DraftSaverInterface::class);
     $instance->aiEditorialContext = $container->get(AiEditorialContextInterface::class);
@@ -276,14 +285,23 @@ class DraftingPlugin extends AiAssistantPluginBase {
     }
 
     $session = $this->loadSession($body);
-    $agent = $this->agentManager->createAgent('drafting', ['session' => $session]);
 
     // SSEEncoder::frame() returns an already-framed "data: {...}\n\n"
     // string. Symfony's ServerEvent/EventStreamResponse frame raw data
     // themselves, so handing them a pre-framed string would double-wrap it;
-    // a plain StreamedResponse with the SSE headers set by hand is what
-    // writes SSEEncoder's frames to the wire untouched.
-    $response = new StreamedResponse(function () use ($agent, $message): void {
+    // a plain StreamedResponse with the SSE headers set by hand, and a
+    // writer the channel shares, is what writes every frame to the wire
+    // untouched. The channel carries per-group progress and the drafted
+    // fields: a tool cannot stream into the agent's own generator, so
+    // DraftContentNeuronTool reports through it instead.
+    $write = static function (string $frame): void {
+      echo $frame;
+      flush();
+    };
+    $channel = $this->channelManager->createChannel('sse', ['writer' => $write]);
+    $agent = $this->agentManager->createAgent('drafting', ['session' => $session], [], $channel);
+
+    $response = new StreamedResponse(function () use ($agent, $message, $write): void {
       set_time_limit(0);
       ini_set('zlib.output_compression', '0');
       ini_set('implicit_flush', '1');
@@ -291,11 +309,9 @@ class DraftingPlugin extends AiAssistantPluginBase {
         apache_setenv('no-gzip', '1');
       }
       foreach ($agent->stream(new UserMessage($message)) as $event) {
-        echo SSEEncoder::frame($event);
-        flush();
+        $write(SSEEncoder::frame($event));
       }
-      echo "data: [DONE]\n\n";
-      flush();
+      $write("data: [DONE]\n\n");
     });
     $response->headers->set('Content-Type', 'text/event-stream');
     $response->headers->set('Cache-Control', 'no-cache');

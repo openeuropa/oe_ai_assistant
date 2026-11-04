@@ -62,6 +62,12 @@ abstract class DraftingPluginTestBase extends ExistingSiteBase {
           'provider_id' => 'mock_ai',
           'model_id' => 'mock-model',
         ],
+        // The field_group_drafter workflow drafts each group through a
+        // structured response, same as DraftingTurnTest's kernel setup.
+        'chat_with_structured_response' => [
+          'provider_id' => 'mock_ai',
+          'model_id' => 'mock-model',
+        ],
       ])
       ->save();
 

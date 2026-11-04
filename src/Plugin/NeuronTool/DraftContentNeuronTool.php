@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Drupal\oe_ai_assistant\Plugin\NeuronTool;
 
 use Drupal\ai_neuron\Attribute\NeuronTool;
+use Drupal\ai_neuron\Channel\ChannelAwareInterface;
+use Drupal\ai_neuron\Traits\ChannelAwareTrait;
 use Drupal\ai_neuron\Workflow\NeuronWorkflowManagerInterface;
 use Drupal\Component\Utility\Crypt;
 use Drupal\Core\Logger\LoggerChannelInterface;
@@ -16,6 +18,7 @@ use Drupal\oe_ai_assistant\Exception\SchemaRetriesExhaustedException;
 use Drupal\oe_ai_assistant\Neuron\Workflow\Nodes\ValidateNode;
 use NeuronAI\Chat\History\MessageStoreInterface;
 use NeuronAI\Chat\Messages\AssistantMessage;
+use NeuronAI\Workflow\Streaming\ProtocolEvent;
 use Psr\Log\LogLevel;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 
@@ -46,7 +49,9 @@ use Symfony\Component\DependencyInjection\Attribute\Autowire;
     ),
   ],
 )]
-final class DraftContentNeuronTool extends DraftingToolBase {
+final class DraftContentNeuronTool extends DraftingToolBase implements ChannelAwareInterface {
+
+  use ChannelAwareTrait;
 
   /**
    * The group that carries the title and the summary of the content.
@@ -103,12 +108,41 @@ final class DraftContentNeuronTool extends DraftingToolBase {
       $run = $this->runId($version);
       $conversation = $this->conversation();
       $answers = [];
-      foreach ($groups as $group) {
+
+      // A tool cannot stream to its own agent, so per-group progress leaves
+      // through the channel instead: one mutated plan, re-sent in full on
+      // every group's status transition, mirroring what the deleted
+      // DraftingOrchestrator sent through the old UiMessageStream.
+      $plan = array_map(static fn (array $g): array => [
+        'stepId' => $g['groupId'],
+        'label' => $g['label'],
+        'status' => 'pending',
+      ], $groups);
+      $this->channel?->send(new ProtocolEvent('data-plan', ['data' => $plan]));
+
+      foreach ($groups as $index => $group) {
         $groupId = (string) $group['groupId'];
-        $answers[$groupId] = $this->draftGroup($group, $run, $this->task($conversation, $answers));
+        $plan[$index]['status'] = 'in_progress';
+        $this->channel?->send(new ProtocolEvent('data-plan', ['data' => $plan]));
+        try {
+          $answers[$groupId] = $this->draftGroup($group, $run, $this->task($conversation, $answers));
+        }
+        catch (\Throwable $e) {
+          $plan[$index]['status'] = 'error';
+          $this->channel?->send(new ProtocolEvent('data-plan', ['data' => $plan]));
+          throw $e;
+        }
+        $plan[$index]['status'] = 'done';
+        $this->channel?->send(new ProtocolEvent('data-plan', ['data' => $plan]));
       }
 
-      $this->storeDraft($session, $version, $run, $this->assemble($groups, $answers));
+      // The drafted field values reach the editor's pane as a
+      // data-drafted-fields part, because they are no longer in the tool
+      // result; captured once so the channel and the drafts thread send and
+      // store the same value.
+      $fields = $this->assemble($groups, $answers);
+      $this->storeDraft($session, $version, $run, $fields);
+      $this->channel?->send(new ProtocolEvent('data-drafted-fields', ['data' => $fields]));
 
       // A draft holds every field of the content type, and this agent
       // replays its thread on every turn. So the result names the draft,

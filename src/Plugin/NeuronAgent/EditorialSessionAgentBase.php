@@ -57,7 +57,7 @@ abstract class EditorialSessionAgentBase extends NeuronAgentPluginBase {
     ];
 
     return array_map(
-      fn (string $id): ToolInterface => $this->toolManager->createTool($id, $this->contextFor($id, $context)),
+      fn (string $id): ToolInterface => $this->toolManager->createTool($id, $this->contextFor($id, $context), channel: $this->channel),
       $definition->tools,
     );
   }
