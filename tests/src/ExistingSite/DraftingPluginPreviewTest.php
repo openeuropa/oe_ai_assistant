@@ -5,6 +5,9 @@ declare(strict_types=1);
 namespace Drupal\Tests\oe_ai_assistant\ExistingSite;
 
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
+use Drupal\oe_ai_assistant\Entity\Bundle\ContentCreationSessionInterface;
+use NeuronAI\Chat\History\MessageStoreInterface;
+use NeuronAI\Chat\Messages\AssistantMessage;
 
 /**
  * Integration tests for the DraftingPlugin preview action.
@@ -16,11 +19,11 @@ use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
 class DraftingPluginPreviewTest extends DraftingPluginTestBase {
 
   /**
-   * Seeds a versioned draft_content result directly on the transcript.
+   * Seeds a versioned draft directly on the session's drafts thread.
    *
-   * Bypasses the chat/orchestrator flow entirely: preview only reads the
-   * draft results stored on the session, so seeding them directly keeps this
-   * suite independent of the (separately tested) drafting conversation flow.
+   * Bypasses the chat flow entirely: preview only reads the draft results
+   * stored on the session, so seeding them directly keeps this suite
+   * independent of the (separately tested) drafting conversation flow.
    *
    * @param \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $session
    *   The session hosting the conversation.
@@ -37,29 +40,17 @@ class DraftingPluginPreviewTest extends DraftingPluginTestBase {
     array $fields,
     ?string $templateId,
   ): void {
-    $storage = \Drupal::entityTypeManager()->getStorage('ai_conversation_message');
-    $message = $storage->create([
-      'host_entity_type' => $session->getEntityTypeId(),
-      'host_entity_id' => (int) $session->id(),
-      'role' => 'assistant',
-      'content' => '',
-    ]);
-    $message->setToolCalls([
-      [
-        'type' => 'function',
-        'function' => ['name' => 'draft_content', 'arguments' => '{}'],
-        'result' => [
-          'version' => $version,
-          'context' => [
-            'tone' => NULL,
-            'template' => $templateId !== NULL ? ['id' => $templateId, 'label' => $templateId] : NULL,
-            'documents' => [],
-          ],
-          'fields' => $fields,
-        ],
+    assert($session instanceof ContentCreationSessionInterface);
+    \Drupal::service(MessageStoreInterface::class)->append($session->draftsThread(), new AssistantMessage(json_encode([
+      'version' => $version,
+      'run' => sprintf('draft_%d.abcdef', $version),
+      'context' => [
+        'tone' => NULL,
+        'template' => $templateId !== NULL ? ['id' => $templateId, 'label' => $templateId] : NULL,
+        'documents' => [],
       ],
-    ]);
-    $message->save();
+      'fields' => $fields,
+    ])));
   }
 
   /**
