@@ -322,6 +322,157 @@ class DraftingPlugin extends AiAssistantPluginBase {
   }
 
   /**
+   * Returns the user-visible transcript for the session.
+   *
+   * Reads the editor's own thread off the Neuron store: every sub-agent
+   * thread a field group drafts in belongs to a different agent, so it is
+   * never in here. A settled tool call is joined against the drafts thread
+   * for drafting_draft_content specifically, because the call itself settles
+   * with a bare {draft, version} and the artifact rehydrates from the full
+   * {version, context, fields} the drafts thread carries.
+   *
+   * @param \Symfony\Component\HttpFoundation\Request $request
+   *   The incoming request.
+   *
+   * @return array
+   *   An array with a `messages` list of {role, content} entries.
+   */
+  public function getMessages(Request $request): array {
+    $session = $this->loadSession($this->decodeJsonBody($request));
+    assert($session instanceof ContentCreationSessionInterface);
+    $thread = $session->conversationThreads()['drafting.session_' . $session->id()] ?? [];
+
+    // Preload the authors of user turns in one query, grouped by uid, so
+    // each turn can carry the author's display name for avatars and the
+    // participants list.
+    $authorIds = [];
+    foreach ($thread as $row) {
+      $uid = (int) $row->getOwnerId();
+      if ($row->get('role')->value === 'user' && $uid > 0) {
+        $authorIds[$uid] = $uid;
+      }
+    }
+    $authors = $authorIds === []
+      ? []
+      : $this->entityTypeManager->getStorage('user')->loadMultiple($authorIds);
+
+    $messages = [];
+    foreach ($thread as $row) {
+      // The 'created' field is a plain UNIX timestamp (the 'created' field
+      // type has no computed date property, unlike 'datetime'); exposed in
+      // RFC 3339 so clients can render local timestamps.
+      $at = date('c', (int) $row->get('created')->value);
+
+      // A settled tool call: the model's action is what the editor sees,
+      // regardless of the role Neuron stored the result under.
+      $toolResults = $row->getToolResults();
+      if ($toolResults !== []) {
+        $messages[] = [
+          'role' => 'assistant',
+          'content' => '',
+          'at' => $at,
+          'toolCalls' => array_map(
+            fn (array $result): array => [
+              'function' => ['name' => $result['name'], 'arguments' => '{}'],
+              'result' => $this->joinDraftToolResult($session, $result['name'], $result['result']),
+            ],
+            $toolResults,
+          ),
+        ];
+        continue;
+      }
+
+      // A call the run suspends on (an approval-gated tool) has no result
+      // yet; the editor still sees it as a running card.
+      $meta = $row->getMeta() ?? [];
+      $pending = ($meta['type'] ?? '') === 'tool_call'
+        ? array_values(array_filter((array) ($meta['tools'] ?? []), static fn ($tool): bool => is_array($tool) && isset($tool['name'])))
+        : [];
+      if ($pending !== []) {
+        $messages[] = [
+          'role' => 'assistant',
+          'content' => '',
+          'at' => $at,
+          'toolCalls' => array_map(
+            static fn (array $tool): array => [
+              'function' => ['name' => (string) $tool['name'], 'arguments' => json_encode($tool['inputs'] ?? [])],
+            ],
+            $pending,
+          ),
+        ];
+        continue;
+      }
+
+      // Only user and assistant turns are shown to the editor.
+      $role = (string) $row->get('role')->value;
+      if (!in_array($role, ['user', 'assistant'], TRUE)) {
+        continue;
+      }
+      $content = implode('', array_map(
+        static fn (array $block): string => (string) ($block['content'] ?? ''),
+        array_filter((array) ($row->getContent() ?? []), static fn ($block): bool => is_array($block) && ($block['type'] ?? '') === 'text'),
+      ));
+      // Skip empty turns that carry neither text nor a tool call.
+      if ($content === '') {
+        continue;
+      }
+      $item = ['role' => $role, 'content' => $content, 'at' => $at];
+      $uid = (int) $row->getOwnerId();
+      if ($role === 'user' && isset($authors[$uid])) {
+        $item['userId'] = (string) $uid;
+        $item['userName'] = (string) $authors[$uid]->getDisplayName();
+      }
+      $messages[] = $item;
+    }
+
+    return ['messages' => $messages];
+  }
+
+  /**
+   * Replaces a settled drafting_draft_content result with its full shape.
+   *
+   * The tool settles its call with a bare {draft, version} so a schema of any
+   * size costs the conversation the same; the artifact rehydrates from the
+   * full {version, context, fields} the drafts thread carries instead.
+   *
+   * @param \Drupal\oe_ai_assistant\Entity\Bundle\ContentCreationSessionInterface $session
+   *   The session hosting the drafts thread.
+   * @param string $toolName
+   *   The name of the settled call.
+   * @param array $result
+   *   The call's own settled result.
+   *
+   * @return array
+   *   The full versioned result for drafting_draft_content; $result
+   *   unchanged for any other tool.
+   */
+  private function joinDraftToolResult(ContentCreationSessionInterface $session, string $toolName, array $result): array {
+    if ($toolName !== 'drafting_draft_content' || !isset($result['version'])) {
+      return $result;
+    }
+
+    $version = (int) $result['version'];
+    $draft = $session->getDraftContent($version);
+    if ($draft === NULL) {
+      return $result;
+    }
+
+    $context = NULL;
+    foreach ($session->listDrafts() as $entry) {
+      if ($entry['version'] === $version) {
+        $context = $entry['context'];
+        break;
+      }
+    }
+
+    return [
+      'version' => $version,
+      'context' => $context,
+      'fields' => $draft['fields'],
+    ];
+  }
+
+  /**
    * Resets the conversation for the session.
    *
    * @param \Symfony\Component\HttpFoundation\Request $request

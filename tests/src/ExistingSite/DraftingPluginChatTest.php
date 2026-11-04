@@ -5,8 +5,11 @@ declare(strict_types=1);
 namespace Drupal\Tests\oe_ai_assistant\ExistingSite;
 
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
+use Drupal\oe_ai_assistant\Entity\Bundle\ContentCreationSessionInterface;
 use Drupal\oe_ai_assistant_test\Plugin\AiProvider\MockAiProvider;
 use Drupal\oe_ai_assistant_test\Plugin\AiProvider\MockResponse;
+use NeuronAI\Chat\History\MessageStoreInterface;
+use NeuronAI\Chat\Messages\AssistantMessage;
 
 /**
  * Integration tests for the DraftingPlugin chat action.
@@ -553,11 +556,23 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
     $user = $this->createUser(['use oe ai assistant']);
     $this->loginUser($user);
     $session = $this->createSession($user);
+    $thread = 'drafting.session_' . $session->id();
 
-    $this->seedMessage($session, 'user', 'Draft a news article.', [], (int) $user->id());
-    $this->seedMessage($session, 'assistant', 'Here is a draft.');
-    // A tool row is not user-visible and must be filtered out.
-    $this->seedMessage($session, 'tool', 'Tool payload.');
+    $userRow = $this->seedNeuronRow($session, $thread, [
+      'role' => 'user',
+      'content' => json_encode([['type' => 'text', 'content' => 'Draft a news article.', 'meta' => []]]),
+      'uid' => (int) $user->id(),
+    ]);
+    $assistantRow = $this->seedNeuronRow($session, $thread, [
+      'role' => 'assistant',
+      'content' => json_encode([['type' => 'text', 'content' => 'Here is a draft.', 'meta' => []]]),
+    ]);
+    // A row of a sub-agent's own thread is not the editor's transcript and
+    // must be filtered out.
+    $this->seedNeuronRow($session, 'field_group.session_' . $session->id() . '.group_main_fields', [
+      'role' => 'user',
+      'content' => json_encode([['type' => 'text', 'content' => 'leaked sub-agent chatter', 'meta' => []]]),
+    ]);
 
     // Events are exercised in EditorialEventsTest; filter here.
     $messages = array_values(array_filter(
@@ -565,29 +580,61 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
       fn($m) => $m['role'] !== 'event',
     ));
 
-    // Timestamps must come from the persisted rows' created field.
-    $rows = array_values(array_filter(
-      $this->loadTranscript($session),
-      fn($row) => in_array($row->getRole(), ['user', 'assistant'], TRUE),
-    ));
-
     $this->assertSame(
       [
         [
           'role' => 'user',
           'content' => 'Draft a news article.',
-          'at' => $rows[0]->get('created')->date->format('c'),
+          'at' => date('c', (int) $userRow->get('created')->value),
           'userId' => (string) $user->id(),
           'userName' => $user->getDisplayName(),
         ],
         [
           'role' => 'assistant',
           'content' => 'Here is a draft.',
-          'at' => $rows[1]->get('created')->date->format('c'),
+          'at' => date('c', (int) $assistantRow->get('created')->value),
         ],
       ],
       $messages,
     );
+  }
+
+  /**
+   * Seeds a neuron_message row hosted by the session, under a thread.
+   *
+   * @param \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $session
+   *   The session the row is stamped with.
+   * @param string $threadId
+   *   The thread the row belongs to.
+   * @param array $values
+   *   Field values, overriding the defaults below.
+   *
+   * @return \Drupal\ai_neuron\Entity\NeuronMessageInterface
+   *   The saved row.
+   */
+  private function seedNeuronRow(AiEditorialSessionInterface $session, string $threadId, array $values = []) {
+    static $counter = 0;
+    $counter++;
+
+    $storage = \Drupal::entityTypeManager()->getStorage('neuron_message');
+    $entity = $storage->create($values + [
+      'bundle' => 'editorial_session',
+      'oe_ai_session' => (int) $session->id(),
+      'thread_id' => $threadId,
+      'message_id' => 'msg_' . $counter,
+      'agent_id' => 'drafting',
+      'role' => 'user',
+      'turn' => $counter,
+      'complete' => TRUE,
+      'created' => \Drupal::time()->getCurrentTime(),
+    ]);
+    $entity->save();
+    $storage->resetCache([$entity->id()]);
+
+    // The 'created' field's computed date property is empty on the entity
+    // create() just built, even after save(); reloading is what later
+    // callers read through too (conversationThreads() loads fresh rows).
+    return $storage->load($entity->id());
   }
 
   /**
@@ -600,18 +647,41 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
     $user = $this->createUser(['use oe ai assistant']);
     $this->loginUser($user);
     $session = $this->createSession($user);
+    $thread = 'drafting.session_' . $session->id();
 
-    $this->seedMessage($session, 'user', 'Draft a news article.');
-    // An assistant turn that triggered drafting: empty text, draft_content
-    // tool call carrying the consolidated fields as its result.
-    $fields = ['title' => [['value' => 'Test Title']]];
-    $this->seedMessage($session, 'assistant', '', [
-      [
-        'type' => 'function',
-        'function' => ['name' => 'draft_content', 'arguments' => '{}'],
-        'result' => $fields,
-      ],
+    $this->seedNeuronRow($session, $thread, [
+      'role' => 'user',
+      'content' => json_encode([['type' => 'text', 'content' => 'Draft a news article.', 'meta' => []]]),
+      'uid' => (int) $user->id(),
     ]);
+    // The settled call+result pair the tool writes: the bare {draft, version}
+    // it settles with, which getMessages() must replace with the full
+    // versioned shape the artifact rehydrates from.
+    $this->seedNeuronRow($session, $thread, [
+      'role' => 'user',
+      'meta' => json_encode([
+        'type' => 'tool_call_result',
+        'tools' => [
+          ['name' => 'drafting_draft_content', 'result' => ['draft' => 'Draft 1', 'version' => 1]],
+        ],
+      ]),
+    ]);
+
+    // The matching row in the drafts thread, as DraftContentNeuronTool
+    // ::storeDraft() writes it.
+    $fields = ['title' => [['value' => 'Test Title']]];
+    $context = [
+      'tone' => NULL,
+      'template' => ['id' => 'news_with_paragraphs', 'label' => 'News with paragraphs'],
+      'documents' => [],
+    ];
+    assert($session instanceof ContentCreationSessionInterface);
+    \Drupal::service(MessageStoreInterface::class)->append($session->draftsThread(), new AssistantMessage(json_encode([
+      'version' => 1,
+      'run' => 'draft_1.abcdef',
+      'context' => $context,
+      'fields' => $fields,
+    ])));
 
     // Events are exercised in EditorialEventsTest; filter here.
     $messages = array_values(array_filter(
@@ -624,10 +694,13 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
     $this->assertArrayNotHasKey('toolCalls', $messages[0]);
 
     $this->assertSame('assistant', $messages[1]['role']);
-    $this->assertSame('', $messages[1]['content']);
     $this->assertArrayHasKey('toolCalls', $messages[1]);
-    $this->assertSame('draft_content', $messages[1]['toolCalls'][0]['function']['name']);
-    $this->assertSame($fields, $messages[1]['toolCalls'][0]['result']);
+    $this->assertSame('drafting_draft_content', $messages[1]['toolCalls'][0]['function']['name']);
+    $this->assertSame([
+      'version' => 1,
+      'context' => $context,
+      'fields' => $fields,
+    ], $messages[1]['toolCalls'][0]['result']);
   }
 
   /**
