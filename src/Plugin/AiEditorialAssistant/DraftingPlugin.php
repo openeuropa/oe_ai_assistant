@@ -11,7 +11,6 @@ use Drupal\Core\Url;
 use Drupal\file\Upload\InputStreamFileWriterInterface;
 use Drupal\file\Upload\InputStreamUploadedFile;
 use Drupal\oe_ai_assistant\Annotation\AiEditorialAssistant;
-use Drupal\oe_ai_assistant\Entity\AiConversationMessageInterface;
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
 use Drupal\oe_ai_assistant\Exception\ActionException;
 use Drupal\oe_ai_assistant\Service\Drafting\ContextDocumentRepository;
@@ -146,9 +145,9 @@ class DraftingPlugin extends AiAssistantPluginBase {
    * {@inheritdoc}
    */
   public function getActionMap(): array {
-    // The base provides the shared get-messages action.
     return parent::getActionMap() + [
       'chat' => $this->chat(...),
+      'get-messages' => $this->getMessages(...),
       'reset' => $this->reset(...),
       'save' => $this->save(...),
       'set-tone' => $this->setTone(...),
@@ -165,8 +164,8 @@ class DraftingPlugin extends AiAssistantPluginBase {
    * {@inheritdoc}
    */
   public function getRequestSchemas(): array {
-    // The base provides the get-messages schema.
     return parent::getRequestSchemas() + [
+      'get-messages' => 'GetMessagesRequest',
       'reset' => 'DraftingResetRequest',
       'save' => 'DraftingSaveRequest',
       'set-tone' => 'DraftingSetToneRequest',
@@ -483,8 +482,6 @@ class DraftingPlugin extends AiAssistantPluginBase {
    */
   public function reset(Request $request): array {
     $session = $this->loadSession($this->decodeJsonBody($request));
-    $this->entityTypeManager->getStorage('ai_conversation_message')
-      ->deleteForHost($session);
     $session->deleteConversation();
     return ['status' => 'ok'];
   }
@@ -521,16 +518,9 @@ class DraftingPlugin extends AiAssistantPluginBase {
       );
     }
 
-    $result = $this->draftSaver->save($session, $draft['fields'], $draft['templateId'], $version);
-
-    $this->messageRecorder->recordEvent(
-      $session,
-      sprintf('Draft %d saved as unpublished revision', $version),
-      ['type' => 'save', 'version' => $version, 'nodeId' => $result['nodeId']],
-      (int) $this->currentUser->id(),
-    );
-
-    return $result;
+    // No save event is recorded; the editorial change log is an accepted,
+    // documented loss until OEL-5127 answers it from session revisions.
+    return $this->draftSaver->save($session, $draft['fields'], $draft['templateId'], $version);
   }
 
   /**
@@ -602,9 +592,9 @@ class DraftingPlugin extends AiAssistantPluginBase {
     $toneId = (string) ($body['toneId'] ?? '');
 
     // Validate before any write; getTone throws the same exception as
-    // buildSelectedPrompt and also returns the label needed for the event.
+    // buildSelectedPrompt.
     try {
-      $tone = $this->aiEditorialContext->getTone($toneId);
+      $this->aiEditorialContext->getTone($toneId);
     }
     catch (\InvalidArgumentException $e) {
       throw new ActionException(
@@ -615,28 +605,8 @@ class DraftingPlugin extends AiAssistantPluginBase {
     }
 
     $session = $this->loadSession($body);
-    $previous = $session->get(static::TONE_FIELD)->entity;
-    $from = $previous
-      ? ['id' => (string) $previous->id(), 'label' => (string) $previous->label()]
-      : NULL;
     $session->set(static::TONE_FIELD, $toneId);
     $session->save();
-
-    // Record the change as a durable timeline event; the summary names
-    // both tones when there was a previous one. Re-selecting the current
-    // tone is a no-op and must not record a misleading change event.
-    $to = ['id' => $tone['id'], 'label' => $tone['label']];
-    if ($from !== NULL && $from['id'] === $to['id']) {
-      return ['status' => 'ok'];
-    }
-    $summary = $from === NULL
-      ? sprintf('Tone changed to %s', $to['label'])
-      : sprintf('Tone changed from %s to %s', $from['label'], $to['label']);
-    $this->messageRecorder->recordEvent(
-      $session, $summary,
-      ['type' => 'tone', 'from' => $from, 'to' => $to],
-      (int) $this->currentUser->id(),
-    );
 
     return ['status' => 'ok'];
   }
@@ -661,10 +631,6 @@ class DraftingPlugin extends AiAssistantPluginBase {
     $templateId = (string) ($body['template'] ?? '');
 
     $session = $this->loadSession($body);
-    $previous = $session->get(static::TEMPLATE_FIELD)->entity;
-    $from = $previous
-      ? ['id' => (string) $previous->id(), 'label' => (string) $previous->label()]
-      : NULL;
     $session->set(static::TEMPLATE_FIELD, $templateId !== '' ? $templateId : NULL);
 
     $violations = $session->get(static::TEMPLATE_FIELD)->validate();
@@ -677,22 +643,6 @@ class DraftingPlugin extends AiAssistantPluginBase {
     }
 
     $session->save();
-
-    // Record the change as a durable timeline event. The field is mandatory
-    // and validated above, so the referenced template always exists here.
-    // Re-selecting the current template is a no-op and must not record a
-    // misleading change event.
-    $template = $session->get(static::TEMPLATE_FIELD)->entity;
-    $to = ['id' => (string) $template->id(), 'label' => (string) $template->label()];
-    if ($from !== NULL && $from['id'] === $to['id']) {
-      return ['status' => 'ok'];
-    }
-    $summary = sprintf('Template changed to %s', $to['label']);
-    $this->messageRecorder->recordEvent(
-      $session, $summary,
-      ['type' => 'template', 'from' => $from, 'to' => $to],
-      (int) $this->currentUser->id(),
-    );
 
     return ['status' => 'ok'];
   }
@@ -787,41 +737,6 @@ class DraftingPlugin extends AiAssistantPluginBase {
     [$repository, $session, $documentId] = $this->resolveDocumentRequest($request);
 
     return ['status' => $repository->extract($session, $documentId)];
-  }
-
-  /**
-   * Attaches the drafted fields as the result of the draft_content call.
-   *
-   * The result is the output of the draft_content tool, produced by the
-   * orchestrator after the loop returns. Storing it on the tool call lets the
-   * transcript render a clickable trace that repopulates the artifact.
-   *
-   * @param \Drupal\oe_ai_assistant\Entity\AiConversationMessageInterface $message
-   *   The assistant turn that triggered drafting.
-   * @param array $result
-   *   The versioned draft result: {version, context, fields}.
-   */
-  private function attachDraftResult(AiConversationMessageInterface $message, array $result): void {
-    $toolCalls = $message->getToolCalls();
-    $found = FALSE;
-    foreach ($toolCalls as &$call) {
-      if (($call['function']['name'] ?? '') === 'draft_content') {
-        $call['result'] = $result;
-        $found = TRUE;
-      }
-    }
-    unset($call);
-    // Guarantee a draft_content trace even if the stream did not surface the
-    // call in the reconstructed tool list.
-    if (!$found) {
-      $toolCalls[] = [
-        'type' => 'function',
-        'function' => ['name' => 'draft_content', 'arguments' => '{}'],
-        'result' => $result,
-      ];
-    }
-    $message->setToolCalls($toolCalls);
-    $message->save();
   }
 
   /**
