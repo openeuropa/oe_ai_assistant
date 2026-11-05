@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace Drupal\oe_ai_assistant\Plugin\NeuronTool;
 
 use Drupal\ai_neuron\Attribute\NeuronTool;
-use Drupal\ai_neuron\Channel\ChannelAwareInterface;
-use Drupal\ai_neuron\Traits\ChannelAwareTrait;
+use Drupal\ai_neuron\Channel\ChannelAwarePluginInterface;
+use Drupal\ai_neuron\Traits\ChannelAwarePluginTrait;
 use Drupal\ai_neuron\Workflow\NeuronWorkflowManagerInterface;
 use Drupal\Component\Utility\Crypt;
 use Drupal\Core\Logger\LoggerChannelInterface;
@@ -49,9 +49,9 @@ use Symfony\Component\DependencyInjection\Attribute\Autowire;
     ),
   ],
 )]
-final class DraftContentNeuronTool extends DraftingToolBase implements ChannelAwareInterface {
+final class DraftContentNeuronTool extends DraftingToolBase implements ChannelAwarePluginInterface {
 
-  use ChannelAwareTrait;
+  use ChannelAwarePluginTrait;
 
   /**
    * The group that carries the title and the summary of the content.

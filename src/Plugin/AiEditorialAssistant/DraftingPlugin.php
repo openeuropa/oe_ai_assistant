@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Drupal\oe_ai_assistant\Plugin\AiEditorialAssistant;
 
 use Drupal\ai_neuron\Agent\NeuronAgentManagerInterface;
-use Drupal\ai_neuron\Channel\NeuronChannelManagerInterface;
+use Drupal\ai_neuron\Channel\SseChannel;
 use Drupal\Core\Cache\RefinableCacheableDependencyInterface;
 use Drupal\Core\Url;
 use Drupal\file\Upload\InputStreamFileWriterInterface;
@@ -64,13 +64,6 @@ class DraftingPlugin extends AiAssistantPluginBase {
    * @var \Drupal\ai_neuron\Agent\NeuronAgentManagerInterface
    */
   protected NeuronAgentManagerInterface $agentManager;
-
-  /**
-   * The Neuron channel plugin manager.
-   *
-   * @var \Drupal\ai_neuron\Channel\NeuronChannelManagerInterface
-   */
-  protected NeuronChannelManagerInterface $channelManager;
 
   /**
    * The drafting schema provider.
@@ -132,7 +125,6 @@ class DraftingPlugin extends AiAssistantPluginBase {
   ): static {
     $instance = parent::create($container, $configuration, $plugin_id, $plugin_definition);
     $instance->agentManager = $container->get(NeuronAgentManagerInterface::class);
-    $instance->channelManager = $container->get(NeuronChannelManagerInterface::class);
     $instance->schemaProvider = $container->get(DraftingSchemaProviderInterface::class);
     $instance->draftSaver = $container->get(DraftSaverInterface::class);
     $instance->aiEditorialContext = $container->get(AiEditorialContextInterface::class);
@@ -303,7 +295,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
     // method iterates (confirmed by reading SegmentOutput directly: with
     // an adapter set, as this agent has, the channel is not limited to
     // the segment lifecycle). Writing from this method's own foreach loop
-    // as well as from the channel's writer double-frames every event, so
+    // as well as from the channel's own echo double-frames every event, so
     // the loop below only drives the generator to completion; the channel
     // is what actually reaches the wire, for both the main stream and
     // DraftContentNeuronTool's own per-group progress (a tool cannot
@@ -313,7 +305,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
       echo $frame;
       flush();
     };
-    $channel = $this->channelManager->createChannel('sse', ['writer' => $write]);
+    $channel = new SseChannel();
     // Building the agent resolves the session's template eagerly (its
     // instructions() reads the schema groups), so a stale stored template
     // surfaces here as DraftingTemplateException, which must become a
@@ -324,7 +316,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
     // reasons that are a site misconfiguration, not the editor's — those
     // must not be downgraded into a 400 that echoes their raw message.
     try {
-      $agent = $this->agentManager->createAgent('drafting', ['session' => $session], [], $channel);
+      $agent = $this->agentManager->withChannel($channel)->createAgent('drafting', ['session' => $session]);
     }
     catch (DraftingTemplateException $e) {
       throw new ActionException('invalid_request', $e->getMessage(), 400);
