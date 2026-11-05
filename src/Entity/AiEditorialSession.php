@@ -46,7 +46,6 @@ use Drupal\user\EntityOwnerTrait;
  *   bundle_entity_type = "ai_editorial_session_type",
  *   links = {
  *     "canonical" = "/admin/content/ai/{ai_editorial_session}",
- *     "history" = "/admin/content/ai/{ai_editorial_session}/history",
  *     "neuron-history" = "/admin/content/ai/{ai_editorial_session}/neuron-history",
  *     "add-page" = "/admin/content/ai/add",
  *     "add-form" = "/admin/content/ai/add/{ai_editorial_session_type}",
@@ -153,6 +152,19 @@ class AiEditorialSession extends ContentEntityBase implements AiEditorialSession
     }
 
     return $threads;
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function conversationThread(string $threadId): array {
+    $rows = \Drupal::entityTypeManager()
+      ->getStorage('neuron_message')
+      ->loadByProperties(['oe_ai_session' => (int) $this->id(), 'thread_id' => $threadId]);
+    // Keyed by row id, so sorting the keys is what puts the oldest first.
+    ksort($rows);
+
+    return array_values($rows);
   }
 
   /**

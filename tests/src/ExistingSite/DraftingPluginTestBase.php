@@ -62,6 +62,12 @@ abstract class DraftingPluginTestBase extends ExistingSiteBase {
           'provider_id' => 'mock_ai',
           'model_id' => 'mock-model',
         ],
+        // The field_group_drafter workflow drafts each group through a
+        // structured response, same as DraftingTurnTest's kernel setup.
+        'chat_with_structured_response' => [
+          'provider_id' => 'mock_ai',
+          'model_id' => 'mock-model',
+        ],
       ])
       ->save();
 
@@ -73,10 +79,8 @@ abstract class DraftingPluginTestBase extends ExistingSiteBase {
    */
   protected function tearDown(): void {
     // Remove any conversation messages persisted against the test sessions.
-    $storage = \Drupal::entityTypeManager()
-      ->getStorage('ai_conversation_message');
     foreach ($this->sessions as $session) {
-      $storage->deleteForHost($session);
+      $session->deleteConversation();
     }
 
     MockAiProvider::reset();
@@ -106,51 +110,6 @@ abstract class DraftingPluginTestBase extends ExistingSiteBase {
     $this->markEntityForCleanup($session);
     $this->sessions[] = $session;
     return $session;
-  }
-
-  /**
-   * Seeds a conversation message hosted by the session.
-   *
-   * @param \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $session
-   *   The session hosting the conversation.
-   * @param string $role
-   *   The message role.
-   * @param string $content
-   *   The message text.
-   * @param array $toolCalls
-   *   Optional tool calls to store on the message.
-   * @param int|null $uid
-   *   Optional author user ID, set on user turns.
-   */
-  protected function seedMessage(AiEditorialSessionInterface $session, string $role, string $content, array $toolCalls = [], ?int $uid = NULL): void {
-    /** @var \Drupal\oe_ai_assistant\Entity\AiConversationMessageInterface $message */
-    $message = \Drupal::entityTypeManager()->getStorage('ai_conversation_message')
-      ->create([
-        'host_entity_type' => $session->getEntityTypeId(),
-        'host_entity_id' => (int) $session->id(),
-        'role' => $role,
-        'content' => $content,
-      ] + ($uid !== NULL ? ['uid' => $uid] : []));
-    if ($toolCalls) {
-      $message->setToolCalls($toolCalls);
-    }
-    $message->save();
-  }
-
-  /**
-   * Loads the persisted top-level transcript for a session.
-   *
-   * @param \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $session
-   *   The session hosting the conversation.
-   *
-   * @return \Drupal\oe_ai_assistant\Entity\AiConversationMessageInterface[]
-   *   The transcript entities.
-   */
-  protected function loadTranscript(AiEditorialSessionInterface $session): array {
-    $storage = \Drupal::entityTypeManager()
-      ->getStorage('ai_conversation_message');
-    $storage->resetCache();
-    return $storage->loadTranscript($session);
   }
 
   /**

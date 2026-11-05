@@ -92,10 +92,14 @@ export type DataStreamLifecycleEvent =
 
 // -- Drafting plugin custom data events --
 
-/** Custom data event carrying drafted field values. */
+/** Custom data event carrying a drafted version, its context and fields. */
 export interface DraftedFieldsEvent {
   type: "data-drafted-fields";
-  data: Record<string, unknown>;
+  data: {
+    version: number;
+    context: Record<string, unknown> | null;
+    fields: Record<string, unknown>;
+  };
   /** When true, this is a progressive update (not accumulated). */
   transient?: true;
 }

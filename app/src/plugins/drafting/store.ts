@@ -12,6 +12,7 @@ import {
   setPluginState,
   usePluginSlice,
 } from "@/store/plugin-store";
+import type { ParsedDraftResult } from "./draft-result";
 
 const PLUGIN_ID = "drafting";
 
@@ -27,6 +28,14 @@ export interface DraftingSliceState {
   plan: PlanStep[];
   /** Raw drafted field values keyed by field machine name. */
   draftedFields: Record<string, unknown>;
+  /**
+   * Drafts reported live through the data-drafted-fields channel event,
+   * keyed by version (transient). The tool-call part's own result never
+   * carries the fields, so this is the only way the rail/save flow sees a
+   * draft produced in the current session before a reload rehydrates the
+   * thread with the join getMessages() performs server side.
+   */
+  liveDrafts: Record<number, ParsedDraftResult>;
   /** Confirmed selection per composer panel, keyed by panel id. */
   selections: Record<string, string>;
   /** Whether the artifact pane is collapsed to a slim rail (transient). */
@@ -39,6 +48,7 @@ export const draftingSliceConfig: PluginSliceConfig<DraftingSliceState> = {
   initialState: {
     plan: [],
     draftedFields: {},
+    liveDrafts: {},
     selections: {},
     isArtifactCollapsed: false,
     activeDraftVersion: null,

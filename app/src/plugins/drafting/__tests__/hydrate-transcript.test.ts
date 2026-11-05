@@ -23,7 +23,7 @@ describe("toThreadMessages", () => {
     ]);
   });
 
-  it("maps a draft_content tool call with a versioned result to args.fields from parsed shape", () => {
+  it("maps a drafting_draft_content tool call with a versioned result to args.fields from parsed shape", () => {
     // Versioned result shape: the parser extracts fields from result.fields.
     const fields = { title: [{ value: "Test Title" }] };
     const versionedResult = { version: 1, context: null, fields };
@@ -34,7 +34,7 @@ describe("toThreadMessages", () => {
         toolCalls: [
           {
             type: "function",
-            function: { name: "draft_content", arguments: "{}" },
+            function: { name: "drafting_draft_content", arguments: "{}" },
             result: versionedResult,
           },
         ],
@@ -48,14 +48,14 @@ describe("toThreadMessages", () => {
     if (!message) throw new Error("expected a message");
     const part = (message.content as AnyPart[])[0];
     expect(part.type).toBe("tool-call");
-    expect(part.toolName).toBe("draft_content");
+    expect(part.toolName).toBe("drafting_draft_content");
     // args.fields comes from the parsed shape, not the raw result object.
     expect(part.args).toEqual({ fields });
     // result carries the raw value so ToolUI can parse it independently.
     expect(part.result).toEqual(versionedResult);
   });
 
-  it("maps a draft_content tool call with a legacy flat result to args.fields", () => {
+  it("maps a drafting_draft_content tool call with a legacy flat result to args.fields", () => {
     // Legacy shape: a flat object without a numeric version; used as-is.
     const fields = { title: [{ value: "Legacy Title" }] };
     const input: SessionMessage[] = [
@@ -65,7 +65,7 @@ describe("toThreadMessages", () => {
         toolCalls: [
           {
             type: "function",
-            function: { name: "draft_content", arguments: "{}" },
+            function: { name: "drafting_draft_content", arguments: "{}" },
             result: fields,
           },
         ],
@@ -79,7 +79,7 @@ describe("toThreadMessages", () => {
     if (!message) throw new Error("expected a message");
     const part = (message.content as AnyPart[])[0];
     expect(part.type).toBe("tool-call");
-    expect(part.toolName).toBe("draft_content");
+    expect(part.toolName).toBe("drafting_draft_content");
     // Legacy: parseDraftResult returns fields = the flat object itself.
     expect(part.args).toEqual({ fields });
     expect(part.result).toEqual(fields);

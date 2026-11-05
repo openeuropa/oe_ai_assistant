@@ -13,6 +13,7 @@ describe("drafting plugin state", () => {
     expect(draftingSliceConfig.initialState).toEqual({
       plan: [],
       draftedFields: {},
+      liveDrafts: {},
       selections: {},
       isArtifactCollapsed: false,
       activeDraftVersion: null,
@@ -25,6 +26,7 @@ describe("drafting plugin state", () => {
         draftedFields: {
           title: { label: "Title", value: "Draft", type: "string" },
         },
+        liveDrafts: { 1: { version: 1, context: null, fields: {} } },
         selections: { tone: "clear-professional" },
         isArtifactCollapsed: true,
         activeDraftVersion: 2,
@@ -39,6 +41,7 @@ describe("drafting plugin state", () => {
     expect(getDraftingState()).toEqual({
       plan: [],
       draftedFields: {},
+      liveDrafts: {},
       selections: {},
       isArtifactCollapsed: false,
       activeDraftVersion: null,
@@ -54,6 +57,9 @@ describe("drafting plugin state", () => {
       draftedFields: {
         title: { label: "Title", value: "Draft", type: "string" },
       },
+      liveDrafts: {
+        1: { version: 1, context: null, fields: { title: "Live" } },
+      },
       selections: { tone: "clear-professional" },
     });
 
@@ -61,6 +67,9 @@ describe("drafting plugin state", () => {
       plan: [{ stepId: "s1", label: "Step 1", status: "done" }],
       draftedFields: {
         title: { label: "Title", value: "Draft", type: "string" },
+      },
+      liveDrafts: {
+        1: { version: 1, context: null, fields: { title: "Live" } },
       },
       selections: { tone: "clear-professional" },
     });

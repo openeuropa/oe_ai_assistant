@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { extractSessionDrafts } from "../session-drafts";
 
-/** Builds a draft_content tool-call part in the assistant-ui shape. */
+/** Builds a drafting_draft_content tool-call part in the assistant-ui shape. */
 function draftPart(result: unknown, argsFields?: Record<string, unknown>) {
   return {
     type: "tool-call",
-    toolName: "draft_content",
+    toolName: "drafting_draft_content",
     args: { fields: argsFields ?? {} },
     result,
   };
@@ -98,5 +98,67 @@ describe("extractSessionDrafts", () => {
     const messages = [{ content: [draftPart({}, {})] }];
 
     expect(extractSessionDrafts(messages)).toEqual([]);
+  });
+
+  it("merges a live draft not yet reflected in the thread", () => {
+    // The tool-call part's own result is the bare JSON string the backend
+    // returns to the LLM ({"draft":"Draft 1","version":1}) — not an
+    // object, and never carrying the fields (the backend keeps the tool
+    // result small so the LLM never replays a whole content type). A
+    // draft produced live surfaces only through the channel's
+    // data-drafted-fields event, until a reload rehydrates the thread
+    // with the join getMessages() performs server side.
+    const messages = [
+      { content: [draftPart('{"draft":"Draft 1","version":1}')] },
+    ];
+    const liveDrafts = {
+      1: { version: 1, context: null, fields: { title: "Live" } },
+    };
+
+    const drafts = extractSessionDrafts(messages, liveDrafts);
+
+    expect(drafts).toHaveLength(1);
+    expect(drafts[0]?.version).toBe(1);
+    expect(drafts[0]?.label).toBe("Draft 1");
+    expect(drafts[0]?.fields).toEqual({ title: "Live" });
+  });
+
+  it("prefers the thread's own draft over a live one of the same version", () => {
+    const messages = [
+      {
+        content: [
+          draftPart({
+            version: 1,
+            context: { tone: null, template: null, documents: [] },
+            fields: { title: "From thread" },
+          }),
+        ],
+      },
+    ];
+    const liveDrafts = {
+      1: { version: 1, context: null, fields: { title: "Live" } },
+    };
+
+    const drafts = extractSessionDrafts(messages, liveDrafts);
+
+    expect(drafts).toHaveLength(1);
+    expect(drafts[0]?.fields).toEqual({ title: "From thread" });
+  });
+
+  it("keeps an earlier live draft once a later one streams in", () => {
+    const liveDrafts = {
+      1: { version: 1, context: null, fields: { title: "First" } },
+      2: { version: 2, context: null, fields: { title: "Second" } },
+    };
+
+    const drafts = extractSessionDrafts([], liveDrafts);
+
+    expect(drafts.map((d) => d.version)).toEqual([1, 2]);
+  });
+
+  it("ignores a live draft that has not produced fields yet", () => {
+    const liveDrafts = { 1: { version: 1, context: null, fields: {} } };
+
+    expect(extractSessionDrafts([], liveDrafts)).toEqual([]);
   });
 });

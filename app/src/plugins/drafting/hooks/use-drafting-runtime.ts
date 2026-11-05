@@ -6,7 +6,10 @@
  * which sends POST requests to /api/plugins/drafting/chat and
  * consumes UI Message Stream SSE events. The onData callback
  * intercepts data-drafted-fields events to store the raw field
- * values in the Zustand drafting store. The history adapter
+ * values in the Zustand drafting store, and the version-keyed draft
+ * (version, context, fields) that useSessionDrafts() merges into the
+ * thread-derived list so the rail/save flow see a draft the instant it
+ * streams in, without waiting for a reload. The history adapter
  * rehydrates the thread from the backend on mount.
  */
 
@@ -21,6 +24,7 @@ import { useMemo } from "react";
 import { getCsrfHeaders } from "@/api/csrf-token";
 import { getSessionMessages } from "@/api/session-messages";
 import { getConfig } from "@/config";
+import type { ParsedDraftResult } from "../draft-result";
 import { toThreadMessages } from "../hydrate-transcript";
 import { getDraftingState, type PlanStep, setDraftingState } from "../store";
 
@@ -72,12 +76,21 @@ export function useDraftingRuntime() {
     },
     // Handle custom data-* events from the UI message stream.
     onData: (data) => {
-      // Store raw drafted field values directly from the backend.
+      // Store raw drafted field values directly from the backend, and
+      // index the draft by version so useSessionDrafts() can show it
+      // before the thread's own tool-call part ever carries the fields.
+      // Replaced, not merged, to match openSessionDraft()/the draft card's
+      // onOpen(): draftedFields is the fields of activeDraftVersion, and a
+      // later draft can carry fewer fields than an earlier one (a template
+      // switch, a narrower revision), so merging would leave stale values
+      // from a draft no longer open.
       if (data.name === "drafted-fields") {
-        const incoming = data.data as Record<string, unknown>;
-        const existing = getDraftingState().draftedFields;
+        const incoming = data.data as ParsedDraftResult;
+        const { liveDrafts } = getDraftingState();
         setDraftingState({
-          draftedFields: { ...existing, ...incoming },
+          draftedFields: incoming.fields,
+          activeDraftVersion: incoming.version as number,
+          liveDrafts: { ...liveDrafts, [incoming.version as number]: incoming },
         });
       }
       // Handle orchestration plan updates.
