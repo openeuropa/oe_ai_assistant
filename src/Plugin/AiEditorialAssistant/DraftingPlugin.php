@@ -27,6 +27,7 @@ use Drupal\ai\Response\AiStreamedResponse;
 use NeuronAI\Chat\Messages\UserMessage;
 use NeuronAI\Workflow\Streaming\ProtocolEvent;
 use NeuronAI\Workflow\Streaming\SSEEncoder;
+use NeuronAI\Workflow\Workflow;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\File\Exception\FileException;
 use Symfony\Component\HttpFoundation\Request;
@@ -322,7 +323,16 @@ class DraftingPlugin extends AiAssistantPluginBase {
       throw new ActionException('invalid_request', $e->getMessage(), 400);
     }
 
-    $response = new AiStreamedResponse(function () use ($agent, $message, $write): void {
+    // ai_neuron's AgentInterface does not declare setMaxSteps(), but the
+    // concrete Agent it builds extends Workflow, which does: a routing cycle
+    // that never stops (a confused model alternating tool calls) must not
+    // run forever just because the interface does not promise a bound.
+    if ($agent instanceof Workflow) {
+      $agent->setMaxSteps(20);
+    }
+
+    $logger = $this->logger;
+    $response = new AiStreamedResponse(static function () use ($agent, $message, $write, $logger): void {
       set_time_limit(0);
       ini_set('zlib.output_compression', '0');
       ini_set('implicit_flush', '1');
@@ -330,16 +340,19 @@ class DraftingPlugin extends AiAssistantPluginBase {
         apache_setenv('no-gzip', '1');
       }
       try {
-        // The channel already wrote every event as it was produced; draining
-        // the generator is only what drives the agent's run to completion.
-        iterator_to_array($agent->stream(new UserMessage($message)), FALSE);
+        // The channel already wrote every event as it was produced; this
+        // only has to drive the agent's run to completion, not collect
+        // what it yields, so this advances the generator without
+        // allocating an array of every chunk it ever produces.
+        $stream = $agent->stream(new UserMessage($message));
+        while ($stream->valid()) {
+          $stream->next();
+        }
       }
       catch (\Throwable $e) {
         // Never let an exception escape into the open SSE stream: Drupal's
-        // exception handler would print an HTML error page mid-stream. Log
-        // the details server-side and degrade into a protocol error event
-        // so the client can render it cleanly instead.
-        $this->logger->error('Drafting chat stream failed: @message', [
+        // exception handler would print an HTML error page mid-stream.
+        $logger->error('Drafting chat stream failed: @message', [
           '@message' => $e->getMessage(),
           'exception' => $e,
         ]);
@@ -375,8 +388,14 @@ class DraftingPlugin extends AiAssistantPluginBase {
    */
   public function getMessages(Request $request): array {
     $session = $this->loadSession($this->decodeJsonBody($request));
-    assert($session instanceof ContentCreationSessionInterface);
-    $thread = $session->conversationThreads()['drafting.session_' . $session->id()] ?? [];
+    // assert() is a no-op outside development (zend.assertions off by
+    // default), so a session of a bundle this plugin does not serve must
+    // be refused here rather than reach the typed calls below as a raw
+    // TypeError.
+    if (!$session instanceof ContentCreationSessionInterface) {
+      throw new ActionException('invalid_request', 'The editorial session does not support drafting.', 400);
+    }
+    $thread = $session->conversationThread('drafting.session_' . $session->id());
 
     // Preload the authors of user turns in one query, grouped by uid, so
     // each turn can carry the author's display name for avatars and the
@@ -402,9 +421,21 @@ class DraftingPlugin extends AiAssistantPluginBase {
     $pendingToSuppress = [];
     foreach ($thread as $index => $row) {
       foreach ($row->getToolResults() as $result) {
+        if (!isset($result['name'])) {
+          continue;
+        }
         $pendingToSuppress[$result['name']][] = $index;
       }
     }
+
+    // Read once per request, not once per settled drafting_draft_content
+    // result: listDrafts() and getDraftContent() each decode the whole
+    // drafts thread, and nothing writes to it while this request reads it.
+    $draftContexts = [];
+    foreach ($session->listDrafts() as $entry) {
+      $draftContexts[$entry['version']] = $entry['context'];
+    }
+    $draftFields = [];
 
     $messages = [];
     foreach ($thread as $index => $row) {
@@ -422,10 +453,12 @@ class DraftingPlugin extends AiAssistantPluginBase {
           'content' => '',
           'at' => $at,
           'toolCalls' => array_map(
-            fn (array $result): array => [
-              'function' => ['name' => $result['name'], 'arguments' => '{}'],
-              'result' => $this->joinDraftToolResult($session, $result['name'], $result['result']),
-            ],
+            function (array $result) use ($session, $draftContexts, &$draftFields): array {
+              return [
+                'function' => ['name' => $result['name'], 'arguments' => '{}'],
+                'result' => $this->joinDraftToolResult($session, $result['name'], $result['result'], $draftContexts, $draftFields),
+              ];
+            },
             $toolResults,
           ),
         ];
@@ -507,34 +540,35 @@ class DraftingPlugin extends AiAssistantPluginBase {
    *   The name of the settled call.
    * @param array $result
    *   The call's own settled result.
+   * @param array $draftContexts
+   *   Every draft's context snapshot, keyed by version, read once by the
+   *   caller.
+   * @param array $draftFields
+   *   The field values already read back for a version in this request,
+   *   keyed by version; filled in as new versions are seen.
    *
    * @return array
    *   The full versioned result for drafting_draft_content; $result
    *   unchanged for any other tool.
    */
-  private function joinDraftToolResult(ContentCreationSessionInterface $session, string $toolName, array $result): array {
+  private function joinDraftToolResult(ContentCreationSessionInterface $session, string $toolName, array $result, array $draftContexts, array &$draftFields): array {
     if ($toolName !== 'drafting_draft_content' || !isset($result['version'])) {
       return $result;
     }
 
     $version = (int) $result['version'];
-    $draft = $session->getDraftContent($version);
-    if ($draft === NULL) {
-      return $result;
+    if (!array_key_exists($version, $draftFields)) {
+      $draft = $session->getDraftContent($version);
+      $draftFields[$version] = $draft['fields'] ?? NULL;
     }
-
-    $context = NULL;
-    foreach ($session->listDrafts() as $entry) {
-      if ($entry['version'] === $version) {
-        $context = $entry['context'];
-        break;
-      }
+    if ($draftFields[$version] === NULL) {
+      return $result;
     }
 
     return [
       'version' => $version,
-      'context' => $context,
-      'fields' => $draft['fields'],
+      'context' => $draftContexts[$version] ?? NULL,
+      'fields' => $draftFields[$version],
     ];
   }
 
@@ -575,7 +609,9 @@ class DraftingPlugin extends AiAssistantPluginBase {
     $session = $this->loadSession($body);
     $version = (int) ($body['version'] ?? 0);
 
-    assert($session instanceof ContentCreationSessionInterface);
+    if (!$session instanceof ContentCreationSessionInterface) {
+      throw new ActionException('invalid_request', 'The editorial session does not support drafting.', 400);
+    }
     $draft = $session->getDraftContent($version);
     if ($draft === NULL || $draft['fields'] === []) {
       throw new ActionException(
@@ -623,7 +659,9 @@ class DraftingPlugin extends AiAssistantPluginBase {
       throw new ActionException('invalid_request', 'A positive version is required.', 400);
     }
 
-    assert($session instanceof ContentCreationSessionInterface);
+    if (!$session instanceof ContentCreationSessionInterface) {
+      throw new ActionException('invalid_request', 'The editorial session does not support drafting.', 400);
+    }
     $draft = $session->getDraftContent($version);
     if ($draft === NULL) {
       throw new ActionException(

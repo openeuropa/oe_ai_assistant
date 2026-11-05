@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace Drupal\oe_ai_assistant\Neuron\Chat\Messages\Stream\Adapters;
 
 use NeuronAI\Agent\Adapters\VercelAIAdapter;
+use NeuronAI\Agent\Interrupt\ToolResultsRequest;
 use NeuronAI\Tools\ToolCall;
+use NeuronAI\Workflow\Interrupt\InterruptRequest;
 use NeuronAI\Workflow\Streaming\ProtocolEvent;
 
 /**
@@ -46,6 +48,25 @@ final class PatchedVercelAIAdapter extends VercelAIAdapter {
       'toolName' => $call->getName(),
       'input' => (object) $call->getInputs(),
     ]);
+  }
+
+  /**
+   * {@inheritdoc}
+   *
+   * For a ToolResultsRequest (a call the run suspends on), the parent's own
+   * interrupt() already closes the input with its own explicit event right
+   * after calling previewTool(). Closing the call here first, before the
+   * parent runs, keeps the override above from emitting a second one for
+   * the same call.
+   */
+  public function interrupt(InterruptRequest $request): iterable {
+    if ($request instanceof ToolResultsRequest) {
+      foreach ($request->getToolCalls() as $call) {
+        $this->inputsClosed[$this->resolveToolCallId($call)] = TRUE;
+      }
+    }
+
+    yield from parent::interrupt($request);
   }
 
 }

@@ -147,9 +147,24 @@ final class DraftContentNeuronTool extends DraftingToolBase implements ChannelAw
       $fields = $this->assemble($groups, $answers);
       $context = $this->draftContext();
       $this->storeDraft($session, $version, $run, $context, $fields);
-      $this->channel?->send(new ProtocolEvent('data-drafted-fields', [
-        'data' => ['version' => $version, 'context' => $context, 'fields' => $fields],
-      ]));
+
+      // The draft is already durably stored at this point; a channel that
+      // cannot be written to (a dropped SSE connection, for example) must
+      // not turn an already-successful draft into a reported failure, so
+      // this is its own try rather than part of the run's.
+      try {
+        $this->channel?->send(new ProtocolEvent('data-drafted-fields', [
+          'data' => ['version' => $version, 'context' => $context, 'fields' => $fields],
+        ]));
+      }
+      catch (\Throwable $e) {
+        $this->logger->warning('Drafting live notification of draft @version of session @session failed after the draft was stored: @message', [
+          '@version' => $version,
+          '@session' => (string) $session->id(),
+          '@message' => $e->getMessage(),
+          'exception' => $e,
+        ]);
+      }
 
       // A draft holds every field of the content type, and this agent
       // replays its thread on every turn. So the result names the draft,

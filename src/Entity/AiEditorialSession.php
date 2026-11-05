@@ -157,6 +157,19 @@ class AiEditorialSession extends ContentEntityBase implements AiEditorialSession
   /**
    * {@inheritdoc}
    */
+  public function conversationThread(string $threadId): array {
+    $rows = \Drupal::entityTypeManager()
+      ->getStorage('neuron_message')
+      ->loadByProperties(['oe_ai_session' => (int) $this->id(), 'thread_id' => $threadId]);
+    // Keyed by row id, so sorting the keys is what puts the oldest first.
+    ksort($rows);
+
+    return array_values($rows);
+  }
+
+  /**
+   * {@inheritdoc}
+   */
   public function conversationToolResults(): array {
     $results = [];
     foreach ($this->conversationRows() as $row) {

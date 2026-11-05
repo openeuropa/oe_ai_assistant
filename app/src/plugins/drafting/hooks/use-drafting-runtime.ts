@@ -79,11 +79,17 @@ export function useDraftingRuntime() {
       // Store raw drafted field values directly from the backend, and
       // index the draft by version so useSessionDrafts() can show it
       // before the thread's own tool-call part ever carries the fields.
+      // Replaced, not merged, to match openSessionDraft()/the draft card's
+      // onOpen(): draftedFields is the fields of activeDraftVersion, and a
+      // later draft can carry fewer fields than an earlier one (a template
+      // switch, a narrower revision), so merging would leave stale values
+      // from a draft no longer open.
       if (data.name === "drafted-fields") {
         const incoming = data.data as ParsedDraftResult;
-        const { draftedFields, liveDrafts } = getDraftingState();
+        const { liveDrafts } = getDraftingState();
         setDraftingState({
-          draftedFields: { ...draftedFields, ...incoming.fields },
+          draftedFields: incoming.fields,
+          activeDraftVersion: incoming.version as number,
           liveDrafts: { ...liveDrafts, [incoming.version as number]: incoming },
         });
       }

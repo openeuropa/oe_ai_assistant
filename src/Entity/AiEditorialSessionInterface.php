@@ -48,6 +48,20 @@ interface AiEditorialSessionInterface extends ContentEntityInterface, EntityChan
   public function conversationThreads(): array;
 
   /**
+   * Returns the stored rows of one thread of this session.
+   *
+   * A caller that only reads one thread does not have to load and group
+   * every thread of the session to get it.
+   *
+   * @param string $threadId
+   *   The thread ID, as ai_neuron composed it.
+   *
+   * @return \Drupal\ai_neuron\Entity\NeuronMessageInterface[]
+   *   The thread's rows, oldest first; empty when the thread has none.
+   */
+  public function conversationThread(string $threadId): array;
+
+  /**
    * Returns what the tools of this session answered, in the order they ran.
    *
    * @return array
