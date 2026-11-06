@@ -29,6 +29,30 @@ import { toThreadMessages } from "../hydrate-transcript";
 import { getDraftingState, type PlanStep, setDraftingState } from "../store";
 
 /**
+ * One group's progress, as the drafting node reports it.
+ */
+interface DraftingActivity {
+  id: string;
+  type: string;
+  data: {
+    group: string;
+    label: string;
+    status: keyof typeof ACTIVITY_STATUS;
+    index: number;
+    total: number;
+  };
+}
+
+/**
+ * What each status of a group means to the rail.
+ */
+const ACTIVITY_STATUS = {
+  drafting: "in_progress",
+  drafted: "done",
+  failed: "error",
+} as const satisfies Record<string, PlanStep["status"]>;
+
+/**
  * Returns an assistant-ui runtime backed by the Data Stream Protocol.
  *
  * The runtime sends POST requests to /api/plugins/drafting/chat
@@ -93,14 +117,31 @@ export function useDraftingRuntime() {
           liveDrafts: { ...liveDrafts, [incoming.version as number]: incoming },
         });
       }
-      // Handle orchestration plan updates.
-      if (data.name === "plan") {
-        setDraftingState({ plan: data.data as PlanStep[] });
+      // The drafting node reports one group at a time, because Neuron's own
+      // progress event replaces the activity that shares its id. The rail
+      // shows the whole plan, so the groups seen so far are accumulated here
+      // in the order the run reached them.
+      if (data.name === "workflow-activity") {
+        const activity = data.data as DraftingActivity;
+        if (activity.type !== "drafting") {
+          return;
+        }
+        const seen = getDraftingState().plan;
+        const step: PlanStep = {
+          stepId: activity.data.group,
+          label: activity.data.label,
+          status: ACTIVITY_STATUS[activity.data.status],
+        };
+        const next = seen.some((s) => s.stepId === step.stepId)
+          ? seen.map((s) => (s.stepId === step.stepId ? step : s))
+          : [...seen, step];
+        setDraftingState({ plan: next });
       }
     },
     onFinish: () => {
-      // Clear plan when the run finishes so it doesn't linger.
-      // The drafted fields stay visible.
+      // The progress belongs to the turn that produced it, so a finished turn
+      // leaves none of it on the screen. The drafted fields stay visible.
+      setDraftingState({ plan: [] });
     },
     onError: (error) => {
       console.error("[drafting] Data stream runtime error:", error);

@@ -108,6 +108,10 @@ function DraftingChat() {
   const documents = useDraftingDocuments();
   const template = useDraftingTemplate();
   const hasFields = Object.keys(draftedFields).length > 0;
+  // A session that already holds a draft would otherwise show it while the
+  // next one is being written, and the editor would see no sign that anything
+  // is happening.
+  const isDrafting = plan.some((step) => step.status === "in_progress");
   // The pane only exists once there is an artifact to show; before that
   // the chat takes the full workspace width.
   const hasArtifact = hasFields || plan.length > 0;
@@ -158,7 +162,7 @@ function DraftingChat() {
 
   /** Determine what the artifact pane shows. */
   function renderArtifact() {
-    if (hasFields) {
+    if (hasFields && !isDrafting) {
       // Versioned drafts get the tabbed live preview pane; legacy
       // unversioned drafts cannot be addressed by the preview
       // endpoint and keep the plain data table.

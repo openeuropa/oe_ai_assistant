@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Drupal\oe_ai_assistant\Plugin\NeuronAgent;
 
-use Drupal\ai_neuron\NeuronStreamAdapter;
 use Drupal\ai_neuron\Attribute\NeuronAgent;
 use Drupal\Core\Plugin\Context\EntityContextDefinition;
 use Drupal\Core\StringTranslation\TranslatableMarkup;
@@ -18,7 +17,6 @@ use Drupal\oe_ai_assistant\Entity\Bundle\ContentCreationSessionInterface;
   label: new TranslatableMarkup('Drafting'),
   description: new TranslatableMarkup('Gathers requirements in conversation and drafts content per field group.'),
   operation_type: 'chat_with_tools',
-  stream_adapter: NeuronStreamAdapter::Custom,
   tools: [
     'drafting_get_history',
     'drafting_draft_content',

@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\oe_ai_assistant\Plugin\AiEditorialAssistant;
 
-use Drupal\ai_neuron\Agent\NeuronAgentManagerInterface;
+use Drupal\ai_neuron\Workflow\NeuronWorkflowManagerInterface;
 use Drupal\ai_neuron\Channel\SseChannel;
 use Drupal\Core\Cache\RefinableCacheableDependencyInterface;
 use Drupal\Core\Url;
@@ -24,10 +24,10 @@ use Drupal\oe_ai_assistant\Service\DraftSaverInterface;
 use Drupal\oe_ai_assistant\Service\DraftingSchemaProviderInterface;
 use Drupal\oe_ai_assistant\Service\PreviewRendererInterface;
 use Drupal\ai\Response\AiStreamedResponse;
-use NeuronAI\Chat\Messages\UserMessage;
+use Drupal\oe_ai_assistant\Neuron\Workflow\Events\ChatTurnEvent;
+use NeuronAI\Workflow\Executor\ExecutionRequest;
 use NeuronAI\Workflow\Streaming\ProtocolEvent;
 use NeuronAI\Workflow\Streaming\SSEEncoder;
-use NeuronAI\Workflow\Workflow;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\File\Exception\FileException;
 use Symfony\Component\HttpFoundation\Request;
@@ -60,11 +60,11 @@ class DraftingPlugin extends AiAssistantPluginBase {
   private const string TEMPLATE_FIELD = 'template';
 
   /**
-   * The Neuron agent plugin manager.
+   * Builds the run that serves one turn.
    *
-   * @var \Drupal\ai_neuron\Agent\NeuronAgentManagerInterface
+   * @var \Drupal\ai_neuron\Workflow\NeuronWorkflowManagerInterface
    */
-  protected NeuronAgentManagerInterface $agentManager;
+  protected NeuronWorkflowManagerInterface $workflows;
 
   /**
    * The drafting schema provider.
@@ -125,7 +125,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
     $plugin_definition,
   ): static {
     $instance = parent::create($container, $configuration, $plugin_id, $plugin_definition);
-    $instance->agentManager = $container->get(NeuronAgentManagerInterface::class);
+    $instance->workflows = $container->get(NeuronWorkflowManagerInterface::class);
     $instance->schemaProvider = $container->get(DraftingSchemaProviderInterface::class);
     $instance->draftSaver = $container->get(DraftSaverInterface::class);
     $instance->aiEditorialContext = $container->get(AiEditorialContextInterface::class);
@@ -306,6 +306,10 @@ class DraftingPlugin extends AiAssistantPluginBase {
       echo $frame;
       flush();
     };
+    // A drafting node reads this off the start event, because the version a
+    // turn would write is decided before any model call.
+    $version = (int) $session->nextVersion()['version'];
+
     $channel = new SseChannel();
     // Building the agent resolves the session's template eagerly (its
     // instructions() reads the schema groups), so a stale stored template
@@ -317,22 +321,21 @@ class DraftingPlugin extends AiAssistantPluginBase {
     // reasons that are a site misconfiguration, not the editor's — those
     // must not be downgraded into a 400 that echoes their raw message.
     try {
-      $agent = $this->agentManager->withChannel($channel)->createAgent('drafting', ['session' => $session]);
+      $workflow = $this->workflows->withChannel($channel)->createWorkflow(
+        'editorial_turn',
+        [],
+        ['session' => $session],
+      );
+    }
+    catch (DraftingTemplateException $e) {
+      throw new ActionException('invalid_request', $e->getMessage(), 400);
     }
     catch (DraftingTemplateException $e) {
       throw new ActionException('invalid_request', $e->getMessage(), 400);
     }
 
-    // ai_neuron's AgentInterface does not declare setMaxSteps(), but the
-    // concrete Agent it builds extends Workflow, which does: a routing cycle
-    // that never stops (a confused model alternating tool calls) must not
-    // run forever just because the interface does not promise a bound.
-    if ($agent instanceof Workflow) {
-      $agent->setMaxSteps(20);
-    }
-
     $logger = $this->logger;
-    $response = new AiStreamedResponse(static function () use ($agent, $message, $write, $logger): void {
+    $response = new AiStreamedResponse(static function () use ($workflow, $message, $version, $write, $logger): void {
       set_time_limit(0);
       ini_set('zlib.output_compression', '0');
       ini_set('implicit_flush', '1');
@@ -341,10 +344,10 @@ class DraftingPlugin extends AiAssistantPluginBase {
       }
       try {
         // The channel already wrote every event as it was produced; this
-        // only has to drive the agent's run to completion, not collect
-        // what it yields, so this advances the generator without
-        // allocating an array of every chunk it ever produces.
-        $stream = $agent->stream(new UserMessage($message));
+        // only has to drive the run to completion, not collect what it
+        // yields, so this advances the generator without allocating an
+        // array of every chunk it ever produces.
+        $stream = $workflow->events(ExecutionRequest::start(new ChatTurnEvent($message, $version)));
         while ($stream->valid()) {
           $stream->next();
         }
