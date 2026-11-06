@@ -12,7 +12,6 @@ use Drupal\oe_ai_assistant\Entity\Bundle\ContentCreationSessionInterface;
 use Drupal\oe_ai_assistant\Exception\SchemaRetriesExhaustedException;
 use Drupal\oe_ai_assistant\Neuron\Workflow\Events\DraftingRequestedEvent;
 use Drupal\oe_ai_assistant\Neuron\Workflow\Events\DraftStoredEvent;
-use Drupal\oe_ai_assistant\Plugin\NeuronTool\DraftingToolBase;
 use NeuronAI\Agent\Adapters\Events\ActivityStreamEvent;
 use NeuronAI\Agent\Adapters\Events\CustomStreamEvent;
 use NeuronAI\Chat\History\MessageStoreInterface;
@@ -92,11 +91,7 @@ final class DraftingNode extends Node {
 
       // Captured once, so the stored draft and the part the editor's pane
       // reads carry the same snapshot of what the editor set up.
-      $context = DraftingToolBase::snapshot(
-        $this->session->getTone(),
-        $this->session->getTemplate(),
-        $this->session->getDocuments(),
-      );
+      $context = $this->snapshot();
       $fields = $this->assemble($groups, $answers);
       $this->storeDraft($event->version, $run, $context, $fields);
 
@@ -252,6 +247,28 @@ final class DraftingNode extends Node {
       'context' => $context,
       'fields' => $fields,
     ])));
+  }
+
+  /**
+   * What the editor set up, as a draft of this run records it.
+   *
+   * Ids travel with the labels read at request time, so a draft keeps what the
+   * editor saw even if a term or a template is renamed later. The file name
+   * and the extracted text stay out: a draft records which documents were
+   * used, not their contents.
+   *
+   * @return array
+   *   The snapshot.
+   */
+  private function snapshot(): array {
+    return [
+      'tone' => $this->session->getTone(),
+      'template' => $this->session->getTemplate(),
+      'documents' => array_map(static function (array $document): array {
+        unset($document['filename'], $document['extract']);
+        return $document;
+      }, $this->session->getDocuments()),
+    ];
   }
 
   /**
