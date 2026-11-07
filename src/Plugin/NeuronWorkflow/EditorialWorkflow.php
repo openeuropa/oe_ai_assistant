@@ -14,6 +14,7 @@ use Drupal\Core\Plugin\Context\EntityContextDefinition;
 use Drupal\Core\StringTranslation\TranslatableMarkup;
 use Drupal\oe_ai_assistant\Entity\Bundle\ContentCreationSessionInterface;
 use Drupal\oe_ai_assistant\Neuron\Chat\Messages\Stream\Adapters\PatchedVercelAIAdapter;
+use Drupal\oe_ai_assistant\Neuron\Workflow\Editorial\EditorialResources;
 use Drupal\oe_ai_assistant\Neuron\Workflow\Editorial\Events\ChatTurnEvent;
 use Drupal\oe_ai_assistant\Neuron\Workflow\Editorial\Nodes\ChatNode;
 use Drupal\oe_ai_assistant\Neuron\Workflow\Editorial\Nodes\ChatResumeNode;
@@ -62,19 +63,46 @@ final class EditorialWorkflow extends NeuronWorkflowPluginBase {
    * {@inheritdoc}
    */
   protected function nodes(): array {
-    $session = $this->getContextValue('session');
-    assert($session instanceof ContentCreationSessionInterface);
-
-    // One agent for the turn: building it here resolves the session's
-    // template and the provider while the endpoint can still answer 400, and
-    // the node that resumes the turn needs the instance that suspended.
-    $agent = $this->agents->createAgent('editorial', ['session' => $session]);
+    // The agent of the turn is built here rather than in resources(). A run
+    // resolves its resources once the stream is open, and building the agent
+    // is what reads the session's template and the provider. So a stale
+    // template becomes a clean 400 while the endpoint can still answer one.
+    // The node that resumes the turn also needs the instance that suspended.
+    $agent = $this->agents->createAgent('editorial', ['session' => $this->session()]);
 
     return [
       new ChatNode($agent),
-      new DraftContentNode($this->workflows, $this->store, $session, $this->logger),
+      new DraftContentNode(),
       new ChatResumeNode($agent),
     ];
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  protected function resources(): EditorialResources {
+    return new EditorialResources(
+      $this->workflows,
+      $this->store,
+      $this->logger,
+      $this->session(),
+    );
+  }
+
+  /**
+   * The session this run serves.
+   *
+   * A context value is typed as mixed, and both nodes() and resources() read
+   * the session, so the narrowing happens once here.
+   *
+   * @return \Drupal\oe_ai_assistant\Entity\Bundle\ContentCreationSessionInterface
+   *   The session.
+   */
+  private function session(): ContentCreationSessionInterface {
+    $session = $this->getContextValue('session');
+    assert($session instanceof ContentCreationSessionInterface);
+
+    return $session;
   }
 
   /**

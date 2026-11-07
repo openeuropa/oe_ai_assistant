@@ -4,18 +4,14 @@ declare(strict_types=1);
 
 namespace Drupal\oe_ai_assistant\Neuron\Workflow\Editorial\Nodes;
 
-use Drupal\ai_neuron\Workflow\NeuronWorkflowManagerInterface;
 use Drupal\Component\Utility\Crypt;
-use Drupal\Core\DependencyInjection\DependencySerializationTrait;
-use Drupal\Core\Logger\LoggerChannelInterface;
-use Drupal\oe_ai_assistant\Entity\Bundle\ContentCreationSessionInterface;
 use Drupal\oe_ai_assistant\Exception\SchemaRetriesExhaustedException;
 use Drupal\oe_ai_assistant\Neuron\Workflow\Drafting\Nodes\ValidateNode;
 use Drupal\oe_ai_assistant\Neuron\Workflow\Editorial\Events\DraftingRequestedEvent;
 use Drupal\oe_ai_assistant\Neuron\Workflow\Editorial\Events\DraftStoredEvent;
+use Drupal\oe_ai_assistant\Neuron\Workflow\Editorial\EditorialResources;
 use NeuronAI\Agent\Adapters\Events\ActivityStreamEvent;
 use NeuronAI\Agent\Adapters\Events\CustomStreamEvent;
-use NeuronAI\Chat\History\MessageStoreInterface;
 use NeuronAI\Chat\Messages\AssistantMessage;
 use NeuronAI\Workflow\Node;
 use NeuronAI\Workflow\WorkflowState;
@@ -30,37 +26,16 @@ use NeuronAI\Workflow\WorkflowState;
  */
 final class DraftContentNode extends Node {
 
-  use DependencySerializationTrait;
-
   /**
    * The group that carries the title and the summary of the content.
    */
   private const MAIN_GROUP = 'main_fields';
 
   /**
-   * Builds the node.
-   *
-   * @param \Drupal\ai_neuron\Workflow\NeuronWorkflowManagerInterface $workflows
-   *   Builds the drafter of one group.
-   * @param \NeuronAI\Chat\History\MessageStoreInterface $store
-   *   Where the draft is written.
-   * @param \Drupal\oe_ai_assistant\Entity\Bundle\ContentCreationSessionInterface $session
-   *   The session the draft belongs to.
-   * @param \Drupal\Core\Logger\LoggerChannelInterface $logger
-   *   Records a group the run could not write.
-   */
-  public function __construct(
-    protected NeuronWorkflowManagerInterface $workflows,
-    protected MessageStoreInterface $store,
-    protected ContentCreationSessionInterface $session,
-    protected LoggerChannelInterface $logger,
-  ) {}
-
-  /**
    * Drafts every group of the content type and reports the draft.
    */
-  public function __invoke(DraftingRequestedEvent $event, WorkflowState $state): \Generator {
-    $groups = $this->session->getFieldGroups();
+  public function __invoke(DraftingRequestedEvent $event, WorkflowState $state, EditorialResources $resources): \Generator {
+    $groups = $resources->session->getFieldGroups();
     $total = count($groups);
     $run = $this->runId($event->version);
     $answers = [];
@@ -74,7 +49,7 @@ final class DraftContentNode extends Node {
       if ($groups === []) {
         throw new \RuntimeException(sprintf(
           'The "%s" content type has no field group to draft.',
-          $this->session->getContentType(),
+          $resources->session->getContentType(),
         ));
       }
 
@@ -91,7 +66,7 @@ final class DraftContentNode extends Node {
 
         if (!is_array($fields)) {
           yield $this->progress($group, 'drafting', $index, $total);
-          $fields = $this->draftGroup($group, $run, $this->task($state, $answers));
+          $fields = $this->draftGroup($resources, $group, $run, $this->task($state, $answers));
           $fields = $this->memoize('group.' . $groupId, static fn (): array => $fields);
         }
 
@@ -102,9 +77,9 @@ final class DraftContentNode extends Node {
 
       // Captured once, so the stored draft and the part the editor's pane
       // reads carry the same snapshot of what the editor set up.
-      $context = $this->snapshot();
+      $context = $this->snapshot($resources);
       $fields = $this->assemble($groups, $answers);
-      $this->storeDraft($event->version, $run, $context, $fields);
+      $this->storeDraft($resources, $event->version, $run, $context, $fields);
 
       // The field values reach no model, so the pane cannot read them off the
       // tool result. They go out as their own part, which is what shows the
@@ -125,9 +100,9 @@ final class DraftContentNode extends Node {
       // The set is incomplete, so this run stores no draft. The model has to
       // learn which group stopped it: an editor told a draft is ready, who
       // then opens half a content type, learns nothing.
-      $this->logger->error('Drafting @group of session @session failed in run @run: @message', [
+      $resources->logger->error('Drafting @group of session @session failed in run @run: @message', [
         '@group' => $failed === '' ? 'the set' : sprintf('the "%s" group', $failed),
-        '@session' => (string) $this->session->id(),
+        '@session' => (string) $resources->session->id(),
         '@run' => $run,
         '@message' => $e->getMessage(),
         'exception' => $e,
@@ -193,6 +168,8 @@ final class DraftContentNode extends Node {
   /**
    * Runs the drafter of one group and reports the values it wrote.
    *
+   * @param \Drupal\oe_ai_assistant\Neuron\Workflow\Editorial\EditorialResources $resources
+   *   What this run shares.
    * @param array $group
    *   The group definition, with its id and its schema slice.
    * @param string $run
@@ -206,9 +183,9 @@ final class DraftContentNode extends Node {
    * @throws \Drupal\oe_ai_assistant\Exception\SchemaRetriesExhaustedException
    *   When no answer of the drafter matched the group schema.
    */
-  private function draftGroup(array $group, string $run, string $task): array {
-    $state = $this->workflows->createWorkflow('draft_group', [], [
-      'session' => $this->session,
+  private function draftGroup(EditorialResources $resources, array $group, string $run, string $task): array {
+    $state = $resources->workflows->createWorkflow('draft_group', [], [
+      'session' => $resources->session,
       'group' => (string) $group['groupId'],
       'schema' => (array) $group['schemaSlice'],
       'task' => $task,
@@ -242,6 +219,8 @@ final class DraftContentNode extends Node {
    * read back. Nothing runs an agent on this thread, so the draft is as
    * large as the content type needs.
    *
+   * @param \Drupal\oe_ai_assistant\Neuron\Workflow\Editorial\EditorialResources $resources
+   *   What this run shares.
    * @param int $version
    *   The version of the draft.
    * @param string $run
@@ -251,8 +230,8 @@ final class DraftContentNode extends Node {
    * @param array $fields
    *   The field values, keyed by field name.
    */
-  private function storeDraft(int $version, string $run, array $context, array $fields): void {
-    $this->store->append($this->session->draftsThread(), new AssistantMessage(json_encode([
+  private function storeDraft(EditorialResources $resources, int $version, string $run, array $context, array $fields): void {
+    $resources->store->append($resources->session->draftsThread(), new AssistantMessage(json_encode([
       'version' => $version,
       'run' => $run,
       'context' => $context,
@@ -268,17 +247,20 @@ final class DraftContentNode extends Node {
    * and the extracted text stay out: a draft records which documents were
    * used, not their contents.
    *
+   * @param \Drupal\oe_ai_assistant\Neuron\Workflow\Editorial\EditorialResources $resources
+   *   What this run shares.
+   *
    * @return array
    *   The snapshot.
    */
-  private function snapshot(): array {
+  private function snapshot(EditorialResources $resources): array {
     return [
-      'tone' => $this->session->getTone(),
-      'template' => $this->session->getTemplate(),
+      'tone' => $resources->session->getTone(),
+      'template' => $resources->session->getTemplate(),
       'documents' => array_map(static function (array $document): array {
         unset($document['filename'], $document['extract']);
         return $document;
-      }, $this->session->getDocuments()),
+      }, $resources->session->getDocuments()),
     ];
   }
 

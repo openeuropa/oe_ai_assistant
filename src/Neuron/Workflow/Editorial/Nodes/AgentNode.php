@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Drupal\oe_ai_assistant\Neuron\Workflow\Editorial\Nodes;
 
-use Drupal\Core\DependencyInjection\DependencySerializationTrait;
 use Drupal\oe_ai_assistant\Neuron\Workflow\Editorial\Events\DraftingRequestedEvent;
 use NeuronAI\Agent\AgentInterface;
 use NeuronAI\Agent\AgentState;
@@ -23,8 +22,6 @@ use NeuronAI\Workflow\WorkflowState;
  * suspended.
  */
 abstract class AgentNode extends Node {
-
-  use DependencySerializationTrait;
 
   /**
    * Builds the node.

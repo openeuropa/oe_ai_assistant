@@ -10,6 +10,7 @@ use Drupal\ai_neuron\Workflow\NeuronWorkflowPluginBase;
 use Drupal\Core\Plugin\Context\ContextDefinition;
 use Drupal\Core\Plugin\Context\EntityContextDefinition;
 use Drupal\Core\StringTranslation\TranslatableMarkup;
+use Drupal\oe_ai_assistant\Neuron\Workflow\Drafting\DraftingResources;
 use Drupal\oe_ai_assistant\Neuron\Workflow\Drafting\Events\DraftRequestEvent;
 use Drupal\oe_ai_assistant\Neuron\Workflow\Drafting\Nodes\DraftNode;
 use Drupal\oe_ai_assistant\Neuron\Workflow\Drafting\Nodes\RetryNode;
@@ -74,16 +75,17 @@ final class DraftingWorkflow extends NeuronWorkflowPluginBase {
     $group = (string) $this->getContextValue('group');
 
     return [
-      new DraftNode(
-        $this->agents,
-        $this->getContextValue('session'),
-        $group,
-        $schema,
-        (string) $this->getContextValue('run'),
-      ),
+      new DraftNode($group, $schema, (string) $this->getContextValue('run')),
       new ValidateNode($group, $schema),
       new RetryNode($group),
     ];
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  protected function resources(): DraftingResources {
+    return new DraftingResources($this->agents, $this->getContextValue('session'));
   }
 
   /**
