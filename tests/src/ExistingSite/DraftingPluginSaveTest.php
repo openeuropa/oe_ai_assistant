@@ -382,7 +382,7 @@ class DraftingPluginSaveTest extends DraftingPluginTestBase {
   /**
    * Seeds a completed draft version into the session's drafts thread.
    *
-   * Mirrors how DraftContentNeuronTool::storeDraft() records a draft: a
+   * Mirrors how RequestDraftNeuronTool::storeDraft() records a draft: a
    * row of the session's drafts thread, not the editor's own conversation.
    *
    * @param \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $session

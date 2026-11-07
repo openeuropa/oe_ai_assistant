@@ -10,10 +10,10 @@ use Drupal\ai_neuron\Workflow\NeuronWorkflowPluginBase;
 use Drupal\Core\Plugin\Context\ContextDefinition;
 use Drupal\Core\Plugin\Context\EntityContextDefinition;
 use Drupal\Core\StringTranslation\TranslatableMarkup;
-use Drupal\oe_ai_assistant\Neuron\Workflow\Events\DraftRequestEvent;
-use Drupal\oe_ai_assistant\Neuron\Workflow\Nodes\DraftNode;
-use Drupal\oe_ai_assistant\Neuron\Workflow\Nodes\RetryNode;
-use Drupal\oe_ai_assistant\Neuron\Workflow\Nodes\ValidateNode;
+use Drupal\oe_ai_assistant\Neuron\Workflow\Drafting\Events\DraftRequestEvent;
+use Drupal\oe_ai_assistant\Neuron\Workflow\Drafting\Nodes\DraftNode;
+use Drupal\oe_ai_assistant\Neuron\Workflow\Drafting\Nodes\RetryNode;
+use Drupal\oe_ai_assistant\Neuron\Workflow\Drafting\Nodes\ValidateNode;
 use NeuronAI\Workflow\Events\Event;
 
 /**
@@ -24,7 +24,7 @@ use NeuronAI\Workflow\Events\Event;
  * the run.
  */
 #[NeuronWorkflow(
-  id: 'field_group_drafter',
+  id: 'draft_group',
   label: new TranslatableMarkup('Field group drafter'),
   description: new TranslatableMarkup('Asks the drafter for one field group and checks the answer against its schema.'),
   context_definitions: [
@@ -50,7 +50,7 @@ use NeuronAI\Workflow\Events\Event;
     ),
   ],
 )]
-final class FieldGroupDrafterWorkflow extends NeuronWorkflowPluginBase {
+final class DraftingWorkflow extends NeuronWorkflowPluginBase {
 
   public function __construct(
     array $configuration,

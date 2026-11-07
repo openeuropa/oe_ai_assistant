@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\oe_ai_assistant\Plugin\AiEditorialAssistant;
 
-use Drupal\ai_neuron\Agent\NeuronAgentManagerInterface;
+use Drupal\ai_neuron\Workflow\NeuronWorkflowManagerInterface;
 use Drupal\ai_neuron\Channel\SseChannel;
 use Drupal\Core\Cache\RefinableCacheableDependencyInterface;
 use Drupal\Core\Url;
@@ -23,11 +23,10 @@ use Drupal\oe_ai_assistant\Service\DraftAssemblerInterface;
 use Drupal\oe_ai_assistant\Service\DraftSaverInterface;
 use Drupal\oe_ai_assistant\Service\DraftingSchemaProviderInterface;
 use Drupal\oe_ai_assistant\Service\PreviewRendererInterface;
-use Drupal\ai\Response\AiStreamedResponse;
-use NeuronAI\Chat\Messages\UserMessage;
+use Drupal\oe_ai_assistant\Response\SseResponse;
+use Drupal\oe_ai_assistant\Neuron\Workflow\Editorial\Events\ChatTurnEvent;
+use NeuronAI\Workflow\Executor\ExecutionRequest;
 use NeuronAI\Workflow\Streaming\ProtocolEvent;
-use NeuronAI\Workflow\Streaming\SSEEncoder;
-use NeuronAI\Workflow\Workflow;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\File\Exception\FileException;
 use Symfony\Component\HttpFoundation\Request;
@@ -36,9 +35,9 @@ use Symfony\Component\HttpFoundation\Response;
 /**
  * Drafting plugin: AI-powered content drafting with SSE streaming.
  *
- * The chat action streams the `drafting` Neuron agent, which owns its own
+ * The chat action streams the `editorial` Neuron agent, which owns its own
  * tools, conversation thread, and per-group drafting through the
- * `field_group` workflow. The conversation is scoped by an editorial
+ * `draft_group` workflow. The conversation is scoped by an editorial
  * session, which the agent reads as plugin context; any user with access
  * to the session sees the same conversation.
  */
@@ -60,11 +59,11 @@ class DraftingPlugin extends AiAssistantPluginBase {
   private const string TEMPLATE_FIELD = 'template';
 
   /**
-   * The Neuron agent plugin manager.
+   * Builds the run that serves one turn.
    *
-   * @var \Drupal\ai_neuron\Agent\NeuronAgentManagerInterface
+   * @var \Drupal\ai_neuron\Workflow\NeuronWorkflowManagerInterface
    */
-  protected NeuronAgentManagerInterface $agentManager;
+  protected NeuronWorkflowManagerInterface $workflows;
 
   /**
    * The drafting schema provider.
@@ -125,7 +124,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
     $plugin_definition,
   ): static {
     $instance = parent::create($container, $configuration, $plugin_id, $plugin_definition);
-    $instance->agentManager = $container->get(NeuronAgentManagerInterface::class);
+    $instance->workflows = $container->get(NeuronWorkflowManagerInterface::class);
     $instance->schemaProvider = $container->get(DraftingSchemaProviderInterface::class);
     $instance->draftSaver = $container->get(DraftSaverInterface::class);
     $instance->aiEditorialContext = $container->get(AiEditorialContextInterface::class);
@@ -256,12 +255,10 @@ class DraftingPlugin extends AiAssistantPluginBase {
   /**
    * Streams an AI chat response via SSE.
    *
-   * Builds the drafting Neuron agent for the session and drives its
-   * stream to completion; the SSE channel built alongside it is what
-   * actually frames and writes every protocol event, ending with the
-   * [DONE] sentinel the frontend's decoder waits for. The agent owns its
-   * own conversation, tools, and per-turn drafting; this action only
-   * carries its stream to the HTTP response.
+   * Builds the editorial turn of the session and drives it to completion.
+   * The run answers the editor and writes the draft the answer asks for; the
+   * SSE channel built alongside it frames and writes every protocol event.
+   * This action only carries that stream to the HTTP response.
    *
    * @param \Symfony\Component\HttpFoundation\Request $request
    *   The incoming request with a chat message body.
@@ -280,74 +277,40 @@ class DraftingPlugin extends AiAssistantPluginBase {
     }
 
     $session = $this->loadSession($body);
+    if (!$session instanceof ContentCreationSessionInterface) {
+      throw new ActionException('invalid_request', 'The editorial session does not support drafting.', 400);
+    }
 
-    // SSEEncoder::frame() returns an already-framed "data: {...}\n\n"
-    // string. Symfony's ServerEvent/EventStreamResponse frame raw data
-    // themselves, so handing them a pre-framed string would double-wrap it;
-    // AiStreamedResponse writes every frame to the wire untouched, and also
-    // drains every PHP output buffer before sending (see its sendContent()):
-    // without that, a non-zero output_buffering setting holds every echo in
-    // this callback until the buffer fills or the request ends, delivering
-    // the whole turn as one block and defeating the point of streaming.
-    //
-    // The channel is the only writer. NeuronAI\Workflow\Streaming\
-    // SegmentOutput::deliver() sends every event the stream adapter
-    // transforms to the channel *and* yields it to the generator this
-    // method iterates (confirmed by reading SegmentOutput directly: with
-    // an adapter set, as this agent has, the channel is not limited to
-    // the segment lifecycle). Writing from this method's own foreach loop
-    // as well as from the channel's own echo double-frames every event, so
-    // the loop below only drives the generator to completion; the channel
-    // is what actually reaches the wire, for both the main stream and
-    // DraftContentNeuronTool's own per-group progress (a tool cannot
-    // stream into the agent's own generator, so it reports through the
-    // channel directly instead).
-    $write = static function (string $frame): void {
-      echo $frame;
-      flush();
-    };
+    // The draft-content node writes this version, and it is decided before any
+    // model call: the turn that asks for a draft takes the next one.
+    $version = (int) $session->nextVersion()['version'];
     $channel = new SseChannel();
-    // Building the agent resolves the session's template eagerly (its
-    // instructions() reads the schema groups), so a stale stored template
-    // surfaces here as DraftingTemplateException, which must become a
-    // clean 400 rather than reach the editor as an unhandled server error.
-    // Catching the narrower subclass rather than the base
-    // \InvalidArgumentException matters: createAgent() also resolves the
-    // provider and the channel, and either can throw the base class for
-    // reasons that are a site misconfiguration, not the editor's — those
-    // must not be downgraded into a 400 that echoes their raw message.
+    // Building the run builds the agent of its chat nodes, which resolves the
+    // session's template: its instructions() reads the schema groups. So a
+    // stale stored template surfaces here, and becomes a clean 400 rather
+    // than an error page in the middle of an open stream. Catching the
+    // narrower subclass rather than the base \InvalidArgumentException
+    // matters: the same build resolves the provider and the channel, and
+    // either can throw the base class for reasons that are a site
+    // misconfiguration rather than the editor's. Those must not be
+    // downgraded into a 400 that echoes their raw message.
     try {
-      $agent = $this->agentManager->withChannel($channel)->createAgent('drafting', ['session' => $session]);
+      $workflow = $this->workflows->withChannel($channel)->createWorkflow(
+        plugin_id: 'editorial_turn',
+        contexts: ['session' => $session],
+      );
     }
     catch (DraftingTemplateException $e) {
       throw new ActionException('invalid_request', $e->getMessage(), 400);
     }
 
-    // ai_neuron's AgentInterface does not declare setMaxSteps(), but the
-    // concrete Agent it builds extends Workflow, which does: a routing cycle
-    // that never stops (a confused model alternating tool calls) must not
-    // run forever just because the interface does not promise a bound.
-    if ($agent instanceof Workflow) {
-      $agent->setMaxSteps(20);
-    }
-
     $logger = $this->logger;
-    $response = new AiStreamedResponse(static function () use ($agent, $message, $write, $logger): void {
-      set_time_limit(0);
-      ini_set('zlib.output_compression', '0');
-      ini_set('implicit_flush', '1');
-      if (function_exists('apache_setenv')) {
-        apache_setenv('no-gzip', '1');
-      }
+    $response = new SseResponse(static function () use ($workflow, $message, $version, $channel, $logger): void {
       try {
-        // The channel already wrote every event as it was produced; this
-        // only has to drive the agent's run to completion, not collect
-        // what it yields, so this advances the generator without
-        // allocating an array of every chunk it ever produces.
-        $stream = $agent->stream(new UserMessage($message));
-        while ($stream->valid()) {
-          $stream->next();
-        }
+        // A run executes while its generator is advanced, and run() is what
+        // advances it to the end. The channel wrote every event as the run
+        // produced it, so nothing here reads what it answers.
+        $workflow->run(ExecutionRequest::start(new ChatTurnEvent($message, $version)));
       }
       catch (\Throwable $e) {
         // Never let an exception escape into the open SSE stream: Drupal's
@@ -356,16 +319,20 @@ class DraftingPlugin extends AiAssistantPluginBase {
           '@message' => $e->getMessage(),
           'exception' => $e,
         ]);
-        $write(SSEEncoder::frame(new ProtocolEvent('error', [
+        $channel->send(new ProtocolEvent('error', [
           'errorText' => 'The assistant request failed. Please try again.',
-        ])));
+        ]));
       }
-      $write("data: [DONE]\n\n");
-    }, 200, [
-      'Content-Type' => 'text/event-stream',
-      'Cache-Control' => 'no-cache',
-      'x-vercel-ai-ui-message-stream' => 'v1',
-    ]);
+      finally {
+        // The client's decoder raises an error of its own when the body ends
+        // without this frame. That error hides the one above. A UI message
+        // stream ends with the terminator, so this writes it whatever the
+        // run did.
+        echo "data: [DONE]\n\n";
+        @ob_flush();
+        flush();
+      }
+    }, 200, ['x-vercel-ai-ui-message-stream' => 'v1']);
 
     return $response;
   }
@@ -395,7 +362,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
     if (!$session instanceof ContentCreationSessionInterface) {
       throw new ActionException('invalid_request', 'The editorial session does not support drafting.', 400);
     }
-    $thread = $session->conversationThread('drafting.session_' . $session->id());
+    $thread = $session->conversationThread('editorial.session_' . $session->id());
 
     // Preload the authors of user turns in one query, grouped by uid, so
     // each turn can carry the author's display name for avatars and the

@@ -2,11 +2,11 @@
 
 declare(strict_types=1);
 
-namespace Drupal\oe_ai_assistant\Neuron\Workflow\Nodes;
+namespace Drupal\oe_ai_assistant\Neuron\Workflow\Drafting\Nodes;
 
 use Drupal\oe_ai_assistant\Exception\SchemaRetriesExhaustedException;
-use Drupal\oe_ai_assistant\Neuron\Workflow\Events\DraftRequestEvent;
-use Drupal\oe_ai_assistant\Neuron\Workflow\Events\SchemaViolationEvent;
+use Drupal\oe_ai_assistant\Neuron\Workflow\Drafting\Events\DraftRequestEvent;
+use Drupal\oe_ai_assistant\Neuron\Workflow\Drafting\Events\SchemaViolationEvent;
 use NeuronAI\Workflow\Node;
 use NeuronAI\Workflow\WorkflowState;
 

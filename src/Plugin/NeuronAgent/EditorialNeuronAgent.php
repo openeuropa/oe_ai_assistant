@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Drupal\oe_ai_assistant\Plugin\NeuronAgent;
 
-use Drupal\ai_neuron\NeuronStreamAdapter;
 use Drupal\ai_neuron\Attribute\NeuronAgent;
 use Drupal\Core\Plugin\Context\EntityContextDefinition;
 use Drupal\Core\StringTranslation\TranslatableMarkup;
@@ -14,11 +13,10 @@ use Drupal\oe_ai_assistant\Entity\Bundle\ContentCreationSessionInterface;
  * The agent that talks to the editor and drafts through tools.
  */
 #[NeuronAgent(
-  id: DraftingNeuronAgent::PLUGIN_ID,
-  label: new TranslatableMarkup('Drafting'),
+  id: EditorialNeuronAgent::PLUGIN_ID,
+  label: new TranslatableMarkup('Editorial'),
   description: new TranslatableMarkup('Gathers requirements in conversation and drafts content per field group.'),
   operation_type: 'chat_with_tools',
-  stream_adapter: NeuronStreamAdapter::Custom,
   tools: [
     'drafting_get_history',
     'drafting_draft_content',
@@ -30,12 +28,12 @@ use Drupal\oe_ai_assistant\Entity\Bundle\ContentCreationSessionInterface;
     ),
   ],
 )]
-final class DraftingNeuronAgent extends EditorialSessionAgentBase {
+final class EditorialNeuronAgent extends EditorialSessionAgentBase {
 
   /**
    * The id this agent is registered under.
    */
-  public const string PLUGIN_ID = 'drafting';
+  public const string PLUGIN_ID = 'editorial';
 
   /**
    * {@inheritdoc}

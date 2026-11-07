@@ -18,7 +18,7 @@ use NeuronAI\Providers\AIProviderInterface;
  * everything the model needs.
  */
 #[NeuronAgent(
-  id: 'field_group',
+  id: 'group_drafter',
   label: new TranslatableMarkup('Field group drafter'),
   description: new TranslatableMarkup('Writes the values of one field group against its JSON schema.'),
   operation_type: 'chat_with_structured_response',
@@ -41,7 +41,7 @@ use NeuronAI\Providers\AIProviderInterface;
     ),
   ],
 )]
-final class FieldGroupNeuronAgent extends EditorialSessionAgentBase {
+final class GroupDrafterNeuronAgent extends EditorialSessionAgentBase {
 
   /**
    * {@inheritdoc}

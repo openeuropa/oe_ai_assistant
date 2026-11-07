@@ -7,7 +7,7 @@ namespace Drupal\Tests\oe_ai_assistant\Kernel;
 use Drupal\ai_neuron\Agent\NeuronAgentManagerInterface;
 use Drupal\ai_neuron\Tools\NeuronToolManagerInterface;
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
-use Drupal\oe_ai_assistant\Plugin\NeuronTool\DraftContentNeuronTool;
+use Drupal\oe_ai_assistant\Plugin\NeuronTool\RequestDraftNeuronTool;
 use Drupal\oe_ai_assistant\Service\DraftingSchemaProvider;
 use Drupal\oe_ai_assistant\Service\DraftingSchemaProviderInterface;
 use Drupal\oe_ai_assistant_test\Plugin\AiProvider\MockAiProvider;
@@ -66,7 +66,7 @@ class DraftingTurnTest extends AiEditorialSessionKernelTestBase {
     $this->enqueueTurn();
 
     $agent = $this->container->get(NeuronAgentManagerInterface::class)
-      ->createAgent('drafting', ['session' => $session]);
+      ->createAgent('editorial', ['session' => $session]);
     $state = $agent->chat(new UserMessage('Please draft it, go ahead.'), TRUE);
 
     $this->assertSame('Draft 1 is ready.', $state->getMessage()?->getContent());
@@ -117,12 +117,12 @@ class DraftingTurnTest extends AiEditorialSessionKernelTestBase {
 
     MockAiProvider::reset();
     $this->enqueueTurn();
-    $agentManager->createAgent('drafting', ['session' => $session])
+    $agentManager->createAgent('editorial', ['session' => $session])
       ->chat(new UserMessage('Please draft it, go ahead.'), TRUE);
 
     MockAiProvider::reset();
     $this->enqueueTurn('Draft 2 is ready.');
-    $agentManager->createAgent('drafting', ['session' => $session])
+    $agentManager->createAgent('editorial', ['session' => $session])
       ->chat(new UserMessage('Draft it again.'), TRUE);
 
     $this->assertSame(['Draft 1', 'Draft 2'], array_column($session->listDrafts(), 'name'));
@@ -149,7 +149,7 @@ class DraftingTurnTest extends AiEditorialSessionKernelTestBase {
     MockAiProvider::enqueue(new MockResponse(text: 'Draft 1 is ready.'));
 
     $this->container->get(NeuronAgentManagerInterface::class)
-      ->createAgent('drafting', ['session' => $session])
+      ->createAgent('editorial', ['session' => $session])
       ->chat(new UserMessage('Please draft it, go ahead.'), TRUE);
 
     // The correction turn is in the drafter's own conversation: the answer
@@ -181,7 +181,7 @@ class DraftingTurnTest extends AiEditorialSessionKernelTestBase {
     MockAiProvider::enqueue(new MockResponse(text: 'The main fields could not be drafted.'));
 
     $this->container->get(NeuronAgentManagerInterface::class)
-      ->createAgent('drafting', ['session' => $session])
+      ->createAgent('editorial', ['session' => $session])
       ->chat(new UserMessage('Please draft it, go ahead.'), TRUE);
 
     $results = $session->conversationToolResults();
@@ -229,7 +229,7 @@ class DraftingTurnTest extends AiEditorialSessionKernelTestBase {
     MockAiProvider::enqueue(new MockResponse(text: 'The draft could not be generated.'));
 
     $this->container->get(NeuronAgentManagerInterface::class)
-      ->createAgent('drafting', ['session' => $session])
+      ->createAgent('editorial', ['session' => $session])
       ->chat(new UserMessage('Please draft it, go ahead.'), TRUE);
 
     $results = $session->conversationToolResults();
@@ -260,7 +260,7 @@ class DraftingTurnTest extends AiEditorialSessionKernelTestBase {
     ];
     $answer = [['target_uuid' => 'p1'], ['target_uuid' => 'p2']];
 
-    $assemble = new \ReflectionMethod(DraftContentNeuronTool::class, 'assemble');
+    $assemble = new \ReflectionMethod(RequestDraftNeuronTool::class, 'assemble');
     $fields = $assemble->invoke($this->tool(), $groups, ['field_people' => $answer]);
 
     $this->assertSame([], $fields, 'Neither field takes a list the answer did not name.');
@@ -276,13 +276,13 @@ class DraftingTurnTest extends AiEditorialSessionKernelTestBase {
   /**
    * Builds the drafting tool, bound to a session of its own.
    */
-  private function tool(): DraftContentNeuronTool {
+  private function tool(): RequestDraftNeuronTool {
     $plugin = $this->container->get(NeuronToolManagerInterface::class)->createTool(
       'drafting_draft_content',
-      ['session' => $this->createSession($this->createUser()), 'thread' => 'drafting.session_1'],
+      ['session' => $this->createSession($this->createUser()), 'thread' => 'editorial.session_1'],
     );
     $tool = (new \ReflectionProperty($plugin, 'plugin'))->getValue($plugin);
-    assert($tool instanceof DraftContentNeuronTool);
+    assert($tool instanceof RequestDraftNeuronTool);
 
     return $tool;
   }
@@ -301,7 +301,7 @@ class DraftingTurnTest extends AiEditorialSessionKernelTestBase {
     $this->enqueueTurn();
 
     $this->container->get(NeuronAgentManagerInterface::class)
-      ->createAgent('drafting', ['session' => $session])
+      ->createAgent('editorial', ['session' => $session])
       ->chat(new UserMessage('Write about the 2026 sett counts in Flanders.'), TRUE);
 
     $rows = $session->conversationThreads()[$this->thread($session, 1, 'main_fields')];
@@ -335,7 +335,7 @@ class DraftingTurnTest extends AiEditorialSessionKernelTestBase {
     MockAiProvider::enqueue(new MockResponse(text: 'Draft 1 is ready.'));
 
     $this->container->get(NeuronAgentManagerInterface::class)
-      ->createAgent('drafting', ['session' => $session])
+      ->createAgent('editorial', ['session' => $session])
       ->chat(new UserMessage('Please draft it, go ahead.'), TRUE);
 
     $this->assertSame(['Draft 1'], array_column($session->listDrafts(), 'name'));
@@ -362,7 +362,7 @@ class DraftingTurnTest extends AiEditorialSessionKernelTestBase {
     MockAiProvider::enqueue(new MockResponse(text: 'This content type cannot be drafted.'));
 
     $this->container->get(NeuronAgentManagerInterface::class)
-      ->createAgent('drafting', ['session' => $session])
+      ->createAgent('editorial', ['session' => $session])
       ->chat(new UserMessage('Please draft it, go ahead.'), TRUE);
 
     $this->assertSame([], $session->listDrafts());
@@ -394,7 +394,7 @@ class DraftingTurnTest extends AiEditorialSessionKernelTestBase {
     MockAiProvider::enqueue(new MockResponse(text: 'Draft 1 is ready.'));
 
     $this->container->get(NeuronAgentManagerInterface::class)
-      ->createAgent('drafting', ['session' => $session])
+      ->createAgent('editorial', ['session' => $session])
       ->chat(new UserMessage('Please draft it, go ahead.'), TRUE);
 
     // The run asked the group again, and the draft holds the paragraph of
@@ -424,7 +424,7 @@ class DraftingTurnTest extends AiEditorialSessionKernelTestBase {
       MockAiProvider::enqueue(new MockResponse(text: '{"nope": []}'));
     }
     MockAiProvider::enqueue(new MockResponse(text: 'The main fields could not be drafted.'));
-    $agentManager->createAgent('drafting', ['session' => $session])
+    $agentManager->createAgent('editorial', ['session' => $session])
       ->chat(new UserMessage('Please draft it, go ahead.'), TRUE);
 
     $this->assertSame([], $session->listDrafts());
@@ -432,7 +432,7 @@ class DraftingTurnTest extends AiEditorialSessionKernelTestBase {
 
     MockAiProvider::reset();
     $this->enqueueTurn();
-    $agentManager->createAgent('drafting', ['session' => $session])
+    $agentManager->createAgent('editorial', ['session' => $session])
       ->chat(new UserMessage('Try again.'), TRUE);
 
     // The draft the failed run never stored is the one this run takes.
@@ -467,7 +467,7 @@ class DraftingTurnTest extends AiEditorialSessionKernelTestBase {
    */
   private function thread(AiEditorialSessionInterface $session, int $version, string $group): string {
     $pattern = sprintf(
-      '@^field_group\.session_%s\.draft_%d\.[A-Za-z0-9_-]{6}\.group_%s$@',
+      '@^group_drafter\.session_%s\.draft_%d\.[A-Za-z0-9_-]{6}\.group_%s$@',
       $session->id(),
       $version,
       preg_quote($group, '@'),
