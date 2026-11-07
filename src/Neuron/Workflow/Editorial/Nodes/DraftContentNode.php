@@ -68,6 +68,16 @@ final class DraftContentNode extends Node {
     $failed = '';
 
     try {
+      // A content type with no field group assembles a draft of no fields.
+      // The editor is then told a draft is ready, and opens an empty form.
+      // So the run fails and the model reports it.
+      if ($groups === []) {
+        throw new \RuntimeException(sprintf(
+          'The "%s" content type has no field group to draft.',
+          $this->session->getContentType(),
+        ));
+      }
+
       foreach ($groups as $group) {
         $index++;
         $groupId = (string) $group['groupId'];
