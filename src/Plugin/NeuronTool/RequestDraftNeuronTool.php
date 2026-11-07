@@ -5,11 +5,10 @@ declare(strict_types=1);
 namespace Drupal\oe_ai_assistant\Plugin\NeuronTool;
 
 use Drupal\ai_neuron\Attribute\NeuronTool;
+use Drupal\ai_neuron\Tools\DeferredToolPluginInterface;
 use Drupal\ai_neuron\Tools\NeuronToolPluginBase;
 use Drupal\Core\StringTranslation\TranslatableMarkup;
-use Drupal\oe_ai_assistant\Neuron\Tools\DeferredProxyTool;
 use NeuronAI\Exceptions\ToolException;
-use NeuronAI\Tools\ToolInterface;
 
 /**
  * Asks the run for the next draft of the session.
@@ -27,23 +26,12 @@ use NeuronAI\Tools\ToolInterface;
   . ' drafting_get_history lists the drafts of this session.',
   label: new TranslatableMarkup('Draft content'),
 )]
-final class RequestDraftNeuronTool extends NeuronToolPluginBase {
+final class RequestDraftNeuronTool extends NeuronToolPluginBase implements DeferredToolPluginInterface {
 
   /**
    * The id this tool is registered under.
    */
   public const string TOOL_ID = 'drafting_draft_content';
-
-  /**
-   * {@inheritdoc}
-   *
-   * Neuron reads the deferred flag off the tool in the agent's registry, and
-   * the base registers a proxy there rather than this plugin. So this returns
-   * a proxy that carries the marker.
-   */
-  public function getNeuron(): ToolInterface {
-    return DeferredProxyTool::make($this->getPluginId(), $this->description(), $this->properties(), $this);
-  }
 
   /**
    * {@inheritdoc}
