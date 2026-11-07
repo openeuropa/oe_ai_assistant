@@ -90,9 +90,9 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
   /**
    * Tests that drafting reports per-group progress and the drafted fields.
    *
-   * The drafting tool call writes every group of the template in one call,
-   * so the stream would otherwise carry one tool part at the start and the
-   * next minutes later; the channel is what reports progress in between.
+   * One deferred call writes every group of the template. The stream would
+   * otherwise carry one tool part at the start and the next minutes later.
+   * The node that drafts yields an activity per group in between.
    */
   public function testDraftingReportsPerGroupProgressAndDraftedFields(): void {
     $user = $this->createUser(['use oe ai assistant']);
@@ -126,40 +126,37 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
       'Expected 200 response. Body: ' . substr($result['body'], 0, 500));
 
     $events = $this->parseSseEvents($result['body']);
-    $planEvents = array_values(array_filter($events, fn($e) => $e['type'] === 'data-plan'));
-    // Exactly one initial all-pending frame, plus one in_progress and one
-    // done per group (two groups): 5. An exact count, not a floor, so a
-    // regression that delivers every frame twice (confirmed possible: the
-    // channel and this method's own stream iteration are two independent
-    // delivery paths) is caught here rather than only visible as a UI bug.
-    $this->assertCount(5, $planEvents,
-      'Exactly one pending frame plus one in_progress and one done per group.');
+    $activity = array_values(array_filter($events, fn($e) => $e['type'] === 'data-workflow-activity'));
+    // One drafting frame and one drafted frame per group, for two groups: 4.
+    // An exact count, not a floor, so a regression that delivers every frame
+    // twice is caught here rather than only as a UI bug.
+    $this->assertCount(4, $activity,
+      'One drafting frame and one drafted frame per group.');
 
-    // Every plan frame carries {stepId, label, status} per step, matching
-    // what app/src/plugins/drafting/components/plan-steps.tsx expects.
-    $statusesByStep = [];
-    foreach ($planEvents as $event) {
-      foreach ($event['data'] as $step) {
-        $this->assertArrayHasKey('stepId', $step);
-        $this->assertArrayHasKey('label', $step);
-        $this->assertArrayHasKey('status', $step);
-        $statusesByStep[$step['stepId']][] = $step['status'];
-      }
+    // Every frame names its group, its label and its status, which is what
+    // app/src/plugins/drafting/hooks/use-drafting-runtime.ts merges by group.
+    $statusesByGroup = [];
+    foreach ($activity as $event) {
+      $step = $event['data']['data'];
+      $this->assertArrayHasKey('group', $step);
+      $this->assertArrayHasKey('label', $step);
+      $this->assertArrayHasKey('status', $step);
+      $statusesByGroup[$step['group']][] = $step['status'];
     }
-    $this->assertArrayHasKey('main_fields', $statusesByStep);
-    $this->assertSame(['pending', 'in_progress', 'done'], array_values(array_unique($statusesByStep['main_fields'])));
+    $this->assertArrayHasKey('main_fields', $statusesByGroup);
+    $this->assertSame(['drafting', 'drafted'], $statusesByGroup['main_fields']);
 
-    // Exactly one data-drafted-fields frame, after the last data-plan frame,
+    // Exactly one data-drafted-fields frame, after the last activity frame,
     // carrying the version, the editorial context snapshot and the whole
     // assembled field map — the same shape getMessages() joins onto the
     // tool-call result on reload, so the live stream and a reload show the
     // editor the same draft without a page refresh in between.
     $draftedFieldsEvents = array_values(array_filter($events, fn($e) => $e['type'] === 'data-drafted-fields'));
     $this->assertCount(1, $draftedFieldsEvents, 'Exactly one data-drafted-fields frame.');
-    $lastPlanIndex = array_search(end($planEvents), $events, TRUE);
+    $lastActivityIndex = array_search(end($activity), $events, TRUE);
     $draftedFieldsIndex = array_search($draftedFieldsEvents[0], $events, TRUE);
-    $this->assertGreaterThan($lastPlanIndex, $draftedFieldsIndex,
-      'data-drafted-fields must arrive after the last data-plan frame.');
+    $this->assertGreaterThan($lastActivityIndex, $draftedFieldsIndex,
+      'data-drafted-fields must arrive after the last activity frame.');
     $this->assertSame(1, $draftedFieldsEvents[0]['data']['version']);
     $this->assertArrayHasKey('template', $draftedFieldsEvents[0]['data']['context']);
     $this->assertSame(['tone' => NULL, 'documents' => []], [
