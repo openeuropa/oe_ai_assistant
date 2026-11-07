@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Drupal\oe_ai_assistant\Neuron\Workflow\Nodes;
+namespace Drupal\oe_ai_assistant\Neuron\Workflow\Editorial\Nodes;
 
 use Drupal\ai_neuron\Workflow\NeuronWorkflowManagerInterface;
 use Drupal\Component\Utility\Crypt;
@@ -10,8 +10,9 @@ use Drupal\Core\DependencyInjection\DependencySerializationTrait;
 use Drupal\Core\Logger\LoggerChannelInterface;
 use Drupal\oe_ai_assistant\Entity\Bundle\ContentCreationSessionInterface;
 use Drupal\oe_ai_assistant\Exception\SchemaRetriesExhaustedException;
-use Drupal\oe_ai_assistant\Neuron\Workflow\Events\DraftingRequestedEvent;
-use Drupal\oe_ai_assistant\Neuron\Workflow\Events\DraftStoredEvent;
+use Drupal\oe_ai_assistant\Neuron\Workflow\Drafting\Nodes\ValidateNode;
+use Drupal\oe_ai_assistant\Neuron\Workflow\Editorial\Events\DraftingRequestedEvent;
+use Drupal\oe_ai_assistant\Neuron\Workflow\Editorial\Events\DraftStoredEvent;
 use NeuronAI\Agent\Adapters\Events\ActivityStreamEvent;
 use NeuronAI\Agent\Adapters\Events\CustomStreamEvent;
 use NeuronAI\Chat\History\MessageStoreInterface;
@@ -24,10 +25,10 @@ use NeuronAI\Workflow\WorkflowState;
  *
  * The drafting runs here rather than inside the tool the model called, so it
  * can yield while it works and the editor sees which group it is writing. Each
- * group is drafted by the field group workflow, which checks the answer
+ * group is drafted by the drafting workflow, which checks the answer
  * against the schema of the group and asks again while it does not match.
  */
-final class DraftingNode extends Node {
+final class DraftContentNode extends Node {
 
   use DependencySerializationTrait;
 
@@ -196,7 +197,7 @@ final class DraftingNode extends Node {
    *   When no answer of the drafter matched the group schema.
    */
   private function draftGroup(array $group, string $run, string $task): array {
-    $state = $this->workflows->createWorkflow('field_group_drafter', [], [
+    $state = $this->workflows->createWorkflow('draft_group', [], [
       'session' => $this->session,
       'group' => (string) $group['groupId'],
       'schema' => (array) $group['schemaSlice'],

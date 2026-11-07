@@ -20,14 +20,14 @@ use NeuronAI\Tools\ToolInterface;
  * streams while it does, and the result reaches the model afterwards.
  */
 #[NeuronTool(
-  id: DraftContentNeuronTool::TOOL_ID,
+  id: RequestDraftNeuronTool::TOOL_ID,
   description: 'Drafts the content of every field group and stores it as the next draft.'
   . ' Call it once, when the editor is ready for a draft. The result names the'
   . ' draft ("Draft 1", "Draft 2", and so on) and gives its version;'
   . ' drafting_get_history lists the drafts of this session.',
   label: new TranslatableMarkup('Draft content'),
 )]
-final class DraftContentNeuronTool extends NeuronToolPluginBase {
+final class RequestDraftNeuronTool extends NeuronToolPluginBase {
 
   /**
    * The id this tool is registered under.

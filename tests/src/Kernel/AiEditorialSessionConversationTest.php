@@ -29,7 +29,7 @@ class AiEditorialSessionConversationTest extends AiEditorialSessionKernelTestBas
       'oe_ai_session' => (int) $session->id(),
       'thread_id' => $threadId,
       'message_id' => 'msg_' . $counter,
-      'agent_id' => 'drafting',
+      'agent_id' => 'editorial',
       'role' => 'user',
       'turn' => 1,
       'complete' => TRUE,
@@ -44,13 +44,13 @@ class AiEditorialSessionConversationTest extends AiEditorialSessionKernelTestBas
   public function testConversationThreadsGroupsOnlyItsOwnRows(): void {
     $session = $this->createSession($this->createUser());
     $other = $this->createSession($this->createUser());
-    $editorThread = 'drafting.session_' . $session->id();
-    $runThread = 'field_group.run_1';
+    $editorThread = 'editorial.session_' . $session->id();
+    $runThread = 'group_drafter.run_1';
 
     $this->createRow($session, $editorThread);
     $this->createRow($session, $runThread);
     $this->createRow($session, $runThread);
-    $this->createRow($other, 'drafting.session_' . $other->id());
+    $this->createRow($other, 'editorial.session_' . $other->id());
 
     $threads = $session->conversationThreads();
 
@@ -65,7 +65,7 @@ class AiEditorialSessionConversationTest extends AiEditorialSessionKernelTestBas
   public function testConversationToolResultsDecodesSettledCalls(): void {
     $session = $this->createSession($this->createUser());
 
-    $this->createRow($session, 'drafting.session_' . $session->id(), [
+    $this->createRow($session, 'editorial.session_' . $session->id(), [
       'meta' => json_encode([
         'type' => 'tool_call_result',
         'tools' => [
@@ -74,7 +74,7 @@ class AiEditorialSessionConversationTest extends AiEditorialSessionKernelTestBas
       ]),
     ]);
     // A row that is not a settled tool call contributes nothing.
-    $this->createRow($session, 'drafting.session_' . $session->id(), [
+    $this->createRow($session, 'editorial.session_' . $session->id(), [
       'meta' => json_encode(['type' => 'text']),
     ]);
 
@@ -90,9 +90,9 @@ class AiEditorialSessionConversationTest extends AiEditorialSessionKernelTestBas
     $session = $this->createSession($this->createUser());
     $other = $this->createSession($this->createUser());
 
-    $this->createRow($session, 'drafting.session_' . $session->id());
-    $this->createRow($session, 'field_group.run_1');
-    $this->createRow($other, 'drafting.session_' . $other->id());
+    $this->createRow($session, 'editorial.session_' . $session->id());
+    $this->createRow($session, 'group_drafter.run_1');
+    $this->createRow($other, 'editorial.session_' . $other->id());
 
     $session->deleteConversation();
 

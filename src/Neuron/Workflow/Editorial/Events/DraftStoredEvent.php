@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Drupal\oe_ai_assistant\Neuron\Workflow\Events;
+namespace Drupal\oe_ai_assistant\Neuron\Workflow\Editorial\Events;
 
 use NeuronAI\Workflow\Events\Event;
 

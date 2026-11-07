@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-namespace Drupal\oe_ai_assistant\Neuron\Workflow\Nodes;
+namespace Drupal\oe_ai_assistant\Neuron\Workflow\Editorial\Nodes;
 
-use Drupal\oe_ai_assistant\Neuron\Workflow\Events\DraftStoredEvent;
+use Drupal\oe_ai_assistant\Neuron\Workflow\Editorial\Events\DraftStoredEvent;
 use NeuronAI\Workflow\WorkflowState;
 
 /**
@@ -15,7 +15,7 @@ use NeuronAI\Workflow\WorkflowState;
  * as the result of its own call. Starting a turn here would ask the editor's
  * question a second time instead.
  */
-final class ChatResumeNode extends EditorialAgentNode {
+final class ChatResumeNode extends AgentNode {
 
   /**
    * Streams what the agent answers once it reads the draft.

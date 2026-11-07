@@ -2,10 +2,10 @@
 
 declare(strict_types=1);
 
-namespace Drupal\oe_ai_assistant\Neuron\Workflow\Nodes;
+namespace Drupal\oe_ai_assistant\Neuron\Workflow\Editorial\Nodes;
 
 use Drupal\Core\DependencyInjection\DependencySerializationTrait;
-use Drupal\oe_ai_assistant\Neuron\Workflow\Events\DraftingRequestedEvent;
+use Drupal\oe_ai_assistant\Neuron\Workflow\Editorial\Events\DraftingRequestedEvent;
 use NeuronAI\Agent\AgentInterface;
 use NeuronAI\Agent\AgentState;
 use NeuronAI\Agent\Interrupt\ToolResultsRequest;
@@ -22,7 +22,7 @@ use NeuronAI\Workflow\WorkflowState;
  * the same session, which is how the second one finds the run the first one
  * suspended.
  */
-abstract class EditorialAgentNode extends Node {
+abstract class AgentNode extends Node {
 
   use DependencySerializationTrait;
 

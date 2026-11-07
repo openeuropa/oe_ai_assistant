@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-namespace Drupal\oe_ai_assistant\Neuron\Workflow\Nodes;
+namespace Drupal\oe_ai_assistant\Neuron\Workflow\Editorial\Nodes;
 
-use Drupal\oe_ai_assistant\Neuron\Workflow\Events\ChatTurnEvent;
+use Drupal\oe_ai_assistant\Neuron\Workflow\Editorial\Events\ChatTurnEvent;
 use NeuronAI\Chat\Messages\UserMessage;
 use NeuronAI\Workflow\WorkflowState;
 
@@ -15,7 +15,7 @@ use NeuronAI\Workflow\WorkflowState;
  * the run and the adapter of the run shapes them. The agent answers or asks
  * for a draft, and the returned event says which.
  */
-final class ChatNode extends EditorialAgentNode {
+final class ChatNode extends AgentNode {
 
   /**
    * Streams the agent's answer to one message of the editor.

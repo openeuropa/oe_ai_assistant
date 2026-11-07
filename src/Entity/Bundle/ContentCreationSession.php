@@ -166,7 +166,7 @@ class ContentCreationSession extends AiEditorialSession implements ContentCreati
   /**
    * Collects every stored draft of this session, oldest first.
    *
-   * The drafting agent writes a draft to the drafts thread of the session.
+   * The drafting run writes a draft to the drafts thread of the session.
    * The chat endpoint writes one as the result of a draft_content tool call
    * in the stored transcript, so this reads both until OEL-5072 retires the
    * second.

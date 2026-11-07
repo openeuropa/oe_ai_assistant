@@ -13,8 +13,8 @@ use Drupal\oe_ai_assistant\Entity\Bundle\ContentCreationSessionInterface;
  * The agent that talks to the editor and drafts through tools.
  */
 #[NeuronAgent(
-  id: DraftingNeuronAgent::PLUGIN_ID,
-  label: new TranslatableMarkup('Drafting'),
+  id: EditorialNeuronAgent::PLUGIN_ID,
+  label: new TranslatableMarkup('Editorial'),
   description: new TranslatableMarkup('Gathers requirements in conversation and drafts content per field group.'),
   operation_type: 'chat_with_tools',
   tools: [
@@ -28,12 +28,12 @@ use Drupal\oe_ai_assistant\Entity\Bundle\ContentCreationSessionInterface;
     ),
   ],
 )]
-final class DraftingNeuronAgent extends EditorialSessionAgentBase {
+final class EditorialNeuronAgent extends EditorialSessionAgentBase {
 
   /**
    * The id this agent is registered under.
    */
-  public const string PLUGIN_ID = 'drafting';
+  public const string PLUGIN_ID = 'editorial';
 
   /**
    * {@inheritdoc}

@@ -279,7 +279,7 @@ Overflow text.", $prompt);
       $session->set('tone', 1)->save();
     }
 
-    $agent = $this->container->get(NeuronAgentManagerInterface::class)->createAgent('field_group', [
+    $agent = $this->container->get(NeuronAgentManagerInterface::class)->createAgent('group_drafter', [
       'session' => $session,
       'group' => 'main_fields',
       'schema' => ['type' => 'object'],

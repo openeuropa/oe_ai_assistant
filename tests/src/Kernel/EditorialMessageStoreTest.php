@@ -61,13 +61,13 @@ class EditorialMessageStoreTest extends AiEditorialSessionKernelTestBase {
   public function testAppendStampsTheSessionOfTheRun(): void {
     $session = $this->createSession($this->createUser());
 
-    $this->storeFor('drafting', $session)->append('thread-1', new UserMessage('Draft the intro.'));
+    $this->storeFor('editorial', $session)->append('thread-1', new UserMessage('Draft the intro.'));
 
     $rows = $this->rowsOf('thread-1');
     $this->assertCount(1, $rows);
     $this->assertSame('editorial_session', $rows[0]->bundle());
     $this->assertSame((int) $session->id(), (int) $rows[0]->get('oe_ai_session')->target_id);
-    $this->assertSame('drafting', $rows[0]->get('agent_id')->value);
+    $this->assertSame('editorial', $rows[0]->get('agent_id')->value);
   }
 
   /**
@@ -76,13 +76,13 @@ class EditorialMessageStoreTest extends AiEditorialSessionKernelTestBase {
   public function testSubAgentRunCarriesTheSameSession(): void {
     $session = $this->createSession($this->createUser());
 
-    $this->storeFor('field_group', $session)->append('thread-2', new AssistantMessage('{"title": "Draft"}'));
+    $this->storeFor('group_drafter', $session)->append('thread-2', new AssistantMessage('{"title": "Draft"}'));
 
     $rows = $this->rowsOf('thread-2');
     $this->assertCount(1, $rows);
     $this->assertSame('editorial_session', $rows[0]->bundle());
     $this->assertSame((int) $session->id(), (int) $rows[0]->get('oe_ai_session')->target_id);
-    $this->assertSame('field_group', $rows[0]->get('agent_id')->value);
+    $this->assertSame('group_drafter', $rows[0]->get('agent_id')->value);
   }
 
   /**
@@ -102,7 +102,7 @@ class EditorialMessageStoreTest extends AiEditorialSessionKernelTestBase {
    */
   public function testAppendStampsEveryMessageOfConversation(): void {
     $session = $this->createSession($this->createUser());
-    $store = $this->storeFor('drafting', $session);
+    $store = $this->storeFor('editorial', $session);
 
     $store->append('thread-4', new UserMessage('Draft the intro.'));
     $store->append('thread-4', new AssistantMessage('Sure, give me a moment.'));

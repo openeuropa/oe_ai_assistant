@@ -24,7 +24,7 @@ use Drupal\oe_ai_assistant\Service\DraftSaverInterface;
 use Drupal\oe_ai_assistant\Service\DraftingSchemaProviderInterface;
 use Drupal\oe_ai_assistant\Service\PreviewRendererInterface;
 use Drupal\oe_ai_assistant\Response\SseResponse;
-use Drupal\oe_ai_assistant\Neuron\Workflow\Events\ChatTurnEvent;
+use Drupal\oe_ai_assistant\Neuron\Workflow\Editorial\Events\ChatTurnEvent;
 use NeuronAI\Workflow\Executor\ExecutionRequest;
 use NeuronAI\Workflow\Streaming\ProtocolEvent;
 use Symfony\Component\DependencyInjection\ContainerInterface;
@@ -35,9 +35,9 @@ use Symfony\Component\HttpFoundation\Response;
 /**
  * Drafting plugin: AI-powered content drafting with SSE streaming.
  *
- * The chat action streams the `drafting` Neuron agent, which owns its own
+ * The chat action streams the `editorial` Neuron agent, which owns its own
  * tools, conversation thread, and per-group drafting through the
- * `field_group` workflow. The conversation is scoped by an editorial
+ * `draft_group` workflow. The conversation is scoped by an editorial
  * session, which the agent reads as plugin context; any user with access
  * to the session sees the same conversation.
  */
@@ -281,7 +281,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
       throw new ActionException('invalid_request', 'The editorial session does not support drafting.', 400);
     }
 
-    // The drafting node writes this version, and it is decided before any
+    // The draft-content node writes this version, and it is decided before any
     // model call: the turn that asks for a draft takes the next one.
     $version = (int) $session->nextVersion()['version'];
     $channel = new SseChannel();
@@ -353,7 +353,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
     if (!$session instanceof ContentCreationSessionInterface) {
       throw new ActionException('invalid_request', 'The editorial session does not support drafting.', 400);
     }
-    $thread = $session->conversationThread('drafting.session_' . $session->id());
+    $thread = $session->conversationThread('editorial.session_' . $session->id());
 
     // Preload the authors of user turns in one query, grouped by uid, so
     // each turn can carry the author's display name for avatars and the

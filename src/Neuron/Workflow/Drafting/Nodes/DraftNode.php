@@ -2,13 +2,13 @@
 
 declare(strict_types=1);
 
-namespace Drupal\oe_ai_assistant\Neuron\Workflow\Nodes;
+namespace Drupal\oe_ai_assistant\Neuron\Workflow\Drafting\Nodes;
 
 use Drupal\ai_neuron\Agent\NeuronAgentManagerInterface;
 use Drupal\Core\DependencyInjection\DependencySerializationTrait;
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
-use Drupal\oe_ai_assistant\Neuron\Workflow\Events\DraftedEvent;
-use Drupal\oe_ai_assistant\Neuron\Workflow\Events\DraftRequestEvent;
+use Drupal\oe_ai_assistant\Neuron\Workflow\Drafting\Events\DraftedEvent;
+use Drupal\oe_ai_assistant\Neuron\Workflow\Drafting\Events\DraftRequestEvent;
 use NeuronAI\Chat\Messages\UserMessage;
 use NeuronAI\Workflow\Node;
 use NeuronAI\Workflow\WorkflowState;
@@ -60,7 +60,7 @@ final class DraftNode extends Node {
    *   can then call chat() plainly.
    */
   public function __invoke(DraftRequestEvent $event, WorkflowState $state): DraftedEvent {
-    $this->agent ??= $this->agents->createAgent('field_group', [
+    $this->agent ??= $this->agents->createAgent('group_drafter', [
       'session' => $this->session,
       'group' => $this->group,
       'schema' => $this->schema,

@@ -81,7 +81,7 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
 
     // The turn is persisted on the agent's own Neuron thread for the session.
     $threads = $session->conversationThreads();
-    $thread = $threads['drafting.session_' . $session->id()] ?? [];
+    $thread = $threads['editorial.session_' . $session->id()] ?? [];
     $roles = array_map(fn($row) => $row->get('role')->value, $thread);
     $this->assertContains('user', $roles, 'A user turn must be persisted.');
     $this->assertContains('assistant', $roles, 'An assistant turn must be persisted.');
@@ -337,10 +337,10 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
    * One document is processed through the real Tika service, one is left
    * scheduled: every field-group drafter's prompt must carry the extracted
    * text of the first and announce the second as not available yet.
-   * DraftingNeuronAgent::instructions() does not call documentsPrompt() —
+   * EditorialNeuronAgent::instructions() does not call documentsPrompt() —
    * confirmed by reading it — so the editor-facing agent itself is not
    * asserted on here; only EditorialSessionAgentBase's sub-agents
-   * (FieldGroupNeuronAgent) call it.
+   * (GroupDrafterNeuronAgent) call it.
    */
   public function testDocumentExtractsReachFieldGroupSubAgents(): void {
     $user = $this->createUser(['use oe ai assistant']);
@@ -439,7 +439,7 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
     $user = $this->createUser(['use oe ai assistant']);
     $this->loginUser($user);
     $session = $this->createSession($user);
-    $thread = 'drafting.session_' . $session->id();
+    $thread = 'editorial.session_' . $session->id();
 
     $userRow = $this->seedNeuronRow($session, $thread, [
       'role' => 'user',
@@ -452,7 +452,7 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
     ]);
     // A row of a sub-agent's own thread is not the editor's transcript and
     // must be filtered out.
-    $this->seedNeuronRow($session, 'field_group.session_' . $session->id() . '.group_main_fields', [
+    $this->seedNeuronRow($session, 'group_drafter.session_' . $session->id() . '.group_main_fields', [
       'role' => 'user',
       'content' => json_encode([['type' => 'text', 'content' => 'leaked sub-agent chatter', 'meta' => []]]),
     ]);
@@ -505,7 +505,7 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
       'oe_ai_session' => (int) $session->id(),
       'thread_id' => $threadId,
       'message_id' => 'msg_' . $counter,
-      'agent_id' => 'drafting',
+      'agent_id' => 'editorial',
       'role' => 'user',
       'turn' => $counter,
       'complete' => TRUE,
@@ -530,7 +530,7 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
     $user = $this->createUser(['use oe ai assistant']);
     $this->loginUser($user);
     $session = $this->createSession($user);
-    $thread = 'drafting.session_' . $session->id();
+    $thread = 'editorial.session_' . $session->id();
 
     $this->seedNeuronRow($session, $thread, [
       'role' => 'user',
@@ -550,7 +550,7 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
       ]),
     ]);
 
-    // The matching row in the drafts thread, as DraftContentNeuronTool
+    // The matching row in the drafts thread, as RequestDraftNeuronTool
     // ::storeDraft() writes it.
     $fields = ['title' => [['value' => 'Test Title']]];
     $context = [
@@ -599,7 +599,7 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
     $user = $this->createUser(['use oe ai assistant']);
     $this->loginUser($user);
     $session = $this->createSession($user);
-    $thread = 'drafting.session_' . $session->id();
+    $thread = 'editorial.session_' . $session->id();
 
     // The model's own call, committed first and never replaced.
     $this->seedNeuronRow($session, $thread, [
@@ -651,7 +651,7 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
     $user = $this->createUser(['use oe ai assistant']);
     $this->loginUser($user);
     $session = $this->createSession($user);
-    $thread = 'drafting.session_' . $session->id();
+    $thread = 'editorial.session_' . $session->id();
 
     $this->seedNeuronRow($session, $thread, [
       'role' => 'user',
@@ -751,7 +751,7 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
 
     // The version reaches the model through the recorded confirmation.
     $threads = $session->conversationThreads();
-    $thread = $threads['drafting.session_' . $session->id()] ?? [];
+    $thread = $threads['editorial.session_' . $session->id()] ?? [];
     $texts = array_map(
       fn($row) => implode('', array_map(
         static fn (array $block): string => (string) ($block['content'] ?? ''),
@@ -803,7 +803,7 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
     assert($session instanceof ContentCreationSessionInterface);
 
     // Seed two drafted turns with provenance snapshots, as
-    // DraftContentNeuronTool::storeDraft() writes them.
+    // RequestDraftNeuronTool::storeDraft() writes them.
     $documents = [
       [
         'id' => '12',
@@ -858,7 +858,7 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
 
     // The tool result was recorded on the editor's own thread.
     $threads = $session->conversationThreads();
-    $thread = $threads['drafting.session_' . $session->id()] ?? [];
+    $thread = $threads['editorial.session_' . $session->id()] ?? [];
     $results = [];
     foreach ($thread as $row) {
       $results = array_merge($results, $row->getToolResults());

@@ -14,10 +14,10 @@ use Drupal\Core\Plugin\Context\EntityContextDefinition;
 use Drupal\Core\StringTranslation\TranslatableMarkup;
 use Drupal\oe_ai_assistant\Entity\Bundle\ContentCreationSessionInterface;
 use Drupal\oe_ai_assistant\Neuron\Chat\Messages\Stream\Adapters\PatchedVercelAIAdapter;
-use Drupal\oe_ai_assistant\Neuron\Workflow\Events\ChatTurnEvent;
-use Drupal\oe_ai_assistant\Neuron\Workflow\Nodes\ChatNode;
-use Drupal\oe_ai_assistant\Neuron\Workflow\Nodes\ChatResumeNode;
-use Drupal\oe_ai_assistant\Neuron\Workflow\Nodes\DraftingNode;
+use Drupal\oe_ai_assistant\Neuron\Workflow\Editorial\Events\ChatTurnEvent;
+use Drupal\oe_ai_assistant\Neuron\Workflow\Editorial\Nodes\ChatNode;
+use Drupal\oe_ai_assistant\Neuron\Workflow\Editorial\Nodes\ChatResumeNode;
+use Drupal\oe_ai_assistant\Neuron\Workflow\Editorial\Nodes\DraftContentNode;
 use NeuronAI\Chat\History\MessageStoreInterface;
 use NeuronAI\Workflow\Events\Event;
 use NeuronAI\Workflow\Streaming\Adapter\StreamAdapterInterface;
@@ -43,7 +43,7 @@ use Symfony\Component\DependencyInjection\Attribute\Autowire;
     ),
   ],
 )]
-final class EditorialTurnWorkflow extends NeuronWorkflowPluginBase {
+final class EditorialWorkflow extends NeuronWorkflowPluginBase {
 
   public function __construct(
     array $configuration,
@@ -68,11 +68,11 @@ final class EditorialTurnWorkflow extends NeuronWorkflowPluginBase {
     // One agent for the turn: building it here resolves the session's
     // template and the provider while the endpoint can still answer 400, and
     // the node that resumes the turn needs the instance that suspended.
-    $agent = $this->agents->createAgent('drafting', ['session' => $session]);
+    $agent = $this->agents->createAgent('editorial', ['session' => $session]);
 
     return [
       new ChatNode($agent),
-      new DraftingNode($this->workflows, $this->store, $session, $this->logger),
+      new DraftContentNode($this->workflows, $this->store, $session, $this->logger),
       new ChatResumeNode($agent),
     ];
   }
