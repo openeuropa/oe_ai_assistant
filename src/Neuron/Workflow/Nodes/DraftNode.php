@@ -68,12 +68,6 @@ final class DraftNode extends Node {
     ]);
 
     $result = $this->agent->chat(new UserMessage($event->message), TRUE);
-    if ($result instanceof \Generator) {
-      // Nobody reads the chunks, and a generator holds its return value
-      // until it finishes. So this drains it.
-      iterator_to_array($result);
-      $result = $result->getReturn();
-    }
 
     return new DraftedEvent($result->getMessage()?->getContent() ?? '');
   }
