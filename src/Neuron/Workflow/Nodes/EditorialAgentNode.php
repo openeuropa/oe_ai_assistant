@@ -4,9 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\oe_ai_assistant\Neuron\Workflow\Nodes;
 
-use Drupal\ai_neuron\Agent\NeuronAgentManagerInterface;
 use Drupal\Core\DependencyInjection\DependencySerializationTrait;
-use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
 use Drupal\oe_ai_assistant\Neuron\Workflow\Events\DraftingRequestedEvent;
 use NeuronAI\Agent\AgentInterface;
 use NeuronAI\Agent\AgentState;
@@ -31,26 +29,20 @@ abstract class EditorialAgentNode extends Node {
   /**
    * Builds the node.
    *
-   * @param \Drupal\ai_neuron\Agent\NeuronAgentManagerInterface $agents
-   *   Builds the agent of this run's conversation.
-   * @param \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $session
-   *   The session the conversation belongs to.
+   * The agent is built with the run rather than here. Building it resolves
+   * the session's template and the provider, and the endpoint has to answer a
+   * stale template or a misconfigured provider before it opens the stream: an
+   * exception raised once the response is streaming reaches the editor as
+   * Drupal's own error page, mid-protocol. Both chat nodes share the one
+   * instance, which is also how the node that resumes the turn reaches the
+   * call the node that started it suspended on.
+   *
+   * @param \NeuronAI\Agent\AgentInterface $agent
+   *   The agent of this run's conversation.
    */
   public function __construct(
-    protected NeuronAgentManagerInterface $agents,
-    protected AiEditorialSessionInterface $session,
+    protected AgentInterface $agent,
   ) {}
-
-  /**
-   * Builds the agent of this run's conversation.
-   *
-   * @return \NeuronAI\Agent\AgentInterface
-   *   The agent. The manager gives it the provider, the conversation store,
-   *   the persistence and the listeners of the site.
-   */
-  protected function agent(): AgentInterface {
-    return $this->agents->createAgent('drafting', ['session' => $this->session]);
-  }
 
   /**
    * Decides what the run does with the turn the agent just ran.

@@ -27,7 +27,7 @@ final class ChatNode extends EditorialAgentNode {
     $state->set('version', $event->version);
     $state->set('task', $event->message);
 
-    $agentState = yield from $this->agent()->stream(new UserMessage($event->message));
+    $agentState = yield from $this->agent->stream(new UserMessage($event->message));
 
     return $this->route($agentState, $state);
   }

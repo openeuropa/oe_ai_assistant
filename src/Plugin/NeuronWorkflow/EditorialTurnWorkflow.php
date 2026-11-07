@@ -65,10 +65,15 @@ final class EditorialTurnWorkflow extends NeuronWorkflowPluginBase {
     $session = $this->getContextValue('session');
     assert($session instanceof ContentCreationSessionInterface);
 
+    // One agent for the turn: building it here resolves the session's
+    // template and the provider while the endpoint can still answer 400, and
+    // the node that resumes the turn needs the instance that suspended.
+    $agent = $this->agents->createAgent('drafting', ['session' => $session]);
+
     return [
-      new ChatNode($this->agents, $session),
+      new ChatNode($agent),
       new DraftingNode($this->workflows, $this->store, $session, $this->logger),
-      new ChatResumeNode($this->agents, $session),
+      new ChatResumeNode($agent),
     ];
   }
 

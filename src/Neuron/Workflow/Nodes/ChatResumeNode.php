@@ -21,7 +21,7 @@ final class ChatResumeNode extends EditorialAgentNode {
    * Streams what the agent answers once it reads the draft.
    */
   public function __invoke(DraftStoredEvent $event, WorkflowState $state): \Generator {
-    $agentState = yield from $this->agent()
+    $agentState = yield from $this->agent
       ->submitToolResults($state->get('results'))
       ->events();
 

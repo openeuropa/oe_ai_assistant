@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\oe_ai_assistant\Kernel;
 
-use Drupal\ai\Response\AiStreamedResponse;
+use Drupal\oe_ai_assistant\Response\SseResponse;
 use Drupal\oe_ai_assistant\Exception\ActionException;
 use Drupal\oe_ai_assistant\Plugin\AiAssistantPluginManager;
 use Drupal\oe_ai_assistant_test\Plugin\AiProvider\MockAiProvider;
@@ -162,14 +162,14 @@ class DraftingPluginSetTemplateTest extends AiEditorialSessionKernelTestBase {
   }
 
   /**
-   * The chat() action streams via AiStreamedResponse.
+   * The chat() action streams via SseResponse.
    *
-   * AiStreamedResponse::sendContent() drains every PHP output buffer before
+   * SseResponse::sendContent() drains every PHP output buffer before
    * sending, so events reach the wire as the agent produces them rather
    * than batched into one block at the end of the request (PHP's default
    * output_buffering holds everything a callback echoes otherwise).
    */
-  public function testChatStreamsViaAiStreamedResponse(): void {
+  public function testChatStreamsViaSseResponse(): void {
     $sessionId = $this->ownedSession();
     $this->setTemplate($sessionId, 'news_a');
     MockAiProvider::enqueue(new MockResponse(text: 'Hello.'));
@@ -183,7 +183,7 @@ class DraftingPluginSetTemplateTest extends AiEditorialSessionKernelTestBase {
 
     $response = $plugin->chat($request);
 
-    $this->assertInstanceOf(AiStreamedResponse::class, $response);
+    $this->assertInstanceOf(SseResponse::class, $response);
   }
 
   /**
@@ -209,8 +209,13 @@ class DraftingPluginSetTemplateTest extends AiEditorialSessionKernelTestBase {
 
     $response = $plugin->chat($request);
 
+    // The channel flushes each frame out of the buffer it was written to, so
+    // the callback runs inside two: the inner one receives the frames and the
+    // outer one collects what the flush pushes out of it.
+    ob_start();
     ob_start();
     ($response->getCallback())();
+    ob_end_flush();
     $output = ob_get_clean();
 
     $this->assertStringNotContainsString(
@@ -219,7 +224,6 @@ class DraftingPluginSetTemplateTest extends AiEditorialSessionKernelTestBase {
       'The internal failure detail must never leak into the stream.',
     );
     $this->assertStringContainsString('"type":"error"', $output);
-    $this->assertStringEndsWith("data: [DONE]\n\n", $output);
   }
 
   /**

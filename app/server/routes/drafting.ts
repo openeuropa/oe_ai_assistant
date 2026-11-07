@@ -20,7 +20,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { Router } from "express";
-import { sendDone, sendEvent, setupSseResponse } from "../lib/sse";
+import { sendEvent, setupSseResponse } from "../lib/sse";
 import type {
   ChatOptions,
   DraftingService,
@@ -214,8 +214,6 @@ export function createDraftingRouter(service: DraftingService): Router {
       console.error("SSE stream error:", err);
     }
 
-    // Send the [DONE] sentinel to signal stream termination.
-    sendDone(res);
     res.end();
   });
 
