@@ -323,6 +323,15 @@ class DraftingPlugin extends AiAssistantPluginBase {
           'errorText' => 'The assistant request failed. Please try again.',
         ]));
       }
+      finally {
+        // The client's decoder raises an error of its own when the body ends
+        // without this frame. That error hides the one above. A UI message
+        // stream ends with the terminator, so this writes it whatever the
+        // run did.
+        echo "data: [DONE]\n\n";
+        @ob_flush();
+        flush();
+      }
     }, 200, ['x-vercel-ai-ui-message-stream' => 'v1']);
 
     return $response;

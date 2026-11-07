@@ -187,6 +187,30 @@ class DraftingPluginSetTemplateTest extends AiEditorialSessionKernelTestBase {
   }
 
   /**
+   * The stream ends with the terminator the client's decoder requires.
+   *
+   * A UI message stream is terminated by a `data: [DONE]` frame. Without it
+   * the client's decoder reaches the end of the body and throws, so a turn
+   * that answered correctly still fails in the browser.
+   */
+  public function testChatStreamEndsWithTheDoneTerminator(): void {
+    $sessionId = $this->ownedSession();
+    $this->setTemplate($sessionId, 'news_a');
+    MockAiProvider::enqueue(new MockResponse(text: 'Hello.'));
+
+    $plugin = $this->container->get(AiAssistantPluginManager::class)
+      ->createInstance('drafting');
+    $request = Request::create('/', 'POST', content: json_encode([
+      'sessionId' => $sessionId,
+      'message' => 'Hi.',
+    ]));
+
+    $output = $this->drain($plugin->chat($request));
+
+    $this->assertStringEndsWith("data: [DONE]\n\n", $output);
+  }
+
+  /**
    * A mid-stream provider failure degrades to a clean error event.
    *
    * The agent's stream has already started (a start event is on the wire)
@@ -209,14 +233,7 @@ class DraftingPluginSetTemplateTest extends AiEditorialSessionKernelTestBase {
 
     $response = $plugin->chat($request);
 
-    // The channel flushes each frame out of the buffer it was written to, so
-    // the callback runs inside two: the inner one receives the frames and the
-    // outer one collects what the flush pushes out of it.
-    ob_start();
-    ob_start();
-    ($response->getCallback())();
-    ob_end_flush();
-    $output = ob_get_clean();
+    $output = $this->drain($response);
 
     $this->assertStringNotContainsString(
       'MockAiProvider',
@@ -252,6 +269,22 @@ class DraftingPluginSetTemplateTest extends AiEditorialSessionKernelTestBase {
 
     $this->expectException(\InvalidArgumentException::class);
     $plugin->executeAction('chat', $request);
+  }
+
+  /**
+   * Runs a streamed response's callback and returns what it wrote.
+   *
+   * The channel flushes each frame out of the buffer it was written to, so
+   * the callback runs inside two: the inner one receives the frames and the
+   * outer one collects what the flush pushes out of it.
+   */
+  private function drain(SseResponse $response): string {
+    ob_start();
+    ob_start();
+    ($response->getCallback())();
+    ob_end_flush();
+
+    return (string) ob_get_clean();
   }
 
 }
