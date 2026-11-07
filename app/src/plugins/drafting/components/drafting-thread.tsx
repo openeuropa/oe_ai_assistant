@@ -136,9 +136,17 @@ function MessageError() {
   if (!status || status.type !== "incomplete" || status.reason !== "error") {
     return null;
   }
-  const errorText = (status as Record<string, unknown>).error as
-    | string
-    | undefined;
+  // The runtime stores whatever failed. A string arrives only when the
+  // stream reported the error. A transport failure leaves an Error, and a
+  // rejected request leaves the response body. React throws on an object
+  // child, so only a string reaches the markup.
+  const error = (status as Record<string, unknown>).error;
+  const errorText =
+    typeof error === "string"
+      ? error
+      : error instanceof Error
+        ? error.message
+        : undefined;
   return (
     <div className="mt-2 flex items-start gap-2 rounded-md border border-red-200 bg-red-50 px-3 py-2">
       <AlertCircle size={16} className="mt-0.5 shrink-0 text-red-500" />
