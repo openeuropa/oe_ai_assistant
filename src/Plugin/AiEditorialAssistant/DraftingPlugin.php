@@ -24,7 +24,7 @@ use Drupal\oe_ai_assistant\Service\DraftSaverInterface;
 use Drupal\oe_ai_assistant\Service\DraftingSchemaProviderInterface;
 use Drupal\oe_ai_assistant\Service\PreviewRendererInterface;
 use Drupal\oe_ai_assistant\Response\SseResponse;
-use Drupal\oe_ai_assistant\Neuron\Workflow\Editorial\Events\ChatTurnEvent;
+use Drupal\oe_ai_assistant\Plugin\NeuronWorkflow\Editorial\Events\ChatTurnEvent;
 use NeuronAI\Workflow\Executor\ExecutionRequest;
 use NeuronAI\Workflow\Streaming\ProtocolEvent;
 use Symfony\Component\DependencyInjection\ContainerInterface;
@@ -323,16 +323,14 @@ class DraftingPlugin extends AiAssistantPluginBase {
           'errorText' => 'The assistant request failed. Please try again.',
         ]));
       }
-      finally {
-        // The client's decoder raises an error of its own when the body ends
-        // without this frame. That error hides the one above. A UI message
-        // stream ends with the terminator, so this writes it whatever the
-        // run did.
-        echo "data: [DONE]\n\n";
-        @ob_flush();
-        flush();
-      }
-    }, 200, ['x-vercel-ai-ui-message-stream' => 'v1']);
+    },
+      200,
+      ['x-vercel-ai-ui-message-stream' => 'v1'],
+      // The sentinel this protocol ends with. The response writes it, because
+      // a run reaches the client through a channel and the channel is a
+      // transport: a hub that frames the stream itself has no body to end.
+      "data: [DONE]\n\n",
+    );
 
     return $response;
   }

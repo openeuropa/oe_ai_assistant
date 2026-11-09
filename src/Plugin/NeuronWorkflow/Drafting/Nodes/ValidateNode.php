@@ -2,10 +2,10 @@
 
 declare(strict_types=1);
 
-namespace Drupal\oe_ai_assistant\Neuron\Workflow\Drafting\Nodes;
+namespace Drupal\oe_ai_assistant\Plugin\NeuronWorkflow\Drafting\Nodes;
 
-use Drupal\oe_ai_assistant\Neuron\Workflow\Drafting\Events\DraftedEvent;
-use Drupal\oe_ai_assistant\Neuron\Workflow\Drafting\Events\SchemaViolationEvent;
+use Drupal\oe_ai_assistant\Plugin\NeuronWorkflow\Drafting\Events\DraftedEvent;
+use Drupal\oe_ai_assistant\Plugin\NeuronWorkflow\Drafting\Events\SchemaViolationEvent;
 use Drupal\oe_ai_assistant\Service\RequestValidator;
 use JsonSchema\Constraints\BaseConstraint;
 use JsonSchema\Validator;

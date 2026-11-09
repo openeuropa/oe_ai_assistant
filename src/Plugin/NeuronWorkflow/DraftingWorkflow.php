@@ -10,11 +10,11 @@ use Drupal\ai_neuron\Workflow\NeuronWorkflowPluginBase;
 use Drupal\Core\Plugin\Context\ContextDefinition;
 use Drupal\Core\Plugin\Context\EntityContextDefinition;
 use Drupal\Core\StringTranslation\TranslatableMarkup;
-use Drupal\oe_ai_assistant\Neuron\Workflow\Drafting\DraftingResources;
-use Drupal\oe_ai_assistant\Neuron\Workflow\Drafting\Events\DraftRequestEvent;
-use Drupal\oe_ai_assistant\Neuron\Workflow\Drafting\Nodes\DraftNode;
-use Drupal\oe_ai_assistant\Neuron\Workflow\Drafting\Nodes\RetryNode;
-use Drupal\oe_ai_assistant\Neuron\Workflow\Drafting\Nodes\ValidateNode;
+use Drupal\oe_ai_assistant\Plugin\NeuronWorkflow\Drafting\DraftingResources;
+use Drupal\oe_ai_assistant\Plugin\NeuronWorkflow\Drafting\Events\DraftRequestEvent;
+use Drupal\oe_ai_assistant\Plugin\NeuronWorkflow\Drafting\Nodes\DraftNode;
+use Drupal\oe_ai_assistant\Plugin\NeuronWorkflow\Drafting\Nodes\RetryNode;
+use Drupal\oe_ai_assistant\Plugin\NeuronWorkflow\Drafting\Nodes\ValidateNode;
 use NeuronAI\Workflow\Events\Event;
 
 /**

@@ -2,11 +2,11 @@
 
 declare(strict_types=1);
 
-namespace Drupal\oe_ai_assistant\Neuron\Workflow\Drafting\Nodes;
+namespace Drupal\oe_ai_assistant\Plugin\NeuronWorkflow\Drafting\Nodes;
 
-use Drupal\oe_ai_assistant\Neuron\Workflow\Drafting\DraftingResources;
-use Drupal\oe_ai_assistant\Neuron\Workflow\Drafting\Events\DraftedEvent;
-use Drupal\oe_ai_assistant\Neuron\Workflow\Drafting\Events\DraftRequestEvent;
+use Drupal\oe_ai_assistant\Plugin\NeuronWorkflow\Drafting\DraftingResources;
+use Drupal\oe_ai_assistant\Plugin\NeuronWorkflow\Drafting\Events\DraftedEvent;
+use Drupal\oe_ai_assistant\Plugin\NeuronWorkflow\Drafting\Events\DraftRequestEvent;
 use NeuronAI\Chat\Messages\UserMessage;
 use NeuronAI\Workflow\Node;
 use NeuronAI\Workflow\WorkflowState;

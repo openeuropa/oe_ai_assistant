@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Drupal\oe_ai_assistant\Neuron\Workflow\Editorial;
+namespace Drupal\oe_ai_assistant\Plugin\NeuronWorkflow\Editorial;
 
 use Drupal\ai_neuron\Workflow\NeuronWorkflowManagerInterface;
 use Drupal\Core\Logger\LoggerChannelInterface;

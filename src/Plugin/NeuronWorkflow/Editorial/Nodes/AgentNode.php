@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-namespace Drupal\oe_ai_assistant\Neuron\Workflow\Editorial\Nodes;
+namespace Drupal\oe_ai_assistant\Plugin\NeuronWorkflow\Editorial\Nodes;
 
-use Drupal\oe_ai_assistant\Neuron\Workflow\Editorial\Events\DraftingRequestedEvent;
+use Drupal\oe_ai_assistant\Plugin\NeuronWorkflow\Editorial\Events\DraftingRequestedEvent;
 use NeuronAI\Agent\AgentInterface;
 use NeuronAI\Agent\AgentState;
 use NeuronAI\Agent\Interrupt\ToolResultsRequest;

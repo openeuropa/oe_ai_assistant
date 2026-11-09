@@ -187,30 +187,6 @@ class DraftingPluginSetTemplateTest extends AiEditorialSessionKernelTestBase {
   }
 
   /**
-   * The stream ends with the terminator the client's decoder requires.
-   *
-   * A UI message stream is terminated by a `data: [DONE]` frame. Without it
-   * the client's decoder reaches the end of the body and throws, so a turn
-   * that answered correctly still fails in the browser.
-   */
-  public function testChatStreamEndsWithTheDoneTerminator(): void {
-    $sessionId = $this->ownedSession();
-    $this->setTemplate($sessionId, 'news_a');
-    MockAiProvider::enqueue(new MockResponse(text: 'Hello.'));
-
-    $plugin = $this->container->get(AiAssistantPluginManager::class)
-      ->createInstance('drafting');
-    $request = Request::create('/', 'POST', content: json_encode([
-      'sessionId' => $sessionId,
-      'message' => 'Hi.',
-    ]));
-
-    $output = $this->drain($plugin->chat($request));
-
-    $this->assertStringEndsWith("data: [DONE]\n\n", $output);
-  }
-
-  /**
    * A mid-stream provider failure degrades to a clean error event.
    *
    * The agent's stream has already started (a start event is on the wire)

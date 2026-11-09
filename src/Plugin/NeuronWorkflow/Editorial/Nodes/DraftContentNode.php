@@ -2,14 +2,14 @@
 
 declare(strict_types=1);
 
-namespace Drupal\oe_ai_assistant\Neuron\Workflow\Editorial\Nodes;
+namespace Drupal\oe_ai_assistant\Plugin\NeuronWorkflow\Editorial\Nodes;
 
 use Drupal\Component\Utility\Crypt;
 use Drupal\oe_ai_assistant\Exception\SchemaRetriesExhaustedException;
-use Drupal\oe_ai_assistant\Neuron\Workflow\Drafting\Nodes\ValidateNode;
-use Drupal\oe_ai_assistant\Neuron\Workflow\Editorial\Events\DraftingRequestedEvent;
-use Drupal\oe_ai_assistant\Neuron\Workflow\Editorial\Events\DraftStoredEvent;
-use Drupal\oe_ai_assistant\Neuron\Workflow\Editorial\EditorialResources;
+use Drupal\oe_ai_assistant\Plugin\NeuronWorkflow\Drafting\Nodes\ValidateNode;
+use Drupal\oe_ai_assistant\Plugin\NeuronWorkflow\Editorial\Events\DraftingRequestedEvent;
+use Drupal\oe_ai_assistant\Plugin\NeuronWorkflow\Editorial\Events\DraftStoredEvent;
+use Drupal\oe_ai_assistant\Plugin\NeuronWorkflow\Editorial\EditorialResources;
 use NeuronAI\Agent\Adapters\Events\ActivityStreamEvent;
 use NeuronAI\Agent\Adapters\Events\CustomStreamEvent;
 use NeuronAI\Chat\Messages\AssistantMessage;
@@ -168,7 +168,7 @@ final class DraftContentNode extends Node {
   /**
    * Runs the drafter of one group and reports the values it wrote.
    *
-   * @param \Drupal\oe_ai_assistant\Neuron\Workflow\Editorial\EditorialResources $resources
+   * @param \Drupal\oe_ai_assistant\Plugin\NeuronWorkflow\Editorial\EditorialResources $resources
    *   What this run shares.
    * @param array $group
    *   The group definition, with its id and its schema slice.
@@ -219,7 +219,7 @@ final class DraftContentNode extends Node {
    * read back. Nothing runs an agent on this thread, so the draft is as
    * large as the content type needs.
    *
-   * @param \Drupal\oe_ai_assistant\Neuron\Workflow\Editorial\EditorialResources $resources
+   * @param \Drupal\oe_ai_assistant\Plugin\NeuronWorkflow\Editorial\EditorialResources $resources
    *   What this run shares.
    * @param int $version
    *   The version of the draft.
@@ -247,7 +247,7 @@ final class DraftContentNode extends Node {
    * and the extracted text stay out: a draft records which documents were
    * used, not their contents.
    *
-   * @param \Drupal\oe_ai_assistant\Neuron\Workflow\Editorial\EditorialResources $resources
+   * @param \Drupal\oe_ai_assistant\Plugin\NeuronWorkflow\Editorial\EditorialResources $resources
    *   What this run shares.
    *
    * @return array

@@ -28,8 +28,12 @@ class SseResponse extends StreamedResponse {
    *   The HTTP status code.
    * @param array $headers
    *   Headers to add, which win over the ones this class sets.
+   * @param string $terminator
+   *   What to write once the callback has finished, for a protocol whose body
+   *   ends with a sentinel the client waits for. Empty for a protocol with
+   *   none.
    */
-  public function __construct(?callable $callback = NULL, int $status = 200, array $headers = []) {
+  public function __construct(?callable $callback = NULL, int $status = 200, array $headers = [], private readonly string $terminator = '') {
     parent::__construct($callback, $status, $headers + [
       'Content-Type' => 'text/event-stream',
       'Cache-Control' => 'no-cache',
@@ -62,7 +66,18 @@ class SseResponse extends StreamedResponse {
       ob_end_flush();
     }
 
-    return parent::sendContent();
+    parent::sendContent();
+
+    // A client's decoder reads to the end of the body, so a protocol whose
+    // body ends with a sentinel leaves it waiting. Writing it here covers
+    // every way the callback can finish, including the one that reports a
+    // failure and returns.
+    if ($this->terminator !== '') {
+      echo $this->terminator;
+      flush();
+    }
+
+    return $this;
   }
 
 }

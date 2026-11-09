@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Drupal\oe_ai_assistant\Neuron\Workflow\Drafting\Events;
+namespace Drupal\oe_ai_assistant\Plugin\NeuronWorkflow\Drafting\Events;
 
 use NeuronAI\Workflow\Events\Event;
 
