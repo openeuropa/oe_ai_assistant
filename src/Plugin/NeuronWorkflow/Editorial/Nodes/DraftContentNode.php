@@ -42,6 +42,31 @@ final class DraftContentNode extends Node {
     $index = 0;
     $failed = '';
 
+    // Read before the first group, so the stored draft and the card the
+    // editor watches carry the same snapshot of what the editor set up. A
+    // reading in the catch could throw a second time.
+    $context = $this->snapshot($resources);
+
+    // The editor's card draws its rows from this list. The list travels
+    // before the first group is drafted, so the card shows every group of the
+    // content type from the start and fills them in as the run reaches them.
+    $progress = [];
+    foreach ($groups as $group) {
+      $groupId = (string) $group['groupId'];
+      $progress[$groupId] = [
+        'id' => $groupId,
+        'label' => (string) ($group['label'] ?? $groupId),
+        'status' => 'pending',
+      ];
+    }
+
+    yield new CustomStreamEvent('draft-started', [
+      'version' => $event->version,
+      'callIds' => $event->callIds,
+      'context' => $context,
+      'groups' => array_values($progress),
+    ]);
+
     try {
       // A content type with no field group assembles a draft of no fields.
       // The editor is then told a draft is ready, and opens an empty form.
@@ -71,15 +96,20 @@ final class DraftContentNode extends Node {
         }
 
         yield $this->progress($group, 'drafted', $index, $total);
+        $progress[$groupId]['status'] = 'drafted';
         $answers[$groupId] = $fields;
         $failed = '';
       }
 
-      // Captured once, so the stored draft and the part the editor's pane
-      // reads carry the same snapshot of what the editor set up.
-      $context = $this->snapshot($resources);
       $fields = $this->assemble($groups, $answers);
-      $this->storeDraft($resources, $event->version, $run, $context, $fields);
+      $this->storeDraft($resources, [
+        'version' => $event->version,
+        'run' => $run,
+        'status' => 'drafted',
+        'context' => $context,
+        'groups' => array_values($progress),
+        'fields' => $fields,
+      ]);
 
       // The field values reach no model, so the pane cannot read them off the
       // tool result. They go out as their own part, which is what shows the
@@ -89,6 +119,10 @@ final class DraftContentNode extends Node {
         'version' => $event->version,
         'context' => $context,
         'fields' => $fields,
+        // The row the draft sits in is stamped by the site, and a reload
+        // reads the time back off it. The browser clock would disagree with
+        // that, so the time the site kept travels with the draft.
+        'createdAt' => date('c'),
       ]);
 
       // A draft holds every field of the content type, and the agent replays
@@ -97,7 +131,7 @@ final class DraftContentNode extends Node {
       $result = ['draft' => sprintf('Draft %d', $event->version), 'version' => $event->version];
     }
     catch (\Throwable $e) {
-      // The set is incomplete, so this run stores no draft. The model has to
+      // The set is incomplete, so this run stores no field. The model has to
       // learn which group stopped it: an editor told a draft is ready, who
       // then opens half a content type, learns nothing.
       $resources->logger->error('Drafting @group of session @session failed in run @run: @message', [
@@ -108,19 +142,44 @@ final class DraftContentNode extends Node {
         'exception' => $e,
       ]);
 
-      if ($failed !== '') {
-        yield $this->progress(['groupId' => $failed], 'failed', $index, $total);
-      }
-
       // A raw message can carry a gateway response, and the agent repeats to
       // the editor what it reads. A schema miss names the fields of the
       // editor's own template, so that one is passed on.
-      $result = [
-        'error' => $e instanceof SchemaRetriesExhaustedException
-          ? $e->getMessage()
-          : 'The group could not be drafted.',
+      $message = match (TRUE) {
+        $e instanceof SchemaRetriesExhaustedException => $e->getMessage(),
+        $failed === '' => 'The draft could not be written.',
+        default => 'The group could not be drafted.',
+      };
+
+      if ($failed !== '') {
+        yield $this->progress(['groupId' => $failed], 'failed', $index, $total);
+        $progress[$failed]['status'] = 'failed';
+        $progress[$failed]['error'] = $message;
+      }
+
+      // The editor reads the card again after a reload, so a run that failed
+      // is stored the way a run that worked is. The record holds no field,
+      // which is what keeps it out of the drafts the editor can open.
+      $this->storeDraft($resources, [
+        'version' => $event->version,
+        'run' => $run,
+        'status' => 'failed',
+        'context' => $context,
+        'groups' => array_values($progress),
+        'fields' => [],
+        // A failure that belongs to no group has no row to carry it, so the
+        // record carries it for the header of the card.
+        'error' => $failed === '' ? $message : '',
+      ]);
+
+      yield new CustomStreamEvent('draft-failed', [
+        'version' => $event->version,
+        'callIds' => $event->callIds,
         'group' => $failed,
-      ];
+        'error' => $message,
+      ]);
+
+      $result = ['error' => $message, 'group' => $failed, 'version' => $event->version];
     }
 
     $results = [];
@@ -221,22 +280,13 @@ final class DraftContentNode extends Node {
    *
    * @param \Drupal\oe_ai_assistant\Plugin\NeuronWorkflow\Editorial\EditorialResources $resources
    *   What this run shares.
-   * @param int $version
-   *   The version of the draft.
-   * @param string $run
-   *   The run that wrote it, which names its drafter conversations.
-   * @param array $context
-   *   The snapshot of what the editor set up.
-   * @param array $fields
-   *   The field values, keyed by field name.
+   * @param array $draft
+   *   The record of the run: its version, the run that wrote it, its status,
+   *   the snapshot of what the editor set up, the groups with the status each
+   *   one reached, and the field values.
    */
-  private function storeDraft(EditorialResources $resources, int $version, string $run, array $context, array $fields): void {
-    $resources->store->append($resources->session->draftsThread(), new AssistantMessage(json_encode([
-      'version' => $version,
-      'run' => $run,
-      'context' => $context,
-      'fields' => $fields,
-    ])));
+  private function storeDraft(EditorialResources $resources, array $draft): void {
+    $resources->store->append($resources->session->draftsThread(), new AssistantMessage(json_encode($draft)));
   }
 
   /**

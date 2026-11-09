@@ -81,6 +81,9 @@ interface ContentCreationSessionInterface extends AiEditorialSessionInterface {
   /**
    * Lists the stored drafts with their provenance snapshots.
    *
+   * A run that failed stores no field, and is not a draft the editor can
+   * open, so it is left out.
+   *
    * @return array
    *   One entry per draft, in version order: {name: "Draft N", version: N,
    *   context: snapshot array}.
@@ -99,5 +102,20 @@ interface ContentCreationSessionInterface extends AiEditorialSessionInterface {
    *   template.
    */
   public function getDraftContent(int $version): ?array;
+
+  /**
+   * Returns the whole record one drafting run stored.
+   *
+   * A run that failed stores a record too, so this reports what happened to a
+   * version the editor cannot open. Use getDraftContent() to read a draft.
+   *
+   * @param int $version
+   *   The version the run drafted.
+   *
+   * @return array|null
+   *   {version, run, status, context, groups, fields, error}, or NULL when no
+   *   run carries that version.
+   */
+  public function getDraftRun(int $version): ?array;
 
 }

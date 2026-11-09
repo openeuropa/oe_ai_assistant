@@ -11,7 +11,8 @@ describe("drafting plugin state", () => {
     const { draftingSliceConfig } = await import("../store");
 
     expect(draftingSliceConfig.initialState).toEqual({
-      plan: [],
+      runs: {},
+      activeCallIds: [],
       draftedFields: {},
       liveDrafts: {},
       selections: {},
@@ -22,11 +23,22 @@ describe("drafting plugin state", () => {
     // The conversation lives on the backend; nothing is persisted locally.
     expect(
       draftingSliceConfig.partialize?.({
-        plan: [],
+        runs: {},
+        activeCallIds: [],
         draftedFields: {
           title: { label: "Title", value: "Draft", type: "string" },
         },
-        liveDrafts: { 1: { version: 1, context: null, fields: {} } },
+        liveDrafts: {
+          1: {
+            version: 1,
+            context: null,
+            groups: [],
+            status: "drafted" as const,
+            error: "",
+            createdAt: null,
+            fields: {},
+          },
+        },
         selections: { tone: "clear-professional" },
         isArtifactCollapsed: true,
         activeDraftVersion: 2,
@@ -39,7 +51,8 @@ describe("drafting plugin state", () => {
     const { getDraftingState } = await import("../store");
 
     expect(getDraftingState()).toEqual({
-      plan: [],
+      runs: {},
+      activeCallIds: [],
       draftedFields: {},
       liveDrafts: {},
       selections: {},
@@ -53,23 +66,65 @@ describe("drafting plugin state", () => {
     const { getDraftingState, setDraftingState } = await import("../store");
 
     setDraftingState({
-      plan: [{ stepId: "s1", label: "Step 1", status: "done" }],
+      runs: {
+        call_1: {
+          version: 1,
+          status: "drafted" as const,
+          groups: [
+            {
+              id: "main_fields",
+              label: "Main fields",
+              status: "drafted" as const,
+            },
+          ],
+          context: null,
+        },
+      },
       draftedFields: {
         title: { label: "Title", value: "Draft", type: "string" },
       },
       liveDrafts: {
-        1: { version: 1, context: null, fields: { title: "Live" } },
+        1: {
+          version: 1,
+          context: null,
+          groups: [],
+          status: "drafted" as const,
+          error: "",
+          createdAt: null,
+          fields: { title: "Live" },
+        },
       },
       selections: { tone: "clear-professional" },
     });
 
     expect(getDraftingState()).toEqual({
-      plan: [{ stepId: "s1", label: "Step 1", status: "done" }],
+      runs: {
+        call_1: {
+          version: 1,
+          status: "drafted" as const,
+          groups: [
+            {
+              id: "main_fields",
+              label: "Main fields",
+              status: "drafted" as const,
+            },
+          ],
+          context: null,
+        },
+      },
       draftedFields: {
         title: { label: "Title", value: "Draft", type: "string" },
       },
       liveDrafts: {
-        1: { version: 1, context: null, fields: { title: "Live" } },
+        1: {
+          version: 1,
+          context: null,
+          groups: [],
+          status: "drafted" as const,
+          error: "",
+          createdAt: null,
+          fields: { title: "Live" },
+        },
       },
       selections: { tone: "clear-professional" },
     });

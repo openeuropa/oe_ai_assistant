@@ -38,12 +38,41 @@ export interface DraftContext {
   documents: DraftDocumentSnapshot[];
 }
 
+/** Where one field group of a draft stands. */
+export type DraftGroupStatus = "pending" | "drafting" | "drafted" | "failed";
+
+/** One field group of a draft, with the progress the run reported for it. */
+export interface DraftGroupProgress {
+  /** The group id, which is unique within the content type. */
+  id: string;
+  /** The group label, as the content type defines it. */
+  label: string;
+  status: DraftGroupStatus;
+  /** The error recorded for a failed group. Absent for every other status. */
+  error?: string;
+}
+
+/**
+ * Where the drafting run that produces a draft stands.
+ *
+ * A running draft has no fields to display yet, and a failed one never gets
+ * any, so the card opens the artifact pane only when the run is drafted. A
+ * stored record is never running: the run streams its progress instead.
+ */
+export type DraftRunStatus = "running" | "drafted" | "failed";
+
 /** Normalized draft result: versioned shape or legacy flat fields map. */
 export interface ParsedDraftResult {
   /** Numeric version when the versioned shape is detected; null for legacy. */
   version: number | null;
   /** Editorial context present in versioned shape; null for legacy. */
   context: DraftContext | null;
+  /** The groups the run drafted; empty for a record that stored none. */
+  groups: DraftGroupProgress[];
+  /** What the run that wrote this record ended as. */
+  status: DraftRunStatus;
+  /** The error of a run that failed outside any group; empty otherwise. */
+  error: string;
   /** The field values for this draft, keyed by field name. */
   fields: Record<string, unknown>;
 }
@@ -89,28 +118,50 @@ function normaliseContext(raw: unknown): DraftContext {
 }
 
 /**
+ * Normalises the groups of a stored record.
+ *
+ * Elements are stored verbatim by the backend. A record written before the
+ * groups were stored carries none, and the card then shows no group row.
+ */
+function normaliseGroups(raw: unknown): DraftGroupProgress[] {
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+  return raw as DraftGroupProgress[];
+}
+
+/**
  * Parses a draft_content tool-call result into a normalised shape.
  *
- * Versioned detection: an object with a numeric `version` and an object
- * `fields`. Everything else that is object-like is treated as a legacy flat
- * fields map. Null/undefined/non-object inputs produce empty fields.
+ * Versioned detection: an object with a numeric `version`. A run that failed
+ * stores no field, so the field map cannot settle this. Everything else that
+ * is object-like is treated as a legacy flat fields map. Null/undefined and
+ * non-object inputs produce empty fields.
  */
 export function parseDraftResult(result: unknown): ParsedDraftResult {
+  const empty = {
+    version: null,
+    context: null,
+    groups: [],
+    status: "drafted" as const,
+    error: "",
+  };
+
   if (!isPlainObject(result)) {
-    return { version: null, context: null, fields: {} };
+    return { ...empty, fields: {} };
   }
 
-  const hasNumericVersion = typeof result["version"] === "number";
-  const hasObjectFields = isPlainObject(result["fields"]);
-
-  if (hasNumericVersion && hasObjectFields) {
+  if (typeof result["version"] === "number") {
     return {
-      version: result["version"] as number,
+      version: result["version"],
       context: normaliseContext(result["context"]),
-      fields: result["fields"] as Record<string, unknown>,
+      groups: normaliseGroups(result["groups"]),
+      status: result["status"] === "failed" ? "failed" : "drafted",
+      error: typeof result["error"] === "string" ? result["error"] : "",
+      fields: isPlainObject(result["fields"]) ? result["fields"] : {},
     };
   }
 
   // Legacy flat map: the whole result object is the fields map.
-  return { version: null, context: null, fields: result };
+  return { ...empty, fields: result };
 }

@@ -11,15 +11,16 @@
 import type { ToolCallMessagePartProps } from "@assistant-ui/react";
 import { makeAssistantToolUI } from "@assistant-ui/react";
 import { Check, Loader2, PenLine, Wrench, X } from "lucide-react";
+import type { DraftRunStatus } from "../draft-result";
 import { parseDraftResult } from "../draft-result";
 import { useSavedVersions } from "../saved-versions";
 import { useSessionDrafts } from "../session-drafts";
-import { setDraftingState } from "../store";
+import { setDraftingState, useDraftingSlice } from "../store";
 import { DraftCard } from "./draft-card";
 import { EventChip } from "./event-chip";
 
 /** Shared wrapper for tool call cards in the chat. */
-function ToolCallCard({
+export function ToolCallCard({
   icon: Icon,
   label,
   detail,
@@ -76,71 +77,85 @@ function ToolCallCard({
   return <div className={base}>{body}</div>;
 }
 
+/**
+ * What a run's own status means to the tool call card.
+ *
+ * assistant-ui settles the call as complete whatever the run reported: a
+ * failure travels inside the result rather than as a tool error. So the card
+ * reads the status of the run instead of the status of the call.
+ */
+const TOOL_STATUS = {
+  running: "running",
+  drafted: "complete",
+  failed: "incomplete",
+} as const satisfies Record<DraftRunStatus, string>;
+
 /** UI for the drafting_draft_content tool call. */
 export const DraftContentToolUI = makeAssistantToolUI<
-  { fields: Record<string, unknown> },
+  Record<string, never>,
   Record<string, unknown>
 >({
   toolName: "drafting_draft_content",
-  render: ({ args, result, status }) => {
+  render: ({ result, status, toolCallId }) => {
     // Saved state and creation time come from the thread index, so the
     // card stays in step with the preview header and the rail.
     const sessionDrafts = useSessionDrafts();
     const savedVersions = useSavedVersions();
+    // The run streams its progress under the id of the call that asked for
+    // the draft. A reload reports no run, and the result then carries the
+    // record the backend joins onto it.
+    const run = useDraftingSlice().runs[toolCallId];
+    const parsed = parseDraftResult(result);
 
-    // While running or on error, show the generic tool card with status.
-    if (status.type !== "complete") {
-      const fieldCount = Object.keys(args?.fields ?? {}).length;
-      return (
-        <ToolCallCard
-          icon={PenLine}
-          label="Drafting content"
-          detail={
-            fieldCount > 0
-              ? `${fieldCount} field${fieldCount > 1 ? "s" : ""}`
-              : undefined
-          }
-          status={status}
-        />
-      );
-    }
+    const version = run?.version ?? parsed.version;
+    const runStatus = run?.status ?? parsed.status;
+    const groups = run?.groups ?? parsed.groups;
+    const context = run?.context ?? parsed.context;
+    const error =
+      run?.error ?? (parsed.error === "" ? undefined : parsed.error);
 
-    // On completion, parse the result (versioned object on the live path,
-    // or fall back to args.fields when result is empty on a rehydrated trace).
-    // This choice only picks the data source; success itself is signalled by
-    // the complete status checked above.
-    const raw =
-      result && Object.keys(result).length > 0 ? result : (args?.fields ?? {});
-    const parsed = parseDraftResult(raw);
-    const fields = parsed.fields;
+    // The fields never travel with the call's own result, so they come from
+    // the drafts index, which merges the live stream with the thread.
+    const draft =
+      version === null
+        ? undefined
+        : sessionDrafts.find((entry) => entry.version === version);
 
-    // A completed call that yielded no fields has nothing to open, so show
-    // the plain status card instead of an openable draft card.
-    if (Object.keys(fields).length === 0) {
-      return (
-        <ToolCallCard icon={PenLine} label="Drafting content" status={status} />
-      );
+    const card = (
+      <ToolCallCard
+        icon={PenLine}
+        label="Drafting content"
+        status={version === null ? status : { type: TOOL_STATUS[runStatus] }}
+      />
+    );
+
+    // Until the run names its version there is nothing to draw a card from,
+    // so the call shows as the plain tool card it is.
+    if (version === null) {
+      return card;
     }
 
     return (
-      <DraftCard
-        version={parsed.version}
-        context={parsed.context}
-        fields={fields}
-        isSaved={parsed.version !== null && savedVersions.has(parsed.version)}
-        createdAt={
-          sessionDrafts.find((draft) => draft.version === parsed.version)
-            ?.createdAt ?? null
-        }
-        onOpen={() =>
-          // Show this draft in the pane, expanding it if collapsed.
-          setDraftingState({
-            draftedFields: fields,
-            activeDraftVersion: parsed.version,
-            isArtifactCollapsed: false,
-          })
-        }
-      />
+      <>
+        {card}
+        <DraftCard
+          version={version}
+          context={context}
+          groups={groups}
+          status={runStatus}
+          error={error}
+          isSaved={savedVersions.has(version)}
+          createdAt={draft?.createdAt ?? null}
+          onOpen={() =>
+            // Show this draft in the pane, expanding it if collapsed.
+            setDraftingState({
+              draftedFields: draft?.fields ?? {},
+              activeDraftVersion: version,
+              isArtifactCollapsed: false,
+            })
+          }
+        />
+      </>
     );
   },
 });

@@ -1,7 +1,7 @@
 /**
  * Zustand store slice for the drafting plugin.
  *
- * Tracks the orchestration plan steps and raw drafted field values
+ * Tracks the progress of the drafting runs and the raw drafted field values
  * from the AI agent. The conversation itself is persisted server
  * side against the editorial session, so nothing here is persisted.
  */
@@ -12,20 +12,57 @@ import {
   setPluginState,
   usePluginSlice,
 } from "@/store/plugin-store";
-import type { ParsedDraftResult } from "./draft-result";
+import type {
+  DraftContext,
+  DraftGroupProgress,
+  DraftRunStatus,
+  ParsedDraftResult,
+} from "./draft-result";
 
 const PLUGIN_ID = "drafting";
 
-/** A step in the orchestration plan. */
-export interface PlanStep {
-  stepId: string;
-  label: string;
-  status: "pending" | "in_progress" | "done" | "error";
+/**
+ * What one drafting run reported about itself.
+ *
+ * The run streams its progress, so this is the only place the card can read
+ * it from: the tool call settles with a bare name and version, and the stored
+ * record reaches the browser on the next reload.
+ */
+export interface DraftRunProgress {
+  version: number;
+  status: DraftRunStatus;
+  groups: DraftGroupProgress[];
+  /** What the editor set up, as the run read it when it started. */
+  context: DraftContext | null;
+  /** The error of a run that failed outside any group. */
+  error?: string;
+}
+
+/**
+ * A draft the run reported while it streamed.
+ *
+ * The time comes with it because the browser cannot work it out: a reload
+ * reads the time off the row the site stamped, and a clock reading taken here
+ * would disagree with that.
+ */
+export interface LiveDraft extends ParsedDraftResult {
+  /** RFC 3339 time the site stored the draft; null when none was reported. */
+  createdAt: string | null;
 }
 
 export interface DraftingSliceState {
-  /** Orchestration plan steps (transient). */
-  plan: PlanStep[];
+  /**
+   * The runs seen in this session, keyed by the id of the tool call that
+   * asked for the draft (transient). A turn renders its own card from the
+   * entry under its own call id, so an earlier turn keeps the run it
+   * reported.
+   */
+  runs: Record<string, DraftRunProgress>;
+  /**
+   * The calls the run in flight settles, which is what the progress events
+   * of that run update. Empty between turns.
+   */
+  activeCallIds: string[];
   /** Raw drafted field values keyed by field machine name. */
   draftedFields: Record<string, unknown>;
   /**
@@ -35,7 +72,7 @@ export interface DraftingSliceState {
    * draft produced in the current session before a reload rehydrates the
    * thread with the join getMessages() performs server side.
    */
-  liveDrafts: Record<number, ParsedDraftResult>;
+  liveDrafts: Record<number, LiveDraft>;
   /** Confirmed selection per composer panel, keyed by panel id. */
   selections: Record<string, string>;
   /** Whether the artifact pane is collapsed to a slim rail (transient). */
@@ -46,7 +83,8 @@ export interface DraftingSliceState {
 
 export const draftingSliceConfig: PluginSliceConfig<DraftingSliceState> = {
   initialState: {
-    plan: [],
+    runs: {},
+    activeCallIds: [],
     draftedFields: {},
     liveDrafts: {},
     selections: {},

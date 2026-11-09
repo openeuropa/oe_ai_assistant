@@ -393,14 +393,10 @@ class DraftingPlugin extends AiAssistantPluginBase {
       }
     }
 
-    // Read once per request, not once per settled drafting_draft_content
-    // result: listDrafts() and getDraftContent() each decode the whole
-    // drafts thread, and nothing writes to it while this request reads it.
-    $draftContexts = [];
-    foreach ($session->listDrafts() as $entry) {
-      $draftContexts[$entry['version']] = $entry['context'];
-    }
-    $draftFields = [];
+    // getDraftRun() decodes the whole drafts thread, so a version is read
+    // once per request and not once per settled drafting_draft_content
+    // result. Nothing writes to the thread while this request reads it.
+    $draftRuns = [];
 
     $messages = [];
     foreach ($thread as $index => $row) {
@@ -418,10 +414,10 @@ class DraftingPlugin extends AiAssistantPluginBase {
           'content' => '',
           'at' => $at,
           'toolCalls' => array_map(
-            function (array $result) use ($session, $draftContexts, &$draftFields): array {
+            function (array $result) use ($session, &$draftRuns): array {
               return [
                 'function' => ['name' => $result['name'], 'arguments' => '{}'],
-                'result' => $this->joinDraftToolResult($session, $result['name'], $result['result'], $draftContexts, $draftFields),
+                'result' => $this->joinDraftToolResult($session, $result['name'], $result['result'], $draftRuns),
               ];
             },
             $toolResults,
@@ -496,8 +492,9 @@ class DraftingPlugin extends AiAssistantPluginBase {
    * Replaces a settled drafting_draft_content result with its full shape.
    *
    * The tool settles its call with a bare {draft, version} so a schema of any
-   * size costs the conversation the same; the artifact rehydrates from the
-   * full {version, context, fields} the drafts thread carries instead.
+   * size costs the conversation the same. The editor's card is rebuilt from
+   * the record the run stored instead, which carries the groups it drafted
+   * and what happened to each one.
    *
    * @param \Drupal\oe_ai_assistant\Entity\Bundle\ContentCreationSessionInterface $session
    *   The session hosting the drafts thread.
@@ -505,35 +502,35 @@ class DraftingPlugin extends AiAssistantPluginBase {
    *   The name of the settled call.
    * @param array $result
    *   The call's own settled result.
-   * @param array $draftContexts
-   *   Every draft's context snapshot, keyed by version, read once by the
-   *   caller.
-   * @param array $draftFields
-   *   The field values already read back for a version in this request,
-   *   keyed by version; filled in as new versions are seen.
+   * @param array $draftRuns
+   *   The records already read back in this request, keyed by version and
+   *   filled in as new versions are seen.
    *
    * @return array
-   *   The full versioned result for drafting_draft_content; $result
-   *   unchanged for any other tool.
+   *   The full record for drafting_draft_content; $result unchanged for any
+   *   other tool, and for a version no run stored.
    */
-  private function joinDraftToolResult(ContentCreationSessionInterface $session, string $toolName, array $result, array $draftContexts, array &$draftFields): array {
+  private function joinDraftToolResult(ContentCreationSessionInterface $session, string $toolName, array $result, array &$draftRuns): array {
     if ($toolName !== 'drafting_draft_content' || !isset($result['version'])) {
       return $result;
     }
 
     $version = (int) $result['version'];
-    if (!array_key_exists($version, $draftFields)) {
-      $draft = $session->getDraftContent($version);
-      $draftFields[$version] = $draft['fields'] ?? NULL;
+    if (!array_key_exists($version, $draftRuns)) {
+      $draftRuns[$version] = $session->getDraftRun($version);
     }
-    if ($draftFields[$version] === NULL) {
+    $run = $draftRuns[$version];
+    if ($run === NULL) {
       return $result;
     }
 
     return [
       'version' => $version,
-      'context' => $draftContexts[$version] ?? NULL,
-      'fields' => $draftFields[$version],
+      'status' => $run['status'] ?? 'drafted',
+      'context' => $run['context'] ?? NULL,
+      'groups' => $run['groups'] ?? [],
+      'error' => $run['error'] ?? '',
+      'fields' => $run['fields'] ?? [],
     ];
   }
 

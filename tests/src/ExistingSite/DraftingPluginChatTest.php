@@ -547,7 +547,7 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
       ]),
     ]);
 
-    // The matching row in the drafts thread, as RequestDraftNeuronTool
+    // The matching row in the drafts thread, as DraftContentNode
     // ::storeDraft() writes it.
     $fields = ['title' => [['value' => 'Test Title']]];
     $context = [
@@ -555,11 +555,17 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
       'template' => ['id' => 'news_with_paragraphs', 'label' => 'News with paragraphs'],
       'documents' => [],
     ];
+    $groups = [
+      ['id' => 'main_fields', 'label' => 'Main fields', 'status' => 'drafted'],
+      ['id' => 'content_paragraphs', 'label' => 'Content paragraphs', 'status' => 'drafted'],
+    ];
     assert($session instanceof ContentCreationSessionInterface);
     \Drupal::service(MessageStoreInterface::class)->append($session->draftsThread(), new AssistantMessage(json_encode([
       'version' => 1,
       'run' => 'draft_1.abcdef',
+      'status' => 'drafted',
       'context' => $context,
+      'groups' => $groups,
       'fields' => $fields,
     ])));
 
@@ -578,9 +584,87 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
     $this->assertSame('drafting_draft_content', $messages[1]['toolCalls'][0]['function']['name']);
     $this->assertSame([
       'version' => 1,
+      'status' => 'drafted',
       'context' => $context,
+      'groups' => $groups,
+      'error' => '',
       'fields' => $fields,
     ], $messages[1]['toolCalls'][0]['result']);
+  }
+
+  /**
+   * Tests that a run that failed reaches the transcript the way it ended.
+   *
+   * The editor reads the same card during the run and after a reload, so the
+   * record a failed run stores is joined onto its call. The run stored no
+   * field, so the draft is not one the editor can open.
+   */
+  public function testGetMessagesReturnsFailedDraftRun(): void {
+    $user = $this->createUser(['use oe ai assistant']);
+    $this->loginUser($user);
+    $session = $this->createSession($user);
+    $thread = 'editorial.session_' . $session->id();
+
+    $this->seedNeuronRow($session, $thread, [
+      'role' => 'user',
+      'meta' => json_encode([
+        'type' => 'tool_call_result',
+        'tools' => [
+          [
+            'name' => 'drafting_draft_content',
+            'result' => [
+              'error' => 'The group could not be drafted.',
+              'group' => 'content_paragraphs',
+              'version' => 1,
+            ],
+          ],
+        ],
+      ]),
+    ]);
+
+    $context = [
+      'tone' => NULL,
+      'template' => ['id' => 'news_with_paragraphs', 'label' => 'News with paragraphs'],
+      'documents' => [],
+    ];
+    $groups = [
+      ['id' => 'main_fields', 'label' => 'Main fields', 'status' => 'drafted'],
+      [
+        'id' => 'content_paragraphs',
+        'label' => 'Content paragraphs',
+        'status' => 'failed',
+        'error' => 'The group could not be drafted.',
+      ],
+    ];
+    assert($session instanceof ContentCreationSessionInterface);
+    \Drupal::service(MessageStoreInterface::class)->append($session->draftsThread(), new AssistantMessage(json_encode([
+      'version' => 1,
+      'run' => 'draft_1.abcdef',
+      'status' => 'failed',
+      'context' => $context,
+      'groups' => $groups,
+      'fields' => [],
+      'error' => '',
+    ])));
+
+    $messages = array_values(array_filter(
+      $this->getMessages($session),
+      fn($m) => $m['role'] !== 'event',
+    ));
+
+    $this->assertSame([
+      'version' => 1,
+      'status' => 'failed',
+      'context' => $context,
+      'groups' => $groups,
+      'error' => '',
+      'fields' => [],
+    ], $messages[0]['toolCalls'][0]['result']);
+
+    // A run that stored no field is no draft: it reaches neither the rail,
+    // nor the history the model reads, nor the preview and save endpoints.
+    $this->assertSame([], $session->listDrafts());
+    $this->assertNull($session->getDraftContent(1));
   }
 
   /**

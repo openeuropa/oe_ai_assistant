@@ -112,7 +112,15 @@ describe("extractSessionDrafts", () => {
       { content: [draftPart('{"draft":"Draft 1","version":1}')] },
     ];
     const liveDrafts = {
-      1: { version: 1, context: null, fields: { title: "Live" } },
+      1: {
+        version: 1,
+        context: null,
+        groups: [],
+        status: "drafted" as const,
+        error: "",
+        createdAt: null,
+        fields: { title: "Live" },
+      },
     };
 
     const drafts = extractSessionDrafts(messages, liveDrafts);
@@ -136,7 +144,15 @@ describe("extractSessionDrafts", () => {
       },
     ];
     const liveDrafts = {
-      1: { version: 1, context: null, fields: { title: "Live" } },
+      1: {
+        version: 1,
+        context: null,
+        groups: [],
+        status: "drafted" as const,
+        error: "",
+        createdAt: null,
+        fields: { title: "Live" },
+      },
     };
 
     const drafts = extractSessionDrafts(messages, liveDrafts);
@@ -147,8 +163,24 @@ describe("extractSessionDrafts", () => {
 
   it("keeps an earlier live draft once a later one streams in", () => {
     const liveDrafts = {
-      1: { version: 1, context: null, fields: { title: "First" } },
-      2: { version: 2, context: null, fields: { title: "Second" } },
+      1: {
+        version: 1,
+        context: null,
+        groups: [],
+        status: "drafted" as const,
+        error: "",
+        createdAt: null,
+        fields: { title: "First" },
+      },
+      2: {
+        version: 2,
+        context: null,
+        groups: [],
+        status: "drafted" as const,
+        error: "",
+        createdAt: null,
+        fields: { title: "Second" },
+      },
     };
 
     const drafts = extractSessionDrafts([], liveDrafts);
@@ -157,8 +189,36 @@ describe("extractSessionDrafts", () => {
   });
 
   it("ignores a live draft that has not produced fields yet", () => {
-    const liveDrafts = { 1: { version: 1, context: null, fields: {} } };
+    const liveDrafts = {
+      1: {
+        version: 1,
+        context: null,
+        groups: [],
+        status: "drafted" as const,
+        error: "",
+        createdAt: null,
+        fields: {},
+      },
+    };
 
     expect(extractSessionDrafts([], liveDrafts)).toEqual([]);
+  });
+
+  it("keeps the time the run reported for a live draft", () => {
+    const liveDrafts = {
+      1: {
+        version: 1,
+        context: null,
+        groups: [],
+        status: "drafted" as const,
+        error: "",
+        createdAt: "2026-11-09T09:40:00+00:00",
+        fields: { title: "Live" },
+      },
+    };
+
+    const drafts = extractSessionDrafts([], liveDrafts);
+
+    expect(drafts[0]?.createdAt).toEqual(new Date("2026-11-09T09:40:00+00:00"));
   });
 });

@@ -11,10 +11,10 @@ import { useAuiState } from "@assistant-ui/react";
 import { useMemo } from "react";
 import {
   type DraftContext,
-  type ParsedDraftResult,
+  type DraftGroupProgress,
   parseDraftResult,
 } from "./draft-result";
-import { setDraftingState, useDraftingSlice } from "./store";
+import { type LiveDraft, setDraftingState, useDraftingSlice } from "./store";
 
 /** One entry in the session drafts index. */
 export interface SessionDraft {
@@ -22,6 +22,8 @@ export interface SessionDraft {
   version: number | null;
   /** Editorial context captured when the draft was generated. */
   context: DraftContext | null;
+  /** The groups the run drafted; empty for a draft that recorded none. */
+  groups: DraftGroupProgress[];
   /** The field values for this draft, keyed by field name. */
   fields: Record<string, unknown>;
   /** Menu label, e.g. "Draft 2"; plain "Draft" for legacy entries. */
@@ -71,7 +73,7 @@ function hasKeys(value: unknown): value is Record<string, unknown> {
  */
 export function extractSessionDrafts(
   messages: readonly ThreadMessageLikeShape[],
-  liveDrafts?: Readonly<Record<number, ParsedDraftResult>>,
+  liveDrafts?: Readonly<Record<number, LiveDraft>>,
 ): SessionDraft[] {
   const drafts: SessionDraft[] = [];
 
@@ -111,7 +113,9 @@ export function extractSessionDrafts(
     drafts.push({
       ...liveDraft,
       label: `Draft ${liveDraft.version}`,
-      createdAt: null,
+      // The run reports the time the site stamped on the draft, so the card
+      // and the pane header carry it without waiting for a reload.
+      createdAt: liveDraft.createdAt ? new Date(liveDraft.createdAt) : null,
     });
   }
 

@@ -223,6 +223,7 @@ class DraftingTurnTest extends AiEditorialSessionKernelTestBase {
     $this->assertSame([
       'error' => 'The group could not be drafted.',
       'group' => 'main_fields',
+      'version' => 1,
     ], $results[0]['result']);
     $this->assertSame([], $session->listDrafts());
 
@@ -307,8 +308,9 @@ class DraftingTurnTest extends AiEditorialSessionKernelTestBase {
 
     $this->assertSame([], $session->listDrafts());
     $this->assertSame([
-      'error' => 'The group could not be drafted.',
+      'error' => 'The draft could not be written.',
       'group' => '',
+      'version' => 1,
     ], $session->conversationToolResults()[0]['result']);
   }
 
@@ -350,7 +352,7 @@ class DraftingTurnTest extends AiEditorialSessionKernelTestBase {
   }
 
   /**
-   * A run that follows a failed one takes the version and its own threads.
+   * A run that follows a failed one takes the next version and its own threads.
    */
   public function testRunAfterFailedRunDraftsInNewThreads(): void {
     $session = $this->createSession($this->createUser());
@@ -370,17 +372,21 @@ class DraftingTurnTest extends AiEditorialSessionKernelTestBase {
     $this->enqueueTurn();
     $this->turn($session, 'Try again.');
 
-    // The draft the failed run never stored is the one this run takes.
-    $this->assertSame(['Draft 1'], array_column($session->listDrafts(), 'name'));
+    // The failed run records what stopped it under the version it took, so
+    // the editor reads one card per attempt and this run takes the next one.
+    $this->assertSame(['Draft 2'], array_column($session->listDrafts(), 'name'));
 
-    // Both runs took version 1, so the random segment is what keeps the
-    // second from reading the answers the validator rejected in the first.
     $threads = array_keys($session->conversationThreads());
     $this->assertNotEmpty(array_diff($threads, $failed), 'The second run drafts in threads of its own.');
     $this->assertCount(
-      2,
+      1,
       preg_grep('@\.draft_1\.[A-Za-z0-9_-]{6}\.group_main_fields$@', $threads),
-      'The failed run and the run that followed it hold separate conversations.',
+      'The failed run holds the conversation of its own version.',
+    );
+    $this->assertCount(
+      1,
+      preg_grep('@\.draft_2\.[A-Za-z0-9_-]{6}\.group_main_fields$@', $threads),
+      'The run that followed it holds a conversation of its own.',
     );
   }
 

@@ -9,8 +9,10 @@
  * values in the Zustand drafting store, and the version-keyed draft
  * (version, context, fields) that useSessionDrafts() merges into the
  * thread-derived list so the rail/save flow see a draft the instant it
- * streams in, without waiting for a reload. The history adapter
- * rehydrates the thread from the backend on mount.
+ * streams in, without waiting for a reload. It also follows the run that
+ * writes the draft, from the groups it names before it starts to the group
+ * that stops it, which is what the draft card reports while the run works.
+ * The history adapter rehydrates the thread from the backend on mount.
  */
 
 import {
@@ -24,9 +26,14 @@ import { useMemo } from "react";
 import { getCsrfHeaders } from "@/api/csrf-token";
 import { getSessionMessages } from "@/api/session-messages";
 import { getConfig } from "@/config";
-import type { ParsedDraftResult } from "../draft-result";
+import type { DraftContext, DraftGroupProgress } from "../draft-result";
 import { toThreadMessages } from "../hydrate-transcript";
-import { getDraftingState, type PlanStep, setDraftingState } from "../store";
+import {
+  type DraftRunProgress,
+  getDraftingState,
+  type LiveDraft,
+  setDraftingState,
+} from "../store";
 
 /**
  * One group's progress, as the drafting node reports it.
@@ -44,13 +51,34 @@ interface DraftingActivity {
 }
 
 /**
- * What each status of a group means to the rail.
+ * What each status of a group means to the card.
  */
 const ACTIVITY_STATUS = {
-  drafting: "in_progress",
-  drafted: "done",
-  failed: "error",
-} as const satisfies Record<string, PlanStep["status"]>;
+  drafting: "drafting",
+  drafted: "drafted",
+  failed: "failed",
+} as const satisfies Record<string, DraftGroupProgress["status"]>;
+
+/**
+ * Applies a change to every run the turn in flight is drafting.
+ *
+ * A turn settles one drafting call, and the card of that call reads the run
+ * under its own id. The model can ask twice in one turn, and both calls then
+ * wait for the same draft, so the change reaches all of them.
+ */
+function updateActiveRuns(
+  change: (run: DraftRunProgress) => DraftRunProgress,
+): void {
+  const { runs, activeCallIds } = getDraftingState();
+  const next = { ...runs };
+  for (const callId of activeCallIds) {
+    const run = next[callId];
+    if (run) {
+      next[callId] = change(run);
+    }
+  }
+  setDraftingState({ runs: next });
+}
 
 /**
  * Returns an assistant-ui runtime backed by the Data Stream Protocol.
@@ -100,6 +128,28 @@ export function useDraftingRuntime() {
     },
     // Handle custom data-* events from the UI message stream.
     onData: (data) => {
+      // The run names its groups before it drafts the first one, so the card
+      // of the call that asked shows every row from the start.
+      if (data.name === "draft-started") {
+        const started = data.data as {
+          version: number;
+          callIds: string[];
+          context: DraftContext;
+          groups: DraftGroupProgress[];
+        };
+        const { runs } = getDraftingState();
+        const next = { ...runs };
+        for (const callId of started.callIds) {
+          next[callId] = {
+            version: started.version,
+            status: "running",
+            groups: started.groups,
+            context: started.context,
+          };
+        }
+        setDraftingState({ runs: next, activeCallIds: started.callIds });
+      }
+
       // Store raw drafted field values directly from the backend, and
       // index the draft by version so useSessionDrafts() can show it
       // before the thread's own tool-call part ever carries the fields.
@@ -109,39 +159,59 @@ export function useDraftingRuntime() {
       // switch, a narrower revision), so merging would leave stale values
       // from a draft no longer open.
       if (data.name === "drafted-fields") {
-        const incoming = data.data as ParsedDraftResult;
+        const incoming = data.data as LiveDraft;
         const { liveDrafts } = getDraftingState();
         setDraftingState({
           draftedFields: incoming.fields,
           activeDraftVersion: incoming.version as number,
           liveDrafts: { ...liveDrafts, [incoming.version as number]: incoming },
+          // The editor asked for this draft, so the pane opens on it. A pane
+          // the editor collapsed earlier holds an older draft, and leaving it
+          // shut hides the one they waited for.
+          isArtifactCollapsed: false,
         });
+        updateActiveRuns((run) => ({ ...run, status: "drafted" }));
       }
+
       // The drafting node reports one group at a time, because Neuron's own
-      // progress event replaces the activity that shares its id. The rail
-      // shows the whole plan, so the groups seen so far are accumulated here
-      // in the order the run reached them.
+      // progress event replaces the activity that shares its id.
       if (data.name === "workflow-activity") {
         const activity = data.data as DraftingActivity;
         if (activity.type !== "drafting") {
           return;
         }
-        const seen = getDraftingState().plan;
-        const step: PlanStep = {
-          stepId: activity.data.group,
-          label: activity.data.label,
-          status: ACTIVITY_STATUS[activity.data.status],
+        const status = ACTIVITY_STATUS[activity.data.status];
+        updateActiveRuns((run) => ({
+          ...run,
+          groups: run.groups.map((group) =>
+            group.id === activity.data.group ? { ...group, status } : group,
+          ),
+        }));
+      }
+
+      // A failure ends the run, and the message belongs to the group that
+      // stopped it. A failure that reached no group is the run's own.
+      if (data.name === "draft-failed") {
+        const failure = data.data as {
+          group: string;
+          error: string;
         };
-        const next = seen.some((s) => s.stepId === step.stepId)
-          ? seen.map((s) => (s.stepId === step.stepId ? step : s))
-          : [...seen, step];
-        setDraftingState({ plan: next });
+        updateActiveRuns((run) => ({
+          ...run,
+          status: "failed",
+          error: failure.group === "" ? failure.error : undefined,
+          groups: run.groups.map((group) =>
+            group.id === failure.group
+              ? { ...group, status: "failed", error: failure.error }
+              : group,
+          ),
+        }));
       }
     },
     onFinish: () => {
-      // The progress belongs to the turn that produced it, so a finished turn
-      // leaves none of it on the screen. The drafted fields stay visible.
-      setDraftingState({ plan: [] });
+      // The run is over, so later progress events belong to no call. The runs
+      // themselves stay: each card reads the one its own call reported.
+      setDraftingState({ activeCallIds: [] });
     },
     onError: (error) => {
       console.error("[drafting] Data stream runtime error:", error);

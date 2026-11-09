@@ -97,6 +97,9 @@ class ContentCreationSession extends AiEditorialSession implements ContentCreati
   public function listDrafts(): array {
     $drafts = [];
     foreach ($this->draftResults() as $result) {
+      if (self::hasFailed($result)) {
+        continue;
+      }
       $version = (int) $result['version'];
       $drafts[] = [
         'name' => sprintf('Draft %d', $version),
@@ -113,7 +116,7 @@ class ContentCreationSession extends AiEditorialSession implements ContentCreati
    */
   public function getDraftContent(int $version): ?array {
     foreach ($this->draftResults() as $result) {
-      if ((int) $result['version'] !== $version) {
+      if ((int) $result['version'] !== $version || self::hasFailed($result)) {
         continue;
       }
 
@@ -124,6 +127,35 @@ class ContentCreationSession extends AiEditorialSession implements ContentCreati
     }
 
     return NULL;
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function getDraftRun(int $version): ?array {
+    foreach ($this->draftResults() as $result) {
+      if ((int) $result['version'] === $version) {
+        return $result;
+      }
+    }
+
+    return NULL;
+  }
+
+  /**
+   * Says whether a stored record is a run that failed.
+   *
+   * Records written before the status was stored hold a draft, so a record
+   * with no status is a run that worked.
+   *
+   * @param array $result
+   *   The stored record.
+   *
+   * @return bool
+   *   TRUE when the run failed.
+   */
+  private static function hasFailed(array $result): bool {
+    return ($result['status'] ?? 'drafted') === 'failed';
   }
 
   /**
@@ -166,15 +198,13 @@ class ContentCreationSession extends AiEditorialSession implements ContentCreati
   /**
    * Collects every stored draft of this session, oldest first.
    *
-   * The drafting run writes a draft to the drafts thread of the session.
-   * The chat endpoint writes one as the result of a draft_content tool call
-   * in the stored transcript, so this reads both until OEL-5072 retires the
-   * second.
-   *
-   * @todo Drop the transcript branch when the OEL-5066 epic is complete.
+   * The drafting run writes one record per run, which a run that failed
+   * writes too. So the callers that hand a draft to the editor drop the
+   * failed ones, and the ones that report what happened keep them.
    *
    * @return array
-   *   One entry per draft, each {version, context, fields}.
+   *   One entry per run, each {version, run, status, context, groups,
+   *   fields}.
    */
   private function draftResults(): array {
     $results = [];
