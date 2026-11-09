@@ -134,8 +134,9 @@ function normaliseGroups(raw: unknown): DraftGroupProgress[] {
  * Parses a draft_content tool-call result into a normalised shape.
  *
  * Versioned detection: an object with a numeric `version`. A run that failed
- * stores no field, so the field map cannot settle this. Everything else that
- * is object-like is treated as a legacy flat fields map. Null/undefined and
+ * stores no field, so the field map cannot settle this. A run that wrote no
+ * draft has no version, and says so with its status. Everything else that is
+ * object-like is treated as a legacy flat fields map. Null/undefined and
  * non-object inputs produce empty fields.
  */
 export function parseDraftResult(result: unknown): ParsedDraftResult {
@@ -159,6 +160,18 @@ export function parseDraftResult(result: unknown): ParsedDraftResult {
       status: result["status"] === "failed" ? "failed" : "drafted",
       error: typeof result["error"] === "string" ? result["error"] : "",
       fields: isPlainObject(result["fields"]) ? result["fields"] : {},
+    };
+  }
+
+  // A run that wrote no draft has no version, and the legacy branch below
+  // would take it for a fields map and call it drafted. Its own status says
+  // it failed, so this branch comes first.
+  if (result["status"] === "failed") {
+    return {
+      ...empty,
+      status: "failed",
+      error: typeof result["error"] === "string" ? result["error"] : "",
+      fields: {},
     };
   }
 

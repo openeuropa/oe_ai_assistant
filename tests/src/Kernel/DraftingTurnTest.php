@@ -4,16 +4,22 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\oe_ai_assistant\Kernel;
 
+use Drupal\ai_neuron\Agent\NeuronAgentManagerInterface;
 use Drupal\ai_neuron\Workflow\NeuronWorkflowManagerInterface;
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
+use Drupal\oe_ai_assistant\Plugin\AiAssistantPluginManager;
 use Drupal\oe_ai_assistant\Plugin\NeuronWorkflow\Editorial\Events\ChatTurnEvent;
 use Drupal\oe_ai_assistant\Service\DraftingSchemaProvider;
 use Drupal\oe_ai_assistant\Service\DraftingSchemaProviderInterface;
 use Drupal\oe_ai_assistant_test\Plugin\AiProvider\MockAiProvider;
 use Drupal\oe_ai_assistant_test\Plugin\AiProvider\MockResponse;
+use NeuronAI\Agent\AgentInterface;
+use NeuronAI\Chat\Messages\UserMessage;
 use NeuronAI\Workflow\Executor\ExecutionRequest;
 use NeuronAI\Workflow\WorkflowState;
+use NeuronAI\Workflow\WorkflowStatus;
 use Psr\Log\AbstractLogger;
+use Symfony\Component\HttpFoundation\Request;
 
 /**
  * Drives one whole turn of an editorial session.
@@ -451,6 +457,113 @@ class DraftingTurnTest extends AiEditorialSessionKernelTestBase {
       preg_grep('@\.draft_2\.[A-Za-z0-9_-]{6}\.group_main_fields$@', $threads),
       'The run that followed it holds a conversation of its own.',
     );
+  }
+
+  /**
+   * A turn whose process died while drafting does not block the next one.
+   *
+   * The call that asks for a draft suspends the agent until the same request
+   * submits the result. A process that ends in that window leaves a run that
+   * nothing will resume, and a held run refuses the next one. So a turn drops
+   * the run it finds.
+   */
+  public function testTurnAfterTheDraftDiedAnswersAgain(): void {
+    $session = $this->createSession($this->createUser());
+
+    MockAiProvider::reset();
+    $agent = $this->deadDraft($session);
+    $this->assertSame(WorkflowStatus::Suspended, $agent->inspect()?->status);
+
+    MockAiProvider::enqueue(new MockResponse(text: 'The draft did not finish.'));
+    $state = $this->turn($session, 'Is the draft ready?');
+
+    $this->assertSame('The draft did not finish.', $state->get('answer'));
+
+    // The new turn answers the open call, so the model reads a settled turn
+    // instead of a question nothing replied to.
+    $results = $session->conversationToolResults();
+    $this->assertCount(1, $results);
+    $this->assertSame('drafting_draft_content', $results[0]['name']);
+    $this->assertStringContainsString('interrupted', json_encode($results[0]['result']));
+  }
+
+  /**
+   * The transcript reports a draft that died as failed.
+   *
+   * The card reads a call with no result as a draft that landed. The call
+   * that asked for this one has no draft to point at, before or after a
+   * later turn settles it. So the transcript reports the failure.
+   */
+  public function testTranscriptReportsTheDraftThatDiedAsFailed(): void {
+    $owner = $this->createUser(['use oe ai assistant', 'view_update own sessions']);
+    $this->container->get('current_user')->setAccount($owner);
+    $session = $this->createSession($owner);
+
+    MockAiProvider::reset();
+    $this->deadDraft($session);
+
+    // Nothing settled the call yet. This is what a reload lands on.
+    $result = $this->transcriptDraftCall($session);
+    $this->assertSame('failed', $result['status']);
+    $this->assertSame('The draft did not finish.', $result['error']);
+
+    MockAiProvider::enqueue(new MockResponse(text: 'The draft did not finish.'));
+    $this->turn($session, 'Is the draft ready?');
+
+    // The turn settled the call with the interruption the library reports.
+    $result = $this->transcriptDraftCall($session);
+    $this->assertSame('failed', $result['status']);
+    $this->assertStringContainsString('interrupted', $result['error']);
+  }
+
+  /**
+   * Leaves the agent on the call that asks for a draft.
+   *
+   * Nothing writes the draft and nothing submits the result. A process that
+   * ends while it drafts a group leaves this behind.
+   *
+   * @param \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $session
+   *   The session the turn belongs to.
+   *
+   * @return \NeuronAI\Agent\AgentInterface
+   *   The agent that asked.
+   */
+  private function deadDraft(AiEditorialSessionInterface $session): AgentInterface {
+    MockAiProvider::enqueue($this->toolCall());
+    $agent = $this->container->get(NeuronAgentManagerInterface::class)
+      ->createAgent('editorial', ['session' => $session]);
+    iterator_to_array($agent->stream(new UserMessage('Please draft it, go ahead.')), FALSE);
+
+    return $agent;
+  }
+
+  /**
+   * The result the transcript reports for the session's drafting call.
+   *
+   * @param \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $session
+   *   The session whose transcript to read.
+   *
+   * @return array
+   *   The result of the one drafting call the transcript holds.
+   */
+  private function transcriptDraftCall(AiEditorialSessionInterface $session): array {
+    $plugin = $this->container->get(AiAssistantPluginManager::class)
+      ->createInstance('drafting');
+    $request = Request::create('/', 'POST', content: json_encode([
+      'sessionId' => (string) $session->id(),
+    ]));
+
+    $results = [];
+    foreach ($plugin->executeAction('get-messages', $request)['messages'] as $message) {
+      foreach ($message['toolCalls'] ?? [] as $call) {
+        if (($call['function']['name'] ?? '') === 'drafting_draft_content') {
+          $results[] = $call['result'] ?? [];
+        }
+      }
+    }
+    $this->assertCount(1, $results, 'The transcript holds one drafting call.');
+
+    return reset($results);
   }
 
   /**

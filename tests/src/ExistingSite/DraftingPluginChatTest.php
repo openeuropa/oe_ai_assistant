@@ -743,13 +743,14 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
   }
 
   /**
-   * Tests that a call nothing settled reaches the editor as a running card.
+   * Tests what a call nothing settled reaches the editor as.
    *
-   * A run suspends on an approval-gated call. Its result arrives in a later
-   * request, and no row names its id yet. The card is the editor's only sign
-   * that the turn waits.
+   * The card reads a call with no result as one still running. A drafting
+   * call settles in the request that asked for it, so one left with no
+   * result carries the failure. A call of any other tool can still settle in
+   * a later request.
    */
-  public function testGetMessagesKeepsTheUnsettledCall(): void {
+  public function testGetMessagesReportsTheUnsettledCall(): void {
     $user = $this->createUser(['use oe ai assistant']);
     $this->loginUser($user);
     $session = $this->createSession($user);
@@ -761,6 +762,7 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
         'type' => 'tool_call',
         'tools' => [
           ['name' => 'drafting_draft_content', 'callId' => 'call_2', 'inputs' => []],
+          ['name' => 'drafting_get_history', 'callId' => 'call_3', 'inputs' => []],
         ],
       ]),
     ]);
@@ -771,8 +773,14 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
     ));
 
     $this->assertCount(1, $messages);
-    $this->assertSame('drafting_draft_content', $messages[0]['toolCalls'][0]['function']['name']);
-    $this->assertArrayNotHasKey('result', $messages[0]['toolCalls'][0]);
+    $calls = $messages[0]['toolCalls'];
+    $this->assertSame('drafting_draft_content', $calls[0]['function']['name']);
+    $this->assertSame(
+      ['status' => 'failed', 'error' => 'The draft did not finish.'],
+      $calls[0]['result'],
+    );
+    $this->assertSame('drafting_get_history', $calls[1]['function']['name']);
+    $this->assertArrayNotHasKey('result', $calls[1]);
   }
 
   /**

@@ -82,6 +82,35 @@ function updateActiveRuns(
 }
 
 /**
+ * Fails the runs the turn left running, and ends the turn.
+ *
+ * A run reports its own end. The draft lands, or a group stops it. A stream
+ * that breaks reports neither, so the card spins for good and the overlay
+ * keeps the pane covered.
+ *
+ * @param error What the card reports for such a run.
+ */
+function settleActiveRuns(error: string): void {
+  updateActiveRuns((run) =>
+    run.status !== "running"
+      ? run
+      : {
+          ...run,
+          status: "failed",
+          error,
+          // The group the run was writing stops with the run. A group it
+          // never reached stays pending.
+          groups: run.groups.map((group) =>
+            group.status === "drafting"
+              ? { ...group, status: "failed", error }
+              : group,
+          ),
+        },
+  );
+  setDraftingState({ activeCallIds: [] });
+}
+
+/**
  * Returns an assistant-ui runtime backed by the Data Stream Protocol.
  *
  * The runtime sends POST requests to /api/plugins/drafting/chat
@@ -220,12 +249,16 @@ export function useDraftingRuntime() {
       }
     },
     onFinish: () => {
-      // The run is over, so later progress events belong to no call. The runs
-      // themselves stay: each card reads the one its own call reported.
-      setDraftingState({ activeCallIds: [] });
+      // The turn is over, so later progress events belong to no call. Each
+      // card reads the run its own call reported, so the runs stay.
+      settleActiveRuns("The draft did not finish.");
+    },
+    onCancel: () => {
+      settleActiveRuns("The draft stopped before it finished.");
     },
     onError: (error) => {
       console.error("[drafting] Data stream runtime error:", error);
+      settleActiveRuns("The connection ended before the draft landed.");
     },
   });
 

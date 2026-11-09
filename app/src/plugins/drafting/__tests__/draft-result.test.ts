@@ -1,8 +1,8 @@
 /**
  * Unit tests for the draft result parser.
  *
- * Covers the versioned shape (full, with nulls), the legacy flat map, and
- * degenerate inputs (null, non-object).
+ * Covers the versioned shape (full, with nulls), a run that failed without a
+ * version, the legacy flat map, and degenerate inputs (null, non-object).
  */
 
 import { describe, expect, it } from "vitest";
@@ -149,6 +149,21 @@ describe("parseDraftResult", () => {
 
     expect(parsed.status).toBe("failed");
     expect(parsed.groups).toEqual(groups);
+    expect(parsed.fields).toEqual({});
+  });
+
+  it("reads the failure of a run that named no version", () => {
+    // A run whose process ended wrote no draft, so it reports no version.
+    // The legacy branch would take it for a fields map and call it drafted.
+    const parsed = parseDraftResult({
+      status: "failed",
+      error: "The draft did not finish.",
+    });
+
+    expect(parsed.version).toBeNull();
+    expect(parsed.status).toBe("failed");
+    expect(parsed.error).toBe("The draft did not finish.");
+    expect(parsed.groups).toEqual([]);
     expect(parsed.fields).toEqual({});
   });
 

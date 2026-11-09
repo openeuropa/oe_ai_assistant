@@ -19,6 +19,7 @@ use Drupal\oe_ai_assistant\Service\Drafting\DocumentRepositoryInterface;
 use Drupal\oe_ai_assistant\Entity\Bundle\ContentCreationSessionInterface;
 use Drupal\oe_ai_assistant\Exception\DraftingTemplateException;
 use Drupal\oe_ai_assistant\Plugin\AiAssistantPluginBase;
+use Drupal\oe_ai_assistant\Plugin\NeuronTool\RequestDraftNeuronTool;
 use Drupal\oe_ai_assistant\Service\AiEditorialContextInterface;
 use Drupal\oe_ai_assistant\Service\DraftAssemblerInterface;
 use Drupal\oe_ai_assistant\Service\DraftSaverInterface;
@@ -414,10 +415,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
       if (!in_array($role, ['user', 'assistant'], TRUE)) {
         continue;
       }
-      $content = implode('', array_map(
-        static fn (array $block): string => (string) ($block['content'] ?? ''),
-        array_filter((array) ($row->getContent() ?? []), static fn ($block): bool => is_array($block) && ($block['type'] ?? '') === 'text'),
-      ));
+      $content = self::blocksText((array) ($row->getContent() ?? []));
       // Skip empty turns that carry neither text nor a tool call.
       if ($content === '') {
         continue;
@@ -478,9 +476,56 @@ class DraftingPlugin extends AiAssistantPluginBase {
     );
 
     return array_map(
-      static fn (array $tool): array => ['function' => ['name' => (string) $tool['name']]],
+      static function (array $tool): array {
+        $call = ['function' => ['name' => (string) $tool['name']]];
+
+        // The card reads a call with no result as one still running. A
+        // drafting call settles in the request that asked for it, so one
+        // left with no result wrote no draft. It carries the failure
+        // instead.
+        if ((string) $tool['name'] === RequestDraftNeuronTool::TOOL_ID) {
+          $call['result'] = self::failedDraft('');
+        }
+
+        return $call;
+      },
       array_values($unsettled),
     );
+  }
+
+  /**
+   * The text of a list of content blocks.
+   *
+   * A stored row and a tool result both carry their content as blocks, and a
+   * block that is not text carries none.
+   *
+   * @param array $blocks
+   *   The content blocks.
+   *
+   * @return string
+   *   The text of every text block, joined.
+   */
+  private static function blocksText(array $blocks): string {
+    return implode('', array_map(
+      static fn (array $block): string => (string) ($block['content'] ?? ''),
+      array_filter($blocks, static fn ($block): bool => is_array($block) && ($block['type'] ?? '') === 'text'),
+    ));
+  }
+
+  /**
+   * The record the card reads for a drafting call that wrote no draft.
+   *
+   * @param string $error
+   *   What the call reported, empty when it reported nothing.
+   *
+   * @return array
+   *   The record.
+   */
+  private static function failedDraft(string $error): array {
+    return [
+      'status' => 'failed',
+      'error' => $error === '' ? 'The draft did not finish.' : $error,
+    ];
   }
 
   /**
@@ -499,12 +544,20 @@ class DraftingPlugin extends AiAssistantPluginBase {
    *   The call's own settled result.
    *
    * @return array
-   *   The stored record for drafting_draft_content. Any other tool, and a
-   *   version no run stored, keep the result they came with.
+   *   The stored record for drafting_draft_content, or the failure when the
+   *   call names no version. Any other tool, and a version no run stored,
+   *   keep the result they came with.
    */
   private function joinDraftToolResult(ContentCreationSessionInterface $session, string $toolName, array $result): array {
-    if ($toolName !== 'drafting_draft_content' || !isset($result['version'])) {
+    if ($toolName !== RequestDraftNeuronTool::TOOL_ID) {
       return $result;
+    }
+
+    if (!isset($result['version'])) {
+      // The tool names the version it drafted, so a result without one came
+      // from no draft. A turn that finds the call open settles it with the
+      // interruption the library reports, as content blocks.
+      return self::failedDraft(self::blocksText((array) ($result['blocks'] ?? [])));
     }
 
     return $session->getDraftRun((int) $result['version']) ?? $result;

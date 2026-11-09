@@ -21,6 +21,7 @@ use Drupal\oe_ai_assistant\Plugin\NeuronWorkflow\Editorial\Nodes\ChatNode;
 use Drupal\oe_ai_assistant\Plugin\NeuronWorkflow\Editorial\Nodes\ChatResumeNode;
 use Drupal\oe_ai_assistant\Plugin\NeuronWorkflow\Editorial\Nodes\DraftContentNode;
 use NeuronAI\Workflow\Events\Event;
+use NeuronAI\Workflow\Persistence\PersistenceInterface;
 use NeuronAI\Workflow\Streaming\Adapter\StreamAdapterInterface;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 
@@ -52,6 +53,7 @@ final class EditorialWorkflow extends NeuronWorkflowPluginBase {
     $plugin_definition,
     private readonly NeuronAgentManagerInterface $agents,
     private readonly NeuronWorkflowManagerInterface $workflows,
+    private readonly PersistenceInterface $persistence,
     private readonly EditorialMessageStore $store,
     #[Autowire(service: 'logger.channel.oe_ai_assistant')]
     private readonly LoggerChannelInterface $logger,
@@ -83,6 +85,7 @@ final class EditorialWorkflow extends NeuronWorkflowPluginBase {
   protected function resources(): EditorialResources {
     return new EditorialResources(
       $this->workflows,
+      $this->persistence,
       $this->store->forSession($this->session()),
       $this->logger,
       $this->session(),

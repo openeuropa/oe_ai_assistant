@@ -125,7 +125,16 @@ export const DraftContentToolUI = makeAssistantToolUI<
       <ToolCallCard
         icon={PenLine}
         label="Drafting content"
-        status={version === null ? status : { type: TOOL_STATUS[runStatus] }}
+        // A run with no version draws no card of its own, so the error has
+        // nowhere to go but the detail line.
+        detail={version === null ? error : undefined}
+        // A call with no run behind it stands on its own status. A run that
+        // failed is the exception, because the call itself settled complete.
+        status={
+          version === null && runStatus !== "failed"
+            ? status
+            : { type: TOOL_STATUS[runStatus] }
+        }
       />
     );
 
