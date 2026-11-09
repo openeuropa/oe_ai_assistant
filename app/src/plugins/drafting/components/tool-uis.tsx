@@ -126,11 +126,14 @@ export const DraftContentToolUI = makeAssistantToolUI<
       <ToolCallCard
         icon={PenLine}
         label={toolLabel(toolName)}
-        // A run with no version draws no card of its own, so the error has
-        // nowhere to go but the detail line.
+        // A run with no version draws no draft card, and the card is where
+        // a failure names its reason. The editor would read a failed call
+        // and no reason for it. So the detail line carries the error.
         detail={version === null ? error : undefined}
-        // A call with no run behind it stands on its own status. A run that
-        // failed is the exception, because the call itself settled complete.
+        // A failed run still answers its call, so the call itself reads as
+        // complete. A card that took the status of the call would show the
+        // editor a draft that landed. So the status comes from the run, and
+        // only a call with no run of its own keeps its status.
         status={
           version === null && runStatus !== "failed"
             ? status
@@ -192,14 +195,15 @@ export const EditorialEventToolUI = makeAssistantToolUI<
  *
  * Receives ToolCallMessagePartProps from assistant-ui (toolName, args, result,
  * argsText, status, addResult, resume, type, toolCallId). Renders a generic
- * ToolCallCard with a Wrench icon and the label the tool declares.
+ * ToolCallCard with a Wrench icon and the label the host declares for it.
  */
 export function ToolFallbackCard({
   toolName,
   status,
 }: ToolCallMessagePartProps) {
-  // Only the tool name reaches this card, and an editor should not read a
-  // machine name. So the card shows the label the host declares for it.
+  // The props name the tool and carry no label, so a card built from the
+  // name alone would show the editor drafting_get_history. The host
+  // declares a label for every tool, and this card reads it.
   return (
     <ToolCallCard icon={Wrench} label={toolLabel(toolName)} status={status} />
   );

@@ -240,9 +240,10 @@ class DraftingPlugin extends AiAssistantPluginBase {
       'preview' => [
         'url' => Url::fromRoute('oe_ai_assistant.drafting_preview')->toString() . '?sessionId={sessionId}&version={versionId}',
       ],
-      // A tool call reaches the app under its machine name, which no
-      // editor should read in a card. So the config carries the label
-      // every tool plugin declares, keyed by that name.
+      // A tool call reaches the app under its machine name alone. A card
+      // built from that name would show the editor drafting_draft_content.
+      // So the config carries the label every tool plugin declares, keyed
+      // by that name.
       'toolLabels' => $this->toolLabels(),
     ];
   }
@@ -504,10 +505,10 @@ class DraftingPlugin extends AiAssistantPluginBase {
       static function (array $tool): array {
         $call = ['function' => ['name' => (string) $tool['name']]];
 
-        // The card reads a call with no result as one still running. A
-        // drafting call settles in the request that asked for it, so one
-        // left with no result wrote no draft. It carries the failure
-        // instead.
+        // A call with no result draws a card that spins forever. A
+        // drafting call settles in the request that asked for it, so a
+        // call the transcript finds open wrote no draft. The transcript
+        // hands that call a failure as its result.
         if ((string) $tool['name'] === RequestDraftNeuronTool::TOOL_ID) {
           $call['result'] = self::failedDraft('');
         }
@@ -519,10 +520,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
   }
 
   /**
-   * The text of a list of content blocks.
-   *
-   * A stored row and a tool result both carry their content as blocks, and a
-   * block that is not text carries none.
+   * Joins the text of the content blocks a row or a tool result carries.
    *
    * @param array $blocks
    *   The content blocks.
@@ -579,9 +577,10 @@ class DraftingPlugin extends AiAssistantPluginBase {
     }
 
     if (!isset($result['version'])) {
-      // The tool names the version it drafted, so a result without one came
-      // from no draft. A turn that finds the call open settles it with the
-      // interruption the library reports, as content blocks.
+      // The card reads a result with no version as a fields map, and draws
+      // a draft nobody wrote. A later turn settles the open call with the
+      // interruption the library reports, which arrives as content blocks.
+      // So the failure here carries the text of those blocks.
       return self::failedDraft(self::blocksText((array) ($result['blocks'] ?? [])));
     }
 

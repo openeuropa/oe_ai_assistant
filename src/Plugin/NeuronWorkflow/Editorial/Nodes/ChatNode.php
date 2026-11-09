@@ -26,9 +26,10 @@ final class ChatNode extends AgentNode {
   public function __invoke(ChatTurnEvent $event, WorkflowState $state, EditorialResources $resources): \Generator {
     $this->dropSuspendedRun($resources);
 
-    // The node that drafts never receives the editor's message. A drafter
-    // holds only its own thread, which carries no message of the editor.
-    // So this node stores the message on the state as the task of the turn.
+    // A drafter reads its own thread alone, and no message of the editor
+    // reaches that thread. A drafter without a task writes about a subject
+    // nobody asked for. This event reaches no other node, so the node
+    // stores the message on the state as the task of the turn.
     $state->set('task', $event->message);
 
     $agentState = yield from $this->agent->stream(new UserMessage($event->message));
@@ -39,10 +40,11 @@ final class ChatNode extends AgentNode {
   /**
    * Frees the conversation of a turn that asked for a draft and never read it.
    *
-   * The call that asks for a draft suspends the agent until the same request
-   * submits the result. A process that ends in that window leaves a run that
-   * nothing will resume, and a held run refuses every turn after it. So the
-   * turn drops it, and the agent reads the open call as interrupted.
+   * A run that stays suspended makes every later turn of the session fail.
+   * The editor sends a message and reads an error. A run reaches that state
+   * when the process dies after the call that asks for a draft, before the
+   * same request submits the result. So this turn drops the run, and the
+   * agent reads the open call as interrupted.
    *
    * @param \Drupal\oe_ai_assistant\Plugin\NeuronWorkflow\Editorial\EditorialResources $resources
    *   What this run shares.
@@ -53,10 +55,11 @@ final class ChatNode extends AgentNode {
       return;
     }
 
-    // The agent refuses to drop a run that waits on a tool call. A person
-    // can still answer one, and dropping the run answers it with an error.
-    // Nobody will answer this call, because the request that asked is gone.
-    // So the drop goes through an engine built on the agent's persistence.
+    // The agent refuses to drop a run that waits on a tool call. A later
+    // turn answers such a call with an interruption error, and a person who
+    // meant to submit the result loses the chance. Nobody submits this
+    // result, because the request that asked for the draft is gone. So an
+    // engine built on the agent's persistence drops the run.
     (new WorkflowEngine($resources->persistence))
       ->abandon((string) $this->agent->getWorkflowId());
 

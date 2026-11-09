@@ -64,8 +64,8 @@ const ACTIVITY_STATUS = {
 /**
  * Applies a change to the run of one call.
  *
- * The store keys each run by the call that asked for the draft. This drops
- * a change that names a call with no run.
+ * The store keys every run by the call that asked for the draft. A change
+ * that names a call with no run does nothing.
  */
 function updateRun(
   callId: string,
@@ -80,11 +80,12 @@ function updateRun(
 /**
  * Fails the runs the turn left running, and ends the turn.
  *
- * A run reports its own end. The draft lands, or a group stops it. A stream
- * that breaks reports neither, so the card spins for good and the overlay
- * keeps the pane covered.
+ * A card spins forever when nothing reports the end of its run, and the
+ * overlay keeps the pane covered. A run that finishes reports its own end,
+ * either a draft that landed or a group that stopped it. A stream that
+ * breaks reports nothing, so the turn fails every run still running.
  *
- * @param error What the card reports for such a run.
+ * @param error The message the card reports for such a run.
  */
 function settleActiveRuns(error: string): void {
   const { runs, activeCallIds } = getDraftingState();
@@ -96,8 +97,10 @@ function settleActiveRuns(error: string): void {
       ...run,
       status: "failed",
       error,
-      // The group the run was writing stops with the run. A group it never
-      // reached stays pending.
+      // The run stopped at one group and never reached the groups after
+      // it. A card that fails them all blames a group the run never
+      // drafted. So only the group in progress fails, and the rest stay
+      // pending.
       groups: run.groups.map((group) =>
         group.status === "drafting"
           ? { ...group, status: "failed", error }
@@ -176,9 +179,9 @@ export function useDraftingRuntime() {
               context: started.context,
             },
           },
-          // A call that this list leaves out keeps its spinner after the
-          // turn ends. The turn settles only the runs the list names. So
-          // every call of the turn joins the list as its draft starts.
+          // A call missing from this list keeps its spinner after the
+          // turn ends, because the turn settles only the runs the list
+          // names. So every call joins the list as its draft starts.
           activeCallIds: [...activeCallIds, started.callId],
         });
       }
@@ -255,8 +258,9 @@ export function useDraftingRuntime() {
       }
     },
     onFinish: () => {
-      // The turn is over, so later progress events belong to no call. Each
-      // card reads the run its own call reported, so the runs stay.
+      // The stream reported no end for a run still running, so the turn
+      // ends it here. The runs themselves stay, because each card reads
+      // the run its own call reported.
       settleActiveRuns("The draft did not finish.");
     },
     onCancel: () => {

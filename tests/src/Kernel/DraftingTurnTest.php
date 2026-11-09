@@ -466,10 +466,9 @@ class DraftingTurnTest extends AiEditorialSessionKernelTestBase {
   /**
    * A turn whose process died while drafting does not block the next one.
    *
-   * The call that asks for a draft suspends the agent until the same request
-   * submits the result. A process that ends in that window leaves a run that
-   * nothing will resume, and a held run refuses the next one. So a turn drops
-   * the run it finds.
+   * A run left suspended makes every later turn of the session fail. The
+   * next turn drops that run and answers the open call, so the conversation
+   * continues.
    */
   public function testTurnAfterTheDraftDiedAnswersAgain(): void {
     $session = $this->createSession($this->createUser());
@@ -483,8 +482,8 @@ class DraftingTurnTest extends AiEditorialSessionKernelTestBase {
 
     $this->assertSame('The draft did not finish.', $state->get('answer'));
 
-    // The new turn answers the open call, so the model reads a settled turn
-    // instead of a question nothing replied to.
+    // An open call leaves the model a question nothing replied to. The new
+    // turn answers the call, so the model reads a settled turn.
     $results = $session->conversationToolResults();
     $this->assertCount(1, $results);
     $this->assertSame('drafting_draft_content', $results[0]['name']);
@@ -494,10 +493,10 @@ class DraftingTurnTest extends AiEditorialSessionKernelTestBase {
   /**
    * A second draft in one turn takes the version after the first.
    *
-   * The agent can ask for another draft once it reads the first, and a retry
-   * after a draft that failed is the likely case. Two drafts that take one
-   * version reach the editor under one name, so each call numbers its own
-   * draft.
+   * Two drafts that take one version reach the editor under one name. The
+   * agent can ask for a second draft once it reads the first, and a retry
+   * after a draft that failed is the likely case. So every call takes a
+   * version of its own.
    */
   public function testSecondDraftInOneTurnTakesTheNextVersion(): void {
     $session = $this->createSession($this->createUser());
@@ -524,9 +523,10 @@ class DraftingTurnTest extends AiEditorialSessionKernelTestBase {
   /**
    * The transcript reports a draft that died as failed.
    *
-   * The card reads a call with no result as a draft that landed. The call
-   * that asked for this one has no draft to point at, before or after a
-   * later turn settles it. So the transcript reports the failure.
+   * The card would draw this call as a draft still running. A later turn
+   * settles the call, and the card would then draw a draft that landed. No
+   * draft exists in either state. So the transcript reports the failure in
+   * both.
    */
   public function testTranscriptReportsTheDraftThatDiedAsFailed(): void {
     $owner = $this->createUser(['use oe ai assistant', 'view_update own sessions']);
@@ -536,7 +536,7 @@ class DraftingTurnTest extends AiEditorialSessionKernelTestBase {
     MockAiProvider::reset();
     $this->deadDraft($session);
 
-    // Nothing settled the call yet. This is what a reload lands on.
+    // Nothing settled the call yet, which is the state a reload reads.
     $result = $this->transcriptDraftCall($session);
     $this->assertSame('failed', $result['status']);
     $this->assertSame('The draft did not finish.', $result['error']);
@@ -554,7 +554,7 @@ class DraftingTurnTest extends AiEditorialSessionKernelTestBase {
    * Leaves the agent on the call that asks for a draft.
    *
    * Nothing writes the draft and nothing submits the result. A process that
-   * ends while it drafts a group leaves this behind.
+   * dies while it drafts a group leaves the session in this state.
    *
    * @param \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $session
    *   The session the turn belongs to.

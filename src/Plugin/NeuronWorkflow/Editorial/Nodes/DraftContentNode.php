@@ -35,9 +35,11 @@ final class DraftContentNode extends Node {
    * Writes one draft for every call that asked, and reports each one.
    */
   public function __invoke(DraftingRequestedEvent $event, WorkflowState $state, EditorialResources $resources): \Generator {
-    // A draft numbers itself from the drafts the session already stores, so
-    // two drafts that run together take the same number. This loop writes
-    // the draft of one call at a time.
+    // A draft takes its number from the drafts the session stores, and it
+    // stores nothing until it writes its last group. Two drafts that run
+    // at the same time would both answer Draft 1, and the editor would
+    // open one of the two. So this loop writes the draft of one call at a
+    // time.
     $results = [];
     foreach ($event->callIds as $callId) {
       $result = yield from $this->draft($resources, $state, $callId);
@@ -59,16 +61,17 @@ final class DraftContentNode extends Node {
    *   The call this draft answers.
    *
    * @return \Generator
-   *   Yields the progress of the draft, and returns what the model reads
-   *   back: the name of the draft, or what stopped it.
+   *   Yields the progress of the draft. Returns what the model receives,
+   *   which is the name of the draft or what stopped it.
    */
   private function draft(EditorialResources $resources, WorkflowState $state, string $callId): \Generator {
     $groups = $resources->session->getFieldGroups();
     $total = count($groups);
-    // A second reading of nextVersion() answers a different number, because
-    // the session numbers from the drafts it stores. A retried step has to
-    // write the version it took the first time, so the memo holds that
-    // reading against the call.
+    // The run already told the editor the name of this draft. A step that
+    // runs again reads nextVersion() a second time, and that reading
+    // answers a higher number once the session stores a draft. The draft
+    // would land under a name the editor never saw. So the memo keeps the
+    // first reading, under the id of the call.
     $version = (int) $this->memoize(
       'version.' . $callId,
       fn (): int => $resources->session->nextVersion(),
@@ -245,11 +248,11 @@ final class DraftContentNode extends Node {
   private function progress(string $callId, array $group, string $status, int $index, int $total): ActivityStreamEvent {
     $groupId = (string) $group['groupId'];
 
-    // The id names the group, so each event replaces the progress of that
-    // group rather than adding a line to the editor's screen. Two drafts of
-    // one reply write the same groups. An id of the group alone would let
-    // the second draft overwrite the rows of the first. So the id carries
-    // the call as well.
+    // Two drafts of one reply write the same groups. An event replaces the
+    // row of the card that carries its id. An id of the group alone would
+    // give both drafts one set of rows. The second draft would then reset
+    // the rows the first draft filled. So the id names the call and the
+    // group.
     return new ActivityStreamEvent(
       id: sprintf('draft:%s.%s', $callId, $groupId),
       type: 'drafting',
@@ -297,10 +300,11 @@ final class DraftContentNode extends Node {
   /**
    * Names this run, so two runs of one draft never share a conversation.
    *
-   * A retried step drafts the version it already took, and the drafter
-   * threads of its first attempt stay behind. A name built from the version
-   * alone would read those threads again, so a random segment separates the
-   * two. The version ties the run to the draft it wrote.
+   * A retried step drafts the version it took the first time. A name built
+   * from the version alone would name the drafter thread of the attempt
+   * that failed. The drafter would answer from a conversation that already
+   * failed. So a random segment separates the two runs. The version ties
+   * the run to the draft it wrote.
    *
    * @param int $version
    *   The version this run drafts.

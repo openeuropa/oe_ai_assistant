@@ -743,12 +743,12 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
   }
 
   /**
-   * Tests what a call nothing settled reaches the editor as.
+   * Tests that a drafting call nothing settled reaches the editor as failed.
    *
-   * The card reads a call with no result as one still running. A drafting
-   * call settles in the request that asked for it, so one left with no
-   * result carries the failure. A call of any other tool can still settle in
-   * a later request.
+   * A card that reads an open call as running spins forever. A drafting
+   * call settles in the request that asked for it, so a call the transcript
+   * finds open wrote no draft. A call of any other tool can still settle in
+   * a later request, so it keeps its open result.
    */
   public function testGetMessagesReportsTheUnsettledCall(): void {
     $user = $this->createUser(['use oe ai assistant']);

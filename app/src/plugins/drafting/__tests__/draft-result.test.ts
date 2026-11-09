@@ -153,8 +153,8 @@ describe("parseDraftResult", () => {
   });
 
   it("reads the failure of a run that named no version", () => {
-    // A run whose process ended wrote no draft, so it reports no version.
-    // The legacy branch would take it for a fields map and call it drafted.
+    // A run whose process died reports a status and no version. The parser
+    // reads that status, and does not read the result as a fields map.
     const parsed = parseDraftResult({
       status: "failed",
       error: "The draft did not finish.",

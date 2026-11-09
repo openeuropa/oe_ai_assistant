@@ -163,9 +163,9 @@ export function parseDraftResult(result: unknown): ParsedDraftResult {
     };
   }
 
-  // A run that wrote no draft has no version, and the legacy branch below
-  // would take it for a fields map and call it drafted. Its own status says
-  // it failed, so this branch comes first.
+  // A run that wrote no draft carries a status and no version. The legacy
+  // branch below would read it as a fields map and report a draft that does
+  // not exist. So this branch reads the status first.
   if (result["status"] === "failed") {
     return {
       ...empty,

@@ -9,9 +9,10 @@ use NeuronAI\Workflow\Events\Event;
 /**
  * Starts a turn of the editor's conversation.
  *
- * A field on the session would hold the editor's message after the turn
- * ends, and the turn after it would read the message again. The message is
- * the input of one invocation, so the caller hands it over on this event.
+ * A field on the session would still hold the message after the turn ends.
+ * The next turn would then answer the message of the turn before it. The
+ * message is the input of one invocation, so the caller passes it on this
+ * event.
  */
 final class ChatTurnEvent implements Event {
 

@@ -86,9 +86,9 @@ describe("toThreadMessages", () => {
   });
 
   it("keeps a part for every drafting call of a reply", () => {
-    // Two drafting calls in one reply hold two drafts, and the editor needs
-    // a card for each. Two parts under one call id would draw one card, so
-    // the ids differ.
+    // Two parts that share a call id draw one card, and one of the two
+    // drafts then reaches the editor with no card. So every drafting call
+    // of a reply takes a part under its own id.
     const input: SessionMessage[] = [
       {
         role: "assistant",
