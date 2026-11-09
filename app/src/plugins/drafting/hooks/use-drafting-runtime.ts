@@ -27,6 +27,7 @@ import { getCsrfHeaders } from "@/api/csrf-token";
 import { getSessionMessages } from "@/api/session-messages";
 import { getConfig } from "@/config";
 import type { DraftContext, DraftGroupProgress } from "../draft-result";
+import { parseDraftResult } from "../draft-result";
 import { toThreadMessages } from "../hydrate-transcript";
 import {
   type DraftRunProgress,
@@ -159,7 +160,17 @@ export function useDraftingRuntime() {
       // switch, a narrower revision), so merging would leave stale values
       // from a draft no longer open.
       if (data.name === "drafted-fields") {
-        const incoming = data.data as LiveDraft;
+        // Parsed rather than cast: the event and the stored record are two
+        // spellings of one draft, and a key the stream leaves out would
+        // otherwise reach the card as undefined.
+        const payload = data.data as Record<string, unknown>;
+        const incoming: LiveDraft = {
+          ...parseDraftResult(payload),
+          createdAt:
+            typeof payload["createdAt"] === "string"
+              ? payload["createdAt"]
+              : null,
+        };
         const { liveDrafts } = getDraftingState();
         setDraftingState({
           draftedFields: incoming.fields,

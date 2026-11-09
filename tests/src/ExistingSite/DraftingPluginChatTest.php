@@ -126,7 +126,26 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
       'Expected 200 response. Body: ' . substr($result['body'], 0, 500));
 
     $events = $this->parseSseEvents($result['body']);
+
+    // The run names every group before it drafts the first one, so the card
+    // shows the whole set from the start. The frame arrives before any
+    // activity frame, and carries the calls it settles so each card reads
+    // the run of its own call.
+    $started = array_values(array_filter($events, fn($e) => $e['type'] === 'data-draft-started'));
+    $this->assertCount(1, $started, 'Exactly one data-draft-started frame.');
+    $this->assertSame(1, $started[0]['data']['version']);
+    $this->assertNotEmpty($started[0]['data']['callIds']);
+    $this->assertSame([
+      ['id' => 'main_fields', 'label' => 'Main fields', 'status' => 'pending'],
+      ['id' => 'field_content_paragraphs', 'label' => 'Content paragraphs', 'status' => 'pending'],
+    ], $started[0]['data']['groups']);
+
     $activity = array_values(array_filter($events, fn($e) => $e['type'] === 'data-workflow-activity'));
+    $this->assertGreaterThan(
+      array_search($started[0], $events, TRUE),
+      array_search($activity[0], $events, TRUE),
+      'data-draft-started must arrive before the first activity frame.',
+    );
     // One drafting frame and one drafted frame per group, for two groups: 4.
     // An exact count, not a floor, so a regression that delivers every frame
     // twice is caught here rather than only as a UI bug.
@@ -158,6 +177,16 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
     $this->assertGreaterThan($lastActivityIndex, $draftedFieldsIndex,
       'data-drafted-fields must arrive after the last activity frame.');
     $this->assertSame(1, $draftedFieldsEvents[0]['data']['version']);
+    // The frame carries the whole draft, not the fields alone: the card the
+    // editor is watching reads its groups and its status off this one, and a
+    // key left out here reaches it as nothing at all.
+    $this->assertSame('drafted', $draftedFieldsEvents[0]['data']['status']);
+    $this->assertSame('', $draftedFieldsEvents[0]['data']['error']);
+    $this->assertSame([
+      ['id' => 'main_fields', 'label' => 'Main fields', 'status' => 'drafted'],
+      ['id' => 'field_content_paragraphs', 'label' => 'Content paragraphs', 'status' => 'drafted'],
+    ], $draftedFieldsEvents[0]['data']['groups']);
+    $this->assertNotEmpty($draftedFieldsEvents[0]['data']['createdAt']);
     $this->assertArrayHasKey('template', $draftedFieldsEvents[0]['data']['context']);
     $this->assertSame(['tone' => NULL, 'documents' => []], [
       'tone' => $draftedFieldsEvents[0]['data']['context']['tone'],

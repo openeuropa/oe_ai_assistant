@@ -117,7 +117,10 @@ final class DraftContentNode extends Node {
       // reload reads the draft back from the drafts thread.
       yield new CustomStreamEvent('drafted-fields', [
         'version' => $event->version,
+        'status' => 'drafted',
         'context' => $context,
+        'groups' => array_values($progress),
+        'error' => '',
         'fields' => $fields,
         // The row the draft sits in is stamped by the site, and a reload
         // reads the time back off it. The browser clock would disagree with

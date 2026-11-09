@@ -113,6 +113,45 @@ describe("parseDraftResult", () => {
     expect(result.fields).toEqual(raw);
   });
 
+  it("gives an empty group list to a versioned result that names none", () => {
+    // The card reads the list without checking it, so a record or a stream
+    // event that leaves the key out must still parse to a list.
+    const parsed = parseDraftResult({
+      version: 2,
+      context: null,
+      fields: { title: [{ value: "Title" }] },
+    });
+
+    expect(parsed.groups).toEqual([]);
+    expect(parsed.status).toBe("drafted");
+    expect(parsed.error).toBe("");
+  });
+
+  it("reads the groups and the failure of a run that stopped", () => {
+    const groups = [
+      { id: "main_fields", label: "Main fields", status: "drafted" },
+      {
+        id: "content_paragraphs",
+        label: "Content paragraphs",
+        status: "failed",
+        error: "The group could not be drafted.",
+      },
+    ];
+
+    const parsed = parseDraftResult({
+      version: 2,
+      status: "failed",
+      context: null,
+      groups,
+      error: "",
+      fields: [],
+    });
+
+    expect(parsed.status).toBe("failed");
+    expect(parsed.groups).toEqual(groups);
+    expect(parsed.fields).toEqual({});
+  });
+
   it("returns empty fields for null input", () => {
     const result = parseDraftResult(null);
 
