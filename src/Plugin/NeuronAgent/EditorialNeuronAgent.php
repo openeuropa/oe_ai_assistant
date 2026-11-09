@@ -58,8 +58,10 @@ final class EditorialNeuronAgent extends EditorialSessionAgentBase {
       (a) you have gathered specific information for all field
           groups, or
       (b) the user has explicitly told you to proceed without it.
-    - Call drafting_draft_content once. It writes every field group and
-      answers with the name of the draft it stored.
+    - Call drafting_draft_content at most once in a reply, never twice.
+      One call writes every field group and answers with the name of the
+      draft it stored. A user who wants another draft asks again, and
+      that draft belongs to the reply that follows the request.
     - Tell the user which draft is ready and that they can review it on
       the right. Do not repeat the field values.
     - Only report a draft as ready when the result carries a draft. When
