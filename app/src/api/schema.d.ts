@@ -171,7 +171,7 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Upload a drafting context document
+         * Upload a drafting document
          * @description The file bytes form the raw request body. Session, category and filename are query parameters, exploded from the request schema.
          */
         post: operations["postDraftingAddDocument"];
@@ -190,7 +190,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** List drafting context documents */
+        /** List drafting documents */
         post: operations["postDraftingListDocuments"];
         delete?: never;
         options?: never;
@@ -207,7 +207,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Remove a drafting context document */
+        /** Remove a drafting document */
         post: operations["postDraftingRemoveDocument"];
         delete?: never;
         options?: never;
@@ -225,7 +225,7 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Process a drafting context document
+         * Process a drafting document
          * @description Runs text extraction and summarisation on a referenced document and returns its resulting status. Fired by the app after a successful upload and by the retry control. A document that is already being processed, or done, is left alone and its current status returned.
          */
         post: operations["postDraftingExtractDocument"];
@@ -479,10 +479,10 @@ export interface components {
             status: "ok";
         };
         /**
-         * @description Document category. The backend derives the session field, media bundle, and storage details from this category.
+         * @description Document category. The backend derives the session field, media bundle, and storage details from this category. Context documents ground the drafting conversation; publishable assets are files that can be placed into the drafted content.
          * @enum {string}
          */
-        DraftingDocumentCategory: "context";
+        DraftingDocumentCategory: "context" | "publishable";
         /**
          * @description Extraction state of a document. Scheduled, extracting, extracted and summarizing are transient; done and error are final. Error can be retried with extract-document.
          * @enum {string}
