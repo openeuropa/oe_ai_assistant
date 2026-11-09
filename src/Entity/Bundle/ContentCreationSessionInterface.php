@@ -20,7 +20,8 @@ interface ContentCreationSessionInterface extends AiEditorialSessionInterface {
    * Returns the thread that holds the drafts of this session.
    *
    * No agent runs on this thread, so a draft never reaches a model through
-   * the conversation it replays.
+   * the conversation it replays. Its rows carry the session reference.
+   * deleteConversation() therefore deletes them too.
    */
   public function draftsThread(): string;
 

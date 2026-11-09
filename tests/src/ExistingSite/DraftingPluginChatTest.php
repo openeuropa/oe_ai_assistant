@@ -8,8 +8,6 @@ use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
 use Drupal\oe_ai_assistant\Entity\Bundle\ContentCreationSessionInterface;
 use Drupal\oe_ai_assistant_test\Plugin\AiProvider\MockAiProvider;
 use Drupal\oe_ai_assistant_test\Plugin\AiProvider\MockResponse;
-use NeuronAI\Chat\History\MessageStoreInterface;
-use NeuronAI\Chat\Messages\AssistantMessage;
 
 /**
  * Integration tests for the DraftingPlugin chat action.
@@ -588,15 +586,16 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
       ['id' => 'main_fields', 'label' => 'Main fields', 'status' => 'drafted'],
       ['id' => 'content_paragraphs', 'label' => 'Content paragraphs', 'status' => 'drafted'],
     ];
-    assert($session instanceof ContentCreationSessionInterface);
-    \Drupal::service(MessageStoreInterface::class)->append($session->draftsThread(), new AssistantMessage(json_encode([
+    $draft = [
       'version' => 1,
       'run' => 'draft_1.abcdef',
       'status' => 'drafted',
       'context' => $context,
       'groups' => $groups,
       'fields' => $fields,
-    ])));
+    ];
+    assert($session instanceof ContentCreationSessionInterface);
+    $this->storeDraft($session, $draft);
 
     // Events are exercised in EditorialEventsTest; filter here.
     $messages = array_values(array_filter(
@@ -611,14 +610,7 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
     $this->assertSame('assistant', $messages[1]['role']);
     $this->assertArrayHasKey('toolCalls', $messages[1]);
     $this->assertSame('drafting_draft_content', $messages[1]['toolCalls'][0]['function']['name']);
-    $this->assertSame([
-      'version' => 1,
-      'status' => 'drafted',
-      'context' => $context,
-      'groups' => $groups,
-      'error' => '',
-      'fields' => $fields,
-    ], $messages[1]['toolCalls'][0]['result']);
+    $this->assertSame($draft, $messages[1]['toolCalls'][0]['result']);
   }
 
   /**
@@ -665,8 +657,7 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
         'error' => 'The group could not be drafted.',
       ],
     ];
-    assert($session instanceof ContentCreationSessionInterface);
-    \Drupal::service(MessageStoreInterface::class)->append($session->draftsThread(), new AssistantMessage(json_encode([
+    $draft = [
       'version' => 1,
       'run' => 'draft_1.abcdef',
       'status' => 'failed',
@@ -674,21 +665,16 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
       'groups' => $groups,
       'fields' => [],
       'error' => '',
-    ])));
+    ];
+    assert($session instanceof ContentCreationSessionInterface);
+    $this->storeDraft($session, $draft);
 
     $messages = array_values(array_filter(
       $this->getMessages($session),
       fn($m) => $m['role'] !== 'event',
     ));
 
-    $this->assertSame([
-      'version' => 1,
-      'status' => 'failed',
-      'context' => $context,
-      'groups' => $groups,
-      'error' => '',
-      'fields' => [],
-    ], $messages[0]['toolCalls'][0]['result']);
+    $this->assertSame($draft, $messages[0]['toolCalls'][0]['result']);
 
     // A run that stored no field is no draft: it reaches neither the rail,
     // nor the history the model reads, nor the preview and save endpoints.
@@ -717,28 +703,32 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
       'meta' => json_encode([
         'type' => 'tool_call',
         'tools' => [
-          ['name' => 'drafting_draft_content', 'inputs' => []],
+          ['name' => 'drafting_draft_content', 'callId' => 'call_1', 'inputs' => []],
         ],
       ]),
     ]);
-    // The settled pair, committed immediately after.
+    // The settled pair, committed immediately after. It names the same call.
     $this->seedNeuronRow($session, $thread, [
       'role' => 'user',
       'meta' => json_encode([
         'type' => 'tool_call_result',
         'tools' => [
-          ['name' => 'drafting_draft_content', 'result' => ['draft' => 'Draft 1', 'version' => 1]],
+          [
+            'name' => 'drafting_draft_content',
+            'callId' => 'call_1',
+            'result' => ['draft' => 'Draft 1', 'version' => 1],
+          ],
         ],
       ]),
     ]);
 
     assert($session instanceof ContentCreationSessionInterface);
-    \Drupal::service(MessageStoreInterface::class)->append($session->draftsThread(), new AssistantMessage(json_encode([
+    $this->storeDraft($session, [
       'version' => 1,
       'run' => 'draft_1.abcdef',
       'context' => ['tone' => NULL, 'template' => NULL, 'documents' => []],
       'fields' => ['title' => [['value' => 'Test Title']]],
-    ])));
+    ]);
 
     $messages = array_values(array_filter(
       $this->getMessages($session),
@@ -750,6 +740,39 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
     $this->assertCount(1, $messages);
     $this->assertArrayHasKey('toolCalls', $messages[0]);
     $this->assertArrayHasKey('result', $messages[0]['toolCalls'][0]);
+  }
+
+  /**
+   * Tests that a call nothing settled reaches the editor as a running card.
+   *
+   * A run suspends on an approval-gated call. Its result arrives in a later
+   * request, and no row names its id yet. The card is the editor's only sign
+   * that the turn waits.
+   */
+  public function testGetMessagesKeepsTheUnsettledCall(): void {
+    $user = $this->createUser(['use oe ai assistant']);
+    $this->loginUser($user);
+    $session = $this->createSession($user);
+    $thread = 'editorial.session_' . $session->id();
+
+    $this->seedNeuronRow($session, $thread, [
+      'role' => 'assistant',
+      'meta' => json_encode([
+        'type' => 'tool_call',
+        'tools' => [
+          ['name' => 'drafting_draft_content', 'callId' => 'call_2', 'inputs' => []],
+        ],
+      ]),
+    ]);
+
+    $messages = array_values(array_filter(
+      $this->getMessages($session),
+      fn($m) => $m['role'] !== 'event',
+    ));
+
+    $this->assertCount(1, $messages);
+    $this->assertSame('drafting_draft_content', $messages[0]['toolCalls'][0]['function']['name']);
+    $this->assertArrayNotHasKey('result', $messages[0]['toolCalls'][0]);
   }
 
   /**
@@ -912,8 +935,7 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
     $session = $this->createSession($user);
     assert($session instanceof ContentCreationSessionInterface);
 
-    // Seed two drafted turns with provenance snapshots, as
-    // RequestDraftNeuronTool::storeDraft() writes them.
+    // Seed two drafted turns with provenance snapshots.
     $documents = [
       [
         'id' => '12',
@@ -924,8 +946,7 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
         'summary' => 'Key figures on EU emissions.',
       ],
     ];
-    $store = \Drupal::service(MessageStoreInterface::class);
-    $store->append($session->draftsThread(), new AssistantMessage(json_encode([
+    $this->storeDraft($session, [
       'version' => 1,
       'run' => 'draft_1.abcdef',
       'context' => [
@@ -934,8 +955,8 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
         'documents' => $documents,
       ],
       'fields' => ['title' => [['value' => 'First']]],
-    ])));
-    $store->append($session->draftsThread(), new AssistantMessage(json_encode([
+    ]);
+    $this->storeDraft($session, [
       'version' => 2,
       'run' => 'draft_2.abcdef',
       'context' => [
@@ -944,7 +965,7 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
         'documents' => [],
       ],
       'fields' => ['title' => [['value' => 'Second']]],
-    ])));
+    ]);
 
     MockAiProvider::enqueue(new MockResponse(
       toolCalls: [

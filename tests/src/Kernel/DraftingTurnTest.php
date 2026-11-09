@@ -102,6 +102,35 @@ class DraftingTurnTest extends AiEditorialSessionKernelTestBase {
   }
 
   /**
+   * A session owns its drafts, and deleting its conversation deletes them.
+   *
+   * The run writes the draft through a store bound to the session. The row
+   * therefore carries the session reference, and the version a reader finds
+   * it by.
+   */
+  public function testDraftsThreadBelongsToTheSession(): void {
+    $session = $this->createSession($this->createUser());
+
+    MockAiProvider::reset();
+    $this->enqueueTurn();
+    $this->turn($session, 'Please draft it, go ahead.');
+
+    $rows = $session->conversationThread($session->draftsThread());
+    $this->assertCount(1, $rows);
+    $this->assertSame('editorial_session', $rows[0]->bundle());
+    $this->assertSame('1', $rows[0]->get('oe_draft_version')->value);
+
+    // One query finds the record by its version.
+    $this->assertSame(1, $session->getDraftRun(1)['version']);
+    $this->assertNull($session->getDraftRun(2));
+
+    $session->deleteConversation();
+
+    $this->assertSame([], $session->conversationThread($session->draftsThread()));
+    $this->assertSame([], $session->listDrafts());
+  }
+
+  /**
    * A second turn numbers its draft after the first.
    *
    * The version comes from the drafts stored for the session, which is what

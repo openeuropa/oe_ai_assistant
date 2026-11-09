@@ -6,6 +6,9 @@ namespace Drupal\Tests\oe_ai_assistant\ExistingSite;
 
 use Drupal\Core\Url;
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
+use Drupal\oe_ai_assistant\Entity\Bundle\ContentCreationSessionInterface;
+use Drupal\oe_ai_assistant\Neuron\Chat\History\EditorialMessageStore;
+use Drupal\oe_ai_assistant\Neuron\Chat\Messages\EditorialAssistantMessage;
 use Drupal\oe_ai_assistant_test\Plugin\AiProvider\MockAiProvider;
 use Drupal\Tests\oe_ai_assistant\Traits\ExistingSiteConfigBackupTrait;
 use Drupal\user\UserInterface;
@@ -110,6 +113,26 @@ abstract class DraftingPluginTestBase extends ExistingSiteBase {
     $this->markEntityForCleanup($session);
     $this->sessions[] = $session;
     return $session;
+  }
+
+  /**
+   * Records a draft of a session, as DraftContentNode::storeDraft() does.
+   *
+   * A reader finds one draft by its version. The row therefore carries the
+   * session and the version.
+   *
+   * @param \Drupal\oe_ai_assistant\Entity\Bundle\ContentCreationSessionInterface $session
+   *   The session the draft belongs to.
+   * @param array $draft
+   *   The record of the run, as the node writes it.
+   */
+  protected function storeDraft(ContentCreationSessionInterface $session, array $draft): void {
+    $message = (new EditorialAssistantMessage(json_encode($draft)))
+      ->setDraftVersion((string) $draft['version']);
+
+    \Drupal::service(EditorialMessageStore::class)
+      ->forSession($session)
+      ->append($session->draftsThread(), $message);
   }
 
   /**

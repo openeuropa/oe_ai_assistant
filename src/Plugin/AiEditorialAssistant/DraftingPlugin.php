@@ -6,6 +6,7 @@ namespace Drupal\oe_ai_assistant\Plugin\AiEditorialAssistant;
 
 use Drupal\ai_neuron\Workflow\NeuronWorkflowManagerInterface;
 use Drupal\ai_neuron\Channel\SseChannel;
+use Drupal\ai_neuron\Entity\NeuronMessageInterface;
 use Drupal\Core\Cache\RefinableCacheableDependencyInterface;
 use Drupal\Core\Url;
 use Drupal\file\Upload\InputStreamFileWriterInterface;
@@ -376,90 +377,35 @@ class DraftingPlugin extends AiAssistantPluginBase {
       ? []
       : $this->entityTypeManager->getStorage('user')->loadMultiple($authorIds);
 
-    // The store is append-only: a settled call's own row stays in the
-    // thread beside its result, so without this a committed drafting turn
-    // would show as two bubbles — a "pending" card that never completes,
-    // immediately followed by the finished one. A name queued here, by
-    // position, is claimed by the first later settled result of the same
-    // name; what is left unclaimed is a call the run is genuinely still
-    // suspended on (an approval-gated tool with no answer yet).
-    $pendingToSuppress = [];
-    foreach ($thread as $index => $row) {
-      foreach ($row->getToolResults() as $result) {
-        if (!isset($result['name'])) {
-          continue;
+    // The store is append-only. A settled call keeps its own row beside its
+    // result row, and a transcript that renders both shows the drafting turn
+    // twice. Both rows name the same call id. These are the ids a later row
+    // settled.
+    $settled = [];
+    foreach ($thread as $row) {
+      $meta = $row->getMeta() ?? [];
+      if (($meta['type'] ?? '') !== 'tool_call_result') {
+        continue;
+      }
+      foreach ((array) ($meta['tools'] ?? []) as $tool) {
+        if (is_array($tool) && isset($tool['callId'])) {
+          $settled[(string) $tool['callId']] = TRUE;
         }
-        $pendingToSuppress[$result['name']][] = $index;
       }
     }
 
-    // getDraftRun() decodes the whole drafts thread, so a version is read
-    // once per request and not once per settled drafting_draft_content
-    // result. Nothing writes to the thread while this request reads it.
-    $draftRuns = [];
-
     $messages = [];
-    foreach ($thread as $index => $row) {
+    foreach ($thread as $row) {
       // The 'created' field is a plain UNIX timestamp (the 'created' field
       // type has no computed date property, unlike 'datetime'); exposed in
       // RFC 3339 so clients can render local timestamps.
       $at = date('c', (int) $row->get('created')->value);
 
-      // A settled tool call: the model's action is what the editor sees,
-      // regardless of the role Neuron stored the result under.
-      $toolResults = $row->getToolResults();
-      if ($toolResults !== []) {
-        $messages[] = [
-          'role' => 'assistant',
-          'content' => '',
-          'at' => $at,
-          'toolCalls' => array_map(
-            function (array $result) use ($session, &$draftRuns): array {
-              return [
-                'function' => ['name' => $result['name'], 'arguments' => '{}'],
-                'result' => $this->joinDraftToolResult($session, $result['name'], $result['result'], $draftRuns),
-              ];
-            },
-            $toolResults,
-          ),
-        ];
-        continue;
-      }
-
-      // A call the run suspends on (an approval-gated tool) has no result
-      // yet; the editor still sees it as a running card. A call already
-      // settled by a later row in the thread is not rendered twice.
-      $meta = $row->getMeta() ?? [];
-      $pending = ($meta['type'] ?? '') === 'tool_call'
-        ? array_values(array_filter(
-          (array) ($meta['tools'] ?? []),
-          function ($tool) use (&$pendingToSuppress, $index): bool {
-            if (!is_array($tool) || !isset($tool['name'])) {
-              return FALSE;
-            }
-            $name = (string) $tool['name'];
-            foreach ($pendingToSuppress[$name] ?? [] as $key => $settledIndex) {
-              if ($settledIndex > $index) {
-                unset($pendingToSuppress[$name][$key]);
-                return FALSE;
-              }
-            }
-            return TRUE;
-          },
-        ))
-        : [];
-      if ($pending !== []) {
-        $messages[] = [
-          'role' => 'assistant',
-          'content' => '',
-          'at' => $at,
-          'toolCalls' => array_map(
-            static fn (array $tool): array => [
-              'function' => ['name' => (string) $tool['name'], 'arguments' => json_encode($tool['inputs'] ?? [])],
-            ],
-            $pending,
-          ),
-        ];
+      // Neuron stores a tool result under the user role. The editor reads
+      // the model's action instead.
+      $toolCalls = $this->toolCallsOf($row, $settled, $session);
+      if ($toolCalls !== []) {
+        $messages[] = ['role' => 'assistant', 'at' => $at, 'toolCalls' => $toolCalls];
         continue;
       }
 
@@ -489,12 +435,61 @@ class DraftingPlugin extends AiAssistantPluginBase {
   }
 
   /**
+   * The tool calls of a row, as the editor's transcript renders them.
+   *
+   * A settled call carries its result. A run suspends on an approval-gated
+   * call, which has no result yet, and the editor sees a running card. A call
+   * a later row settled belongs to that row.
+   *
+   * @param \Drupal\ai_neuron\Entity\NeuronMessageInterface $row
+   *   The stored message.
+   * @param array $settled
+   *   The ids of the calls the thread settled, keyed by id.
+   * @param \Drupal\oe_ai_assistant\Entity\Bundle\ContentCreationSessionInterface $session
+   *   The session hosting the drafts thread.
+   *
+   * @return array
+   *   One entry per call, shaped {function: {name}, result?}. A row that is
+   *   not a tool row has none.
+   */
+  private function toolCallsOf(NeuronMessageInterface $row, array $settled, ContentCreationSessionInterface $session): array {
+    $meta = $row->getMeta() ?? [];
+
+    if (($meta['type'] ?? '') === 'tool_call_result') {
+      return array_map(
+        fn (array $result): array => [
+          'function' => ['name' => $result['name']],
+          'result' => $this->joinDraftToolResult($session, $result['name'], $result['result']),
+        ],
+        $row->getToolResults(),
+      );
+    }
+
+    if (($meta['type'] ?? '') !== 'tool_call') {
+      return [];
+    }
+
+    $unsettled = array_filter(
+      (array) ($meta['tools'] ?? []),
+      // The key sits in a text column, so check its shape too.
+      static fn ($tool): bool => is_array($tool)
+        && isset($tool['name'], $tool['callId'])
+        && !isset($settled[(string) $tool['callId']]),
+    );
+
+    return array_map(
+      static fn (array $tool): array => ['function' => ['name' => (string) $tool['name']]],
+      array_values($unsettled),
+    );
+  }
+
+  /**
    * Replaces a settled drafting_draft_content result with its full shape.
    *
    * The tool settles its call with a bare {draft, version} so a schema of any
-   * size costs the conversation the same. The editor's card is rebuilt from
-   * the record the run stored instead, which carries the groups it drafted
-   * and what happened to each one.
+   * size costs the conversation the same. The editor's card reads the stored
+   * record instead. That record carries the groups and what happened to each
+   * one.
    *
    * @param \Drupal\oe_ai_assistant\Entity\Bundle\ContentCreationSessionInterface $session
    *   The session hosting the drafts thread.
@@ -502,36 +497,17 @@ class DraftingPlugin extends AiAssistantPluginBase {
    *   The name of the settled call.
    * @param array $result
    *   The call's own settled result.
-   * @param array $draftRuns
-   *   The records already read back in this request, keyed by version and
-   *   filled in as new versions are seen.
    *
    * @return array
-   *   The full record for drafting_draft_content; $result unchanged for any
-   *   other tool, and for a version no run stored.
+   *   The stored record for drafting_draft_content. Any other tool, and a
+   *   version no run stored, keep the result they came with.
    */
-  private function joinDraftToolResult(ContentCreationSessionInterface $session, string $toolName, array $result, array &$draftRuns): array {
+  private function joinDraftToolResult(ContentCreationSessionInterface $session, string $toolName, array $result): array {
     if ($toolName !== 'drafting_draft_content' || !isset($result['version'])) {
       return $result;
     }
 
-    $version = (int) $result['version'];
-    if (!array_key_exists($version, $draftRuns)) {
-      $draftRuns[$version] = $session->getDraftRun($version);
-    }
-    $run = $draftRuns[$version];
-    if ($run === NULL) {
-      return $result;
-    }
-
-    return [
-      'version' => $version,
-      'status' => $run['status'] ?? 'drafted',
-      'context' => $run['context'] ?? NULL,
-      'groups' => $run['groups'] ?? [],
-      'error' => $run['error'] ?? '',
-      'fields' => $run['fields'] ?? [],
-    ];
+    return $session->getDraftRun((int) $result['version']) ?? $result;
   }
 
   /**

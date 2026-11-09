@@ -25,7 +25,8 @@ final class EditorialResources extends WorkflowResources {
    * @param \Drupal\ai_neuron\Workflow\NeuronWorkflowManagerInterface $workflows
    *   Builds the drafter of one group.
    * @param \NeuronAI\Chat\History\MessageStoreInterface $store
-   *   Where a draft is written.
+   *   Where the run writes a draft. A caller binds the session to it, so
+   *   its rows carry the reference and the version.
    * @param \Drupal\Core\Logger\LoggerChannelInterface $logger
    *   Records a group the run could not write.
    * @param \Drupal\oe_ai_assistant\Entity\Bundle\ContentCreationSessionInterface $session

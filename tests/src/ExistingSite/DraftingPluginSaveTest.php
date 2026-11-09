@@ -6,8 +6,6 @@ namespace Drupal\Tests\oe_ai_assistant\ExistingSite;
 
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
 use Drupal\oe_ai_assistant\Entity\Bundle\ContentCreationSessionInterface;
-use NeuronAI\Chat\History\MessageStoreInterface;
-use NeuronAI\Chat\Messages\AssistantMessage;
 
 /**
  * Integration tests for the DraftingPlugin save action.
@@ -382,8 +380,8 @@ class DraftingPluginSaveTest extends DraftingPluginTestBase {
   /**
    * Seeds a completed draft version into the session's drafts thread.
    *
-   * Mirrors how RequestDraftNeuronTool::storeDraft() records a draft: a
-   * row of the session's drafts thread, not the editor's own conversation.
+   * A draft is a row of the session's drafts thread. The editor's own
+   * conversation holds none.
    *
    * @param \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $session
    *   The session hosting the conversation.
@@ -396,7 +394,7 @@ class DraftingPluginSaveTest extends DraftingPluginTestBase {
    */
   protected function seedDraft(AiEditorialSessionInterface $session, int $version, array $fields, ?string $templateId = NULL): void {
     assert($session instanceof ContentCreationSessionInterface);
-    \Drupal::service(MessageStoreInterface::class)->append($session->draftsThread(), new AssistantMessage(json_encode([
+    $this->storeDraft($session, [
       'version' => $version,
       'run' => sprintf('draft_%d.abcdef', $version),
       'context' => [
@@ -405,7 +403,7 @@ class DraftingPluginSaveTest extends DraftingPluginTestBase {
         'documents' => [],
       ],
       'fields' => $fields,
-    ])));
+    ]);
   }
 
   /**

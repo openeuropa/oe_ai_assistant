@@ -4,11 +4,11 @@ declare(strict_types=1);
 
 namespace Drupal\oe_ai_assistant\Entity\Bundle;
 
+use Drupal\ai_neuron\Entity\NeuronMessageInterface;
 use Drupal\oe_ai_assistant\Entity\AiEditorialSession;
 use Drupal\oe_ai_assistant\Service\AiEditorialContextInterface;
 use Drupal\oe_ai_assistant\Service\Drafting\ContextDocumentRepository;
 use Drupal\oe_ai_assistant\Service\DraftingSchemaProviderInterface;
-use NeuronAI\Chat\History\MessageStoreInterface;
 
 /**
  * Bundle class for the content creation session.
@@ -29,18 +29,6 @@ class ContentCreationSession extends AiEditorialSession implements ContentCreati
    */
   public function draftsThread(): string {
     return 'drafts.session_' . $this->id();
-  }
-
-  /**
-   * {@inheritdoc}
-   *
-   * The rows of the drafts thread carry no session reference, so the delete
-   * of the parent cannot reach them. This clears the thread by name
-   * first.
-   */
-  public function deleteConversation(): void {
-    \Drupal::service(MessageStoreInterface::class)->clear($this->draftsThread());
-    parent::deleteConversation();
   }
 
   /**
@@ -115,31 +103,22 @@ class ContentCreationSession extends AiEditorialSession implements ContentCreati
    * {@inheritdoc}
    */
   public function getDraftContent(int $version): ?array {
-    foreach ($this->draftResults() as $result) {
-      if ((int) $result['version'] !== $version || self::hasFailed($result)) {
-        continue;
-      }
-
-      return [
-        'fields' => $result['fields'] ?? [],
-        'templateId' => $result['context']['template']['id'] ?? NULL,
-      ];
+    $result = $this->draftResult($version);
+    if ($result === NULL || self::hasFailed($result)) {
+      return NULL;
     }
 
-    return NULL;
+    return [
+      'fields' => $result['fields'] ?? [],
+      'templateId' => $result['context']['template']['id'] ?? NULL,
+    ];
   }
 
   /**
    * {@inheritdoc}
    */
   public function getDraftRun(int $version): ?array {
-    foreach ($this->draftResults() as $result) {
-      if ((int) $result['version'] === $version) {
-        return $result;
-      }
-    }
-
-    return NULL;
+    return $this->draftResult($version);
   }
 
   /**
@@ -208,9 +187,9 @@ class ContentCreationSession extends AiEditorialSession implements ContentCreati
    */
   private function draftResults(): array {
     $results = [];
-    foreach (\Drupal::service(MessageStoreInterface::class)->loadAll($this->draftsThread()) as $message) {
-      $draft = json_decode((string) $message->getContent(), TRUE);
-      if (is_array($draft) && isset($draft['version'])) {
+    foreach ($this->conversationThread($this->draftsThread()) as $row) {
+      $draft = self::decodeDraft($row);
+      if ($draft !== NULL) {
         $results[] = $draft;
       }
     }
@@ -218,6 +197,43 @@ class ContentCreationSession extends AiEditorialSession implements ContentCreati
     usort($results, static fn (array $a, array $b): int => (int) $a['version'] <=> (int) $b['version']);
 
     return $results;
+  }
+
+  /**
+   * Reads the record of one run, by the version the run took.
+   *
+   * @param int $version
+   *   The version to read.
+   *
+   * @return array|null
+   *   The record, or NULL when the session stored no such version.
+   */
+  private function draftResult(int $version): ?array {
+    $rows = \Drupal::entityTypeManager()->getStorage('neuron_message')->loadByProperties([
+      'oe_ai_session' => (int) $this->id(),
+      'thread_id' => $this->draftsThread(),
+      'oe_draft_version' => (string) $version,
+    ]);
+    $row = reset($rows);
+
+    return $row === FALSE ? NULL : self::decodeDraft($row);
+  }
+
+  /**
+   * Decodes the record a row of the drafts thread holds.
+   *
+   * @param \Drupal\ai_neuron\Entity\NeuronMessageInterface $row
+   *   The stored message.
+   *
+   * @return array|null
+   *   The record, or NULL when the row holds no draft.
+   */
+  private static function decodeDraft(NeuronMessageInterface $row): ?array {
+    // The run writes the record as one JSON string. The row therefore holds
+    // one text block.
+    $draft = json_decode((string) ($row->getContent()[0]['content'] ?? ''), TRUE);
+
+    return is_array($draft) && isset($draft['version']) ? $draft : NULL;
   }
 
 }

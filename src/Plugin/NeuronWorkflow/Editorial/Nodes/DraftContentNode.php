@@ -6,13 +6,13 @@ namespace Drupal\oe_ai_assistant\Plugin\NeuronWorkflow\Editorial\Nodes;
 
 use Drupal\Component\Utility\Crypt;
 use Drupal\oe_ai_assistant\Exception\SchemaRetriesExhaustedException;
+use Drupal\oe_ai_assistant\Neuron\Chat\Messages\EditorialAssistantMessage;
 use Drupal\oe_ai_assistant\Plugin\NeuronWorkflow\Drafting\Nodes\ValidateNode;
 use Drupal\oe_ai_assistant\Plugin\NeuronWorkflow\Editorial\Events\DraftingRequestedEvent;
 use Drupal\oe_ai_assistant\Plugin\NeuronWorkflow\Editorial\Events\DraftStoredEvent;
 use Drupal\oe_ai_assistant\Plugin\NeuronWorkflow\Editorial\EditorialResources;
 use NeuronAI\Agent\Adapters\Events\ActivityStreamEvent;
 use NeuronAI\Agent\Adapters\Events\CustomStreamEvent;
-use NeuronAI\Chat\Messages\AssistantMessage;
 use NeuronAI\Workflow\Node;
 use NeuronAI\Workflow\WorkflowState;
 
@@ -279,7 +279,8 @@ final class DraftContentNode extends Node {
    *
    * A draft holds every field of the content type, which no model needs to
    * read back. Nothing runs an agent on this thread, so the draft is as
-   * large as the content type needs.
+   * large as the content type needs. A reader asks for one draft, so the
+   * message names its version and the store records it on the row.
    *
    * @param \Drupal\oe_ai_assistant\Plugin\NeuronWorkflow\Editorial\EditorialResources $resources
    *   What this run shares.
@@ -289,7 +290,10 @@ final class DraftContentNode extends Node {
    *   one reached, and the field values.
    */
   private function storeDraft(EditorialResources $resources, array $draft): void {
-    $resources->store->append($resources->session->draftsThread(), new AssistantMessage(json_encode($draft)));
+    $message = (new EditorialAssistantMessage(json_encode($draft)))
+      ->setDraftVersion((string) $draft['version']);
+
+    $resources->store->append($resources->session->draftsThread(), $message);
   }
 
   /**

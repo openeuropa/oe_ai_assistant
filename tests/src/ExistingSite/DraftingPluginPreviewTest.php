@@ -6,8 +6,6 @@ namespace Drupal\Tests\oe_ai_assistant\ExistingSite;
 
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
 use Drupal\oe_ai_assistant\Entity\Bundle\ContentCreationSessionInterface;
-use NeuronAI\Chat\History\MessageStoreInterface;
-use NeuronAI\Chat\Messages\AssistantMessage;
 
 /**
  * Integration tests for the DraftingPlugin preview action.
@@ -41,7 +39,7 @@ class DraftingPluginPreviewTest extends DraftingPluginTestBase {
     ?string $templateId,
   ): void {
     assert($session instanceof ContentCreationSessionInterface);
-    \Drupal::service(MessageStoreInterface::class)->append($session->draftsThread(), new AssistantMessage(json_encode([
+    $this->storeDraft($session, [
       'version' => $version,
       'run' => sprintf('draft_%d.abcdef', $version),
       'context' => [
@@ -50,7 +48,7 @@ class DraftingPluginPreviewTest extends DraftingPluginTestBase {
         'documents' => [],
       ],
       'fields' => $fields,
-    ])));
+    ]);
   }
 
   /**

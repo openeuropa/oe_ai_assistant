@@ -13,13 +13,13 @@ use Drupal\Core\Logger\LoggerChannelInterface;
 use Drupal\Core\Plugin\Context\EntityContextDefinition;
 use Drupal\Core\StringTranslation\TranslatableMarkup;
 use Drupal\oe_ai_assistant\Entity\Bundle\ContentCreationSessionInterface;
+use Drupal\oe_ai_assistant\Neuron\Chat\History\EditorialMessageStore;
 use Drupal\oe_ai_assistant\Neuron\Chat\Messages\Stream\Adapters\PatchedVercelAIAdapter;
 use Drupal\oe_ai_assistant\Plugin\NeuronWorkflow\Editorial\EditorialResources;
 use Drupal\oe_ai_assistant\Plugin\NeuronWorkflow\Editorial\Events\ChatTurnEvent;
 use Drupal\oe_ai_assistant\Plugin\NeuronWorkflow\Editorial\Nodes\ChatNode;
 use Drupal\oe_ai_assistant\Plugin\NeuronWorkflow\Editorial\Nodes\ChatResumeNode;
 use Drupal\oe_ai_assistant\Plugin\NeuronWorkflow\Editorial\Nodes\DraftContentNode;
-use NeuronAI\Chat\History\MessageStoreInterface;
 use NeuronAI\Workflow\Events\Event;
 use NeuronAI\Workflow\Streaming\Adapter\StreamAdapterInterface;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
@@ -52,7 +52,7 @@ final class EditorialWorkflow extends NeuronWorkflowPluginBase {
     $plugin_definition,
     private readonly NeuronAgentManagerInterface $agents,
     private readonly NeuronWorkflowManagerInterface $workflows,
-    private readonly MessageStoreInterface $store,
+    private readonly EditorialMessageStore $store,
     #[Autowire(service: 'logger.channel.oe_ai_assistant')]
     private readonly LoggerChannelInterface $logger,
   ) {
@@ -83,7 +83,7 @@ final class EditorialWorkflow extends NeuronWorkflowPluginBase {
   protected function resources(): EditorialResources {
     return new EditorialResources(
       $this->workflows,
-      $this->store,
+      $this->store->forSession($this->session()),
       $this->logger,
       $this->session(),
     );

@@ -7,6 +7,7 @@ namespace Drupal\Tests\oe_ai_assistant\Kernel;
 use Drupal\ai_neuron\Agent\NeuronAgentManagerInterface;
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
 use Drupal\oe_ai_assistant\Neuron\Chat\History\EditorialMessageStore;
+use Drupal\oe_ai_assistant\Neuron\Chat\Messages\EditorialAssistantMessage;
 use NeuronAI\Chat\History\MessageStoreInterface;
 use NeuronAI\Chat\Messages\AssistantMessage;
 use NeuronAI\Chat\Messages\UserMessage;
@@ -95,6 +96,41 @@ class EditorialMessageStoreTest extends AiEditorialSessionKernelTestBase {
     $this->assertCount(1, $rows);
     $this->assertSame('default', $rows[0]->bundle());
     $this->assertFalse($rows[0]->hasField('oe_ai_session'));
+  }
+
+  /**
+   * A session-bound store records the session on a thread with no agent.
+   */
+  public function testAppendForSessionStampsTheSessionAndVersion(): void {
+    $session = $this->createSession($this->createUser());
+    $message = (new EditorialAssistantMessage('{"version":3}'))
+      ->setDraftVersion('3');
+
+    $this->store()->forSession($session)->append('thread-5', $message);
+
+    $rows = $this->rowsOf('thread-5');
+    $this->assertCount(1, $rows);
+    $this->assertSame('editorial_session', $rows[0]->bundle());
+    $this->assertSame((int) $session->id(), (int) $rows[0]->get('oe_ai_session')->target_id);
+    $this->assertSame('3', $rows[0]->get('oe_draft_version')->value);
+    // The version is metadata of the message. The row keeps it, so a stored
+    // message still names its draft.
+    $this->assertSame('3', $rows[0]->getMeta()['__meta']['draft_version'] ?? NULL);
+    // No agent wrote it, so the row names none.
+    $this->assertNull($rows[0]->get('agent_id')->value);
+  }
+
+  /**
+   * A message that names no version leaves the field empty.
+   */
+  public function testAppendWithoutVersionLeavesTheFieldEmpty(): void {
+    $session = $this->createSession($this->createUser());
+
+    $this->storeFor('editorial', $session)->append('thread-6', new UserMessage('Draft the intro.'));
+
+    $rows = $this->rowsOf('thread-6');
+    $this->assertCount(1, $rows);
+    $this->assertTrue($rows[0]->get('oe_draft_version')->isEmpty());
   }
 
   /**
