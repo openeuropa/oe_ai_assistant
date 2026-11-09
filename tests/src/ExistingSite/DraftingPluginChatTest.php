@@ -127,12 +127,12 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
 
     // The run names every group before it drafts the first one, so the card
     // shows the whole set from the start. The frame arrives before any
-    // activity frame, and carries the calls it settles so each card reads
-    // the run of its own call.
+    // activity frame, and names the call it answers, so each card reads the
+    // run of its own call.
     $started = array_values(array_filter($events, fn($e) => $e['type'] === 'data-draft-started'));
     $this->assertCount(1, $started, 'Exactly one data-draft-started frame.');
     $this->assertSame(1, $started[0]['data']['version']);
-    $this->assertNotEmpty($started[0]['data']['callIds']);
+    $this->assertSame('call_1', $started[0]['data']['callId']);
     $this->assertSame([
       ['id' => 'main_fields', 'label' => 'Main fields', 'status' => 'pending'],
       ['id' => 'field_content_paragraphs', 'label' => 'Content paragraphs', 'status' => 'pending'],
