@@ -19,13 +19,10 @@ final class DraftingRequestedEvent implements Event {
    * Builds the event.
    *
    * @param array $callIds
-   *   The calls of the chat agent that wait for a draft.
-   * @param int $version
-   *   The draft to write.
+   *   The calls of the chat agent, each waiting for a draft of its own.
    */
   public function __construct(
     public readonly array $callIds,
-    public readonly int $version,
   ) {}
 
 }

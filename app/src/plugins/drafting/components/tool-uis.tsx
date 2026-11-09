@@ -16,6 +16,7 @@ import { parseDraftResult } from "../draft-result";
 import { useSavedVersions } from "../saved-versions";
 import { useSessionDrafts } from "../session-drafts";
 import { setDraftingState, useDraftingSlice } from "../store";
+import { toolLabel } from "../tool-labels";
 import { DraftCard } from "./draft-card";
 import { EventChip } from "./event-chip";
 
@@ -96,7 +97,7 @@ export const DraftContentToolUI = makeAssistantToolUI<
   Record<string, unknown>
 >({
   toolName: "drafting_draft_content",
-  render: ({ result, status, toolCallId }) => {
+  render: ({ result, status, toolCallId, toolName }) => {
     // Saved state and creation time come from the thread index, so the
     // card stays in step with the preview header and the rail.
     const sessionDrafts = useSessionDrafts();
@@ -124,7 +125,7 @@ export const DraftContentToolUI = makeAssistantToolUI<
     const card = (
       <ToolCallCard
         icon={PenLine}
-        label="Drafting content"
+        label={toolLabel(toolName)}
         // A run with no version draws no card of its own, so the error has
         // nowhere to go but the detail line.
         detail={version === null ? error : undefined}
@@ -191,13 +192,15 @@ export const EditorialEventToolUI = makeAssistantToolUI<
  *
  * Receives ToolCallMessagePartProps from assistant-ui (toolName, args, result,
  * argsText, status, addResult, resume, type, toolCallId). Renders a generic
- * ToolCallCard with a Wrench icon and the tool name humanized for display.
+ * ToolCallCard with a Wrench icon and the label the tool declares.
  */
 export function ToolFallbackCard({
   toolName,
   status,
 }: ToolCallMessagePartProps) {
-  // Convert snake_case tool name to a readable label (underscores to spaces).
-  const label = toolName.replace(/_/g, " ");
-  return <ToolCallCard icon={Wrench} label={label} status={status} />;
+  // Only the tool name reaches this card, and an editor should not read a
+  // machine name. So the card shows the label the host declares for it.
+  return (
+    <ToolCallCard icon={Wrench} label={toolLabel(toolName)} status={status} />
+  );
 }

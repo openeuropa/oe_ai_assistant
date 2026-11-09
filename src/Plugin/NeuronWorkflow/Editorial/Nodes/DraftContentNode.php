@@ -17,7 +17,7 @@ use NeuronAI\Workflow\Node;
 use NeuronAI\Workflow\WorkflowState;
 
 /**
- * Writes one draft, a field group at a time.
+ * Writes a draft for every call of a reply, a field group at a time.
  *
  * The drafting runs here rather than inside the tool the model called, so it
  * can yield while it works and the editor sees which group it is writing. Each
@@ -32,12 +32,48 @@ final class DraftContentNode extends Node {
   private const MAIN_GROUP = 'main_fields';
 
   /**
-   * Drafts every group of the content type and reports the draft.
+   * Writes one draft for every call that asked, and reports each one.
    */
   public function __invoke(DraftingRequestedEvent $event, WorkflowState $state, EditorialResources $resources): \Generator {
+    // A draft numbers itself from the drafts the session already stores, so
+    // two drafts that run together take the same number. This loop writes
+    // the draft of one call at a time.
+    $results = [];
+    foreach ($event->callIds as $callId) {
+      $result = yield from $this->draft($resources, $state, $callId);
+      $results[$callId] = ['result' => $result];
+    }
+    $state->set('results', $results);
+
+    return new DraftStoredEvent();
+  }
+
+  /**
+   * Writes the draft that one call asked for.
+   *
+   * @param \Drupal\oe_ai_assistant\Plugin\NeuronWorkflow\Editorial\EditorialResources $resources
+   *   What this run shares.
+   * @param \NeuronAI\Workflow\WorkflowState $state
+   *   The state of the run, which holds what the editor asked for.
+   * @param string $callId
+   *   The call this draft answers.
+   *
+   * @return \Generator
+   *   Yields the progress of the draft, and returns what the model reads
+   *   back: the name of the draft, or what stopped it.
+   */
+  private function draft(EditorialResources $resources, WorkflowState $state, string $callId): \Generator {
     $groups = $resources->session->getFieldGroups();
     $total = count($groups);
-    $run = $this->runId($event->version);
+    // A second reading of nextVersion() answers a different number, because
+    // the session numbers from the drafts it stores. A retried step has to
+    // write the version it took the first time, so the memo holds that
+    // reading against the call.
+    $version = (int) $this->memoize(
+      'version.' . $callId,
+      fn (): int => $resources->session->nextVersion(),
+    );
+    $run = $this->runId($version);
     $answers = [];
     $index = 0;
     $failed = '';
@@ -61,8 +97,8 @@ final class DraftContentNode extends Node {
     }
 
     yield new CustomStreamEvent('draft-started', [
-      'version' => $event->version,
-      'callIds' => $event->callIds,
+      'version' => $version,
+      'callId' => $callId,
       'context' => $context,
       'groups' => array_values($progress),
     ]);
@@ -87,15 +123,15 @@ final class DraftContentNode extends Node {
         // none of its progress. A closure cannot yield into this generator,
         // so the node reads the recorded value back rather than wrapping the
         // drafting in memoize().
-        $fields = $this->recallMemo('group.' . $groupId);
+        $fields = $this->recallMemo('group.' . $callId . '.' . $groupId);
 
         if (!is_array($fields)) {
-          yield $this->progress($group, 'drafting', $index, $total);
+          yield $this->progress($callId, $group, 'drafting', $index, $total);
           $fields = $this->draftGroup($resources, $group, $run, $this->task($resources, $state, $answers));
-          $fields = $this->memoize('group.' . $groupId, static fn (): array => $fields);
+          $fields = $this->memoize('group.' . $callId . '.' . $groupId, static fn (): array => $fields);
         }
 
-        yield $this->progress($group, 'drafted', $index, $total);
+        yield $this->progress($callId, $group, 'drafted', $index, $total);
         $progress[$groupId]['status'] = 'drafted';
         $answers[$groupId] = $fields;
         $failed = '';
@@ -103,7 +139,7 @@ final class DraftContentNode extends Node {
 
       $fields = $this->assemble($groups, $answers);
       $this->storeDraft($resources, [
-        'version' => $event->version,
+        'version' => $version,
         'run' => $run,
         'status' => 'drafted',
         'context' => $context,
@@ -116,7 +152,8 @@ final class DraftContentNode extends Node {
       // draft without waiting for a reload. The part is a convenience: a
       // reload reads the draft back from the drafts thread.
       yield new CustomStreamEvent('drafted-fields', [
-        'version' => $event->version,
+        'version' => $version,
+        'callId' => $callId,
         'status' => 'drafted',
         'context' => $context,
         'groups' => array_values($progress),
@@ -131,7 +168,7 @@ final class DraftContentNode extends Node {
       // A draft holds every field of the content type, and the agent replays
       // its thread on every turn. So the model is told the name of the draft,
       // and the fields stay in the drafts thread.
-      $result = ['draft' => sprintf('Draft %d', $event->version), 'version' => $event->version];
+      $result = ['draft' => sprintf('Draft %d', $version), 'version' => $version];
     }
     catch (\Throwable $e) {
       // The set is incomplete, so this run stores no field. The model has to
@@ -155,7 +192,7 @@ final class DraftContentNode extends Node {
       };
 
       if ($failed !== '') {
-        yield $this->progress(['groupId' => $failed], 'failed', $index, $total);
+        yield $this->progress($callId, ['groupId' => $failed], 'failed', $index, $total);
         $progress[$failed]['status'] = 'failed';
         $progress[$failed]['error'] = $message;
       }
@@ -164,7 +201,7 @@ final class DraftContentNode extends Node {
       // is stored the way a run that worked is. The record holds no field,
       // which is what keeps it out of the drafts the editor can open.
       $this->storeDraft($resources, [
-        'version' => $event->version,
+        'version' => $version,
         'run' => $run,
         'status' => 'failed',
         'context' => $context,
@@ -176,27 +213,23 @@ final class DraftContentNode extends Node {
       ]);
 
       yield new CustomStreamEvent('draft-failed', [
-        'version' => $event->version,
-        'callIds' => $event->callIds,
+        'version' => $version,
+        'callId' => $callId,
         'group' => $failed,
         'error' => $message,
       ]);
 
-      $result = ['error' => $message, 'group' => $failed, 'version' => $event->version];
+      $result = ['error' => $message, 'group' => $failed, 'version' => $version];
     }
 
-    $results = [];
-    foreach ($event->callIds as $callId) {
-      $results[$callId] = ['result' => $result];
-    }
-    $state->set('results', $results);
-
-    return new DraftStoredEvent();
+    return $result;
   }
 
   /**
-   * Reports where one group stands.
+   * Reports where one group of one draft stands.
    *
+   * @param string $callId
+   *   The call whose draft this group belongs to.
    * @param array $group
    *   The group being drafted, with its id and its label.
    * @param string $status
@@ -209,15 +242,19 @@ final class DraftContentNode extends Node {
    * @return \NeuronAI\Agent\Adapters\Events\ActivityStreamEvent
    *   The progress event.
    */
-  private function progress(array $group, string $status, int $index, int $total): ActivityStreamEvent {
+  private function progress(string $callId, array $group, string $status, int $index, int $total): ActivityStreamEvent {
     $groupId = (string) $group['groupId'];
 
     // The id names the group, so each event replaces the progress of that
-    // group rather than adding a line to the editor's screen.
+    // group rather than adding a line to the editor's screen. Two drafts of
+    // one reply write the same groups. An id of the group alone would let
+    // the second draft overwrite the rows of the first. So the id carries
+    // the call as well.
     return new ActivityStreamEvent(
-      id: 'draft:' . $groupId,
+      id: sprintf('draft:%s.%s', $callId, $groupId),
       type: 'drafting',
       data: [
+        'callId' => $callId,
         'group' => $groupId,
         'label' => (string) ($group['label'] ?? $groupId),
         'status' => $status,
@@ -260,9 +297,10 @@ final class DraftContentNode extends Node {
   /**
    * Names this run, so two runs of one draft never share a conversation.
    *
-   * A run that failed leaves its drafter threads behind, and the next one
-   * takes the version it did not store. The random segment is what tells the
-   * two apart, and the version is what ties a run to the draft it wrote.
+   * A retried step drafts the version it already took, and the drafter
+   * threads of its first attempt stay behind. A name built from the version
+   * alone would read those threads again, so a random segment separates the
+   * two. The version ties the run to the draft it wrote.
    *
    * @param int $version
    *   The version this run drafts.

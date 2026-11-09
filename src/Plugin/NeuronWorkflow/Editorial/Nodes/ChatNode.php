@@ -26,10 +26,9 @@ final class ChatNode extends AgentNode {
   public function __invoke(ChatTurnEvent $event, WorkflowState $state, EditorialResources $resources): \Generator {
     $this->dropSuspendedRun($resources);
 
-    // The node that drafts and the node that resumes the turn both read these,
-    // and only this node receives them. A drafter reads its own thread only,
-    // so the message is on the state as the task of the turn.
-    $state->set('version', $event->version);
+    // The node that drafts never receives the editor's message. A drafter
+    // holds only its own thread, which carries no message of the editor.
+    // So this node stores the message on the state as the task of the turn.
     $state->set('task', $event->message);
 
     $agentState = yield from $this->agent->stream(new UserMessage($event->message));

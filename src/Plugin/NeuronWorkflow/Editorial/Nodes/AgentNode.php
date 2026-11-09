@@ -62,7 +62,7 @@ abstract class AgentNode extends Node {
         $callIds[] = (string) $call->getCallId();
       }
 
-      return new DraftingRequestedEvent($callIds, (int) $state->get('version'));
+      return new DraftingRequestedEvent($callIds);
     }
 
     $state->set('answer', (string) $agentState->getMessage()?->getContent());

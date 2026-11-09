@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\oe_ai_assistant\Plugin\AiEditorialAssistant;
 
+use Drupal\ai_neuron\Tools\NeuronToolManagerInterface;
 use Drupal\ai_neuron\Workflow\NeuronWorkflowManagerInterface;
 use Drupal\ai_neuron\Channel\SseChannel;
 use Drupal\ai_neuron\Entity\NeuronMessageInterface;
@@ -117,6 +118,13 @@ class DraftingPlugin extends AiAssistantPluginBase {
   protected PreviewRendererInterface $previewRenderer;
 
   /**
+   * The tool plugin manager, which holds the label of every tool.
+   *
+   * @var \Drupal\ai_neuron\Tools\NeuronToolManagerInterface
+   */
+  protected NeuronToolManagerInterface $toolManager;
+
+  /**
    * {@inheritdoc}
    */
   public static function create(
@@ -134,6 +142,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
     $instance->inputStreamFileWriter = $container->get(InputStreamFileWriterInterface::class);
     $instance->draftAssembler = $container->get(DraftAssemblerInterface::class);
     $instance->previewRenderer = $container->get(PreviewRendererInterface::class);
+    $instance->toolManager = $container->get(NeuronToolManagerInterface::class);
     return $instance;
   }
 
@@ -231,7 +240,26 @@ class DraftingPlugin extends AiAssistantPluginBase {
       'preview' => [
         'url' => Url::fromRoute('oe_ai_assistant.drafting_preview')->toString() . '?sessionId={sessionId}&version={versionId}',
       ],
+      // A tool call reaches the app under its machine name, which no
+      // editor should read in a card. So the config carries the label
+      // every tool plugin declares, keyed by that name.
+      'toolLabels' => $this->toolLabels(),
     ];
+  }
+
+  /**
+   * Collects the label every tool plugin declares.
+   *
+   * @return array
+   *   The labels, keyed by the machine name of the tool.
+   */
+  private function toolLabels(): array {
+    $labels = [];
+    foreach ($this->toolManager->getDefinitions() as $id => $definition) {
+      $labels[(string) $id] = (string) $definition->label;
+    }
+
+    return $labels;
   }
 
   /**
@@ -283,9 +311,6 @@ class DraftingPlugin extends AiAssistantPluginBase {
       throw new ActionException('invalid_request', 'The editorial session does not support drafting.', 400);
     }
 
-    // The draft-content node writes this version, and it is decided before any
-    // model call: the turn that asks for a draft takes the next one.
-    $version = (int) $session->nextVersion()['version'];
     $channel = new SseChannel();
     // Building the run builds the agent of its chat nodes, which resolves the
     // session's template: its instructions() reads the schema groups. So a
@@ -307,12 +332,12 @@ class DraftingPlugin extends AiAssistantPluginBase {
     }
 
     $logger = $this->logger;
-    $response = new SseResponse(static function () use ($workflow, $message, $version, $channel, $logger): void {
+    $response = new SseResponse(static function () use ($workflow, $message, $channel, $logger): void {
       try {
         // A run executes while its generator is advanced, and run() is what
         // advances it to the end. The channel wrote every event as the run
         // produced it, so nothing here reads what it answers.
-        $workflow->run(ExecutionRequest::start(new ChatTurnEvent($message, $version)));
+        $workflow->run(ExecutionRequest::start(new ChatTurnEvent($message)));
       }
       catch (\Throwable $e) {
         // Never let an exception escape into the open SSE stream: Drupal's

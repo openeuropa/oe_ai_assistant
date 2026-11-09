@@ -85,6 +85,40 @@ describe("toThreadMessages", () => {
     expect(part.result).toEqual(fields);
   });
 
+  it("keeps a part for every drafting call of a reply", () => {
+    // Two drafting calls in one reply hold two drafts, and the editor needs
+    // a card for each. Two parts under one call id would draw one card, so
+    // the ids differ.
+    const input: SessionMessage[] = [
+      {
+        role: "assistant",
+        content: "Here are your drafts.",
+        toolCalls: [
+          {
+            type: "function",
+            function: { name: "drafting_draft_content", arguments: "{}" },
+            result: { version: 4, context: null, fields: {} },
+          },
+          {
+            type: "function",
+            function: { name: "drafting_draft_content", arguments: "{}" },
+            result: { version: 5, context: null, fields: {} },
+          },
+        ],
+      },
+    ];
+
+    const [message] = toThreadMessages(input);
+    if (!message) throw new Error("expected a message");
+    const parts = message.content as AnyPart[];
+
+    expect(parts).toHaveLength(3);
+    expect(parts[0].type).toBe("text");
+    expect(parts[1].toolName).toBe("drafting_draft_content");
+    expect(parts[2].toolName).toBe("drafting_draft_content");
+    expect(parts[1].toolCallId).not.toBe(parts[2].toolCallId);
+  });
+
   it("maps an event item to an editorial_event tool-call part", () => {
     const input: SessionMessage[] = [
       {

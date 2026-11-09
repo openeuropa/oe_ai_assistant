@@ -324,9 +324,9 @@ class DraftingTurnTest extends AiEditorialSessionKernelTestBase {
   }
 
   /**
-   * Two calls in one turn write one draft.
+   * Two calls in one reply write two drafts.
    */
-  public function testTwoCallsInOneTurnWriteOneDraft(): void {
+  public function testTwoCallsInOneReplyWriteTwoDrafts(): void {
     $session = $this->createSession($this->createUser());
 
     MockAiProvider::reset();
@@ -346,17 +346,21 @@ class DraftingTurnTest extends AiEditorialSessionKernelTestBase {
     ));
     MockAiProvider::enqueue(new MockResponse(text: self::MAIN_FIELDS));
     MockAiProvider::enqueue(new MockResponse(text: self::PARAGRAPHS));
-    MockAiProvider::enqueue(new MockResponse(text: 'Draft 1 is ready.'));
+    MockAiProvider::enqueue(new MockResponse(text: self::MAIN_FIELDS));
+    MockAiProvider::enqueue(new MockResponse(text: self::PARAGRAPHS));
+    MockAiProvider::enqueue(new MockResponse(text: 'Drafts 1 and 2 are ready.'));
 
-    $this->turn($session, 'Please draft it, go ahead.');
+    $this->turn($session, 'Draft two of them.');
 
-    $this->assertSame(['Draft 1'], array_column($session->listDrafts(), 'name'));
+    $this->assertSame(['Draft 1', 'Draft 2'], array_column($session->listDrafts(), 'name'));
 
-    // Both calls answered the same draft, and only one ran the drafters.
+    // Each call answers with the draft it asked for, and each draft runs
+    // the drafters of its own groups.
     $results = $session->conversationToolResults();
     $this->assertCount(2, $results);
-    $this->assertSame($results[0]['result'], $results[1]['result']);
-    $this->assertCount(1, preg_grep('@\.group_main_fields$@', array_keys($session->conversationThreads())));
+    $this->assertSame(['draft' => 'Draft 1', 'version' => 1], $results[0]['result']);
+    $this->assertSame(['draft' => 'Draft 2', 'version' => 2], $results[1]['result']);
+    $this->assertCount(2, preg_grep('@\.group_main_fields$@', array_keys($session->conversationThreads())));
   }
 
   /**
@@ -488,6 +492,36 @@ class DraftingTurnTest extends AiEditorialSessionKernelTestBase {
   }
 
   /**
+   * A second draft in one turn takes the version after the first.
+   *
+   * The agent can ask for another draft once it reads the first, and a retry
+   * after a draft that failed is the likely case. Two drafts that take one
+   * version reach the editor under one name, so each call numbers its own
+   * draft.
+   */
+  public function testSecondDraftInOneTurnTakesTheNextVersion(): void {
+    $session = $this->createSession($this->createUser());
+
+    MockAiProvider::reset();
+    MockAiProvider::enqueue($this->toolCall());
+    MockAiProvider::enqueue(new MockResponse(text: self::MAIN_FIELDS));
+    MockAiProvider::enqueue(new MockResponse(text: self::PARAGRAPHS));
+    // The reply that reads the first draft asks for a second one.
+    MockAiProvider::enqueue($this->toolCall('call_2'));
+    MockAiProvider::enqueue(new MockResponse(
+      text: '{"title": [{"value": "T2"}], "field_teaser": [{"value": "S2"}]}',
+    ));
+    MockAiProvider::enqueue(new MockResponse(text: self::PARAGRAPHS));
+    MockAiProvider::enqueue(new MockResponse(text: 'Draft 2 is ready.'));
+
+    $this->turn($session, 'Draft it, then draft it again.');
+
+    $this->assertSame(['Draft 1', 'Draft 2'], array_column($session->listDrafts(), 'name'));
+    $this->assertSame([['value' => 'T']], $session->getDraftContent(1)['fields']['title']);
+    $this->assertSame([['value' => 'T2']], $session->getDraftContent(2)['fields']['title']);
+  }
+
+  /**
    * The transcript reports a draft that died as failed.
    *
    * The card reads a call with no result as a draft that landed. The call
@@ -569,10 +603,6 @@ class DraftingTurnTest extends AiEditorialSessionKernelTestBase {
   /**
    * Runs one turn of a session and returns the state it ended in.
    *
-   * The endpoint decides the version before any model call, so the turn that
-   * asks for a draft takes the next one. This mirrors it, because a turn that
-   * starts without one writes draft 0.
-   *
    * @param \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $session
    *   The session the turn belongs to.
    * @param string $message
@@ -582,11 +612,9 @@ class DraftingTurnTest extends AiEditorialSessionKernelTestBase {
    *   The state of the finished run.
    */
   private function turn(AiEditorialSessionInterface $session, string $message): WorkflowState {
-    $version = (int) $session->nextVersion()['version'];
-
     return $this->container->get(NeuronWorkflowManagerInterface::class)
       ->createWorkflow('editorial_turn', [], ['session' => $session])
-      ->run(ExecutionRequest::start(new ChatTurnEvent($message, $version)));
+      ->run(ExecutionRequest::start(new ChatTurnEvent($message)));
   }
 
   /**
@@ -644,12 +672,16 @@ class DraftingTurnTest extends AiEditorialSessionKernelTestBase {
 
   /**
    * The editorial agent's call of the drafting tool, which takes no inputs.
+   *
+   * @param string $callId
+   *   The id the model gives the call. A turn that asks twice needs a
+   *   different one for each call.
    */
-  private function toolCall(): MockResponse {
+  private function toolCall(string $callId = 'call_1'): MockResponse {
     return new MockResponse(
       toolCalls: [
         [
-          'id' => 'call_1',
+          'id' => $callId,
           'type' => 'function',
           'function' => ['name' => 'drafting_draft_content', 'arguments' => '{}'],
         ],

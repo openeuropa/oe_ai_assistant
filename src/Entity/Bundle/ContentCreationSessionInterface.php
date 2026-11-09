@@ -74,10 +74,10 @@ interface ContentCreationSessionInterface extends AiEditorialSessionInterface {
   /**
    * Numbers the draft about to be stored.
    *
-   * @return array
-   *   {version: N}, the version following the drafts already stored.
+   * @return int
+   *   The version following the drafts already stored.
    */
-  public function nextVersion(): array;
+  public function nextVersion(): int;
 
   /**
    * Lists the stored drafts with their provenance snapshots.

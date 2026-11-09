@@ -73,10 +73,10 @@ class ContentCreationSession extends AiEditorialSession implements ContentCreati
    * would hand the editor a number they already saw, so the next version
    * follows the highest one stored.
    */
-  public function nextVersion(): array {
+  public function nextVersion(): int {
     $versions = array_map(static fn (array $result): int => (int) $result['version'], $this->draftResults());
 
-    return ['version' => ($versions === [] ? 0 : max($versions)) + 1];
+    return ($versions === [] ? 0 : max($versions)) + 1;
   }
 
   /**

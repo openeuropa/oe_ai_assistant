@@ -9,8 +9,9 @@ use NeuronAI\Workflow\Events\Event;
 /**
  * Starts a turn of the editor's conversation.
  *
- * The message and the version are one invocation's input rather than facts of
- * the session, so a caller hands them over on the event that starts the turn.
+ * A field on the session would hold the editor's message after the turn
+ * ends, and the turn after it would read the message again. The message is
+ * the input of one invocation, so the caller hands it over on this event.
  */
 final class ChatTurnEvent implements Event {
 
@@ -19,12 +20,9 @@ final class ChatTurnEvent implements Event {
    *
    * @param string $message
    *   What the editor sent.
-   * @param int $version
-   *   The draft this turn writes if the agent asks for one.
    */
   public function __construct(
     public readonly string $message,
-    public readonly int $version,
   ) {}
 
 }

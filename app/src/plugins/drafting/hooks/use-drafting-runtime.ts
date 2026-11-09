@@ -43,6 +43,7 @@ interface DraftingActivity {
   id: string;
   type: string;
   data: {
+    callId: string;
     group: string;
     label: string;
     status: keyof typeof ACTIVITY_STATUS;
@@ -61,24 +62,19 @@ const ACTIVITY_STATUS = {
 } as const satisfies Record<string, DraftGroupProgress["status"]>;
 
 /**
- * Applies a change to every run the turn in flight is drafting.
+ * Applies a change to the run of one call.
  *
- * A turn settles one drafting call, and the card of that call reads the run
- * under its own id. The model can ask twice in one turn, and both calls then
- * wait for the same draft, so the change reaches all of them.
+ * The store keys each run by the call that asked for the draft. This drops
+ * a change that names a call with no run.
  */
-function updateActiveRuns(
+function updateRun(
+  callId: string,
   change: (run: DraftRunProgress) => DraftRunProgress,
 ): void {
-  const { runs, activeCallIds } = getDraftingState();
-  const next = { ...runs };
-  for (const callId of activeCallIds) {
-    const run = next[callId];
-    if (run) {
-      next[callId] = change(run);
-    }
-  }
-  setDraftingState({ runs: next });
+  const { runs } = getDraftingState();
+  const run = runs[callId];
+  if (!run) return;
+  setDraftingState({ runs: { ...runs, [callId]: change(run) } });
 }
 
 /**
@@ -91,23 +87,25 @@ function updateActiveRuns(
  * @param error What the card reports for such a run.
  */
 function settleActiveRuns(error: string): void {
-  updateActiveRuns((run) =>
-    run.status !== "running"
-      ? run
-      : {
-          ...run,
-          status: "failed",
-          error,
-          // The group the run was writing stops with the run. A group it
-          // never reached stays pending.
-          groups: run.groups.map((group) =>
-            group.status === "drafting"
-              ? { ...group, status: "failed", error }
-              : group,
-          ),
-        },
-  );
-  setDraftingState({ activeCallIds: [] });
+  const { runs, activeCallIds } = getDraftingState();
+  const next = { ...runs };
+  for (const callId of activeCallIds) {
+    const run = next[callId];
+    if (!run || run.status !== "running") continue;
+    next[callId] = {
+      ...run,
+      status: "failed",
+      error,
+      // The group the run was writing stops with the run. A group it never
+      // reached stays pending.
+      groups: run.groups.map((group) =>
+        group.status === "drafting"
+          ? { ...group, status: "failed", error }
+          : group,
+      ),
+    };
+  }
+  setDraftingState({ runs: next, activeCallIds: [] });
 }
 
 /**
@@ -163,21 +161,26 @@ export function useDraftingRuntime() {
       if (data.name === "draft-started") {
         const started = data.data as {
           version: number;
-          callIds: string[];
+          callId: string;
           context: DraftContext;
           groups: DraftGroupProgress[];
         };
-        const { runs } = getDraftingState();
-        const next = { ...runs };
-        for (const callId of started.callIds) {
-          next[callId] = {
-            version: started.version,
-            status: "running",
-            groups: started.groups,
-            context: started.context,
-          };
-        }
-        setDraftingState({ runs: next, activeCallIds: started.callIds });
+        const { runs, activeCallIds } = getDraftingState();
+        setDraftingState({
+          runs: {
+            ...runs,
+            [started.callId]: {
+              version: started.version,
+              status: "running",
+              groups: started.groups,
+              context: started.context,
+            },
+          },
+          // A call that this list leaves out keeps its spinner after the
+          // turn ends. The turn settles only the runs the list names. So
+          // every call of the turn joins the list as its draft starts.
+          activeCallIds: [...activeCallIds, started.callId],
+        });
       }
 
       // Store raw drafted field values directly from the backend, and
@@ -200,6 +203,8 @@ export function useDraftingRuntime() {
               ? payload["createdAt"]
               : null,
         };
+        const callId =
+          typeof payload["callId"] === "string" ? payload["callId"] : "";
         const { liveDrafts } = getDraftingState();
         setDraftingState({
           draftedFields: incoming.fields,
@@ -210,7 +215,7 @@ export function useDraftingRuntime() {
           // shut hides the one they waited for.
           isArtifactCollapsed: false,
         });
-        updateActiveRuns((run) => ({ ...run, status: "drafted" }));
+        updateRun(callId, (run) => ({ ...run, status: "drafted" }));
       }
 
       // The drafting node reports one group at a time, because Neuron's own
@@ -221,7 +226,7 @@ export function useDraftingRuntime() {
           return;
         }
         const status = ACTIVITY_STATUS[activity.data.status];
-        updateActiveRuns((run) => ({
+        updateRun(activity.data.callId, (run) => ({
           ...run,
           groups: run.groups.map((group) =>
             group.id === activity.data.group ? { ...group, status } : group,
@@ -233,10 +238,11 @@ export function useDraftingRuntime() {
       // stopped it. A failure that reached no group is the run's own.
       if (data.name === "draft-failed") {
         const failure = data.data as {
+          callId: string;
           group: string;
           error: string;
         };
-        updateActiveRuns((run) => ({
+        updateRun(failure.callId, (run) => ({
           ...run,
           status: "failed",
           error: failure.group === "" ? failure.error : undefined,

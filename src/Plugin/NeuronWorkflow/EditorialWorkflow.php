@@ -115,7 +115,7 @@ final class EditorialWorkflow extends NeuronWorkflowPluginBase {
    * only the fallback for a run nobody gave one to.
    */
   protected function startEvent(): Event {
-    return new ChatTurnEvent('', 0);
+    return new ChatTurnEvent('');
   }
 
   /**
