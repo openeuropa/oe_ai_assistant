@@ -157,6 +157,41 @@ class AiEditorialSession extends ContentEntityBase implements AiEditorialSession
   /**
    * {@inheritdoc}
    */
+  public function editorialThread(): string {
+    return 'editorial.session_' . $this->id();
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function conversationTurns(): array {
+    $turns = [];
+    foreach ($this->conversationThread($this->editorialThread()) as $row) {
+      $role = (string) $row->get('role')->value;
+      if (!in_array($role, ['user', 'assistant'], TRUE)) {
+        continue;
+      }
+
+      // A tool call and its result are stored under these same two roles,
+      // and both carry no text. Reading the text leaves them out.
+      $text = implode('', array_map(
+        static fn (array $block): string => (string) ($block['content'] ?? ''),
+        array_filter(
+          (array) ($row->getContent() ?? []),
+          static fn ($block): bool => is_array($block) && ($block['type'] ?? '') === 'text',
+        ),
+      ));
+      if ($text !== '') {
+        $turns[] = ['role' => $role, 'text' => $text];
+      }
+    }
+
+    return $turns;
+  }
+
+  /**
+   * {@inheritdoc}
+   */
   public function conversationThread(string $threadId): array {
     $rows = \Drupal::entityTypeManager()
       ->getStorage('neuron_message')

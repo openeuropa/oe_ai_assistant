@@ -91,7 +91,7 @@ final class DraftContentNode extends Node {
 
         if (!is_array($fields)) {
           yield $this->progress($group, 'drafting', $index, $total);
-          $fields = $this->draftGroup($resources, $group, $run, $this->task($state, $answers));
+          $fields = $this->draftGroup($resources, $group, $run, $this->task($resources, $state, $answers));
           $fields = $this->memoize('group.' . $groupId, static fn (): array => $fields);
         }
 
@@ -365,9 +365,12 @@ final class DraftContentNode extends Node {
   /**
    * Builds what this run tells one group's drafter.
    *
-   * A drafter reads its own thread only, so the task carries what the editor
-   * asked for. Without it the drafter writes about a subject of its own.
+   * A drafter reads its own thread only. Without a task it writes about a
+   * subject of its own. So the task carries the conversation of the session,
+   * what the editor asked for, and what the earlier groups wrote.
    *
+   * @param \Drupal\oe_ai_assistant\Plugin\NeuronWorkflow\Editorial\EditorialResources $resources
+   *   What this run shares, which answers what the session said so far.
    * @param \NeuronAI\Workflow\WorkflowState $state
    *   The state of the run, which holds what the editor asked for.
    * @param array $answers
@@ -376,8 +379,25 @@ final class DraftContentNode extends Node {
    * @return string
    *   The task.
    */
-  private function task(WorkflowState $state, array $answers): string {
-    $task = "The editor asked for this content:\n" . (string) $state->get('task') . "\n";
+  private function task(EditorialResources $resources, WorkflowState $state, array $answers): string {
+    $task = '';
+
+    // A drafter writes one group and holds no conversation of its own. It
+    // reads what the editor wants from this task alone. So the task opens
+    // with the turns of the session, which carry no draft.
+    $turns = $resources->session->conversationTurns();
+    if ($turns !== []) {
+      $task = "The conversation so far:\n" . implode("\n", array_map(
+        static fn (array $turn): string => sprintf(
+          '%s: %s',
+          $turn['role'] === 'user' ? 'Editor' : 'Assistant',
+          $turn['text'],
+        ),
+        $turns,
+      )) . "\n\n";
+    }
+
+    $task .= "The editor asked for this content:\n" . (string) $state->get('task') . "\n";
 
     // A later group must fit the title and the summary the main group wrote,
     // so the task carries them.

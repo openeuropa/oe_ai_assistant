@@ -361,7 +361,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
     if (!$session instanceof ContentCreationSessionInterface) {
       throw new ActionException('invalid_request', 'The editorial session does not support drafting.', 400);
     }
-    $thread = $session->conversationThread('editorial.session_' . $session->id());
+    $thread = $session->conversationThread($session->editorialThread());
 
     // Preload the authors of user turns in one query, grouped by uid, so
     // each turn can carry the author's display name for avatars and the

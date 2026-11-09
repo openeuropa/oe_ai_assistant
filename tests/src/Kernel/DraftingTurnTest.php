@@ -102,6 +102,40 @@ class DraftingTurnTest extends AiEditorialSessionKernelTestBase {
   }
 
   /**
+   * A drafter reads what the editor and the assistant said before the draft.
+   *
+   * The task is the only thing a drafter reads, and the drafts stay out of
+   * it. So an earlier turn reaches the drafter as a line of the conversation,
+   * and the fields of an earlier draft reach it not at all.
+   */
+  public function testDrafterReadsTheConversationWithoutTheDrafts(): void {
+    $session = $this->createSession($this->createUser());
+
+    MockAiProvider::reset();
+    MockAiProvider::enqueue(new MockResponse(text: 'Tell me when you are ready.'));
+    $this->turn($session, 'We are writing about the floods in Valencia.');
+
+    $this->enqueueTurn();
+    $this->turn($session, 'Draft it now.');
+
+    MockAiProvider::reset();
+    $this->enqueueTurn('Draft 2 is ready.');
+    $this->turn($session, 'Draft another one.');
+
+    $threads = $session->conversationThreads();
+    $task = (string) ($threads[$this->thread($session, 2, 'main_fields')][0]->getContent()[0]['content'] ?? '');
+
+    $this->assertStringContainsString('Editor: We are writing about the floods in Valencia.', $task);
+    $this->assertStringContainsString('Assistant: Tell me when you are ready.', $task);
+    $this->assertStringContainsString('Assistant: Draft 1 is ready.', $task);
+    $this->assertStringContainsString('Editor: Draft another one.', $task);
+
+    // The conversation names the drafts it produced and carries none of them.
+    $this->assertStringNotContainsString('field_teaser', $task);
+    $this->assertStringNotContainsString('<p>B</p>', $task);
+  }
+
+  /**
    * A session owns its drafts, and deleting its conversation deletes them.
    *
    * The run writes the draft through a store bound to the session. The row
