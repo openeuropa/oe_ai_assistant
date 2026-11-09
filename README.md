@@ -78,6 +78,72 @@ exist until you also build the app yourself or pull the pre-built release artifa
 | `/api/ai/plugins/{plugin_id}/{action}` | POST | Dispatch plugin actions |
 | `/node/{node}/ai-assistant` | GET | AI Assistant tab on node pages |
 
+## Architecture
+
+A chat turn runs as two Neuron workflows. The `editorial_turn` workflow holds the conversation and suspends the
+agent when it calls the deferred draft tool. The `draft_group` workflow runs once per field group, to write and
+validate the fields of that group. In the diagram, rounded boxes are agents, rectangles are workflow nodes,
+orange is the streaming path and grey is stored state.
+
+```mermaid
+flowchart LR
+  B["Browser (assistant-ui)"]
+  DP["DraftingPlugin::chat()<br/>next version, withChannel(SseChannel)"]
+  B -- "POST /chat" --> DP
+
+  subgraph ET["editorial_turn workflow"]
+    direction TB
+    CN["ChatNode<br/>handles ChatTurnEvent"]
+    AG(["EditorialNeuronAgent<br/>draft tool deferred"])
+    DC["DraftContentNode<br/>groups, assemble, store"]
+    CR["ChatResumeNode<br/>same agent instance"]
+    STOP(("StopEvent"))
+
+    CN -- "stream(UserMessage)" --> AG
+    AG -- "answer -> StopEvent" --> CN
+    AG -- "suspends on deferred call<br/>DraftingRequestedEvent" --> DC
+    DC -- "DraftStoredEvent" --> CR
+    CR -- "submitToolResults()->events()" --> AG
+    CR -- "drafts again<br/>DraftingRequestedEvent" --> DC
+    CR -- "answer" --> STOP
+  end
+
+  subgraph DG["draft_group workflow xN, one run per field group"]
+    direction TB
+    DR(["Draft<br/>GroupDrafterNeuronAgent"])
+    VA["Validate<br/>closed group schema"]
+    RE["Retry<br/>throws after 5 attempts"]
+    DR -- "DraftedEvent" --> VA
+    VA -- "SchemaViolationEvent" --> RE
+    RE -- "DraftRequestEvent + violations" --> DR
+  end
+
+  DT[("drafts.session_{id}<br/>stored draft")]
+
+  subgraph SS["streaming"]
+    direction TB
+    AD["PatchedVercelAIAdapter"]
+    CH["SseChannel<br/>one per request"]
+    RS["SseResponse"]
+    AD -- "ProtocolEvent" --> CH
+    CH -- "SSE frames" --> RS
+  end
+
+  DP -- "run(start(ChatTurnEvent))" --> CN
+  DC == "run() per group" ==> DR
+  VA == "valid: StopEvent, fields" ==> DC
+  DC -- "append(draft JSON)" --> DT
+  ET -. "yield: agent chunks, data-drafting, data-drafted-fields" .-> AD
+  RS -. "text/event-stream" .-> B
+
+  class AG,DR agent
+  class DP,CN,DC,CR,VA,RE node
+  class B,AD,CH,RS stream
+  class DT,STOP store
+  style ET stroke-width:3px
+  style DG stroke-width:3px
+```
+
 ## Development
 
 The module uses [DDEV](https://ddev.com/) with the
