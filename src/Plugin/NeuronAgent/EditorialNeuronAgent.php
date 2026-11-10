@@ -20,6 +20,8 @@ use Drupal\oe_ai_assistant\Entity\Bundle\ContentCreationSessionInterface;
   tools: [
     'drafting_get_history',
     'drafting_draft_content',
+    'context_get_editorial_context',
+    'context_read_document',
   ],
   context_definitions: [
     'session' => new EntityContextDefinition(
@@ -84,6 +86,11 @@ final class EditorialNeuronAgent extends EditorialSessionAgentBase {
       reported, and do not claim a draft is ready.
     - The field groups below are the ones a new draft follows.
     - Answer questions about earlier drafts with drafting_get_history.
+    - Answer questions about the session itself, what it is about, what
+      material is attached, what a document covers, by calling
+      context_get_editorial_context first. Read one document in full with
+      context_read_document only when its summary does not answer the question.
+      Never guess what a document contains.
     - You can have normal conversations with the user at any point.
     PROMPT;
 

@@ -10,7 +10,15 @@
 
 import type { ToolCallMessagePartProps } from "@assistant-ui/react";
 import { makeAssistantToolUI } from "@assistant-ui/react";
-import { Check, Loader2, PenLine, Wrench, X } from "lucide-react";
+import {
+  Check,
+  FileSearch,
+  Info,
+  Loader2,
+  PenLine,
+  Wrench,
+  X,
+} from "lucide-react";
 import type { DraftRunStatus } from "../draft-result";
 import { parseDraftResult } from "../draft-result";
 import { useSavedVersions } from "../saved-versions";
@@ -187,6 +195,59 @@ export const EditorialEventToolUI = makeAssistantToolUI<
   toolName: "editorial_event",
   render: ({ args }) => (
     <EventChip eventType={args.eventType} summary={args.summary} at={args.at} />
+  ),
+});
+
+/** UI for the context_get_editorial_context tool call. */
+export const GetEditorialContextToolUI = makeAssistantToolUI<
+  Record<string, never>,
+  unknown
+>({
+  toolName: "context_get_editorial_context",
+  render: ({ status }) => (
+    <ToolCallCard icon={Info} label="Get editorial context" status={status} />
+  ),
+});
+
+/**
+ * Reads the document's title off its result, once the tool has answered.
+ *
+ * The tool reports the title alongside the text/summary it read, as the
+ * JSON string __invoke() returns. A live call carries that string verbatim;
+ * a rehydrated one may already have been decoded by the history adapter, so
+ * both shapes are accepted.
+ */
+function readDocumentTitle(result: unknown): string | undefined {
+  const parsed = typeof result === "string" ? safeJsonParse(result) : result;
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    return undefined;
+  }
+  const title = (parsed as Record<string, unknown>).title;
+  return typeof title === "string" && title !== "" ? title : undefined;
+}
+
+/** Parses a JSON string, or returns undefined when it is not valid JSON. */
+function safeJsonParse(raw: string): unknown {
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return undefined;
+  }
+}
+
+/** UI for the context_read_document tool call. */
+export const ReadDocumentToolUI = makeAssistantToolUI<
+  { document?: string },
+  unknown
+>({
+  toolName: "context_read_document",
+  render: ({ result, status }) => (
+    <ToolCallCard
+      icon={FileSearch}
+      label="Read document"
+      detail={readDocumentTitle(result)}
+      status={status}
+    />
   ),
 });
 
