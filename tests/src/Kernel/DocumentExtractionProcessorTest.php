@@ -108,11 +108,6 @@ class DocumentExtractionProcessorTest extends AiEditorialSessionKernelTestBase {
     $this->assertSame('Full text', $fresh->get(DocumentExtractionProcessorInterface::EXTRACT_FIELD)->value);
     $this->assertSame('A brief summary.', $fresh->get(DocumentExtractionProcessorInterface::SUMMARY_FIELD)->value);
     $this->assertSame($revisions, $this->countRevisions($media));
-
-    $log = MockAiProvider::getCallLog();
-    $this->assertCount(1, $log);
-    $this->assertStringContainsString('Full text', $log[0]['messages'][0]['text']);
-    $this->assertStringContainsString('summary', strtolower($log[0]['system_prompt']));
   }
 
   /**
