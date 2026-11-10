@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Drupal\oe_ai_assistant\Service;
 
 use Drupal\Core\Entity\EntityTypeManagerInterface;
+use Drupal\oe_ai_assistant\Exception\DraftingToneException;
 use Drupal\taxonomy\TermInterface;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 
@@ -125,13 +126,13 @@ class AiEditorialContext implements AiEditorialContextInterface {
   protected function loadVocabularyTerm(string $termId, string $vid): TermInterface {
     $term = $this->entityTypeManager->getStorage('taxonomy_term')->load($termId);
     if (!$term instanceof TermInterface || $term->bundle() !== $vid) {
-      throw new \InvalidArgumentException(
+      throw new DraftingToneException(
         sprintf('Taxonomy term "%s" does not exist in vocabulary "%s".', $termId, $vid)
       );
     }
     $ai_prompt = $this->getTermPrompt($term);
     if (empty($ai_prompt)) {
-      throw new \InvalidArgumentException(
+      throw new DraftingToneException(
         sprintf('Taxonomy term "%s" does not have a prompt defined.', $termId)
       );
     }

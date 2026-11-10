@@ -19,6 +19,7 @@ use Drupal\oe_ai_assistant\Service\Drafting\ContextDocumentRepository;
 use Drupal\oe_ai_assistant\Service\Drafting\DocumentRepositoryInterface;
 use Drupal\oe_ai_assistant\Entity\Bundle\ContentCreationSessionInterface;
 use Drupal\oe_ai_assistant\Exception\DraftingTemplateException;
+use Drupal\oe_ai_assistant\Exception\DraftingToneException;
 use Drupal\oe_ai_assistant\Plugin\AiAssistantPluginBase;
 use Drupal\oe_ai_assistant\Plugin\NeuronTool\RequestDraftNeuronTool;
 use Drupal\oe_ai_assistant\Service\AiEditorialContextInterface;
@@ -330,6 +331,9 @@ class DraftingPlugin extends AiAssistantPluginBase {
     }
     catch (DraftingTemplateException $e) {
       throw new ActionException('invalid_request', $e->getMessage(), 400);
+    }
+    catch (DraftingToneException $e) {
+      throw new ActionException('invalid_context', $e->getMessage(), 400);
     }
 
     $logger = $this->logger;

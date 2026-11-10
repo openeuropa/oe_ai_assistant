@@ -162,6 +162,43 @@ class DraftingPluginSetTemplateTest extends AiEditorialSessionKernelTestBase {
   }
 
   /**
+   * A stale stored tone makes chat() return an error.
+   */
+  public function testChatWithStaleSessionToneReturnsError(): void {
+    $sessionId = $this->ownedSession();
+    $this->setTemplate($sessionId, 'news_a');
+    $storage = $this->container->get('entity_type.manager')->getStorage('taxonomy_term');
+    $term = $storage->create([
+      'vid' => 'oe_ai_tone',
+      'name' => 'Formal',
+      'oe_ai_prompt' => 'Use professional, institutional language.',
+    ]);
+    $term->save();
+    $session = $this->container->get('entity_type.manager')
+      ->getStorage('ai_editorial_session')->load($sessionId);
+    $session->set('tone', $term->id())->save();
+    // A session holds a stale tone only when an editor deletes the term
+    // after selecting it. So the test deletes the term here, and keeps its
+    // id for the message it expects.
+    $termId = (string) $term->id();
+    $term->delete();
+
+    $plugin = $this->container->get(AiAssistantPluginManager::class)
+      ->createInstance('drafting');
+    $request = Request::create('/', 'POST', content: json_encode([
+      'sessionId' => $sessionId,
+      'message' => 'Draft it.',
+    ]));
+
+    $this->expectException(ActionException::class);
+    $this->expectExceptionMessage(sprintf(
+      'Taxonomy term "%s" does not exist in vocabulary "oe_ai_tone".',
+      $termId,
+    ));
+    $plugin->executeAction('chat', $request);
+  }
+
+  /**
    * The chat() action streams via SseResponse.
    *
    * SseResponse::sendContent() drains every PHP output buffer before
