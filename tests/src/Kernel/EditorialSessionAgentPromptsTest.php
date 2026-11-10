@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Drupal\Tests\oe_ai_assistant\Kernel;
 
 use Drupal\ai_neuron\Agent\NeuronAgentManagerInterface;
+use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
 use Drupal\oe_ai_assistant\Plugin\NeuronAgent\EditorialSessionAgentBase;
 use Drupal\oe_ai_assistant\Service\AiEditorialContext;
 use Drupal\oe_ai_assistant\Service\AiEditorialContextInterface;
@@ -81,6 +82,21 @@ Full text of one.", $prompt);
     $this->assertStringNotContainsString('Summary one.', $prompt);
     $this->assertStringContainsString('background only', $prompt);
     $this->assertStringNotContainsString('wait a moment', $prompt);
+  }
+
+  /**
+   * Tests that the editorial agent is told about the context documents.
+   */
+  public function testEditorialAgentIsToldAboutTheDocuments(): void {
+    $prompt = $this->editorialInstructions([
+      self::document('1', 'done', 'Full text of one.', 'Summary one.'),
+    ]);
+
+    $this->assertStringContainsString('Context documents', $prompt);
+    $this->assertStringContainsString('Full text of one.', $prompt);
+    // Without the content type block, the agent calls for a draft and asks
+    // the editor about no field group. So the prompt carries both blocks.
+    $this->assertStringContainsString('Content type context:', $prompt);
   }
 
   /**
@@ -240,10 +256,11 @@ Overflow text.", $prompt);
   protected function setUp(): void {
     parent::setUp();
     $this->enableModules(['oe_ai_assistant_test']);
-    // Building the drafter resolves a provider for its operation type.
+    // Building an agent resolves a provider for its operation type.
     $this->config('ai.settings')
       ->set('default_providers', [
         'chat_with_structured_response' => ['provider_id' => 'mock_ai', 'model_id' => 'mock-model'],
+        'chat_with_tools' => ['provider_id' => 'mock_ai', 'model_id' => 'mock-model'],
       ])
       ->save();
   }
@@ -263,6 +280,44 @@ Overflow text.", $prompt);
    *   The instructions.
    */
   private function instructions(?array $tone, array $documents): string {
+    $agent = $this->container->get(NeuronAgentManagerInterface::class)->createAgent('group_drafter', [
+      'session' => $this->stubbedSession($tone, $documents),
+      'group' => 'main_fields',
+      'schema' => ['type' => 'object'],
+      'run' => 'draft_1',
+    ]);
+
+    return $agent->getInstructions()->getContent();
+  }
+
+  /**
+   * The instructions the editorial agent is built with, on a stubbed session.
+   *
+   * @param array $documents
+   *   The documents the session is set up with.
+   *
+   * @return string
+   *   The instructions.
+   */
+  private function editorialInstructions(array $documents): string {
+    $agent = $this->container->get(NeuronAgentManagerInterface::class)
+      ->createAgent('editorial', ['session' => $this->stubbedSession(NULL, $documents)]);
+
+    return $agent->getInstructions()->getContent();
+  }
+
+  /**
+   * A session that answers with the tone and the documents given here.
+   *
+   * @param array|null $tone
+   *   The tone the session is set up with.
+   * @param array $documents
+   *   The documents the session is set up with.
+   *
+   * @return \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface
+   *   The session.
+   */
+  private function stubbedSession(?array $tone, array $documents): AiEditorialSessionInterface {
     // The session reads both through the container, and an interface is an
     // alias of its class, so the stubs go in under the class.
     $tones = $this->createMock(AiEditorialContextInterface::class);
@@ -279,14 +334,7 @@ Overflow text.", $prompt);
       $session->set('tone', 1)->save();
     }
 
-    $agent = $this->container->get(NeuronAgentManagerInterface::class)->createAgent('group_drafter', [
-      'session' => $session,
-      'group' => 'main_fields',
-      'schema' => ['type' => 'object'],
-      'run' => 'draft_1',
-    ]);
-
-    return $agent->getInstructions()->getContent();
+    return $session;
   }
 
   /**
