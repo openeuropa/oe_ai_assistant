@@ -58,6 +58,18 @@ interface ContentCreationSessionInterface extends AiEditorialSessionInterface {
   public function getDocuments(): array;
 
   /**
+   * Returns one document the editor attached as background.
+   *
+   * @param string $id
+   *   The document id, as getDocuments() reports it.
+   *
+   * @return array|null
+   *   The descriptor {id, title, category, status, filename, summary, meta,
+   *   extract}, or NULL when no attached document carries that id.
+   */
+  public function getDocument(string $id): ?array;
+
+  /**
    * Returns the schema groups a new draft must match.
    *
    * @return array
