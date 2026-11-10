@@ -75,9 +75,9 @@ final class DraftContentNode extends Node {
       fn (): int => $resources->session->nextVersion(),
     );
     $run = $this->runId($version);
-    // A reading of the conversation is one query, and the conversation does
-    // not change while the groups are drafted. So one reading serves every
-    // group.
+    // Read the conversation once for the whole draft. It can't change while
+    // we draft the groups, so re-reading it for each group would only repeat
+    // the same query.
     $conversation = $this->conversation($resources);
     $answers = [];
     $index = 0;
@@ -409,12 +409,13 @@ final class DraftContentNode extends Node {
   /**
    * Builds what this run tells one group's drafter.
    *
-   * A drafter reads its own thread only. Without a task it writes about a
-   * subject of its own. So the task carries the conversation of the session
-   * and what the earlier groups wrote.
+   * A drafter only sees its own thread, so without a task it would write
+   * about a subject of its own choosing. The task gives it the conversation
+   * from the session and whatever the earlier groups wrote.
    *
    * @param string $conversation
-   *   The turns of the session, as the drafter reads them.
+   *   The conversation block from conversation(), empty when the session has
+   *   no turns yet.
    * @param array $answers
    *   What the groups drafted so far answered, keyed by group id.
    *
@@ -435,17 +436,16 @@ final class DraftContentNode extends Node {
   }
 
   /**
-   * The turns of the session, as a drafter reads them.
+   * Formats the session's conversation for a drafter's prompt.
    *
-   * A drafter holds no conversation of its own, so the request the editor
-   * made reaches it only here. The turns carry no draft, because a draft is
-   * written to a thread of its own.
+   * This reads the editorial thread only. The drafts don't show up in it,
+   * because each group's drafter writes to a thread of its own.
    *
    * @param \Drupal\oe_ai_assistant\Plugin\NeuronWorkflow\Editorial\EditorialResources $resources
    *   What this run shares.
    *
    * @return string
-   *   The block of turns, empty when the session has said nothing yet.
+   *   The conversation block, empty when the session has no turns yet.
    */
   private function conversation(EditorialResources $resources): string {
     $turns = $resources->session->conversationTurns();

@@ -206,10 +206,10 @@ class AiEditorialSession extends ContentEntityBase implements AiEditorialSession
   /**
    * The rows of a thread that an agent still replays to the model.
    *
-   * Neuron trims a thread to the context window of its agent, and stamps
-   * every row it drops. A reader of the whole thread therefore grows with
-   * the session, and a prompt built from it overflows the window the trim
-   * was protecting. So this reads what the trim left.
+   * Neuron trims a thread to its agent's context window and stamps the rows
+   * it drops with `archived_at`. Reading the whole thread gives us a prompt
+   * that grows with the session, until it overflows the window the trim was
+   * protecting. So we go through activeIds() and get what the trim left.
    *
    * @param string $threadId
    *   The thread to read.

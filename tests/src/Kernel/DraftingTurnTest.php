@@ -492,11 +492,11 @@ class DraftingTurnTest extends AiEditorialSessionKernelTestBase {
   }
 
   /**
-   * A drafter reads the editor's message once, not twice.
+   * A drafter is told the editor's message once, not twice.
    *
-   * The task carries the conversation of the session, and the message that
-   * asked for the draft is the last turn of it. A task that repeated the
-   * message would pay for it twice in every group of every draft.
+   * The task includes the session's conversation, and the message that asked
+   * for the draft is the last turn in it. Quoting that message again would
+   * send it, and pay for it, twice in every group of every draft.
    */
   public function testDrafterReadsTheEditorsMessageOnce(): void {
     $session = $this->createSession($this->createUser());
@@ -514,9 +514,10 @@ class DraftingTurnTest extends AiEditorialSessionKernelTestBase {
   /**
    * A drafter is not told the turns Neuron archived.
    *
-   * Neuron trims a thread to the context window of its agent and stamps
-   * what it drops. A drafter told every stored turn grows with the session
-   * until the call overflows and every group fails.
+   * Neuron trims the thread to its agent's context window and stamps what it
+   * drops. If the task included every stored turn, the prompt would keep
+   * growing with the session until the drafting call overflows and every
+   * group fails.
    */
   public function testDrafterSkipsTheTurnsNeuronArchived(): void {
     $session = $this->createSession($this->createUser());
@@ -525,8 +526,8 @@ class DraftingTurnTest extends AiEditorialSessionKernelTestBase {
     MockAiProvider::enqueue(new MockResponse(text: 'Tell me when you are ready.'));
     $this->turn($session, 'We are writing about the floods in Valencia.');
 
-    // The turn above wrote the question and the answer, and both fall out
-    // of the window here.
+    // That turn stored two rows, the editor's message and the reply.
+    // Archiving both is what a trim to the context window would do.
     $this->container->get(EditorialMessageStore::class)
       ->forSession($session)
       ->archive($session->editorialThread(), 2);
