@@ -169,6 +169,47 @@ class AiEditorialSessionMessageCleanupTest extends AiEditorialSessionKernelTestB
   }
 
   /**
+   * Tests that deleting a session removes its private publishable assets.
+   */
+  public function testSessionDeleteRemovesItsPublishableAssets(): void {
+    $media_storage = $this->container->get('entity_type.manager')->getStorage('media');
+    $file_storage = $this->container->get('entity_type.manager')->getStorage('file');
+    $user = $this->createUser();
+    $session = $this->createSession($user);
+    [$media, $file] = $this->createPublishableAsset('asset.png', $session);
+
+    $session->delete();
+
+    $this->assertNull($media_storage->loadUnchanged((int) $media->id()));
+    $this->assertNull($file_storage->loadUnchanged((int) $file->id()));
+  }
+
+  /**
+   * Tests that deleting a session leaves the publishable assets of others.
+   */
+  public function testSessionDeleteLeavesOtherSessionsPublishableAssets(): void {
+    $media_storage = $this->container->get('entity_type.manager')->getStorage('media');
+    $file_storage = $this->container->get('entity_type.manager')->getStorage('file');
+    $user = $this->createUser();
+    $session = $this->createSession($user);
+    $other_session = $this->createSession($user);
+    [$media, $file] = $this->createPublishableAsset('mine.png', $session);
+    [$other_media, $other_file] = $this->createPublishableAsset('theirs.png', $other_session);
+
+    $other_session->delete();
+
+    $this->assertNotNull($media_storage->loadUnchanged((int) $media->id()));
+    $this->assertNotNull($file_storage->loadUnchanged((int) $file->id()));
+    $this->assertNull($media_storage->loadUnchanged((int) $other_media->id()));
+    $this->assertNull($file_storage->loadUnchanged((int) $other_file->id()));
+
+    $session->delete();
+
+    $this->assertNull($media_storage->loadUnchanged((int) $media->id()));
+    $this->assertNull($file_storage->loadUnchanged((int) $file->id()));
+  }
+
+  /**
    * Creates a private context document media item owned by a session.
    *
    * @return array{
@@ -191,6 +232,37 @@ class AiEditorialSessionMessageCleanupTest extends AiEditorialSessionKernelTestB
       'status' => 0,
       'oe_ai_session' => ['target_id' => $session->id()],
       'oe_ai_context_document' => [
+        'target_id' => $file->id(),
+      ],
+    ]);
+    $media->save();
+
+    return [$media, $file];
+  }
+
+  /**
+   * Creates a private publishable asset media item owned by a session.
+   *
+   * @return array{
+   *   0: \Drupal\media\MediaInterface,
+   *   1: \Drupal\file\FileInterface
+   *   }
+   *   The created media and file entities.
+   */
+  private function createPublishableAsset(string $filename, AiEditorialSessionInterface $session): array {
+    $file = File::create([
+      'filename' => $filename,
+      'uri' => 'public://' . $filename,
+      'status' => FileInterface::STATUS_PERMANENT,
+    ]);
+    $file->save();
+
+    $media = Media::create([
+      'bundle' => 'ai_publishable_asset',
+      'name' => $filename,
+      'status' => 0,
+      'oe_ai_session' => ['target_id' => $session->id()],
+      'oe_ai_publishable_asset' => [
         'target_id' => $file->id(),
       ],
     ]);

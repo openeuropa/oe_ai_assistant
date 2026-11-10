@@ -111,7 +111,7 @@ setTemplate:
 addDocument:
   post:
     operationId: postDraftingAddDocument
-    summary: Upload a drafting context document
+    summary: Upload a drafting document
     description: >
       The file bytes form the raw request body. Session, category and
       filename are query parameters, exploded from the request schema.
@@ -151,7 +151,7 @@ addDocument:
 listDocuments:
   post:
     operationId: postDraftingListDocuments
-    summary: List drafting context documents
+    summary: List drafting documents
     tags: [Drafting]
     requestBody:
       required: true
@@ -178,7 +178,7 @@ listDocuments:
 removeDocument:
   post:
     operationId: postDraftingRemoveDocument
-    summary: Remove a drafting context document
+    summary: Remove a drafting document
     tags: [Drafting]
     requestBody:
       required: true
@@ -205,7 +205,7 @@ removeDocument:
 extractDocument:
   post:
     operationId: postDraftingExtractDocument
-    summary: Process a drafting context document
+    summary: Process a drafting document
     description: >
       Runs text extraction and summarisation on a referenced document and
       returns its resulting status. Fired by the app after a successful

@@ -11,6 +11,7 @@ use Drupal\Core\Hook\Attribute\Hook;
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
 use Drupal\oe_ai_assistant\Entity\Storage\AiConversationMessageStorageInterface;
 use Drupal\oe_ai_assistant\Service\Drafting\ContextDocumentRepository;
+use Drupal\oe_ai_assistant\Service\Drafting\PublishableAssetRepository;
 use Drupal\oe_ai_assistant\Service\MessageRecorderInterface;
 
 /**
@@ -24,6 +25,7 @@ final class EditorialSessionHooks {
     private readonly EntityTypeManagerInterface $entityTypeManager,
     private readonly MessageRecorderInterface $messageRecorder,
     private readonly ContextDocumentRepository $contextDocumentRepository,
+    private readonly PublishableAssetRepository $publishableAssetRepository,
   ) {}
 
   /**
@@ -96,6 +98,19 @@ final class EditorialSessionHooks {
     assert($entity instanceof AiEditorialSessionInterface);
 
     $this->contextDocumentRepository->deleteForSession($entity);
+  }
+
+  /**
+   * Implements hook_ai_editorial_session_delete().
+   *
+   * Removes the private publishable assets of the deleted session, together
+   * with their managed files.
+   */
+  #[Hook('ai_editorial_session_delete')]
+  public function deleteSessionPublishableAssets(EntityInterface $entity): void {
+    assert($entity instanceof AiEditorialSessionInterface);
+
+    $this->publishableAssetRepository->deleteForSession($entity);
   }
 
 }

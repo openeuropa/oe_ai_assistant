@@ -21,6 +21,7 @@ use Drupal\oe_ai_assistant\Service\Drafting\ContextDocumentRepository;
 use Drupal\oe_ai_assistant\Service\Drafting\DocumentRepositoryInterface;
 use Drupal\oe_ai_assistant\Service\Drafting\DraftHistoryInterface;
 use Drupal\oe_ai_assistant\Service\Drafting\EditorialContext;
+use Drupal\oe_ai_assistant\Service\Drafting\PublishableAssetRepository;
 use Drupal\oe_ai_assistant\Plugin\AiAssistantPluginBase;
 use Drupal\oe_ai_assistant\Service\AiEditorialContextInterface;
 use Drupal\oe_ai_assistant\Service\DraftAssemblerInterface;
@@ -122,6 +123,13 @@ class DraftingPlugin extends AiAssistantPluginBase {
   protected ContextDocumentRepository $contextDocumentRepository;
 
   /**
+   * The publishable asset repository.
+   *
+   * @var \Drupal\oe_ai_assistant\Service\Drafting\PublishableAssetRepository
+   */
+  protected PublishableAssetRepository $publishableAssetRepository;
+
+  /**
    * The input stream file writer, which stages raw upload bodies.
    *
    * @var \Drupal\file\Upload\InputStreamFileWriterInterface
@@ -160,6 +168,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
     $instance->aiEditorialContext = $container->get(AiEditorialContextInterface::class);
     $instance->draftHistory = $container->get(DraftHistoryInterface::class);
     $instance->contextDocumentRepository = $container->get(ContextDocumentRepository::class);
+    $instance->publishableAssetRepository = $container->get(PublishableAssetRepository::class);
     $instance->inputStreamFileWriter = $container->get(InputStreamFileWriterInterface::class);
     $instance->draftAssembler = $container->get(DraftAssemblerInterface::class);
     $instance->previewRenderer = $container->get(PreviewRendererInterface::class);
@@ -871,6 +880,10 @@ class DraftingPlugin extends AiAssistantPluginBase {
   private function resolveDocumentRepository(string $category): DocumentRepositoryInterface {
     if ($category === ContextDocumentRepository::CATEGORY) {
       return $this->contextDocumentRepository;
+    }
+
+    if ($category === PublishableAssetRepository::CATEGORY) {
+      return $this->publishableAssetRepository;
     }
 
     throw new ActionException(
