@@ -60,11 +60,11 @@ class SseResponse extends StreamedResponse {
       apache_setenv('no-gzip', '1');
     }
 
-    // Every buffer Drupal opened holds the callback's frames, so they are
-    // closed before the first one is written.
-    while (ob_get_level() > 0) {
-      ob_end_flush();
-    }
+    // Close every buffer Drupal opened, so the callback's frames are not
+    // held in one. Don't loop on ob_end_flush() to do it: PHP refuses to
+    // remove some buffers, and the level then never drops. Symfony's helper
+    // stops at the first buffer that refuses.
+    static::closeOutputBuffers(0, TRUE);
 
     parent::sendContent();
 

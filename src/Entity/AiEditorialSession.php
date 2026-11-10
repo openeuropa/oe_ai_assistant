@@ -47,7 +47,7 @@ use Drupal\user\EntityOwnerTrait;
  *   bundle_entity_type = "ai_editorial_session_type",
  *   links = {
  *     "canonical" = "/admin/content/ai/{ai_editorial_session}",
- *     "neuron-history" = "/admin/content/ai/{ai_editorial_session}/neuron-history",
+ *     "history" = "/admin/content/ai/{ai_editorial_session}/history",
  *     "add-page" = "/admin/content/ai/add",
  *     "add-form" = "/admin/content/ai/add/{ai_editorial_session_type}",
  *     "delete-form" = "/admin/content/ai/{ai_editorial_session}/delete",
@@ -173,15 +173,7 @@ class AiEditorialSession extends ContentEntityBase implements AiEditorialSession
         continue;
       }
 
-      // A tool call and its result are stored under these same two roles,
-      // and both carry no text. Reading the text leaves them out.
-      $text = implode('', array_map(
-        static fn (array $block): string => (string) ($block['content'] ?? ''),
-        array_filter(
-          (array) ($row->getContent() ?? []),
-          static fn ($block): bool => is_array($block) && ($block['type'] ?? '') === 'text',
-        ),
-      ));
+      $text = $this->textOf((array) ($row->getContent() ?? []));
       if ($text !== '') {
         $turns[] = ['role' => $role, 'text' => $text];
       }
@@ -222,6 +214,16 @@ class AiEditorialSession extends ContentEntityBase implements AiEditorialSession
     assert($storage instanceof NeuronMessageStorageInterface);
 
     return array_values($storage->loadMultiple($storage->activeIds($threadId)));
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function textOf(array $blocks): string {
+    return implode('', array_map(
+      static fn (array $block): string => (string) ($block['content'] ?? ''),
+      array_filter($blocks, static fn ($block): bool => is_array($block) && ($block['type'] ?? '') === 'text'),
+    ));
   }
 
   /**

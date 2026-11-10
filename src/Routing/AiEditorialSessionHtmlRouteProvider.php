@@ -19,15 +19,15 @@ class AiEditorialSessionHtmlRouteProvider extends AdminHtmlRouteProvider {
   public function getRoutes(EntityTypeInterface $entity_type) {
     $collection = parent::getRoutes($entity_type);
 
-    if ($neuron_history_route = $this->getNeuronHistoryRoute($entity_type)) {
-      $collection->add('entity.ai_editorial_session.neuron_history', $neuron_history_route);
+    if ($history_route = $this->getHistoryRoute($entity_type)) {
+      $collection->add('entity.ai_editorial_session.history', $history_route);
     }
 
     return $collection;
   }
 
   /**
-   * Gets the Neuron-backed conversation history route.
+   * Gets the conversation history route of a session.
    *
    * @param \Drupal\Core\Entity\EntityTypeInterface $entity_type
    *   The entity type.
@@ -35,12 +35,12 @@ class AiEditorialSessionHtmlRouteProvider extends AdminHtmlRouteProvider {
    * @return \Symfony\Component\Routing\Route|null
    *   The generated route, if the entity type declares the link template.
    */
-  protected function getNeuronHistoryRoute(EntityTypeInterface $entity_type): ?Route {
-    if (!$entity_type->hasLinkTemplate('neuron-history')) {
+  protected function getHistoryRoute(EntityTypeInterface $entity_type): ?Route {
+    if (!$entity_type->hasLinkTemplate('history')) {
       return NULL;
     }
     $entity_type_id = $entity_type->id();
-    $route = new Route($entity_type->getLinkTemplate('neuron-history'));
+    $route = new Route($entity_type->getLinkTemplate('history'));
     $route
       ->setDefaults([
         '_controller' => '\Drupal\oe_ai_assistant\Controller\SessionConversationHistoryController::view',

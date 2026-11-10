@@ -445,7 +445,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
       if (!in_array($role, ['user', 'assistant'], TRUE)) {
         continue;
       }
-      $content = self::blocksText((array) ($row->getContent() ?? []));
+      $content = $session->textOf((array) ($row->getContent() ?? []));
       // Skip empty turns that carry neither text nor a tool call.
       if ($content === '') {
         continue;
@@ -524,22 +524,6 @@ class DraftingPlugin extends AiAssistantPluginBase {
   }
 
   /**
-   * Joins the text of the content blocks a row or a tool result carries.
-   *
-   * @param array $blocks
-   *   The content blocks.
-   *
-   * @return string
-   *   The text of every text block, joined.
-   */
-  private static function blocksText(array $blocks): string {
-    return implode('', array_map(
-      static fn (array $block): string => (string) ($block['content'] ?? ''),
-      array_filter($blocks, static fn ($block): bool => is_array($block) && ($block['type'] ?? '') === 'text'),
-    ));
-  }
-
-  /**
    * The record the card reads for a drafting call that wrote no draft.
    *
    * @param string $error
@@ -585,7 +569,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
       // a draft nobody wrote. A later turn settles the open call with the
       // interruption the library reports, which arrives as content blocks.
       // So the failure here carries the text of those blocks.
-      return self::failedDraft(self::blocksText((array) ($result['blocks'] ?? [])));
+      return self::failedDraft($session->textOf((array) ($result['blocks'] ?? [])));
     }
 
     return $session->getDraftRun((int) $result['version']) ?? $result;

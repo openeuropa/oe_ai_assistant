@@ -8,11 +8,9 @@ use Drupal\ai_neuron\Agent\NeuronAgentDefinition;
 use Drupal\Component\Plugin\Definition\ContextAwarePluginDefinitionInterface;
 use Drupal\ai_neuron\Agent\NeuronAgentPluginBase;
 use Drupal\Core\Logger\LoggerChannelTrait;
-use Drupal\oe_ai_assistant\Neuron\Chat\Messages\Stream\Adapters\PatchedVercelAIAdapter;
 use Drupal\oe_ai_assistant\Service\Drafting\DocumentExtractionProcessorInterface;
 use NeuronAI\Tools\ToolCall;
 use NeuronAI\Tools\ToolInterface;
-use NeuronAI\Workflow\Streaming\Adapter\StreamAdapterInterface;
 
 /**
  * Base class for the agents that serve one editorial session.
@@ -45,19 +43,14 @@ abstract class EditorialSessionAgentBase extends NeuronAgentPluginBase {
   /**
    * {@inheritdoc}
    *
-   * The attribute names the tools, and every one of them serves this agent's
-   * session: it reads what it needs off that rather than being handed it, so
-   * they are built on the session context instead of on nothing. The thread
-   * travels with it, so a tool that reads this conversation back is given the
-   * thread rather than composing it again.
+   * The attribute lists the tools, and they all serve this agent's session.
+   * A tool reads off the session whatever it needs, so the session is the
+   * only context we have to pass down.
    */
   protected function tools(): array {
     $definition = $this->getPluginDefinition();
     assert($definition instanceof NeuronAgentDefinition);
-    $context = [
-      'session' => $this->getContextValue('session'),
-      'thread' => $this->runId($this->threadKey()),
-    ];
+    $context = ['session' => $this->getContextValue('session')];
 
     return array_map(
       fn (string $id): ToolInterface => $this->toolManager->createTool($id, $this->contextFor($id, $context)),
@@ -84,18 +77,6 @@ abstract class EditorialSessionAgentBase extends NeuronAgentPluginBase {
     assert($definition instanceof ContextAwarePluginDefinitionInterface);
 
     return array_intersect_key($context, $definition->getContextDefinitions());
-  }
-
-  /**
-   * {@inheritdoc}
-   *
-   * The app reads the Vercel protocol, and Neuron's adapter for it leaves out
-   * the event that closes a tool call's input. The app holds a call back until
-   * its input is closed, so one adapter adds it for every agent below here
-   * that declares Custom.
-   */
-  protected function customStreamAdapter(string $threadId): StreamAdapterInterface {
-    return new PatchedVercelAIAdapter();
   }
 
   /**
@@ -132,10 +113,12 @@ abstract class EditorialSessionAgentBase extends NeuronAgentPluginBase {
   /**
    * {@inheritdoc}
    *
-   * The session is the whole key, so the next turn continues the conversation
-   * the last one left. Nothing reads this string back: the store stamps the
-   * session reference on every row off the plugin context. An agent that
-   * answers one question per run names what tells its runs apart instead.
+   * The session is the whole key, so the next turn carries on the
+   * conversation the last one left off. Keep it in step with
+   * AiEditorialSession::editorialThread(), which spells out the same thread
+   * id by hand, because the transcript endpoint reads the stored rows with
+   * no agent to ask. A subclass that answers one question per run, like
+   * GroupDrafterNeuronAgent, appends what tells its own runs apart.
    */
   protected function threadKey(): string {
     return 'session_' . $this->getContextValue('session')->id();

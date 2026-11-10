@@ -368,9 +368,10 @@ final class DraftContentNode extends Node {
   /**
    * Merges what each group answered into one field map.
    *
-   * A model does not always key its answer the way the schema asks. Two
-   * shapes come back instead. A main group carries fields of another group,
-   * and a reference group answers a bare list. This repairs both.
+   * A model does not always key its answer the way the schema asks. The
+   * main group comes back carrying fields that belong to another group. So
+   * we take from each answer only the fields of the group that answered,
+   * and drop the rest.
    *
    * @param array $groups
    *   The field groups of the run, each with groupId and fieldNames.
@@ -392,13 +393,6 @@ final class DraftContentNode extends Node {
       foreach ($group['fieldNames'] as $fieldName) {
         if (array_key_exists($fieldName, $answer)) {
           $fields[$fieldName] = $answer[$fieldName];
-        }
-        elseif (array_is_list($answer) && count($group['fieldNames']) === 1) {
-          // A model sometimes answers a bare list where the schema asks for
-          // an object keyed by field. A group of one field takes the list as
-          // the value of that field. A list names no field of a larger
-          // group, so such a group takes nothing.
-          $fields[$fieldName] = $answer;
         }
       }
     }
