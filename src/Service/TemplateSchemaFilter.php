@@ -50,6 +50,7 @@ class TemplateSchemaFilter implements TemplateSchemaFilterInterface {
           'schemaSlice' => [
             'type' => 'object',
             'properties' => [$fieldName => $fieldSchema],
+            'additionalProperties' => FALSE,
           ],
         ];
       }
@@ -67,6 +68,7 @@ class TemplateSchemaFilter implements TemplateSchemaFilterInterface {
         'schemaSlice' => [
           'type' => 'object',
           'properties' => $mainFields,
+          'additionalProperties' => FALSE,
         ],
       ];
     }
@@ -99,9 +101,14 @@ class TemplateSchemaFilter implements TemplateSchemaFilterInterface {
       $kept[$fieldName] = $this->pruneField($properties[$fieldName], $templateField);
     }
 
+    // EntityJsonSchemaComposer closes every object it emits.
+    // We rebuild this one from scratch, so set additionalProperties again.
+    // Without it a model can answer with a field the template pruned out,
+    // ValidateNode lets it through, and assemble() drops the text it wrote.
     $result = [
       'type' => 'object',
       'properties' => $kept,
+      'additionalProperties' => FALSE,
     ];
     $required = array_values(array_intersect($schema['required'] ?? [], array_keys($kept)));
     if ($required !== []) {

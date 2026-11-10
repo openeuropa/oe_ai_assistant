@@ -171,6 +171,29 @@ class TemplateSchemaFilterTest extends KernelTestBase {
   }
 
   /**
+   * The filtered schema and every group slice forbid undeclared properties.
+   *
+   * A slice is both the drafter's structured output schema and what
+   * ValidateNode checks the answer against. Leave it open and the model can
+   * answer with a field the group never asked for, validation still passes,
+   * and DraftContentNode::assemble() drops the text it wrote.
+   */
+  public function testTemplateSlicesForbidUndeclaredProperties(): void {
+    $schema = $this->composer()->compose('node', 'oe_news');
+
+    $filtered = $this->filter()->filter($schema, $this->template('news_default'));
+    $this->assertFalse($filtered['additionalProperties'] ?? NULL);
+
+    $groups = $this->filter()->splitIntoGroups($schema, $this->template('news_with_paragraphs'));
+    foreach ($groups as $group) {
+      $this->assertFalse(
+        $group['schemaSlice']['additionalProperties'] ?? NULL,
+        sprintf('The "%s" slice is closed.', $group['groupId']),
+      );
+    }
+  }
+
+  /**
    * A variant's required list is recomputed against the kept fields.
    *
    * The fixture marks field_quote_text as required. Kept, it stays in the
