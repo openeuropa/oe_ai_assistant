@@ -75,7 +75,10 @@ const test = base.extend<{ assetSession: string }>({
               const lists = await Promise.all(categories.map(listDocuments));
               return lists
                 .flat()
-                .every((document) => document.status === "done");
+                .every(
+                  (document) =>
+                    document.status === "done" || document.status === "error",
+                );
             },
             { timeout: 15000, intervals: [500, 1000] },
           )
@@ -121,6 +124,13 @@ test("publishable assets stay separate through upload, reload, and removal", asy
   await expect(
     assetsPanel.getByText("AI Act factsheet.pdf", { exact: true }),
   ).toBeVisible();
+  // The backend stores images, but cannot generate their descriptions yet.
+  await expect(
+    assetsPanel.getByTestId("document-status").filter({ hasText: "Failed" }),
+  ).toHaveCount(1);
+  await expect(
+    assetsPanel.getByTestId("document-status").filter({ hasText: "Ready" }),
+  ).toHaveCount(1);
   await expect(
     assetsPanel.getByText("EU AI Act briefing note.pdf", { exact: true }),
   ).toHaveCount(0);

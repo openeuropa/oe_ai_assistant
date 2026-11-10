@@ -50,13 +50,19 @@ The mock API seeds a JPG and a PDF; uploading, processing, and removing files
 are simulated separately for each session and category. Uploaded bytes are
 discarded, and restarting the mock server resets the lists.
 
-The provisional `pluginConfig.drafting.publishableAssets` configuration uses
-`enabled` and `extensions`, matching the existing `documents` configuration.
-Lists are fetched after startup through `list-documents`. Hosts that omit this
-configuration keep the panel hidden and send no publishable-assets requests.
-The API category includes `publishable` in preparation for OEL-4840; Drupal
-storage and integration remain dependent on that backend implementation and
-OEL-4842. Video uploads and media-library selection are not offered here.
+Drupal exposes `pluginConfig.drafting.publishableAssets` with `enabled` and
+`extensions` read from the publishable asset source field, matching the existing
+`documents` configuration. Lists are fetched after startup through
+`list-documents`; uploads, removals, and processing use the same document actions
+with `category: publishable`. Existing sites need the OEL-4840 media configuration
+installed; until the source field is available, the panel stays hidden.
+
+The default field accepts `txt doc docx pdf md png jpg jpeg gif`. Documents use
+the extraction and summary pipeline. Images are stored successfully, but their
+processing currently ends in `error`, leaving the asset attached without a
+description. The mock reproduces this limitation. Image descriptions and asset
+placement in generated content are follow-up epic work. Video uploads and
+media-library selection are not offered here.
 
 ## Scripts
 

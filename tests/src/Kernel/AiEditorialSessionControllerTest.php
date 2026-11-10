@@ -75,6 +75,48 @@ class AiEditorialSessionControllerTest extends AiEditorialSessionKernelTestBase 
   }
 
   /**
+   * The publishable panel uses the accepted extensions of its upload field.
+   */
+  public function testViewExposesPublishableAssetsPanel(): void {
+    $session = $this->createSession($this->createUser());
+
+    $drafting = $this->draftingConfig($this->controller()->view($session));
+
+    $this->assertTrue($drafting['publishableAssets']['enabled']);
+    $this->assertSame(['txt', 'doc', 'docx', 'pdf', 'md', 'png', 'jpg', 'jpeg', 'gif'], $drafting['publishableAssets']['extensions']);
+    $this->assertSame(['txt', 'doc', 'docx', 'pdf', 'md'], $drafting['documents']['extensions']);
+  }
+
+  /**
+   * Changes to the upload settings are reflected in the panel configuration.
+   */
+  public function testViewExposesUpdatedPublishableExtensions(): void {
+    $field = $this->container->get('entity_type.manager')->getStorage('field_config')
+      ->load('media.ai_publishable_asset.oe_ai_publishable_asset');
+    $field->setSetting('file_extensions', 'pdf png')->save();
+    $session = $this->createSession($this->createUser());
+
+    $build = $this->controller()->view($session);
+
+    $this->assertSame(['pdf', 'png'], $this->draftingConfig($build)['publishableAssets']['extensions']);
+    $this->assertContains('config:field_config_list', $build['#cache']['tags']);
+  }
+
+  /**
+   * Sites without the publishable upload field keep the composer usable.
+   */
+  public function testViewHidesPublishableAssetsWithoutUploadField(): void {
+    $this->container->get('entity_type.manager')->getStorage('field_config')
+      ->load('media.ai_publishable_asset.oe_ai_publishable_asset')->delete();
+    $session = $this->createSession($this->createUser());
+
+    $drafting = $this->draftingConfig($this->controller()->view($session));
+
+    $this->assertSame(['enabled' => FALSE, 'extensions' => []], $drafting['publishableAssets']);
+    $this->assertTrue($drafting['documents']['enabled']);
+  }
+
+  /**
    * A bundle without templates yields an empty list without breaking init.
    */
   public function testViewWithoutTemplatesExposesEmptyList(): void {

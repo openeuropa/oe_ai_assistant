@@ -61,10 +61,20 @@ export const developmentConfig = {
         extensions: ["txt", "doc", "docx", "pdf", "md"],
       },
       publishableAssets: {
-        // Provisional UC-06 config, enabled only in standalone development.
-        // The separate asset list is seeded by the mock API.
+        // Match the default upload field configuration shipped by OEL-4840.
+        // Drupal supplies these extensions from its configured source field.
         enabled: true,
-        extensions: ["jpg", "jpeg", "png", "webp", "pdf", "doc", "docx"],
+        extensions: [
+          "txt",
+          "doc",
+          "docx",
+          "pdf",
+          "md",
+          "png",
+          "jpg",
+          "jpeg",
+          "gif",
+        ],
       },
     },
   },

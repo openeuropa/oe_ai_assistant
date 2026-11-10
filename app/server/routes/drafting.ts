@@ -48,7 +48,8 @@ function documentListKey(
 /**
  * Fakes the extraction pipeline: the status advances every two seconds
  * until done. A filename containing "fail" stops at error after the
- * extraction step, so the retry control can be exercised.
+ * extraction step, so the retry control can be exercised. Images also stop
+ * at error, matching the backend's current document-only extraction pipeline.
  */
 const MOCK_PROGRESSION: MockDocumentStatus[] = [
   "extracting",
@@ -58,7 +59,9 @@ const MOCK_PROGRESSION: MockDocumentStatus[] = [
 ];
 
 function startMockExtraction(document: MockDocument): void {
-  const fails = document.title.toLowerCase().includes("fail");
+  const fails =
+    document.title.toLowerCase().includes("fail") ||
+    ["png", "jpg", "jpeg", "gif"].includes(document.meta.type);
   MOCK_PROGRESSION.forEach((status, index) => {
     setTimeout(
       () => {
@@ -94,7 +97,7 @@ const initialMockPublishableAssets: MockDocument[] = [
   {
     id: "publishable-image-1",
     title: "European Commission building.jpg",
-    status: "done",
+    status: "error",
     meta: { type: "jpg", size: 1048576 },
   },
   {
