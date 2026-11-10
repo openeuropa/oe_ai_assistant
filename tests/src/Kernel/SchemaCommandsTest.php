@@ -40,6 +40,7 @@ class SchemaCommandsTest extends KernelTestBase {
     'link',
     'taxonomy',
     'ai',
+    'ai_neuron',
     'entity_reference_revisions',
     'inline_entity_form',
     'key',
