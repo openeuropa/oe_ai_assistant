@@ -74,7 +74,14 @@ class ContentCreationSession extends AiEditorialSession implements ContentCreati
    * follows the highest one stored.
    */
   public function nextVersion(): int {
-    $versions = array_map(static fn (array $result): int => (int) $result['version'], $this->draftResults());
+    // Read the version off the oe_draft_version column so we don't have to
+    // decode a draft here. Each row of this thread holds a whole draft, and
+    // draftResults() would parse that whole JSON payload just to get one
+    // number out of it. The column is a string, so we cast before comparing.
+    $versions = array_map(
+      static fn (NeuronMessageInterface $row): int => (int) $row->get('oe_draft_version')->value,
+      $this->conversationThread($this->draftsThread()),
+    );
 
     return ($versions === [] ? 0 : max($versions)) + 1;
   }

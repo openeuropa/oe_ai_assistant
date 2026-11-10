@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Drupal\Tests\oe_ai_assistant\Kernel;
 
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
+use Drupal\oe_ai_assistant\Entity\Bundle\ContentCreationSessionInterface;
 
 /**
  * Kernel tests for the conversation a session reads off its message rows.
@@ -36,6 +37,39 @@ class AiEditorialSessionConversationTest extends AiEditorialSessionKernelTestBas
       'content' => json_encode([['type' => 'text', 'content' => 'hello', 'meta' => []]]),
       'meta' => json_encode(['type' => 'text']),
     ])->save();
+  }
+
+  /**
+   * The next version comes from the column, not from the stored drafts.
+   *
+   * Each row of the drafts thread holds a whole draft as JSON, and reading
+   * the number out of every one of them parses a large payload per draft.
+   * The column already holds it. The row below names version 11 and carries
+   * no draft anyone can parse, so it counts here and would not if we read
+   * the payloads.
+   */
+  public function testNextVersionReadsTheVersionColumn(): void {
+    $session = $this->createSession($this->createUser());
+    assert($session instanceof ContentCreationSessionInterface);
+
+    foreach (['1', '2', '9', '10'] as $version) {
+      $this->createRow($session, $session->draftsThread(), [
+        'oe_draft_version' => $version,
+        'content' => json_encode([
+          [
+            'type' => 'text',
+            'content' => json_encode(['version' => $version, 'fields' => []]),
+            'meta' => [],
+          ],
+        ]),
+      ]);
+    }
+    $this->createRow($session, $session->draftsThread(), [
+      'oe_draft_version' => '11',
+      'content' => json_encode([['type' => 'text', 'content' => 'not a draft', 'meta' => []]]),
+    ]);
+
+    $this->assertSame(12, $session->nextVersion());
   }
 
   /**
