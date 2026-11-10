@@ -13,6 +13,7 @@ use Drupal\oe_ai_assistant\Plugin\NeuronWorkflow\Editorial\Events\ChatTurnEvent;
 use Drupal\oe_ai_assistant\Service\DraftingSchemaProvider;
 use Drupal\oe_ai_assistant\Service\DraftingSchemaProviderInterface;
 use Drupal\oe_ai_assistant_test\Plugin\AiProvider\MockAiProvider;
+use Drupal\oe_ai_assistant_test\Plugin\NeuronTool\FailingNeuronTool;
 use Drupal\oe_ai_assistant_test\Plugin\AiProvider\MockResponse;
 use NeuronAI\Agent\AgentInterface;
 use NeuronAI\Chat\Messages\UserMessage;
@@ -489,6 +490,70 @@ class DraftingTurnTest extends AiEditorialSessionKernelTestBase {
     $this->assertCount(1, $results);
     $this->assertSame('drafting_draft_content', $results[0]['name']);
     $this->assertStringContainsString('interrupted', json_encode($results[0]['result']));
+  }
+
+  /**
+   * A failing tool is logged in full and reported to the model by name only.
+   */
+  public function testToolFailureIsLoggedAndReportedPlainly(): void {
+    $session = $this->createSession($this->createUser());
+    $records = [];
+    $this->container->get('logger.factory')->addLogger(new class ($records) extends AbstractLogger {
+
+      /**
+       * @param array $records
+       *   The records, by reference, so the test reads what the agent logged.
+       */
+      public function __construct(
+        private array &$records,
+      ) {}
+
+      /**
+       * {@inheritdoc}
+       */
+      public function log($level, string|\Stringable $message, array $context = []): void {
+        $placeholders = array_filter(
+          $context,
+          static fn (mixed $value, string $key): bool => str_starts_with($key, '@') && is_scalar($value),
+          ARRAY_FILTER_USE_BOTH,
+        );
+        $this->records[] = strtr((string) $message, $placeholders);
+      }
+
+    });
+
+    MockAiProvider::reset();
+    MockAiProvider::enqueue(new MockResponse(
+      toolCalls: [
+        [
+          'id' => 'call_1',
+          'type' => 'function',
+          'function' => ['name' => 'oe_ai_assistant_test_failing', 'arguments' => '{}'],
+        ],
+      ],
+    ));
+    MockAiProvider::enqueue(new MockResponse(text: 'That did not work.'));
+
+    $agent = $this->container->get(NeuronAgentManagerInterface::class)
+      ->createAgent('oe_ai_assistant_test_failing_tool', ['session' => $session]);
+    // stream() and not chat(): MockAiProvider only returns tool calls on its
+    // streaming path, and leaves them out of a plain chat response.
+    iterator_to_array($agent->stream(new UserMessage('Use the tool.')), FALSE);
+
+    // The tool result is what the model reads back. It names the tool and
+    // leaves the exception message out.
+    $results = $session->conversationToolResults();
+    $this->assertCount(1, $results);
+    $this->assertSame([
+      'tool' => 'oe_ai_assistant_test_failing',
+      'error' => 'The tool failed.',
+    ], $results[0]['result']);
+
+    // The exception message is in the log instead.
+    $this->assertNotEmpty(preg_grep(
+      '@' . preg_quote(FailingNeuronTool::MESSAGE, '@') . '@',
+      $records,
+    ));
   }
 
   /**

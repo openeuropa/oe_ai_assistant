@@ -7,6 +7,7 @@ namespace Drupal\oe_ai_assistant\Plugin\NeuronAgent;
 use Drupal\ai_neuron\Agent\NeuronAgentDefinition;
 use Drupal\Component\Plugin\Definition\ContextAwarePluginDefinitionInterface;
 use Drupal\ai_neuron\Agent\NeuronAgentPluginBase;
+use Drupal\Core\Logger\LoggerChannelTrait;
 use Drupal\oe_ai_assistant\Neuron\Chat\Messages\Stream\Adapters\PatchedVercelAIAdapter;
 use Drupal\oe_ai_assistant\Service\Drafting\DocumentExtractionProcessorInterface;
 use NeuronAI\Tools\ToolCall;
@@ -25,6 +26,8 @@ use NeuronAI\Workflow\Streaming\Adapter\StreamAdapterInterface;
  * the blocks they inject are rendered here as well.
  */
 abstract class EditorialSessionAgentBase extends NeuronAgentPluginBase {
+
+  use LoggerChannelTrait;
 
   /**
    * Characters of one context document extract injected into a prompt.
@@ -98,18 +101,32 @@ abstract class EditorialSessionAgentBase extends NeuronAgentPluginBase {
   /**
    * {@inheritdoc}
    *
-   * A tool answers the model in JSON, so a failure is reported the same way
-   * rather than as the sentence the base class returns. The call names itself
-   * in it, with what it was given, so a model that called several tools in one
-   * turn is told which of them failed and on what.
+   * Our tools return JSON to the model, so a failure is reported as JSON too,
+   * instead of the plain sentence NeuronAgentPluginBase builds. The payload
+   * names the tool, so a model that called several tools in one turn can see
+   * which one failed.
    */
   protected function toolErrorHandler(): ?callable {
-    return static fn (\Throwable $exception, ToolCall $call): string => json_encode([
-      'error' => $exception->getMessage(),
-      'tool' => $call->getName(),
-      'description' => $call->getDescription(),
-      'inputs' => $call->getInputs(),
-    ]);
+    $logger = $this->getLogger('oe_ai_assistant');
+
+    return static function (\Throwable $exception, ToolCall $call) use ($logger): string {
+      // Don't return the exception message to the model: a database driver
+      // puts the failing query and the host in it, and the agent repeats
+      // whatever we return to the editor. It goes to the log instead.
+      $logger->error('The @tool tool failed: @message', [
+        '@tool' => $call->getName(),
+        '@message' => $exception->getMessage(),
+        'exception' => $exception,
+      ]);
+
+      // json_encode() returns string|false and the handler has to return a
+      // string. It can only fail on data it can't encode, and all we encode
+      // is a tool name and a fixed sentence, so the cast is safe.
+      return (string) json_encode([
+        'tool' => $call->getName(),
+        'error' => 'The tool failed.',
+      ]);
+    };
   }
 
   /**
