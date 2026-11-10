@@ -85,21 +85,6 @@ Full text of one.", $prompt);
   }
 
   /**
-   * Tests that the editorial agent is told about the context documents.
-   */
-  public function testEditorialAgentIsToldAboutTheDocuments(): void {
-    $prompt = $this->editorialInstructions([
-      self::document('1', 'done', 'Full text of one.', 'Summary one.'),
-    ]);
-
-    $this->assertStringContainsString('Context documents', $prompt);
-    $this->assertStringContainsString('Full text of one.', $prompt);
-    // Without the content type block, the agent calls for a draft and asks
-    // the editor about no field group. So the prompt carries both blocks.
-    $this->assertStringContainsString('Content type context:', $prompt);
-  }
-
-  /**
    * Tests that unprocessed and failed documents are announced, not read.
    */
   public function testDocumentsPromptAnnouncesPendingDocuments(): void {
@@ -256,11 +241,10 @@ Overflow text.", $prompt);
   protected function setUp(): void {
     parent::setUp();
     $this->enableModules(['oe_ai_assistant_test']);
-    // Building an agent resolves a provider for its operation type.
+    // Building the drafter resolves a provider for its operation type.
     $this->config('ai.settings')
       ->set('default_providers', [
         'chat_with_structured_response' => ['provider_id' => 'mock_ai', 'model_id' => 'mock-model'],
-        'chat_with_tools' => ['provider_id' => 'mock_ai', 'model_id' => 'mock-model'],
       ])
       ->save();
   }
@@ -286,22 +270,6 @@ Overflow text.", $prompt);
       'schema' => ['type' => 'object'],
       'run' => 'draft_1',
     ]);
-
-    return $agent->getInstructions()->getContent();
-  }
-
-  /**
-   * The instructions the editorial agent is built with, on a stubbed session.
-   *
-   * @param array $documents
-   *   The documents the session is set up with.
-   *
-   * @return string
-   *   The instructions.
-   */
-  private function editorialInstructions(array $documents): string {
-    $agent = $this->container->get(NeuronAgentManagerInterface::class)
-      ->createAgent('editorial', ['session' => $this->stubbedSession(NULL, $documents)]);
 
     return $agent->getInstructions()->getContent();
   }

@@ -39,13 +39,6 @@ final class EditorialNeuronAgent extends EditorialSessionAgentBase {
 
   /**
    * {@inheritdoc}
-   *
-   * An editor attaches a document and then asks this agent about it. No
-   * other block of this prompt names the attachment, so the agent has no
-   * text to answer from. The editor also hears nothing about a document
-   * that is still in extraction, or one whose extraction failed. The
-   * documents block carries the text and both warnings. This agent writes
-   * no field of the draft, so the prompt omits the tone.
    */
   protected function instructions(): string {
     // The tools describe themselves; this is the policy for using them.
@@ -55,14 +48,6 @@ final class EditorialNeuronAgent extends EditorialSessionAgentBase {
     Workflow:
     - When the user asks to draft content, review the field groups
       provided below.
-    - The editor may attach context documents. Any they attached are
-      listed below, with the text of each one. Read them before you
-      answer a question about this session, and again before you call
-      drafting_draft_content. Treat what they say as information you
-      already hold about the field groups.
-    - When the editor refers to a document, answer from its text below.
-      Say so when a document is still being processed or when it failed,
-      so the editor knows what a draft can use.
     - For each group, determine whether you have enough information
       from the conversation to generate meaningful content. If ANY
       field group lacks context, ask the user about it specifically.
@@ -94,9 +79,7 @@ final class EditorialNeuronAgent extends EditorialSessionAgentBase {
     - You can have normal conversations with the user at any point.
     PROMPT;
 
-    $blocks = array_filter([$this->contentTypePrompt(), $this->documentsPrompt()]);
-
-    return $instructions . "\n\n" . implode("\n\n", $blocks) . "\n";
+    return $instructions . "\n\n" . $this->contentTypePrompt() . "\n";
   }
 
   /**
