@@ -178,7 +178,7 @@ class TemplateSchemaFilterTest extends KernelTestBase {
    * answer with a field the group never asked for, validation still passes,
    * and DraftContentNode::assemble() drops the text it wrote.
    */
-  public function testTemplateSlicesForbidUndeclaredProperties(): void {
+  public function testTemplateSchemasForbidUndeclaredProperties(): void {
     $schema = $this->composer()->compose('node', 'oe_news');
 
     $filtered = $this->filter()->filter($schema, $this->template('news_default'));

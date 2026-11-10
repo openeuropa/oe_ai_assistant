@@ -36,6 +36,25 @@ final class ProviderCallLogger {
     'proxy-authorization',
   ];
 
+  /**
+   * Query parameters and body keys whose value is redacted, lower case.
+   */
+  private const SECRET_KEYS = [
+    'api_key',
+    'api-key',
+    'apikey',
+    'key',
+    'access_token',
+    'accesstoken',
+    'token',
+    'client_secret',
+    'secret',
+    'password',
+    'passwd',
+    'subscription-key',
+    'signature',
+  ];
+
   public function __construct(
     private readonly FileSystemInterface $fileSystem,
   ) {}
@@ -78,7 +97,7 @@ final class ProviderCallLogger {
    */
   private function dump(RequestInterface $request): string {
     $uri = $request->getUri();
-    $target = $request->getRequestTarget();
+    $target = $this->target($request->getRequestTarget());
     $lines = [sprintf('%s %s HTTP/%s', $request->getMethod(), $target, $request->getProtocolVersion())];
 
     foreach ($request->getHeaders() as $header => $values) {
@@ -90,6 +109,53 @@ final class ProviderCallLogger {
     }
 
     return implode("\n", $lines) . "\n\n" . $this->body($request) . "\n";
+  }
+
+  /**
+   * Hides the value of any secret the request carries in its query string.
+   *
+   * Several providers take the API key as a query parameter rather than a
+   * header, so redacting headers alone would still write the key to disk.
+   * We rewrite only the values. The file is replayed as it stands, so the
+   * rest of the request line stays byte for byte what was sent.
+   *
+   * @param string $target
+   *   The request target, path and query.
+   *
+   * @return string
+   *   The target, with every secret value replaced.
+   */
+  private function target(string $target): string {
+    return (string) preg_replace_callback(
+      '@(?<=[?&])([^=&]+)=([^&]*)@',
+      static fn (array $match): string => in_array(strtolower(urldecode($match[1])), self::SECRET_KEYS, TRUE)
+        ? $match[1] . '=[redacted]'
+        : $match[0],
+      $target,
+    );
+  }
+
+  /**
+   * Hides the value of any secret the decoded body carries, at any depth.
+   *
+   * @param mixed $value
+   *   A decoded JSON value.
+   *
+   * @return mixed
+   *   The value, with every secret replaced.
+   */
+  private function redact(mixed $value): mixed {
+    if (is_object($value)) {
+      foreach (get_object_vars($value) as $name => $nested) {
+        $value->{$name} = in_array(strtolower($name), self::SECRET_KEYS, TRUE)
+          ? '[redacted]'
+          : $this->redact($nested);
+      }
+
+      return $value;
+    }
+
+    return is_array($value) ? array_map($this->redact(...), $value) : $value;
   }
 
   /**
@@ -111,12 +177,19 @@ final class ProviderCallLogger {
     $contents = $body->getContents();
     $body->rewind();
 
-    $decoded = json_decode($contents, TRUE);
+    // Decode to objects, not arrays. Passing TRUE here turns an empty JSON
+    // object into an empty PHP array, which encodes again as [], so a file
+    // meant to be replayed would claim we sent "parameters": [] where we
+    // sent "parameters": {}.
+    $decoded = json_decode($contents);
     if (json_last_error() !== JSON_ERROR_NONE) {
       return $contents;
     }
 
-    return json_encode($decoded, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+    return (string) json_encode(
+      $this->redact($decoded),
+      JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE,
+    );
   }
 
 }
