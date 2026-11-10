@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\oe_ai_assistant\Entity;
 
+use Drupal\ai_neuron\Entity\NeuronMessageStorageInterface;
 use Drupal\Core\Entity\ContentEntityBase;
 use Drupal\Core\Entity\EntityChangedTrait;
 use Drupal\Core\Entity\EntityStorageInterface;
@@ -166,7 +167,7 @@ class AiEditorialSession extends ContentEntityBase implements AiEditorialSession
    */
   public function conversationTurns(): array {
     $turns = [];
-    foreach ($this->conversationThread($this->editorialThread()) as $row) {
+    foreach ($this->activeThread($this->editorialThread()) as $row) {
       $role = (string) $row->get('role')->value;
       if (!in_array($role, ['user', 'assistant'], TRUE)) {
         continue;
@@ -200,6 +201,27 @@ class AiEditorialSession extends ContentEntityBase implements AiEditorialSession
     ksort($rows);
 
     return array_values($rows);
+  }
+
+  /**
+   * The rows of a thread that an agent still replays to the model.
+   *
+   * Neuron trims a thread to the context window of its agent, and stamps
+   * every row it drops. A reader of the whole thread therefore grows with
+   * the session, and a prompt built from it overflows the window the trim
+   * was protecting. So this reads what the trim left.
+   *
+   * @param string $threadId
+   *   The thread to read.
+   *
+   * @return \Drupal\ai_neuron\Entity\NeuronMessageInterface[]
+   *   The rows, oldest first.
+   */
+  private function activeThread(string $threadId): array {
+    $storage = \Drupal::entityTypeManager()->getStorage('neuron_message');
+    assert($storage instanceof NeuronMessageStorageInterface);
+
+    return array_values($storage->loadMultiple($storage->activeIds($threadId)));
   }
 
   /**

@@ -42,7 +42,7 @@ final class DraftContentNode extends Node {
     // time.
     $results = [];
     foreach ($event->callIds as $callId) {
-      $result = yield from $this->draft($resources, $state, $callId);
+      $result = yield from $this->draft($resources, $callId);
       $results[$callId] = ['result' => $result];
     }
     $state->set('results', $results);
@@ -55,8 +55,6 @@ final class DraftContentNode extends Node {
    *
    * @param \Drupal\oe_ai_assistant\Plugin\NeuronWorkflow\Editorial\EditorialResources $resources
    *   What this run shares.
-   * @param \NeuronAI\Workflow\WorkflowState $state
-   *   The state of the run, which holds what the editor asked for.
    * @param string $callId
    *   The call this draft answers.
    *
@@ -64,7 +62,7 @@ final class DraftContentNode extends Node {
    *   Yields the progress of the draft. Returns what the model receives,
    *   which is the name of the draft or what stopped it.
    */
-  private function draft(EditorialResources $resources, WorkflowState $state, string $callId): \Generator {
+  private function draft(EditorialResources $resources, string $callId): \Generator {
     $groups = $resources->session->getFieldGroups();
     $total = count($groups);
     // The run already told the editor the name of this draft. A step that
@@ -77,6 +75,10 @@ final class DraftContentNode extends Node {
       fn (): int => $resources->session->nextVersion(),
     );
     $run = $this->runId($version);
+    // A reading of the conversation is one query, and the conversation does
+    // not change while the groups are drafted. So one reading serves every
+    // group.
+    $conversation = $this->conversation($resources);
     $answers = [];
     $index = 0;
     $failed = '';
@@ -130,7 +132,7 @@ final class DraftContentNode extends Node {
 
         if (!is_array($fields)) {
           yield $this->progress($callId, $group, 'drafting', $index, $total);
-          $fields = $this->draftGroup($resources, $group, $run, $this->task($resources, $state, $answers));
+          $fields = $this->draftGroup($resources, $group, $run, $this->task($conversation, $answers));
           $fields = $this->memoize('group.' . $callId . '.' . $groupId, static fn (): array => $fields);
         }
 
@@ -408,38 +410,19 @@ final class DraftContentNode extends Node {
    * Builds what this run tells one group's drafter.
    *
    * A drafter reads its own thread only. Without a task it writes about a
-   * subject of its own. So the task carries the conversation of the session,
-   * what the editor asked for, and what the earlier groups wrote.
+   * subject of its own. So the task carries the conversation of the session
+   * and what the earlier groups wrote.
    *
-   * @param \Drupal\oe_ai_assistant\Plugin\NeuronWorkflow\Editorial\EditorialResources $resources
-   *   What this run shares, which answers what the session said so far.
-   * @param \NeuronAI\Workflow\WorkflowState $state
-   *   The state of the run, which holds what the editor asked for.
+   * @param string $conversation
+   *   The turns of the session, as the drafter reads them.
    * @param array $answers
    *   What the groups drafted so far answered, keyed by group id.
    *
    * @return string
    *   The task.
    */
-  private function task(EditorialResources $resources, WorkflowState $state, array $answers): string {
-    $task = '';
-
-    // A drafter writes one group and holds no conversation of its own. It
-    // reads what the editor wants from this task alone. So the task opens
-    // with the turns of the session, which carry no draft.
-    $turns = $resources->session->conversationTurns();
-    if ($turns !== []) {
-      $task = "The conversation so far:\n" . implode("\n", array_map(
-        static fn (array $turn): string => sprintf(
-          '%s: %s',
-          $turn['role'] === 'user' ? 'Editor' : 'Assistant',
-          $turn['text'],
-        ),
-        $turns,
-      )) . "\n\n";
-    }
-
-    $task .= "The editor asked for this content:\n" . (string) $state->get('task') . "\n";
+  private function task(string $conversation, array $answers): string {
+    $task = $conversation;
 
     // A later group must fit the title and the summary the main group wrote,
     // so the task carries them.
@@ -449,6 +432,35 @@ final class DraftContentNode extends Node {
     }
 
     return $task . 'Generate content for the fields in the provided schema. Follow the conversation context.';
+  }
+
+  /**
+   * The turns of the session, as a drafter reads them.
+   *
+   * A drafter holds no conversation of its own, so the request the editor
+   * made reaches it only here. The turns carry no draft, because a draft is
+   * written to a thread of its own.
+   *
+   * @param \Drupal\oe_ai_assistant\Plugin\NeuronWorkflow\Editorial\EditorialResources $resources
+   *   What this run shares.
+   *
+   * @return string
+   *   The block of turns, empty when the session has said nothing yet.
+   */
+  private function conversation(EditorialResources $resources): string {
+    $turns = $resources->session->conversationTurns();
+    if ($turns === []) {
+      return '';
+    }
+
+    return "The conversation so far:\n" . implode("\n", array_map(
+      static fn (array $turn): string => sprintf(
+        '%s: %s',
+        $turn['role'] === 'user' ? 'Editor' : 'Assistant',
+        $turn['text'],
+      ),
+      $turns,
+    )) . "\n\n";
   }
 
 }

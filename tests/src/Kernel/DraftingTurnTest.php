@@ -7,6 +7,7 @@ namespace Drupal\Tests\oe_ai_assistant\Kernel;
 use Drupal\ai_neuron\Agent\NeuronAgentManagerInterface;
 use Drupal\ai_neuron\Workflow\NeuronWorkflowManagerInterface;
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
+use Drupal\oe_ai_assistant\Neuron\Chat\History\EditorialMessageStore;
 use Drupal\oe_ai_assistant\Plugin\AiAssistantPluginManager;
 use Drupal\oe_ai_assistant\Plugin\NeuronWorkflow\Editorial\Events\ChatTurnEvent;
 use Drupal\oe_ai_assistant\Service\DraftingSchemaProvider;
@@ -488,6 +489,55 @@ class DraftingTurnTest extends AiEditorialSessionKernelTestBase {
     $this->assertCount(1, $results);
     $this->assertSame('drafting_draft_content', $results[0]['name']);
     $this->assertStringContainsString('interrupted', json_encode($results[0]['result']));
+  }
+
+  /**
+   * A drafter reads the editor's message once, not twice.
+   *
+   * The task carries the conversation of the session, and the message that
+   * asked for the draft is the last turn of it. A task that repeated the
+   * message would pay for it twice in every group of every draft.
+   */
+  public function testDrafterReadsTheEditorsMessageOnce(): void {
+    $session = $this->createSession($this->createUser());
+
+    MockAiProvider::reset();
+    $this->enqueueTurn();
+
+    $this->turn($session, 'Write about the floods in Valencia.');
+
+    $rows = $session->conversationThreads()[$this->thread($session, 1, 'main_fields')];
+    $task = (string) ($rows[0]->getContent()[0]['content'] ?? '');
+    $this->assertSame(1, substr_count($task, 'Write about the floods in Valencia.'));
+  }
+
+  /**
+   * A drafter is not told the turns Neuron archived.
+   *
+   * Neuron trims a thread to the context window of its agent and stamps
+   * what it drops. A drafter told every stored turn grows with the session
+   * until the call overflows and every group fails.
+   */
+  public function testDrafterSkipsTheTurnsNeuronArchived(): void {
+    $session = $this->createSession($this->createUser());
+
+    MockAiProvider::reset();
+    MockAiProvider::enqueue(new MockResponse(text: 'Tell me when you are ready.'));
+    $this->turn($session, 'We are writing about the floods in Valencia.');
+
+    // The turn above wrote the question and the answer, and both fall out
+    // of the window here.
+    $this->container->get(EditorialMessageStore::class)
+      ->forSession($session)
+      ->archive($session->editorialThread(), 2);
+
+    $this->enqueueTurn();
+    $this->turn($session, 'Draft it now.');
+
+    $rows = $session->conversationThreads()[$this->thread($session, 1, 'main_fields')];
+    $task = (string) ($rows[0]->getContent()[0]['content'] ?? '');
+    $this->assertStringContainsString('Draft it now.', $task);
+    $this->assertStringNotContainsString('floods in Valencia', $task);
   }
 
   /**
