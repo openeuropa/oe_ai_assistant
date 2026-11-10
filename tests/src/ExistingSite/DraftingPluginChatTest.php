@@ -125,10 +125,13 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
 
     $events = $this->parseSseEvents($result['body']);
 
-    // The run names every group before it drafts the first one, so the card
-    // shows the whole set from the start. The frame arrives before any
-    // activity frame, and names the call it answers, so each card reads the
-    // run of its own call.
+    // A frame that does not name its own call draws no draft card.
+    // The card of a tool call reads its run under that call's id. The
+    // editor then watches a plain tool call while the draft runs.
+    // Activity frames report one group at a time, which leaves the editor
+    // no view of how many groups remain. So the frame names the call it
+    // answers, and lists every group as pending before the first activity
+    // frame.
     $started = array_values(array_filter($events, fn($e) => $e['type'] === 'data-draft-started'));
     $this->assertCount(1, $started, 'Exactly one data-draft-started frame.');
     $this->assertSame(1, $started[0]['data']['version']);
