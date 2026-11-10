@@ -258,10 +258,21 @@ export class MockDraftingService implements DraftingService {
     plan[0].status = "done";
     yield { type: "data-plan", data: [...plan] };
 
-    // Emit the drafted fields.
+    // Emit the drafted fields in the versioned shape the Drupal backend
+    // sends. parseDraftResult() reads a payload with no numeric version as
+    // a legacy flat fields map and returns version null, so the rail would
+    // list a "Draft null" entry next to the real draft.
     yield {
       type: "data-drafted-fields",
-      data: selectedFields,
+      data: {
+        version,
+        status: "drafted",
+        context: null,
+        groups: [],
+        error: "",
+        fields: selectedFields,
+        createdAt: new Date().toISOString(),
+      },
     };
 
     // Emit the drafting_draft_content tool call so the clickable card appears
