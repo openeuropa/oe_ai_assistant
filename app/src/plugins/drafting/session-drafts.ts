@@ -70,7 +70,7 @@ export function extractSessionDrafts(
       // rehydrated trace stored an empty result (mirrors the tool UI).
       const raw = hasKeys(part.result)
         ? part.result
-        : (part.args?.["fields"] ?? {});
+        : (part.args?.fields ?? {});
       const parsed = parseDraftResult(raw);
       if (Object.keys(parsed.fields).length === 0) {
         continue;

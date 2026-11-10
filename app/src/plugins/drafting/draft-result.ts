@@ -78,13 +78,13 @@ function normaliseDocuments(raw: unknown): DraftDocumentSnapshot[] {
 function normaliseContext(raw: unknown): DraftContext {
   const ctx = isPlainObject(raw) ? raw : {};
   return {
-    tone: isPlainObject(ctx["tone"])
-      ? (ctx["tone"] as unknown as DraftToneSnapshot)
+    tone: isPlainObject(ctx.tone)
+      ? (ctx.tone as unknown as DraftToneSnapshot)
       : null,
-    template: isPlainObject(ctx["template"])
-      ? (ctx["template"] as unknown as DraftTemplateSnapshot)
+    template: isPlainObject(ctx.template)
+      ? (ctx.template as unknown as DraftTemplateSnapshot)
       : null,
-    documents: normaliseDocuments(ctx["documents"]),
+    documents: normaliseDocuments(ctx.documents),
   };
 }
 
@@ -100,14 +100,14 @@ export function parseDraftResult(result: unknown): ParsedDraftResult {
     return { version: null, context: null, fields: {} };
   }
 
-  const hasNumericVersion = typeof result["version"] === "number";
-  const hasObjectFields = isPlainObject(result["fields"]);
+  const hasNumericVersion = typeof result.version === "number";
+  const hasObjectFields = isPlainObject(result.fields);
 
   if (hasNumericVersion && hasObjectFields) {
     return {
-      version: result["version"] as number,
-      context: normaliseContext(result["context"]),
-      fields: result["fields"] as Record<string, unknown>,
+      version: result.version as number,
+      context: normaliseContext(result.context),
+      fields: result.fields as Record<string, unknown>,
     };
   }
 
