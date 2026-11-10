@@ -198,16 +198,34 @@ export const EditorialEventToolUI = makeAssistantToolUI<
   ),
 });
 
+/**
+ * Builds a tool UI for a tool whose card needs nothing beyond the shared
+ * icon/label/status shape, optionally with a detail line read off the
+ * result.
+ */
+function makeSimpleToolUI<TArgs, TResult>(
+  toolName: string,
+  icon: typeof PenLine,
+  detail?: (result: TResult | undefined) => string | undefined,
+) {
+  return makeAssistantToolUI<TArgs, TResult>({
+    toolName,
+    render: ({ result, status }) => (
+      <ToolCallCard
+        icon={icon}
+        label={toolLabel(toolName)}
+        detail={detail?.(result)}
+        status={status}
+      />
+    ),
+  });
+}
+
 /** UI for the context_get_editorial_context tool call. */
-export const GetEditorialContextToolUI = makeAssistantToolUI<
+export const GetEditorialContextToolUI = makeSimpleToolUI<
   Record<string, never>,
   unknown
->({
-  toolName: "context_get_editorial_context",
-  render: ({ status }) => (
-    <ToolCallCard icon={Info} label="Get editorial context" status={status} />
-  ),
-});
+>("context_get_editorial_context", Info);
 
 /**
  * Reads the document's title off its result, once the tool has answered.
@@ -236,20 +254,10 @@ function safeJsonParse(raw: string): unknown {
 }
 
 /** UI for the context_read_document tool call. */
-export const ReadDocumentToolUI = makeAssistantToolUI<
+export const ReadDocumentToolUI = makeSimpleToolUI<
   { document?: string },
   unknown
->({
-  toolName: "context_read_document",
-  render: ({ result, status }) => (
-    <ToolCallCard
-      icon={FileSearch}
-      label="Read document"
-      detail={readDocumentTitle(result)}
-      status={status}
-    />
-  ),
-});
+>("context_read_document", FileSearch, readDocumentTitle);
 
 /**
  * Fallback renderer for any tool call not registered with makeAssistantToolUI.
