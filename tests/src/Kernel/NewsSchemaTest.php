@@ -47,7 +47,7 @@ class NewsSchemaTest extends KernelTestBase {
     'document_loader',
     'document_loader_tika',
     'oe_ai_assistant_test',
-    'schema_api',
+    'schema_builder',
   ];
 
   /**
@@ -70,7 +70,7 @@ class NewsSchemaTest extends KernelTestBase {
    */
   public function testNewsSchema(): void {
     $schema = $this->container
-      ->get('Drupal\schema_api\SchemaApiInterface')
+      ->get('Drupal\schema_builder\SchemaBuilderInterface')
       ->get('node', 'oe_news');
 
     $path = sys_get_temp_dir() . '/oe_news.schema.json';
@@ -145,7 +145,7 @@ class NewsSchemaTest extends KernelTestBase {
    */
   public function testTemplateNarrowsTheSchema(): void {
     $schema = $this->container
-      ->get('Drupal\schema_api\SchemaApiInterface')
+      ->get('Drupal\schema_builder\SchemaBuilderInterface')
       ->get('node', 'oe_news', ['template' => $this->index('news_with_paragraphs')]);
 
     $path = sys_get_temp_dir() . '/oe_news.template.schema.json';
@@ -196,7 +196,7 @@ class NewsSchemaTest extends KernelTestBase {
    */
   public function testTemplatePinsNestedValue(): void {
     $schema = $this->container
-      ->get('Drupal\schema_api\SchemaApiInterface')
+      ->get('Drupal\schema_builder\SchemaBuilderInterface')
       ->get('node', 'oe_news', ['template' => $this->index('news_nested_defaults')]);
 
     $quote = $schema['properties']['field_content_paragraphs']['items']['oneOf'][0];

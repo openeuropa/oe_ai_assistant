@@ -44,7 +44,7 @@ class DraftingSchemaGroupsTest extends KernelTestBase {
     'ai',
     'ai_neuron',
     'oe_ai_assistant',
-    'schema_api',
+    'schema_builder',
     'state_machine',
     'document_loader',
     'document_loader_tika',

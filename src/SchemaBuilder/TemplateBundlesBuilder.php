@@ -5,9 +5,9 @@ declare(strict_types=1);
 namespace Drupal\oe_ai_assistant\SchemaBuilder;
 
 use Drupal\Core\Entity\EntityTypeManagerInterface;
-use Drupal\schema_api\Attribute\FieldItemSchemaBuilder;
-use Drupal\schema_api\Builder\FieldItemSchemaBuilderBase;
-use Drupal\schema_api\Context\ItemContext;
+use Drupal\schema_builder\Attribute\FieldItemSchemaBuilder;
+use Drupal\schema_builder\SchemaBuilder\FieldItemSchemaBuilderBase;
+use Drupal\schema_builder\Context\ItemContext;
 
 /**
  * Narrows a reference to the bundles the chosen template asks for.

@@ -50,7 +50,7 @@ class AiDraftingTemplateCrudTest extends KernelTestBase {
     'paragraphs',
     // This project.
     'oe_ai_assistant',
-    'schema_api',
+    'schema_builder',
     'state_machine',
     'document_loader',
     'document_loader_tika',

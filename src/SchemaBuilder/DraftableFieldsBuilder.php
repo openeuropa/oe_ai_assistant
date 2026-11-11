@@ -6,9 +6,9 @@ namespace Drupal\oe_ai_assistant\SchemaBuilder;
 
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Field\BaseFieldDefinition;
-use Drupal\schema_api\Attribute\FieldSchemaBuilder;
-use Drupal\schema_api\Builder\FieldSchemaBuilderBase;
-use Drupal\schema_api\Context\FieldContext;
+use Drupal\schema_builder\Attribute\FieldSchemaBuilder;
+use Drupal\schema_builder\SchemaBuilder\FieldSchemaBuilderBase;
+use Drupal\schema_builder\Context\FieldContext;
 
 /**
  * Leaves out the fields an editor never fills in by hand.

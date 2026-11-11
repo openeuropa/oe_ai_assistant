@@ -9,7 +9,7 @@ use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\oe_ai_assistant\AiDraftingTemplateInterface;
 use Drupal\oe_ai_assistant\Exception\DraftingTemplateException;
 use Drupal\oe_ai_assistant\SchemaBuilder\TemplateIndex;
-use Drupal\schema_api\SchemaApiInterface;
+use Drupal\schema_builder\SchemaBuilderInterface;
 
 /**
  * Resolves a drafting template and returns the field groups it asks for.
@@ -17,7 +17,7 @@ use Drupal\schema_api\SchemaApiInterface;
 class DraftingSchemaProvider implements DraftingSchemaProviderInterface {
 
   public function __construct(
-    private readonly SchemaApiInterface $schemaApi,
+    private readonly SchemaBuilderInterface $schemaApi,
     private readonly TemplateDefaultsResolverInterface $defaultsResolver,
     private readonly EntityTypeManagerInterface $entityTypeManager,
     private readonly EntityFieldManagerInterface $entityFieldManager,

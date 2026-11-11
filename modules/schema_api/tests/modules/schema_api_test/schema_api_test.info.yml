@@ -1,7 +1,0 @@
-name: 'Schema API test'
-type: module
-description: 'Test subscriber for the schema_api spike.'
-package: Testing
-core_version_requirement: ^11
-dependencies:
-  - oe_ai_assistant:schema_api

@@ -1,0 +1,7 @@
+services:
+  _defaults:
+    autoconfigure: true
+    autowire: true
+
+  Drupal\schema_builder\SchemaBuilder: {}
+  Drupal\schema_builder\SchemaBuilderInterface: '@Drupal\schema_builder\SchemaBuilder'
