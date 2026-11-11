@@ -43,12 +43,16 @@ class EditorialContextToolsTest extends AiEditorialSessionKernelTestBase {
   }
 
   /**
-   * Tests that the context tool reports the tone, template and documents.
+   * Tests that the context tool reports the tone label, never its guidelines.
    *
    * The summary is reported, never the extracted text: that is what
-   * context_read_document is for.
+   * context_read_document is for. The tone guidelines text stays off this
+   * tool for the same reason: EditorialNeuronAgent writes no field of the
+   * draft and must stay tone-free, but a tool result lands in a persisted
+   * thread row, so leaking the guidelines here would bake them in as a
+   * standing instruction that outlives a later tone change.
    */
-  public function testContextToolReportsSummariesNeverExtracts(): void {
+  public function testContextToolReportsTheToneLabelNeverItsGuidelines(): void {
     $session = $this->stubbedSession([
       'id' => '3',
       'label' => 'Formal',
@@ -59,10 +63,7 @@ class EditorialContextToolsTest extends AiEditorialSessionKernelTestBase {
 
     $result = json_decode($this->contextTool($session), TRUE);
 
-    $this->assertSame([
-      'label' => 'Formal',
-      'guidelines' => 'Use professional, institutional language.',
-    ], $result['tone']);
+    $this->assertSame(['label' => 'Formal'], $result['tone']);
     $this->assertNull($result['template']);
     $this->assertCount(1, $result['documents']);
     $this->assertSame('Summary one.', $result['documents'][0]['summary']);

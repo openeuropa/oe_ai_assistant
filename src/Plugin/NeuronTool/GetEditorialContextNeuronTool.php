@@ -41,9 +41,13 @@ final class GetEditorialContextNeuronTool extends NeuronToolPluginBase {
     $template = $session->getTemplate();
 
     return json_encode([
+      // The guidelines text itself is left to the drafters
+      // (EditorialSessionAgentBase::tonePrompt()): this agent writes no
+      // field of the draft, and a tool result lands in a persisted thread
+      // row, so it would outlive a later tone change and read as a
+      // standing instruction rather than the fact that it is.
       'tone' => $tone === NULL ? NULL : [
         'label' => $tone['label'],
-        'guidelines' => $tone['prompt'],
       ],
       'template' => $template === NULL ? NULL : [
         'label' => $template['label'],
