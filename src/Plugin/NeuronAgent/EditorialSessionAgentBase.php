@@ -41,6 +41,23 @@ abstract class EditorialSessionAgentBase extends NeuronAgentPluginBase {
   public const int MAX_TOTAL_CHARS = 60000;
 
   /**
+   * Caps a document extract at the per-document character budget.
+   *
+   * @param string $extract
+   *   The extract to cap.
+   *
+   * @return array{0: string, 1: bool}
+   *   The extract, capped if needed, and whether it was capped.
+   */
+  public static function truncateDocumentExtract(string $extract): array {
+    if (mb_strlen($extract) <= self::MAX_DOCUMENT_CHARS) {
+      return [$extract, FALSE];
+    }
+
+    return [mb_substr($extract, 0, self::MAX_DOCUMENT_CHARS), TRUE];
+  }
+
+  /**
    * {@inheritdoc}
    *
    * The attribute lists the tools, and they all serve this agent's session.
@@ -178,10 +195,7 @@ abstract class EditorialSessionAgentBase extends NeuronAgentPluginBase {
       $filename = trim((string) ($document['filename'] ?? ''));
       $lines[] = $filename === '' ? $heading : sprintf('%s (file: %s)', $heading, $filename);
       $extract = trim((string) ($document['extract'] ?? ''));
-      $truncated = mb_strlen($extract) > self::MAX_DOCUMENT_CHARS;
-      if ($truncated) {
-        $extract = mb_substr($extract, 0, self::MAX_DOCUMENT_CHARS);
-      }
+      [$extract, $truncated] = self::truncateDocumentExtract($extract);
       $summary = trim((string) ($document['summary'] ?? ''));
       if ($extract !== '' && mb_strlen($extract) <= $budget) {
         $budget -= mb_strlen($extract);
