@@ -381,6 +381,14 @@
   }
 }
 
+/* Added via classList at runtime (drafting-thread.tsx); can't be a
+   Tailwind utility. */
+@layer components {
+  .streamdown-copy-failed {
+    color: var(--color-red-500) !important;
+  }
+}
+
 /* No language info-string leaves an empty label span and a blank header
    bar. */
 @layer components {

@@ -27,6 +27,7 @@ import {
   SendHorizontal,
   X,
 } from "lucide-react";
+import { useEffect, useRef } from "react";
 import type { PaneTabItem } from "@/components/ui/pane-tabs";
 import { avatarColorClass, UserAvatar } from "@/components/ui/user-avatar";
 import { getConfig } from "@/config";
@@ -157,10 +158,15 @@ function MessageError() {
   );
 }
 
+/** How long the copy-failed flag stays on the button before it clears. */
+const COPY_FAILED_FLAG_MS = 2000;
+
 /**
  * Renders streamed assistant text with Streamdown for incremental
- * markdown rendering. Text deltas arrive from the LLM stream at
- * the provider's natural pace.
+ * markdown rendering.
+ *
+ * Download stays off: never real source code here. The click listener
+ * flags copy failures, which Streamdown's own button swallows silently.
  */
 function AssistantText({
   text,
@@ -169,9 +175,52 @@ function AssistantText({
   text: string;
   status: { type: string };
 }) {
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) {
+      return;
+    }
+
+    const onClick = (event: MouseEvent) => {
+      const button = (event.target as HTMLElement).closest(
+        '[data-streamdown="code-block-copy-button"]',
+      );
+      if (!(button instanceof HTMLElement) || !navigator.clipboard) {
+        return;
+      }
+      const code = button
+        .closest('[data-streamdown="code-block"]')
+        ?.querySelector('[data-streamdown="code-block-body"]')?.textContent;
+      if (!code) {
+        return;
+      }
+      navigator.clipboard.writeText(code).catch(() => {
+        button.classList.add("streamdown-copy-failed");
+        button.title = "Copy failed: the browser refused clipboard access.";
+        window.setTimeout(() => {
+          button.classList.remove("streamdown-copy-failed");
+          button.removeAttribute("title");
+        }, COPY_FAILED_FLAG_MS);
+      });
+    };
+
+    container.addEventListener("click", onClick, true);
+    return () => container.removeEventListener("click", onClick, true);
+  }, []);
+
   return (
-    <div className="chat-markdown text-base prose max-w-none">
-      <Streamdown isAnimating={status.type === "running"}>{text}</Streamdown>
+    <div
+      ref={containerRef}
+      className="chat-markdown text-base prose max-w-none"
+    >
+      <Streamdown
+        isAnimating={status.type === "running"}
+        controls={{ code: { copy: true, download: false } }}
+      >
+        {text}
+      </Streamdown>
     </div>
   );
 }
