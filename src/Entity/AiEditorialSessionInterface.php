@@ -78,21 +78,6 @@ interface AiEditorialSessionInterface extends ContentEntityInterface, EntityChan
   public function conversationThread(string $threadId): array;
 
   /**
-   * Joins the text blocks of a stored message.
-   *
-   * Neuron keeps a message's content as a list of blocks, and only a block
-   * of type 'text' holds any text. A tool result carries no content at all,
-   * so it comes back empty and conversationTurns() skips that row.
-   *
-   * @param array $blocks
-   *   The content blocks of a stored message, or of a tool result.
-   *
-   * @return string
-   *   The text of every text block, joined.
-   */
-  public function textOf(array $blocks): string;
-
-  /**
    * Returns what the tools of this session answered, in the order they ran.
    *
    * @return array

@@ -11,6 +11,7 @@ use Drupal\Core\Entity\EntityStorageInterface;
 use Drupal\Core\Entity\EntityTypeInterface;
 use Drupal\Core\Field\BaseFieldDefinition;
 use Drupal\node\NodeInterface;
+use Drupal\oe_ai_assistant\Utility\MessageContent;
 use Drupal\user\EntityOwnerTrait;
 
 /**
@@ -173,7 +174,9 @@ class AiEditorialSession extends ContentEntityBase implements AiEditorialSession
         continue;
       }
 
-      $text = $this->textOf((array) ($row->getContent() ?? []));
+      $text = MessageContent::toText((array) ($row->getContent() ?? []));
+      // A tool result carries no content at all, so its text is empty and
+      // the row is skipped.
       if ($text !== '') {
         $turns[] = ['role' => $role, 'text' => $text];
       }
@@ -214,16 +217,6 @@ class AiEditorialSession extends ContentEntityBase implements AiEditorialSession
     assert($storage instanceof NeuronMessageStorageInterface);
 
     return array_values($storage->loadMultiple($storage->activeIds($threadId)));
-  }
-
-  /**
-   * {@inheritdoc}
-   */
-  public function textOf(array $blocks): string {
-    return implode('', array_map(
-      static fn (array $block): string => (string) ($block['content'] ?? ''),
-      array_filter($blocks, static fn ($block): bool => is_array($block) && ($block['type'] ?? '') === 'text'),
-    ));
   }
 
   /**

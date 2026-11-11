@@ -29,6 +29,7 @@ use Drupal\oe_ai_assistant\Service\DraftingSchemaProviderInterface;
 use Drupal\oe_ai_assistant\Service\PreviewRendererInterface;
 use Drupal\oe_ai_assistant\Response\SseResponse;
 use Drupal\oe_ai_assistant\Plugin\NeuronWorkflow\Editorial\Events\ChatTurnEvent;
+use Drupal\oe_ai_assistant\Utility\MessageContent;
 use NeuronAI\Workflow\Executor\ExecutionRequest;
 use NeuronAI\Workflow\Streaming\ProtocolEvent;
 use Symfony\Component\DependencyInjection\ContainerInterface;
@@ -445,7 +446,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
       if (!in_array($role, ['user', 'assistant'], TRUE)) {
         continue;
       }
-      $content = $session->textOf((array) ($row->getContent() ?? []));
+      $content = MessageContent::toText((array) ($row->getContent() ?? []));
       // Skip empty turns that carry neither text nor a tool call.
       if ($content === '') {
         continue;
@@ -569,7 +570,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
       // a draft nobody wrote. A later turn settles the open call with the
       // interruption the library reports, which arrives as content blocks.
       // So the failure here carries the text of those blocks.
-      return self::failedDraft($session->textOf((array) ($result['blocks'] ?? [])));
+      return self::failedDraft(MessageContent::toText((array) ($result['blocks'] ?? [])));
     }
 
     return $session->getDraftRun((int) $result['version']) ?? $result;
