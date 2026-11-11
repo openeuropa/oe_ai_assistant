@@ -183,6 +183,8 @@ function AssistantText({
       return;
     }
 
+    const clearTimers = new WeakMap<HTMLElement, number>();
+
     const onClick = (event: MouseEvent) => {
       const button = (event.target as HTMLElement).closest(
         '[data-streamdown="code-block-copy-button"]',
@@ -197,12 +199,20 @@ function AssistantText({
         return;
       }
       navigator.clipboard.writeText(code).catch(() => {
+        const pending = clearTimers.get(button);
+        if (pending !== undefined) {
+          window.clearTimeout(pending);
+        }
         button.classList.add("streamdown-copy-failed");
         button.title = "Copy failed: the browser refused clipboard access.";
-        window.setTimeout(() => {
-          button.classList.remove("streamdown-copy-failed");
-          button.removeAttribute("title");
-        }, COPY_FAILED_FLAG_MS);
+        clearTimers.set(
+          button,
+          window.setTimeout(() => {
+            button.classList.remove("streamdown-copy-failed");
+            button.removeAttribute("title");
+            clearTimers.delete(button);
+          }, COPY_FAILED_FLAG_MS),
+        );
       });
     };
 

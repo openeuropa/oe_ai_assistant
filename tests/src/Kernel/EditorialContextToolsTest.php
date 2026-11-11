@@ -43,6 +43,38 @@ class EditorialContextToolsTest extends AiEditorialSessionKernelTestBase {
   }
 
   /**
+   * Tests that editorial agent instructions carry no document or tone text.
+   *
+   * Both used to be injected into this prompt directly; they now reach the
+   * model only through context_get_editorial_context and
+   * context_read_document. Nothing asserted their absence here, so a
+   * regression that puts either back into instructions() would pass
+   * unnoticed.
+   */
+  public function testEditorialAgentInstructionsCarryNoDocumentOrToneText(): void {
+    $this->enableModules(['entity_reference_revisions', 'paragraphs', 'link', 'inline_entity_form']);
+    $this->installEntitySchema('paragraph');
+    $this->config('ai.settings')
+      ->set('default_providers', ['chat_with_tools' => ['provider_id' => 'mock_ai', 'model_id' => 'mock-model']])
+      ->save();
+    $session = $this->stubbedSession([
+      'id' => '3',
+      'label' => 'Formal',
+      'prompt' => 'Use professional, institutional language.',
+    ], [
+      self::document('1', 'done', 'The quarterly figures are confidential.', 'Summary one.'),
+    ]);
+
+    $agent = $this->container->get(NeuronAgentManagerInterface::class)
+      ->createAgent('editorial', ['session' => $session]);
+
+    $instructions = $agent->getInstructions()->getContent();
+
+    $this->assertStringNotContainsString('The quarterly figures are confidential.', $instructions);
+    $this->assertStringNotContainsString('Use professional, institutional language.', $instructions);
+  }
+
+  /**
    * Tests that the context tool reports the tone label, never its guidelines.
    *
    * The summary is reported, never the extracted text: that is what
