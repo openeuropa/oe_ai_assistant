@@ -44,7 +44,7 @@ final class ReferenceBuilder extends FieldItemSchemaBuilderBase {
     foreach (array_keys($bundles) as $bundle) {
       // SchemaApi answers with nothing when this bundle is already being
       // walked, which is how a reference back to an ancestor ends.
-      $variant = $this->schemaApi->get($targetType, $bundle);
+      $variant = $this->schemaApi->get($targetType, $bundle, $context->parameters);
       if ($variant !== []) {
         $variants[] = $variant;
       }

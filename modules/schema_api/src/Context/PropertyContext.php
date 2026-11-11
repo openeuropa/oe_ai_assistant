@@ -28,6 +28,8 @@ final class PropertyContext extends FieldContext {
    * @param array $constraints
    *   Constraint options keyed by constraint name, from the property
    *   definition and from the ComplexData constraints of the field item.
+   * @param array $parameters
+   *   What the caller of SchemaApi::get() passed in.
    */
   public function __construct(
     string $entityTypeId,
@@ -36,8 +38,9 @@ final class PropertyContext extends FieldContext {
     public readonly string $propertyName,
     public readonly DataDefinitionInterface $propertyDefinition,
     array $constraints,
+    array $parameters = [],
   ) {
-    parent::__construct($entityTypeId, $bundle, $fieldDefinition, $constraints);
+    parent::__construct($entityTypeId, $bundle, $fieldDefinition, $constraints, $parameters);
   }
 
 }

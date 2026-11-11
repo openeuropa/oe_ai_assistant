@@ -23,12 +23,15 @@ class FieldContext {
    * @param array $constraints
    *   Constraint options keyed by constraint name, belonging to the level
    *   this context describes rather than to the field throughout.
+   * @param array $parameters
+   *   What the caller of SchemaApi::get() passed in.
    */
   public function __construct(
     public readonly string $entityTypeId,
     public readonly string $bundle,
     public readonly FieldDefinitionInterface $fieldDefinition,
     public readonly array $constraints = [],
+    public readonly array $parameters = [],
   ) {}
 
   /**

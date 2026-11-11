@@ -40,7 +40,7 @@ final class SchemaApi implements SchemaApiInterface {
   /**
    * {@inheritdoc}
    */
-  public function get(string $entityTypeId, string $bundle): array {
+  public function get(string $entityTypeId, string $bundle, array $parameters = []): array {
     // A builder may walk into a referenced bundle, which can lead back here.
     // Returning nothing lets the builder that asked drop the branch, and
     // keeps a bundle that reaches itself from recurring without end.
@@ -51,7 +51,7 @@ final class SchemaApi implements SchemaApiInterface {
     $this->walking[$key] = TRUE;
 
     try {
-      return $this->bundle($entityTypeId, $bundle);
+      return $this->bundle($entityTypeId, $bundle, $parameters);
     }
     finally {
       unset($this->walking[$key]);
@@ -61,7 +61,7 @@ final class SchemaApi implements SchemaApiInterface {
   /**
    * Walks the fields of one bundle.
    */
-  private function bundle(string $entityTypeId, string $bundle): array {
+  private function bundle(string $entityTypeId, string $bundle, array $parameters): array {
     $properties = [];
     $required = [];
 
@@ -71,6 +71,7 @@ final class SchemaApi implements SchemaApiInterface {
         $bundle,
         $definition,
         $this->options($definition->getConstraints()),
+        $parameters,
       );
       $field = $this->field($context);
       if ($field === NULL) {
@@ -123,6 +124,7 @@ final class SchemaApi implements SchemaApiInterface {
         $name,
         $definition,
         $this->options($definition->getConstraints() + ($constraints[$name] ?? [])),
+        $context->parameters,
       ));
     }
 
@@ -132,6 +134,7 @@ final class SchemaApi implements SchemaApiInterface {
         $context->bundle,
         $context->fieldDefinition,
         $this->options($itemDefinition->getConstraints()),
+        $context->parameters,
       ),
       ['properties' => $properties],
     );
