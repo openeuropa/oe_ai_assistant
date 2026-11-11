@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\oe_ai_assistant\Service\Drafting;
 
+use Drupal\ai_neuron\Agent\NeuronAgentInterface;
 use Drupal\ai_neuron\Agent\NeuronAgentManagerInterface;
 use Drupal\Component\Datetime\TimeInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
@@ -290,11 +291,37 @@ final class DocumentExtractionProcessor implements DocumentExtractionProcessorIn
    *
    * The call is not streamed and the extract is capped so a long document
    * never overflows the model context.
+   *
+   * Built from the plugin directly instead of
+   * NeuronAgentManager::createAgent(): this run has no editorial session to
+   * key a thread on, and the manager unconditionally binds the site's
+   * persisted message store and workflow persistence to every agent it
+   * builds, which would leave this one-off call as an orphaned, unreadable
+   * row nothing ever deletes.
    */
   private function summarize(string $text): string {
-    $agent = $this->agents->createAgent('document_summary');
+    $plugin = $this->agents->createInstance('document_summary');
+    assert($plugin instanceof NeuronAgentInterface);
+
+    try {
+      $agent = $plugin->getNeuron();
+    }
+    catch (\InvalidArgumentException $e) {
+      throw new DocumentExtractionException('No default chat provider is configured.', 0, $e);
+    }
+
     $message = new UserMessage(mb_substr($text, 0, self::MAX_PROMPT_CHARS));
-    $summary = trim((string) $agent->chat($message)->getMessage()?->getContent());
+    $response = $agent->chat($message)->getMessage();
+    if ($response === NULL) {
+      throw new DocumentExtractionException('The provider returned no response.');
+    }
+
+    $content = $response->getContent();
+    if ($content === NULL) {
+      throw new DocumentExtractionException('The provider returned a response with no text content.');
+    }
+
+    $summary = trim($content);
     if ($summary === '') {
       throw new DocumentExtractionException('The provider returned an empty summary.');
     }
