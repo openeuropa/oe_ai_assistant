@@ -301,7 +301,9 @@ final class DocumentExtractionProcessor implements DocumentExtractionProcessorIn
    */
   private function summarize(string $text): string {
     $plugin = $this->agents->createInstance('document_summary');
-    assert($plugin instanceof NeuronAgentInterface);
+    if (!$plugin instanceof NeuronAgentInterface) {
+      throw new DocumentExtractionException('The document_summary plugin is not a Neuron agent.');
+    }
 
     try {
       $agent = $plugin->getNeuron();
