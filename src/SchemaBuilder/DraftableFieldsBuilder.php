@@ -14,9 +14,9 @@ use Drupal\schema_api\Context\FieldContext;
  * Leaves out the fields an editor never fills in by hand.
  *
  * A bundle carries two dozen base fields that Drupal keeps for itself, such
- * as the identifiers, the timestamps and the publishing flags. None of them
- * has a value worth asking for, and describing one invites an answer that is
- * thrown away.
+ * as the identifiers, the timestamps and the publishing flags. There's
+ * nothing to ask the model about them, and describing one only invites a
+ * value we'd throw away.
  */
 #[FieldSchemaBuilder(
   weight: -50,
@@ -26,10 +26,20 @@ final class DraftableFieldsBuilder extends FieldSchemaBuilderBase {
   /**
    * The base fields kept besides the label and the bundle.
    *
-   * These two carry a value this module pins, so they stay in the schema and
-   * another builder states what the value is.
+   * We pin langcode and moderation_state rather than ask for them, so they
+   * have to stay in the schema for LangcodeBuilder and ModerationStateBuilder
+   * to state the value.
    */
   private const PINNED = ['langcode', 'moderation_state'];
+
+  /**
+   * The entity type whose plumbing is worth pinning.
+   *
+   * A draft is one node, and the language and workflow state are decided for
+   * that node. A paragraph inside it inherits both, so naming them again on
+   * every paragraph only gives a drafter more to echo back.
+   */
+  private const PINNED_ENTITY_TYPE = 'node';
 
   public function __construct(
     private readonly EntityTypeManagerInterface $entityTypeManager,
@@ -45,10 +55,10 @@ final class DraftableFieldsBuilder extends FieldSchemaBuilderBase {
     }
 
     $keys = $this->entityTypeManager->getDefinition($context->entityTypeId)->getKeys();
-    $kept = array_merge(
-      array_filter([$keys['label'] ?? NULL, $keys['bundle'] ?? NULL]),
-      self::PINNED,
-    );
+    $kept = array_filter([$keys['label'] ?? NULL, $keys['bundle'] ?? NULL]);
+    if ($context->entityTypeId === self::PINNED_ENTITY_TYPE) {
+      $kept = array_merge($kept, self::PINNED);
+    }
 
     return in_array($context->fieldDefinition->getName(), $kept, TRUE) ? $schema : NULL;
   }

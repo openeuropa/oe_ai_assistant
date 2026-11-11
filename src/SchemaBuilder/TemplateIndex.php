@@ -5,15 +5,16 @@ declare(strict_types=1);
 namespace Drupal\oe_ai_assistant\SchemaBuilder;
 
 use Drupal\oe_ai_assistant\AiDraftingTemplateInterface;
+use Drupal\oe_ai_assistant\Service\TemplateDefaultsResolverInterface;
 
 /**
  * Answers what a drafting template says about one bundle.
  *
- * A template nests by field, so the fields of a paragraph sit under the
- * reference that reaches it. A builder sees only the bundle it is describing
- * and never the path taken to get there, so the tree is flattened by bundle
- * on the way in. A bundle named twice in one template therefore has one set
- * of fields and one set of defaults, whichever reference reached it.
+ * A template nests by field, so a paragraph's fields sit under the reference
+ * that reaches them. A builder only ever sees the bundle it's describing and
+ * never the path taken to get there, so we flatten the tree by entity type
+ * and bundle on the way in. A bundle the template names twice then ends up
+ * with one set of fields and one set of defaults, pooled from both places.
  */
 final class TemplateIndex {
 
@@ -27,8 +28,16 @@ final class TemplateIndex {
    */
   private array $defaults = [];
 
-  public function __construct(AiDraftingTemplateInterface $template) {
-    $this->read('node', $template->getContentType(), $template->getFields(), $template->resolveDefaults());
+  public function __construct(
+    private readonly TemplateDefaultsResolverInterface $defaultsResolver,
+    AiDraftingTemplateInterface $template,
+  ) {
+    $this->read(
+      'node',
+      $template->getContentType(),
+      $template->getFields(),
+      $template->getDefaults(),
+    );
   }
 
   /**
@@ -62,7 +71,10 @@ final class TemplateIndex {
       array_keys($defaults),
     );
 
-    foreach ($defaults as $fieldName => $default) {
+    // Run the defaults through the resolver first. A stored default can
+    // name its target by uuid or carry a __NOW__ token, and neither means
+    // anything in a schema.
+    foreach ($this->defaultsResolver->resolve($defaults, $entityTypeId, $bundle) as $fieldName => $default) {
       $this->defaults[$entityTypeId][$bundle][$fieldName] = $default['default_value'] ?? $default;
     }
 

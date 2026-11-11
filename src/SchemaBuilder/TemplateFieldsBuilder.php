@@ -12,10 +12,10 @@ use Drupal\schema_api\Context\FieldContext;
 /**
  * Narrows a bundle to the fields the chosen template asks for.
  *
- * A bundle describes far more than any one piece of writing needs, and every
- * field left in is one more thing a model is invited to invent. The template
- * is the editor's answer to what this draft is about, so nothing outside it
- * is described.
+ * A bundle has far more fields than any one piece of writing needs, and
+ * every field left in is one more the model may invent a value for. The
+ * template is where the editor said what this draft covers, so anything it
+ * doesn't name is dropped.
  */
 #[FieldSchemaBuilder(
   weight: -40,
@@ -35,15 +35,16 @@ final class TemplateFieldsBuilder extends FieldSchemaBuilderBase {
       return $schema;
     }
 
-    // A bundle the template says nothing about is described in full, which
-    // is what a reference into an undeclared paragraph type needs.
+    // Keep every field of a bundle the template says nothing about. A
+    // template can name a reference field without listing the paragraph
+    // types behind it, and dropping their fields would leave them empty.
     if (!$template->covers($context->entityTypeId, $context->bundle)) {
       return $schema;
     }
 
-    // The bundle field names which bundle a payload is, which is how the
-    // denormalizer picks an entity class and how a reader tells the variants
-    // of a reference apart. No template needs to ask for it.
+    // Always keep the bundle field, whatever the template says. It's what
+    // BundleKeyBuilder pins so the denormalizer can pick an entity class and
+    // a reader can tell the variants of a reference apart.
     $bundleKey = $this->entityTypeManager
       ->getDefinition($context->entityTypeId)
       ->getKey('bundle');

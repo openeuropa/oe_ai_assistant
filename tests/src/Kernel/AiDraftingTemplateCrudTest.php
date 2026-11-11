@@ -50,6 +50,7 @@ class AiDraftingTemplateCrudTest extends KernelTestBase {
     'paragraphs',
     // This project.
     'oe_ai_assistant',
+    'schema_api',
     'state_machine',
     'document_loader',
     'document_loader_tika',
@@ -452,9 +453,13 @@ class AiDraftingTemplateCrudTest extends KernelTestBase {
   }
 
   /**
-   * Tests that referenced items do not support nested defaults.
+   * Tests that a reference item may pin a value on the bundle it names.
+   *
+   * A paragraph inside a draft is reached only by walking into it, so the
+   * value a template pins there is declared beside the fields of the same
+   * item rather than at the top of the template.
    */
-  public function testNestedDefaultsOnReferenceItemAreInvalid(): void {
+  public function testNestedDefaultsOnReferenceItemAreValid(): void {
     $template = $this->buildTemplate('oe_news', [
       'title' => ['prompt' => 'Headline.'],
       'field_contacts' => [
@@ -475,12 +480,8 @@ class AiDraftingTemplateCrudTest extends KernelTestBase {
         ],
       ],
     ]);
-    $result = $template->validate();
 
-    $this->assertErrorMatches(
-      "/'defaults' is not a supported key./",
-      $this->violationMessages($result)
-    );
+    $this->assertSame([], $this->violationMessages($template->validate()));
   }
 
   /**

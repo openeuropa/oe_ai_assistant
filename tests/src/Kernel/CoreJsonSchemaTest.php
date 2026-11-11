@@ -69,6 +69,7 @@ class CoreJsonSchemaTest extends KernelTestBase {
     'key',
     'ai',
     'oe_ai_assistant',
+    'schema_api',
     'state_machine',
     'document_loader',
     'document_loader_tika',
@@ -501,7 +502,7 @@ class CoreJsonSchemaTest extends KernelTestBase {
    *
    * Note: the JSON shape used here is core's deserialization input shape
    * (matching what `$serializer->normalize($entity, 'json')` would emit),
-   * NOT the LLM-facing shape produced by EntityJsonSchemaComposer (which
+   * NOT the LLM-facing shape the drafting schema produces (which
    * uses x-targetType/x-bundles extension keys and a wrapped envelope).
    * The LLM is expected to emit values matching core's input contract.
    */

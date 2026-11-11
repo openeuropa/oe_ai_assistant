@@ -121,21 +121,32 @@ class NewsSchemaTest extends KernelTestBase {
   }
 
   /**
-   * Tests the schema a drafting template narrows the bundle down to.
-   *
-   * The template names four fields and three paragraph slots across two
-   * bundles, and pins the language. Everything it does not name is left out,
-   * at the top level and inside each paragraph.
+   * Builds the index of a template the test module installs.
    */
-  public function testTemplateNarrowsTheSchema(): void {
+  private function index(string $id): TemplateIndex {
     $template = $this->container
       ->get('entity_type.manager')
       ->getStorage('ai_drafting_template')
-      ->load('news_with_paragraphs');
+      ->load($id);
 
+    return new TemplateIndex(
+      $this->container->get('Drupal\oe_ai_assistant\Service\TemplateDefaultsResolverInterface'),
+      $template,
+    );
+  }
+
+  /**
+   * Tests the schema a drafting template narrows the bundle down to.
+   *
+   * The news_with_paragraphs template asks for the title, the teaser and
+   * three paragraph slots across two bundles, and pins the language.
+   * Anything it doesn't name is dropped, at the top level and inside each
+   * paragraph.
+   */
+  public function testTemplateNarrowsTheSchema(): void {
     $schema = $this->container
       ->get('Drupal\schema_api\SchemaApiInterface')
-      ->get('node', 'oe_news', ['template' => new TemplateIndex($template)]);
+      ->get('node', 'oe_news', ['template' => $this->index('news_with_paragraphs')]);
 
     $path = sys_get_temp_dir() . '/oe_news.template.schema.json';
     file_put_contents($path, json_encode($schema, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
@@ -148,13 +159,14 @@ class NewsSchemaTest extends KernelTestBase {
       'field_teaser',
     ], array_keys($schema['properties']));
 
-    // The pinned language is stated rather than applied after the answer.
+    // The pinned language is in the schema as a const, not merged into the
+    // answer once the model has sent it.
     $this->assertSame(
       'en',
       $schema['properties']['langcode']['items']['properties']['value']['const'],
     );
 
-    // Each paragraph carries only the fields its slot names.
+    // Each paragraph type carries only the fields the template names for it.
     $variants = $schema['properties']['field_content_paragraphs']['items']['oneOf'];
     $this->assertSame(
       [
@@ -174,6 +186,32 @@ class NewsSchemaTest extends KernelTestBase {
     );
 
     $this->assertFileExists($path);
+  }
+
+  /**
+   * Tests that a value pinned on a paragraph reaches the nested schema.
+   *
+   * The default sits on a reference item, so it only describes a bundle the
+   * walk reaches by recursing into the paragraph field.
+   */
+  public function testTemplatePinsNestedValue(): void {
+    $schema = $this->container
+      ->get('Drupal\schema_api\SchemaApiInterface')
+      ->get('node', 'oe_news', ['template' => $this->index('news_nested_defaults')]);
+
+    $quote = $schema['properties']['field_content_paragraphs']['items']['oneOf'][0];
+
+    $this->assertSame(
+      'European Commission',
+      $quote['properties']['field_quote_attribution']['items']['properties']['value']['const'],
+    );
+
+    // The other field of the paragraph is described as usual, so the model
+    // still writes it.
+    $this->assertArrayNotHasKey(
+      'const',
+      $quote['properties']['field_quote_text']['items']['properties']['value'],
+    );
   }
 
 }

@@ -10,14 +10,15 @@ use Drupal\schema_api\Context\ItemContext;
 use Drupal\schema_api\SchemaApiInterface;
 
 /**
- * Describes what a reference points at, instead of only its identifier.
+ * Describes the entity an entity_reference_revisions field points at.
  *
- * Without this an item of a reference field says no more than "an integer",
- * which a reader cannot act on. Walking into each bundle the field accepts
- * gives a choice between whole entities.
+ * This field type owns its target. A paragraph is created with its parent
+ * and saved with it, so one payload can carry the whole thing. A plain
+ * entity_reference points at an entity with a life of its own, found or
+ * created elsewhere, and there the identifier is all we can describe.
  */
 #[FieldItemSchemaBuilder(
-  field_type: ['entity_reference', 'entity_reference_revisions'],
+  field_type: 'entity_reference_revisions',
   weight: 50,
 )]
 final class ReferenceBuilder extends FieldItemSchemaBuilderBase {

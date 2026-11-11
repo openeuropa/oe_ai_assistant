@@ -11,10 +11,10 @@ use Drupal\schema_api\Context\FieldContext;
 /**
  * States the values the chosen template pins on a field.
  *
- * Merging a default into the answer after the fact leaves the document that
- * is finally built unchecked, because validation already ran. Saying the
- * value in the schema puts it inside what is validated, and a model that
- * writes around it cannot contradict it.
+ * We could merge a pinned value into the answer once it comes back, but
+ * validation has run by then and what we build from it would go unchecked.
+ * Stating it as a const keeps the value inside what gets validated, and the
+ * model can't answer with anything else.
  */
 #[FieldSchemaBuilder(
   weight: 40,
@@ -39,8 +39,9 @@ final class TemplateDefaultsBuilder extends FieldSchemaBuilderBase {
       return $schema;
     }
 
-    // A default is stored as the field would hold it, a list of items each
-    // holding its columns. One item is all a pinned value ever needs.
+    // A default is stored the way the field holds it, a list of items with
+    // their columns. Only the first item is pinned, since a pinned value
+    // never needs more than one.
     $item = reset($default);
     foreach ($item as $property => $value) {
       $schema['items']['properties'][$property]['const'] = $value;

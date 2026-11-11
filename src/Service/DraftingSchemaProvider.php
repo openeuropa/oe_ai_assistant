@@ -4,19 +4,23 @@ declare(strict_types=1);
 
 namespace Drupal\oe_ai_assistant\Service;
 
+use Drupal\Core\Entity\EntityFieldManagerInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\oe_ai_assistant\AiDraftingTemplateInterface;
 use Drupal\oe_ai_assistant\Exception\DraftingTemplateException;
+use Drupal\oe_ai_assistant\SchemaBuilder\TemplateIndex;
+use Drupal\schema_api\SchemaApiInterface;
 
 /**
- * Resolves a drafting template and returns the (template-pruned) field groups.
+ * Resolves a drafting template and returns the field groups it asks for.
  */
 class DraftingSchemaProvider implements DraftingSchemaProviderInterface {
 
   public function __construct(
-    private readonly EntityJsonSchemaComposer $composer,
-    private readonly TemplateSchemaFilterInterface $filter,
+    private readonly SchemaApiInterface $schemaApi,
+    private readonly TemplateDefaultsResolverInterface $defaultsResolver,
     private readonly EntityTypeManagerInterface $entityTypeManager,
+    private readonly EntityFieldManagerInterface $entityFieldManager,
   ) {}
 
   /**
@@ -24,11 +28,68 @@ class DraftingSchemaProvider implements DraftingSchemaProviderInterface {
    */
   public function groups(string $entityTypeId, string $bundle, ?string $templateId = NULL): array {
     $template = $this->resolveTemplate($entityTypeId, $bundle, $templateId);
-    if ($template === NULL) {
-      return $this->composer->splitSchemaIntoGroups($entityTypeId, $bundle);
+    $parameters = $template === NULL
+      ? []
+      : ['template' => new TemplateIndex($this->defaultsResolver, $template)];
+
+    $schema = $this->schemaApi->get($entityTypeId, $bundle, $parameters);
+
+    return $this->split($entityTypeId, $bundle, $schema);
+  }
+
+  /**
+   * Splits a bundle schema into the groups the drafters work on.
+   *
+   * One drafter writes a whole group, so a group is as much as a single call
+   * should carry. Every scalar field goes in one group, and each field that
+   * holds entities of its own gets a group to itself, which keeps a long run
+   * of paragraphs out of the call that writes the title.
+   *
+   * @return array
+   *   Ordered groups, each with 'groupId', 'label', 'fieldNames' and
+   *   'schemaSlice' keys.
+   */
+  private function split(string $entityTypeId, string $bundle, array $schema): array {
+    $definitions = $this->entityFieldManager->getFieldDefinitions($entityTypeId, $bundle);
+
+    $mainFields = [];
+    $groups = [];
+    foreach ($schema['properties'] ?? [] as $fieldName => $fieldSchema) {
+      if (!isset($fieldSchema['items']['oneOf'])) {
+        $mainFields[$fieldName] = $fieldSchema;
+        continue;
+      }
+      $groups[] = [
+        'groupId' => $fieldName,
+        'label' => isset($definitions[$fieldName])
+          ? (string) $definitions[$fieldName]->getLabel()
+          : $fieldName,
+        'fieldNames' => [$fieldName],
+        'schemaSlice' => $this->slice([$fieldName => $fieldSchema]),
+      ];
     }
-    $schema = $this->composer->compose($entityTypeId, $bundle);
-    return $this->filter->splitIntoGroups($schema, $template);
+
+    if ($mainFields !== []) {
+      array_unshift($groups, [
+        'groupId' => 'main_fields',
+        'label' => 'Main fields',
+        'fieldNames' => array_keys($mainFields),
+        'schemaSlice' => $this->slice($mainFields),
+      ]);
+    }
+
+    return $groups;
+  }
+
+  /**
+   * Wraps the fields of one group in a schema a drafter can be given.
+   */
+  private function slice(array $properties): array {
+    return [
+      'type' => 'object',
+      'properties' => $properties,
+      'additionalProperties' => FALSE,
+    ];
   }
 
   /**

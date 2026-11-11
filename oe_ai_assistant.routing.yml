@@ -33,17 +33,6 @@ oe_ai_assistant.drafting_preview:
   requirements:
     _permission: 'use oe ai assistant'
 
-# Content schema route: returns the JSON Schema for an entity type/bundle.
-oe_ai_assistant.content_schema:
-  path: /api/ai/content-schema/{entity_type_id}/{bundle}
-  defaults:
-    _controller: \Drupal\oe_ai_assistant\Controller\ContentSchemaController::get
-  methods: [GET]
-  requirements:
-    _permission: 'use oe ai assistant'
-    entity_type_id: '[a-z][a-z0-9_]*'
-    bundle: '[a-z][a-z0-9_]*'
-
 # Templates
 entity.ai_drafting_template.collection:
   path: '/admin/config/ai-editorial/templates'

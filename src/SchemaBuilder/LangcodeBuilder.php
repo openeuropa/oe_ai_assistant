@@ -12,11 +12,11 @@ use Drupal\schema_api\Context\FieldContext;
 /**
  * Pins a draft to the default language of the site.
  *
- * Stating the language as a const rather than applying it after the answer
- * means the document a model returns is checked whole, with the language in
- * it, instead of being changed once nothing validates it any more.
+ * The language is a const in the schema rather than something set on the
+ * answer afterwards, so it's there while the document is validated.
  */
 #[FieldSchemaBuilder(
+  entity_type: 'node',
   field_name: 'langcode',
   weight: 30,
 )]

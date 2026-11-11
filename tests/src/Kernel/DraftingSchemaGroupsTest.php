@@ -6,7 +6,6 @@ namespace Drupal\Tests\oe_ai_assistant\Kernel;
 
 use Drupal\KernelTests\KernelTestBase;
 use Drupal\oe_ai_assistant\Service\DraftingSchemaProviderInterface;
-use Drupal\oe_ai_assistant\Service\EntityJsonSchemaComposer;
 use PHPUnit\Framework\Attributes\Group;
 
 /**
@@ -45,6 +44,7 @@ class DraftingSchemaGroupsTest extends KernelTestBase {
     'ai',
     'ai_neuron',
     'oe_ai_assistant',
+    'schema_api',
     'state_machine',
     'document_loader',
     'document_loader_tika',
@@ -59,7 +59,7 @@ class DraftingSchemaGroupsTest extends KernelTestBase {
     $groups = $this->resolveGroups('node', 'oe_news', 'news_default');
 
     $byId = array_column($groups, 'fieldNames', 'groupId');
-    $this->assertSame(['title', 'field_teaser', 'field_body'], $byId['main_fields']);
+    $this->assertSame(['langcode', 'type', 'title', 'field_body', 'field_teaser'], $byId['main_fields']);
     $this->assertArrayNotHasKey('field_content_paragraphs', $byId);
     $this->assertNotContains('field_news_type', $byId['main_fields']);
   }
@@ -82,81 +82,44 @@ class DraftingSchemaGroupsTest extends KernelTestBase {
     $groups = $this->resolveGroups('node', 'oe_news');
 
     $byId = array_column($groups, 'fieldNames', 'groupId');
-    $this->assertSame(['title', 'field_teaser'], $byId['main_fields']);
+    $this->assertSame(['langcode', 'type', 'title', 'field_teaser'], $byId['main_fields']);
     $this->assertArrayHasKey('field_content_paragraphs', $byId);
     $this->assertNotContains('field_body', $byId['main_fields']);
   }
 
   /**
-   * Tests that oe_news schema splits into expected groups.
+   * Tests that a field holding whole entities is drafted on its own.
+   *
+   * One drafter writes a whole group, and a run of paragraphs is far more
+   * than belongs in the call that writes the title.
    */
-  public function testSplitsOeNewsIntoGroups(): void {
-    $groups = $this->composer()->splitSchemaIntoGroups('node', 'oe_news');
+  public function testReferenceFieldGetsItsOwnGroup(): void {
+    $groups = $this->resolveGroups('node', 'oe_news', 'news_with_paragraphs');
+    $byId = array_column($groups, 'fieldNames', 'groupId');
 
-    $groupIds = array_column($groups, 'groupId');
-    $this->assertContains('main_fields', $groupIds,
-      'Should have a main_fields group.');
+    $this->assertSame(['field_content_paragraphs'], $byId['field_content_paragraphs']);
+    $this->assertNotContains('field_content_paragraphs', $byId['main_fields']);
 
-    // field_content_paragraphs is entity_reference_revisions
-    // and should get its own group.
-    $this->assertContains('field_content_paragraphs', $groupIds,
-      'Paragraphs field should get its own group.');
-
-    // Main fields should contain title and body.
-    $mainGroup = $groups[array_search('main_fields', $groupIds)];
-    $this->assertContains('title', $mainGroup['fieldNames']);
-    $this->assertContains('field_body', $mainGroup['fieldNames']);
-
-    // Main fields should NOT contain the paragraph field.
-    $this->assertNotContains('field_content_paragraphs',
-      $mainGroup['fieldNames']);
-
-    // Taxonomy/media references should stay in main_fields.
-    $this->assertContains('field_news_tags',
-      $mainGroup['fieldNames'],
-      'Taxonomy reference should stay in main_fields.');
-
-    // Each group should have a schemaSlice with properties.
-    foreach ($groups as $group) {
-      $this->assertArrayHasKey('schemaSlice', $group);
-      $this->assertArrayHasKey('properties',
-        $group['schemaSlice']);
-    }
+    // The group is named after the field, so an editor watching a draft
+    // being written reads the label they know.
+    $labels = array_column($groups, 'label', 'groupId');
+    $this->assertSame('Content paragraphs', $labels['field_content_paragraphs']);
   }
 
   /**
-   * Tests that group labels come from Drupal field definitions.
+   * Tests that a bundle with no template is described field for field.
+   *
+   * A plain reference points at an entity with a life of its own, so it is
+   * named rather than written, and it belongs with the other scalars.
    */
-  public function testGroupLabelsFromFieldDefinitions(): void {
-    $groups = $this->composer()->splitSchemaIntoGroups('node', 'oe_news');
+  public function testBundleWithoutTemplateKeepsEveryField(): void {
+    $groups = $this->resolveGroups('node', 'oe_contact');
+    $byId = array_column($groups, 'fieldNames', 'groupId');
 
-    $groupIds = array_column($groups, 'groupId');
-    $paraIndex = array_search('field_content_paragraphs', $groupIds);
-    if ($paraIndex !== FALSE) {
-      $this->assertEquals(
-        'Content paragraphs',
-        $groups[$paraIndex]['label'],
-        'Group label should come from the Drupal field label.'
-      );
+    $this->assertSame(['main_fields'], array_keys($byId));
+    foreach (['field_contact_name', 'field_contact_email', 'field_contact_role'] as $name) {
+      $this->assertContains($name, $byId['main_fields']);
     }
-  }
-
-  /**
-   * Tests that taxonomy and media references stay in main_fields.
-   */
-  public function testSimpleReferencesStayInMainFields(): void {
-    $groups = $this->composer()->splitSchemaIntoGroups('node', 'oe_news');
-    $groupIds = array_column($groups, 'groupId');
-
-    $mainGroup = $groups[array_search('main_fields', $groupIds)];
-
-    $this->assertContains('field_news_tags',
-      $mainGroup['fieldNames'],
-      'Taxonomy reference should stay in main_fields.');
-
-    $this->assertContains('field_news_image',
-      $mainGroup['fieldNames'],
-      'Image/file reference should stay in main_fields.');
   }
 
   /**
@@ -178,13 +141,6 @@ class DraftingSchemaGroupsTest extends KernelTestBase {
     ]);
 
     $this->installConfig(['oe_ai_assistant_test']);
-  }
-
-  /**
-   * Returns the composer service from the container.
-   */
-  private function composer(): EntityJsonSchemaComposer {
-    return $this->container->get(EntityJsonSchemaComposer::class);
   }
 
   /**

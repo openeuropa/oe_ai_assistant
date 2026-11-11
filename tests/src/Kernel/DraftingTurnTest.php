@@ -87,6 +87,8 @@ class DraftingTurnTest extends AiEditorialSessionKernelTestBase {
     $this->assertSame(['Draft 1'], array_column($drafts, 'name'));
     $this->assertSame('news_with_paragraphs', $drafts[0]['context']['template']['id']);
     $this->assertSame([
+      'langcode' => [['value' => 'en']],
+      'type' => [['target_id' => 'oe_news']],
       'title' => [['value' => 'T']],
       'field_teaser' => [['value' => 'S']],
       'field_content_paragraphs' => [
@@ -624,7 +626,8 @@ class DraftingTurnTest extends AiEditorialSessionKernelTestBase {
     // The reply that reads the first draft asks for a second one.
     MockAiProvider::enqueue($this->toolCall('call_2'));
     MockAiProvider::enqueue(new MockResponse(
-      text: '{"title": [{"value": "T2"}], "field_teaser": [{"value": "S2"}]}',
+      text: '{"langcode": [{"value": "en"}], "type": [{"target_id": "oe_news"}],'
+      . ' "title": [{"value": "T2"}], "field_teaser": [{"value": "S2"}]}',
     ));
     MockAiProvider::enqueue(new MockResponse(text: self::PARAGRAPHS));
     MockAiProvider::enqueue(new MockResponse(text: 'Draft 2 is ready.'));
@@ -765,7 +768,8 @@ class DraftingTurnTest extends AiEditorialSessionKernelTestBase {
   /**
    * The main_fields answer of a news article.
    */
-  private const MAIN_FIELDS = '{"title": [{"value": "T"}], "field_teaser": [{"value": "S"}]}';
+  private const MAIN_FIELDS = '{"langcode": [{"value": "en"}], "type": [{"target_id": "oe_news"}],'
+    . ' "title": [{"value": "T"}], "field_teaser": [{"value": "S"}]}';
 
   /**
    * The paragraphs answer, matching the text block branch of the schema.

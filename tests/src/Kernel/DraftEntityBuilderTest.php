@@ -53,6 +53,7 @@ class DraftEntityBuilderTest extends KernelTestBase {
     'key',
     'ai',
     'oe_ai_assistant',
+    'schema_api',
     'state_machine',
     'document_loader',
     'document_loader_tika',
