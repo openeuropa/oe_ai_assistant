@@ -1,0 +1,8 @@
+name: 'Schema API'
+type: module
+description: 'Spike: derive JSON Schema for a content entity bundle.'
+package: 'OpenEuropa AI'
+core_version_requirement: ^11
+dependencies:
+  - drupal:serialization
+  - drupal:filter

@@ -1,0 +1,26 @@
+services:
+  _defaults:
+    autoconfigure: true
+    autowire: true
+
+  Drupal\schema_api\SchemaApi: {}
+  Drupal\schema_api\SchemaApiInterface: '@Drupal\schema_api\SchemaApi'
+
+  Drupal\schema_api\Builder\Field\FieldStructureBuilder: {}
+  Drupal\schema_api\Builder\Field\FieldDescriptionBuilder: {}
+  Drupal\schema_api\Builder\Field\BundleKeyBuilder: {}
+
+  Drupal\schema_api\Builder\Item\InternalPropertyBuilder: {}
+  Drupal\schema_api\Builder\Item\ItemStructureBuilder: {}
+  Drupal\schema_api\Builder\Item\ReferenceBuilder: {}
+
+  Drupal\schema_api\Builder\Property\DataTypeBuilder: {}
+  Drupal\schema_api\Builder\Property\LengthBuilder: {}
+  Drupal\schema_api\Builder\Property\RangeBuilder: {}
+  Drupal\schema_api\Builder\Property\CountBuilder: {}
+  Drupal\schema_api\Builder\Property\ChoiceBuilder: {}
+  Drupal\schema_api\Builder\Property\PatternBuilder: {}
+  Drupal\schema_api\Builder\Property\StringFormatBuilder: {}
+  Drupal\schema_api\Builder\Property\ConstantBuilder: {}
+  Drupal\schema_api\Builder\Property\FieldSettingsBuilder: {}
+  Drupal\schema_api\Builder\Property\TextFormatBuilder: {}

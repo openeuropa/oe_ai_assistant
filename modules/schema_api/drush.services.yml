@@ -1,0 +1,5 @@
+services:
+  Drupal\schema_api\Drush\Commands\SchemaApiCommands:
+    arguments: ['@Drupal\schema_api\SchemaApiInterface']
+    tags:
+      - { name: drush.command }

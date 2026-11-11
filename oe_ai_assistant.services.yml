@@ -17,6 +17,8 @@ services:
     tags:
       - { name: http_client_middleware }
 
+  Drupal\oe_ai_assistant\SchemaBuilder\DraftableFieldsBuilder: {}
+
   Drupal\oe_ai_assistant\Service\RequestValidator: {}
 
   Drupal\oe_ai_assistant\Service\EntityJsonSchemaComposer: {}
