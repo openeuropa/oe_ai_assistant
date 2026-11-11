@@ -61,11 +61,11 @@ interface ContentCreationSessionInterface extends AiEditorialSessionInterface {
    * Returns one document the editor attached as background.
    *
    * @param string $id
-   *   The document id, as getDocuments() reports it.
+   *   The document ID, as getDocuments() reports it.
    *
    * @return array|null
    *   The descriptor {id, title, category, status, filename, summary, meta,
-   *   extract}, or NULL when no attached document carries that id.
+   *   extract}, or NULL when no attached document carries that ID.
    */
   public function getDocument(string $id): ?array;
 
