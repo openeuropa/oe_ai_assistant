@@ -40,7 +40,7 @@ final class ReadDocumentNeuronTool extends NeuronToolPluginBase {
    *
    * No enum here: building it would call getDocuments() on the session
    * context while the tool itself is still being constructed, which breaks
-   * any caller that builds the tool generically. An unknown id is instead
+   * any caller that builds the tool generically. An unknown ID is instead
    * reported as a readable error from __invoke(), which only touches the
    * context once the tool actually runs.
    */

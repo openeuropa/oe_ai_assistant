@@ -36,11 +36,12 @@ final class SummaryNeuronAgent extends NeuronAgentPluginBase {
   /**
    * {@inheritdoc}
    *
-   * The base class tags a request with just this plugin's id. Kept at the
-   * pair the direct provider call this agent replaced used to send, so a
-   * site matching moderation or prompt-logging config on 'oe_ai_assistant'
-   * or 'document_summary' keeps screening this input, the one text here an
-   * editor fully controls through an uploaded file.
+   * The base class tags a request with just this plugin's ID. We send the
+   * same two-tag pair ('oe_ai_assistant', 'document_summary') that
+   * DocumentExtractionProcessor's old direct provider call used to send,
+   * so a site's moderation or prompt-logging config keyed on either tag
+   * still screens this input: the one text in this flow an editor fully
+   * controls, through an uploaded file.
    */
   protected function provider(): AIProviderInterface {
     return $this->providers->create($this->operationType(), ['oe_ai_assistant', 'document_summary']);

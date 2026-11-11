@@ -46,8 +46,9 @@ abstract class EditorialSessionAgentBase extends NeuronAgentPluginBase {
    * @param string $extract
    *   The extract to cap.
    *
-   * @return array{0: string, 1: bool}
-   *   The extract, capped if needed, and whether it was capped.
+   * @return array
+   *   Two elements: the extract, capped if needed, and whether it was
+   *   capped.
    */
   public static function truncateDocumentExtract(string $extract): array {
     if (mb_strlen($extract) <= self::MAX_DOCUMENT_CHARS) {

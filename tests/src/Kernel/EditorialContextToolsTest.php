@@ -77,12 +77,12 @@ class EditorialContextToolsTest extends AiEditorialSessionKernelTestBase {
   /**
    * Tests that the context tool reports the tone label, never its guidelines.
    *
-   * The summary is reported, never the extracted text: that is what
-   * context_read_document is for. The tone guidelines text stays off this
-   * tool for the same reason: EditorialNeuronAgent writes no field of the
-   * draft and must stay tone-free, but a tool result lands in a persisted
-   * thread row, so leaking the guidelines here would bake them in as a
-   * standing instruction that outlives a later tone change.
+   * The summary is reported, never the extracted text: that's what
+   * context_read_document is for. The guidelines text is held back for the
+   * same reason explained on GetEditorialContextNeuronTool::__invoke(): a
+   * tool result is saved as a thread row, and a guidelines text baked in
+   * here would go stale, with nothing marking it as such, if the editor
+   * later changed the tone.
    */
   public function testContextToolReportsTheToneLabelNeverItsGuidelines(): void {
     $session = $this->stubbedSession([
@@ -166,7 +166,7 @@ class EditorialContextToolsTest extends AiEditorialSessionKernelTestBase {
    * No enum: building one would read the session's documents while the
    * tool itself is still being constructed, which crashes any caller that
    * builds the editorial tool set generically, such as
-   * NeuronToolManager::createTools(). An unknown id is refused by
+   * NeuronToolManager::createTools(). An unknown ID is refused by
    * __invoke() instead, once the tool actually runs.
    */
   public function testReadDocumentPropertyHasNoEnum(): void {

@@ -165,8 +165,9 @@ const COPY_FAILED_FLAG_MS = 2000;
  * Renders streamed assistant text with Streamdown for incremental
  * markdown rendering.
  *
- * Download stays off: never real source code here. The click listener
- * flags copy failures, which Streamdown's own button swallows silently.
+ * Downloads stay off: this is never real source code worth saving as a
+ * file. Streamdown's own copy button swallows clipboard failures
+ * silently, so the click listener below flags them instead.
  */
 function AssistantText({
   text,
