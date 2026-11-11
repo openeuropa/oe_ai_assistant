@@ -140,7 +140,8 @@ export function DraftRail() {
                   <DraftCard
                     version={draft.version}
                     context={draft.context}
-                    fields={draft.fields}
+                    groups={draft.groups}
+                    status="drafted"
                     isSaved={isSaved}
                     createdAt={draft.createdAt}
                     onOpen={() => openSessionDraft(draft)}

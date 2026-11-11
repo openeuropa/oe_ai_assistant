@@ -36,7 +36,6 @@ class TemplateSchemaFilterTest extends KernelTestBase {
     'link',
     'taxonomy',
     'ai',
-    'ai_agents',
     'entity_reference_revisions',
     'inline_entity_form',
     'key',
@@ -169,6 +168,29 @@ class TemplateSchemaFilterTest extends KernelTestBase {
       'field_content_paragraphs',
       $groups[1]['schemaSlice']['properties'],
     );
+  }
+
+  /**
+   * The filtered schema and every group slice forbid undeclared properties.
+   *
+   * A slice is both the drafter's structured output schema and what
+   * ValidateNode checks the answer against. Leave it open and the model can
+   * answer with a field the group never asked for, validation still passes,
+   * and DraftContentNode::assemble() drops the text it wrote.
+   */
+  public function testTemplateSchemasForbidUndeclaredProperties(): void {
+    $schema = $this->composer()->compose('node', 'oe_news');
+
+    $filtered = $this->filter()->filter($schema, $this->template('news_default'));
+    $this->assertFalse($filtered['additionalProperties'] ?? NULL);
+
+    $groups = $this->filter()->splitIntoGroups($schema, $this->template('news_with_paragraphs'));
+    foreach ($groups as $group) {
+      $this->assertFalse(
+        $group['schemaSlice']['additionalProperties'] ?? NULL,
+        sprintf('The "%s" slice is closed.', $group['groupId']),
+      );
+    }
   }
 
   /**

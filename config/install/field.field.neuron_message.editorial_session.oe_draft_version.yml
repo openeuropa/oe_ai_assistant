@@ -1,0 +1,18 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - ai_neuron.neuron_message_type.editorial_session
+    - field.storage.neuron_message.oe_draft_version
+id: neuron_message.editorial_session.oe_draft_version
+field_name: oe_draft_version
+entity_type: neuron_message
+bundle: editorial_session
+label: 'Draft version'
+description: 'The draft a row of the drafts thread holds, empty on a conversation message.'
+required: false
+translatable: false
+default_value: {  }
+default_value_callback: ''
+settings: {  }
+field_type: string

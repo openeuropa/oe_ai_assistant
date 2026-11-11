@@ -4,12 +4,14 @@ declare(strict_types=1);
 
 namespace Drupal\oe_ai_assistant\Entity;
 
+use Drupal\ai_neuron\Entity\NeuronMessageStorageInterface;
 use Drupal\Core\Entity\ContentEntityBase;
 use Drupal\Core\Entity\EntityChangedTrait;
 use Drupal\Core\Entity\EntityStorageInterface;
 use Drupal\Core\Entity\EntityTypeInterface;
 use Drupal\Core\Field\BaseFieldDefinition;
 use Drupal\node\NodeInterface;
+use Drupal\oe_ai_assistant\Utility\MessageContent;
 use Drupal\user\EntityOwnerTrait;
 
 /**
@@ -47,7 +49,6 @@ use Drupal\user\EntityOwnerTrait;
  *   links = {
  *     "canonical" = "/admin/content/ai/{ai_editorial_session}",
  *     "history" = "/admin/content/ai/{ai_editorial_session}/history",
- *     "neuron-history" = "/admin/content/ai/{ai_editorial_session}/neuron-history",
  *     "add-page" = "/admin/content/ai/add",
  *     "add-form" = "/admin/content/ai/add/{ai_editorial_session_type}",
  *     "delete-form" = "/admin/content/ai/{ai_editorial_session}/delete",
@@ -153,6 +154,69 @@ class AiEditorialSession extends ContentEntityBase implements AiEditorialSession
     }
 
     return $threads;
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function editorialThread(): string {
+    return 'editorial.session_' . $this->id();
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function conversationTurns(): array {
+    $turns = [];
+    foreach ($this->activeThread($this->editorialThread()) as $row) {
+      $role = (string) $row->get('role')->value;
+      if (!in_array($role, ['user', 'assistant'], TRUE)) {
+        continue;
+      }
+
+      $text = MessageContent::toText((array) ($row->getContent() ?? []));
+      // A tool result carries no content at all, so its text is empty and
+      // the row is skipped.
+      if ($text !== '') {
+        $turns[] = ['role' => $role, 'text' => $text];
+      }
+    }
+
+    return $turns;
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function conversationThread(string $threadId): array {
+    $rows = \Drupal::entityTypeManager()
+      ->getStorage('neuron_message')
+      ->loadByProperties(['oe_ai_session' => (int) $this->id(), 'thread_id' => $threadId]);
+    // Keyed by row id, so sorting the keys is what puts the oldest first.
+    ksort($rows);
+
+    return array_values($rows);
+  }
+
+  /**
+   * The rows of a thread that an agent still replays to the model.
+   *
+   * Neuron trims a thread to its agent's context window and stamps the rows
+   * it drops with `archived_at`. Reading the whole thread gives us a prompt
+   * that grows with the session, until it overflows the window the trim was
+   * protecting. So we go through activeIds() and get what the trim left.
+   *
+   * @param string $threadId
+   *   The thread to read.
+   *
+   * @return \Drupal\ai_neuron\Entity\NeuronMessageInterface[]
+   *   The rows, oldest first.
+   */
+  private function activeThread(string $threadId): array {
+    $storage = \Drupal::entityTypeManager()->getStorage('neuron_message');
+    assert($storage instanceof NeuronMessageStorageInterface);
+
+    return array_values($storage->loadMultiple($storage->activeIds($threadId)));
   }
 
   /**

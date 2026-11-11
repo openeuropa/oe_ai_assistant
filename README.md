@@ -9,7 +9,6 @@ Drupal AI.
 - Drupal 11
 - PHP 8.3+
 - [AI module](https://www.drupal.org/project/ai) (^1.3)
-- [AI Agents](https://www.drupal.org/project/ai_agents) (^1.3)
 - Content Moderation (core)
 - [Document Loader](https://www.drupal.org/project/document_loader) (^2.0)
 - [State Machine](https://www.drupal.org/project/state_machine) (^1.14)
@@ -78,6 +77,72 @@ exist until you also build the app yourself or pull the pre-built release artifa
 |-------|--------|-------------|
 | `/api/ai/plugins/{plugin_id}/{action}` | POST | Dispatch plugin actions |
 | `/node/{node}/ai-assistant` | GET | AI Assistant tab on node pages |
+
+## Architecture
+
+A chat turn runs as two Neuron workflows. The `editorial_turn` workflow holds the conversation and suspends the
+agent when it calls the deferred draft tool. The `draft_group` workflow runs once per field group, to write and
+validate the fields of that group. In the diagram, rounded boxes are agents, rectangles are workflow nodes,
+orange is the streaming path and grey is stored state.
+
+```mermaid
+flowchart LR
+  B["Browser (assistant-ui)"]
+  DP["DraftingPlugin::chat()<br/>next version, withChannel(SseChannel)"]
+  B -- "POST /chat" --> DP
+
+  subgraph ET["editorial_turn workflow"]
+    direction TB
+    CN["ChatNode<br/>handles ChatTurnEvent"]
+    AG(["EditorialNeuronAgent<br/>draft tool deferred"])
+    DC["DraftContentNode<br/>groups, assemble, store"]
+    CR["ChatResumeNode<br/>same agent instance"]
+    STOP(("StopEvent"))
+
+    CN -- "stream(UserMessage)" --> AG
+    AG -- "answer -> StopEvent" --> CN
+    AG -- "suspends on deferred call<br/>DraftingRequestedEvent" --> DC
+    DC -- "DraftStoredEvent" --> CR
+    CR -- "submitToolResults()->events()" --> AG
+    CR -- "drafts again<br/>DraftingRequestedEvent" --> DC
+    CR -- "answer" --> STOP
+  end
+
+  subgraph DG["draft_group workflow xN, one run per field group"]
+    direction TB
+    DR(["Draft<br/>GroupDrafterNeuronAgent"])
+    VA["Validate<br/>closed group schema"]
+    RE["Retry<br/>throws after 5 attempts"]
+    DR -- "DraftedEvent" --> VA
+    VA -- "SchemaViolationEvent" --> RE
+    RE -- "DraftRequestEvent + violations" --> DR
+  end
+
+  DT[("drafts.session_{id}<br/>stored draft")]
+
+  subgraph SS["streaming"]
+    direction TB
+    AD["PatchedVercelAIAdapter"]
+    CH["SseChannel<br/>one per request"]
+    RS["SseResponse"]
+    AD -- "ProtocolEvent" --> CH
+    CH -- "SSE frames" --> RS
+  end
+
+  DP -- "run(start(ChatTurnEvent))" --> CN
+  DC == "run() per group" ==> DR
+  VA == "valid: StopEvent, fields" ==> DC
+  DC -- "append(draft JSON)" --> DT
+  ET -. "yield: agent chunks, data-drafting, data-drafted-fields" .-> AD
+  RS -. "text/event-stream" .-> B
+
+  class AG,DR agent
+  class DP,CN,DC,CR,VA,RE node
+  class B,AD,CH,RS stream
+  class DT,STOP store
+  style ET stroke-width:3px
+  style DG stroke-width:3px
+```
 
 ## Development
 
@@ -231,9 +296,27 @@ ddev phpcs
 ddev phpcbf    # Auto-fix violations
 ```
 
+### Logging provider requests
+
+Every request the module sends to the AI provider can be written to disk, to inspect a payload or hand it to the
+provider maintainer. The switch is in `.ddev/settings.ai.php`, off by default. Turn it on in the live copy,
+`web/sites/default/settings.ai.php`, and run `drush cr`:
+
+```php
+$settings['oe_ai_assistant_log_requests'] = TRUE;
+```
+
+Each request lands in its own file under `private://ai-calls`, named after the moment it was sent and the host it
+went to, for example `2026-10-09_12-03-56.530922_api.tech.ec.europa.eu.http`. A file holds the request line, the
+headers and the body, so it can be replayed as is. Credentials are written as `[redacted]`, and a JSON body is
+indented for reading, which makes it longer than the `Content-Length` header reports.
+
+While the setting is on, every outgoing HTTP request is logged, not only the provider ones. Turn it off once the
+payload is captured.
+
 ## Patches
 
-This module patches `drupal/ai_agents` and `drupal/ai` via `cweagans/composer-patches`. Each patch is declared
+This module patches `drupal/ai` via `cweagans/composer-patches`. Each patch is declared
 with an absolute URL pinned to a commit in this repository, so it is applied automatically on projects that
 enable patches from dependencies.
 

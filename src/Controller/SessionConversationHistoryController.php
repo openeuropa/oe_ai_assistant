@@ -14,12 +14,6 @@ use Symfony\Component\DependencyInjection\ContainerInterface;
 
 /**
  * Renders the Neuron-backed conversation history of a session.
- *
- * Separate from AiConversationHistoryController, which keeps reading the
- * old ai_conversation_message entity until OEL-5072 removes it. This one
- * is empty at first: nothing writes to the Neuron store until then.
- *
- * @todo Remove the note above when the OEL-5066 epic is complete.
  */
 final class SessionConversationHistoryController extends ControllerBase {
 

@@ -1,0 +1,64 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Drupal\oe_ai_assistant\Plugin\NeuronWorkflow\Drafting\Nodes;
+
+use Drupal\oe_ai_assistant\Exception\SchemaRetriesExhaustedException;
+use Drupal\oe_ai_assistant\Plugin\NeuronWorkflow\Drafting\Events\DraftRequestEvent;
+use Drupal\oe_ai_assistant\Plugin\NeuronWorkflow\Drafting\Events\SchemaViolationEvent;
+use NeuronAI\Workflow\Node;
+use NeuronAI\Workflow\WorkflowState;
+
+/**
+ * Asks the drafter again with the violations, or gives up.
+ */
+final class RetryNode extends Node {
+
+  /**
+   * The state key counting the corrections asked for in this run.
+   */
+  public const string ATTEMPTS_KEY = 'schema_retries';
+
+  /**
+   * Builds the node.
+   *
+   * @param string $group
+   *   The field group the run drafts.
+   * @param int $maxRetries
+   *   How many corrected answers to ask for before giving up.
+   */
+  public function __construct(
+    private readonly string $group,
+    private readonly int $maxRetries = 5,
+  ) {}
+
+  /**
+   * Feeds the violations back to the drafter.
+   *
+   * @throws \Drupal\oe_ai_assistant\Exception\SchemaRetriesExhaustedException
+   *   When no answer matched the schema within the allowed retries.
+   */
+  public function __invoke(SchemaViolationEvent $event, WorkflowState $state): DraftRequestEvent {
+    $attempts = (int) $state->get(self::ATTEMPTS_KEY, 0) + 1;
+    $state->set(self::ATTEMPTS_KEY, $attempts);
+
+    if ($attempts > $this->maxRetries) {
+      throw new SchemaRetriesExhaustedException(sprintf(
+        'The "%s" answer does not match its schema: %s',
+        $this->group,
+        implode('; ', $event->violations),
+      ));
+    }
+
+    // The drafter reads its own conversation, which already holds the
+    // answer to correct. So this turn carries the violations and nothing
+    // else.
+    return new DraftRequestEvent(
+      "Your previous answer does not match the schema:\n- "
+      . implode("\n- ", $event->violations)
+      . "\n\nAnswer again with one JSON object that matches the schema exactly."
+    );
+  }
+
+}

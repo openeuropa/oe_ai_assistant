@@ -23,15 +23,11 @@ class AiEditorialSessionHtmlRouteProvider extends AdminHtmlRouteProvider {
       $collection->add('entity.ai_editorial_session.history', $history_route);
     }
 
-    if ($neuron_history_route = $this->getNeuronHistoryRoute($entity_type)) {
-      $collection->add('entity.ai_editorial_session.neuron_history', $neuron_history_route);
-    }
-
     return $collection;
   }
 
   /**
-   * Gets the conversation history route, built from the history link template.
+   * Gets the conversation history route of a session.
    *
    * @param \Drupal\Core\Entity\EntityTypeInterface $entity_type
    *   The entity type.
@@ -45,38 +41,6 @@ class AiEditorialSessionHtmlRouteProvider extends AdminHtmlRouteProvider {
     }
     $entity_type_id = $entity_type->id();
     $route = new Route($entity_type->getLinkTemplate('history'));
-    $route
-      ->setDefaults([
-        '_controller' => '\Drupal\oe_ai_assistant\Controller\AiConversationHistoryController::view',
-        '_title_callback' => '\Drupal\oe_ai_assistant\Controller\AiConversationHistoryController::title',
-      ])
-      ->setRequirement('_permission', 'access ai conversation message overview+administer ai conversation messages')
-      ->setOption('_admin_route', TRUE)
-      ->setOption('parameters', [
-        $entity_type_id => ['type' => 'entity:' . $entity_type_id],
-      ]);
-
-    return $route;
-  }
-
-  /**
-   * Gets the Neuron-backed conversation history route.
-   *
-   * Separate from the route above, so the old tab keeps reading the old
-   * entity rather than being repointed onto the new store.
-   *
-   * @param \Drupal\Core\Entity\EntityTypeInterface $entity_type
-   *   The entity type.
-   *
-   * @return \Symfony\Component\Routing\Route|null
-   *   The generated route, if the entity type declares the link template.
-   */
-  protected function getNeuronHistoryRoute(EntityTypeInterface $entity_type): ?Route {
-    if (!$entity_type->hasLinkTemplate('neuron-history')) {
-      return NULL;
-    }
-    $entity_type_id = $entity_type->id();
-    $route = new Route($entity_type->getLinkTemplate('neuron-history'));
     $route
       ->setDefaults([
         '_controller' => '\Drupal\oe_ai_assistant\Controller\SessionConversationHistoryController::view',

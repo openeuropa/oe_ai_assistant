@@ -6,6 +6,9 @@ namespace Drupal\Tests\oe_ai_assistant\ExistingSite;
 
 use Drupal\Core\Url;
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
+use Drupal\oe_ai_assistant\Entity\Bundle\ContentCreationSessionInterface;
+use Drupal\oe_ai_assistant\Neuron\Chat\History\EditorialMessageStore;
+use Drupal\oe_ai_assistant\Neuron\Chat\Messages\EditorialAssistantMessage;
 use Drupal\oe_ai_assistant_test\Plugin\AiProvider\MockAiProvider;
 use Drupal\Tests\oe_ai_assistant\Traits\ExistingSiteConfigBackupTrait;
 use Drupal\user\UserInterface;
@@ -62,6 +65,12 @@ abstract class DraftingPluginTestBase extends ExistingSiteBase {
           'provider_id' => 'mock_ai',
           'model_id' => 'mock-model',
         ],
+        // The draft_group workflow drafts each group through a
+        // structured response, same as DraftingTurnTest's kernel setup.
+        'chat_with_structured_response' => [
+          'provider_id' => 'mock_ai',
+          'model_id' => 'mock-model',
+        ],
       ])
       ->save();
 
@@ -73,10 +82,8 @@ abstract class DraftingPluginTestBase extends ExistingSiteBase {
    */
   protected function tearDown(): void {
     // Remove any conversation messages persisted against the test sessions.
-    $storage = \Drupal::entityTypeManager()
-      ->getStorage('ai_conversation_message');
     foreach ($this->sessions as $session) {
-      $storage->deleteForHost($session);
+      $session->deleteConversation();
     }
 
     MockAiProvider::reset();
@@ -109,48 +116,23 @@ abstract class DraftingPluginTestBase extends ExistingSiteBase {
   }
 
   /**
-   * Seeds a conversation message hosted by the session.
+   * Records a draft of a session, as DraftContentNode::storeDraft() does.
    *
-   * @param \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $session
-   *   The session hosting the conversation.
-   * @param string $role
-   *   The message role.
-   * @param string $content
-   *   The message text.
-   * @param array $toolCalls
-   *   Optional tool calls to store on the message.
-   * @param int|null $uid
-   *   Optional author user ID, set on user turns.
+   * A reader finds one draft by its version. The row therefore carries the
+   * session and the version.
+   *
+   * @param \Drupal\oe_ai_assistant\Entity\Bundle\ContentCreationSessionInterface $session
+   *   The session the draft belongs to.
+   * @param array $draft
+   *   The record of the run, as the node writes it.
    */
-  protected function seedMessage(AiEditorialSessionInterface $session, string $role, string $content, array $toolCalls = [], ?int $uid = NULL): void {
-    /** @var \Drupal\oe_ai_assistant\Entity\AiConversationMessageInterface $message */
-    $message = \Drupal::entityTypeManager()->getStorage('ai_conversation_message')
-      ->create([
-        'host_entity_type' => $session->getEntityTypeId(),
-        'host_entity_id' => (int) $session->id(),
-        'role' => $role,
-        'content' => $content,
-      ] + ($uid !== NULL ? ['uid' => $uid] : []));
-    if ($toolCalls) {
-      $message->setToolCalls($toolCalls);
-    }
-    $message->save();
-  }
+  protected function storeDraft(ContentCreationSessionInterface $session, array $draft): void {
+    $message = (new EditorialAssistantMessage(json_encode($draft)))
+      ->setDraftVersion((string) $draft['version']);
 
-  /**
-   * Loads the persisted top-level transcript for a session.
-   *
-   * @param \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $session
-   *   The session hosting the conversation.
-   *
-   * @return \Drupal\oe_ai_assistant\Entity\AiConversationMessageInterface[]
-   *   The transcript entities.
-   */
-  protected function loadTranscript(AiEditorialSessionInterface $session): array {
-    $storage = \Drupal::entityTypeManager()
-      ->getStorage('ai_conversation_message');
-    $storage->resetCache();
-    return $storage->loadTranscript($session);
+    \Drupal::service(EditorialMessageStore::class)
+      ->forSession($session)
+      ->append($session->draftsThread(), $message);
   }
 
   /**

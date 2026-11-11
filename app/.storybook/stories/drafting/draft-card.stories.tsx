@@ -1,6 +1,10 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { DraftCard } from "../../../src/plugins/drafting/components/draft-card";
-import type { DraftContext } from "../../../src/plugins/drafting/draft-result";
+import type {
+  DraftContext,
+  DraftGroupProgress,
+  DraftGroupStatus,
+} from "../../../src/plugins/drafting/draft-result";
 
 const meta = {
   title: "Drafting/Draft card",
@@ -13,17 +17,46 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-/** Sample fields shared across stories. */
-const sampleFields = {
-  title: "New approach to circular economy in the EU",
-  body: "The European Commission has proposed new measures...",
-  summary: "A concise overview of the circular economy package.",
-};
+/** When the sample drafts were generated. */
+const createdAt = new Date("2026-11-09T08:40:00Z");
+
+/** The field groups of the sample content type, in the order it defines them. */
+const NEWS_GROUPS = [
+  { id: "main_fields", label: "Main fields" },
+  { id: "content_paragraphs", label: "Content paragraphs" },
+  { id: "categorisation", label: "Categorisation" },
+];
+
+/**
+ * Builds the sample groups, one status per group.
+ *
+ * The error is attached to the first failed group, which is the only one that
+ * can carry a message: a failure stops the run.
+ */
+function newsGroups(
+  statuses: DraftGroupStatus[],
+  error?: string,
+): DraftGroupProgress[] {
+  return NEWS_GROUPS.map((group, index) => ({
+    ...group,
+    status: statuses[index] ?? "pending",
+    ...(statuses[index] === "failed" && error ? { error } : {}),
+  }));
+}
+
+/** The message a schema miss records, which the popover shows. */
+const schemaError =
+  "The drafter answered four times and no answer matched the schema of the " +
+  'group. The last answer was missing "field_paragraphs" and gave ' +
+  '"field_teaser" as an array where the schema asks for a string.';
 
 /** Full editorial context: tone, template, and several documents per category. */
 const fullContext: DraftContext = {
-  tone: { id: "formal", label: "Formal" },
-  template: { id: "press-release", label: "Press Release" },
+  tone: { id: "technical", label: "Technical" },
+  template: {
+    id: "news-with-paragraphs",
+    label: "News article with paragraphs",
+  },
   documents: [
     {
       id: "doc-1",
@@ -77,63 +110,269 @@ const fullContext: DraftContext = {
         size: 96256,
       },
     },
-    {
-      id: "doc-5",
-      title: "Hero image: recycling facility",
-      category: "publishable",
-      summary:
-        "Approved photograph for the article header showing the sorting line of a materials recovery facility near Rotterdam, taken during the January press visit. The image is cleared for editorial use across all Union channels, includes the photographer credit in its embedded metadata, and a cropped 16 by 9 variant optimised for social media cards is available from the media library under the same reference number.",
-      file: {
-        url: "https://example.com/files/hero-recycling-facility.jpg",
-        name: "hero-recycling-facility.jpg",
-        mime: "image/jpeg",
-        size: 4718592,
-      },
-    },
-    {
-      id: "doc-6",
-      title: "Explainer clip",
-      category: "publishable",
-      summary:
-        "Thirty second explainer video produced for social media that walks through the journey of a plastic bottle from separate collection to food-grade recycled packaging. Subtitled versions exist in all official languages, the master file is delivered in 4K with a separate audio stem for re-voicing, and the clip ends on the campaign hashtag frame required by the visual identity guidelines for this initiative.",
-      file: {
-        url: "https://example.com/files/explainer-clip.mp4",
-        name: "explainer-clip.mp4",
-        mime: "video/mp4",
-        size: 87031808,
-      },
-    },
   ],
 };
 
-/** Draft card with full editorial context: tone, template, and two documents. */
-export const FullContext: Story = {
+/** Tone and template only, which is the common setup. */
+const plainContext: DraftContext = {
+  tone: fullContext.tone,
+  template: fullContext.template,
+  documents: [],
+};
+
+/**
+ * Documents whose titles are file names, which carry no space to wrap on.
+ *
+ * Real uploads arrive named this way, so the card has to cut them rather than
+ * let one long word widen the chat.
+ */
+const fileNameContext: DraftContext = {
+  tone: fullContext.tone,
+  template: fullContext.template,
+  documents: fullContext.documents.map((doc, index) => ({
+    ...doc,
+    title: [
+      "circular_economy_action_plan_2020_consolidated_final_version.pdf",
+      "impact_assessment_2025_annex_III_member_state_projections.pdf",
+      "stakeholder_consultation_notes_rounds_one_to_four_merged.docx",
+      "commission_press_release_draft_for_editorial_review_v7.docx",
+    ][index] as string,
+  })),
+};
+
+/** Wraps a story in the chat well, which gives a card its whole width. */
+function Frame({ children }: { children: React.ReactNode }) {
+  return <div className="w-full bg-gray-50 px-4">{children}</div>;
+}
+
+/** Wraps a story in a chat well narrow enough to cut a long file name. */
+function NarrowFrame({ children }: { children: React.ReactNode }) {
+  return <div className="max-w-sm bg-gray-50 px-4">{children}</div>;
+}
+
+/**
+ * The first frame: the run has named its groups and started on none of them.
+ *
+ * Tone, template and documents are known before the run starts, so they are
+ * already filled in. Created waits for the stored draft.
+ */
+export const JustStarted: Story = {
   render: () => (
-    <div className="max-w-md">
+    <Frame>
       <DraftCard
-        version={3}
+        version={2}
         context={fullContext}
-        fields={sampleFields}
+        groups={newsGroups(["pending", "pending", "pending"])}
+        status="running"
+        isSaved={false}
+        createdAt={null}
         onOpen={() => {}}
       />
-    </div>
+    </Frame>
   ),
 };
 
-/** Draft card with a tone but no template and no documents. */
-export const ToneOnly: Story = {
+/** Mid-run: one group written, one being written, one still to come. */
+export const Drafting: Story = {
   render: () => (
-    <div className="max-w-md">
+    <Frame>
       <DraftCard
-        version={1}
-        context={{
-          tone: { id: "conversational", label: "Conversational" },
-          template: null,
-          documents: [],
-        }}
-        fields={sampleFields}
+        version={2}
+        context={fullContext}
+        groups={newsGroups(["drafted", "drafting", "pending"])}
+        status="running"
+        isSaved={false}
+        createdAt={null}
         onOpen={() => {}}
       />
-    </div>
+    </Frame>
+  ),
+};
+
+/** The last group has landed. This is what a reload rebuilds. */
+export const Drafted: Story = {
+  render: () => (
+    <Frame>
+      <DraftCard
+        version={2}
+        context={fullContext}
+        groups={newsGroups(["drafted", "drafted", "drafted"])}
+        status="drafted"
+        isSaved={false}
+        createdAt={createdAt}
+        onOpen={() => {}}
+      />
+    </Frame>
+  ),
+};
+
+/** The version has been saved as a revision, so the header icon is a tick. */
+export const Saved: Story = {
+  render: () => (
+    <Frame>
+      <DraftCard
+        version={2}
+        context={fullContext}
+        groups={newsGroups(["drafted", "drafted", "drafted"])}
+        status="drafted"
+        isSaved={true}
+        createdAt={createdAt}
+        onOpen={() => {}}
+      />
+    </Frame>
+  ),
+};
+
+/**
+ * A group failed, which stops the run.
+ *
+ * Click the red cross on the row to read what the run recorded. The groups
+ * after it stay pending, because the run never reached them.
+ */
+export const GroupFailed: Story = {
+  render: () => (
+    <Frame>
+      <DraftCard
+        version={2}
+        context={fullContext}
+        groups={newsGroups(["drafted", "failed", "pending"], schemaError)}
+        status="failed"
+        isSaved={false}
+        createdAt={createdAt}
+        onOpen={() => {}}
+      />
+    </Frame>
+  ),
+};
+
+/**
+ * The run failed before it reached a group, so no row carries the cross.
+ *
+ * The header cross opens the message instead. A content type with no field
+ * group fails this way.
+ */
+export const RunFailed: Story = {
+  render: () => (
+    <Frame>
+      <DraftCard
+        version={2}
+        context={plainContext}
+        groups={[]}
+        status="failed"
+        error='The "oe_news" content type has no field group to draft.'
+        isSaved={false}
+        createdAt={createdAt}
+        onOpen={() => {}}
+      />
+    </Frame>
+  ),
+};
+
+/** A content type of one group, drafted. */
+export const SingleGroup: Story = {
+  render: () => (
+    <Frame>
+      <DraftCard
+        version={1}
+        context={plainContext}
+        groups={[
+          { id: "main_fields", label: "Main fields", status: "drafted" },
+        ]}
+        status="drafted"
+        isSaved={false}
+        createdAt={createdAt}
+        onOpen={() => {}}
+      />
+    </Frame>
+  ),
+};
+
+/** A content type of many groups, part way through a run. */
+export const ManyGroups: Story = {
+  render: () => (
+    <Frame>
+      <DraftCard
+        version={1}
+        context={plainContext}
+        groups={[
+          { id: "main_fields", label: "Main fields", status: "drafted" },
+          { id: "teaser", label: "Teaser", status: "drafted" },
+          {
+            id: "content_paragraphs",
+            label: "Content paragraphs",
+            status: "drafted",
+          },
+          { id: "related", label: "Related content", status: "drafting" },
+          { id: "categorisation", label: "Categorisation", status: "pending" },
+          { id: "contacts", label: "Contacts", status: "pending" },
+          {
+            id: "publication",
+            label: "Publication details",
+            status: "pending",
+          },
+        ]}
+        status="running"
+        isSaved={false}
+        createdAt={null}
+        onOpen={() => {}}
+      />
+    </Frame>
+  ),
+};
+
+/** The editor set no tone and no template, so the card carries neither row. */
+export const NoContext: Story = {
+  render: () => (
+    <Frame>
+      <DraftCard
+        version={1}
+        context={{ tone: null, template: null, documents: [] }}
+        groups={newsGroups(["drafted", "drafting", "pending"])}
+        status="running"
+        isSaved={false}
+        createdAt={null}
+        onOpen={() => {}}
+      />
+    </Frame>
+  ),
+};
+
+/** A draft stored before groups were recorded, which has no rows to show. */
+export const LegacyDraft: Story = {
+  render: () => (
+    <Frame>
+      <DraftCard
+        version={null}
+        context={plainContext}
+        groups={[]}
+        status="drafted"
+        isSaved={false}
+        createdAt={createdAt}
+        onOpen={() => {}}
+      />
+    </Frame>
+  ),
+};
+
+/**
+ * Context documents named the way an upload names them.
+ *
+ * An underscore is no break opportunity, so each link is cut to the width of
+ * its column. The whole name is on the link as a tooltip, and the detail
+ * dialog carries it in full.
+ */
+export const FileNameDocuments: Story = {
+  render: () => (
+    <NarrowFrame>
+      <DraftCard
+        version={2}
+        context={fileNameContext}
+        groups={newsGroups(["drafted", "drafted", "drafted"])}
+        status="drafted"
+        isSaved={false}
+        createdAt={createdAt}
+        onOpen={() => {}}
+      />
+    </NarrowFrame>
   ),
 };

@@ -45,7 +45,7 @@ interface AiEditorialContextInterface {
    * @return array{id: string, label: string, prompt: string}
    *   The tone id, label and raw prompt guidelines.
    *
-   * @throws \InvalidArgumentException
+   * @throws \Drupal\oe_ai_assistant\Exception\DraftingToneException
    *   Thrown when the term does not exist, belongs to another vocabulary,
    *   or has no prompt defined.
    */

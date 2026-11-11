@@ -5,18 +5,14 @@ declare(strict_types=1);
 namespace Drupal\oe_ai_assistant\Plugin;
 
 use Drupal\ai\AiProviderPluginManager;
-use Drupal\ai\OperationType\Chat\ChatMessage;
 use Drupal\Component\Plugin\Exception\PluginException;
 use Drupal\Core\Cache\RefinableCacheableDependencyInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Plugin\ContainerFactoryPluginInterface;
 use Drupal\Core\Plugin\PluginBase;
 use Drupal\Core\Session\AccountInterface;
-use Drupal\oe_ai_assistant\Entity\AiConversationMessageInterface;
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
 use Drupal\oe_ai_assistant\Exception\ActionException;
-use Drupal\oe_ai_assistant\Service\MessageRecorderInterface;
-use Drupal\oe_ai_assistant\Service\UiMessageStreamInterface;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\Request;
@@ -36,23 +32,11 @@ use Symfony\Component\HttpFoundation\Response;
 abstract class AiAssistantPluginBase extends PluginBase implements AiAssistantPluginInterface, ContainerFactoryPluginInterface {
 
   /**
-   * Maximum top-level turns replayed to the model as history.
-   */
-  protected const MAX_HISTORY = 40;
-
-  /**
    * The AI provider plugin manager.
    *
    * @var \Drupal\ai\AiProviderPluginManager
    */
   protected AiProviderPluginManager $aiProviderManager;
-
-  /**
-   * The UI message stream service.
-   *
-   * @var \Drupal\oe_ai_assistant\Service\UiMessageStreamInterface
-   */
-  protected UiMessageStreamInterface $uiMessageStream;
 
   /**
    * The entity type manager.
@@ -67,13 +51,6 @@ abstract class AiAssistantPluginBase extends PluginBase implements AiAssistantPl
    * @var \Drupal\Core\Session\AccountInterface
    */
   protected AccountInterface $currentUser;
-
-  /**
-   * The message recorder.
-   *
-   * @var \Drupal\oe_ai_assistant\Service\MessageRecorderInterface
-   */
-  protected MessageRecorderInterface $messageRecorder;
 
   /**
    * Logger channel for oe_ai_assistant.
@@ -93,10 +70,8 @@ abstract class AiAssistantPluginBase extends PluginBase implements AiAssistantPl
   ): static {
     $instance = new static($configuration, $plugin_id, $plugin_definition);
     $instance->aiProviderManager = $container->get('ai.provider');
-    $instance->uiMessageStream = $container->get(UiMessageStreamInterface::class);
     $instance->entityTypeManager = $container->get('entity_type.manager');
     $instance->currentUser = $container->get('current_user');
-    $instance->messageRecorder = $container->get(MessageRecorderInterface::class);
     $instance->logger = $container->get('logger.channel.oe_ai_assistant');
     return $instance;
   }
@@ -104,23 +79,20 @@ abstract class AiAssistantPluginBase extends PluginBase implements AiAssistantPl
   /**
    * {@inheritdoc}
    *
-   * Every plugin exposes the shared get-messages action, so any conversation
-   * hosted by an editorial session can be retrieved. Plugins add their own
-   * actions by merging with parent::getActionMap().
+   * A plugin that serves a conversation declares its own get-messages
+   * action, reading from whichever store hosts it; this base registers
+   * none. Plugins add their own actions by merging with
+   * parent::getActionMap().
    */
   public function getActionMap(): array {
-    return [
-      'get-messages' => $this->getMessages(...),
-    ];
+    return [];
   }
 
   /**
    * {@inheritdoc}
    */
   public function getRequestSchemas(): array {
-    return [
-      'get-messages' => 'GetMessagesRequest',
-    ];
+    return [];
   }
 
   /**
@@ -138,89 +110,6 @@ abstract class AiAssistantPluginBase extends PluginBase implements AiAssistantPl
    */
   public function getAppConfig(AiEditorialSessionInterface $session, RefinableCacheableDependencyInterface $cacheability): array {
     return [];
-  }
-
-  /**
-   * Returns the user-visible transcript for the session.
-   *
-   * @param \Symfony\Component\HttpFoundation\Request $request
-   *   The incoming request.
-   *
-   * @return array
-   *   An array with a `messages` list of {role, content} entries.
-   */
-  public function getMessages(Request $request): array {
-    $session = $this->loadSession($this->decodeJsonBody($request));
-    $storage = $this->entityTypeManager->getStorage('ai_conversation_message');
-    $transcript = $storage->loadTranscript($session);
-
-    // Preload the authors of user turns in one query, grouped by uid, so
-    // each turn can carry the author's display name for avatars and the
-    // participants list.
-    $authorIds = [];
-    foreach ($transcript as $message) {
-      $uid = (int) $message->get('uid')->target_id;
-      if ($message->getRole() === 'user' && $uid > 0) {
-        $authorIds[$uid] = $uid;
-      }
-    }
-    $authors = $authorIds === []
-      ? []
-      : $this->entityTypeManager->getStorage('user')->loadMultiple($authorIds);
-
-    $messages = [];
-    foreach ($transcript as $message) {
-      $role = $message->getRole();
-      // The created field is a datetime stored in UTC; expose it in RFC
-      // 3339 so clients can render local timestamps.
-      $at = (string) $message->get('created')->date?->format('c');
-      // Event rows surface as compact timeline entries.
-      if ($role === 'event') {
-        $metadata = $message->getMetadata();
-        $item = [
-          'role' => 'event',
-          'type' => (string) ($metadata['type'] ?? ''),
-          'summary' => (string) $message->get('content')->value,
-          'at' => $at,
-        ];
-        // Save events name the draft version they persisted, so clients
-        // can mark that version as saved.
-        if (isset($metadata['version'])) {
-          $item['version'] = (int) $metadata['version'];
-        }
-        $messages[] = $item;
-        continue;
-      }
-      // Only user and assistant turns are shown to the editor.
-      if (!in_array($role, ['user', 'assistant'], TRUE)) {
-        continue;
-      }
-      $content = (string) $message->get('content')->value;
-      $toolCalls = $message->getToolCalls();
-      // Skip empty turns that carry neither text nor a tool call.
-      if ($content === '' && !$toolCalls) {
-        continue;
-      }
-      $item = [
-        'role' => $role,
-        'content' => $content,
-        // Creation time of the turn, for client-side timestamps.
-        'at' => $at,
-      ];
-      // Attribute user turns to their author for shared sessions. The
-      // uid keeps same-named users apart; the display name is what the
-      // client renders.
-      $uid = (int) $message->get('uid')->target_id;
-      if ($role === 'user' && isset($authors[$uid])) {
-        $item['userId'] = (string) $uid;
-        $item['userName'] = (string) $authors[$uid]->getDisplayName();
-      }
-      if ($toolCalls) {
-        $item['toolCalls'] = $toolCalls;
-      }
-      $messages[] = $item;
-    }
-    return ['messages' => $messages];
   }
 
   /**
@@ -324,43 +213,6 @@ abstract class AiAssistantPluginBase extends PluginBase implements AiAssistantPl
       throw new ActionException('forbidden', 'Access to the editorial session is denied.', 403);
     }
     return $session;
-  }
-
-  /**
-   * Loads the persisted transcript as chat history for the model.
-   *
-   * @param \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $session
-   *   The session hosting the conversation.
-   *
-   * @return \Drupal\ai\OperationType\Chat\ChatMessage[]
-   *   The capped top-level transcript as ChatMessage objects.
-   */
-  protected function buildHistory(AiEditorialSessionInterface $session): array {
-    $storage = $this->entityTypeManager->getStorage('ai_conversation_message');
-    // Skip persisted tool results: a bare chat message cannot re-link
-    // them to the assistant call that produced them, and providers
-    // reject unpaired tool messages. The assistant's follow-up text
-    // already carries the outcome.
-    $entities = array_filter(
-      $storage->loadTranscript($session),
-      fn(AiConversationMessageInterface $message): bool => $message->getRole() !== AiConversationMessageInterface::ROLE_TOOL,
-    );
-    // Slice AFTER filtering so tool rows do not consume history slots.
-    $entities = array_slice($entities, -static::MAX_HISTORY);
-    return array_map(
-      function (AiConversationMessageInterface $message): ChatMessage {
-        $content = (string) $message->get('content')->value;
-        // Editorial events enter the history as compact notes.
-        // The user role is used because mid-history system messages are
-        // provider-dependent, and the bracket prefix marks the note as
-        // non-conversational.
-        if ($message->getRole() === AiConversationMessageInterface::ROLE_EVENT) {
-          return new ChatMessage('user', '[Editorial change] ' . $content);
-        }
-        return new ChatMessage($message->getRole(), $content);
-      },
-      $entities,
-    );
   }
 
 }

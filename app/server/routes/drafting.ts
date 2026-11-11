@@ -214,7 +214,9 @@ export function createDraftingRouter(service: DraftingService): Router {
       console.error("SSE stream error:", err);
     }
 
-    // Send the [DONE] sentinel to signal stream termination.
+    // End the stream with the [DONE] sentinel. The client's
+    // UIMessageStreamDecoder throws "Stream ended abruptly" when the body
+    // ends without it, so every drafting turn would show up as a failed run.
     sendDone(res);
     res.end();
   });
