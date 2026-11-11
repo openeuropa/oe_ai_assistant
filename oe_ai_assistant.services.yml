@@ -32,6 +32,9 @@ services:
   Drupal\oe_ai_assistant\Service\Drafting\PublishableAssetRepository: {}
   Drupal\oe_ai_assistant\Service\TextFormatResolver: {}
 
+  Drupal\oe_ai_assistant\Service\Drafting\PublishableAssetPromoter: {}
+  Drupal\oe_ai_assistant\Service\Drafting\PublishableAssetPromoterInterface: '@Drupal\oe_ai_assistant\Service\Drafting\PublishableAssetPromoter'
+
   # Drives a document through extraction and summarisation.
   Drupal\oe_ai_assistant\Service\Drafting\DocumentExtractionProcessorInterface:
     class: Drupal\oe_ai_assistant\Service\Drafting\DocumentExtractionProcessor
