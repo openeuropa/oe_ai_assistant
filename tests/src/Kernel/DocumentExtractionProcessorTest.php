@@ -111,6 +111,68 @@ class DocumentExtractionProcessorTest extends AiEditorialSessionKernelTestBase {
   }
 
   /**
+   * Tests that the extract reaches the summary agent, capped in length.
+   *
+   * SummaryNeuronAgentTest covers the agent on its own, but a mock summary
+   * response comes back the same whatever it is asked, so only this call
+   * log assertion would catch summarize() sending the wrong field, calling
+   * a different agent, or dropping the mb_substr() length cap.
+   */
+  public function testSummarizeSendsTheCappedExtractToTheSummaryAgent(): void {
+    $long = str_repeat('a', 60010);
+    $this->tika->append(new Response(200, [], $long));
+    MockAiProvider::enqueue(new MockResponse('A brief summary.'));
+    $media = $this->createDocument();
+
+    $this->processor()->process($media);
+
+    $log = MockAiProvider::getCallLog();
+    $this->assertCount(1, $log);
+    // The cap is 60000 characters (MAX_PROMPT_CHARS); the extract here is
+    // longer, so a dropped cap would send it in full.
+    $this->assertSame(mb_substr($long, 0, 60000), $log[0]['messages'][0]['text']);
+    $this->assertStringContainsString('summarise', strtolower($log[0]['system_prompt']));
+  }
+
+  /**
+   * Tests that a summary never leaves a row in Neuron's workflow store.
+   *
+   * The summarize() method builds the summary agent from the plugin
+   * directly instead of through NeuronAgentManager::createAgent(), which
+   * is what would bind the site's durable workflow persistence to it.
+   * Without that binding, the agent's run falls back to Neuron's own
+   * default, an in-process array nothing ever writes to disk, so this
+   * table stays empty whatever the run's outcome. Before that, every
+   * summary, and every retry of a failed one, left an orphan partition
+   * here that nothing ever swept.
+   */
+  public function testSummarizeLeavesNoWorkflowStoreRow(): void {
+    $this->tika->append(new Response(200, [], 'Full text'));
+    MockAiProvider::enqueue(new MockResponse('A brief summary.'));
+    $media = $this->createDocument();
+
+    $this->processor()->process($media);
+
+    $this->assertSame(0, (int) $this->container->get('database')
+      ->select('neuron_workflow_store')
+      ->countQuery()
+      ->execute()
+      ->fetchField());
+
+    $this->tika->append(new Response(200, [], 'Full text again'));
+    MockAiProvider::enqueue(new MockResponse(error: new \RuntimeException('Provider down.')));
+    $failing = $this->createDocument('brief2.txt');
+
+    $this->processor()->process($failing);
+
+    $this->assertSame(0, (int) $this->container->get('database')
+      ->select('neuron_workflow_store')
+      ->countQuery()
+      ->execute()
+      ->fetchField());
+  }
+
+  /**
    * Tests that a provider failure keeps the extract and ends in error.
    */
   public function testProviderFailureKeepsExtract(): void {
