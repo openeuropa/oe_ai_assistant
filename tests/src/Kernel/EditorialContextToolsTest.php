@@ -6,11 +6,14 @@ namespace Drupal\Tests\oe_ai_assistant\Kernel;
 
 use Drupal\ai_neuron\Agent\NeuronAgentManagerInterface;
 use Drupal\ai_neuron\Tools\NeuronToolManagerInterface;
+use Drupal\oe_ai_assistant\Entity\AiDraftingTemplate;
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
 use Drupal\oe_ai_assistant\Service\AiEditorialContext;
 use Drupal\oe_ai_assistant\Service\AiEditorialContextInterface;
 use Drupal\oe_ai_assistant\Service\Drafting\ContextDocumentRepository;
 use Drupal\oe_ai_assistant\Service\Drafting\DocumentRepositoryInterface;
+use Drupal\taxonomy\Entity\Term;
+use Drupal\taxonomy\TermInterface;
 
 /**
  * Tests the tools that let an agent answer from the editorial context.
@@ -79,10 +82,10 @@ class EditorialContextToolsTest extends AiEditorialSessionKernelTestBase {
    *
    * The summary is reported, never the extracted text: that's what
    * context_read_document is for. The guidelines text is held back for the
-   * same reason explained on GetEditorialContextNeuronTool::__invoke(): a
-   * tool result is saved as a thread row, and a guidelines text baked in
-   * here would go stale, with nothing marking it as such, if the editor
-   * later changed the tone.
+   * reason stated in GetEditorialContextNeuronTool::__invoke(): a tool
+   * result is saved as a thread row, and a guidelines text baked in here
+   * would go stale, with nothing marking it as such, if the editor later
+   * changed the tone.
    */
   public function testContextToolReportsTheToneLabelNeverItsGuidelines(): void {
     $session = $this->stubbedSession([
@@ -95,8 +98,11 @@ class EditorialContextToolsTest extends AiEditorialSessionKernelTestBase {
 
     $result = json_decode($this->contextTool($session), TRUE);
 
-    $this->assertSame(['label' => 'Formal'], $result['tone']);
-    $this->assertNull($result['template']);
+    $this->assertSame(
+      ['id' => '3', 'label' => 'Formal', 'description' => ''],
+      $result['tone']['selected'],
+    );
+    $this->assertNull($result['template']['selected']);
     $this->assertCount(1, $result['documents']);
     $this->assertSame('Summary one.', $result['documents'][0]['summary']);
     $this->assertArrayNotHasKey('extract', $result['documents'][0]);
@@ -104,16 +110,63 @@ class EditorialContextToolsTest extends AiEditorialSessionKernelTestBase {
   }
 
   /**
-   * Tests that nothing set up answers null tone and template.
+   * Tests that a session with nothing set up selects no tone or template.
    */
   public function testContextToolReportsNothingSetUp(): void {
     $session = $this->stubbedSession(NULL, []);
 
     $result = json_decode($this->contextTool($session), TRUE);
 
-    $this->assertNull($result['tone']);
-    $this->assertNull($result['template']);
+    $this->assertNull($result['tone']['selected']);
+    $this->assertNull($result['template']['selected']);
     $this->assertSame([], $result['documents']);
+  }
+
+  /**
+   * Tests that the tool reports the tones and templates on offer.
+   *
+   * The session only records what the editor picked, so without the
+   * options the agent can't answer "which tones can I choose from?". The
+   * options come from the same two services that feed the app's own
+   * pickers, so the agent and the picker name the same tones.
+   */
+  public function testContextToolReportsTheOptionsTheEditorCanPick(): void {
+    $formal = $this->createTone('Formal', 'Short, institutional sentences.', 'Use professional, institutional language.');
+    $this->createTone('Plain', 'Everyday words and short sentences.', 'Write plainly.');
+    AiDraftingTemplate::create([
+      'id' => 'news_brief',
+      'label' => 'News brief',
+      'description' => 'A short news item.',
+      'status' => TRUE,
+      'content_type' => 'oe_news',
+      'fields' => ['title' => ['prompt' => 'Title.']],
+    ])->save();
+
+    $session = $this->createSession($this->createUser());
+    $session->set('tone', $formal->id())->set('template', 'news_brief')->save();
+
+    $payload = $this->contextTool($session);
+    $result = json_decode($payload, TRUE);
+
+    $labels = array_column($result['tone']['options'], 'label');
+    sort($labels);
+    $this->assertSame(['Formal', 'Plain'], $labels);
+    $this->assertSame([
+      'id' => (string) $formal->id(),
+      'label' => 'Formal',
+      'description' => 'Short, institutional sentences.',
+    ], $result['tone']['selected']);
+    $this->assertContains($result['tone']['selected'], $result['tone']['options']);
+
+    $this->assertSame([
+      ['id' => 'news_brief', 'label' => 'News brief', 'description' => 'A short news item.'],
+    ], $result['template']['options']);
+    $this->assertSame($result['template']['options'][0], $result['template']['selected']);
+
+    // An option names and describes a tone. The guidelines text stays out
+    // of the payload, for the selected tone as much as for the others.
+    $this->assertStringNotContainsString('Use professional, institutional language.', $payload);
+    $this->assertStringNotContainsString('Write plainly.', $payload);
   }
 
   /**
@@ -227,6 +280,21 @@ class EditorialContextToolsTest extends AiEditorialSessionKernelTestBase {
     }
 
     return $session;
+  }
+
+  /**
+   * Creates an enabled tone term with its description and guidelines.
+   */
+  private function createTone(string $label, string $description, string $prompt): TermInterface {
+    $term = Term::create([
+      'vid' => 'oe_ai_tone',
+      'name' => $label,
+      'description' => $description,
+      'field_oe_ai_prompt' => $prompt,
+    ]);
+    $term->save();
+
+    return $term;
   }
 
   /**
