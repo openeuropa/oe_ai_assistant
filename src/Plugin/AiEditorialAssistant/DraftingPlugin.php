@@ -219,7 +219,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
       'bundle' => $context['bundle'],
       'tone' => [
         'enabled' => TRUE,
-        'options' => $this->serializeToneOptions($this->aiEditorialContext->getAvailableTones()),
+        'options' => $this->aiEditorialContext->getToneOptions(),
         // The tone already saved on the session, so the app can rehydrate
         // the selector on load.
         'selected' => (string) $session->get(static::TONE_FIELD)->target_id,
@@ -263,26 +263,6 @@ class DraftingPlugin extends AiAssistantPluginBase {
     }
 
     return $labels;
-  }
-
-  /**
-   * Serializes internal prompt-ready tone options for frontend bootstrap.
-   *
-   * @param array<int, array{id: string, label: string, description: string, oe_ai_prompt: string}> $options
-   *   The prompt-ready service options.
-   *
-   * @return array<int, array{id: string, label: string, description: string}>
-   *   Frontend-safe tone options.
-   */
-  private function serializeToneOptions(array $options): array {
-    return array_map(
-      static fn (array $option): array => [
-        'id' => $option['id'],
-        'label' => $option['label'],
-        'description' => $option['description'],
-      ],
-      $options,
-    );
   }
 
   /**
