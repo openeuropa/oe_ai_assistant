@@ -18,6 +18,16 @@ interface AiEditorialContextInterface {
   public function getAvailableTones(): array;
 
   /**
+   * Returns the tones the editor can pick, as selectable options.
+   *
+   * @return array
+   *   One entry per tone, each {id, label, description}, in the order the
+   *   tone picker offers them. The AI guidelines of a tone stay out; a
+   *   caller that needs them asks for the tone itself.
+   */
+  public function getToneOptions(): array;
+
+  /**
    * Builds the prompt for asking the user to select a tone.
    *
    * @return string

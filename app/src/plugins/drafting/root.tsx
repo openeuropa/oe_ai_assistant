@@ -28,6 +28,8 @@ import { PaneBusyOverlay } from "./components/pane-busy-overlay";
 import {
   DraftContentToolUI,
   EditorialEventToolUI,
+  GetEditorialContextToolUI,
+  ReadDocumentToolUI,
 } from "./components/tool-uis";
 import { useDraftingDocuments } from "./hooks/use-drafting-documents";
 import { useDraftingRuntime } from "./hooks/use-drafting-runtime";
@@ -311,6 +313,8 @@ function DraftingChat() {
       {/* Register tool call renderers so they appear inline in chat. */}
       <DraftContentToolUI />
       <EditorialEventToolUI />
+      <GetEditorialContextToolUI />
+      <ReadDocumentToolUI />
 
       {/* Feed the shell exit guard with this plugin's pending state.
           Panel saves report themselves via useCardSelection. */}

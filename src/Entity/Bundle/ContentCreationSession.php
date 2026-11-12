@@ -55,6 +55,19 @@ class ContentCreationSession extends AiEditorialSession implements ContentCreati
   /**
    * {@inheritdoc}
    */
+  public function getDocument(string $id): ?array {
+    foreach ($this->getDocuments() as $document) {
+      if ((string) ($document['id'] ?? '') === $id) {
+        return $document;
+      }
+    }
+
+    return NULL;
+  }
+
+  /**
+   * {@inheritdoc}
+   */
   public function getFieldGroups(): array {
     return $this->brief()['groups'];
   }

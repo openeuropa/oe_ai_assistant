@@ -10,7 +10,16 @@
 
 import type { ToolCallMessagePartProps } from "@assistant-ui/react";
 import { makeAssistantToolUI } from "@assistant-ui/react";
-import { Check, Loader2, PenLine, Wrench, X } from "lucide-react";
+import {
+  Check,
+  FileSearch,
+  Info,
+  Loader2,
+  PenLine,
+  Wrench,
+  X,
+} from "lucide-react";
+import { useMemo } from "react";
 import type { DraftRunStatus } from "../draft-result";
 import { parseDraftResult } from "../draft-result";
 import { useSavedVersions } from "../saved-versions";
@@ -189,6 +198,93 @@ export const EditorialEventToolUI = makeAssistantToolUI<
     <EventChip eventType={args.eventType} summary={args.summary} at={args.at} />
   ),
 });
+
+/** Parses a JSON string, or returns undefined when it is not valid JSON. */
+function safeJsonParse(raw: string): unknown {
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Decodes a tool's JSON result into a plain object, whatever shape it
+ * arrives in.
+ *
+ * A live call carries the JSON string __invoke() returned verbatim; a
+ * rehydrated one carries the same payload already decoded into a plain
+ * object, by NeuronMessage::decodeResult()/DraftingPlugin::toolCallsOf() on
+ * the backend. Both shapes are accepted here.
+ */
+function parseToolResult(result: unknown): Record<string, unknown> | undefined {
+  const parsed = typeof result === "string" ? safeJsonParse(result) : result;
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    return undefined;
+  }
+  return parsed as Record<string, unknown>;
+}
+
+/**
+ * Whether a tool's result carries an in-band error.
+ *
+ * The backend reports a tool failure this way rather than as a tool error,
+ * so assistant-ui always settles the call as complete; the card has to look
+ * inside the result itself to tell the two apart.
+ */
+function resultIsError(parsed: Record<string, unknown> | undefined): boolean {
+  return typeof parsed?.error === "string" && parsed.error !== "";
+}
+
+/** Reads the document's title off its parsed result. */
+function titleOf(
+  parsed: Record<string, unknown> | undefined,
+): string | undefined {
+  const title = parsed?.title;
+  return typeof title === "string" && title !== "" ? title : undefined;
+}
+
+/**
+ * Builds a tool UI for a tool whose card needs nothing beyond the shared
+ * icon/label/status shape, optionally with a detail line read off the
+ * result.
+ *
+ * The result is parsed once per result value (memoised, not per render), and
+ * an in-band error in the result downgrades the card to the error status
+ * even though the call itself settled as complete.
+ */
+function makeSimpleToolUI<TArgs, TResult>(
+  toolName: string,
+  icon: typeof PenLine,
+  detail?: (parsed: Record<string, unknown> | undefined) => string | undefined,
+) {
+  return makeAssistantToolUI<TArgs, TResult>({
+    toolName,
+    render: ({ result, status }) => {
+      const parsed = useMemo(() => parseToolResult(result), [result]);
+      return (
+        <ToolCallCard
+          icon={icon}
+          label={toolLabel(toolName)}
+          detail={detail?.(parsed)}
+          status={resultIsError(parsed) ? { type: "incomplete" } : status}
+        />
+      );
+    },
+  });
+}
+
+/** UI for the context_get_editorial_context tool call. */
+export const GetEditorialContextToolUI = makeSimpleToolUI<
+  Record<string, never>,
+  unknown
+>("context_get_editorial_context", Info);
+
+/** UI for the context_read_document tool call. */
+export const ReadDocumentToolUI = makeSimpleToolUI<
+  { document?: string },
+  unknown
+>("context_read_document", FileSearch, titleOf);
 
 /**
  * Fallback renderer for any tool call not registered with makeAssistantToolUI.
