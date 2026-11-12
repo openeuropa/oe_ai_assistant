@@ -30,6 +30,13 @@ final class TemplateDefaultsBuilder extends FieldSchemaBuilderBase {
       return $schema;
     }
 
+    // ReferenceBuilder has already replaced the columns of a reference item
+    // with a choice of whole entities. Pinning a column back onto the item
+    // would ask for a payload that no branch of the choice accepts.
+    if (isset($schema['items']['oneOf'])) {
+      return $schema;
+    }
+
     $default = $template->defaultFor(
       $context->entityTypeId,
       $context->bundle,

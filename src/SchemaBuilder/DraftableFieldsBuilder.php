@@ -30,7 +30,7 @@ final class DraftableFieldsBuilder extends FieldSchemaBuilderBase {
    * have to stay in the schema for LangcodeBuilder and ModerationStateBuilder
    * to state the value.
    */
-  private const PINNED = ['langcode', 'moderation_state'];
+  public const PINNED = ['langcode', 'moderation_state'];
 
   /**
    * The entity type whose plumbing is worth pinning.
@@ -51,6 +51,16 @@ final class DraftableFieldsBuilder extends FieldSchemaBuilderBase {
   protected function build(FieldContext $context, array $schema): ?array {
     // A field somebody configured on the bundle is there to be filled in.
     if (!$context->fieldDefinition instanceof BaseFieldDefinition) {
+      return $schema;
+    }
+
+    // A template that names a base field has asked for it, which outweighs
+    // the rule below. Both builders read the template, so neither has to
+    // undo what the other decided.
+    $template = $context->parameters['template'] ?? NULL;
+    if ($template instanceof TemplateIndex
+      && $template->wants($context->entityTypeId, $context->bundle, $context->fieldDefinition->getName())
+    ) {
       return $schema;
     }
 

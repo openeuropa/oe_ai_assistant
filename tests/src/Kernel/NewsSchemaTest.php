@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Drupal\Tests\oe_ai_assistant\Kernel;
 
 use Drupal\KernelTests\KernelTestBase;
+use Drupal\oe_ai_assistant\AiDraftingTemplateInterface;
 use Drupal\oe_ai_assistant\SchemaBuilder\TemplateIndex;
 use PHPUnit\Framework\Attributes\Group;
 
@@ -121,6 +122,85 @@ class NewsSchemaTest extends KernelTestBase {
   }
 
   /**
+   * Tests that a template keeps the fields this module pins.
+   *
+   * DraftableFieldsBuilder keeps langcode and moderation_state so
+   * LangcodeBuilder and ModerationStateBuilder can state their value. A
+   * template narrowing the bundle must not take them back out.
+   */
+  public function testTemplateKeepsThePinnedFields(): void {
+    $schema = $this->schema($this->index('news_with_paragraphs'));
+
+    $this->assertSame(
+      'en',
+      $schema['properties']['langcode']['items']['properties']['value']['const'],
+    );
+    $this->assertSame(
+      'draft',
+      $schema['properties']['moderation_state']['items']['properties']['value']['const'],
+    );
+  }
+
+  /**
+   * Tests that a template can ask for a field another builder would drop.
+   *
+   * Builders run from the lightest to the heaviest, so the heaviest has the
+   * last word. A template naming a base field outweighs the rule that drops
+   * the base fields nobody asked for.
+   */
+  public function testTemplateAsksForBaseField(): void {
+    $storage = $this->container->get('entity_type.manager')->getStorage('ai_drafting_template');
+    $template = $storage->load('news_default');
+    $template->set('fields', $template->getFields() + ['promote' => ['prompt' => 'Promote it.']]);
+
+    $schema = $this->schema($this->indexOf($template));
+
+    $this->assertArrayHasKey('promote', $schema['properties']);
+  }
+
+  /**
+   * Tests that a pinned default leaves a reference field's choice alone.
+   *
+   * ReferenceBuilder replaces the columns of a reference item with a choice
+   * of whole entities. Pinning a value back onto those columns would ask
+   * for a payload no branch of the choice accepts.
+   */
+  public function testPinnedDefaultLeavesReferences(): void {
+    $storage = $this->container->get('entity_type.manager')->getStorage('ai_drafting_template');
+    $template = $storage->load('news_with_paragraphs');
+    $template->set('defaults', $template->getDefaults() + [
+      'field_content_paragraphs' => [
+        'default_value' => [['target_id' => 7, 'target_revision_id' => 7]],
+      ],
+    ]);
+
+    $schema = $this->schema($this->indexOf($template));
+    $items = $schema['properties']['field_content_paragraphs']['items'];
+
+    $this->assertArrayHasKey('oneOf', $items);
+    $this->assertArrayNotHasKey('properties', $items);
+  }
+
+  /**
+   * Returns the schema of oe_news, narrowed by a template when given one.
+   */
+  private function schema(?TemplateIndex $index = NULL): array {
+    return $this->container
+      ->get('Drupal\schema_builder\SchemaBuilderInterface')
+      ->get('node', 'oe_news', $index === NULL ? [] : ['template' => $index]);
+  }
+
+  /**
+   * Builds the index of a template already in hand.
+   */
+  private function indexOf(AiDraftingTemplateInterface $template): TemplateIndex {
+    return new TemplateIndex(
+      $this->container->get('Drupal\oe_ai_assistant\Service\TemplateDefaultsResolverInterface'),
+      $template,
+    );
+  }
+
+  /**
    * Builds the index of a template the test module installs.
    */
   private function index(string $id): TemplateIndex {
@@ -155,6 +235,7 @@ class NewsSchemaTest extends KernelTestBase {
       'langcode',
       'type',
       'title',
+      'moderation_state',
       'field_content_paragraphs',
       'field_teaser',
     ], array_keys($schema['properties']));

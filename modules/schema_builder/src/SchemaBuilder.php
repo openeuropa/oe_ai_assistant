@@ -78,7 +78,12 @@ final class SchemaBuilder implements SchemaBuilderInterface {
         continue;
       }
       $properties[$name] = $field;
-      if ($definition->isRequired()) {
+
+      // A field asked to hold at least one item has to be there to hold it.
+      // That covers a field Drupal requires and a field whose value a
+      // builder has already decided, without the builder reaching a list it
+      // does not own.
+      if ($definition->isRequired() || ($field['minItems'] ?? 0) >= 1) {
         $required[] = $name;
       }
     }

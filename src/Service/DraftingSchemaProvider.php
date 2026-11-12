@@ -65,7 +65,7 @@ class DraftingSchemaProvider implements DraftingSchemaProviderInterface {
           ? (string) $definitions[$fieldName]->getLabel()
           : $fieldName,
         'fieldNames' => [$fieldName],
-        'schemaSlice' => $this->slice([$fieldName => $fieldSchema]),
+        'schemaSlice' => $this->slice([$fieldName => $fieldSchema], $schema['required'] ?? []),
       ];
     }
 
@@ -74,7 +74,7 @@ class DraftingSchemaProvider implements DraftingSchemaProviderInterface {
         'groupId' => 'main_fields',
         'label' => 'Main fields',
         'fieldNames' => array_keys($mainFields),
-        'schemaSlice' => $this->slice($mainFields),
+        'schemaSlice' => $this->slice($mainFields, $schema['required'] ?? []),
       ]);
     }
 
@@ -83,13 +83,31 @@ class DraftingSchemaProvider implements DraftingSchemaProviderInterface {
 
   /**
    * Wraps the fields of one group in a schema a drafter can be given.
+   *
+   * The required list comes from the bundle and names fields of other
+   * groups too, so it is narrowed to the fields this group holds. Without
+   * it a drafter may answer with nothing and still match the schema, and a
+   * value the template pins is only checked while the key happens to be
+   * there.
+   *
+   * @param array $properties
+   *   The fields of the group, keyed by name.
+   * @param array $required
+   *   The names of the required fields of the whole bundle.
    */
-  private function slice(array $properties): array {
-    return [
+  private function slice(array $properties, array $required): array {
+    $slice = [
       'type' => 'object',
       'properties' => $properties,
       'additionalProperties' => FALSE,
     ];
+
+    $required = array_values(array_intersect($required, array_keys($properties)));
+    if ($required !== []) {
+      $slice['required'] = $required;
+    }
+
+    return $slice;
   }
 
   /**

@@ -59,7 +59,7 @@ class DraftingSchemaGroupsTest extends KernelTestBase {
     $groups = $this->resolveGroups('node', 'oe_news', 'news_default');
 
     $byId = array_column($groups, 'fieldNames', 'groupId');
-    $this->assertSame(['langcode', 'type', 'title', 'field_body', 'field_teaser'], $byId['main_fields']);
+    $this->assertSame(['langcode', 'type', 'title', 'moderation_state', 'field_body', 'field_teaser'], $byId['main_fields']);
     $this->assertArrayNotHasKey('field_content_paragraphs', $byId);
     $this->assertNotContains('field_news_type', $byId['main_fields']);
   }
@@ -82,7 +82,7 @@ class DraftingSchemaGroupsTest extends KernelTestBase {
     $groups = $this->resolveGroups('node', 'oe_news');
 
     $byId = array_column($groups, 'fieldNames', 'groupId');
-    $this->assertSame(['langcode', 'type', 'title', 'field_teaser'], $byId['main_fields']);
+    $this->assertSame(['langcode', 'type', 'title', 'moderation_state', 'field_teaser'], $byId['main_fields']);
     $this->assertArrayHasKey('field_content_paragraphs', $byId);
     $this->assertNotContains('field_body', $byId['main_fields']);
   }

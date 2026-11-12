@@ -42,13 +42,15 @@ final class TemplateFieldsBuilder extends FieldSchemaBuilderBase {
       return $schema;
     }
 
-    // Always keep the bundle field, whatever the template says. It's what
-    // BundleKeyBuilder pins so the denormalizer can pick an entity class and
-    // a reader can tell the variants of a reference apart.
+    // Some fields are kept whatever the template says, because another
+    // builder states their value and a template has no reason to ask for
+    // one. The bundle field is how the denormalizer picks an entity class
+    // and how a reader tells the variants of a reference apart.
     $bundleKey = $this->entityTypeManager
       ->getDefinition($context->entityTypeId)
       ->getKey('bundle');
-    if ($bundleKey === $context->fieldDefinition->getName()) {
+    $pinned = array_merge([$bundleKey], DraftableFieldsBuilder::PINNED);
+    if (in_array($context->fieldDefinition->getName(), $pinned, TRUE)) {
       return $schema;
     }
 

@@ -82,7 +82,7 @@ class DraftingSchemaProviderTest extends KernelTestBase {
   public function testMatchingTemplateReturnsFilteredGroups(): void {
     $groups = $this->provider()->groups('node', 'oe_news', 'news_with_paragraphs');
 
-    $this->assertSame(['langcode', 'type', 'title', 'field_teaser'], $this->mainFields($groups));
+    $this->assertSame(['langcode', 'type', 'title', 'moderation_state', 'field_teaser'], $this->mainFields($groups));
     $this->assertContains('field_content_paragraphs', array_column($groups, 'groupId'));
   }
 
@@ -102,7 +102,7 @@ class DraftingSchemaProviderTest extends KernelTestBase {
 
     $groups = $this->provider()->groups('node', 'oe_news');
 
-    $this->assertSame(['langcode', 'type', 'title', 'field_teaser'], $this->mainFields($groups));
+    $this->assertSame(['langcode', 'type', 'title', 'moderation_state', 'field_teaser'], $this->mainFields($groups));
     $this->assertContains('field_content_paragraphs', array_column($groups, 'groupId'));
   }
 
@@ -209,6 +209,20 @@ class DraftingSchemaProviderTest extends KernelTestBase {
   }
 
   /**
+   * Tests that a group tells a drafter which of its fields are required.
+   *
+   * A group schema with no required list accepts an empty answer, and every
+   * value a template pins is only validated while the key is there.
+   */
+  public function testGroupSliceCarriesRequired(): void {
+    $groups = $this->provider()->groups('node', 'oe_news', 'news_default');
+    $slices = array_column($groups, 'schemaSlice', 'groupId');
+
+    $this->assertContains('title', $slices['main_fields']['required']);
+    $this->assertContains('langcode', $slices['main_fields']['required']);
+  }
+
+  /**
    * Disabled templates are not listed.
    */
   public function testAvailableTemplatesExcludesDisabledTemplates(): void {
@@ -241,7 +255,7 @@ class DraftingSchemaProviderTest extends KernelTestBase {
     // every node.
     $main = $this->mainFields($this->provider()->groups('node', 'oe_news', ''));
 
-    $this->assertSame(['langcode', 'type', 'title', 'field_teaser'], $main);
+    $this->assertSame(['langcode', 'type', 'title', 'moderation_state', 'field_teaser'], $main);
   }
 
 }
