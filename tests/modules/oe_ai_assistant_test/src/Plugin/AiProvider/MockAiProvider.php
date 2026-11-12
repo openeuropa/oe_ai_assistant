@@ -7,6 +7,7 @@ namespace Drupal\oe_ai_assistant_test\Plugin\AiProvider;
 use Drupal\Core\Config\ImmutableConfig;
 use Drupal\Core\StringTranslation\TranslatableMarkup;
 use Drupal\ai\Attribute\AiProvider;
+use Drupal\ai\Dto\TokenUsageDto;
 use Drupal\ai\Base\AiProviderClientBase;
 use Drupal\ai\Enum\AiModelCapability;
 use Drupal\ai\OperationType\Chat\ChatInput;
@@ -148,9 +149,16 @@ class MockAiProvider extends AiProviderClientBase implements ChatInterface {
       return new ChatOutput($iterator, $input->getMessages(), []);
     }
 
-    // Non-streaming mode: return complete message at once.
+    // Non-streaming mode: return complete message at once. The usage goes
+    // on the output, which is where drupal/ai reports it; a streamed
+    // response carries it on the message instead.
     $message = new ChatMessage('assistant', $response->text);
-    return new ChatOutput($message, $input->getMessages(), []);
+    $usage = $response->tokenUsage === NULL ? NULL : new TokenUsageDto(
+      input: $response->tokenUsage['input'] ?? 0,
+      output: $response->tokenUsage['output'] ?? 0,
+    );
+
+    return new ChatOutput($message, $input->getMessages(), [], $usage);
   }
 
   /**
