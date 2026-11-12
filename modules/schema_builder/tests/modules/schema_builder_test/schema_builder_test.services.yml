@@ -1,0 +1,6 @@
+services:
+  _defaults:
+    autoconfigure: true
+    autowire: true
+
+  Drupal\schema_builder_test\SchemaBuilder\LinkUriBuilder: {}

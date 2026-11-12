@@ -31,8 +31,9 @@ abstract class BuilderBase {
    *   opening with a check for the constraint it reads.
    * @param float $weight
    *   Builders run from the lightest to the heaviest, so the heaviest has
-   *   the last word on a keyword two of them set. A builder that matches one
-   *   bundle therefore outweighs one that matches every field.
+   *   the last word on a keyword two of them set. Give a builder that
+   *   matches one bundle a heavier weight than one that matches every
+   *   field.
    */
   public function __construct(
     public readonly ?string $entity_type = NULL,

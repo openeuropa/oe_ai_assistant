@@ -24,7 +24,7 @@ use Drupal\schema_builder\SchemaBuilderInterface;
 final class ReferenceBuilder extends FieldItemSchemaBuilderBase {
 
   public function __construct(
-    private readonly SchemaBuilderInterface $schemaApi,
+    private readonly SchemaBuilderInterface $schemaBuilder,
   ) {}
 
   /**
@@ -45,7 +45,7 @@ final class ReferenceBuilder extends FieldItemSchemaBuilderBase {
     foreach (array_keys($bundles) as $bundle) {
       // SchemaBuilder answers with nothing when this bundle is already being
       // walked, which is how a reference back to an ancestor ends.
-      $variant = $this->schemaApi->get($targetType, $bundle, $context->parameters);
+      $variant = $this->schemaBuilder->get($targetType, $bundle, $context->parameters);
       if ($variant !== []) {
         $variants[] = $variant;
       }
@@ -57,9 +57,11 @@ final class ReferenceBuilder extends FieldItemSchemaBuilderBase {
 
     // The columns of the reference itself are no longer what is asked for,
     // since the payload now carries the entity rather than a pointer to one.
+    // Which entity type the variants belong to is not written down here: it
+    // is on the field, and a keyword outside the specification is rejected
+    // by a provider that enforces the schema it is given.
     unset($schema['properties'], $schema['required'], $schema['additionalProperties']);
     $schema['oneOf'] = $variants;
-    $schema['x-targetType'] = $targetType;
 
     return $schema;
   }

@@ -17,7 +17,7 @@ use Drupal\schema_builder\SchemaBuilderInterface;
 class DraftingSchemaProvider implements DraftingSchemaProviderInterface {
 
   public function __construct(
-    private readonly SchemaBuilderInterface $schemaApi,
+    private readonly SchemaBuilderInterface $schemaBuilder,
     private readonly TemplateDefaultsResolverInterface $defaultsResolver,
     private readonly EntityTypeManagerInterface $entityTypeManager,
     private readonly EntityFieldManagerInterface $entityFieldManager,
@@ -32,7 +32,7 @@ class DraftingSchemaProvider implements DraftingSchemaProviderInterface {
       ? []
       : ['template' => new TemplateIndex($this->defaultsResolver, $template)];
 
-    $schema = $this->schemaApi->get($entityTypeId, $bundle, $parameters);
+    $schema = $this->schemaBuilder->get($entityTypeId, $bundle, $parameters);
 
     return $this->split($entityTypeId, $bundle, $schema);
   }

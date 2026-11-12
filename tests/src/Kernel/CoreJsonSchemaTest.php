@@ -502,8 +502,8 @@ class CoreJsonSchemaTest extends KernelTestBase {
    *
    * Note: the JSON shape used here is core's deserialization input shape
    * (matching what `$serializer->normalize($entity, 'json')` would emit),
-   * NOT the LLM-facing shape the drafting schema produces (which
-   * uses x-targetType/x-bundles extension keys and a wrapped envelope).
+   * NOT the LLM-facing shape the drafting schema produces, which wraps the
+   * fields in an envelope and offers a choice of bundles for a reference.
    * The LLM is expected to emit values matching core's input contract.
    */
   public function testDeserializeFromSchemaConformingJson(): void {

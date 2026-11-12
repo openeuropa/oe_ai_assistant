@@ -115,8 +115,14 @@ class NewsSchemaTest extends KernelTestBase {
 
     // A paragraph field offers a choice of whole paragraphs.
     $paragraphs = $schema['properties']['field_content_paragraphs']['items'];
-    $this->assertSame('paragraph', $paragraphs['x-targetType']);
     $this->assertNotEmpty($paragraphs['oneOf']);
+    $this->assertSame(
+      ['text_block', 'quote_block'],
+      array_map(
+        static fn (array $variant) => $variant['properties']['type']['items']['properties']['target_id']['const'],
+        $paragraphs['oneOf'],
+      ),
+    );
 
     $this->assertFileExists($path);
   }

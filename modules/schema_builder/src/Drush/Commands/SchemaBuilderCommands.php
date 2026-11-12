@@ -17,7 +17,7 @@ final class SchemaBuilderCommands extends DrushCommands {
   use AutowireTrait;
 
   public function __construct(
-    private readonly SchemaBuilderInterface $schemaApi,
+    private readonly SchemaBuilderInterface $schemaBuilder,
   ) {
     parent::__construct();
   }
@@ -37,7 +37,7 @@ final class SchemaBuilderCommands extends DrushCommands {
   #[CLI\Usage(name: 'drush schema-builder:dump oe_news', description: 'Print the schema.')]
   #[CLI\Usage(name: 'drush schema-builder:dump oe_news --out=/tmp/oe_news.json', description: 'Write the schema to a file.')]
   public function dump(string $bundle, array $options = ['entity-type' => 'node', 'out' => NULL]): void {
-    $schema = $this->schemaApi->get($options['entity-type'], $bundle);
+    $schema = $this->schemaBuilder->get($options['entity-type'], $bundle);
     $json = json_encode($schema, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
 
     if ($options['out'] === NULL) {

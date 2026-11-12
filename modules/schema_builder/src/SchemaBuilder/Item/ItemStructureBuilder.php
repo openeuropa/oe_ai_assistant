@@ -10,9 +10,13 @@ use Drupal\schema_builder\Context\ItemContext;
 
 /**
  * Describes one item of a field as the object of columns it is.
+ *
+ * This runs before the builders that decorate the item, so the shape is
+ * settled first and the keys come out in the same order whatever else is
+ * registered.
  */
 #[FieldItemSchemaBuilder(
-  weight: 0,
+  weight: -60,
 )]
 final class ItemStructureBuilder extends FieldItemSchemaBuilderBase {
 

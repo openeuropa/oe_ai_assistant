@@ -36,7 +36,7 @@ final class TemplateBundlesBuilder extends FieldItemSchemaBuilderBase {
       return $schema;
     }
 
-    $targetType = $schema['x-targetType'];
+    $targetType = $context->fieldDefinition->getFieldStorageDefinition()->getSetting('target_type');
     $bundleKey = $this->entityTypeManager->getDefinition($targetType)->getKey('bundle');
 
     $kept = array_values(array_filter(

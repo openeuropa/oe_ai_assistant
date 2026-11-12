@@ -18,6 +18,13 @@ services:
       - { name: http_client_middleware }
 
 
+  Drupal\oe_ai_assistant\SchemaBuilder\DraftableFieldsBuilder: {}
+  Drupal\oe_ai_assistant\SchemaBuilder\LangcodeBuilder: {}
+  Drupal\oe_ai_assistant\SchemaBuilder\ModerationStateBuilder: {}
+  Drupal\oe_ai_assistant\SchemaBuilder\TemplateBundlesBuilder: {}
+  Drupal\oe_ai_assistant\SchemaBuilder\TemplateDefaultsBuilder: {}
+  Drupal\oe_ai_assistant\SchemaBuilder\TemplateFieldsBuilder: {}
+
   Drupal\oe_ai_assistant\Service\TemplateDefaultsResolver: {}
   Drupal\oe_ai_assistant\Service\TemplateDefaultsResolverInterface: '@Drupal\oe_ai_assistant\Service\TemplateDefaultsResolver'
 

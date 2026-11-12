@@ -11,9 +11,13 @@ use Drupal\schema_builder\Context\FieldContext;
 
 /**
  * Describes a field as the list of items it is.
+ *
+ * This runs before the builders that decorate the field, so the shape of a
+ * field is settled before anything is added to it and the keys come out in
+ * the same order whatever else is registered.
  */
 #[FieldSchemaBuilder(
-  weight: 0,
+  weight: -60,
 )]
 final class FieldStructureBuilder extends FieldSchemaBuilderBase {
 
