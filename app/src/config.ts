@@ -32,7 +32,7 @@ export interface AppConfig {
   exitUrl: string;
   /** Display name of the authenticated user (e.g. for avatars). */
   userName: string;
-  /** Disclaimer shown under the composer. Empty string hides it. */
+  /** Sanitized HTML shown under the composer. Empty string hides it. */
   disclaimer: string;
 }
 

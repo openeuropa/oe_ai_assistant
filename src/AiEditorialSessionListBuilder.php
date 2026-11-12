@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Drupal\oe_ai_assistant;
 
 use Drupal\content_moderation\ModerationInformationInterface;
+use Drupal\Core\Cache\CacheableMetadata;
+use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Datetime\DateFormatterInterface;
 use Drupal\Core\Entity\EntityInterface;
 use Drupal\Core\Entity\EntityListBuilder;
@@ -38,6 +40,11 @@ class AiEditorialSessionListBuilder extends EntityListBuilder {
   protected ModerationInformationInterface $moderationInformation;
 
   /**
+   * The configuration service.
+   */
+  protected ConfigFactoryInterface $configFactory;
+
+  /**
    * {@inheritdoc}
    */
   protected function getEntityListQuery(): QueryInterface {
@@ -58,12 +65,14 @@ class AiEditorialSessionListBuilder extends EntityListBuilder {
     RedirectDestinationInterface $redirect_destination,
     EntityTypeManagerInterface $entity_type_manager,
     ModerationInformationInterface $moderation_information,
+    ConfigFactoryInterface $config_factory,
   ) {
     parent::__construct($entity_type, $storage);
     $this->dateFormatter = $date_formatter;
     $this->redirectDestination = $redirect_destination;
     $this->entityTypeManager = $entity_type_manager;
     $this->moderationInformation = $moderation_information;
+    $this->configFactory = $config_factory;
   }
 
   /**
@@ -77,6 +86,7 @@ class AiEditorialSessionListBuilder extends EntityListBuilder {
       $container->get('redirect.destination'),
       $container->get('entity_type.manager'),
       $container->get('content_moderation.moderation_information'),
+      $container->get('config.factory'),
     );
   }
 
@@ -173,6 +183,7 @@ class AiEditorialSessionListBuilder extends EntityListBuilder {
    * {@inheritdoc}
    */
   public function render(): array {
+    $build = [];
     $build['add_new_session'] = [
       '#type' => 'link',
       '#title' => $this->t('Add new session'),
@@ -181,7 +192,18 @@ class AiEditorialSessionListBuilder extends EntityListBuilder {
         'class' => ['button', 'button--action', 'button--primary'],
       ],
     ];
+    // Load the settings config once and reuse it for both the transparency
+    // notice markup and the cacheable dependency added below.
+    $config = $this->configFactory->get('oe_ai_assistant.settings');
+    $build['transparency_notice'] = [
+      '#type' => 'container',
+      '#markup' => TransparencyNoticeFilteredMarkup::create($config->get('transparency_notice')),
+    ];
     $build += parent::render();
+
+    CacheableMetadata::createFromRenderArray($build)
+      ->addCacheableDependency($config)
+      ->applyTo($build);
 
     return $build;
   }

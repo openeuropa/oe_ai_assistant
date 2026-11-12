@@ -5,6 +5,7 @@ use oe ai assistant:
 administer ai editorial sessions:
   title: 'Administer AI editorial sessions'
   description: 'Create, update, and delete AI editorial sessions and their bundles.'
+  restrict access: true
 
 view_update own sessions:
   title: 'View update own session'

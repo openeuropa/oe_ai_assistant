@@ -11,6 +11,7 @@ use Drupal\Core\Url;
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionType;
 use Drupal\oe_ai_assistant\Plugin\AiAssistantPluginManager;
+use Drupal\oe_ai_assistant\TransparencyNoticeFilteredMarkup;
 use Drupal\system\SystemManager;
 use Symfony\Component\HttpFoundation\RedirectResponse;
 use Symfony\Component\HttpFoundation\RequestStack;
@@ -120,6 +121,10 @@ class AiEditorialSessionController extends ControllerBase {
         $pluginConfig[$pluginId] = $config;
       }
     }
+    // Load the settings config once and reuse it for both the disclaimer
+    // markup and the cacheable dependency added at the end of the method.
+    $settings = $this->config('oe_ai_assistant.settings');
+    $disclaimer = TransparencyNoticeFilteredMarkup::create($settings->get('transparency_notice'));
     // Build the configuration object that bootstraps the React app.
     // This data is serialised into window.drupalSettings.oeAiAssistant
     // and read by the React entry point before the first render.
@@ -147,8 +152,8 @@ class AiEditorialSessionController extends ControllerBase {
       // Where the exit control returns the editor to: the AI editorial
       // sessions dashboard.
       'exitUrl' => Url::fromRoute('entity.ai_editorial_session.collection')->toString(),
-      // Disclaimer shown under the chat composer.
-      'disclaimer' => (string) $this->t('AI assistant can make mistakes. Please double-check responses.'),
+      // Sanitized notice shown under the chat composer.
+      'disclaimer' => $disclaimer,
       // List of plugin IDs that should be available in the UI for this node.
       // The React app only registers plugins whose IDs appear in this list,
       // allowing server-side control over which tools are shown per context.
@@ -199,6 +204,7 @@ class AiEditorialSessionController extends ControllerBase {
     CacheableMetadata::createFromRenderArray($build)
       ->addCacheableDependency($session)
       ->addCacheableDependency($this->sessionEntityTypeManager->getStorage('ai_editorial_session_type')->load($session->bundle()))
+      ->addCacheableDependency($settings)
       ->merge($cacheability)
       ->applyTo($build);
 

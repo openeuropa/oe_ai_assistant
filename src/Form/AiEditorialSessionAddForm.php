@@ -4,10 +4,12 @@ declare(strict_types=1);
 
 namespace Drupal\oe_ai_assistant\Form;
 
+use Drupal\Core\Cache\CacheableMetadata;
 use Drupal\Core\Entity\ContentEntityForm;
 use Drupal\Core\Form\FormStateInterface;
 use Drupal\Core\Messenger\MessengerTrait;
 use Drupal\Core\Session\AccountInterface;
+use Drupal\oe_ai_assistant\TransparencyNoticeFilteredMarkup;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 
 /**
@@ -52,7 +54,15 @@ class AiEditorialSessionAddForm extends ContentEntityForm {
       $this->entity->set('content_type', $chosenType);
       $this->entity->set('template', NULL);
     }
-
+    // Load the settings config once and reuse it for both the transparency
+    // notice markup and the cacheable dependency added at the end of the
+    // method.
+    $config = $this->config('oe_ai_assistant.settings');
+    $form['transparency_notice'] = [
+      '#type' => 'container',
+      '#markup' => TransparencyNoticeFilteredMarkup::create($config->get('transparency_notice')),
+      '#weight' => -100,
+    ];
     $form = parent::form($form, $form_state);
     $form['label'] = [
       '#type' => 'textfield',
@@ -70,6 +80,10 @@ class AiEditorialSessionAddForm extends ContentEntityForm {
     ];
     $form['template']['#prefix'] = '<div id="ai-editorial-session-template">';
     $form['template']['#suffix'] = '</div>';
+
+    CacheableMetadata::createFromRenderArray($form)
+      ->addCacheableDependency($config)
+      ->applyTo($form);
 
     return $form;
   }
