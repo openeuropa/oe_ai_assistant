@@ -34,6 +34,20 @@ class AiEditorialContext implements AiEditorialContextInterface {
   /**
    * {@inheritdoc}
    */
+  public function getToneOptions(): array {
+    return array_map(
+      static fn (array $tone): array => [
+        'id' => $tone['id'],
+        'label' => $tone['label'],
+        'description' => $tone['description'],
+      ],
+      $this->getAvailableTones(),
+    );
+  }
+
+  /**
+   * {@inheritdoc}
+   */
   public function buildSelectionPrompt(): string {
     return implode("\n", [
       'Before drafting, ask the user to select a writing tone.',
