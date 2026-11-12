@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Drupal\oe_ai_assistant\Service\Drafting;
 
-use Drupal\ai_neuron\Agent\NeuronAgentInterface;
 use Drupal\ai_neuron\Agent\NeuronAgentManagerInterface;
 use Drupal\Component\Datetime\TimeInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
@@ -17,9 +16,12 @@ use Drupal\document_loader\DocumentLoaderType\Input\WordInput;
 use Drupal\document_loader\Service\DocumentLoaderManager;
 use Drupal\file\FileInterface;
 use Drupal\media\MediaInterface;
+use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
 use Drupal\oe_ai_assistant\Exception\DocumentExtractionException;
+use Drupal\oe_ai_assistant\Plugin\NeuronAgent\SummaryNeuronAgent;
 use Drupal\state_machine\Plugin\Field\FieldType\StateItemInterface;
 use NeuronAI\Chat\Messages\UserMessage;
+use NeuronAI\Workflow\Persistence\InMemoryPersistence;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 
@@ -222,7 +224,7 @@ final class DocumentExtractionProcessor implements DocumentExtractionProcessorIn
         $this->transition($media, 'claim_summarize');
       }
 
-      $summary = $this->summarize((string) $media->get(self::EXTRACT_FIELD)->value);
+      $summary = $this->summarize($media);
       if ($this->isDeleted($media)) {
         return self::STATE_SUMMARIZING;
       }
@@ -290,28 +292,36 @@ final class DocumentExtractionProcessor implements DocumentExtractionProcessorIn
    * Writes a brief summary of the extract with the summary agent.
    *
    * The call is not streamed and the extract is capped so a long document
-   * never overflows the model context.
+   * never overflows the model context. We build the agent with the
+   * document's session, so the session's history page shows the call and
+   * counts its tokens.
    *
-   * Built from the plugin directly instead of
-   * NeuronAgentManager::createAgent(): this run has no editorial session to
-   * key a thread on, and the manager unconditionally binds the site's
-   * persisted message store and workflow persistence to every agent it
-   * builds, which would leave this one-off call as an orphaned, unreadable
-   * row nothing ever deletes.
+   * @throws \Drupal\oe_ai_assistant\Exception\DocumentExtractionException
+   *   When the document names no session, no chat provider is configured,
+   *   or the provider answers with no summary.
    */
-  private function summarize(string $text): string {
-    $plugin = $this->agents->createInstance('document_summary');
-    if (!$plugin instanceof NeuronAgentInterface) {
-      throw new DocumentExtractionException('The document_summary plugin is not a Neuron agent.');
-    }
+  private function summarize(MediaInterface $media): string {
+    $session = $this->session($media);
 
     try {
-      $agent = $plugin->getNeuron();
+      $agent = $this->agents->createAgent(SummaryNeuronAgent::PLUGIN_ID, [
+        'session' => $session,
+        'thread_key' => $this->summaryThreadKey($media, $session),
+      ]);
     }
     catch (\InvalidArgumentException $e) {
       throw new DocumentExtractionException('No default chat provider is configured.', 0, $e);
     }
 
+    // Keep the workflow state in memory. The manager binds the site's
+    // workflow store to every agent it builds, and a failed run leaves a
+    // partition in neuron_workflow_store that only a later run under the
+    // same workflow id would sweep. Every attempt here opens a thread of
+    // its own, so that run never comes. The session history reads the
+    // message rows, which the message store writes either way.
+    $agent->setPersistence(new InMemoryPersistence());
+
+    $text = (string) $media->get(self::EXTRACT_FIELD)->value;
     $message = new UserMessage(mb_substr($text, 0, self::MAX_PROMPT_CHARS));
     $response = $agent->chat($message)->getMessage();
     if ($response === NULL) {
@@ -329,6 +339,55 @@ final class DocumentExtractionProcessor implements DocumentExtractionProcessorIn
     }
 
     return $summary;
+  }
+
+  /**
+   * The editorial session a document belongs to.
+   *
+   * @throws \Drupal\oe_ai_assistant\Exception\DocumentExtractionException
+   *   When the document names no session.
+   */
+  private function session(MediaInterface $media): AiEditorialSessionInterface {
+    $session = $media->get(DocumentRepositoryBase::SESSION_FIELD)->entity;
+    if (!$session instanceof AiEditorialSessionInterface) {
+      throw new DocumentExtractionException(sprintf('Document %s names no editorial session.', $media->id()));
+    }
+
+    return $session;
+  }
+
+  /**
+   * Names the conversation one summary run writes to.
+   *
+   * A run re-sends the whole thread it writes to, so a key built from the
+   * document alone would send the earlier attempt's extract again and
+   * charge the session for it twice. Counting the attempt gives each run a
+   * thread of its own, and the history page keeps their costs apart.
+   *
+   * @return string
+   *   The key, which the agent prefixes with its plugin id to get the
+   *   thread id.
+   */
+  private function summaryThreadKey(MediaInterface $media, AiEditorialSessionInterface $session): string {
+    $key = sprintf('session_%s.media_%s', $session->id(), $media->id());
+    $prefix = SummaryNeuronAgent::PLUGIN_ID . '.' . $key . '.attempt_';
+
+    // Group by thread_id instead of loading the rows. A row carries the
+    // message it stored, the capped extract included, and the thread names
+    // are all we need here.
+    $threads = $this->entityTypeManager->getStorage('neuron_message')
+      ->getAggregateQuery()
+      ->accessCheck(FALSE)
+      ->condition('thread_id', $prefix, 'STARTS_WITH')
+      ->groupBy('thread_id')
+      ->execute();
+
+    $attempt = 1;
+    foreach ($threads as $thread) {
+      $attempt = max($attempt, 1 + (int) substr((string) $thread['thread_id'], strlen($prefix)));
+    }
+
+    return $key . '.attempt_' . $attempt;
   }
 
   /**

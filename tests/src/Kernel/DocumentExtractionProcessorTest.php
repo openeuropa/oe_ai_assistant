@@ -8,6 +8,7 @@ use Drupal\Core\Lock\LockBackendInterface;
 use Drupal\file\Entity\File;
 use Drupal\media\Entity\Media;
 use Drupal\media\MediaInterface;
+use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
 use Drupal\oe_ai_assistant\Service\Drafting\DocumentExtractionProcessorInterface;
 use Drupal\oe_ai_assistant_test\Plugin\AiProvider\MockAiProvider;
 use Drupal\oe_ai_assistant_test\Plugin\AiProvider\MockResponse;
@@ -28,6 +29,11 @@ class DocumentExtractionProcessorTest extends AiEditorialSessionKernelTestBase {
    * The fake Tika server.
    */
   private MockHandler $tika;
+
+  /**
+   * The session the test documents are attached to.
+   */
+  private ?AiEditorialSessionInterface $session = NULL;
 
   /**
    * {@inheritdoc}
@@ -52,6 +58,20 @@ class DocumentExtractionProcessorTest extends AiEditorialSessionKernelTestBase {
   }
 
   /**
+   * The session every test document is attached to.
+   *
+   * Creating a session builds the entity bundle info. That instantiates
+   * EditorialSessionHooks and, through its document repository, the
+   * extraction processor, which then holds the lock service the container
+   * has at that moment. testHeldLockPreventsClaim() replaces the lock with
+   * a refusing stub, so the session is created with the first document and
+   * not in setUp().
+   */
+  private function session(): AiEditorialSessionInterface {
+    return $this->session ??= $this->createSession($this->createUser());
+  }
+
+  /**
    * Creates a scheduled context document media with a text file.
    */
   private function createDocument(string $name = 'brief.txt'): MediaInterface {
@@ -63,6 +83,7 @@ class DocumentExtractionProcessorTest extends AiEditorialSessionKernelTestBase {
       'name' => $name,
       'status' => 0,
       'oe_ai_context_document' => ['target_id' => $file->id()],
+      'oe_ai_session' => ['target_id' => $this->session()->id()],
     ]);
     $media->save();
     return $media;
@@ -75,6 +96,33 @@ class DocumentExtractionProcessorTest extends AiEditorialSessionKernelTestBase {
     $storage = $this->container->get('entity_type.manager')->getStorage('media');
     $storage->resetCache([$media->id()]);
     return $storage->load($media->id());
+  }
+
+  /**
+   * The thread id the given summary attempt of a document writes to.
+   */
+  private function summaryThread(MediaInterface $media, int $attempt): string {
+    return sprintf(
+      'document_summary.session_%s.media_%s.attempt_%d',
+      $this->session()->id(),
+      $media->id(),
+      $attempt,
+    );
+  }
+
+  /**
+   * Every stored Neuron message, oldest first.
+   *
+   * @return \Drupal\ai_neuron\Entity\NeuronMessageInterface[]
+   *   The rows.
+   */
+  private function neuronMessages(): array {
+    $rows = $this->container->get('entity_type.manager')
+      ->getStorage('neuron_message')
+      ->loadMultiple();
+    ksort($rows);
+
+    return array_values($rows);
   }
 
   /**
@@ -137,14 +185,11 @@ class DocumentExtractionProcessorTest extends AiEditorialSessionKernelTestBase {
   /**
    * Tests that a summary never leaves a row in Neuron's workflow store.
    *
-   * The summarize() method builds the summary agent from the plugin
-   * directly instead of through NeuronAgentManager::createAgent(), which
-   * is what would bind the site's durable workflow persistence to it.
-   * Without that binding, the agent's run falls back to Neuron's own
-   * default, an in-process array nothing ever writes to disk, so this
-   * table stays empty whatever the run's outcome. Before that, every
-   * summary, and every retry of a failed one, left an orphan partition
-   * here that nothing ever swept.
+   * A failed run leaves its partition behind, and the only sweep of one is
+   * a later run under the same workflow id. Every summary attempt opens a
+   * thread of its own, so no such run ever comes. The processor therefore
+   * keeps the workflow state of this run in memory, and the table stays
+   * empty whatever the outcome.
    */
   public function testSummarizeLeavesNoWorkflowStoreRow(): void {
     $this->tika->append(new Response(200, [], 'Full text'));
@@ -170,6 +215,88 @@ class DocumentExtractionProcessorTest extends AiEditorialSessionKernelTestBase {
       ->countQuery()
       ->execute()
       ->fetchField());
+  }
+
+  /**
+   * Tests that the summary rows belong to the document's session.
+   *
+   * The session's history page loads every neuron_message row that names
+   * the session and sums the tokens per thread. Unless the summary rows
+   * record the session, the call the editor paid for shows up nowhere and
+   * counts for nothing.
+   */
+  public function testSummaryRunsUnderTheSessionThread(): void {
+    $this->tika->append(new Response(200, [], 'Full text'));
+    MockAiProvider::enqueue(new MockResponse('A brief summary.', tokenUsage: [
+      'input' => 1200,
+      'output' => 80,
+    ]));
+    $media = $this->createDocument();
+
+    $this->processor()->process($media);
+
+    $thread = $this->summaryThread($media, 1);
+    $rows = $this->neuronMessages();
+    $this->assertCount(2, $rows);
+    foreach ($rows as $row) {
+      $this->assertSame($thread, (string) $row->get('thread_id')->value);
+      $this->assertSame($this->session()->id(), $row->get('oe_ai_session')->target_id);
+      $this->assertSame('document_summary', (string) $row->get('agent_id')->value);
+    }
+    $this->assertSame([$thread], array_keys($this->session()->conversationThreads()));
+
+    // What the page adds up: the answer carries the usage the provider
+    // reported, and the question that preceded it carries none.
+    $this->assertNull($rows[0]->get('tokens_total')->value);
+    $this->assertSame(1280, (int) $rows[1]->get('tokens_total')->value);
+  }
+
+  /**
+   * Tests that a second run opens the next attempt instead of resuming.
+   *
+   * Resuming the first attempt's thread would send its extract to the
+   * provider again and charge the session for it twice. The call log
+   * assertion catches that: the second call carries one message, the
+   * replaced text.
+   */
+  public function testSecondRunOpensTheNextAttemptThread(): void {
+    $this->tika->append(new Response(200, [], 'Full text'));
+    MockAiProvider::enqueue(new MockResponse('A brief summary.'));
+    $media = $this->createDocument();
+    $this->processor()->process($media);
+
+    $media = $this->reload($media);
+    $this->processor()->schedule($media);
+    $media->save();
+    $this->tika->append(new Response(200, [], 'Replaced text'));
+    MockAiProvider::enqueue(new MockResponse('Another summary.'));
+
+    $this->processor()->process($this->reload($media));
+
+    $this->assertSame(
+      [$this->summaryThread($media, 1), $this->summaryThread($media, 2)],
+      array_keys($this->session()->conversationThreads()),
+    );
+    $log = MockAiProvider::getCallLog();
+    $this->assertCount(2, $log);
+    $this->assertCount(1, $log[1]['messages']);
+    $this->assertSame('Replaced text', $log[1]['messages'][0]['text']);
+  }
+
+  /**
+   * Tests that a document naming no session is never summarised.
+   */
+  public function testDocumentWithoutSessionEndsInError(): void {
+    $this->tika->append(new Response(200, [], 'Full text'));
+    $media = $this->createDocument();
+    $media->set('oe_ai_session', NULL);
+    $media->save();
+
+    $state = $this->processor()->process($media);
+
+    $this->assertSame(DocumentExtractionProcessorInterface::STATE_ERROR, $state);
+    $this->assertSame([], MockAiProvider::getCallLog());
+    $this->assertSame([], $this->neuronMessages());
   }
 
   /**

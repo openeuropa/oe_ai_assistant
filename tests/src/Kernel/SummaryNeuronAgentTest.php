@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace Drupal\Tests\oe_ai_assistant\Kernel;
 
 use Drupal\ai_neuron\Agent\NeuronAgentManagerInterface;
+use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
 use Drupal\oe_ai_assistant_test\Plugin\AiProvider\MockAiProvider;
 use Drupal\oe_ai_assistant_test\Plugin\AiProvider\MockResponse;
+use NeuronAI\Agent\Agent;
 use NeuronAI\Chat\Messages\UserMessage;
 
 /**
@@ -21,6 +23,11 @@ use NeuronAI\Chat\Messages\UserMessage;
 class SummaryNeuronAgentTest extends AiEditorialSessionKernelTestBase {
 
   /**
+   * The session the agent runs under.
+   */
+  private AiEditorialSessionInterface $session;
+
+  /**
    * {@inheritdoc}
    */
   protected function setUp(): void {
@@ -30,6 +37,15 @@ class SummaryNeuronAgentTest extends AiEditorialSessionKernelTestBase {
       ->set('default_providers', ['chat' => ['provider_id' => 'mock_ai', 'model_id' => 'mock-model']])
       ->save();
     MockAiProvider::reset();
+    $this->session = $this->createSession($this->createUser());
+  }
+
+  /**
+   * Builds the agent with the session context the plugin requires.
+   */
+  private function agent(): Agent {
+    return $this->container->get(NeuronAgentManagerInterface::class)
+      ->createAgent('document_summary', ['session' => $this->session]);
   }
 
   /**
@@ -38,8 +54,7 @@ class SummaryNeuronAgentTest extends AiEditorialSessionKernelTestBase {
   public function testSummaryAgentWritesBriefSummary(): void {
     MockAiProvider::enqueue(new MockResponse('A brief summary.'));
 
-    $agent = $this->container->get(NeuronAgentManagerInterface::class)->createAgent('document_summary');
-    $state = $agent->chat(new UserMessage('Full text of the document.'));
+    $state = $this->agent()->chat(new UserMessage('Full text of the document.'));
 
     $this->assertSame('A brief summary.', $state->getMessage()?->getContent());
 
@@ -58,7 +73,7 @@ class SummaryNeuronAgentTest extends AiEditorialSessionKernelTestBase {
   public function testProviderFailureReachesTheCaller(): void {
     MockAiProvider::enqueue(new MockResponse(error: new \RuntimeException('Provider down.')));
 
-    $agent = $this->container->get(NeuronAgentManagerInterface::class)->createAgent('document_summary');
+    $agent = $this->agent();
 
     $thrown = NULL;
     try {
