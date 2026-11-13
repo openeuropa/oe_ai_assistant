@@ -46,9 +46,17 @@ final class EditorialContext {
    * @param array $contextDocuments
    *   Context document descriptors, each {id, title, category, status,
    *   filename, summary, meta, extract}. Only documents of the "context"
-   *   category are injected into the prompts; publishable assets stay out of
-   *   the context for now. The extract is the full text when the pipeline
-   *   produced one, NULL otherwise.
+   *   category are injected as background reading. The extract is the full
+   *   text when the pipeline produced one, NULL otherwise.
+   * @param array $publishableAssets
+   *   Publishable asset descriptors, each {id, title, category, status,
+   *   filename, summary, meta, extract}, the same shape the asset repository
+   *   serialises. Unlike context documents these are references to material
+   *   the editor wants EMBEDDED in the generated content, not background
+   *   reading; they are injected so the model knows which assets exist and
+   *   can decide where each is used, never read verbatim. The summary holds
+   *   the LLM description used to place the asset (empty for an image whose
+   *   extraction has not produced one).
    */
   public function __construct(
     public readonly ?string $toneId,
@@ -57,6 +65,7 @@ final class EditorialContext {
     public readonly ?string $templateId,
     public readonly ?string $templateLabel,
     public readonly array $contextDocuments = [],
+    public readonly array $publishableAssets = [],
   ) {}
 
   /**
@@ -184,6 +193,57 @@ final class EditorialContext {
       $lines[] = 'Some documents could not be processed. Tell the editor to retry them or to remove them, '
         . 'and warn that a draft produced now ignores their content.';
     }
+
+    return implode("\n", $lines);
+  }
+
+  /**
+   * Builds the publishable assets block of the system prompt.
+   *
+   * Every asset the editor attached for use in the output is listed as a
+   * reference: its id, file name, type and the description produced by the
+   * extraction pipeline. Unlike the context documents block, this is not
+   * background reading: the assets are material to embed or place in the
+   * generated content, and the model addresses one by its id when it decides
+   * where to use it. No file bytes or extracts travel here; references are
+   * short, so there is no character budget. An asset without a description
+   * (an image whose extraction produced none) is still listed so the model
+   * can place it by file name.
+   *
+   * @return string
+   *   The prompt block, or an empty string without publishable assets.
+   */
+  public function toPublishableAssetsPrompt(): string {
+    if ($this->publishableAssets === []) {
+      return '';
+    }
+
+    $lines = ['Publishable assets attached by the editor to use in this draft:'];
+    foreach ($this->publishableAssets as $asset) {
+      $lines[] = '';
+      $id = (string) ($asset['id'] ?? '');
+      $filename = trim((string) ($asset['filename'] ?? ''));
+      $type = trim((string) ($asset['meta']['type'] ?? ''));
+      // The heading carries the id the model must use to reference the asset,
+      // plus the file name and type so it can tell assets apart.
+      $heading = sprintf('### Asset %s', $id !== '' ? $id : ($filename ?: 'unknown'));
+      if ($filename !== '') {
+        $heading .= sprintf(' (file: %s', $filename);
+        $heading .= $type !== '' ? sprintf(', type: %s)', $type) : ')';
+      }
+      elseif ($type !== '') {
+        $heading .= sprintf(' (type: %s)', $type);
+      }
+      $lines[] = $heading;
+      $summary = trim((string) ($asset['summary'] ?? ''));
+      $lines[] = $summary !== ''
+        ? 'Description: ' . $summary
+        : 'No description available yet.';
+    }
+
+    $lines[] = '';
+    $lines[] = 'These assets are for embedding or placement in the generated content, not background reading. '
+      . 'When you use one, reference it by its asset id; never invent an id or use an asset that is not listed here.';
 
     return implode("\n", $lines);
   }

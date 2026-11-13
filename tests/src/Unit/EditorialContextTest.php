@@ -126,6 +126,22 @@ class EditorialContextTest extends UnitTestCase {
   }
 
   /**
+   * Builds a publishable asset descriptor.
+   */
+  private static function asset(string $id, string $summary = '', string $type = 'pdf'): array {
+    return [
+      'id' => $id,
+      'title' => 'Asset ' . $id,
+      'category' => 'publishable',
+      'status' => $summary !== '' ? 'done' : 'error',
+      'filename' => 'asset-' . $id . '.' . $type,
+      'summary' => $summary,
+      'meta' => ['type' => $type, 'size' => 10],
+      'extract' => NULL,
+    ];
+  }
+
+  /**
    * Tests that processed documents are injected as titled text blocks.
    *
    * The heading carries the file name so the agents can tell documents
@@ -313,6 +329,94 @@ Overflow text.", $prompt);
     $this->assertStringContainsString('- Tone: Formal', $prompt);
     $this->assertStringContainsString("### Document 1 (file: doc-1.pdf)
 Text.", $prompt);
+  }
+
+  /**
+   * Tests that an empty context yields no publishable assets block.
+   */
+  public function testPublishableAssetsPromptEmpty(): void {
+    $context = new EditorialContext(NULL, NULL, NULL, NULL, NULL);
+    $this->assertSame('', $context->toPublishableAssetsPrompt());
+  }
+
+  /**
+   * Tests that assets are listed as references with id, file name and type.
+   *
+   * Each asset carries its id (the handle the model must use to place it),
+   * its file name and type, and the extraction description. The block frames
+   * the assets as material to embed, not background reading.
+   */
+  public function testPublishableAssetsPromptListsReferences(): void {
+    $context = new EditorialContext(NULL, NULL, NULL, NULL, NULL, [], [
+      self::asset('12', 'EU emissions report, 2026.'),
+      self::asset('15', 'Hero image of the summit.', 'png'),
+    ]);
+
+    $prompt = $context->toPublishableAssetsPrompt();
+
+    $this->assertStringContainsString('Publishable assets attached by the editor', $prompt);
+    $this->assertStringContainsString("### Asset 12 (file: asset-12.pdf, type: pdf)
+Description: EU emissions report, 2026.", $prompt);
+    $this->assertStringContainsString("### Asset 15 (file: asset-15.png, type: png)
+Description: Hero image of the summit.", $prompt);
+    $this->assertStringContainsString('embedding or placement', $prompt);
+    $this->assertStringContainsString('reference it by its asset id', $prompt);
+  }
+
+  /**
+   * Tests that an asset without a description is still listed.
+   *
+   * An image whose extraction produced no summary comes to rest with an
+   * empty description, but the model can still place it by file name, so it
+   * stays in the block with an explicit "no description" note.
+   */
+  public function testPublishableAssetsPromptListsAssetWithoutDescription(): void {
+    $context = new EditorialContext(NULL, NULL, NULL, NULL, NULL, [], [
+      self::asset('20', '', 'jpg'),
+    ]);
+
+    $prompt = $context->toPublishableAssetsPrompt();
+
+    $this->assertStringContainsString("### Asset 20 (file: asset-20.jpg, type: jpg)
+No description available yet.", $prompt);
+  }
+
+  /**
+   * Tests that the documents block and the assets block never mix.
+   *
+   * Context documents are background reading and publishable assets are
+   * embeddable material; each method returns only its own category so the
+   * two prompts stay distinct.
+   */
+  public function testPublishableAssetsAndDocumentsStaySeparate(): void {
+    $context = new EditorialContext(NULL, NULL, NULL, NULL, NULL, [
+      self::document('1', 'done', 'Document text.'),
+    ], [
+      self::asset('12', 'Asset description.'),
+    ]);
+
+    $documents = $context->toContextDocumentsPrompt();
+    $assets = $context->toPublishableAssetsPrompt();
+
+    $this->assertStringContainsString('Document text.', $documents);
+    $this->assertStringNotContainsString('Asset description.', $documents);
+    $this->assertStringContainsString('Asset description.', $assets);
+    $this->assertStringNotContainsString('Document text.', $assets);
+  }
+
+  /**
+   * Tests that publishable assets never reach the provenance snapshot.
+   *
+   * This ticket injects assets into the prompt only; they are not part of
+   * the draft provenance, which stays tone + template + context documents.
+   */
+  public function testSnapshotIgnoresPublishableAssets(): void {
+    $context = new EditorialContext(NULL, NULL, NULL, NULL, NULL, [], [
+      self::asset('12', 'Asset description.'),
+    ]);
+    $snapshot = $context->toSnapshot();
+    $this->assertArrayNotHasKey('assets', $snapshot);
+    $this->assertSame([], $snapshot['documents']);
   }
 
   /**
