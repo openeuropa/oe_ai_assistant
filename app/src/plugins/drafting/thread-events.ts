@@ -1,11 +1,10 @@
 /**
  * Thread event splice utilities.
  *
- * Builds synthetic assistant messages carrying editorial_event tool-call
- * parts and splices them into the live assistant-ui thread via the
- * export/import API. The shape mirrors what hydrate-transcript.ts produces
- * for server-persisted events so the chip renders through the existing
- * EditorialEventToolUI path without any additional wiring.
+ * Builds synthetic assistant messages that carry editorial_event tool-call
+ * parts. The export/import API splices them into the live assistant-ui
+ * thread, where EditorialEventToolUI draws them as chips. They live only
+ * in the thread, so a reload drops them.
  */
 
 import {
@@ -34,9 +33,8 @@ let localEventCounter = 0;
 /**
  * Builds the synthetic assistant message carrying the event chip part.
  *
- * The resulting message is structurally identical to what hydrate-transcript
- * produces for a server-persisted event, except the id uses a local counter
- * prefix and the args omit the "at" timestamp (it was not produced locally).
+ * The id uses a local counter prefix. The args carry no timestamp, since
+ * the chip reports a change the page has just made.
  */
 export function buildEventThreadMessage(
   event: LocalThreadEvent,

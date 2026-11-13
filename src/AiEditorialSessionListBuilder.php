@@ -213,6 +213,19 @@ class AiEditorialSessionListBuilder extends EntityListBuilder {
       }
     }
 
+    // The activity page carries a permission of its own. So the link
+    // checks the access of the route, and not the access of the session.
+    if ($entity->hasLinkTemplate('activity')) {
+      $activity_url = $entity->toUrl('activity');
+      if ($activity_url->access()) {
+        $operations['activity'] = [
+          'title' => $this->t('Activity'),
+          'weight' => 6,
+          'url' => $activity_url,
+        ];
+      }
+    }
+
     return $operations;
   }
 

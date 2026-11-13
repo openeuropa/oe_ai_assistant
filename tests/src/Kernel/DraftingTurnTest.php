@@ -6,6 +6,7 @@ namespace Drupal\Tests\oe_ai_assistant\Kernel;
 
 use Drupal\ai_neuron\Agent\NeuronAgentManagerInterface;
 use Drupal\ai_neuron\Workflow\NeuronWorkflowManagerInterface;
+use Drupal\oe_ai_assistant\Entity\ActivityType;
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
 use Drupal\oe_ai_assistant\Neuron\Chat\History\EditorialMessageStore;
 use Drupal\oe_ai_assistant\Plugin\AiAssistantPluginManager;
@@ -107,6 +108,11 @@ class DraftingTurnTest extends AiEditorialSessionKernelTestBase {
     $task = (string) ($threads[$paragraphThread][0]->getContent()[0]['content'] ?? '');
     $this->assertStringContainsString('Main fields already generated', $task);
     $this->assertStringContainsString('"title":[{"value":"T"}]', $task);
+
+    $entries = $session->getLatestActivity(100);
+    $this->assertCount(1, $entries);
+    $this->assertSame('Draft 1 generated.', $entries[0]->getMessage());
+    $this->assertSame(ActivityType::DraftGenerated, $entries[0]->getType());
   }
 
   /**
@@ -249,6 +255,14 @@ class DraftingTurnTest extends AiEditorialSessionKernelTestBase {
     $this->assertStringContainsString('does not match its schema', $results[0]['result']['error']);
 
     $this->assertSame([], $session->listDrafts(), 'An incomplete set produces no draft.');
+
+    $entries = $session->getLatestActivity(100);
+    $this->assertCount(1, $entries);
+    $this->assertStringStartsWith(
+      'Draft 1 failed in the "main_fields" group: ',
+      $entries[0]->getMessage(),
+    );
+    $this->assertSame(ActivityType::DraftFailed, $entries[0]->getType());
   }
 
   /**

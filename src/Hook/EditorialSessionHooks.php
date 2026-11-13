@@ -63,4 +63,16 @@ final class EditorialSessionHooks {
     $this->contextDocumentRepository->deleteForSession($entity);
   }
 
+  /**
+   * Implements hook_ai_editorial_session_delete().
+   *
+   * Removes the activity recorded for the deleted session.
+   */
+  #[Hook('ai_editorial_session_delete')]
+  public function deleteSessionActivity(EntityInterface $entity): void {
+    assert($entity instanceof AiEditorialSessionInterface);
+
+    $entity->deleteActivity();
+  }
+
 }

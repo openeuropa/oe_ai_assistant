@@ -109,7 +109,7 @@ GetMessagesResponse:
         properties:
           role:
             type: string
-            description: The message role ("user", "assistant" or "event").
+            description: The message role ("user" or "assistant").
           content:
             type: string
             description: The message text (user and assistant items).
@@ -124,15 +124,6 @@ GetMessagesResponse:
               Stable CMS user id of the author (user items). Clients key
               participants by this id so two users sharing a display
               name stay distinct.
-          type:
-            type: string
-            description: The event type, e.g. "session_start", "tone", "template" (event items).
-          summary:
-            type: string
-            description: The human-readable event summary (event items).
           at:
             type: string
-            description: RFC 3339 timestamp of the event (event items).
-          version:
-            type: integer
-            description: The draft version a "save" event persisted (event items).
+            description: RFC 3339 time the message was stored.
