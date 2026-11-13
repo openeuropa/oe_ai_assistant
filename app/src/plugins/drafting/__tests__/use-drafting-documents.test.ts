@@ -171,19 +171,99 @@ describe("useDraftingDocuments", () => {
     expect(loadErrorState()).toBeNull();
   });
 
-  it("exposes the accepted extensions from the host config", async () => {
+  it("exposes the accepted extensions of its own category", async () => {
     setConfig({
       userId: "editor",
       sessionId: "session-42",
       pluginConfig: {
         drafting: {
-          documents: { enabled: true, extensions: ["pdf", "docx"] },
+          documents: {
+            enabled: true,
+            extensions: {
+              context: ["pdf", "docx"],
+              publishable: ["pdf", "png"],
+            },
+          },
         },
       },
     });
     const { useDraftingDocuments } = await loadHook();
 
     expect(useDraftingDocuments().extensions).toEqual(["pdf", "docx"]);
+    expect(useDraftingDocuments("publishable").extensions).toEqual([
+      "pdf",
+      "png",
+    ]);
+  });
+
+  it("does not load either category when the shared documents gate is disabled", async () => {
+    setConfig({
+      userId: "editor",
+      sessionId: "session-42",
+      pluginConfig: {
+        drafting: {
+          documents: {
+            enabled: false,
+            extensions: { context: ["txt"], publishable: ["jpg"] },
+          },
+        },
+      },
+    });
+    const { useDraftingDocuments } = await loadHook();
+
+    expect(useDraftingDocuments().enabled).toBe(false);
+    expect(useDraftingDocuments("publishable").enabled).toBe(false);
+    await flushAsync();
+    expect(apiMocks.listDraftingDocuments).not.toHaveBeenCalled();
+  });
+
+  it("uses the publishable configuration and category throughout the asset lifecycle", async () => {
+    setConfig({
+      userId: "editor",
+      sessionId: "session-42",
+      pluginConfig: {
+        drafting: {
+          documents: {
+            enabled: true,
+            extensions: { context: ["txt"], publishable: ["jpg", "pdf"] },
+          },
+        },
+      },
+    });
+    const asset: DraftingDocument = {
+      id: "image-1",
+      title: "Building.jpg",
+      status: "done",
+      meta: { type: "jpg", size: 1024 },
+    };
+    apiMocks.listDraftingDocuments.mockResolvedValue([]);
+    apiMocks.addDraftingDocument.mockResolvedValue(asset);
+    const { useDraftingDocuments } = await loadHook();
+    const assets = useDraftingDocuments("publishable");
+    await flushAsync();
+
+    expect(assets.enabled).toBe(true);
+    expect(assets.extensions).toEqual(["jpg", "pdf"]);
+    expect(apiMocks.listDraftingDocuments).toHaveBeenCalledWith("publishable");
+
+    const file = new File(["image"], asset.title, { type: "image/jpeg" });
+    await assets.uploadFiles(fileList([file]));
+    expect(selectedState()).toEqual([asset]);
+    expect(apiMocks.addDraftingDocument).toHaveBeenCalledWith(
+      file,
+      "publishable",
+    );
+    expect(apiMocks.extractDraftingDocument).toHaveBeenCalledWith(
+      asset.id,
+      "publishable",
+    );
+
+    await assets.removeDocument(asset.id);
+    expect(apiMocks.removeDraftingDocument).toHaveBeenCalledWith(
+      asset.id,
+      "publishable",
+    );
+    expect(selectedState()).toEqual([]);
   });
 
   it("surfaces initial list failures instead of the document list", async () => {

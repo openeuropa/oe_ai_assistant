@@ -11,7 +11,13 @@
  */
 
 import { AssistantRuntimeProvider } from "@assistant-ui/react";
-import { FileText, LayoutTemplate, Loader2, Megaphone } from "lucide-react";
+import {
+  FileText,
+  Images,
+  LayoutTemplate,
+  Loader2,
+  Megaphone,
+} from "lucide-react";
 import { type ReactNode, useCallback } from "react";
 import { CardSelectPane } from "@/components/ui/card-select-pane";
 import type { PaneTabItem } from "@/components/ui/pane-tabs";
@@ -106,6 +112,7 @@ function DraftingChat() {
   const runtime = useDraftingRuntime();
   const tone = useDraftingTone();
   const documents = useDraftingDocuments();
+  const publishableAssets = useDraftingDocuments("publishable");
   const template = useDraftingTemplate();
   const hasFields = Object.keys(draftedFields).length > 0;
   // The pane only exists once there is an artifact to show; before that
@@ -232,39 +239,63 @@ function DraftingChat() {
     });
   }
 
-  if (documents.enabled) {
-    tabs.push({
+  const documentPanels = [
+    {
       id: "documents",
-      icon: <FileText size={20} />,
+      category: "context",
       title: "Context documents",
-      summary: documents.isLoading ? (
+      icon: <FileText size={20} />,
+      singular: "document",
+      plural: "documents",
+      state: documents,
+    },
+    {
+      id: "publishable-assets",
+      category: "publishable",
+      title: "Publishable assets",
+      icon: <Images size={20} />,
+      singular: "asset",
+      plural: "assets",
+      state: publishableAssets,
+    },
+  ] as const;
+
+  for (const panel of documentPanels) {
+    const files = panel.state;
+    if (!files.enabled) {
+      continue;
+    }
+    tabs.push({
+      id: panel.id,
+      icon: panel.icon,
+      title: panel.title,
+      summary: files.isLoading ? (
         "Loading"
-      ) : documents.processingCount > 0 ? (
+      ) : files.processingCount > 0 ? (
         // The pipeline still owns some documents: say so even while the
         // pane is closed.
         <span className="inline-flex items-center gap-1">
           <Loader2 size={12} className="animate-spin" />
-          Processing {documents.processingCount} of {documents.count}
+          Processing {files.processingCount} of {files.count}
         </span>
-      ) : documents.count === 1 ? (
-        "1 document"
       ) : (
-        `${documents.count} documents`
+        `${files.count} ${files.count === 1 ? panel.singular : panel.plural}`
       ),
       render: (close) => (
         <DocumentsPanel
-          selected={documents.selected}
-          extensions={documents.extensions}
-          uploads={documents.uploads}
-          onRemove={documents.removeDocument}
-          onRetry={documents.retryDocument}
-          onUpload={documents.uploadFiles}
-          onDismissUpload={documents.dismissUpload}
+          category={panel.category}
+          selected={files.selected}
+          extensions={files.extensions}
+          uploads={files.uploads}
+          onRemove={files.removeDocument}
+          onRetry={files.retryDocument}
+          onUpload={files.uploadFiles}
+          onDismissUpload={files.dismissUpload}
           onClose={close}
-          isSaving={documents.isSaving}
-          isLoading={documents.isLoading}
-          loadError={documents.loadError}
-          selectionError={documents.selectionError}
+          isSaving={files.isSaving}
+          isLoading={files.isLoading}
+          loadError={files.loadError}
+          selectionError={files.selectionError}
         />
       ),
     });

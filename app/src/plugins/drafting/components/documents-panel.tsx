@@ -1,4 +1,4 @@
-import { FileText, Loader2, RotateCcw, Upload, X } from "lucide-react";
+import { FileText, Images, Loader2, RotateCcw, Upload, X } from "lucide-react";
 import { useRef, useState } from "react";
 import { Pane } from "@/components/ui/pane";
 import { formatFileSize } from "@/lib/format-file-size";
@@ -7,11 +7,14 @@ import {
   type DraftingDocument,
   MAX_FILES_PER_SELECTION,
 } from "../hooks/use-drafting-documents";
+import type { DraftingDocumentCategory } from "../types";
 import { ConfirmRemovalDialog } from "./confirm-removal-dialog";
 import { DocumentStatusBadge } from "./document-status-badge";
 
 export interface DocumentsPanelProps {
-  /** Documents attached to ground the next draft. */
+  /** Controls wording and appearance; context documents remain the default. */
+  category?: DraftingDocumentCategory;
+  /** Files attached to this category of the drafting session. */
   selected: DraftingDocument[];
   /** File extensions the backend accepts, without a leading dot. */
   extensions: string[];
@@ -52,13 +55,14 @@ function formatExtensions(extensions: string[]): string {
 }
 
 /**
- * Reference documents pane.
+ * Shared context-documents and publishable-assets pane.
  *
  * Composes the shared Pane chrome with an upload control and the list of
  * attached documents. Presentational only; the document list and mutations
  * live in useDraftingDocuments.
  */
 export function DocumentsPanel({
+  category = "context",
   selected,
   extensions,
   uploads,
@@ -72,6 +76,9 @@ export function DocumentsPanel({
   loadError = null,
   selectionError = null,
 }: DocumentsPanelProps) {
+  const isPublishable = category === "publishable";
+  const cardClassName =
+    "flex items-start justify-between gap-3 rounded-md border border-blue-100 bg-blue-50 px-3 py-2";
   const fileInputRef = useRef<HTMLInputElement>(null);
   // Document awaiting removal confirmation; NULL keeps the dialog closed.
   const [pendingRemoval, setPendingRemoval] = useState<DraftingDocument | null>(
@@ -80,9 +87,13 @@ export function DocumentsPanel({
 
   return (
     <Pane
-      icon={<FileText size={18} />}
-      title="Context documents"
-      description="Attach documents that should guide the next draft. They are private, never published, and only feed the context when generating the draft."
+      icon={isPublishable ? <Images size={18} /> : <FileText size={18} />}
+      title={isPublishable ? "Publishable assets" : "Context documents"}
+      description={
+        isPublishable
+          ? "Provide images and documents the assistant may include or link in the generated content. Assets used in the final content are kept with it."
+          : "Attach documents that should guide the next draft. They are private, never published, and only feed the context when generating the draft."
+      }
       onCancel={onClose}
       cancelLabel="Close"
       isSaving={isSaving}
@@ -109,6 +120,12 @@ export function DocumentsPanel({
           type="file"
           multiple
           className="sr-only"
+          aria-label={
+            isPublishable
+              ? "Upload publishable assets"
+              : "Upload context documents"
+          }
+          disabled={isSaving || isLoading}
           accept={extensions.map((extension) => `.${extension}`).join(",")}
           onChange={(event) => {
             void Promise.resolve(onUpload(event.target.files)).catch(() => {});
@@ -132,7 +149,7 @@ export function DocumentsPanel({
         {isLoading && (
           <p className="flex items-center gap-2 rounded-md border border-gray-200 bg-white px-3 py-2 text-xs text-gray-600">
             <Loader2 size={14} className="animate-spin" />
-            Loading documents
+            {isPublishable ? "Loading publishable assets" : "Loading documents"}
           </p>
         )}
         {!isLoading && loadError && (
@@ -151,10 +168,7 @@ export function DocumentsPanel({
             {/* Upload slots: progress bar while running, error when
                 failed. The remove cross only appears on failed slots. */}
             {uploads.map((upload) => (
-              <div
-                key={upload.id}
-                className="flex items-start justify-between gap-3 rounded-md border border-blue-100 bg-blue-50 px-3 py-2"
-              >
+              <div key={upload.id} className={cardClassName}>
                 <div className="min-w-0 flex-1 space-y-1">
                   <p className="truncate text-xs font-medium text-gray-900">
                     {upload.title}
@@ -189,10 +203,7 @@ export function DocumentsPanel({
             ))}
 
             {selected.map((document) => (
-              <div
-                key={document.id}
-                className="flex items-start justify-between gap-3 rounded-md border border-blue-100 bg-blue-50 px-3 py-2"
-              >
+              <div key={document.id} className={cardClassName}>
                 <div className="min-w-0 space-y-1">
                   <p className="truncate text-xs font-medium text-gray-900">
                     {document.title}
@@ -236,17 +247,26 @@ export function DocumentsPanel({
           selected.length === 0 &&
           uploads.length === 0 && (
             <p className="rounded-md border border-gray-200 bg-white px-3 py-2 text-xs text-gray-600">
-              No temporary context documents are attached to this drafting
-              session.
+              {isPublishable
+                ? "No publishable assets are attached to this drafting session."
+                : "No temporary context documents are attached to this drafting session."}
             </p>
           )}
 
         {/* Removal confirmation; deletes only after explicit approval. */}
         <ConfirmRemovalDialog
           open={pendingRemoval !== null}
-          title="Remove context document"
-          message={`"${pendingRemoval?.title}" will be deleted and would need to be uploaded again to feed the drafting context.`}
-          confirmLabel="Delete document"
+          title={
+            isPublishable
+              ? "Remove publishable asset"
+              : "Remove context document"
+          }
+          message={
+            isPublishable
+              ? `"${pendingRemoval?.title}" will be removed from this session's publishable assets. You would need to upload it again to use it in a future draft.`
+              : `"${pendingRemoval?.title}" will be deleted and would need to be uploaded again to feed the drafting context.`
+          }
+          confirmLabel={isPublishable ? "Remove asset" : "Delete document"}
           onConfirm={async () => {
             if (pendingRemoval) {
               await onRemove(pendingRemoval.id);

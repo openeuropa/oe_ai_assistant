@@ -42,6 +42,28 @@ npm run dev:server:integration  # Mistral-backed API server only
 The standalone mock mode is the expected default for frontend-only work. Use
 integration mode only when you need to validate prompt/provider behaviour.
 
+### Publishable-assets panel (UC-06)
+
+Standalone development enables a separate **Publishable assets** composer
+panel, reusing the documents panel with category-specific wording and icons.
+Publishable assets start empty in the mock API. Uploading, processing, and
+removing files are simulated separately for each session and category. Uploaded
+bytes are discarded, and restarting the mock server resets the lists.
+
+Drupal exposes `pluginConfig.drafting.documents.enabled` and accepted extensions
+keyed by category in `documents.extensions.context` and
+`documents.extensions.publishable`. Lists are fetched after startup through
+`list-documents`; uploads, removals, and processing use the same document actions
+with `category: publishable`. Both panels follow the shared `documents.enabled`
+flag. Existing sites need the OEL-4840 media configuration installed.
+
+The default field accepts `txt doc docx pdf md png jpg jpeg gif`. Documents use
+the extraction and summary pipeline. Images and other files without a matching
+loader skip extraction and finish in `done`, leaving the asset attached without a
+description. The mock follows the same behavior. Image descriptions and asset
+placement in generated content are follow-up epic work. Video uploads and
+media-library selection are not offered here.
+
 ## Scripts
 
 | Command              | Description                                   |

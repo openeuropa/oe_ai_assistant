@@ -32,8 +32,8 @@ export function extractSavedVersions(
       if (part.type !== "tool-call" || part.toolName !== "editorial_event") {
         continue;
       }
-      const version = part.args?.["version"];
-      if (part.args?.["eventType"] === "save" && typeof version === "number") {
+      const version = part.args?.version;
+      if (part.args?.eventType === "save" && typeof version === "number") {
         saved.add(version);
       }
     }

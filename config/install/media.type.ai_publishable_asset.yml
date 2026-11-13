@@ -1,0 +1,13 @@
+langcode: en
+status: true
+dependencies: {  }
+id: ai_publishable_asset
+label: 'AI publishable asset'
+description: 'Private asset (document or image) that can be published into drafted content.'
+source: file
+queue_thumbnail_downloads: false
+new_revision: true
+source_configuration:
+  source_field: oe_ai_publishable_asset
+field_map:
+  name: name

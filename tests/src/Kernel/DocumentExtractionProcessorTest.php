@@ -172,13 +172,19 @@ class DocumentExtractionProcessorTest extends AiEditorialSessionKernelTestBase {
   }
 
   /**
-   * Tests that an unsupported extension fails before any request.
+   * Tests that an unsupported extension skips to done instead of failing.
+   *
+   * There is no text to extract and nothing to summarise, so both fields
+   * stay empty and the processor sends nothing to Tika.
    */
-  public function testUnsupportedExtensionEndsInError(): void {
+  public function testUnsupportedExtensionSkipsToDone(): void {
     $media = $this->createDocument('brief.zip');
 
-    $this->assertSame(DocumentExtractionProcessorInterface::STATE_ERROR, $this->processor()->process($media));
+    $this->assertSame(DocumentExtractionProcessorInterface::STATE_DONE, $this->processor()->process($media));
     $this->assertNull($this->tika->getLastRequest());
+    $reloaded = $this->reload($media);
+    $this->assertTrue($reloaded->get(DocumentExtractionProcessorInterface::EXTRACT_FIELD)->isEmpty());
+    $this->assertTrue($reloaded->get(DocumentExtractionProcessorInterface::SUMMARY_FIELD)->isEmpty());
   }
 
   /**
