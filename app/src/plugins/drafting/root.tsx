@@ -29,6 +29,7 @@ import {
   DraftContentToolUI,
   EditorialEventToolUI,
   GetEditorialContextToolUI,
+  GetSessionActivityToolUI,
   ReadDocumentToolUI,
 } from "./components/tool-uis";
 import { useDraftingDocuments } from "./hooks/use-drafting-documents";
@@ -314,6 +315,7 @@ function DraftingChat() {
       <DraftContentToolUI />
       <EditorialEventToolUI />
       <GetEditorialContextToolUI />
+      <GetSessionActivityToolUI />
       <ReadDocumentToolUI />
 
       {/* Feed the shell exit guard with this plugin's pending state.

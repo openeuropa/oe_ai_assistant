@@ -4,10 +4,13 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\oe_ai_assistant\Kernel;
 
+use Drupal\ai_neuron\Agent\NeuronAgentManagerInterface;
+use Drupal\ai_neuron\Tools\NeuronToolManagerInterface;
 use Drupal\oe_ai_assistant\Entity\ActivityType;
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionActivityInterface;
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
 use Drupal\oe_ai_assistant\Plugin\AiAssistantPluginManager;
+use Drupal\oe_ai_assistant\Plugin\NeuronTool\GetSessionActivityNeuronTool;
 use Drupal\taxonomy\Entity\Term;
 use Drupal\taxonomy\TermInterface;
 use PHPUnit\Framework\Attributes\Group;
@@ -201,15 +204,111 @@ class AiEditorialSessionActivityTest extends AiEditorialSessionKernelTestBase {
     );
   }
 
+  /**
+   * The tool reports what happened, who did it and when.
+   */
+  public function testToolReportsTheActivityOfTheSession(): void {
+    $owner = $this->createUser();
+    $this->container->get('current_user')->setAccount($owner);
+    $session = $this->createSession($owner);
+    $session->recordActivity(ActivityType::ToneChanged, 'Tone set to "Formal".');
+
+    $result = json_decode($this->activityTool($session), TRUE);
+
+    $this->assertSame(0, $result['earlier_entries_omitted']);
+    $this->assertCount(1, $result['activity']);
+    $this->assertSame('Tone set to "Formal".', $result['activity'][0]['message']);
+    $this->assertSame($owner->getDisplayName(), $result['activity'][0]['by']);
+    $this->assertSame(
+      date('c', $session->getLatestActivity(100)[0]->getCreatedTime()),
+      $result['activity'][0]['at'],
+    );
+  }
+
+  /**
+   * A session nothing happened in reports an empty activity.
+   */
+  public function testToolReportsAnEmptyActivity(): void {
+    $session = $this->createSession($this->createUser());
+
+    $this->assertSame(
+      ['activity' => [], 'earlier_entries_omitted' => 0],
+      json_decode($this->activityTool($session), TRUE),
+    );
+  }
+
+  /**
+   * A history longer than the cap reports how many entries it left out.
+   *
+   * Without the count, the model reads the oldest entry it got as the
+   * first thing that happened, and tells the editor so.
+   */
+  public function testToolReportsHowManyEntriesItLeftOut(): void {
+    $session = $this->createSession($this->createUser());
+    $total = GetSessionActivityNeuronTool::MAX_ENTRIES + 3;
+    for ($i = 1; $i <= $total; $i++) {
+      $session->recordActivity(ActivityType::ToneChanged, 'Entry %d', $i);
+    }
+
+    $result = json_decode($this->activityTool($session), TRUE);
+
+    $this->assertCount(GetSessionActivityNeuronTool::MAX_ENTRIES, $result['activity']);
+    $this->assertSame(3, $result['earlier_entries_omitted']);
+    $this->assertSame('Entry 4', $result['activity'][0]['message']);
+    $this->assertSame('Entry ' . $total, $result['activity'][GetSessionActivityNeuronTool::MAX_ENTRIES - 1]['message']);
+  }
+
+  /**
+   * The tool reads the session it serves, and no other.
+   */
+  public function testToolReadsOnlyItsOwnSession(): void {
+    $owner = $this->createUser();
+    $session = $this->createSession($owner);
+    $this->createSession($owner)->recordActivity(ActivityType::ToneChanged, 'theirs');
+    $session->recordActivity(ActivityType::ToneChanged, 'mine');
+
+    $result = json_decode($this->activityTool($session), TRUE);
+
+    $this->assertSame(['mine'], array_column($result['activity'], 'message'));
+  }
+
+  /**
+   * The editorial agent carries the tool and tells the model to use it.
+   */
+  public function testEditorialAgentCarriesTheActivityTool(): void {
+    $this->enableModules(['entity_reference_revisions', 'paragraphs', 'link', 'inline_entity_form']);
+    $this->installEntitySchema('paragraph');
+    $this->config('ai.settings')
+      ->set('default_providers', ['chat_with_tools' => ['provider_id' => 'mock_ai', 'model_id' => 'mock-model']])
+      ->save();
+    $session = $this->createSession($this->createUser());
+
+    $agent = $this->container->get(NeuronAgentManagerInterface::class)
+      ->createAgent('editorial', ['session' => $session]);
+
+    $names = array_map(static fn ($tool) => $tool->getName(), $agent->getTools());
+    $this->assertContains('context_get_session_activity', $names);
+    $this->assertStringContainsString(
+      'context_get_session_activity',
+      $agent->getInstructions()->getContent(),
+    );
+  }
 
 
 
 
 
+  /**
+   * Builds the activity tool bound to the session, and calls it.
+   */
+  private function activityTool(AiEditorialSessionInterface $session): string {
+    $tool = $this->container->get(NeuronToolManagerInterface::class)->createTool(
+      'context_get_session_activity',
+      ['session' => $session],
+    );
 
-
-
-
+    return (string) $tool();
+  }
 
   /**
    * Runs the set-tone action of the drafting plugin.
