@@ -332,9 +332,12 @@ class AiEditorialSessionActivityTest extends AiEditorialSessionKernelTestBase {
   }
 
   /**
-   * The activity page has a permission of its own.
+   * The activity page asks for a permission and for access to the session.
+   *
+   * The permission alone says who reads an activity record, not whose. A
+   * holder of it would otherwise walk the session ids and read them all.
    */
-  public function testActivityPageHasItsOwnPermission(): void {
+  public function testActivityPageChecksThePermissionAndTheSession(): void {
     $this->container->get('router.builder')->rebuild();
 
     $route = $this->container->get('router.route_provider')
@@ -343,6 +346,10 @@ class AiEditorialSessionActivityTest extends AiEditorialSessionKernelTestBase {
     $this->assertSame(
       'access ai editorial session activity',
       $route->getRequirement('_permission'),
+    );
+    $this->assertSame(
+      'ai_editorial_session.view',
+      $route->getRequirement('_entity_access'),
     );
   }
 
