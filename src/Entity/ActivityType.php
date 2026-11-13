@@ -7,16 +7,16 @@ namespace Drupal\oe_ai_assistant\Entity;
 /**
  * The kinds of entry a session records in its activity.
  *
- * An entry carries a sentence an editor reads and a type a program reads.
- * A reader that groups entries, or renders one of them its own way, keys
- * on the type and never parses the sentence.
+ * An entry holds a message for an editor to read. Code that groups
+ * entries, or renders one kind its own way, matches on the type instead
+ * of parsing that message.
  */
 enum ActivityType: string {
 
-  // The editor picked a tone, or picked a different one.
+  // The editor set the tone, or changed it.
   case ToneChanged = 'tone_changed';
 
-  // The editor picked a template, or picked a different one.
+  // The editor set the template, or changed it.
   case TemplateChanged = 'template_changed';
 
   // The editor attached a document to the session.
