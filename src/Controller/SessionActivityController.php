@@ -53,9 +53,7 @@ final class SessionActivityController extends ControllerBase {
    *   The render array: one table of every entry the session recorded.
    */
   public function view(AiEditorialSessionInterface $ai_editorial_session): array {
-    // getLatestActivity() always takes a limit, and this page shows the
-    // whole record. So we count the entries and ask for that many.
-    $entries = $ai_editorial_session->getLatestActivity($ai_editorial_session->countActivity());
+    $entries = $ai_editorial_session->getLatestActivity();
 
     $rows = [];
     foreach ($entries as $entry) {
@@ -83,10 +81,16 @@ final class SessionActivityController extends ControllerBase {
 
     // Invalidate when the session changes or recordActivity() adds an entry.
     $definition = $this->entityTypeManager()->getDefinition('ai_editorial_session_activity');
-    CacheableMetadata::createFromObject($ai_editorial_session)
+    $cacheability = CacheableMetadata::createFromObject($ai_editorial_session)
       ->addCacheContexts($definition->getListCacheContexts())
       ->addCacheTags($definition->getListCacheTags())
-      ->applyTo($build);
+      // Every row names a user and formats a date. A rename has to reach
+      // the page, and two admins in two zones cannot share one render.
+      ->addCacheContexts(['timezone']);
+    foreach ($entries as $entry) {
+      $cacheability->addCacheableDependency($entry->getOwner());
+    }
+    $cacheability->applyTo($build);
 
     return $build;
   }
