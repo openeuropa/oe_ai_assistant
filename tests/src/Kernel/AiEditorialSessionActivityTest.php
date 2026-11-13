@@ -7,7 +7,11 @@ namespace Drupal\Tests\oe_ai_assistant\Kernel;
 use Drupal\oe_ai_assistant\Entity\ActivityType;
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionActivityInterface;
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
+use Drupal\oe_ai_assistant\Plugin\AiAssistantPluginManager;
+use Drupal\taxonomy\Entity\Term;
+use Drupal\taxonomy\TermInterface;
 use PHPUnit\Framework\Attributes\Group;
+use Symfony\Component\HttpFoundation\Request;
 
 /**
  * Tests the activity record of an editorial session.
@@ -144,6 +148,58 @@ class AiEditorialSessionActivityTest extends AiEditorialSessionKernelTestBase {
     $this->assertTrue(TRUE, 'Recording an entry reported no failure of its own.');
   }
 
+  /**
+   * Picking a tone records it, and picking the same one again records nothing.
+   *
+   * The entry names the tone by the label the editor saw. The test renames
+   * "Formal" to "Institutional" afterwards, so an entry that read the label
+   * off the term would say the new name.
+   */
+  public function testSetToneRecordsTheToneTheEditorPicked(): void {
+    $owner = $this->createUser(['use oe ai assistant', 'view_update own sessions']);
+    $this->container->get('current_user')->setAccount($owner);
+    $session = $this->createSession($owner);
+    $formal = $this->createTone('Formal');
+    $plain = $this->createTone('Plain');
+
+    $this->setTone($session, (string) $formal->id());
+    $this->setTone($session, (string) $plain->id());
+    $this->setTone($session, (string) $plain->id());
+
+    $formal->setName('Institutional')->save();
+
+    $this->assertSame([
+      'Tone set to "Formal".',
+      'Tone changed from "Formal" to "Plain".',
+    ], $this->messages($session));
+    $this->assertSame(
+      [ActivityType::ToneChanged, ActivityType::ToneChanged],
+      $this->types($session),
+    );
+  }
+
+  /**
+   * Picking a template records it, and changing it records the change.
+   */
+  public function testSetTemplateRecordsTheTemplateTheEditorPicked(): void {
+    $owner = $this->createUser(['use oe ai assistant', 'view_update own sessions']);
+    $this->container->get('current_user')->setAccount($owner);
+    $session = $this->createSession($owner);
+    $this->createTemplate('news_a', 'News A');
+    $this->createTemplate('news_b', 'News B');
+
+    $this->setTemplate($session, 'news_a');
+    $this->setTemplate($session, 'news_b');
+
+    $this->assertSame([
+      'Template set to "News A".',
+      'Template changed from "News A" to "News B".',
+    ], $this->messages($session));
+    $this->assertSame(
+      [ActivityType::TemplateChanged, ActivityType::TemplateChanged],
+      $this->types($session),
+    );
+  }
 
 
 
@@ -155,12 +211,74 @@ class AiEditorialSessionActivityTest extends AiEditorialSessionKernelTestBase {
 
 
 
+  /**
+   * Runs the set-tone action of the drafting plugin.
+   */
+  private function setTone(AiEditorialSessionInterface $session, string $toneId): void {
+    $this->action($session, 'set-tone', ['toneId' => $toneId]);
+  }
 
+  /**
+   * Runs the set-template action of the drafting plugin.
+   */
+  private function setTemplate(AiEditorialSessionInterface $session, string $template): void {
+    $this->action($session, 'set-template', ['template' => $template]);
+  }
 
+  /**
+   * Runs one action of the drafting plugin against a session.
+   */
+  private function action(AiEditorialSessionInterface $session, string $action, array $body): void {
+    $request = Request::create('/', 'POST', content: json_encode(
+      ['sessionId' => (string) $session->id()] + $body,
+    ));
 
+    $this->container->get(AiAssistantPluginManager::class)
+      ->createInstance('drafting')
+      ->executeAction($action, $request);
+  }
 
+  /**
+   * Creates a tone term with the prompt that set-tone requires.
+   */
+  private function createTone(string $label): TermInterface {
+    $term = Term::create([
+      'vid' => 'oe_ai_tone',
+      'name' => $label,
+      'field_oe_ai_prompt' => 'Write in a ' . strtolower($label) . ' voice.',
+    ]);
+    $term->save();
 
+    return $term;
+  }
 
+  /**
+   * Creates an enabled drafting template for the news content type.
+   */
+  private function createTemplate(string $id, string $label): void {
+    $this->container->get('entity_type.manager')
+      ->getStorage('ai_drafting_template')
+      ->create([
+        'id' => $id,
+        'label' => $label,
+        'content_type' => 'oe_news',
+        'fields' => ['title' => ['prompt' => 'The title.']],
+      ])
+      ->save();
+  }
+
+  /**
+   * Reads back the types recorded for a session, oldest first.
+   *
+   * @return array
+   *   The types.
+   */
+  private function types(AiEditorialSessionInterface $session): array {
+    return array_map(
+      static fn (AiEditorialSessionActivityInterface $entry): ActivityType => $entry->getType(),
+      $session->getLatestActivity(100),
+    );
+  }
 
   /**
    * Reads back the sentences recorded for a session, oldest first.
