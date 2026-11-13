@@ -90,4 +90,39 @@ interface AiEditorialSessionInterface extends ContentEntityInterface, EntityChan
    */
   public function deleteConversation(): void;
 
+  /**
+   * Records one entry in the activity of this session.
+   *
+   * The entry stores the current user and the time of the write. This
+   * method never throws. A write that fails only goes to the log, so
+   * recording cannot break the change the caller just made.
+   *
+   * @param \Drupal\oe_ai_assistant\Entity\ActivityType $type
+   *   The kind of entry to record.
+   * @param string $message
+   *   The sentence to record, or a sprintf() format when the call passes
+   *   arguments.
+   * @param string|int|float ...$arguments
+   *   The values for the format.
+   */
+  public function recordActivity(ActivityType $type, string $message, string|int|float ...$arguments): void;
+
+  /**
+   * Returns the most recent entries in the activity of this session.
+   *
+   * @return \Drupal\oe_ai_assistant\Entity\AiEditorialSessionActivityInterface[]
+   *   The entries, oldest first.
+   */
+  public function getLatestActivity(int $limit): array;
+
+  /**
+   * Counts the entries in the activity of this session.
+   */
+  public function countActivity(): int;
+
+  /**
+   * Removes every entry in the activity of this session.
+   */
+  public function deleteActivity(): void;
+
 }
