@@ -58,7 +58,20 @@ export const developmentConfig = {
       documents: {
         // The document list is fetched from the mock API after boot.
         enabled: true,
-        extensions: ["txt", "doc", "docx", "pdf", "md"],
+        extensions: {
+          context: ["txt", "doc", "docx", "pdf", "md"],
+          publishable: [
+            "txt",
+            "doc",
+            "docx",
+            "pdf",
+            "md",
+            "png",
+            "jpg",
+            "jpeg",
+            "gif",
+          ],
+        },
       },
     },
   },

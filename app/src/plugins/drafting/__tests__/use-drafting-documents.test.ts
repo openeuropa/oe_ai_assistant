@@ -171,19 +171,29 @@ describe("useDraftingDocuments", () => {
     expect(loadErrorState()).toBeNull();
   });
 
-  it("exposes the accepted extensions from the host config", async () => {
+  it("exposes the accepted extensions of its own category", async () => {
     setConfig({
       userId: "editor",
       sessionId: "session-42",
       pluginConfig: {
         drafting: {
-          documents: { enabled: true, extensions: ["pdf", "docx"] },
+          documents: {
+            enabled: true,
+            extensions: {
+              context: ["pdf", "docx"],
+              publishable: ["pdf", "png"],
+            },
+          },
         },
       },
     });
     const { useDraftingDocuments } = await loadHook();
 
     expect(useDraftingDocuments().extensions).toEqual(["pdf", "docx"]);
+    expect(useDraftingDocuments("publishable").extensions).toEqual([
+      "pdf",
+      "png",
+    ]);
   });
 
   it("surfaces initial list failures instead of the document list", async () => {

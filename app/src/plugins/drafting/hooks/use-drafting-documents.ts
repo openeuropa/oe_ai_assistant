@@ -92,11 +92,16 @@ export function useDraftingDocuments(
 ) {
   const draftingConfig = getConfig().pluginConfig.drafting ?? {};
   const documentsConfig = draftingConfig.documents as
-    | { enabled?: boolean; extensions?: string[] }
+    | {
+        enabled?: boolean;
+        extensions?: Partial<Record<DraftingDocumentCategory, string[]>>;
+      }
     | undefined;
   const enabled = documentsConfig?.enabled ?? false;
-  // File extensions the backend accepts, driving the upload control.
-  const extensions = documentsConfig?.extensions ?? [];
+  // File extensions the backend accepts, driving the upload control. The
+  // host sends one list per category, since the categories do not take the
+  // same files.
+  const extensions = documentsConfig?.extensions?.[category] ?? [];
   const [selected, setSelectedState] = useState<DraftingDocument[]>([]);
   // Mirror of the selected list for code running outside a render: the
   // refresh and request callbacks read the latest documents from here.

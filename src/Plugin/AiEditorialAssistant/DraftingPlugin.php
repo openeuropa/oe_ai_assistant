@@ -261,7 +261,13 @@ class DraftingPlugin extends AiAssistantPluginBase {
         // action after boot; the bootstrap only carries the gate and the
         // extensions the upload control offers.
         'enabled' => TRUE,
-        'extensions' => $this->contextDocumentRepository->getAllowedExtensions(),
+        // Each category accepts the extensions of its own source field,
+        // and publishable assets also take images. Keying the lists by
+        // category lets every upload control offer its own.
+        'extensions' => [
+          ContextDocumentRepository::CATEGORY => $this->contextDocumentRepository->getAllowedExtensions(),
+          PublishableAssetRepository::CATEGORY => $this->publishableAssetRepository->getAllowedExtensions(),
+        ],
       ],
       // Live preview iframe URL template. The app substitutes the
       // {sessionId} and {versionId} placeholders before loading the
