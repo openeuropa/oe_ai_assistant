@@ -27,6 +27,7 @@ use NeuronAI\Workflow\Streaming\Adapter\StreamAdapterInterface;
     'drafting_get_history',
     'drafting_draft_content',
     SaveDraftNeuronTool::TOOL_ID,
+    'amend_draft',
     'context_get_editorial_context',
     'context_read_document',
     'context_get_session_activity',
@@ -101,6 +102,12 @@ final class EditorialNeuronAgent extends EditorialSessionAgentBase {
       after material the session may no longer hold.
     - When the user asks for several drafts at once, call it once for
       each draft they asked for, in the same reply.
+    - When the user asks to change, revise or fix something in a draft
+      that already exists, call amend_draft instead of
+      drafting_draft_content. Name the version of the draft to amend.
+      Name specific field groups only when the user asked about specific
+      fields; otherwise every group is amended. amend_draft writes a new
+      draft, it never changes the one it started from.
     - Tell the user the name of every draft that is ready and that they
       can review them on the right. Do not repeat the field values.
     - Only report a draft as ready when the result carries a draft. When
