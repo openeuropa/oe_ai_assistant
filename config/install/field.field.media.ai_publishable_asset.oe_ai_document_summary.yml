@@ -11,7 +11,7 @@ field_name: oe_ai_document_summary
 entity_type: media
 bundle: ai_publishable_asset
 label: 'Document summary'
-description: 'Extracted summary used as AI drafting context.'
+description: 'Summary describing the asset, used to place it in drafted content.'
 required: false
 translatable: true
 default_value: {  }
