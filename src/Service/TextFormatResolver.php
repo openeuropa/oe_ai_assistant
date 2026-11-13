@@ -11,7 +11,7 @@ use Drupal\filter\FilterFormatRepositoryInterface;
 /**
  * Resolves a text format for formatted-text items the LLM left unset.
  *
- * EntityJsonSchemaComposer's JSON Schema omits the `format` property from
+ * The drafting schema omits the `format` property from
  * formatted-text fields, so LLM output never carries one. Deserializing that
  * output leaves the item's `format` property empty, which Drupal's render
  * pipeline falls back to `plain_text` for, escaping markup the LLM produced

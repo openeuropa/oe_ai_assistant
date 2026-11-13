@@ -41,6 +41,7 @@ class DraftingSchemaProviderTest extends KernelTestBase {
     'key',
     'paragraphs',
     'oe_ai_assistant',
+    'schema_builder',
     'state_machine',
     'document_loader',
     'document_loader_tika',
@@ -81,7 +82,7 @@ class DraftingSchemaProviderTest extends KernelTestBase {
   public function testMatchingTemplateReturnsFilteredGroups(): void {
     $groups = $this->provider()->groups('node', 'oe_news', 'news_with_paragraphs');
 
-    $this->assertSame(['title', 'field_teaser'], $this->mainFields($groups));
+    $this->assertSame(['langcode', 'type', 'title', 'moderation_state', 'field_teaser'], $this->mainFields($groups));
     $this->assertContains('field_content_paragraphs', array_column($groups, 'groupId'));
   }
 
@@ -101,7 +102,7 @@ class DraftingSchemaProviderTest extends KernelTestBase {
 
     $groups = $this->provider()->groups('node', 'oe_news');
 
-    $this->assertSame(['title', 'field_teaser'], $this->mainFields($groups));
+    $this->assertSame(['langcode', 'type', 'title', 'moderation_state', 'field_teaser'], $this->mainFields($groups));
     $this->assertContains('field_content_paragraphs', array_column($groups, 'groupId'));
   }
 
@@ -182,6 +183,11 @@ class DraftingSchemaProviderTest extends KernelTestBase {
         'description' => 'Standard news article with title, teaser, and body.',
       ],
       [
+        'id' => 'news_nested_defaults',
+        'label' => 'News article with a pinned attribution',
+        'description' => 'News article whose quote paragraphs always credit the same source.',
+      ],
+      [
         'id' => 'news_preview_defaults',
         'label' => 'News article (preview defaults fixture)',
         'description' => 'Omits field_teaser from fields but supplies it via defaults, for exercising the preview template-defaults merge.',
@@ -203,6 +209,20 @@ class DraftingSchemaProviderTest extends KernelTestBase {
   }
 
   /**
+   * Tests that a group tells a drafter which of its fields are required.
+   *
+   * A group schema with no required list accepts an empty answer, and every
+   * value a template pins is only validated while the key is there.
+   */
+  public function testGroupSliceCarriesRequired(): void {
+    $groups = $this->provider()->groups('node', 'oe_news', 'news_default');
+    $slices = array_column($groups, 'schemaSlice', 'groupId');
+
+    $this->assertContains('title', $slices['main_fields']['required']);
+    $this->assertContains('langcode', $slices['main_fields']['required']);
+  }
+
+  /**
    * Disabled templates are not listed.
    */
   public function testAvailableTemplatesExcludesDisabledTemplates(): void {
@@ -214,7 +234,7 @@ class DraftingSchemaProviderTest extends KernelTestBase {
 
     $ids = array_column($this->provider()->availableTemplates('oe_news'), 'id');
 
-    $this->assertSame(['news_default', 'news_preview_defaults'], $ids);
+    $this->assertSame(['news_default', 'news_nested_defaults', 'news_preview_defaults'], $ids);
   }
 
   /**
@@ -229,11 +249,13 @@ class DraftingSchemaProviderTest extends KernelTestBase {
 
     // With news_with_paragraphs disabled, auto-select does a ksort() + end()
     // over the remaining enabled candidates and picks the alphabetically
-    // last one: news_preview_defaults (not news_default), whose only field
-    // is title.
+    // last one: news_preview_defaults (not news_default). It lists title and
+    // pins field_teaser, and a pinned field is described so the value is
+    // inside what gets validated. The language and the bundle come with
+    // every node.
     $main = $this->mainFields($this->provider()->groups('node', 'oe_news', ''));
 
-    $this->assertSame(['title'], $main);
+    $this->assertSame(['langcode', 'type', 'title', 'moderation_state', 'field_teaser'], $main);
   }
 
 }

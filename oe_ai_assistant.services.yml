@@ -17,12 +17,21 @@ services:
     tags:
       - { name: http_client_middleware }
 
+
+  Drupal\oe_ai_assistant\SchemaBuilder\DraftableFieldsBuilder: {}
+  Drupal\oe_ai_assistant\SchemaBuilder\LangcodeBuilder: {}
+  Drupal\oe_ai_assistant\SchemaBuilder\ModerationStateBuilder: {}
+  Drupal\oe_ai_assistant\SchemaBuilder\TemplateBundlesBuilder: {}
+  Drupal\oe_ai_assistant\SchemaBuilder\TemplateDefaultsBuilder: {}
+  Drupal\oe_ai_assistant\SchemaBuilder\TemplateFieldsBuilder: {}
+  Drupal\oe_ai_assistant\SchemaBuilder\TextFormatBuilder: {}
+
+  Drupal\oe_ai_assistant\Service\TemplateDefaultsResolver: {}
+  Drupal\oe_ai_assistant\Service\TemplateDefaultsResolverInterface: '@Drupal\oe_ai_assistant\Service\TemplateDefaultsResolver'
+
   Drupal\oe_ai_assistant\Service\RequestValidator: {}
 
-  Drupal\oe_ai_assistant\Service\EntityJsonSchemaComposer: {}
 
-  Drupal\oe_ai_assistant\Service\TemplateSchemaFilter: {}
-  Drupal\oe_ai_assistant\Service\TemplateSchemaFilterInterface: '@Drupal\oe_ai_assistant\Service\TemplateSchemaFilter'
 
   Drupal\oe_ai_assistant\Service\DraftingSchemaProvider: {}
   Drupal\oe_ai_assistant\Service\DraftingSchemaProviderInterface: '@Drupal\oe_ai_assistant\Service\DraftingSchemaProvider'
