@@ -15,3 +15,7 @@ administer ai_drafting_template:
 access ai editorial session neuron history:
   title: 'Access the Neuron conversation history of an AI editorial session'
   description: 'View the Neuron-backed conversation history tab of an AI editorial session.'
+
+access ai editorial session activity:
+  title: 'Access the activity of an AI editorial session'
+  description: 'View the record of what happened in an AI editorial session.'

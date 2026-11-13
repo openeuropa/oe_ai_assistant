@@ -6,6 +6,7 @@ namespace Drupal\Tests\oe_ai_assistant\Kernel;
 
 use Drupal\ai_neuron\Agent\NeuronAgentManagerInterface;
 use Drupal\ai_neuron\Tools\NeuronToolManagerInterface;
+use Drupal\oe_ai_assistant\Controller\SessionActivityController;
 use Drupal\oe_ai_assistant\Entity\ActivityType;
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionActivityInterface;
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
@@ -294,9 +295,63 @@ class AiEditorialSessionActivityTest extends AiEditorialSessionKernelTestBase {
     );
   }
 
+  /**
+   * The activity page lists every entry of the session, oldest first.
+   */
+  public function testActivityPageListsEveryEntry(): void {
+    $owner = $this->createUser();
+    $this->container->get('current_user')->setAccount($owner);
+    $session = $this->createSession($owner);
+    $session->recordActivity(ActivityType::ToneChanged, 'Tone set to "%s".', 'Formal');
+    $session->recordActivity(ActivityType::DraftGenerated, 'Draft %d generated.', 1);
 
+    $rows = $this->activityPage($session)['activity']['#rows'];
 
+    $this->assertSame(
+      ['Tone set to "Formal".', 'Draft 1 generated.'],
+      array_column($rows, 4),
+    );
+    $this->assertSame(
+      ['tone_changed', 'draft_generated'],
+      array_column($rows, 2),
+    );
+    $this->assertSame(
+      [$owner->getDisplayName(), $owner->getDisplayName()],
+      array_column($rows, 3),
+    );
+  }
 
+  /**
+   * The activity page of a session with no entries shows a message and no row.
+   */
+  public function testActivityPageListsNoRowForAnEmptySession(): void {
+    $table = $this->activityPage($this->createSession($this->createUser()))['activity'];
+
+    $this->assertSame([], $table['#rows']);
+    $this->assertNotEmpty((string) $table['#empty']);
+  }
+
+  /**
+   * The activity page has a permission of its own.
+   */
+  public function testActivityPageHasItsOwnPermission(): void {
+    $this->container->get('router.builder')->rebuild();
+
+    $route = $this->container->get('router.route_provider')
+      ->getRouteByName('entity.ai_editorial_session.activity');
+
+    $this->assertSame(
+      'access ai editorial session activity',
+      $route->getRequirement('_permission'),
+    );
+  }
+
+  /**
+   * Builds the activity page of a session.
+   */
+  private function activityPage(AiEditorialSessionInterface $session): array {
+    return SessionActivityController::create($this->container)->view($session);
+  }
 
   /**
    * Builds the activity tool bound to the session, and calls it.
