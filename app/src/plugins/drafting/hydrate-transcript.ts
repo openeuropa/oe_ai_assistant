@@ -2,9 +2,7 @@
  * Maps a persisted transcript into assistant-ui seed messages.
  *
  * Used by the drafting runtime's history adapter to rehydrate the thread on
- * mount. Text turns become text parts; tool calls become tool-call parts; event
- * items (role "event") become assistant messages carrying an editorial_event
- * tool-call part so they are visible in the thread.
+ * mount. Text turns become text parts and tool calls become tool-call parts.
  */
 
 import type { ThreadMessageLike } from "@assistant-ui/react";
@@ -36,34 +34,12 @@ function safeParseArgs(raw: string | undefined): Record<string, unknown> {
 /**
  * Maps a single transcript entry to an assistant-ui message.
  *
- * Returns null when the entry has nothing to show (no text, no tool calls,
- * and not an event item).
+ * Returns null when the entry has no text and no tool calls.
  */
 export function toThreadMessage(
   message: SessionMessage,
   index: number,
 ): ThreadMessageLike | null {
-  // Event items are surfaced as assistant messages with a single editorial_event
-  // tool-call part so they appear as annotated steps in the thread.
-  if (message.role === "event") {
-    const part = {
-      type: "tool-call",
-      toolCallId: `event-${index}`,
-      toolName: "editorial_event",
-      args: {
-        eventType: message.type,
-        summary: message.summary,
-        at: message.at,
-        ...(message.version !== undefined ? { version: message.version } : {}),
-      },
-      result: {},
-    };
-    return {
-      role: "assistant",
-      content: [part],
-    } as unknown as ThreadMessageLike;
-  }
-
   const parts: Array<Record<string, unknown>> = [];
 
   if (message.content) {

@@ -484,11 +484,7 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
       'content' => json_encode([['type' => 'text', 'content' => 'leaked sub-agent chatter', 'meta' => []]]),
     ]);
 
-    // Events are exercised in EditorialEventsTest; filter here.
-    $messages = array_values(array_filter(
-      $this->getMessages($session),
-      fn($m) => $m['role'] !== 'event',
-    ));
+    $messages = $this->getMessages($session);
 
     $this->assertSame(
       [
@@ -600,11 +596,7 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
     assert($session instanceof ContentCreationSessionInterface);
     $this->storeDraft($session, $draft);
 
-    // Events are exercised in EditorialEventsTest; filter here.
-    $messages = array_values(array_filter(
-      $this->getMessages($session),
-      fn($m) => $m['role'] !== 'event',
-    ));
+    $messages = $this->getMessages($session);
 
     $this->assertCount(2, $messages);
     $this->assertSame('user', $messages[0]['role']);
@@ -672,10 +664,7 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
     assert($session instanceof ContentCreationSessionInterface);
     $this->storeDraft($session, $draft);
 
-    $messages = array_values(array_filter(
-      $this->getMessages($session),
-      fn($m) => $m['role'] !== 'event',
-    ));
+    $messages = $this->getMessages($session);
 
     $this->assertSame($draft, $messages[0]['toolCalls'][0]['result']);
 
@@ -733,10 +722,7 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
       'fields' => ['title' => [['value' => 'Test Title']]],
     ]);
 
-    $messages = array_values(array_filter(
-      $this->getMessages($session),
-      fn($m) => $m['role'] !== 'event',
-    ));
+    $messages = $this->getMessages($session);
 
     // One message for the pair, not two: the pending row's own card must
     // not appear beside the settled one.
@@ -770,10 +756,7 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
       ]),
     ]);
 
-    $messages = array_values(array_filter(
-      $this->getMessages($session),
-      fn($m) => $m['role'] !== 'event',
-    ));
+    $messages = $this->getMessages($session);
 
     $this->assertCount(1, $messages);
     $calls = $messages[0]['toolCalls'];

@@ -30,14 +30,8 @@ export interface SessionMessage {
   /** CMS user id of the author (user items in shared sessions). */
   userId?: string;
   toolCalls?: SessionToolCall[];
-  /** Event type, e.g. "session_start", "tone", "template" (event items). */
-  type?: string;
-  /** Human-readable event summary (event items). */
-  summary?: string;
   /** RFC 3339 creation timestamp of the entry. */
   at?: string;
-  /** The draft version a "save" event persisted (event items). */
-  version?: number;
 }
 
 /**
