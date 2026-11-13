@@ -82,9 +82,9 @@ class AiEditorialSessionControllerTest extends AiEditorialSessionKernelTestBase 
 
     $drafting = $this->draftingConfig($this->controller()->view($session));
 
-    $this->assertTrue($drafting['publishableAssets']['enabled']);
-    $this->assertSame(['txt', 'doc', 'docx', 'pdf', 'md', 'png', 'jpg', 'jpeg', 'gif'], $drafting['publishableAssets']['extensions']);
-    $this->assertSame(['txt', 'doc', 'docx', 'pdf', 'md'], $drafting['documents']['extensions']);
+    $this->assertTrue($drafting['documents']['enabled']);
+    $this->assertSame(['txt', 'doc', 'docx', 'pdf', 'md', 'png', 'jpg', 'jpeg', 'gif'], $drafting['documents']['extensions']['publishable']);
+    $this->assertSame(['txt', 'doc', 'docx', 'pdf', 'md'], $drafting['documents']['extensions']['context']);
   }
 
   /**
@@ -98,7 +98,7 @@ class AiEditorialSessionControllerTest extends AiEditorialSessionKernelTestBase 
 
     $build = $this->controller()->view($session);
 
-    $this->assertSame(['pdf', 'png'], $this->draftingConfig($build)['publishableAssets']['extensions']);
+    $this->assertSame(['pdf', 'png'], $this->draftingConfig($build)['documents']['extensions']['publishable']);
     $this->assertContains('config:field_config_list', $build['#cache']['tags']);
   }
 
@@ -112,7 +112,7 @@ class AiEditorialSessionControllerTest extends AiEditorialSessionKernelTestBase 
 
     $drafting = $this->draftingConfig($this->controller()->view($session));
 
-    $this->assertSame(['enabled' => FALSE, 'extensions' => []], $drafting['publishableAssets']);
+    $this->assertArrayNotHasKey('publishable', $drafting['documents']['extensions']);
     $this->assertTrue($drafting['documents']['enabled']);
   }
 

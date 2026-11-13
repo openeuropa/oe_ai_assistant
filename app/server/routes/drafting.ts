@@ -31,25 +31,26 @@ type MockDocumentCategory = components["schemas"]["DraftingDocumentCategory"];
 type MockDocumentStatus = components["schemas"]["DraftingDocumentStatus"];
 type MockDocument = components["schemas"]["DraftingDocument"];
 
-function isDocumentCategory(
-  category: unknown,
-): category is MockDocumentCategory {
-  return category === "context" || category === "publishable";
+/** Narrows a request parameter to a category the backend serves. */
+function isCategory(value: unknown): value is MockDocumentCategory {
+  return value === "context" || value === "publishable";
 }
 
-/** Keep each category isolated even when it belongs to the same session. */
-function documentListKey(
-  sessionId: string,
-  category: MockDocumentCategory,
-): string {
-  return JSON.stringify([sessionId, category]);
+/**
+ * Builds the key of the document store, which holds one list per session
+ * and category.
+ */
+function storeKey(sessionId: string, category: MockDocumentCategory): string {
+  return `${sessionId}:${category}`;
 }
+
+/** File types the backend extractor reads. */
+const EXTRACTABLE_TYPES = ["txt", "doc", "docx", "pdf", "md"];
 
 /**
  * Fakes the extraction pipeline: the status advances every two seconds
  * until done. A filename containing "fail" stops at error after the
- * extraction step, so the retry control can be exercised. Images also stop
- * at error, matching the backend's current document-only extraction pipeline.
+ * extraction step, so the retry control can be exercised.
  */
 const MOCK_PROGRESSION: MockDocumentStatus[] = [
   "extracting",
@@ -59,9 +60,13 @@ const MOCK_PROGRESSION: MockDocumentStatus[] = [
 ];
 
 function startMockExtraction(document: MockDocument): void {
-  const fails =
-    document.title.toLowerCase().includes("fail") ||
-    ["png", "jpg", "jpeg", "gif"].includes(document.meta.type);
+  // The backend has nothing to extract from an image, so it skips the
+  // whole progression and leaves the document in done.
+  if (!EXTRACTABLE_TYPES.includes(document.meta.type)) {
+    document.status = "done";
+    return;
+  }
+  const fails = document.title.toLowerCase().includes("fail");
   MOCK_PROGRESSION.forEach((status, index) => {
     setTimeout(
       () => {
@@ -97,7 +102,7 @@ const initialMockPublishableAssets: MockDocument[] = [
   {
     id: "publishable-image-1",
     title: "European Commission building.jpg",
-    status: "error",
+    status: "done",
     meta: { type: "jpg", size: 1048576 },
   },
   {
@@ -149,12 +154,9 @@ function loadSchema(bundle: string): object | null {
 export function createDraftingRouter(service: DraftingService): Router {
   const router = Router();
   const documentsBySession = new Map<string, MockDocument[]>([
+    [storeKey("dev-session", "context"), structuredClone(initialMockDocuments)],
     [
-      documentListKey("dev-session", "context"),
-      structuredClone(initialMockDocuments),
-    ],
-    [
-      documentListKey("dev-session", "publishable"),
+      storeKey("dev-session", "publishable"),
       structuredClone(initialMockPublishableAssets),
     ],
   ]);
@@ -361,7 +363,7 @@ export function createDraftingRouter(service: DraftingService): Router {
     const filename = String(req.query.filename ?? "");
     const body = await readRequestBody(req);
 
-    if (!sessionId || !isDocumentCategory(category) || !filename) {
+    if (!sessionId || !isCategory(category) || !filename) {
       res.status(400).json({
         code: "bad_request",
         message: "sessionId, category, and filename are required",
@@ -378,7 +380,7 @@ export function createDraftingRouter(service: DraftingService): Router {
         size: body.length,
       },
     };
-    const key = documentListKey(sessionId, category);
+    const key = storeKey(sessionId, category);
     const documents = documentsBySession.get(key) ?? [];
     documentsBySession.set(key, [...documents, document]);
 
@@ -398,7 +400,7 @@ export function createDraftingRouter(service: DraftingService): Router {
       documentId?: string;
     };
 
-    if (!sessionId || !isDocumentCategory(category) || !documentId) {
+    if (!sessionId || !isCategory(category) || !documentId) {
       res.status(400).json({
         code: "bad_request",
         message: "sessionId, category, and documentId are required",
@@ -407,7 +409,7 @@ export function createDraftingRouter(service: DraftingService): Router {
     }
 
     const document = (
-      documentsBySession.get(documentListKey(sessionId, category)) ?? []
+      documentsBySession.get(storeKey(sessionId, category)) ?? []
     ).find((item) => item.id === documentId);
     if (!document) {
       res.status(404).json({
@@ -432,7 +434,7 @@ export function createDraftingRouter(service: DraftingService): Router {
       category?: string;
     };
 
-    if (!sessionId || !isDocumentCategory(category)) {
+    if (!sessionId || !isCategory(category)) {
       res.status(400).json({
         code: "bad_request",
         message: "sessionId and category are required",
@@ -441,8 +443,7 @@ export function createDraftingRouter(service: DraftingService): Router {
     }
 
     res.json({
-      documents:
-        documentsBySession.get(documentListKey(sessionId, category)) ?? [],
+      documents: documentsBySession.get(storeKey(sessionId, category)) ?? [],
     });
   });
 
@@ -454,7 +455,7 @@ export function createDraftingRouter(service: DraftingService): Router {
       documentId?: string;
     };
 
-    if (!sessionId || !isDocumentCategory(category) || !documentId) {
+    if (!sessionId || !isCategory(category) || !documentId) {
       res.status(400).json({
         code: "bad_request",
         message: "sessionId, category, and documentId are required",
@@ -462,7 +463,7 @@ export function createDraftingRouter(service: DraftingService): Router {
       return;
     }
 
-    const key = documentListKey(sessionId, category);
+    const key = storeKey(sessionId, category);
     const documents = documentsBySession.get(key) ?? [];
     if (!documents.some((document) => document.id === documentId)) {
       res.status(404).json({

@@ -75,10 +75,7 @@ const test = base.extend<{ assetSession: string }>({
               const lists = await Promise.all(categories.map(listDocuments));
               return lists
                 .flat()
-                .every(
-                  (document) =>
-                    document.status === "done" || document.status === "error",
-                );
+                .every((document) => document.status === "done");
             },
             { timeout: 15000, intervals: [500, 1000] },
           )
@@ -124,13 +121,13 @@ test("publishable assets stay separate through upload, reload, and removal", asy
   await expect(
     assetsPanel.getByText("AI Act factsheet.pdf", { exact: true }),
   ).toBeVisible();
-  // The backend stores images, but cannot generate their descriptions yet.
+  // Files without a loader skip extraction and remain usable assets.
   await expect(
     assetsPanel.getByTestId("document-status").filter({ hasText: "Failed" }),
-  ).toHaveCount(1);
+  ).toHaveCount(0);
   await expect(
     assetsPanel.getByTestId("document-status").filter({ hasText: "Ready" }),
-  ).toHaveCount(1);
+  ).toHaveCount(2);
   await expect(
     assetsPanel.getByText("EU AI Act briefing note.pdf", { exact: true }),
   ).toHaveCount(0);
@@ -150,8 +147,11 @@ test("publishable assets stay separate through upload, reload, and removal", asy
     buffer: Buffer.from("mock image upload"),
   });
   await expect(assetsPanel.getByText(filename, { exact: true })).toBeVisible();
+  await expect(
+    assetsPanel.getByTestId("document-status").filter({ hasText: "Ready" }),
+  ).toHaveCount(3, { timeout: 10000 });
   await assetsPanel.getByRole("button", { name: "Close", exact: true }).click();
-  await expect(assetsButton).toContainText(/Processing 1 of 3|3 assets/);
+  await expect(assetsButton).toContainText("3 assets");
   await expect(contextButton).toContainText("2 documents");
 
   // The list is reloaded from the mock API, rather than retained only in React.

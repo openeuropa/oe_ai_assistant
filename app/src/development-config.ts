@@ -58,23 +58,20 @@ export const developmentConfig = {
       documents: {
         // The document list is fetched from the mock API after boot.
         enabled: true,
-        extensions: ["txt", "doc", "docx", "pdf", "md"],
-      },
-      publishableAssets: {
-        // Match the default upload field configuration shipped by OEL-4840.
-        // Drupal supplies these extensions from its configured source field.
-        enabled: true,
-        extensions: [
-          "txt",
-          "doc",
-          "docx",
-          "pdf",
-          "md",
-          "png",
-          "jpg",
-          "jpeg",
-          "gif",
-        ],
+        extensions: {
+          context: ["txt", "doc", "docx", "pdf", "md"],
+          publishable: [
+            "txt",
+            "doc",
+            "docx",
+            "pdf",
+            "md",
+            "png",
+            "jpg",
+            "jpeg",
+            "gif",
+          ],
+        },
       },
     },
   },

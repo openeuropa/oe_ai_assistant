@@ -8,10 +8,8 @@ use Drupal\file\FileInterface;
 use Drupal\file\Upload\InputStreamFileWriterInterface;
 use Drupal\field\FieldConfigInterface;
 use Drupal\media\MediaInterface;
-use Drupal\oe_ai_assistant\Controller\PluginController;
 use Drupal\oe_ai_assistant\Exception\ActionException;
 use Drupal\oe_ai_assistant\Plugin\AiAssistantPluginManager;
-use Drupal\oe_ai_assistant\Service\RequestValidator;
 use Drupal\file\Upload\InputStreamUploadedFile;
 use Drupal\file\Upload\UploadedFileInterface;
 use Drupal\oe_ai_assistant\Service\Drafting\ContextDocumentRepository;
@@ -20,8 +18,6 @@ use Drupal\oe_ai_assistant_test\Plugin\AiProvider\MockResponse;
 use GuzzleHttp\Psr7\Response;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
-use Symfony\Component\DependencyInjection\ContainerBuilder;
-use Symfony\Component\DependencyInjection\Reference;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\File\Exception\UploadException;
 use Symfony\Component\HttpFoundation\Request;
@@ -32,47 +28,7 @@ use Symfony\Component\HttpFoundation\Request;
 #[Group('oe_ai_assistant')]
 class DraftingPluginDocumentsTest extends AiEditorialSessionKernelTestBase {
 
-  use TikaMockTrait;
-
-  /**
-   * {@inheritdoc}
-   */
-  public function register(ContainerBuilder $container): void {
-    parent::register($container);
-    $container->register('stream_wrapper.private', 'Drupal\Core\StreamWrapper\PrivateStream')
-      ->addTag('stream_wrapper', ['scheme' => 'private']);
-    // Raw upload bodies are read from php://input, which tests cannot feed.
-    $container->register('file.input_stream_file_writer', TestInputStreamFileWriter::class)
-      ->addArgument(new Reference('file_system'));
-  }
-
-  /**
-   * {@inheritdoc}
-   */
-  protected function setUpFilesystem(): void {
-    parent::setUpFilesystem();
-    $privatePath = $this->siteDirectory . '/private';
-    mkdir($privatePath);
-    $this->setSetting('file_private_path', $privatePath);
-  }
-
-  /**
-   * {@inheritdoc}
-   */
-  protected function setUp(): void {
-    parent::setUp();
-    $this->installSchema('file', ['file_usage']);
-    $this->installConfig(['document_loader_tika']);
-    // The Tika submodule ships no server URL, so point it at the mock.
-    $this->config('document_loader_tika.settings')
-      ->set('url', 'http://tika:9998')
-      ->save();
-    $this->enableModules(['oe_ai_assistant_test']);
-    $this->config('ai.settings')
-      ->set('default_providers', ['chat' => ['provider_id' => 'mock_ai', 'model_id' => 'mock-model']])
-      ->save();
-    MockAiProvider::reset();
-  }
+  use DocumentActionsTestTrait;
 
   /**
    * Tests adding, listing, and removing context documents.
@@ -618,33 +574,6 @@ class DraftingPluginDocumentsTest extends AiEditorialSessionKernelTestBase {
   }
 
   /**
-   * Creates a raw-body upload request for the add-document action.
-   *
-   * The scalar parameters travel in the query string and the file bytes
-   * form the whole request body, as the frontend sends them. The bytes are
-   * also primed on the writer double, which stands in for php://input.
-   */
-  private function createUploadRequest(string $sessionId, string $category, string $filename, string $contents): Request {
-    $this->container->get('file.input_stream_file_writer')->setContents($contents);
-    $query = http_build_query([
-      'sessionId' => $sessionId,
-      'category' => $category,
-      'filename' => $filename,
-    ]);
-
-    return Request::create('?' . $query, 'POST', [], [], [], [
-      'CONTENT_TYPE' => 'application/octet-stream',
-    ], $contents);
-  }
-
-  /**
-   * Builds a JSON action request.
-   */
-  private function createJsonRequest(array $body): Request {
-    return Request::create('', 'POST', [], [], [], ['CONTENT_TYPE' => 'application/json'], json_encode($body));
-  }
-
-  /**
    * Stages contents as an upload for the repository, as the action does.
    */
   private function stageUpload(string $filename, string $contents): UploadedFileInterface {
@@ -666,16 +595,6 @@ class DraftingPluginDocumentsTest extends AiEditorialSessionKernelTestBase {
       ->count()
       ->execute();
     $this->assertSame(0, (int) $count);
-  }
-
-  /**
-   * Creates the plugin controller with real services.
-   */
-  private function createPluginController(): PluginController {
-    return new PluginController(
-      $this->container->get(AiAssistantPluginManager::class),
-      $this->container->get(RequestValidator::class),
-    );
   }
 
 }

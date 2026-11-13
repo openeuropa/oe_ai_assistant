@@ -23,10 +23,10 @@ interface AiDraftingTemplateInterface extends ConfigEntityInterface {
   /**
    * Returns the defaults map with special tokens resolved.
    *
-   * Supported tokens inside default value structures: __NOW__ → current Unix
-   * timestamp.
+   * Inside a default value structure, the __NOW__ token resolves to the
+   * current Unix timestamp.
    *
-   * @return array<string, mixed>
+   * @return array
    *   The mapping with tokens resolved.
    */
   public function resolveDefaults(): array;

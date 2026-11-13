@@ -171,19 +171,29 @@ describe("useDraftingDocuments", () => {
     expect(loadErrorState()).toBeNull();
   });
 
-  it("exposes the accepted extensions from the host config", async () => {
+  it("exposes the accepted extensions of its own category", async () => {
     setConfig({
       userId: "editor",
       sessionId: "session-42",
       pluginConfig: {
         drafting: {
-          documents: { enabled: true, extensions: ["pdf", "docx"] },
+          documents: {
+            enabled: true,
+            extensions: {
+              context: ["pdf", "docx"],
+              publishable: ["pdf", "png"],
+            },
+          },
         },
       },
     });
     const { useDraftingDocuments } = await loadHook();
 
     expect(useDraftingDocuments().extensions).toEqual(["pdf", "docx"]);
+    expect(useDraftingDocuments("publishable").extensions).toEqual([
+      "pdf",
+      "png",
+    ]);
   });
 
   it("keeps publishable assets disabled when only context documents are enabled", async () => {
@@ -197,14 +207,37 @@ describe("useDraftingDocuments", () => {
     expect(apiMocks.listDraftingDocuments).not.toHaveBeenCalled();
   });
 
+  it("does not load either category when the shared documents gate is disabled", async () => {
+    setConfig({
+      userId: "editor",
+      sessionId: "session-42",
+      pluginConfig: {
+        drafting: {
+          documents: {
+            enabled: false,
+            extensions: { context: ["txt"], publishable: ["jpg"] },
+          },
+        },
+      },
+    });
+    const { useDraftingDocuments } = await loadHook();
+
+    expect(useDraftingDocuments().enabled).toBe(false);
+    expect(useDraftingDocuments("publishable").enabled).toBe(false);
+    await flushAsync();
+    expect(apiMocks.listDraftingDocuments).not.toHaveBeenCalled();
+  });
+
   it("uses the publishable configuration and category throughout the asset lifecycle", async () => {
     setConfig({
       userId: "editor",
       sessionId: "session-42",
       pluginConfig: {
         drafting: {
-          documents: { enabled: false, extensions: ["txt"] },
-          publishableAssets: { enabled: true, extensions: ["jpg", "pdf"] },
+          documents: {
+            enabled: true,
+            extensions: { context: ["txt"], publishable: ["jpg", "pdf"] },
+          },
         },
       },
     });

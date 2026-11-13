@@ -244,6 +244,12 @@ class DraftingPlugin extends AiAssistantPluginBase {
     // Keep the panel hidden until its upload field is available.
     $publishableField = $this->entityTypeManager->getStorage('field_config')
       ->load('media.ai_publishable_asset.oe_ai_publishable_asset');
+    $documentExtensions = [
+      ContextDocumentRepository::CATEGORY => $this->contextDocumentRepository->getAllowedExtensions(),
+    ];
+    if ($publishableField !== NULL) {
+      $documentExtensions[PublishableAssetRepository::CATEGORY] = $this->publishableAssetRepository->getAllowedExtensions();
+    }
 
     return [
       'entityTypeId' => $context['entityTypeId'],
@@ -265,13 +271,10 @@ class DraftingPlugin extends AiAssistantPluginBase {
         // action after boot; the bootstrap only carries the gate and the
         // extensions the upload control offers.
         'enabled' => TRUE,
-        'extensions' => $this->contextDocumentRepository->getAllowedExtensions(),
-      ],
-      'publishableAssets' => [
-        'enabled' => $publishableField !== NULL,
-        'extensions' => $publishableField !== NULL
-          ? $this->publishableAssetRepository->getAllowedExtensions()
-          : [],
+        // Each category accepts the extensions of its own source field,
+        // and publishable assets also take images. Keying the lists by
+        // category lets every upload control offer its own.
+        'extensions' => $documentExtensions,
       ],
       // Live preview iframe URL template. The app substitutes the
       // {sessionId} and {versionId} placeholders before loading the
@@ -285,10 +288,10 @@ class DraftingPlugin extends AiAssistantPluginBase {
   /**
    * Serializes internal prompt-ready tone options for frontend bootstrap.
    *
-   * @param array<int, array{id: string, label: string, description: string, oe_ai_prompt: string}> $options
+   * @param array $options
    *   The prompt-ready service options.
    *
-   * @return array<int, array{id: string, label: string, description: string}>
+   * @return array
    *   Frontend-safe tone options.
    */
   private function serializeToneOptions(array $options): array {

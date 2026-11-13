@@ -6,71 +6,24 @@ namespace Drupal\Tests\oe_ai_assistant\Kernel;
 
 use Drupal\file\FileInterface;
 use Drupal\media\MediaInterface;
-use Drupal\oe_ai_assistant\Controller\PluginController;
-use Drupal\oe_ai_assistant\Exception\ActionException;
 use Drupal\oe_ai_assistant\Plugin\AiAssistantPluginManager;
 use Drupal\oe_ai_assistant\Service\Drafting\DocumentExtractionProcessorInterface;
-use Drupal\oe_ai_assistant\Service\RequestValidator;
-use Drupal\oe_ai_assistant_test\Plugin\AiProvider\MockAiProvider;
-use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
-use Symfony\Component\DependencyInjection\ContainerBuilder;
-use Symfony\Component\DependencyInjection\Reference;
 use Symfony\Component\HttpFoundation\JsonResponse;
-use Symfony\Component\HttpFoundation\Request;
 
 /**
- * Kernel tests for DraftingPlugin publishable-asset document actions.
+ * Kernel tests for the publishable-asset document actions.
  *
- * The publishable category reuses the same category-generic CRUD as context
- * documents, so this test covers only what the publishable bundle adds: a
- * second bundle resolved through the new enum value, its own private storage,
- * and the known image-extraction gap documented in the OEL-4840 plan.
+ * Add, list and remove run the same code for every category, access
+ * checks included, and DraftingPluginDocumentsTest covers them. This class
+ * covers what the publishable category brings of its own: its media
+ * bundle, its private directory, and its value in the API category enum.
+ * It also covers images the extractor cannot read.
  */
 #[Group('oe_ai_assistant')]
 class PublishableAssetDocumentsTest extends AiEditorialSessionKernelTestBase {
 
-  use TikaMockTrait;
-
-  /**
-   * {@inheritdoc}
-   */
-  public function register(ContainerBuilder $container): void {
-    parent::register($container);
-    $container->register('stream_wrapper.private', 'Drupal\Core\StreamWrapper\PrivateStream')
-      ->addTag('stream_wrapper', ['scheme' => 'private']);
-    // Raw upload bodies are read from php://input, which tests cannot feed.
-    $container->register('file.input_stream_file_writer', TestInputStreamFileWriter::class)
-      ->addArgument(new Reference('file_system'));
-  }
-
-  /**
-   * {@inheritdoc}
-   */
-  protected function setUpFilesystem(): void {
-    parent::setUpFilesystem();
-    $privatePath = $this->siteDirectory . '/private';
-    mkdir($privatePath);
-    $this->setSetting('file_private_path', $privatePath);
-  }
-
-  /**
-   * {@inheritdoc}
-   */
-  protected function setUp(): void {
-    parent::setUp();
-    $this->installSchema('file', ['file_usage']);
-    $this->installConfig(['document_loader_tika']);
-    // The Tika submodule ships no server URL, so point it at the mock.
-    $this->config('document_loader_tika.settings')
-      ->set('url', 'http://tika:9998')
-      ->save();
-    $this->enableModules(['oe_ai_assistant_test']);
-    $this->config('ai.settings')
-      ->set('default_providers', ['chat' => ['provider_id' => 'mock_ai', 'model_id' => 'mock-model']])
-      ->save();
-    MockAiProvider::reset();
-  }
+  use DocumentActionsTestTrait;
 
   /**
    * Tests the add, list and remove round trip for a publishable asset.
@@ -127,11 +80,11 @@ class PublishableAssetDocumentsTest extends AiEditorialSessionKernelTestBase {
   }
 
   /**
-   * Tests the round trip through the controller, exercising the new enum.
+   * Tests the round trip through the controller.
    *
-   * Dispatching through the controller validates the request against the
-   * OpenAPI schema, so this asserts that the widened category enum accepts
-   * the publishable value end to end.
+   * The controller runs every request through the OpenAPI schema, so
+   * going through it is what proves the schema accepts the publishable
+   * category.
    */
   public function testPublishableAssetActionsThroughController(): void {
     $owner = $this->createUser();
@@ -174,151 +127,48 @@ class PublishableAssetDocumentsTest extends AiEditorialSessionKernelTestBase {
   }
 
   /**
-   * Tests publishable asset actions deny users without session access.
-   */
-  #[DataProvider('documentActionAccessProvider')]
-  public function testPublishableAssetActionsDenyUsersWithoutSessionAccess(string $action): void {
-    $owner = $this->createUser();
-    $session = $this->createSession($owner);
-    $this->container->get('current_user')->setAccount($this->createUser());
-    $plugin = $this->container->get(AiAssistantPluginManager::class)
-      ->createInstance('drafting');
-
-    try {
-      $plugin->executeAction($action, $this->createPublishableActionRequest($action, (string) $session->id()));
-      $this->fail(sprintf('The %s action did not deny access.', $action));
-    }
-    catch (ActionException $e) {
-      $this->assertSame('forbidden', $e->errorCode);
-      $this->assertSame(403, $e->statusCode);
-      $this->assertSame('Access to the editorial session is denied.', $e->getMessage());
-    }
-  }
-
-  /**
-   * Tests an uploaded image is stored and referenced even without extraction.
+   * Tests that an image is stored like any document but skips extraction.
    *
-   * OEL-4840 scopes publishable assets to storage and CRUD only (decision A
-   * in the plan). The extraction pipeline describes documents, not images, so
-   * an uploaded image comes to rest in the error state with no description.
-   * This documents that known gap: the media and its private file survive and
-   * stay referenced; only the extraction state is error. Image description is
-   * a follow-up tracked with the placement work (OEL-4844).
+   * The asset lands in its own private directory and comes to rest in
+   * done with no extract and no summary, rather than in error.
    */
-  public function testImageAssetIsStoredButRestsInErrorState(): void {
+  public function testImageAssetSkipsExtraction(): void {
     $owner = $this->createUser();
     $this->container->get('current_user')->setAccount($owner);
     $session = $this->createSession($owner);
     $plugin = $this->container->get(AiAssistantPluginManager::class)
       ->createInstance('drafting');
 
-    // A minimal but valid PNG so the file-field image validators accept it.
-    $png = base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M8AAAMBAQAY3Y2wAAAAAElFTkSuQmCC');
-    $addRequest = $this->createUploadRequest((string) $session->id(), 'publishable', 'picture.png', $png);
+    // The source field accepts a file by extension, not by content, so
+    // these bytes stand in for an image.
+    $addRequest = $this->createUploadRequest((string) $session->id(), 'publishable', 'picture.png', 'Image bytes.');
     $added = $plugin->executeAction('add-document', $addRequest);
 
-    // The asset is stored and scheduled for extraction like any document.
+    // The upload schedules the asset for extraction like any document.
     $this->assertSame(DocumentExtractionProcessorInterface::STATE_SCHEDULED, $added['document']['status']);
     $documentId = $added['document']['id'];
 
-    // Running extraction fails on the unsupported image extension, so the
-    // asset comes to rest in the error state.
     $extractRequest = $this->createJsonRequest([
       'sessionId' => (string) $session->id(),
       'category' => 'publishable',
       'documentId' => $documentId,
     ]);
     $this->assertSame(
-      ['status' => DocumentExtractionProcessorInterface::STATE_ERROR],
+      ['status' => DocumentExtractionProcessorInterface::STATE_DONE],
       $plugin->executeAction('extract-document', $extractRequest),
     );
 
-    // The media and its private file still exist and stay referenced: only
-    // the description is missing.
     $media = $this->container->get('entity_type.manager')->getStorage('media')->load($documentId);
     $this->assertInstanceOf(MediaInterface::class, $media);
     $file = $media->get('oe_ai_publishable_asset')->entity;
     $this->assertInstanceOf(FileInterface::class, $file);
     $this->assertStringStartsWith('private://ai-publishable-assets/', $file->getFileUri());
     $this->assertSame(
-      DocumentExtractionProcessorInterface::STATE_ERROR,
+      DocumentExtractionProcessorInterface::STATE_DONE,
       $media->get(DocumentExtractionProcessorInterface::STATE_FIELD)->value,
     );
+    $this->assertTrue($media->get(DocumentExtractionProcessorInterface::EXTRACT_FIELD)->isEmpty());
     $this->assertTrue($media->get(DocumentExtractionProcessorInterface::SUMMARY_FIELD)->isEmpty());
-  }
-
-  /**
-   * Builds a request for a publishable asset action.
-   */
-  private function createPublishableActionRequest(string $action, string $sessionId): Request {
-    if ($action === 'add-document') {
-      return $this->createUploadRequest($sessionId, 'publishable', 'access-denied-asset.txt', 'Publishable asset contents.');
-    }
-
-    $body = [
-      'sessionId' => $sessionId,
-      'category' => 'publishable',
-    ];
-    if ($action === 'remove-document' || $action === 'extract-document') {
-      $body['documentId'] = '1';
-    }
-
-    return $this->createJsonRequest($body);
-  }
-
-  /**
-   * Creates a raw-body upload request for the add-document action.
-   *
-   * The scalar parameters travel in the query string and the file bytes form
-   * the whole request body, as the frontend sends them. The bytes are also
-   * primed on the writer double, which stands in for php://input.
-   */
-  private function createUploadRequest(string $sessionId, string $category, string $filename, string $contents): Request {
-    $this->container->get('file.input_stream_file_writer')->setContents($contents);
-    $query = http_build_query([
-      'sessionId' => $sessionId,
-      'category' => $category,
-      'filename' => $filename,
-    ]);
-
-    return Request::create('?' . $query, 'POST', [], [], [], [
-      'CONTENT_TYPE' => 'application/octet-stream',
-    ], $contents);
-  }
-
-  /**
-   * Builds a JSON action request.
-   *
-   * @param array<string, string> $body
-   *   The request body.
-   */
-  private function createJsonRequest(array $body): Request {
-    return Request::create('', 'POST', [], [], [], ['CONTENT_TYPE' => 'application/json'], json_encode($body, JSON_THROW_ON_ERROR));
-  }
-
-  /**
-   * Creates the plugin controller with real services.
-   */
-  private function createPluginController(): PluginController {
-    return new PluginController(
-      $this->container->get(AiAssistantPluginManager::class),
-      $this->container->get(RequestValidator::class),
-    );
-  }
-
-  /**
-   * Provides document action names for access checks.
-   *
-   * @return array<string, array{0: string}>
-   *   Test cases keyed by action name.
-   */
-  public static function documentActionAccessProvider(): array {
-    return [
-      'add-document' => ['add-document'],
-      'list-documents' => ['list-documents'],
-      'remove-document' => ['remove-document'],
-      'extract-document' => ['extract-document'],
-    ];
   }
 
   /**

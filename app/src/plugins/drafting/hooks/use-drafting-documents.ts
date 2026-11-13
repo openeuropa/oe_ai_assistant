@@ -96,13 +96,16 @@ export function useDraftingDocuments(
 ) {
   const draftingConfig = (getConfig().pluginConfig.drafting ??
     {}) as DraftingPluginConfig;
-  const documentsConfig =
-    category === "publishable"
-      ? draftingConfig.publishableAssets
-      : draftingConfig.documents;
-  const enabled = documentsConfig?.enabled ?? false;
-  // File extensions the backend accepts, driving the upload control.
-  const extensions = documentsConfig?.extensions ?? [];
+  const documentsConfig = draftingConfig.documents;
+  // A missing category list means that the host has not enabled its storage.
+  const enabled =
+    (documentsConfig?.enabled ?? false) &&
+    (category === "context" ||
+      documentsConfig?.extensions?.publishable !== undefined);
+  // File extensions the backend accepts, driving the upload control. The
+  // host sends one list per category, since the categories do not take the
+  // same files.
+  const extensions = documentsConfig?.extensions?.[category] ?? [];
   const [selected, setSelectedState] = useState<DraftingDocument[]>([]);
   // Mirror of the selected list for code running outside a render: the
   // refresh and request callbacks read the latest documents from here.
