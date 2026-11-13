@@ -440,12 +440,12 @@ export function createDraftingRouter(service: DraftingService): Router {
    */
   router.get("/preview", (req, res) => {
     const sessionId = String(req.query.sessionId ?? "");
-    const version = Number(req.query.version ?? 0);
+    const version = String(req.query.version ?? "");
 
-    if (!sessionId || version <= 0) {
+    if (!sessionId || !version) {
       res.status(400).json({
         code: "invalid_request",
-        message: "sessionId and a positive version are required",
+        message: "sessionId and version are required",
       });
       return;
     }
