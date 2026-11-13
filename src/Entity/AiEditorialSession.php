@@ -272,15 +272,16 @@ class AiEditorialSession extends ContentEntityBase implements AiEditorialSession
   /**
    * {@inheritdoc}
    */
-  public function getLatestActivity(int $limit): array {
+  public function getLatestActivity(?int $limit = NULL): array {
     $storage = $this->activityStorage();
     // Two entries can share a second, so we sort by id and not by the
     // created time. The query gives us the newest entries first, and
     // ksort() puts them back in the order they happened.
-    $ids = $this->activityQuery()
-      ->sort('id', 'DESC')
-      ->range(0, $limit)
-      ->execute();
+    $query = $this->activityQuery()->sort('id', 'DESC');
+    if ($limit !== NULL) {
+      $query->range(0, $limit);
+    }
+    $ids = $query->execute();
     $entries = $storage->loadMultiple($ids);
     ksort($entries);
 

@@ -9,6 +9,7 @@ use Drupal\ai_neuron\Tools\NeuronToolPluginBase;
 use Drupal\Core\Plugin\Context\EntityContextDefinition;
 use Drupal\Core\StringTranslation\TranslatableMarkup;
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionActivityInterface;
+use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
 
 /**
  * Reports what happened in this session, and when.
@@ -52,7 +53,10 @@ final class GetSessionActivityNeuronTool extends NeuronToolPluginBase {
     return json_encode([
       'activity' => array_map(
         static fn (AiEditorialSessionActivityInterface $entry): array => [
-          'at' => date('c', $entry->getCreatedTime()),
+          // gmdate(), not date(): Drupal sets the timezone of the account
+          // that asks, and the row this result becomes is replayed to
+          // everyone who reads the session afterwards.
+          'at' => gmdate('c', $entry->getCreatedTime()),
           'by' => (string) ($entry->getOwner()?->getDisplayName() ?? ''),
           'message' => $entry->getMessage(),
         ],
@@ -61,8 +65,29 @@ final class GetSessionActivityNeuronTool extends NeuronToolPluginBase {
       // We send only the last MAX_ENTRIES entries of a longer session. The
       // model would then read the oldest entry it got as the first thing
       // that happened. So we also report how many we left out.
-      'earlier_entries_omitted' => max(0, $session->countActivity() - count($entries)),
+      'earlier_entries_omitted' => $this->omitted(count($entries), $session),
     ]);
+  }
+
+  /**
+   * Counts the entries this call could not carry.
+   *
+   * @param int $returned
+   *   How many entries the call carries.
+   * @param \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $session
+   *   The session the call reads.
+   *
+   * @return int
+   *   How many older entries the call left out.
+   */
+  private function omitted(int $returned, AiEditorialSessionInterface $session): int {
+    // A short answer already proves it carries everything, so it skips
+    // the count query the long one needs.
+    if ($returned < self::MAX_ENTRIES) {
+      return 0;
+    }
+
+    return max(0, $session->countActivity() - $returned);
   }
 
 }

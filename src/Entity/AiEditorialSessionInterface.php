@@ -110,10 +110,13 @@ interface AiEditorialSessionInterface extends ContentEntityInterface, EntityChan
   /**
    * Returns the most recent entries in the activity of this session.
    *
+   * @param int|null $limit
+   *   How many entries to read. NULL reads every one of them.
+   *
    * @return \Drupal\oe_ai_assistant\Entity\AiEditorialSessionActivityInterface[]
    *   The entries, oldest first.
    */
-  public function getLatestActivity(int $limit): array;
+  public function getLatestActivity(?int $limit = NULL): array;
 
   /**
    * Counts the entries in the activity of this session.

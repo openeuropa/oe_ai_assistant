@@ -569,6 +569,14 @@ class DraftingPlugin extends AiAssistantPluginBase {
   public function reset(Request $request): array {
     $session = $this->loadSession($this->decodeJsonBody($request));
     $session->deleteConversation();
+    // The drafts live in the conversation, so this erases them too. The
+    // record still names every draft the session wrote. Without an entry
+    // the agent offers the editor drafts that no longer open.
+    $session->recordActivity(
+      ActivityType::ConversationReset,
+      'Conversation and drafts cleared.',
+    );
+
     return ['status' => 'ok'];
   }
 
@@ -717,7 +725,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
         ActivityType::ToneChanged,
         'Tone',
         $previous['label'],
-        (string) ($tone['label'] ?? '') ?: $toneId,
+        $this->labelOrId((string) ($tone['label'] ?? ''), $toneId),
       );
     }
 
@@ -789,9 +797,29 @@ class DraftingPlugin extends AiAssistantPluginBase {
    */
   private function selected(AiEditorialSessionInterface $session, string $field): array {
     $id = (string) $session->get($field)->target_id;
-    $label = (string) ($session->get($field)->entity?->label() ?? '');
 
-    return ['id' => $id, 'label' => $label !== '' ? $label : $id];
+    return [
+      'id' => $id,
+      'label' => $this->labelOrId((string) ($session->get($field)->entity?->label() ?? ''), $id),
+    ];
+  }
+
+  /**
+   * Falls back to the id of a selection when it has no label.
+   *
+   * A term named "0" has a label. A test for truthiness would read it as
+   * an empty one and report the term id to the editor instead.
+   *
+   * @param string $label
+   *   The label, empty when there is none to read.
+   * @param string $id
+   *   The id to fall back to.
+   *
+   * @return string
+   *   The label, or the id.
+   */
+  private function labelOrId(string $label, string $id): string {
+    return $label !== '' ? $label : $id;
   }
 
   /**

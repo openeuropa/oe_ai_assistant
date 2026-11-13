@@ -34,4 +34,7 @@ enum ActivityType: string {
   // The editor saved a draft to the CMS.
   case DraftSaved = 'draft_saved';
 
+  // The editor cleared the conversation and the drafts with it.
+  case ConversationReset = 'conversation_reset';
+
 }

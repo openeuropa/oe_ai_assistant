@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Drupal\oe_ai_assistant\Plugin\NeuronWorkflow\Editorial\Nodes;
 
 use Drupal\Component\Utility\Crypt;
+use Drupal\Component\Utility\Unicode;
 use Drupal\oe_ai_assistant\Entity\ActivityType;
 use Drupal\oe_ai_assistant\Exception\SchemaRetriesExhaustedException;
 use Drupal\oe_ai_assistant\Neuron\Chat\Messages\EditorialAssistantMessage;
@@ -152,11 +153,18 @@ final class DraftContentNode extends Node {
         'groups' => array_values($progress),
         'fields' => $fields,
       ]);
-      $resources->session->recordActivity(
-        ActivityType::DraftGenerated,
-        'Draft %d generated.',
-        $version,
-      );
+      // A resumed run replays this node with its groups already memoized,
+      // and the record is append-only. A second entry would tell the
+      // editor the same draft was written twice.
+      $this->memoize('recorded.' . $callId, function () use ($resources, $version): bool {
+        $resources->session->recordActivity(
+          ActivityType::DraftGenerated,
+          'Draft %d generated.',
+          $version,
+        );
+
+        return TRUE;
+      });
 
       // The field values reach no model, so the pane cannot read them off the
       // tool result. They go out as their own part, which is what shows the
@@ -222,23 +230,31 @@ final class DraftContentNode extends Node {
         // record carries it for the header of the card.
         'error' => $failed === '' ? $message : '',
       ]);
-      if ($failed === '') {
-        $resources->session->recordActivity(
-          ActivityType::DraftFailed,
-          'Draft %d failed: %s',
-          $version,
-          $message,
-        );
-      }
-      else {
-        $resources->session->recordActivity(
-          ActivityType::DraftFailed,
-          'Draft %d failed in the "%s" group: %s',
-          $version,
-          $failed,
-          $message,
-        );
-      }
+      // A schema failure names every field of the template that missed.
+      // The record travels back to the model on every later turn, so the
+      // entry carries the opening of the reason and no more.
+      $reason = Unicode::truncate($message, 200, TRUE, TRUE);
+      $this->memoize('recorded.' . $callId, function () use ($resources, $version, $failed, $reason): bool {
+        if ($failed === '') {
+          $resources->session->recordActivity(
+            ActivityType::DraftFailed,
+            'Draft %d failed: %s',
+            $version,
+            $reason,
+          );
+        }
+        else {
+          $resources->session->recordActivity(
+            ActivityType::DraftFailed,
+            'Draft %d failed in the "%s" group: %s',
+            $version,
+            $failed,
+            $reason,
+          );
+        }
+
+        return TRUE;
+      });
 
       yield new CustomStreamEvent('draft-failed', [
         'version' => $version,

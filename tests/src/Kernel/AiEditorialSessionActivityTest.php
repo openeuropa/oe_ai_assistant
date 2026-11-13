@@ -221,7 +221,7 @@ class AiEditorialSessionActivityTest extends AiEditorialSessionKernelTestBase {
     $this->assertSame('Tone set to "Formal".', $result['activity'][0]['message']);
     $this->assertSame($owner->getDisplayName(), $result['activity'][0]['by']);
     $this->assertSame(
-      date('c', $session->getLatestActivity(100)[0]->getCreatedTime()),
+      gmdate('c', $session->getLatestActivity(100)[0]->getCreatedTime()),
       $result['activity'][0]['at'],
     );
   }
@@ -351,6 +351,20 @@ class AiEditorialSessionActivityTest extends AiEditorialSessionKernelTestBase {
       'ai_editorial_session.view',
       $route->getRequirement('_entity_access'),
     );
+  }
+
+  /**
+   * Clearing a session records that its drafts went with the conversation.
+   */
+  public function testResetRecordsThatTheDraftsWereCleared(): void {
+    $owner = $this->createUser(['use oe ai assistant', 'view_update own sessions']);
+    $this->container->get('current_user')->setAccount($owner);
+    $session = $this->createSession($owner);
+
+    $this->action($session, 'reset', []);
+
+    $this->assertSame(['Conversation and drafts cleared.'], $this->messages($session));
+    $this->assertSame([ActivityType::ConversationReset], $this->types($session));
   }
 
   /**
