@@ -9,6 +9,8 @@ use Drupal\file\Upload\InputStreamFileWriterInterface;
 use Drupal\field\FieldConfigInterface;
 use Drupal\media\MediaInterface;
 use Drupal\oe_ai_assistant\Controller\PluginController;
+use Drupal\oe_ai_assistant\Entity\ActivityType;
+use Drupal\oe_ai_assistant\Entity\AiEditorialSessionActivityInterface;
 use Drupal\oe_ai_assistant\Exception\ActionException;
 use Drupal\oe_ai_assistant\Plugin\AiAssistantPluginManager;
 use Drupal\oe_ai_assistant\Service\RequestValidator;
@@ -132,6 +134,21 @@ class DraftingPluginDocumentsTest extends AiEditorialSessionKernelTestBase {
     $this->assertSessionHasNoDocuments($session->id());
     $this->assertNull($this->container->get('entity_type.manager')->getStorage('media')->load($documentId));
     $this->assertNull($this->container->get('entity_type.manager')->getStorage('file')->load($file->id()));
+
+    // Removing a document deletes its media entity, so the activity entry
+    // is the only place that still names the file.
+    $entries = $session->getLatestActivity(100);
+    $this->assertSame([
+      'Document "brief.txt" attached.',
+      'Document "brief.txt" removed.',
+    ], array_map(
+      static fn (AiEditorialSessionActivityInterface $entry): string => $entry->getMessage(),
+      $entries,
+    ));
+    $this->assertSame((int) $owner->id(), (int) $entries[0]->getOwnerId());
+    $this->assertSame((int) $owner->id(), (int) $entries[1]->getOwnerId());
+    $this->assertSame(ActivityType::DocumentAdded, $entries[0]->getType());
+    $this->assertSame(ActivityType::DocumentRemoved, $entries[1]->getType());
   }
 
   /**

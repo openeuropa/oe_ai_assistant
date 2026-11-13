@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Drupal\oe_ai_assistant\Plugin\NeuronWorkflow\DraftContent\Nodes;
 
 use Drupal\Component\Utility\Crypt;
+use Drupal\oe_ai_assistant\Entity\ActivityType;
 use Drupal\oe_ai_assistant\Exception\SchemaRetriesExhaustedException;
 use Drupal\oe_ai_assistant\Neuron\ToolWorkflowInterface;
 use Drupal\oe_ai_assistant\Neuron\Chat\Messages\EditorialAssistantMessage;
@@ -146,6 +147,11 @@ final class DraftContentNode extends Node {
         'groups' => array_values($progress),
         'fields' => $fields,
       ]);
+      $resources->session->recordActivity(
+        ActivityType::DraftGenerated,
+        'Draft %d generated.',
+        $version,
+      );
 
       // The tool result holds no field values, so the pane can't read them
       // off it. They are sent as an event of their own instead, which is what
@@ -214,6 +220,23 @@ final class DraftContentNode extends Node {
         // record carries it for the header of the card.
         'error' => $failed === '' ? $message : '',
       ]);
+      if ($failed === '') {
+        $resources->session->recordActivity(
+          ActivityType::DraftFailed,
+          'Draft %d failed: %s',
+          $version,
+          $message,
+        );
+      }
+      else {
+        $resources->session->recordActivity(
+          ActivityType::DraftFailed,
+          'Draft %d failed in the "%s" group: %s',
+          $version,
+          $failed,
+          $message,
+        );
+      }
 
       yield new CustomStreamEvent('draft-failed', [
         'version' => $version,
