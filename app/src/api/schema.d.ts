@@ -975,8 +975,8 @@ export interface operations {
             query: {
                 /** @description The editorial session hosting the draft to preview. */
                 sessionId: string;
-                /** @description The draft version to render, as returned by get_draft_history / the drafting_draft_content result (e.g. 1 for "Draft 1"). */
-                version: number;
+                /** @description The draft version to render, as returned by get_draft_history / the drafting_draft_content or amend_draft result (e.g. "1" for "Draft 1", "1.1" for "Draft 1.1"). */
+                version: string;
             };
             header?: never;
             path?: never;

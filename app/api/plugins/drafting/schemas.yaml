@@ -57,6 +57,65 @@ DraftingChatRequest:
                     - approve
                     - reject
 
+DraftingResetRequest:
+  type: object
+  required:
+    - sessionId
+  properties:
+    sessionId:
+      type: string
+      description: The editorial session whose conversation to reset.
+
+DraftingResetResponse:
+  type: object
+  required:
+    - status
+  properties:
+    status:
+      type: string
+      description: Confirmation status (e.g. "ok").
+
+DraftingSaveRequest:
+  type: object
+  description: >
+    Save one of the session's drafts as an unpublished revision. The
+    backend resolves the target content type and the drafted field
+    values from the session and its draft history, so the client only
+    names the version being saved; a client can never save field data
+    the session did not produce.
+  required:
+    - sessionId
+    - version
+  properties:
+    sessionId:
+      type: string
+      description: The editorial session that owns the draft.
+    version:
+      type: string
+      description: >
+        The draft version to save, matching the version of a
+        drafting_draft_content or amend_draft result in the session
+        transcript (e.g. "1" or "1.1", the version shown in the artifact
+        pane and the version rail).
+
+DraftingSaveResponse:
+  type: object
+  required:
+    - nodeId
+    - previewUrl
+    - draftName
+  properties:
+    nodeId:
+      type: string
+      description: The ID of the created node.
+    previewUrl:
+      type: string
+      description: URL to preview the created draft node.
+    draftName:
+      type: string
+      description: >
+        The saved draft's display name, e.g. "Draft 1" or "Draft 1.1".
+
 DraftingSetToneRequest:
   type: object
   required:
