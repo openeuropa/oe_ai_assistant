@@ -281,10 +281,10 @@ class DraftingPlugin extends AiAssistantPluginBase {
   /**
    * Serializes internal prompt-ready tone options for frontend bootstrap.
    *
-   * @param array<int, array{id: string, label: string, description: string, oe_ai_prompt: string}> $options
+   * @param array $options
    *   The prompt-ready service options.
    *
-   * @return array<int, array{id: string, label: string, description: string}>
+   * @return array
    *   Frontend-safe tone options.
    */
   private function serializeToneOptions(array $options): array {
