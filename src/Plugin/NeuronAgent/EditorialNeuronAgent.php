@@ -25,6 +25,7 @@ use NeuronAI\Workflow\Streaming\Adapter\StreamAdapterInterface;
   tools: [
     'drafting_get_history',
     'drafting_draft_content',
+    'context_get_session_activity',
   ],
   context_definitions: [
     'session' => new EntityContextDefinition(
@@ -110,6 +111,10 @@ final class EditorialNeuronAgent extends EditorialSessionAgentBase {
       reported, and do not claim a draft is ready.
     - The field groups below are the ones a new draft follows.
     - Answer questions about earlier drafts with drafting_get_history.
+    - Answer questions about what happened in this session and when, such as
+      which tone was used before, when a document was attached or removed, or
+      which draft was saved, by calling context_get_session_activity. Never
+      guess a time or an order of events.
     - You can have normal conversations with the user at any point.
     PROMPT;
 
