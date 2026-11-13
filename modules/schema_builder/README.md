@@ -214,7 +214,6 @@ Property level:
 - `LengthBuilder`, `RangeBuilder`, `CountBuilder`, `ChoiceBuilder`, `PatternBuilder`, `StringFormatBuilder` and
   `ConstantBuilder` translate the validation constraints core ships.
 - `FieldSettingsBuilder` reads what the settings of one field say about its own value.
-- `TextFormatBuilder` lists the text formats the current user may write in.
 
 Naming field types one by one would cover only the ones named. These builders read the constraints instead, so a field
 type that declares a `Length` gets a `maxLength` with no code written for it, core or contrib alike.
@@ -231,8 +230,8 @@ Drupal states the limits of a value in three places, and all three reach a build
 
 ## Things to know
 
-A schema can depend on the account, because `TextFormatBuilder` lists the formats the current user may write in. This
-module caches nothing, so a caller that caches a schema needs the `user.permissions` cache context.
+A builder may read the account, which makes the schema differ from one editor to the next. This module caches
+nothing, so a caller that caches a schema has to work out the cache contexts its own builders need.
 
 Asking for a bundle that is already being walked returns an empty array, which the builder that asked drops. That is
 what stops a bundle reaching itself from recursing without end.

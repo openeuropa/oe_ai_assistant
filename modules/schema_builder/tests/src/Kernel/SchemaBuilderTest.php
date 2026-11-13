@@ -5,10 +5,8 @@ declare(strict_types=1);
 namespace Drupal\Tests\schema_builder\Kernel;
 
 use Drupal\KernelTests\KernelTestBase;
-use Drupal\Tests\user\Traits\UserCreationTrait;
 use Drupal\field\Entity\FieldConfig;
 use Drupal\field\Entity\FieldStorageConfig;
-use Drupal\filter\Entity\FilterFormat;
 use PHPUnit\Framework\Attributes\Group;
 
 /**
@@ -16,8 +14,6 @@ use PHPUnit\Framework\Attributes\Group;
  */
 #[Group('schema_builder')]
 class SchemaBuilderTest extends KernelTestBase {
-
-  use UserCreationTrait;
 
   /**
    * {@inheritdoc}
@@ -117,12 +113,6 @@ class SchemaBuilderTest extends KernelTestBase {
                         "value": {
                             "type": "string"
                         },
-                        "format": {
-                            "type": "string",
-                            "enum": [
-                                "plain_text"
-                            ]
-                        },
                         "summary": {
                             "type": "string"
                         }
@@ -200,31 +190,6 @@ class SchemaBuilderTest extends KernelTestBase {
     ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
 
     $this->assertSame($expected, $actual);
-  }
-
-  /**
-   * Tests that the text formats offered follow the permissions of the user.
-   *
-   * The formats a user may write in differ from one account to the next, so
-   * no field metadata can state them. This is the case FieldItemSchemaEvent
-   * exists for.
-   */
-  public function testTextFormatsFollowTheAccount(): void {
-    $this->installSchema('user', ['users_data']);
-
-    FilterFormat::create([
-      'format' => 'restricted_html',
-      'name' => 'Restricted HTML',
-      'weight' => 1,
-    ])->save();
-
-    $before = $this->schema()['properties']['field_body']['items']['properties']['format']['enum'];
-    $this->assertSame(['plain_text'], $before);
-
-    $this->setUpCurrentUser([], ['use text format restricted_html']);
-
-    $after = $this->schema()['properties']['field_body']['items']['properties']['format']['enum'];
-    $this->assertContains('restricted_html', $after);
   }
 
   /**

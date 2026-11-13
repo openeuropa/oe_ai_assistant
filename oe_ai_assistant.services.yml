@@ -24,6 +24,7 @@ services:
   Drupal\oe_ai_assistant\SchemaBuilder\TemplateBundlesBuilder: {}
   Drupal\oe_ai_assistant\SchemaBuilder\TemplateDefaultsBuilder: {}
   Drupal\oe_ai_assistant\SchemaBuilder\TemplateFieldsBuilder: {}
+  Drupal\oe_ai_assistant\SchemaBuilder\TextFormatBuilder: {}
 
   Drupal\oe_ai_assistant\Service\TemplateDefaultsResolver: {}
   Drupal\oe_ai_assistant\Service\TemplateDefaultsResolverInterface: '@Drupal\oe_ai_assistant\Service\TemplateDefaultsResolver'

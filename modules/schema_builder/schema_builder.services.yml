@@ -28,4 +28,3 @@ services:
   Drupal\schema_builder\SchemaBuilder\Property\PatternBuilder: {}
   Drupal\schema_builder\SchemaBuilder\Property\RangeBuilder: {}
   Drupal\schema_builder\SchemaBuilder\Property\StringFormatBuilder: {}
-  Drupal\schema_builder\SchemaBuilder\Property\TextFormatBuilder: {}
