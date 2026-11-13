@@ -89,7 +89,7 @@ class AiEditorialSessionActivity extends ContentEntityBase implements AiEditoria
     $fields['type'] = BaseFieldDefinition::create('string')
       ->setLabel(t('Type'))
       ->setDescription(t('The kind of entry, as a machine name.'))
-      ->setSetting('max_length', 32)
+      ->setSetting('max_length', 128)
       ->setRequired(TRUE);
 
     $fields['message'] = BaseFieldDefinition::create('string_long')
