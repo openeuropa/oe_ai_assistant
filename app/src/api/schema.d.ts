@@ -413,7 +413,7 @@ export interface components {
         GetMessagesResponse: {
             /** @description The user-visible transcript, oldest first. */
             messages: {
-                /** @description The message role ("user", "assistant" or "event"). */
+                /** @description The message role ("user" or "assistant"). */
                 role: string;
                 /** @description The message text (user and assistant items). */
                 content?: string;
@@ -421,14 +421,8 @@ export interface components {
                 userName?: string;
                 /** @description Stable CMS user id of the author (user items). Clients key participants by this id so two users sharing a display name stay distinct. */
                 userId?: string;
-                /** @description The event type, e.g. "session_start", "tone", "template" (event items). */
-                type?: string;
-                /** @description The human-readable event summary (event items). */
-                summary?: string;
-                /** @description RFC 3339 timestamp of the event (event items). */
+                /** @description RFC 3339 time the message was stored. */
                 at?: string;
-                /** @description The draft version a "save" event persisted (event items). */
-                version?: number;
             }[];
         };
         DraftingChatRequest: {

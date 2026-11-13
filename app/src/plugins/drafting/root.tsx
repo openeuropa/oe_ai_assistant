@@ -3,9 +3,9 @@
  *
  * Split-panel layout: chat on the left, content artifact on the right.
  * DraftingChat owns the assistant-ui runtime, the tone/template/documents
- * hooks, and the tab construction. After a successful save it splices a
- * local event chip into the thread state via appendEventToThread so the
- * chip appears instantly without any remount or refetch.
+ * hooks, and the tab construction. After a draft save it splices a local
+ * event chip into the thread state via appendEventToThread so the chip
+ * appears instantly without any remount or refetch.
  *
  * DraftingRoot is a thin shell that renders DraftingChat.
  */
@@ -98,10 +98,6 @@ function VersionedDraftPreview({
 /**
  * Inner component that owns the assistant-ui runtime and all runtime-dependent
  * state, including tone/template/documents hooks and composer tab construction.
- *
- * Save handlers capture labels before calling submitValues() and splice a
- * local event chip (or error chip on failure) directly into the thread via
- * export/import. This avoids any remount or network refetch after a save.
  */
 function DraftingChat() {
   const { draftedFields, runs, activeCallIds, activeDraftVersion } =
@@ -179,8 +175,8 @@ function DraftingChat() {
   }
 
   // Editorial context panels, shown as pill buttons under the composer.
-  // Each opens a centered modal; the save handler appends a local event
-  // chip to the thread on success or an error chip on failure.
+  // Each opens a centered modal. A panel that saves keeps its own pane
+  // open on a failure, and reports the failure in it.
   const tabs: PaneTabItem[] = [];
 
   if (tone.enabled) {
@@ -198,24 +194,9 @@ function DraftingChat() {
           value={tone.value}
           onChange={tone.updateValue}
           onSave={async () => {
-            // Capture labels before saving so the summary matches the backend's.
-            const previous = tone.selectedLabel;
-            const next =
-              tone.options.find((option) => option.value === tone.value)
-                ?.label ?? tone.value;
-            try {
-              await tone.submitValues();
-            } catch (error) {
-              // The pane keeps its inline error; the chat records the failure.
-              appendEvent("error", "Tone change failed");
-              throw error;
-            }
-            appendEvent(
-              "tone",
-              previous
-                ? `Tone changed from ${previous} to ${next}`
-                : `Tone changed to ${next}`,
-            );
+            // submitValues() throws when the save fails. Nothing catches it,
+            // so close() never runs and the pane stays open.
+            await tone.submitValues();
             close();
           }}
           onCancel={() => {
@@ -284,18 +265,9 @@ function DraftingChat() {
           value={template.value}
           onChange={template.updateValue}
           onSave={async () => {
-            // Capture label before saving so the summary matches the backend's.
-            const next =
-              template.options.find((option) => option.value === template.value)
-                ?.label ?? template.value;
-            try {
-              await template.submitValues();
-            } catch (error) {
-              // The pane keeps its inline error; the chat records the failure.
-              appendEvent("error", "Template change failed");
-              throw error;
-            }
-            appendEvent("template", `Template changed to ${next}`);
+            // submitValues() throws when the save fails. Nothing catches it,
+            // so close() never runs and the pane stays open.
+            await template.submitValues();
             close();
           }}
           onCancel={() => {
@@ -304,6 +276,8 @@ function DraftingChat() {
             close();
           }}
           hasChanges={template.hasChanges}
+          isSaving={template.isSaving}
+          error={template.error}
         />
       ),
     });
