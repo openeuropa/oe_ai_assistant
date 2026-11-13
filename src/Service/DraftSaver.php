@@ -10,6 +10,7 @@ use Drupal\Core\Session\AccountProxyInterface;
 use Drupal\node\NodeInterface;
 use Drupal\oe_ai_assistant\Entity\ActivityType;
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
+use Drupal\oe_ai_assistant\Utility\DraftVersion;
 
 /**
  * Saves a drafted node built from LLM-produced field values.
@@ -33,8 +34,9 @@ class DraftSaver implements DraftSaverInterface {
   /**
    * {@inheritdoc}
    */
-  public function save(AiEditorialSessionInterface $session, array $fields, ?string $templateId, int $version): array {
+  public function save(AiEditorialSessionInterface $session, array $fields, ?string $templateId, string $version): array {
     $existingNode = $session->getNode();
+    $draftName = DraftVersion::display($version);
 
     /** @var \Drupal\node\NodeInterface $node */
     $node = $this->draftAssembler->assemble($session->getContentType(), $fields, $templateId, $existingNode);
@@ -44,7 +46,7 @@ class DraftSaver implements DraftSaverInterface {
     }
     else {
       $node->setNewRevision(TRUE);
-      $node->setRevisionLogMessage(sprintf('Draft %d from session %s', $version, $session->label()));
+      $node->setRevisionLogMessage(sprintf('Draft %s from session %s', $draftName, $session->label()));
       $node->setRevisionUserId((int) $this->currentUser->id());
       $node->setRevisionCreationTime($this->time->getRequestTime());
     }
@@ -71,14 +73,15 @@ class DraftSaver implements DraftSaverInterface {
     $session->recordActivity(
       ActivityType::DraftSaved,
       $existingNode === NULL
-        ? 'Draft %d saved to the CMS as a new node (node %s).'
-        : 'Draft %d saved to the CMS as a new revision of node %s.',
-      [$version, (string) $node->id()],
+        ? 'Draft %s saved to the CMS as a new node (node %s).'
+        : 'Draft %s saved to the CMS as a new revision of node %s.',
+      [$draftName, (string) $node->id()],
     );
 
     return [
       'nodeId' => (string) $node->id(),
       'previewUrl' => $this->buildPreviewUrl($node),
+      'draftName' => sprintf('Draft %s', $draftName),
     ];
   }
 

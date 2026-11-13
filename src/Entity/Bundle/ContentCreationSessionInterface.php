@@ -86,10 +86,22 @@ interface ContentCreationSessionInterface extends AiEditorialSessionInterface {
   /**
    * Numbers the draft about to be stored.
    *
-   * @return int
-   *   The version following the drafts already stored.
+   * @return string
+   *   The next major version following the drafts already stored, as "N.0".
    */
-  public function nextVersion(): int;
+  public function nextVersion(): string;
+
+  /**
+   * Numbers a revision of an existing draft.
+   *
+   * @param string $version
+   *   The version the revision starts from. Only its major matters, since
+   *   the revision follows the highest minor stored under that major.
+   *
+   * @return string
+   *   The next minor version under $version's major.
+   */
+  public function nextMinorVersion(string $version): string;
 
   /**
    * Lists the stored drafts with their provenance snapshots.
@@ -98,15 +110,15 @@ interface ContentCreationSessionInterface extends AiEditorialSessionInterface {
    * open, so it is left out.
    *
    * @return array
-   *   One entry per draft, in version order: {name: "Draft N", version: N,
-   *   context: snapshot array}.
+   *   One entry per draft, in version order: {name: "Draft N" or "Draft
+   *   N.m", version: "N.m", context: snapshot array}.
    */
   public function listDrafts(): array;
 
   /**
    * Returns the fields and template id of one stored draft.
    *
-   * @param int $version
+   * @param string $version
    *   The draft version to look up, as listDrafts() reports it.
    *
    * @return array|null
@@ -114,7 +126,7 @@ interface ContentCreationSessionInterface extends AiEditorialSessionInterface {
    *   that version. The template id is NULL when the draft's snapshot has no
    *   template.
    */
-  public function getDraftContent(int $version): ?array;
+  public function getDraftContent(string $version): ?array;
 
   /**
    * Returns the whole record one drafting run stored.
@@ -122,13 +134,13 @@ interface ContentCreationSessionInterface extends AiEditorialSessionInterface {
    * A run that failed stores a record too, so this reports what happened to a
    * version the editor cannot open. Use getDraftContent() to read a draft.
    *
-   * @param int $version
+   * @param string $version
    *   The version the run drafted.
    *
    * @return array|null
-   *   {version, run, status, context, groups, fields, error}, or NULL when no
-   *   run carries that version.
+   *   {version, run, status, context, groups, schemaGroups, fields, error},
+   *   or NULL when no run carries that version.
    */
-  public function getDraftRun(int $version): ?array;
+  public function getDraftRun(string $version): ?array;
 
 }
