@@ -243,10 +243,7 @@ class AiEditorialSessionMessageCleanupTest extends AiEditorialSessionKernelTestB
   /**
    * Creates a private publishable asset media item owned by a session.
    *
-   * @return array{
-   *   0: \Drupal\media\MediaInterface,
-   *   1: \Drupal\file\FileInterface
-   *   }
+   * @return array
    *   The created media and file entities.
    */
   private function createPublishableAsset(string $filename, AiEditorialSessionInterface $session): array {
