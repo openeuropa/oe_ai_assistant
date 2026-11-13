@@ -240,16 +240,6 @@ class DraftingPlugin extends AiAssistantPluginBase {
     // The accepted extensions come from the document source field, so a
     // field settings change must invalidate the page as well.
     $cacheability->addCacheTags(['config:field_config_list']);
-    // Existing sites may not have imported the publishable media config yet.
-    // Keep the panel hidden until its upload field is available.
-    $publishableField = $this->entityTypeManager->getStorage('field_config')
-      ->load('media.ai_publishable_asset.oe_ai_publishable_asset');
-    $documentExtensions = [
-      ContextDocumentRepository::CATEGORY => $this->contextDocumentRepository->getAllowedExtensions(),
-    ];
-    if ($publishableField !== NULL) {
-      $documentExtensions[PublishableAssetRepository::CATEGORY] = $this->publishableAssetRepository->getAllowedExtensions();
-    }
 
     return [
       'entityTypeId' => $context['entityTypeId'],
@@ -274,7 +264,10 @@ class DraftingPlugin extends AiAssistantPluginBase {
         // Each category accepts the extensions of its own source field,
         // and publishable assets also take images. Keying the lists by
         // category lets every upload control offer its own.
-        'extensions' => $documentExtensions,
+        'extensions' => [
+          ContextDocumentRepository::CATEGORY => $this->contextDocumentRepository->getAllowedExtensions(),
+          PublishableAssetRepository::CATEGORY => $this->publishableAssetRepository->getAllowedExtensions(),
+        ],
       ],
       // Live preview iframe URL template. The app substitutes the
       // {sessionId} and {versionId} placeholders before loading the

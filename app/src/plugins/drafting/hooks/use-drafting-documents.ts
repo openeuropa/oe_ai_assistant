@@ -8,11 +8,7 @@ import {
   removeDraftingDocument,
 } from "../api/drafting-api";
 import { countUnsettled, isDocumentSettled } from "../document-status";
-import type {
-  DraftingDocument,
-  DraftingDocumentCategory,
-  DraftingPluginConfig,
-} from "../types";
+import type { DraftingDocument, DraftingDocumentCategory } from "../types";
 
 export type { DraftingDocument } from "../types";
 
@@ -94,14 +90,14 @@ export interface DocumentUpload {
 export function useDraftingDocuments(
   category: DraftingDocumentCategory = "context",
 ) {
-  const draftingConfig = (getConfig().pluginConfig.drafting ??
-    {}) as DraftingPluginConfig;
-  const documentsConfig = draftingConfig.documents;
-  // A missing category list means that the host has not enabled its storage.
-  const enabled =
-    (documentsConfig?.enabled ?? false) &&
-    (category === "context" ||
-      documentsConfig?.extensions?.publishable !== undefined);
+  const draftingConfig = getConfig().pluginConfig.drafting ?? {};
+  const documentsConfig = draftingConfig.documents as
+    | {
+        enabled?: boolean;
+        extensions?: Partial<Record<DraftingDocumentCategory, string[]>>;
+      }
+    | undefined;
+  const enabled = documentsConfig?.enabled ?? false;
   // File extensions the backend accepts, driving the upload control. The
   // host sends one list per category, since the categories do not take the
   // same files.
@@ -194,9 +190,7 @@ export function useDraftingDocuments(
           setLoadError(
             exception instanceof Error
               ? exception.message
-              : category === "publishable"
-                ? "The publishable assets could not be loaded."
-                : "The documents could not be loaded.",
+              : "The documents could not be loaded.",
           );
         }
       })
@@ -324,9 +318,7 @@ export function useDraftingDocuments(
                     error:
                       exception instanceof Error
                         ? exception.message
-                        : category === "publishable"
-                          ? "The asset could not be uploaded."
-                          : "The document could not be uploaded.",
+                        : "The document could not be uploaded.",
                   }
                 : upload,
             ),

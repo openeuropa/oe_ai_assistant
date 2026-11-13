@@ -196,17 +196,6 @@ describe("useDraftingDocuments", () => {
     ]);
   });
 
-  it("keeps publishable assets disabled when only context documents are enabled", async () => {
-    const { useDraftingDocuments } = await loadHook();
-    const assets = useDraftingDocuments("publishable");
-    await flushAsync();
-
-    expect(assets.enabled).toBe(false);
-    expect(assets.extensions).toEqual([]);
-    expect(assets.isLoading).toBe(false);
-    expect(apiMocks.listDraftingDocuments).not.toHaveBeenCalled();
-  });
-
   it("does not load either category when the shared documents gate is disabled", async () => {
     setConfig({
       userId: "editor",

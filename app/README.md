@@ -46,17 +46,16 @@ integration mode only when you need to validate prompt/provider behaviour.
 
 Standalone development enables a separate **Publishable assets** composer
 panel, reusing the documents panel with category-specific wording and icons.
-The mock API seeds a JPG and a PDF; uploading, processing, and removing files
-are simulated separately for each session and category. Uploaded bytes are
-discarded, and restarting the mock server resets the lists.
+Publishable assets start empty in the mock API. Uploading, processing, and
+removing files are simulated separately for each session and category. Uploaded
+bytes are discarded, and restarting the mock server resets the lists.
 
 Drupal exposes `pluginConfig.drafting.documents.enabled` and accepted extensions
 keyed by category in `documents.extensions.context` and
 `documents.extensions.publishable`. Lists are fetched after startup through
 `list-documents`; uploads, removals, and processing use the same document actions
-with `category: publishable`. Existing sites need the OEL-4840 media configuration
-installed; until the source field is available, the publishable extension list is
-omitted and the panel stays hidden.
+with `category: publishable`. Both panels follow the shared `documents.enabled`
+flag. Existing sites need the OEL-4840 media configuration installed.
 
 The default field accepts `txt doc docx pdf md png jpg jpeg gif`. Documents use
 the extraction and summary pipeline. Images and other files without a matching

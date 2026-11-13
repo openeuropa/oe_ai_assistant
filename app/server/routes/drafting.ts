@@ -20,16 +20,31 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { Router } from "express";
-import type { components } from "../../src/api/schema";
 import { sendDone, sendEvent, setupSseResponse } from "../lib/sse";
 import type {
   ChatOptions,
   DraftingService,
 } from "../services/drafting-service";
 
-type MockDocumentCategory = components["schemas"]["DraftingDocumentCategory"];
-type MockDocumentStatus = components["schemas"]["DraftingDocumentStatus"];
-type MockDocument = components["schemas"]["DraftingDocument"];
+type MockDocumentStatus =
+  | "scheduled"
+  | "extracting"
+  | "extracted"
+  | "summarizing"
+  | "done"
+  | "error";
+
+type MockDocumentCategory = "context" | "publishable";
+
+interface MockDocument {
+  id: string;
+  title: string;
+  status: MockDocumentStatus;
+  meta: {
+    type: string;
+    size: number;
+  };
+}
 
 /** Narrows a request parameter to a category the backend serves. */
 function isCategory(value: unknown): value is MockDocumentCategory {
@@ -98,21 +113,6 @@ const initialMockDocuments: MockDocument[] = [
   },
 ];
 
-const initialMockPublishableAssets: MockDocument[] = [
-  {
-    id: "publishable-image-1",
-    title: "European Commission building.jpg",
-    status: "done",
-    meta: { type: "jpg", size: 1048576 },
-  },
-  {
-    id: "publishable-document-1",
-    title: "AI Act factsheet.pdf",
-    status: "done",
-    meta: { type: "pdf", size: 327680 },
-  },
-];
-
 function extensionFromFilename(filename: string): string {
   const extension = filename.split(".").pop();
   return extension && extension !== filename ? extension.toLowerCase() : "file";
@@ -154,11 +154,7 @@ function loadSchema(bundle: string): object | null {
 export function createDraftingRouter(service: DraftingService): Router {
   const router = Router();
   const documentsBySession = new Map<string, MockDocument[]>([
-    [storeKey("dev-session", "context"), structuredClone(initialMockDocuments)],
-    [
-      storeKey("dev-session", "publishable"),
-      structuredClone(initialMockPublishableAssets),
-    ],
+    [storeKey("dev-session", "context"), initialMockDocuments],
   ]);
 
   /**
