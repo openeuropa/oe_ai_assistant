@@ -1,0 +1,21 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - field.storage.media.oe_ai_document_extract
+    - media.type.ai_publishable_asset
+  module:
+    - text
+id: media.ai_publishable_asset.oe_ai_document_extract
+field_name: oe_ai_document_extract
+entity_type: media
+bundle: ai_publishable_asset
+label: 'Document extract'
+description: 'Full text extracted from the asset.'
+required: false
+translatable: false
+default_value: {  }
+default_value_callback: ''
+settings:
+  allowed_formats: {  }
+field_type: text_long

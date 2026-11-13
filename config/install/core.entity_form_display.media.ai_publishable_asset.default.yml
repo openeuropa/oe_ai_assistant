@@ -1,0 +1,89 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - field.field.media.ai_publishable_asset.oe_ai_document_extract
+    - field.field.media.ai_publishable_asset.oe_ai_document_summary
+    - field.field.media.ai_publishable_asset.oe_ai_extraction_state
+    - field.field.media.ai_publishable_asset.oe_ai_publishable_asset
+    - field.field.media.ai_publishable_asset.oe_ai_session
+    - media.type.ai_publishable_asset
+  module:
+    - file
+    - text
+id: media.ai_publishable_asset.default
+targetEntityType: media
+bundle: ai_publishable_asset
+mode: default
+content:
+  created:
+    type: datetime_timestamp
+    weight: 10
+    region: content
+    settings: {  }
+    third_party_settings: {  }
+  name:
+    type: string_textfield
+    weight: -5
+    region: content
+    settings:
+      size: 60
+      placeholder: ''
+    third_party_settings: {  }
+  oe_ai_session:
+    type: entity_reference_autocomplete
+    weight: 0
+    region: content
+    settings:
+      match_operator: CONTAINS
+      match_limit: 10
+      size: 60
+      placeholder: ''
+    third_party_settings: {  }
+  oe_ai_publishable_asset:
+    type: file_generic
+    weight: 1
+    region: content
+    settings:
+      progress_indicator: throbber
+    third_party_settings: {  }
+  oe_ai_document_extract:
+    type: text_textarea
+    weight: 2
+    region: content
+    settings:
+      rows: 10
+      placeholder: ''
+    third_party_settings: {  }
+  oe_ai_document_summary:
+    type: text_textarea
+    weight: 3
+    region: content
+    settings:
+      rows: 5
+      placeholder: ''
+    third_party_settings: {  }
+  oe_ai_extraction_state:
+    type: options_select
+    weight: 4
+    region: content
+    settings: {  }
+    third_party_settings: {  }
+  status:
+    type: boolean_checkbox
+    weight: 100
+    region: content
+    settings:
+      display_label: true
+    third_party_settings: {  }
+  uid:
+    type: entity_reference_autocomplete
+    weight: 5
+    region: content
+    settings:
+      match_operator: CONTAINS
+      match_limit: 10
+      size: 60
+      placeholder: ''
+    third_party_settings: {  }
+hidden: {  }

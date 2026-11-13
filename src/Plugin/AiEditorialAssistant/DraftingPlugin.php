@@ -21,6 +21,7 @@ use Drupal\oe_ai_assistant\Service\Drafting\ContextDocumentRepository;
 use Drupal\oe_ai_assistant\Service\Drafting\DocumentRepositoryInterface;
 use Drupal\oe_ai_assistant\Service\Drafting\DraftHistoryInterface;
 use Drupal\oe_ai_assistant\Service\Drafting\EditorialContext;
+use Drupal\oe_ai_assistant\Service\Drafting\PublishableAssetRepository;
 use Drupal\oe_ai_assistant\Plugin\AiAssistantPluginBase;
 use Drupal\oe_ai_assistant\Service\AiEditorialContextInterface;
 use Drupal\oe_ai_assistant\Service\DraftAssemblerInterface;
@@ -122,6 +123,13 @@ class DraftingPlugin extends AiAssistantPluginBase {
   protected ContextDocumentRepository $contextDocumentRepository;
 
   /**
+   * The publishable asset repository.
+   *
+   * @var \Drupal\oe_ai_assistant\Service\Drafting\PublishableAssetRepository
+   */
+  protected PublishableAssetRepository $publishableAssetRepository;
+
+  /**
    * The input stream file writer, which stages raw upload bodies.
    *
    * @var \Drupal\file\Upload\InputStreamFileWriterInterface
@@ -160,6 +168,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
     $instance->aiEditorialContext = $container->get(AiEditorialContextInterface::class);
     $instance->draftHistory = $container->get(DraftHistoryInterface::class);
     $instance->contextDocumentRepository = $container->get(ContextDocumentRepository::class);
+    $instance->publishableAssetRepository = $container->get(PublishableAssetRepository::class);
     $instance->inputStreamFileWriter = $container->get(InputStreamFileWriterInterface::class);
     $instance->draftAssembler = $container->get(DraftAssemblerInterface::class);
     $instance->previewRenderer = $container->get(PreviewRendererInterface::class);
@@ -252,7 +261,13 @@ class DraftingPlugin extends AiAssistantPluginBase {
         // action after boot; the bootstrap only carries the gate and the
         // extensions the upload control offers.
         'enabled' => TRUE,
-        'extensions' => $this->contextDocumentRepository->getAllowedExtensions(),
+        // Each category accepts the extensions of its own source field,
+        // and publishable assets also take images. Keying the lists by
+        // category lets every upload control offer its own.
+        'extensions' => [
+          ContextDocumentRepository::CATEGORY => $this->contextDocumentRepository->getAllowedExtensions(),
+          PublishableAssetRepository::CATEGORY => $this->publishableAssetRepository->getAllowedExtensions(),
+        ],
       ],
       // Live preview iframe URL template. The app substitutes the
       // {sessionId} and {versionId} placeholders before loading the
@@ -266,10 +281,10 @@ class DraftingPlugin extends AiAssistantPluginBase {
   /**
    * Serializes internal prompt-ready tone options for frontend bootstrap.
    *
-   * @param array<int, array{id: string, label: string, description: string, oe_ai_prompt: string}> $options
+   * @param array $options
    *   The prompt-ready service options.
    *
-   * @return array<int, array{id: string, label: string, description: string}>
+   * @return array
    *   Frontend-safe tone options.
    */
   private function serializeToneOptions(array $options): array {
@@ -871,6 +886,10 @@ class DraftingPlugin extends AiAssistantPluginBase {
   private function resolveDocumentRepository(string $category): DocumentRepositoryInterface {
     if ($category === ContextDocumentRepository::CATEGORY) {
       return $this->contextDocumentRepository;
+    }
+
+    if ($category === PublishableAssetRepository::CATEGORY) {
+      return $this->publishableAssetRepository;
     }
 
     throw new ActionException(

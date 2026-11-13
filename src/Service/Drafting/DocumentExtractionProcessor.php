@@ -11,10 +11,8 @@ use Drupal\Component\Datetime\TimeInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Lock\LockBackendInterface;
 use Drupal\Core\Session\AccountProxyInterface;
-use Drupal\document_loader\DocumentLoaderType\Input\MarkdownInput;
-use Drupal\document_loader\DocumentLoaderType\Input\PdfInput;
-use Drupal\document_loader\DocumentLoaderType\Input\TextInput;
-use Drupal\document_loader\DocumentLoaderType\Input\WordInput;
+use Drupal\document_loader\DocumentLoaderType\DocumentLoaderTypeFactory;
+use Drupal\document_loader\DocumentLoaderType\Input\FileInput;
 use Drupal\document_loader\Service\DocumentLoaderManager;
 use Drupal\file\FileInterface;
 use Drupal\media\MediaInterface;
@@ -31,19 +29,6 @@ use Symfony\Component\DependencyInjection\Attribute\Autowire;
  * document_loader framework; saves never create a revision.
  */
 final class DocumentExtractionProcessor implements DocumentExtractionProcessorInterface {
-
-  /**
-   * Accepted extensions mapped to their document_loader type and input class.
-   *
-   * @var array
-   */
-  private const array TYPES = [
-    'txt' => ['text', TextInput::class],
-    'md' => ['markdown', MarkdownInput::class],
-    'docx' => ['word', WordInput::class],
-    'doc' => ['word', WordInput::class],
-    'pdf' => ['pdf', PdfInput::class],
-  ];
 
   /**
    * Word bookmark markers Tika leaves in plain text, such as [bookmark: _Toc0].
@@ -65,6 +50,8 @@ final class DocumentExtractionProcessor implements DocumentExtractionProcessorIn
   public function __construct(
     #[Autowire(service: 'document_loader.manager')]
     private readonly DocumentLoaderManager $loader,
+    #[Autowire(service: 'document_loader.type_factory')]
+    private readonly DocumentLoaderTypeFactory $typeFactory,
     private readonly AccountProxyInterface $currentUser,
     #[Autowire(service: 'ai.provider')]
     private readonly AiProviderPluginManager $aiProviderManager,
@@ -221,7 +208,20 @@ final class DocumentExtractionProcessor implements DocumentExtractionProcessorIn
     // run quietly with the state it had reached.
     try {
       if ($this->getState($media) === self::STATE_EXTRACTING) {
-        $text = $this->extractText($this->getSourceFile($media));
+        $file = $this->getSourceFile($media);
+        $extension = strtolower(pathinfo((string) $file->getFilename(), PATHINFO_EXTENSION));
+        $input = $this->typeFactory->createFileInput($extension, (string) $file->getFileUri());
+        $typeId = $this->loader->detectDocumentLoaderType($input);
+        // The loader plugins declare the types they read, so they decide
+        // what can be extracted. An image has no text, but it is still a
+        // complete asset the editor can place in the draft. An error state
+        // would only offer a retry that fails again, so a file no loader
+        // claims takes the skip transition to done.
+        if ($typeId === NULL || $this->loader->getLoadersForType($typeId) === []) {
+          $this->transition($media, 'skip');
+          return self::STATE_DONE;
+        }
+        $text = $this->extractText($typeId, $input);
         if ($this->isDeleted($media)) {
           return self::STATE_EXTRACTING;
         }
@@ -263,21 +263,19 @@ final class DocumentExtractionProcessor implements DocumentExtractionProcessorIn
    * The typed input skips the framework's file access check, which the
    * anonymous cron user would fail on a private file.
    *
+   * @param string $typeId
+   *   The document loader type plugin id that claims the file.
+   * @param \Drupal\document_loader\DocumentLoaderType\Input\FileInput $input
+   *   The typed input built for the file.
+   *
    * @throws \Drupal\oe_ai_assistant\Exception\DocumentExtractionException
-   *   When the extension is unsupported, the loader fails, or no text
-   *   comes back.
+   *   When the loader fails or no text comes back.
    */
-  private function extractText(FileInterface $file): string {
-    $extension = strtolower(pathinfo((string) $file->getFilename(), PATHINFO_EXTENSION));
-    if (!isset(self::TYPES[$extension])) {
-      throw new DocumentExtractionException(sprintf('Unsupported document extension "%s".', $extension));
-    }
-    [$type, $inputClass] = self::TYPES[$extension];
-
+  private function extractText(string $typeId, FileInput $input): string {
     try {
       $result = $this->loader->loadFromInput(
-        'document_loader_type:' . $type,
-        new $inputClass((string) $file->getFileUri()),
+        $typeId,
+        $input,
         $this->currentUser,
         'text',
       );

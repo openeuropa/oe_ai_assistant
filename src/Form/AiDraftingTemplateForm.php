@@ -203,7 +203,7 @@ final class AiDraftingTemplateForm extends EntityForm {
       $parsed = Yaml::parse($raw);
     }
     catch (ParseException $e) {
-      $form_state->setErrorByName($element, $this->t('@label: invalid YAML — @message', [
+      $form_state->setErrorByName($element, $this->t('@label: invalid YAML. @message', [
         '@label' => $label,
         '@message' => $e->getMessage(),
       ]));

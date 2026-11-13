@@ -1,0 +1,22 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - field.storage.media.oe_ai_session
+    - media.type.ai_publishable_asset
+id: media.ai_publishable_asset.oe_ai_session
+field_name: oe_ai_session
+entity_type: media
+bundle: ai_publishable_asset
+label: 'Editorial session'
+description: 'The editorial session this asset belongs to.'
+required: true
+translatable: false
+default_value: {  }
+default_value_callback: ''
+settings:
+  handler: 'default:ai_editorial_session'
+  handler_settings:
+    target_bundles: null
+    auto_create: false
+field_type: entity_reference
