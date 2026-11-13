@@ -29,8 +29,8 @@ describe("drafting plugin state", () => {
           title: { label: "Title", value: "Draft", type: "string" },
         },
         liveDrafts: {
-          1: {
-            version: 1,
+          "1.0": {
+            version: "1.0",
             context: null,
             groups: [],
             status: "drafted" as const,
@@ -41,7 +41,7 @@ describe("drafting plugin state", () => {
         },
         selections: { tone: "clear-professional" },
         isArtifactCollapsed: true,
-        activeDraftVersion: 2,
+        activeDraftVersion: "2.0",
       }),
     ).toEqual({});
   });
@@ -68,7 +68,7 @@ describe("drafting plugin state", () => {
     setDraftingState({
       runs: {
         call_1: {
-          version: 1,
+          version: "1.0",
           status: "drafted" as const,
           groups: [
             {
@@ -84,8 +84,8 @@ describe("drafting plugin state", () => {
         title: { label: "Title", value: "Draft", type: "string" },
       },
       liveDrafts: {
-        1: {
-          version: 1,
+        "1.0": {
+          version: "1.0",
           context: null,
           groups: [],
           status: "drafted" as const,
@@ -100,7 +100,7 @@ describe("drafting plugin state", () => {
     expect(getDraftingState()).toEqual({
       runs: {
         call_1: {
-          version: 1,
+          version: "1.0",
           status: "drafted" as const,
           groups: [
             {
@@ -116,8 +116,8 @@ describe("drafting plugin state", () => {
         title: { label: "Title", value: "Draft", type: "string" },
       },
       liveDrafts: {
-        1: {
-          version: 1,
+        "1.0": {
+          version: "1.0",
           context: null,
           groups: [],
           status: "drafted" as const,

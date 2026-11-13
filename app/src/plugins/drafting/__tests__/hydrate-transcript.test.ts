@@ -26,7 +26,7 @@ describe("toThreadMessages", () => {
   it("maps a drafting_draft_content tool call with a versioned result to args.fields from parsed shape", () => {
     // Versioned result shape: the parser extracts fields from result.fields.
     const fields = { title: [{ value: "Test Title" }] };
-    const versionedResult = { version: 1, context: null, fields };
+    const versionedResult = { version: "1.0", context: null, fields };
     const input: SessionMessage[] = [
       {
         role: "assistant",
@@ -97,12 +97,12 @@ describe("toThreadMessages", () => {
           {
             type: "function",
             function: { name: "drafting_draft_content", arguments: "{}" },
-            result: { version: 4, context: null, fields: {} },
+            result: { version: "4.0", context: null, fields: {} },
           },
           {
             type: "function",
             function: { name: "drafting_draft_content", arguments: "{}" },
-            result: { version: 5, context: null, fields: {} },
+            result: { version: "5.0", context: null, fields: {} },
           },
         ],
       },

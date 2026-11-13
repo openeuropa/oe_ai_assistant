@@ -8,7 +8,7 @@ describe("buildPreviewUrl", () => {
       buildPreviewUrl(
         "https://example.com/?session={sessionId}&version={versionId}",
         "dev-session",
-        8,
+        "8",
       ),
     ).toBe("https://example.com/?session=dev-session&version=8");
   });
@@ -18,13 +18,13 @@ describe("buildPreviewUrl", () => {
       buildPreviewUrl(
         "https://example.com/?session={sessionId}&version={versionId}",
         "a session/id&x",
-        3,
+        "3",
       ),
     ).toBe("https://example.com/?session=a%20session%2Fid%26x&version=3");
   });
 
   it("leaves templates without placeholders untouched", () => {
-    expect(buildPreviewUrl("https://example.com/preview", "s1", 1)).toBe(
+    expect(buildPreviewUrl("https://example.com/preview", "s1", "1")).toBe(
       "https://example.com/preview",
     );
   });

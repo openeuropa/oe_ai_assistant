@@ -17,6 +17,7 @@
 import { X } from "lucide-react";
 import { HoverCard } from "radix-ui";
 import { Fragment, useEffect, useRef } from "react";
+import { displayDraftVersion } from "../draft-version";
 import { useSavedVersions } from "../saved-versions";
 import { openSessionDraft, useSessionDrafts } from "../session-drafts";
 import { setDraftingState, useDraftingSlice } from "../store";
@@ -48,7 +49,7 @@ export function DraftRail() {
 
   // Tracks the newest version already handled so switching between old
   // drafts never re-triggers the activation below.
-  const lastSeenVersion = useRef<number | null>(null);
+  const lastSeenVersion = useRef<string | null>(null);
 
   // React to a new latest draft: on session load with an empty pane,
   // open it; when it was just generated live (the streamed fields are
@@ -101,7 +102,7 @@ export function DraftRail() {
             {isActive ? (
               <X size={14} />
             ) : draft.version !== null ? (
-              `v${draft.version}`
+              `v${displayDraftVersion(draft.version)}`
             ) : (
               "v?"
             )}

@@ -51,14 +51,14 @@ export function toThreadMessage(
     const name = call.function?.name;
     if (!name) continue;
 
-    if (name === "drafting_draft_content") {
+    if (name === "drafting_draft_content" || name === "amend_draft") {
       // Parse the result so callers receive normalised fields in args; the
       // raw result is forwarded as-is so the ToolUI renderer can parse it too.
       const parsed = parseDraftResult(call.result);
       parts.push({
         type: "tool-call",
         toolCallId: `draft-${index}-${toolIndex++}`,
-        toolName: "drafting_draft_content",
+        toolName: name,
         args: { fields: parsed.fields },
         result: call.result ?? {},
       });

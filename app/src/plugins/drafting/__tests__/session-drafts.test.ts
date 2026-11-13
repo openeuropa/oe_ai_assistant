@@ -1,11 +1,15 @@
 import { describe, expect, it } from "vitest";
 import { extractSessionDrafts } from "../session-drafts";
 
-/** Builds a drafting_draft_content tool-call part in the assistant-ui shape. */
-function draftPart(result: unknown, argsFields?: Record<string, unknown>) {
+/** Builds a drafting-tool tool-call part in the assistant-ui shape. */
+function draftPart(
+  result: unknown,
+  argsFields?: Record<string, unknown>,
+  toolName: "drafting_draft_content" | "amend_draft" = "drafting_draft_content",
+) {
   return {
     type: "tool-call",
-    toolName: "drafting_draft_content",
+    toolName,
     args: { fields: argsFields ?? {} },
     result,
   };
@@ -22,7 +26,7 @@ describe("extractSessionDrafts", () => {
       {
         content: [
           draftPart({
-            version: 2,
+            version: "2.0",
             context: { tone: null, template: null, documents: [] },
             fields: { title: "Second" },
           }),
@@ -31,7 +35,7 @@ describe("extractSessionDrafts", () => {
       {
         content: [
           draftPart({
-            version: 1,
+            version: "1.0",
             context: { tone: null, template: null, documents: [] },
             fields: { title: "First" },
           }),
@@ -43,19 +47,43 @@ describe("extractSessionDrafts", () => {
 
     expect(drafts.map((d) => d.label)).toEqual(["Draft 1", "Draft 2"]);
     expect(drafts[0]?.fields).toEqual({ title: "First" });
-    expect(drafts[1]?.version).toBe(2);
+    expect(drafts[1]?.version).toBe("2.0");
+  });
+
+  it("collects an amend_draft call as a draft too, labeled by its minor", () => {
+    const messages = [
+      {
+        content: [
+          draftPart(
+            {
+              version: "1.1",
+              context: { tone: null, template: null, documents: [] },
+              fields: { title: "Amended" },
+            },
+            undefined,
+            "amend_draft",
+          ),
+        ],
+      },
+    ];
+
+    const drafts = extractSessionDrafts(messages);
+
+    expect(drafts).toHaveLength(1);
+    expect(drafts[0]?.label).toBe("Draft 1.1");
+    expect(drafts[0]?.fields).toEqual({ title: "Amended" });
   });
 
   it("carries the creation time of the message holding the draft", () => {
     const createdAt = new Date(2026, 4, 22, 14, 30);
     const versioned = {
-      version: 1,
+      version: "1.0",
       context: { tone: null, template: null, documents: [] },
       fields: { title: "Timed" },
     };
     const messages = [
       { content: [draftPart(versioned)], createdAt },
-      { content: [draftPart({ ...versioned, version: 2 })] },
+      { content: [draftPart({ ...versioned, version: "2.0" })] },
     ];
 
     const drafts = extractSessionDrafts(messages);
@@ -102,18 +130,18 @@ describe("extractSessionDrafts", () => {
 
   it("merges a live draft not yet reflected in the thread", () => {
     // The tool-call part's own result is the bare JSON string the backend
-    // returns to the LLM ({"draft":"Draft 1","version":1}) — not an
+    // returns to the LLM ({"draft":"Draft 1","version":"1.0"}) — not an
     // object, and never carrying the fields (the backend keeps the tool
     // result small so the LLM never replays a whole content type). A
     // draft produced live surfaces only through the channel's
     // data-drafted-fields event, until a reload rehydrates the thread
     // with the join getMessages() performs server side.
     const messages = [
-      { content: [draftPart('{"draft":"Draft 1","version":1}')] },
+      { content: [draftPart('{"draft":"Draft 1","version":"1.0"}')] },
     ];
     const liveDrafts = {
-      1: {
-        version: 1,
+      "1.0": {
+        version: "1.0",
         context: null,
         groups: [],
         status: "drafted" as const,
@@ -126,7 +154,7 @@ describe("extractSessionDrafts", () => {
     const drafts = extractSessionDrafts(messages, liveDrafts);
 
     expect(drafts).toHaveLength(1);
-    expect(drafts[0]?.version).toBe(1);
+    expect(drafts[0]?.version).toBe("1.0");
     expect(drafts[0]?.label).toBe("Draft 1");
     expect(drafts[0]?.fields).toEqual({ title: "Live" });
   });
@@ -136,7 +164,7 @@ describe("extractSessionDrafts", () => {
       {
         content: [
           draftPart({
-            version: 1,
+            version: "1.0",
             context: { tone: null, template: null, documents: [] },
             fields: { title: "From thread" },
           }),
@@ -144,8 +172,8 @@ describe("extractSessionDrafts", () => {
       },
     ];
     const liveDrafts = {
-      1: {
-        version: 1,
+      "1.0": {
+        version: "1.0",
         context: null,
         groups: [],
         status: "drafted" as const,
@@ -163,8 +191,8 @@ describe("extractSessionDrafts", () => {
 
   it("keeps an earlier live draft once a later one streams in", () => {
     const liveDrafts = {
-      1: {
-        version: 1,
+      "1.0": {
+        version: "1.0",
         context: null,
         groups: [],
         status: "drafted" as const,
@@ -172,8 +200,8 @@ describe("extractSessionDrafts", () => {
         createdAt: null,
         fields: { title: "First" },
       },
-      2: {
-        version: 2,
+      "2.0": {
+        version: "2.0",
         context: null,
         groups: [],
         status: "drafted" as const,
@@ -185,13 +213,54 @@ describe("extractSessionDrafts", () => {
 
     const drafts = extractSessionDrafts([], liveDrafts);
 
-    expect(drafts.map((d) => d.version)).toEqual([1, 2]);
+    expect(drafts.map((d) => d.version)).toEqual(["1.0", "2.0"]);
+  });
+
+  it("orders a minor revision after its major and before the next major", () => {
+    const liveDrafts = {
+      "2.0": {
+        version: "2.0",
+        context: null,
+        groups: [],
+        status: "drafted" as const,
+        error: "",
+        createdAt: null,
+        fields: { title: "Draft 2" },
+      },
+      "1.1": {
+        version: "1.1",
+        context: null,
+        groups: [],
+        status: "drafted" as const,
+        error: "",
+        createdAt: null,
+        fields: { title: "Revision of draft 1" },
+      },
+      "1.0": {
+        version: "1.0",
+        context: null,
+        groups: [],
+        status: "drafted" as const,
+        error: "",
+        createdAt: null,
+        fields: { title: "Draft 1" },
+      },
+    };
+
+    const drafts = extractSessionDrafts([], liveDrafts);
+
+    expect(drafts.map((d) => d.version)).toEqual(["1.0", "1.1", "2.0"]);
+    expect(drafts.map((d) => d.label)).toEqual([
+      "Draft 1",
+      "Draft 1.1",
+      "Draft 2",
+    ]);
   });
 
   it("ignores a live draft that has not produced fields yet", () => {
     const liveDrafts = {
-      1: {
-        version: 1,
+      "1.0": {
+        version: "1.0",
         context: null,
         groups: [],
         status: "drafted" as const,
@@ -206,8 +275,8 @@ describe("extractSessionDrafts", () => {
 
   it("keeps the time the run reported for a live draft", () => {
     const liveDrafts = {
-      1: {
-        version: 1,
+      "1.0": {
+        version: "1.0",
         context: null,
         groups: [],
         status: "drafted" as const,

@@ -7,8 +7,8 @@ function savePart(result?: unknown) {
 }
 
 /** A saved result for the given version, as the reloaded transcript returns it. */
-function saved(version: number) {
-  return { version, nodeId: String(version), previewUrl: "/node/1/latest" };
+function saved(version: string) {
+  return { version, nodeId: "1", previewUrl: "/node/1/latest" };
 }
 
 describe("extractSavedVersions", () => {
@@ -18,15 +18,15 @@ describe("extractSavedVersions", () => {
 
   it("collects the versions of saved results, reloaded or live", () => {
     const messages = [
-      { content: [savePart(saved(2))] },
-      { content: [savePart(JSON.stringify(saved(1)))] },
+      { content: [savePart(saved("2.0"))] },
+      { content: [savePart(JSON.stringify(saved("1.1")))] },
     ];
-    expect(extractSavedVersions(messages)).toEqual(new Set([1, 2]));
+    expect(extractSavedVersions(messages)).toEqual(new Set(["2.0", "1.1"]));
   });
 
-  it("ignores failed, cancelled and unanswered saves, other tools and save chips", () => {
+  it("ignores failed, cancelled and unanswered saves, and other tools", () => {
     const messages = [
-      { content: [savePart({ version: 3, error: "No such draft." })] },
+      { content: [savePart({ version: "3.0", error: "No such draft." })] },
       { content: [savePart([])] },
       { content: [savePart()] },
       {
@@ -34,12 +34,7 @@ describe("extractSavedVersions", () => {
           {
             type: "tool-call",
             toolName: "drafting_draft_content",
-            result: saved(5),
-          },
-          {
-            type: "tool-call",
-            toolName: "editorial_event",
-            args: { eventType: "save", version: 4 },
+            result: saved("5.0"),
           },
         ],
       },

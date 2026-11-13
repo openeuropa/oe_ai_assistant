@@ -18,6 +18,7 @@ import {
   LayoutTemplate,
   Loader2,
   Megaphone,
+  Minus,
   PenLine,
 } from "lucide-react";
 import { type ReactNode, useState } from "react";
@@ -27,13 +28,14 @@ import type {
   DraftGroupProgress,
   DraftRunStatus,
 } from "../draft-result";
+import { draftName } from "../draft-version";
 import { formatDraftDateShort } from "../format-draft-date";
 import { DocumentDetailsDialog } from "./document-details-dialog";
 
 /** Props for DraftCard. */
 export interface DraftCardProps {
-  /** Numeric draft version, or null for a legacy draft without version info. */
-  version: number | null;
+  /** "major.minor" draft version, or null for a legacy draft without one. */
+  version: string | null;
   /**
    * The editorial context captured when the draft was generated. Null for
    * legacy drafts that pre-date context tracking.
@@ -63,10 +65,11 @@ export interface DraftCardProps {
 /**
  * Returns the card title based on the draft version.
  *
- * "Draft N" when a numeric version is available, plain "Draft" otherwise.
+ * "Draft N" or "Draft N.m" when a version is available, plain "Draft"
+ * otherwise.
  */
-function draftTitle(version: number | null): string {
-  return version !== null ? `Draft ${version}` : "Draft";
+function draftTitle(version: string | null): string {
+  return version !== null ? draftName(version) : "Draft";
 }
 
 /**
@@ -231,6 +234,11 @@ const GROUP_STATUS_STYLE = {
     icon: CircleX,
     iconClass: "text-red-500",
     labelClass: "text-red-600",
+  },
+  carried: {
+    icon: Minus,
+    iconClass: "text-gray-300",
+    labelClass: "text-gray-400",
   },
 } as const;
 

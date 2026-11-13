@@ -14,12 +14,15 @@ import {
   type DraftGroupProgress,
   parseDraftResult,
 } from "./draft-result";
+import { compareDraftVersions, draftName } from "./draft-version";
 import { type LiveDraft, setDraftingState, useDraftingSlice } from "./store";
+
+const DRAFT_TOOL_NAMES = new Set(["drafting_draft_content", "amend_draft"]);
 
 /** One entry in the session drafts index. */
 export interface SessionDraft {
-  /** Draft version number; null for legacy unversioned drafts. */
-  version: number | null;
+  /** Draft version ("major.minor"); null for legacy unversioned drafts. */
+  version: string | null;
   /** Editorial context captured when the draft was generated. */
   context: DraftContext | null;
   /** The groups the run drafted; empty for a draft that recorded none. */
@@ -73,7 +76,7 @@ function hasKeys(value: unknown): value is Record<string, unknown> {
  */
 export function extractSessionDrafts(
   messages: readonly ThreadMessageLikeShape[],
-  liveDrafts?: Readonly<Record<number, LiveDraft>>,
+  liveDrafts?: Readonly<Record<string, LiveDraft>>,
 ): SessionDraft[] {
   const drafts: SessionDraft[] = [];
 
@@ -81,7 +84,8 @@ export function extractSessionDrafts(
     for (const part of message.content ?? []) {
       if (
         part.type !== "tool-call" ||
-        part.toolName !== "drafting_draft_content"
+        part.toolName === undefined ||
+        !DRAFT_TOOL_NAMES.has(part.toolName)
       ) {
         continue;
       }
@@ -96,7 +100,7 @@ export function extractSessionDrafts(
       }
       drafts.push({
         ...parsed,
-        label: parsed.version !== null ? `Draft ${parsed.version}` : "Draft",
+        label: parsed.version !== null ? draftName(parsed.version) : "Draft",
         createdAt: message.createdAt ?? null,
       });
     }
@@ -112,7 +116,8 @@ export function extractSessionDrafts(
     }
     drafts.push({
       ...liveDraft,
-      label: `Draft ${liveDraft.version}`,
+      label:
+        liveDraft.version !== null ? draftName(liveDraft.version) : "Draft",
       // The run reports the time the site stamped on the draft, so the card
       // and the pane header carry it without waiting for a reload.
       createdAt: liveDraft.createdAt ? new Date(liveDraft.createdAt) : null,
@@ -121,7 +126,12 @@ export function extractSessionDrafts(
 
   // Version order; legacy drafts have no version and sort to the front
   // in their original transcript order (stable sort).
-  return drafts.sort((a, b) => (a.version ?? 0) - (b.version ?? 0));
+  return drafts.sort((a, b) => {
+    if (a.version === null || b.version === null) {
+      return (a.version === null ? 0 : 1) - (b.version === null ? 0 : 1);
+    }
+    return compareDraftVersions(a.version, b.version);
+  });
 }
 
 /** Reads the drafts index from the current thread. */

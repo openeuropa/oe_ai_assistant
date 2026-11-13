@@ -9,6 +9,7 @@
 
 import DOMPurify from "dompurify";
 import { useMemo } from "react";
+import { displayDraftVersion } from "../draft-version";
 import { useDraftingSlice } from "../store";
 
 /**
@@ -267,7 +268,7 @@ export function ContentTable() {
       <div className="flex h-12 shrink-0 items-center border-b border-gray-200 px-4">
         <h2 className="text-base font-semibold text-gray-900">
           {activeDraftVersion !== null
-            ? `Draft ${activeDraftVersion}`
+            ? `Draft ${displayDraftVersion(activeDraftVersion)}`
             : "Drafted Content"}
         </h2>
       </div>
