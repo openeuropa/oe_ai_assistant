@@ -131,9 +131,9 @@ function DraftingChat() {
    * endpoint. The backend resolves the fields for that version from its
    * own draft history, so saving an older version saves exactly what
    * the pane shows. The in-flight request reports pending work so the
-   * exit guard blocks navigation, and the outcome lands in the thread
-   * as a local event chip (the backend records the matching durable
-   * event row).
+   * exit guard blocks navigation, and the outcome lands in the thread as
+   * a local event chip. The chip lasts for this page load. The session
+   * records the save of its own, which the activity page reports.
    */
   const handleSave = useCallback(async () => {
     const version = getDraftingState().activeDraftVersion;

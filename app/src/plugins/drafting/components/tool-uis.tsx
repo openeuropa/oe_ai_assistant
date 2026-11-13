@@ -186,9 +186,9 @@ export const DraftContentToolUI = makeAssistantToolUI<
 /**
  * UI for the editorial_event tool call.
  *
- * DraftingChat splices one of these into the live thread when a save, a
- * tone change or a template change lands. This renderer converts the
- * tool-call part into a compact, centered EventChip.
+ * DraftingChat splices one of these into the live thread when a draft
+ * save lands or fails. This renderer converts the tool-call part into a
+ * compact, centered EventChip.
  */
 export const EditorialEventToolUI = makeAssistantToolUI<
   { eventType: string; summary: string; at?: string },

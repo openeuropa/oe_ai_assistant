@@ -10,9 +10,10 @@ use Drupal\oe_ai_assistant_test\Plugin\AiProvider\MockResponse;
 /**
  * Integration test for the session activity tool.
  *
- * The editor picks two tones over HTTP, then asks the assistant which one
- * came first. The answer can only come from the activity the session
- * recorded, so this covers the recording and the tool together.
+ * The editor picks two tones over HTTP, then asks the assistant about
+ * them. The mock provider scripts the reply, so what this pins is the
+ * tool result the turn recorded: the sentences the two set-tone calls
+ * wrote, in order, with their author.
  */
 class DraftingPluginSessionActivityTest extends DraftingPluginTestBase {
 

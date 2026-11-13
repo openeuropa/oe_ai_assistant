@@ -1,10 +1,9 @@
 /**
  * Saved draft versions derived from the assistant-ui thread.
  *
- * Every "save" editorial event carries the version it persisted, both
- * when hydrated from the transcript and when spliced in locally after a
- * save. Reading the thread keeps the index correct during the session
- * and after a reload.
+ * Saving a draft splices an event part carrying the version it wrote, so
+ * the index follows the saves of this page load. The transcript carries
+ * no such part, so a reload empties the index.
  */
 
 import { useAuiState } from "@assistant-ui/react";
