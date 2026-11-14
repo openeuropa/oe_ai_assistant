@@ -46,8 +46,8 @@ function draftFields(
 ): Record<string, unknown> {
   return {
     title: [{ value: title }],
-    oe_summary: [{ value: `<p>${summary}</p>`, format: "full_html" }],
-    body: [{ value: bodyHtml, format: "full_html" }],
+    oe_summary: [{ value: `<p>${summary}</p>` }],
+    body: [{ value: bodyHtml }],
     oe_publication_date: [{ value: "2026-08-19" }],
   };
 }

@@ -21,8 +21,7 @@
         "field_news_type": [{ "value": "announcement" }],
         "body": [
           {
-            "value": "<p>The European Commission has opened a new call for regional pilot teams working on coastal restoration and shoreline resilience.</p><p>The programme will support small-scale actions that combine community participation, practical restoration work, and evidence gathering for future policy decisions.</p><p>Selected projects will publish their methods and findings in a reusable format so local administrations and partner organisations can compare outcomes across different coastal contexts.</p>",
-            "format": "full_html"
+            "value": "<p>The European Commission has opened a new call for regional pilot teams working on coastal restoration and shoreline resilience.</p><p>The programme will support small-scale actions that combine community participation, practical restoration work, and evidence gathering for future policy decisions.</p><p>Selected projects will publish their methods and findings in a reusable format so local administrations and partner organisations can compare outcomes across different coastal contexts.</p>"
           }
         ],
         "field_contacts": [
@@ -46,8 +45,7 @@
             "type": [{ "target_id": "text_block" }],
             "field_text_body": [
               {
-                "value": "<p>This is a mock paragraph for standalone testing.</p>",
-                "format": "full_html"
+                "value": "<p>This is a mock paragraph for standalone testing.</p>"
               }
             ]
           },
@@ -55,8 +53,7 @@
             "type": [{ "target_id": "quote_block" }],
             "field_quote_text": [
               {
-                "value": "Coastal ecosystems are at a tipping point.",
-                "format": "full_html"
+                "value": "Coastal ecosystems are at a tipping point."
               }
             ],
             "field_quote_attribution": [
@@ -83,8 +80,7 @@
         "field_news_type": [{ "value": "update" }],
         "body": [
           {
-            "value": "<p>The European Commission has refreshed the coastal restoration announcement with a stronger focus on shoreline resilience measures and operational reporting.</p><p>Under the updated framing, participating teams will test practical interventions, document implementation constraints, and share evidence with a common editorial structure.</p>",
-            "format": "full_html"
+            "value": "<p>The European Commission has refreshed the coastal restoration announcement with a stronger focus on shoreline resilience measures and operational reporting.</p><p>Under the updated framing, participating teams will test practical interventions, document implementation constraints, and share evidence with a common editorial structure.</p>"
           }
         ],
         "field_contacts": [
@@ -101,8 +97,7 @@
             "type": [{ "target_id": "text_block" }],
             "field_text_body": [
               {
-                "value": "<p>Updated paragraph with revised framing for the resilience pilot round.</p>",
-                "format": "full_html"
+                "value": "<p>Updated paragraph with revised framing for the resilience pilot round.</p>"
               }
             ]
           }

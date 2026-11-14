@@ -551,9 +551,10 @@ Workflow:
               "valid JSON with no markdown fencing, no explanation, no commentary.\n\n" +
               "Field values must be arrays of items where each item is an object\n" +
               'with property keys (e.g. "title": [{"value": "Headline"}],\n' +
-              '"body": [{"value": "<p>Text</p>", "format": "full_html"}]).\n' +
+              '"body": [{"value": "<p>Text</p>"}]).\n' +
               "Match the schema's array/object/property shape exactly.\n\n" +
-              "For formatted text fields, produce clean HTML.\n" +
+              "For formatted text fields, whose value has the contentMediaType\n" +
+              "text/html, produce clean HTML.\n" +
               "Match the language and tone described in the instructions.\n\n" +
               `Schema:\n${JSON.stringify(group.schemaSlice)}`,
           },

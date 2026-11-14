@@ -7,6 +7,7 @@ namespace Drupal\oe_ai_assistant\Service;
 use Drupal\Component\Plugin\Exception\PluginNotFoundException;
 use Drupal\Core\Entity\ContentEntityInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
+use Drupal\Core\Entity\FieldableEntityInterface;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Component\Serializer\SerializerInterface;
 
@@ -40,6 +41,9 @@ class DraftEntityBuilder {
    *   The bundle machine name (e.g. "oe_news").
    * @param array $fields
    *   The denormalize-input fields map, typically produced by the LLM.
+   * @param \Drupal\Core\Entity\FieldableEntityInterface|null $current
+   *   The stored entity the values will replace, if any, whose text formats
+   *   stand in for missing or invalid ones. See TextFormatResolver.
    *
    * @return \Drupal\Core\Entity\ContentEntityInterface
    *   The unsaved entity with inline child entities attached.
@@ -55,7 +59,7 @@ class DraftEntityBuilder {
    *   template overrides) when templates or sub-agents need to move that
    *   post-build orchestration off the calling plugin.
    */
-  public function fromLlmFields(string $entityTypeId, string $bundle, array $fields): ContentEntityInterface {
+  public function fromLlmFields(string $entityTypeId, string $bundle, array $fields, ?FieldableEntityInterface $current = NULL): ContentEntityInterface {
     try {
       $entityType = $this->entityTypeManager->getDefinition($entityTypeId);
     }
@@ -100,8 +104,8 @@ class DraftEntityBuilder {
       }
     }
 
-    // The LLM never supplies a format; deserialize() leaves it unset.
-    $this->textFormatResolver->resolveEntityFormats($entity);
+    // Every formatted-text item needs a format its field allows.
+    $this->textFormatResolver->resolveEntityFormats($entity, array_keys($nonInlineFields), $current);
 
     return $entity;
   }
