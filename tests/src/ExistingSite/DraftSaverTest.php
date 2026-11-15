@@ -52,7 +52,9 @@ class DraftSaverTest extends DraftingPluginTestBase {
     $result = $this->save($user, $session, 1);
 
     $this->assertArrayHasKey('nodeId', $result);
-    $this->assertArrayHasKey('previewUrl', $result);
+    // The first save is the node's only revision, which core's latest-version
+    // route refuses, so the preview is the node page itself.
+    $this->assertSame('/node/' . $result['nodeId'], $result['previewUrl']);
     $node = \Drupal::entityTypeManager()->getStorage('node')->load($result['nodeId']);
     $this->assertNotNull($node, 'The created node should exist.');
     $this->assertEquals('Draft one title', $node->getTitle());
@@ -186,6 +188,28 @@ class DraftSaverTest extends DraftingPluginTestBase {
       ->execute();
     $this->assertGreaterThanOrEqual(2, count($revisionIds), 'The second save must add a new revision.');
     $this->assertEquals($first['nodeId'], $this->reloadSession($session)->getNode()->id());
+  }
+
+  /**
+   * Tests that a save on a published node previews its pending revision.
+   */
+  public function testPreviewUrlNamesThePendingRevision(): void {
+    $user = $this->createUser([
+      'use oe ai assistant',
+      'create oe_news content',
+      'edit own oe_news content',
+      'use editorial transition create_new_draft',
+    ]);
+    $session = $this->createSession($user);
+    $this->seedDraft($session, 1, ['title' => [['value' => 'First save']]]);
+    $this->seedDraft($session, 2, ['title' => [['value' => 'Second save']]]);
+
+    $first = $this->save($user, $session, 1);
+    $storage = \Drupal::entityTypeManager()->getStorage('node');
+    $storage->load($first['nodeId'])->set('moderation_state', 'published')->save();
+    $second = $this->save($user, $session, 2);
+
+    $this->assertSame('/node/' . $second['nodeId'] . '/latest', $second['previewUrl']);
   }
 
   /**

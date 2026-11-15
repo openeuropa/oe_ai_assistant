@@ -80,7 +80,9 @@ class DraftSaver implements DraftSaverInterface {
    *   Relative URL for the node preview.
    */
   private function buildPreviewUrl(NodeInterface $node): string {
-    return $this->moderationInformation->isModeratedEntity($node)
+    // Core's latest-version route refuses a node with no pending revision, so
+    // only a draft saved over a published revision is previewed there.
+    return $this->moderationInformation->hasPendingRevision($node)
       ? '/node/' . $node->id() . '/latest'
       : '/node/' . $node->id();
   }
