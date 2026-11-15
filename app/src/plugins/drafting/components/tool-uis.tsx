@@ -226,14 +226,30 @@ function parseToolResult(result: unknown): Record<string, unknown> | undefined {
 }
 
 /**
- * Whether a tool's result carries an in-band error.
+ * Whether a tool's result signals failure.
  *
- * The backend reports a tool failure this way rather than as a tool error,
- * so assistant-ui always settles the call as complete; the card has to look
- * inside the result itself to tell the two apart.
+ * assistant-ui always settles the call as complete, so the card has to look
+ * inside the result itself. A result can carry a failure three ways: our own
+ * tools report it in-band as `{error: "..."}`; Neuron's own input validation
+ * (a missing document, a wrong type, an id outside an enum) never reaches
+ * the tool, settling the call with ToolOutput::error() instead, which arrives
+ * live as the plain, non-JSON error text, and after a reload as the decoded
+ * `{is_error: true, blocks: [...]}` NeuronMessage::decodeResult() shape.
  */
-function resultIsError(parsed: Record<string, unknown> | undefined): boolean {
-  return typeof parsed?.error === "string" && parsed.error !== "";
+function resultIsError(
+  result: unknown,
+  parsed: Record<string, unknown> | undefined,
+): boolean {
+  if (parsed !== undefined) {
+    return (
+      parsed.is_error === true ||
+      (typeof parsed.error === "string" && parsed.error !== "")
+    );
+  }
+  // Our own tools only ever succeed with a JSON object string, so a result
+  // that is a non-empty string but did not parse as one is Neuron's own
+  // validation failure text.
+  return typeof result === "string" && result !== "";
 }
 
 /** Reads the document's title off its parsed result. */
@@ -267,7 +283,9 @@ function makeSimpleToolUI<TArgs, TResult>(
           icon={icon}
           label={toolLabel(toolName)}
           detail={detail?.(parsed)}
-          status={resultIsError(parsed) ? { type: "incomplete" } : status}
+          status={
+            resultIsError(result, parsed) ? { type: "incomplete" } : status
+          }
         />
       );
     },
