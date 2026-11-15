@@ -18,18 +18,10 @@ use NeuronAI\Workflow\WorkflowState;
 final class ApprovalNode extends AgentNode {
 
   /**
-   * What the model reads when the editor cancels a save.
-   *
-   * Neuron adds that the tool must not be called again, so the text says a
-   * later request to save is a new one.
-   */
-  private const string CANCELLED = 'The editor cancelled this save. A later request to save is a new request: call ' . SaveDraftNeuronTool::TOOL_ID . ' again';
-
-  /**
    * Streams what the agent answers once it reads the decision.
    */
   public function __invoke(ApprovalDecisionEvent $event, WorkflowState $state): \Generator {
-    $answer = $event->decision === 'approve' ? 'approve' : ['reject', self::CANCELLED];
+    $answer = $event->decision === 'approve' ? 'approve' : ['reject', SaveDraftNeuronTool::CANCELLED];
 
     $agentState = yield from $this->agent
       ->submitApprovalDecisions([$event->callId => $answer])

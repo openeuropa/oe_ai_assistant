@@ -6,6 +6,7 @@ namespace Drupal\Tests\oe_ai_assistant\ExistingSite;
 
 use Drupal\node\Entity\Node;
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
+use Drupal\oe_ai_assistant\Plugin\NeuronTool\SaveDraftNeuronTool;
 use Drupal\oe_ai_assistant_test\Plugin\AiProvider\MockAiProvider;
 use Drupal\oe_ai_assistant_test\Plugin\AiProvider\MockResponse;
 use NeuronAI\Agent\Interrupt\ApprovalRequest;
@@ -206,10 +207,16 @@ class DraftingPluginApprovalTest extends DraftingPluginTestBase {
     $this->assertSame([], $this->newNodeIds());
     $this->assertSame([], $this->getApprovals($session));
     $log = MockAiProvider::getCallLog();
-    $this->assertStringContainsString('The editor cancelled this save.', json_encode(end($log)['messages']));
+    $this->assertStringContainsString(SaveDraftNeuronTool::CANCELLED, json_encode(end($log)['messages']));
 
     $this->askToSave($session, 1, 'call_save_2');
     $this->assertSame('call_save_2', $this->getApprovals($session)[0]['callId']);
+    // The model refuses a later save when the history tells it never to call
+    // the tool again, so the stored cancel carries only the editor's text.
+    $log = MockAiProvider::getCallLog();
+    $history = json_encode(end($log)['messages']);
+    $this->assertStringContainsString(SaveDraftNeuronTool::CANCELLED, $history);
+    $this->assertStringNotContainsString('Do not attempt this tool again', $history);
   }
 
   /**

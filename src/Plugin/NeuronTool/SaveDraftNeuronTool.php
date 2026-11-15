@@ -45,6 +45,13 @@ final class SaveDraftNeuronTool extends NeuronToolPluginBase {
   public const string TOOL_ID = 'drafting_save_draft';
 
   /**
+   * What the model reads when the editor cancels a save.
+   *
+   * It has no closing period, because Neuron's rejection wrapper adds one.
+   */
+  public const string CANCELLED = 'The editor cancelled this save, so nothing was written. A later request to save is a new request: call ' . self::TOOL_ID . ' again';
+
+  /**
    * The saver that writes the node.
    */
   private DraftSaverInterface $draftSaver;
