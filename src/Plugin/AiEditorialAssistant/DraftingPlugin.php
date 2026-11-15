@@ -25,7 +25,6 @@ use Drupal\oe_ai_assistant\Plugin\NeuronTool\RequestDraftNeuronTool;
 use Drupal\oe_ai_assistant\Plugin\NeuronTool\SaveDraftNeuronTool;
 use Drupal\oe_ai_assistant\Service\AiEditorialContextInterface;
 use Drupal\oe_ai_assistant\Service\DraftAssemblerInterface;
-use Drupal\oe_ai_assistant\Service\DraftSaverInterface;
 use Drupal\oe_ai_assistant\Service\DraftingSchemaProviderInterface;
 use Drupal\oe_ai_assistant\Service\PreviewRendererInterface;
 use Drupal\oe_ai_assistant\Response\SseResponse;
@@ -82,13 +81,6 @@ class DraftingPlugin extends AiAssistantPluginBase {
    * @var \Drupal\oe_ai_assistant\Service\DraftingSchemaProviderInterface
    */
   protected DraftingSchemaProviderInterface $schemaProvider;
-
-  /**
-   * The draft saver service.
-   *
-   * @var \Drupal\oe_ai_assistant\Service\DraftSaverInterface
-   */
-  protected DraftSaverInterface $draftSaver;
 
   /**
    * The editorial tone context service.
@@ -151,7 +143,6 @@ class DraftingPlugin extends AiAssistantPluginBase {
     $instance = parent::create($container, $configuration, $plugin_id, $plugin_definition);
     $instance->workflows = $container->get(NeuronWorkflowManagerInterface::class);
     $instance->schemaProvider = $container->get(DraftingSchemaProviderInterface::class);
-    $instance->draftSaver = $container->get(DraftSaverInterface::class);
     $instance->aiEditorialContext = $container->get(AiEditorialContextInterface::class);
     $instance->contextDocumentRepository = $container->get(ContextDocumentRepository::class);
     $instance->inputStreamFileWriter = $container->get(InputStreamFileWriterInterface::class);
@@ -171,7 +162,6 @@ class DraftingPlugin extends AiAssistantPluginBase {
       'get-messages' => $this->getMessages(...),
       'get-approvals' => $this->getApprovals(...),
       'reset' => $this->reset(...),
-      'save' => $this->save(...),
       'set-tone' => $this->setTone(...),
       'set-template' => $this->setTemplate(...),
       'add-document' => $this->addDocument(...),
@@ -190,7 +180,6 @@ class DraftingPlugin extends AiAssistantPluginBase {
       'get-messages' => 'GetMessagesRequest',
       'get-approvals' => 'DraftingGetApprovalsRequest',
       'reset' => 'DraftingResetRequest',
-      'save' => 'DraftingSaveRequest',
       'set-tone' => 'DraftingSetToneRequest',
       'set-template' => 'DraftingSetTemplateRequest',
       'add-document' => 'DraftingAddDocumentRequest',
@@ -673,51 +662,12 @@ class DraftingPlugin extends AiAssistantPluginBase {
   }
 
   /**
-   * Saves one of the session's draft versions as an unpublished node.
-   *
-   * The request names a session and a draft version; the fields come from
-   * the session's own draft history, so clients can never save field data
-   * the session did not produce. The save is recorded as a durable
-   * timeline event on the transcript.
-   *
-   * @param \Symfony\Component\HttpFoundation\Request $request
-   *   The save request with `sessionId` and `version`.
-   *
-   * @return array<string, string>
-   *   An array with `nodeId` and `previewUrl`.
-   *
-   * @throws \Drupal\oe_ai_assistant\Exception\ActionException
-   *   On an unknown version, missing permission, or builder rejection.
-   */
-  public function save(Request $request): array {
-    $body = $this->decodeJsonBody($request);
-    $session = $this->loadSession($body);
-    $version = (int) ($body['version'] ?? 0);
-
-    if (!$session instanceof ContentCreationSessionInterface) {
-      throw new ActionException('invalid_request', 'The editorial session does not support drafting.', 400);
-    }
-    $draft = $session->getDraftContent($version);
-    if ($draft === NULL || $draft['fields'] === []) {
-      throw new ActionException(
-        'invalid_request',
-        sprintf('Draft %d does not exist in this session.', $version),
-        400,
-      );
-    }
-
-    // No save event is recorded; the editorial change log is an accepted,
-    // documented loss until OEL-5127 answers it from session revisions.
-    return $this->draftSaver->save($session, $draft['fields'], $draft['templateId'], $version);
-  }
-
-  /**
    * Renders a themed HTML preview of a stored draft version.
    *
-   * Builds the unsaved node the same way save() would (bundle validation,
-   * create-permission check, template-defaults merge via DraftAssembler),
-   * but never persists it: the built node is handed straight to
-   * PreviewRenderer and discarded after the response is built.
+   * Builds the unsaved node the same way the draft saver would (bundle
+   * validation, create-permission check, template-defaults merge via
+   * DraftAssembler), but never persists it: the built node is handed straight
+   * to PreviewRenderer and discarded after the response is built.
    *
    * Unlike the other actions this one is addressed with GET, so the
    * app's preview iframe can load it through its src attribute. The

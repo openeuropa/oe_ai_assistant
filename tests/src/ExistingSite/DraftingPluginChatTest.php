@@ -235,7 +235,6 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
     ]);
 
     // Check that turn 2's LLM call includes both messages.
-    \Drupal::state()->resetCache();
     $log = MockAiProvider::getCallLog();
     $this->assertCount(2, $log, 'Two LLM calls should have been made.');
 
@@ -286,7 +285,6 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
       'sessionId' => $session->id(),
     ]);
 
-    \Drupal::state()->resetCache();
     $log = MockAiProvider::getCallLog();
     $this->assertCount(2, $log, 'Two drafting agent calls should have been made.');
 
@@ -340,7 +338,6 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
     // agent's confirmation call. Only the two sub-agent calls (index 1, 2)
     // carry the tone; the drafting agent's own calls (index 0, 3) must not,
     // per testDraftingAgentSystemPromptIsStableAndToneFree.
-    \Drupal::state()->resetCache();
     $log = MockAiProvider::getCallLog();
     $this->assertCount(4, $log, 'One call per group plus the agent\'s own two calls.');
 
@@ -395,7 +392,6 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
 
     // Four calls: the drafting agent (index 0, 3) and the two field-group
     // sub-agents (index 1, 2). Only the sub-agent calls carry documents.
-    \Drupal::state()->resetCache();
     $log = MockAiProvider::getCallLog();
     $this->assertCount(4, $log);
     foreach ([1, 2] as $subAgentCallIndex) {

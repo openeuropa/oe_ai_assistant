@@ -58,25 +58,6 @@ getApprovals:
             schema:
               $ref: "../../openapi.yaml#/components/schemas/DraftingGetApprovalsResponse"
 
-save:
-  post:
-    operationId: postDraftingSave
-    summary: Save a session draft version as an unpublished node
-    tags: [Drafting]
-    requestBody:
-      required: true
-      content:
-        application/json:
-          schema:
-            $ref: "../../openapi.yaml#/components/schemas/DraftingSaveRequest"
-    responses:
-      "200":
-        description: Created node details
-        content:
-          application/json:
-            schema:
-              $ref: "../../openapi.yaml#/components/schemas/DraftingSaveResponse"
-
 setTone:
   post:
     operationId: postDraftingSetTone

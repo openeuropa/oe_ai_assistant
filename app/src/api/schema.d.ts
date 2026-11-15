@@ -127,23 +127,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/plugins/drafting/save": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Save a session draft version as an unpublished node */
-        post: operations["postDraftingSave"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/plugins/drafting/set-tone": {
         parameters: {
             query?: never;
@@ -490,19 +473,6 @@ export interface components {
         };
         DraftingGetApprovalsResponse: {
             approvals: components["schemas"]["DraftingApproval"][];
-        };
-        /** @description Save one of the session's drafts as an unpublished revision. The backend resolves the target content type and the drafted field values from the session and its draft history, so the client only names the version being saved; a client can never save field data the session did not produce. */
-        DraftingSaveRequest: {
-            /** @description The editorial session that owns the draft. */
-            sessionId: string;
-            /** @description The draft version to save, matching the version of a drafting_draft_content result in the session transcript (the version shown in the artifact pane and the version rail). */
-            version: number;
-        };
-        DraftingSaveResponse: {
-            /** @description The ID of the created node. */
-            nodeId: string;
-            /** @description URL to preview the created draft node. */
-            previewUrl: string;
         };
         DraftingSetToneRequest: {
             /** @description The editorial session on which the selected tone is saved. */
@@ -877,30 +847,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DraftingGetApprovalsResponse"];
-                };
-            };
-        };
-    };
-    postDraftingSave: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["DraftingSaveRequest"];
-            };
-        };
-        responses: {
-            /** @description Created node details */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["DraftingSaveResponse"];
                 };
             };
         };

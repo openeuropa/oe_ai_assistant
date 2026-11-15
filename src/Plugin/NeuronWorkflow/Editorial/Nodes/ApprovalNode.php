@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\oe_ai_assistant\Plugin\NeuronWorkflow\Editorial\Nodes;
 
+use Drupal\oe_ai_assistant\Plugin\NeuronTool\SaveDraftNeuronTool;
 use Drupal\oe_ai_assistant\Plugin\NeuronWorkflow\Editorial\Events\ApprovalDecisionEvent;
 use NeuronAI\Workflow\WorkflowState;
 
@@ -22,7 +23,7 @@ final class ApprovalNode extends AgentNode {
    * Neuron adds that the tool must not be called again, so the text says a
    * later request to save is a new one.
    */
-  private const string CANCELLED = 'The editor cancelled this save. A later request to save is a new request: call drafting_save_draft again.';
+  private const string CANCELLED = 'The editor cancelled this save. A later request to save is a new request: call ' . SaveDraftNeuronTool::TOOL_ID . ' again';
 
   /**
    * Streams what the agent answers once it reads the decision.

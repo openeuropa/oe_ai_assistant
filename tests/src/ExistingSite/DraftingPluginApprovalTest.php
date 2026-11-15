@@ -23,6 +23,10 @@ use PHPUnit\Framework\Attributes\DataProvider;
  */
 class DraftingPluginApprovalTest extends DraftingPluginTestBase {
 
+  private const string NO_WAITING_SAVE = 'No save waits for that decision.';
+
+  private const string BAD_DECISION = 'The decision must name a call and be approve or reject.';
+
   /**
    * {@inheritdoc}
    */
@@ -265,6 +269,21 @@ class DraftingPluginApprovalTest extends DraftingPluginTestBase {
   }
 
   /**
+   * Tests that the save action no longer exists.
+   */
+  public function testSaveActionIsGone(): void {
+    $session = $this->sessionWithDraft();
+
+    $result = $this->httpPost('/api/ai/plugins/drafting/save', [
+      'sessionId' => $session->id(),
+      'version' => 1,
+    ]);
+
+    $this->assertSame(404, $result['status'], substr($result['body'], 0, 500));
+    $this->assertSame([], $this->newNodeIds());
+  }
+
+  /**
    * Tests that a second decision on the same save is refused.
    */
   public function testRepeatedDecisionIsRefused(): void {
@@ -273,7 +292,9 @@ class DraftingPluginApprovalTest extends DraftingPluginTestBase {
     MockAiProvider::enqueue(new MockResponse(text: 'Draft 1 is saved.'));
     $this->assertSame(200, $this->decide($session, 'call_save', 'approve')['status']);
 
-    $this->assertSame(400, $this->decide($session, 'call_save', 'approve')['status']);
+    $refused = $this->decide($session, 'call_save', 'approve');
+    $this->assertSame(400, $refused['status']);
+    $this->assertSame(self::NO_WAITING_SAVE, $refused['message']);
     $this->assertCount(1, $this->newNodeIds());
   }
 
@@ -285,7 +306,9 @@ class DraftingPluginApprovalTest extends DraftingPluginTestBase {
     $this->askToSave($session, 1);
     $this->httpPost('/api/ai/plugins/drafting/reset', ['sessionId' => $session->id()]);
 
-    $this->assertSame(400, $this->decide($session, 'call_save', 'approve')['status']);
+    $refused = $this->decide($session, 'call_save', 'approve');
+    $this->assertSame(400, $refused['status']);
+    $this->assertSame(self::NO_WAITING_SAVE, $refused['message']);
     $this->assertSame([], $this->newNodeIds());
   }
 
@@ -293,7 +316,7 @@ class DraftingPluginApprovalTest extends DraftingPluginTestBase {
    * Tests that a malformed decision is refused and the save keeps waiting.
    */
   #[DataProvider('malformedApprovals')]
-  public function testMalformedApprovalIsRefused(mixed $approval): void {
+  public function testMalformedApprovalIsRefused(mixed $approval, string $message): void {
     $session = $this->sessionWithDraft();
     $this->askToSave($session, 1);
 
@@ -303,7 +326,9 @@ class DraftingPluginApprovalTest extends DraftingPluginTestBase {
     ]);
 
     $this->assertSame(400, $result['status'], substr($result['body'], 0, 500));
-    $this->assertSame('invalid_request', json_decode($result['body'], TRUE)['code']);
+    $body = json_decode($result['body'], TRUE);
+    $this->assertSame('invalid_request', $body['code']);
+    $this->assertSame($message, $body['message']);
     $this->assertSame(['call_save'], array_column($this->getApprovals($session), 'callId'));
   }
 
@@ -312,10 +337,20 @@ class DraftingPluginApprovalTest extends DraftingPluginTestBase {
    */
   public static function malformedApprovals(): array {
     return [
-      'unknown decision' => [['callId' => 'call_save', 'decision' => 'maybe']],
-      'no call id' => [['decision' => 'approve']],
-      'not an object' => ['approve'],
-      'unknown call' => [['callId' => 'call_nope', 'decision' => 'approve']],
+      'unknown decision' => [
+        ['callId' => 'call_save', 'decision' => 'maybe'],
+        self::BAD_DECISION,
+      ],
+      'no call id' => [['decision' => 'approve'], self::BAD_DECISION],
+      'call id not a string' => [
+        ['callId' => 1, 'decision' => 'approve'],
+        self::BAD_DECISION,
+      ],
+      'not an object' => ['approve', self::BAD_DECISION],
+      'unknown call' => [
+        ['callId' => 'call_nope', 'decision' => 'approve'],
+        self::NO_WAITING_SAVE,
+      ],
     ];
   }
 
@@ -386,15 +421,25 @@ class DraftingPluginApprovalTest extends DraftingPluginTestBase {
    *   Either approve or reject.
    *
    * @return array
-   *   The response 'status' and its parsed SSE 'events'.
+   *   The response 'status', its parsed SSE 'events' and, for a refusal, its
+   *   error 'message'.
    */
   private function decide(AiEditorialSessionInterface $session, string $callId, string $decision): array {
+    // A decision turn ignores the message the client sends with it.
     $result = $this->httpPost('/api/ai/plugins/drafting/chat', [
+      'message' => 'Ignored.',
       'sessionId' => $session->id(),
       'runConfig' => ['custom' => ['approval' => ['callId' => $callId, 'decision' => $decision]]],
     ]);
+    if ($result['status'] !== 200) {
+      $body = json_decode($result['body'], TRUE);
 
-    return ['status' => $result['status'], 'events' => $this->parseSseEvents($result['body'])];
+      return ['status' => $result['status'], 'events' => [], 'message' => $body['message'] ?? NULL];
+    }
+    $events = $this->parseSseEvents($result['body']);
+    $this->assertNotContains('error', array_column($events, 'type'));
+
+    return ['status' => 200, 'events' => $events, 'message' => NULL];
   }
 
   /**
