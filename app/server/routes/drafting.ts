@@ -244,6 +244,18 @@ export function createDraftingRouter(service: DraftingService): Router {
     res.json({ messages: service.getMessages(sessionId) });
   });
 
+  /** POST /get-approvals - The standalone server gates no calls, so none wait. */
+  router.post("/get-approvals", (req, res) => {
+    const sessionId = (req.body as { sessionId?: string })?.sessionId;
+    if (!sessionId) {
+      res
+        .status(400)
+        .json({ code: "bad_request", message: "sessionId is required" });
+      return;
+    }
+    res.json({ approvals: [] });
+  });
+
   /**
    * POST /set-tone - Receive selected drafting tone.
    *

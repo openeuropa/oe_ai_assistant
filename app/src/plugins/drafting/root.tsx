@@ -148,8 +148,8 @@ function DraftingChat() {
    * not change the runtime reference.
    */
   const appendEvent = useCallback(
-    (eventType: string, summary: string, version?: number) =>
-      appendEventToThread(runtime.thread, { eventType, summary, version }),
+    (eventType: string, summary: string) =>
+      appendEventToThread(runtime.thread, { eventType, summary }),
     [runtime],
   );
 
@@ -165,10 +165,14 @@ function DraftingChat() {
         ),
       });
       const { messages } = runtime.thread.getState();
-      runtime.thread.startRun({
-        parentId: messages[messages.length - 1]?.id ?? null,
-        runConfig: { custom: { approval: { callId, decision } } },
-      });
+      // The runtime's onError already reports a failed run; the rejection
+      // carries nothing more.
+      Promise.resolve(
+        runtime.thread.startRun({
+          parentId: messages[messages.length - 1]?.id ?? null,
+          runConfig: { custom: { approval: { callId, decision } } },
+        }),
+      ).catch(() => {});
     },
     [runtime],
   );
@@ -329,7 +333,12 @@ function DraftingChat() {
       <EditorialEventToolUI />
       <SaveDraftToolUI />
 
-      <GatedApprovalDialog approval={approvals[0] ?? null} onDecide={decide} />
+      <GatedApprovalDialog
+        approval={
+          approvals.find((item) => item.name === "drafting_save_draft") ?? null
+        }
+        onDecide={decide}
+      />
 
       {/* Feed the shell exit guard with this plugin's pending state.
           Panel saves report themselves via useCardSelection. */}

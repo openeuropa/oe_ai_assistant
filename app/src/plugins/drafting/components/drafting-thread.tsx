@@ -240,9 +240,9 @@ function MessageFooter({ className = "" }: { className?: string }) {
 
 /**
  * Renders a single assistant message, or the typing indicator
- * when the message has no content yet (waiting for the LLM to
- * start streaming), so the user sees pulsating dots until real
- * content arrives.
+ * when the message has no content yet and its run is still going
+ * (waiting for the LLM to start streaming), so the user sees
+ * pulsating dots until real content arrives.
  *
  * Assistant responses sit directly on the chat surface with no
  * bubble; only user messages keep one. Event-only messages (all
@@ -252,6 +252,7 @@ function MessageFooter({ className = "" }: { className?: string }) {
 function AssistantMessage() {
   const content = useAuiState((s) => s.message?.content ?? []);
   const hasContent = content.length > 0;
+  const status = useAuiState((s) => s.message?.status);
 
   // Detect event-only messages: all parts are editorial_event tool-calls.
   // These are injected by the history adapter and carry no text parts.
@@ -271,14 +272,26 @@ function AssistantMessage() {
       ((part as { text?: string }).text ?? "").trim().length > 0,
   );
 
-  // Show pulsating dots while waiting for the first content
-  // part (text or tool call) to arrive from the backend.
+  // Show pulsating dots while the run is still waiting for the first
+  // content part (text or tool call). A message that finished without any
+  // content, such as the turn that ends at a save waiting for approval,
+  // renders nothing, or its error when the run failed.
   if (!hasContent) {
-    return (
-      <MessagePrimitive.Root className="mb-4">
-        <TypingIndicator />
-      </MessagePrimitive.Root>
-    );
+    if (status?.type === "running") {
+      return (
+        <MessagePrimitive.Root className="mb-4">
+          <TypingIndicator />
+        </MessagePrimitive.Root>
+      );
+    }
+    if (status?.type === "incomplete" && status.reason === "error") {
+      return (
+        <MessagePrimitive.Root className="mb-4">
+          <MessageError />
+        </MessagePrimitive.Root>
+      );
+    }
+    return null;
   }
 
   // Event-only messages render chips without the bubble wrapper so they

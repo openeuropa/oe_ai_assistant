@@ -22,16 +22,19 @@ export function ApprovalDialog({ approval, onDecide }: ApprovalDialogProps) {
     if (approval) onDecide(approval.callId, decision);
   }
 
+  const description = `Draft ${version} will be saved as a new unpublished revision of the content item.`;
+
   return (
     <Dialog
       open={approval !== null}
       onClose={() => decide("reject")}
       title={`Save Draft ${version}?`}
+      description={description}
       // Above the full-screen draft pane, which sits at z-[1300].
       layerClassName="z-[1400]"
     >
       <div className="space-y-4 text-sm text-gray-700">
-        <p>{`Draft ${version} will be saved as a new unpublished revision of the content item.`}</p>
+        <p>{description}</p>
         <div className="flex justify-end gap-2">
           <Button
             variant="outline"
