@@ -37,20 +37,17 @@ final class ReadDocumentNeuronTool extends NeuronToolPluginBase {
 
   /**
    * {@inheritdoc}
-   *
-   * No enum here: building it would call getDocuments() on the session
-   * context while the tool itself is still being constructed, which breaks
-   * any caller that builds the tool generically. An unknown ID is instead
-   * reported as a readable error from __invoke(), which only touches the
-   * context once the tool actually runs.
    */
   protected function properties(): array {
+    $ids = array_column($this->getContextValue('session')->getDocuments(), 'id');
+
     return [
       new ToolProperty(
         'document',
         PropertyType::STRING,
         'The ID of the document to read.',
         TRUE,
+        $ids,
       ),
     ];
   }

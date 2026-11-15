@@ -214,15 +214,13 @@ class EditorialContextToolsTest extends AiEditorialSessionKernelTestBase {
   }
 
   /**
-   * Tests that the document tool declares a plain string property.
+   * Tests that the document property's enum lists the attached ids.
    *
-   * No enum: building one would read the session's documents while the
-   * tool itself is still being constructed, which crashes any caller that
-   * builds the editorial tool set generically, such as
-   * NeuronToolManager::createTools(). An unknown ID is refused by
-   * __invoke() instead, once the tool actually runs.
+   * NeuronToolManager::createTool() applies the session context before
+   * calling getNeuron(), which is what calls properties(), so the session
+   * is always set by the time the enum is built.
    */
-  public function testReadDocumentPropertyHasNoEnum(): void {
+  public function testReadDocumentPropertyEnumeratesAttachedIds(): void {
     $session = $this->stubbedSession(NULL, [
       self::document('1', 'done', 'Full text one.'),
       self::document('2', 'done', 'Full text two.'),
@@ -236,7 +234,7 @@ class EditorialContextToolsTest extends AiEditorialSessionKernelTestBase {
     $properties = $tool->getProperties();
     $this->assertCount(1, $properties);
     $this->assertSame('document', $properties[0]->getName());
-    $this->assertSame([], $properties[0]->getEnum());
+    $this->assertSame(['1', '2'], $properties[0]->getEnum());
   }
 
   /**
