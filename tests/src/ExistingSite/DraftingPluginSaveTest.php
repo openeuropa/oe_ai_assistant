@@ -4,9 +4,6 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\oe_ai_assistant\ExistingSite;
 
-use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
-use Drupal\oe_ai_assistant\Entity\Bundle\ContentCreationSessionInterface;
-
 /**
  * Integration tests for the DraftingPlugin save action.
  *
@@ -16,13 +13,6 @@ use Drupal\oe_ai_assistant\Entity\Bundle\ContentCreationSessionInterface;
  * history, so clients never submit field data.
  */
 class DraftingPluginSaveTest extends DraftingPluginTestBase {
-
-  /**
-   * The IDs of existing entities before the test, keyed by entity type.
-   *
-   * @var array
-   */
-  protected $existingEntityIds = [];
 
   /**
    * {@inheritdoc}
@@ -375,60 +365,6 @@ class DraftingPluginSaveTest extends DraftingPluginTestBase {
     $reloaded = $sessionStorage->load($session->id());
     $this->assertEquals($secondBody['nodeId'], $reloaded->getNode()->id(),
       'The session must repoint to the newly created node.');
-  }
-
-  /**
-   * Seeds a completed draft version into the session's drafts thread.
-   *
-   * A draft is a row of the session's drafts thread. The editor's own
-   * conversation holds none.
-   *
-   * @param \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $session
-   *   The session hosting the conversation.
-   * @param int $version
-   *   The draft version number.
-   * @param array $fields
-   *   The drafted field values, keyed by field machine name.
-   * @param string|null $templateId
-   *   The template id to snapshot in the result context, or NULL for none.
-   */
-  protected function seedDraft(AiEditorialSessionInterface $session, int $version, array $fields, ?string $templateId = NULL): void {
-    assert($session instanceof ContentCreationSessionInterface);
-    $this->storeDraft($session, [
-      'version' => $version,
-      'run' => sprintf('draft_%d.abcdef', $version),
-      'context' => [
-        'tone' => NULL,
-        'template' => $templateId !== NULL ? ['id' => $templateId, 'label' => $templateId] : NULL,
-        'documents' => [],
-      ],
-      'fields' => $fields,
-    ]);
-  }
-
-  /**
-   * Records existing entity IDs so test-created entities can be cleaned up.
-   */
-  protected function trackEntityType(string $entityType): void {
-    $this->existingEntityIds[$entityType] = \Drupal::entityTypeManager()
-      ->getStorage($entityType)
-      ->getQuery()
-      ->accessCheck(FALSE)
-      ->execute();
-  }
-
-  /**
-   * Deletes entities created during the test.
-   */
-  protected function deleteTestEntities(): void {
-    foreach ($this->existingEntityIds as $entityType => $previousIds) {
-      $storage = \Drupal::entityTypeManager()->getStorage($entityType);
-      $currentIds = $storage->getQuery()->accessCheck(FALSE)->execute();
-      $newIds = array_diff($currentIds, $previousIds);
-      if ($newIds) {
-        $storage->delete($storage->loadMultiple($newIds));
-      }
-    }
   }
 
 }
