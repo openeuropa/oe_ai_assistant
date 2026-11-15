@@ -3,9 +3,11 @@
  *
  * Split-panel layout: chat on the left, content artifact on the right.
  * DraftingChat owns the assistant-ui runtime, the tone/template/documents
- * hooks, and the tab construction. After a successful save it splices a
- * local event chip into the thread state via appendEventToThread so the
- * chip appears instantly without any remount or refetch.
+ * hooks, and the tab construction. The pane's Save button sends the chat
+ * message "Save draft {n}." and the editor confirms the resulting save call
+ * in a dialog. Tone and template changes splice a local event chip into the
+ * thread state via appendEventToThread so the chip appears instantly without
+ * any remount or refetch.
  *
  * DraftingRoot is a thin shell that renders DraftingChat.
  */
@@ -16,8 +18,6 @@ import { type ComponentProps, type ReactNode, useCallback } from "react";
 import { CardSelectPane } from "@/components/ui/card-select-pane";
 import type { PaneTabItem } from "@/components/ui/pane-tabs";
 import { getConfig } from "@/config";
-import { useAppStore } from "@/store";
-import { saveDraftRevision } from "./api/drafting-api";
 import { ApprovalDialog } from "./components/approval-dialog";
 import { ArtifactPane } from "./components/artifact-pane";
 import { ContentTable } from "./components/content-table";
@@ -70,8 +70,8 @@ function SessionArtifactPane({ children }: { children: ReactNode }) {
 
 /**
  * Preview pane for a versioned draft, stamped with its creation time.
- * Reads the thread for the timestamp, so it must render inside the
- * AssistantRuntimeProvider.
+ * Save stays disabled while a reply streams or a save waits for the editor.
+ * Reads the thread, so it must render inside the AssistantRuntimeProvider.
  */
 function VersionedDraftPreview({
   version,
@@ -82,6 +82,8 @@ function VersionedDraftPreview({
 }) {
   const sessionDrafts = useSessionDrafts();
   const savedVersions = useSavedVersions();
+  const { approvals } = useDraftingSlice();
+  const isRunning = useAuiState((s) => s.thread.isRunning);
   const activeDraft = sessionDrafts.find((draft) => draft.version === version);
   return (
     <DraftPreview
@@ -90,6 +92,7 @@ function VersionedDraftPreview({
       createdAt={activeDraft?.createdAt ?? null}
       isSaved={savedVersions.has(version)}
       onSave={onSave}
+      isSaveDisabled={isRunning || approvals.length > 0}
     />
   );
 }
@@ -118,14 +121,15 @@ function GatedApprovalDialog({
  * Inner component that owns the assistant-ui runtime and all runtime-dependent
  * state, including tone/template/documents hooks and composer tab construction.
  *
- * Save handlers capture labels before calling submitValues() and splice a
- * local event chip (or error chip on failure) directly into the thread via
- * export/import. This avoids any remount or network refetch after a save.
+ * The pane's Save button appends "Save draft {n}." to the thread, which makes
+ * the agent call the save tool. The call waits for the editor's decision in
+ * the approval dialog. Tone and template handlers capture labels before
+ * calling submitValues() and splice a local event chip (or error chip on
+ * failure) directly into the thread, without any remount or network refetch.
  */
 function DraftingChat() {
   const { draftedFields, runs, activeCallIds, activeDraftVersion, approvals } =
     useDraftingSlice();
-  const setPendingWork = useAppStore((s) => s.setPendingWork);
   const runtime = useDraftingRuntime();
   const tone = useDraftingTone();
   const documents = useDraftingDocuments();
@@ -148,38 +152,6 @@ function DraftingChat() {
       appendEventToThread(runtime.thread, { eventType, summary, version }),
     [runtime],
   );
-
-  /**
-   * Saves the draft version open in the artifact pane via the save
-   * endpoint. The backend resolves the fields for that version from its
-   * own draft history, so saving an older version saves exactly what
-   * the pane shows. The in-flight request reports pending work so the
-   * exit guard blocks navigation, and the outcome lands in the thread
-   * as a local event chip (the backend records the matching durable
-   * event row).
-   */
-  const handleSave = useCallback(async () => {
-    const version = getDraftingState().activeDraftVersion;
-    if (version === null) {
-      // Legacy unversioned drafts cannot be addressed by the contract.
-      appendEvent("error", "This draft has no version and cannot be saved");
-      return;
-    }
-    setPendingWork("drafting:save", true);
-    try {
-      await saveDraftRevision({ version });
-    } catch {
-      appendEvent("error", `Draft ${version} could not be saved`);
-      return;
-    } finally {
-      setPendingWork("drafting:save", false);
-    }
-    appendEvent(
-      "save",
-      `Draft ${version} saved as unpublished revision`,
-      version,
-    );
-  }, [appendEvent, setPendingWork]);
 
   /**
    * Sends the editor's decision on a waiting call as a turn of its own. The
@@ -210,11 +182,13 @@ function DraftingChat() {
       return (
         <VersionedDraftPreview
           version={activeDraftVersion}
-          onSave={handleSave}
+          onSave={() =>
+            runtime.thread.append(`Save draft ${activeDraftVersion}.`)
+          }
         />
       );
     }
-    return <ContentTable onSave={handleSave} />;
+    return <ContentTable />;
   }
 
   // Editorial context panels, shown as pill buttons under the composer.

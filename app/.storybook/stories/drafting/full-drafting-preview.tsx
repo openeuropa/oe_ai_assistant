@@ -590,7 +590,7 @@ export function FullDraftingPreview() {
             transcript always carries drafts, so the rail can restore it. */}
         {hasArtifact && (
           <ArtifactPane canCollapse>
-            <ContentTable onSave={() => {}} />
+            <ContentTable />
           </ArtifactPane>
         )}
 
