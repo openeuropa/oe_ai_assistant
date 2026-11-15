@@ -39,6 +39,25 @@ reset:
             schema:
               $ref: "../../openapi.yaml#/components/schemas/DraftingResetResponse"
 
+getApprovals:
+  post:
+    operationId: postDraftingGetApprovals
+    summary: List the tool calls that wait for the editor's decision
+    tags: [Drafting]
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: "../../openapi.yaml#/components/schemas/DraftingGetApprovalsRequest"
+    responses:
+      "200":
+        description: The waiting calls, empty when none waits
+        content:
+          application/json:
+            schema:
+              $ref: "../../openapi.yaml#/components/schemas/DraftingGetApprovalsResponse"
+
 save:
   post:
     operationId: postDraftingSave

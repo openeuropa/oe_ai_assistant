@@ -48,6 +48,7 @@ class DraftingPluginApprovalTest extends DraftingPluginTestBase {
     $this->assertContains('finish', array_column($events, 'type'));
     $this->assertNotContains('tool-output-available', array_column($events, 'type'));
     $run = $this->editorialRun($session);
+    $this->assertNotNull($run);
     $this->assertSame(WorkflowStatus::Suspended, $run->status);
     $this->assertInstanceOf(ApprovalRequest::class, $run->interrupt);
     $action = $run->interrupt->getActions()[0];
@@ -84,26 +85,83 @@ class DraftingPluginApprovalTest extends DraftingPluginTestBase {
    */
   public function testNonIntegerVersionIsNotGated(): void {
     $session = $this->sessionWithDraft();
-    MockAiProvider::enqueue(new MockResponse(
-      toolCalls: [
-        [
-          'id' => 'call_save',
-          'type' => 'function',
-          'function' => ['name' => 'drafting_save_draft', 'arguments' => '{"version":"two"}'],
-        ],
-      ],
-    ));
-    MockAiProvider::enqueue(new MockResponse(text: 'I need a draft number.'));
 
-    $result = $this->httpPost('/api/ai/plugins/drafting/chat', [
-      'message' => 'Save draft two.',
-      'sessionId' => $session->id(),
-    ]);
-    $events = $this->parseSseEvents($result['body']);
+    $events = $this->askToSave($session, 'two', reply: 'I need a draft number.');
 
     $this->assertContains('finish', array_column($events, 'type'));
+    $this->assertArrayHasKey('errorText', $this->toolOutput($events, 'call_save'));
     $this->assertNotSame(WorkflowStatus::Suspended, $this->editorialRun($session)?->status);
     $this->assertSame([], $this->newNodeIds());
+  }
+
+  /**
+   * Tests that a draft with no fields is answered without a decision.
+   */
+  public function testEmptyDraftIsNotGated(): void {
+    $user = $this->createUser([
+      'use oe ai assistant',
+      'create oe_news content',
+    ]);
+    $this->loginUser($user);
+    $session = $this->createSession($user);
+    $this->seedDraft($session, 1, []);
+
+    $events = $this->askToSave($session, 1, reply: 'Draft 1 does not exist.');
+
+    $output = $this->toolOutput($events, 'call_save');
+    $this->assertSame(
+      ['version' => 1, 'error' => 'Draft 1 does not exist in this session.'],
+      json_decode($output['output'], TRUE),
+    );
+    $this->assertNotSame(WorkflowStatus::Suspended, $this->editorialRun($session)?->status);
+    $this->assertSame([], $this->newNodeIds());
+  }
+
+  /**
+   * Tests that get-approvals lists the save that waits for the editor.
+   */
+  public function testGetApprovalsListsTheWaitingSave(): void {
+    $session = $this->sessionWithDraft();
+    $this->askToSave($session, 1);
+
+    $this->assertSame(
+      [['callId' => 'call_save', 'name' => 'drafting_save_draft', 'inputs' => ['version' => 1]]],
+      $this->getApprovals($session),
+    );
+  }
+
+  /**
+   * Tests that get-approvals is empty when nothing waits.
+   */
+  public function testGetApprovalsIsEmptyWhenNothingWaits(): void {
+    $session = $this->sessionWithDraft();
+
+    $this->assertSame([], $this->getApprovals($session));
+  }
+
+  /**
+   * Tests that a reset drops the save that waits for the editor.
+   */
+  public function testResetDropsTheWaitingSave(): void {
+    $session = $this->sessionWithDraft();
+    $this->askToSave($session, 1);
+
+    $result = $this->httpPost('/api/ai/plugins/drafting/reset', ['sessionId' => $session->id()]);
+
+    $this->assertEquals(200, $result['status'], substr($result['body'], 0, 500));
+    $this->assertSame([], $this->getApprovals($session));
+    $this->assertNull($this->editorialRun($session));
+  }
+
+  /**
+   * Tests that a waiting save draws no card in the transcript.
+   */
+  public function testWaitingSaveDrawsNoCard(): void {
+    $session = $this->sessionWithDraft();
+    $this->askToSave($session, 1);
+
+    $calls = array_merge([], ...array_column($this->getMessages($session), 'toolCalls'));
+    $this->assertNotContains('drafting_save_draft', array_column(array_column($calls, 'function'), 'name'));
   }
 
   /**
@@ -126,7 +184,7 @@ class DraftingPluginApprovalTest extends DraftingPluginTestBase {
    *
    * @param \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $session
    *   The session to chat in.
-   * @param int $version
+   * @param int|string $version
    *   The version the model asks to save.
    * @param string $callId
    *   The id of the tool call.
@@ -136,7 +194,7 @@ class DraftingPluginApprovalTest extends DraftingPluginTestBase {
    * @return array
    *   The parsed SSE events.
    */
-  private function askToSave(AiEditorialSessionInterface $session, int $version, string $callId = 'call_save', ?string $reply = NULL): array {
+  private function askToSave(AiEditorialSessionInterface $session, int|string $version, string $callId = 'call_save', ?string $reply = NULL): array {
     MockAiProvider::enqueue(new MockResponse(
       toolCalls: [
         [
@@ -154,12 +212,30 @@ class DraftingPluginApprovalTest extends DraftingPluginTestBase {
     }
 
     $result = $this->httpPost('/api/ai/plugins/drafting/chat', [
-      'message' => sprintf('Save draft %d.', $version),
+      'message' => sprintf('Save draft %s.', $version),
       'sessionId' => $session->id(),
     ]);
     $this->assertEquals(200, $result['status'], substr($result['body'], 0, 500));
 
     return $this->parseSseEvents($result['body']);
+  }
+
+  /**
+   * Calls the get-approvals action and returns its approvals list.
+   *
+   * @param \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $session
+   *   The session whose waiting saves to list.
+   *
+   * @return array
+   *   The approvals.
+   */
+  private function getApprovals(AiEditorialSessionInterface $session): array {
+    $result = $this->httpPost('/api/ai/plugins/drafting/get-approvals', [
+      'sessionId' => $session->id(),
+    ]);
+    $this->assertEquals(200, $result['status'], substr($result['body'], 0, 500));
+
+    return json_decode($result['body'], TRUE)['approvals'];
   }
 
   /**
@@ -173,6 +249,8 @@ class DraftingPluginApprovalTest extends DraftingPluginTestBase {
   /**
    * Returns the one tool output event of a call.
    *
+   * A call that fails its input validation ends with an error event.
+   *
    * @param array $events
    *   The parsed SSE events.
    * @param string $callId
@@ -184,7 +262,7 @@ class DraftingPluginApprovalTest extends DraftingPluginTestBase {
   private function toolOutput(array $events, string $callId): array {
     $outputs = array_values(array_filter(
       $events,
-      static fn (array $event): bool => $event['type'] === 'tool-output-available' && ($event['toolCallId'] ?? NULL) === $callId,
+      static fn (array $event): bool => in_array($event['type'], ['tool-output-available', 'tool-output-error'], TRUE) && ($event['toolCallId'] ?? NULL) === $callId,
     ));
     $this->assertCount(1, $outputs, sprintf('One tool output for "%s".', $callId));
 

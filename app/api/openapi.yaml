@@ -62,6 +62,8 @@ paths:
     $ref: "plugins/drafting/paths.yaml#/chat"
   /plugins/drafting/reset:
     $ref: "plugins/drafting/paths.yaml#/reset"
+  /plugins/drafting/get-approvals:
+    $ref: "plugins/drafting/paths.yaml#/getApprovals"
   /plugins/drafting/save:
     $ref: "plugins/drafting/paths.yaml#/save"
   /plugins/drafting/set-tone:
@@ -165,6 +167,12 @@ components:
       $ref: "plugins/drafting/schemas.yaml#/DraftingResetRequest"
     DraftingResetResponse:
       $ref: "plugins/drafting/schemas.yaml#/DraftingResetResponse"
+    DraftingGetApprovalsRequest:
+      $ref: "plugins/drafting/schemas.yaml#/DraftingGetApprovalsRequest"
+    DraftingApproval:
+      $ref: "plugins/drafting/schemas.yaml#/DraftingApproval"
+    DraftingGetApprovalsResponse:
+      $ref: "plugins/drafting/schemas.yaml#/DraftingGetApprovalsResponse"
     DraftingSaveRequest:
       $ref: "plugins/drafting/schemas.yaml#/DraftingSaveRequest"
     DraftingSaveResponse:

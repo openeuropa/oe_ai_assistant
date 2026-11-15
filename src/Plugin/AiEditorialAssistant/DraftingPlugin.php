@@ -22,6 +22,7 @@ use Drupal\oe_ai_assistant\Exception\DraftingTemplateException;
 use Drupal\oe_ai_assistant\Exception\DraftingToneException;
 use Drupal\oe_ai_assistant\Plugin\AiAssistantPluginBase;
 use Drupal\oe_ai_assistant\Plugin\NeuronTool\RequestDraftNeuronTool;
+use Drupal\oe_ai_assistant\Plugin\NeuronTool\SaveDraftNeuronTool;
 use Drupal\oe_ai_assistant\Service\AiEditorialContextInterface;
 use Drupal\oe_ai_assistant\Service\DraftAssemblerInterface;
 use Drupal\oe_ai_assistant\Service\DraftSaverInterface;
@@ -30,8 +31,12 @@ use Drupal\oe_ai_assistant\Service\PreviewRendererInterface;
 use Drupal\oe_ai_assistant\Response\SseResponse;
 use Drupal\oe_ai_assistant\Plugin\NeuronWorkflow\Editorial\Events\ChatTurnEvent;
 use Drupal\oe_ai_assistant\Utility\MessageContent;
+use NeuronAI\Agent\Interrupt\ApprovalRequest;
 use NeuronAI\Workflow\Executor\ExecutionRequest;
+use NeuronAI\Workflow\Persistence\PersistenceInterface;
 use NeuronAI\Workflow\Streaming\ProtocolEvent;
+use NeuronAI\Workflow\WorkflowEngine;
+use NeuronAI\Workflow\WorkflowStatus;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\File\Exception\FileException;
 use Symfony\Component\HttpFoundation\Request;
@@ -127,6 +132,13 @@ class DraftingPlugin extends AiAssistantPluginBase {
   protected NeuronToolManagerInterface $toolManager;
 
   /**
+   * The store of the suspended runs, which holds the waiting saves.
+   *
+   * @var \NeuronAI\Workflow\Persistence\PersistenceInterface
+   */
+  protected PersistenceInterface $persistence;
+
+  /**
    * {@inheritdoc}
    */
   public static function create(
@@ -145,6 +157,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
     $instance->draftAssembler = $container->get(DraftAssemblerInterface::class);
     $instance->previewRenderer = $container->get(PreviewRendererInterface::class);
     $instance->toolManager = $container->get(NeuronToolManagerInterface::class);
+    $instance->persistence = $container->get(PersistenceInterface::class);
     return $instance;
   }
 
@@ -155,6 +168,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
     return parent::getActionMap() + [
       'chat' => $this->chat(...),
       'get-messages' => $this->getMessages(...),
+      'get-approvals' => $this->getApprovals(...),
       'reset' => $this->reset(...),
       'save' => $this->save(...),
       'set-tone' => $this->setTone(...),
@@ -173,6 +187,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
   public function getRequestSchemas(): array {
     return parent::getRequestSchemas() + [
       'get-messages' => 'GetMessagesRequest',
+      'get-approvals' => 'DraftingGetApprovalsRequest',
       'reset' => 'DraftingResetRequest',
       'save' => 'DraftingSaveRequest',
       'set-tone' => 'DraftingSetToneRequest',
@@ -506,6 +521,12 @@ class DraftingPlugin extends AiAssistantPluginBase {
         && !isset($settled[(string) $tool['callId']]),
     );
 
+    // The dialog is what shows a waiting save.
+    $unsettled = array_filter(
+      $unsettled,
+      static fn (array $tool): bool => $tool['name'] !== SaveDraftNeuronTool::TOOL_ID,
+    );
+
     return array_map(
       static function (array $tool): array {
         $call = ['function' => ['name' => (string) $tool['name']]];
@@ -577,6 +598,49 @@ class DraftingPlugin extends AiAssistantPluginBase {
   }
 
   /**
+   * Lists the tool calls that wait for the editor's decision.
+   *
+   * @param \Symfony\Component\HttpFoundation\Request $request
+   *   The incoming request.
+   *
+   * @return array
+   *   An array with an `approvals` list of {callId, name, inputs} entries.
+   */
+  public function getApprovals(Request $request): array {
+    $session = $this->loadSession($this->decodeJsonBody($request));
+    if (!$session instanceof ContentCreationSessionInterface) {
+      throw new ActionException('invalid_request', 'The editorial session does not support drafting.', 400);
+    }
+
+    return ['approvals' => $this->pendingApprovals($session)];
+  }
+
+  /**
+   * Lists the calls the session's suspended run waits on.
+   *
+   * @param \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $session
+   *   The session.
+   *
+   * @return array
+   *   One {callId, name, inputs} entry per call with no decision yet.
+   */
+  private function pendingApprovals(AiEditorialSessionInterface $session): array {
+    $run = (new WorkflowEngine($this->persistence))->inspect($session->editorialThread());
+    if ($run?->status !== WorkflowStatus::Suspended || !$run->interrupt instanceof ApprovalRequest) {
+      return [];
+    }
+
+    $approvals = [];
+    foreach ($run->interrupt->getActions() as $action) {
+      if ($action->isPending()) {
+        $approvals[] = ['callId' => $action->id, 'name' => $action->name, 'inputs' => $action->inputs];
+      }
+    }
+
+    return $approvals;
+  }
+
+  /**
    * Resets the conversation for the session.
    *
    * @param \Symfony\Component\HttpFoundation\Request $request
@@ -587,6 +651,8 @@ class DraftingPlugin extends AiAssistantPluginBase {
    */
   public function reset(Request $request): array {
     $session = $this->loadSession($this->decodeJsonBody($request));
+    // A save that waits for the editor belongs to the conversation.
+    (new WorkflowEngine($this->persistence))->abandon($session->editorialThread());
     $session->deleteConversation();
     return ['status' => 'ok'];
   }

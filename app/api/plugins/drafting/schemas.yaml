@@ -38,6 +38,44 @@ DraftingResetResponse:
       type: string
       description: Confirmation status (e.g. "ok").
 
+DraftingGetApprovalsRequest:
+  type: object
+  required:
+    - sessionId
+  properties:
+    sessionId:
+      type: string
+      description: The editorial session whose waiting calls to list.
+
+DraftingApproval:
+  type: object
+  description: A tool call that waits for the editor's decision.
+  required:
+    - callId
+    - name
+    - inputs
+  properties:
+    callId:
+      type: string
+      description: The id of the tool call.
+    name:
+      type: string
+      description: The machine name of the tool.
+    inputs:
+      type: object
+      additionalProperties: true
+      description: The arguments the model gave the tool.
+
+DraftingGetApprovalsResponse:
+  type: object
+  required:
+    - approvals
+  properties:
+    approvals:
+      type: array
+      items:
+        $ref: "../../openapi.yaml#/components/schemas/DraftingApproval"
+
 DraftingSaveRequest:
   type: object
   description: >

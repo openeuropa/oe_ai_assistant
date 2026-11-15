@@ -12,6 +12,8 @@ use Drupal\oe_ai_assistant\Neuron\Chat\Messages\EditorialAssistantMessage;
 use Drupal\oe_ai_assistant_test\Plugin\AiProvider\MockAiProvider;
 use Drupal\Tests\oe_ai_assistant\Traits\ExistingSiteConfigBackupTrait;
 use Drupal\user\UserInterface;
+use NeuronAI\Workflow\Persistence\PersistenceInterface;
+use NeuronAI\Workflow\WorkflowEngine;
 use weitzman\DrupalTestTraits\ExistingSiteBase;
 
 /**
@@ -44,7 +46,7 @@ abstract class DraftingPluginTestBase extends ExistingSiteBase {
    *
    * @var array
    */
-  protected $existingEntityIds = [];
+  protected array $existingEntityIds = [];
 
   /**
    * The CSRF token of the logged-in browser session, fetched on demand.
@@ -91,6 +93,8 @@ abstract class DraftingPluginTestBase extends ExistingSiteBase {
     // Remove any conversation messages persisted against the test sessions.
     foreach ($this->sessions as $session) {
       $session->deleteConversation();
+      (new WorkflowEngine(\Drupal::service(PersistenceInterface::class)))
+        ->abandon($session->editorialThread());
     }
 
     MockAiProvider::reset();
