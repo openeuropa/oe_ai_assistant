@@ -10,9 +10,9 @@
  * DraftingRoot is a thin shell that renders DraftingChat.
  */
 
-import { AssistantRuntimeProvider } from "@assistant-ui/react";
+import { AssistantRuntimeProvider, useAuiState } from "@assistant-ui/react";
 import { FileText, LayoutTemplate, Loader2, Megaphone } from "lucide-react";
-import { type ReactNode, useCallback } from "react";
+import { type ComponentProps, type ReactNode, useCallback } from "react";
 import { CardSelectPane } from "@/components/ui/card-select-pane";
 import type { PaneTabItem } from "@/components/ui/pane-tabs";
 import { getConfig } from "@/config";
@@ -89,6 +89,26 @@ function VersionedDraftPreview({
       createdAt={activeDraft?.createdAt ?? null}
       isSaved={savedVersions.has(version)}
       onSave={onSave}
+    />
+  );
+}
+
+/**
+ * Asks about the first waiting call, and only while the thread is idle.
+ *
+ * A decision runs as a turn, and a second decision started while that turn
+ * still streams would abort it. The next call shows once the reply is done.
+ * Reads the thread, so it must render inside the AssistantRuntimeProvider.
+ */
+function GatedApprovalDialog({
+  approval,
+  onDecide,
+}: ComponentProps<typeof ApprovalDialog>) {
+  const isRunning = useAuiState((s) => s.thread.isRunning);
+  return (
+    <ApprovalDialog
+      approval={isRunning ? null : approval}
+      onDecide={onDecide}
     />
   );
 }
@@ -333,7 +353,7 @@ function DraftingChat() {
       <DraftContentToolUI />
       <EditorialEventToolUI />
 
-      <ApprovalDialog approval={approvals[0] ?? null} onDecide={decide} />
+      <GatedApprovalDialog approval={approvals[0] ?? null} onDecide={decide} />
 
       {/* Feed the shell exit guard with this plugin's pending state.
           Panel saves report themselves via useCardSelection. */}
