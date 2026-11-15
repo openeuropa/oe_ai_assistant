@@ -313,6 +313,26 @@ class DraftingPluginApprovalTest extends DraftingPluginTestBase {
   }
 
   /**
+   * Tests that a user without access to the session cannot read or decide.
+   */
+  public function testOtherUserCannotReadOrDecideTheWaitingSave(): void {
+    $session = $this->sessionWithDraft();
+    $this->askToSave($session, 1);
+    $owner = $this->loggedInUser;
+
+    $this->loginUser($this->createUser(['use oe ai assistant', 'create oe_news content']));
+
+    $result = $this->httpPost('/api/ai/plugins/drafting/get-approvals', ['sessionId' => $session->id()]);
+    $this->assertSame(403, $result['status']);
+    $this->assertSame(403, $this->decide($session, 'call_save', 'approve')['status']);
+    $this->assertSame([], $this->newNodeIds());
+
+    // The owner still sees the save waiting.
+    $this->loginUser($owner);
+    $this->assertCount(1, $this->getApprovals($session));
+  }
+
+  /**
    * Tests that a malformed decision is refused and the save keeps waiting.
    */
   #[DataProvider('malformedApprovals')]

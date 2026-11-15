@@ -29,9 +29,10 @@ use Symfony\Component\DependencyInjection\Attribute\Autowire;
 /**
  * Serves one turn of an editorial session.
  *
- * The turn is a cycle: the agent answers the editor or asks for a draft, the
- * run writes the draft, and the agent reads it and answers. A node ends when
- * it returns an event, so the three steps are three nodes and the run records
+ * A turn starts from the editor's message or from the editor's decision on a
+ * waiting save. Either way the agent answers or asks for a draft. When it
+ * asks, the run writes the draft and the agent reads it and answers. A node
+ * ends when it returns an event, so each step is a node and the run records
  * each one. A failure then repeats one step rather than the whole turn.
  */
 #[NeuronWorkflow(
