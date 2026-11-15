@@ -10,9 +10,11 @@
 
 import type { ToolCallMessagePartProps } from "@assistant-ui/react";
 import { makeAssistantToolUI } from "@assistant-ui/react";
-import { Check, Loader2, PenLine, Wrench, X } from "lucide-react";
+import { Check, Loader2, PenLine, Save, Wrench, X } from "lucide-react";
+import type { ReactNode } from "react";
 import type { DraftRunStatus } from "../draft-result";
 import { parseDraftResult } from "../draft-result";
+import { parseSaveResult } from "../save-result";
 import { useSavedVersions } from "../saved-versions";
 import { useSessionDrafts } from "../session-drafts";
 import { setDraftingState, useDraftingSlice } from "../store";
@@ -27,6 +29,7 @@ export function ToolCallCard({
   detail,
   status,
   onClick,
+  children,
 }: {
   icon: typeof PenLine;
   label: string;
@@ -34,6 +37,8 @@ export function ToolCallCard({
   status: { type: string };
   /** When set, the card becomes a button that runs this on click. */
   onClick?: () => void;
+  /** Extra content under the detail line, such as a link. */
+  children?: ReactNode;
 }) {
   const isRunning = status.type === "running";
   const isError = status.type === "incomplete" || status.type === "error";
@@ -63,6 +68,7 @@ export function ToolCallCard({
           <span className="text-sm font-medium text-gray-700">{label}</span>
         </div>
         {detail && <p className="mt-0.5 text-xs text-gray-400">{detail}</p>}
+        {children}
       </div>
     </>
   );
@@ -169,6 +175,54 @@ export const DraftContentToolUI = makeAssistantToolUI<
           }
         />
       </>
+    );
+  },
+});
+
+/** UI for the drafting_save_draft tool call. */
+export const SaveDraftToolUI = makeAssistantToolUI<
+  { version: number },
+  unknown
+>({
+  toolName: "drafting_save_draft",
+  render: ({ result, status, toolName }) => {
+    const label = toolLabel(toolName);
+    // A cancel arrives with no result, so only a call still running can
+    // wait for one. Once the reply ends, no result reads as cancelled.
+    if (result === undefined && status.type === "running") {
+      return <ToolCallCard icon={Save} label={label} status={status} />;
+    }
+    const saved = parseSaveResult(result);
+    if (saved.status === "saved") {
+      return (
+        <ToolCallCard
+          icon={Save}
+          label={label}
+          detail="Saved as an unpublished revision"
+          status={{ type: "complete" }}
+        >
+          <a
+            href={saved.previewUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="mt-1 inline-block text-xs text-blue-600 hover:underline"
+          >
+            Open preview
+          </a>
+        </ToolCallCard>
+      );
+    }
+    return (
+      <ToolCallCard
+        icon={Save}
+        label={label}
+        detail={
+          saved.status === "not_saved"
+            ? `Not saved: ${saved.error}`
+            : "Cancelled"
+        }
+        status={{ type: "incomplete" }}
+      />
     );
   },
 });

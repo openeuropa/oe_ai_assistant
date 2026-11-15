@@ -29,6 +29,7 @@ import { PaneBusyOverlay } from "./components/pane-busy-overlay";
 import {
   DraftContentToolUI,
   EditorialEventToolUI,
+  SaveDraftToolUI,
 } from "./components/tool-uis";
 import { useDraftingDocuments } from "./hooks/use-drafting-documents";
 import { useDraftingRuntime } from "./hooks/use-drafting-runtime";
@@ -352,6 +353,7 @@ function DraftingChat() {
       {/* Register tool call renderers so they appear inline in chat. */}
       <DraftContentToolUI />
       <EditorialEventToolUI />
+      <SaveDraftToolUI />
 
       <GatedApprovalDialog approval={approvals[0] ?? null} onDecide={decide} />
 
