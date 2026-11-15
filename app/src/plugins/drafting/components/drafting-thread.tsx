@@ -185,6 +185,9 @@ function AssistantText({
     }
 
     const clearTimers = new WeakMap<HTMLElement, number>();
+    // Only set on the first failure of a run, so a retry within the flag
+    // window restores Streamdown's own title rather than the failure text.
+    const originalTitles = new WeakMap<HTMLElement, string>();
 
     const onClick = (event: MouseEvent) => {
       const button = (event.target as HTMLElement).closest(
@@ -193,9 +196,13 @@ function AssistantText({
       if (!(button instanceof HTMLElement) || !navigator.clipboard) {
         return;
       }
-      const code = button
+      const codeBody = button
         .closest('[data-streamdown="code-block"]')
-        ?.querySelector('[data-streamdown="code-block-body"]')?.textContent;
+        ?.querySelector('[data-streamdown="code-block-body"]');
+      // innerText, not textContent: each line renders as its own block-level
+      // span, and textContent ignores that layout, running every line
+      // together with no separator.
+      const code = codeBody instanceof HTMLElement ? codeBody.innerText : "";
       if (!code) {
         return;
       }
@@ -203,6 +210,8 @@ function AssistantText({
         const pending = clearTimers.get(button);
         if (pending !== undefined) {
           window.clearTimeout(pending);
+        } else {
+          originalTitles.set(button, button.title);
         }
         button.classList.add("streamdown-copy-failed");
         button.title = "Copy failed: the browser refused clipboard access.";
@@ -210,7 +219,13 @@ function AssistantText({
           button,
           window.setTimeout(() => {
             button.classList.remove("streamdown-copy-failed");
-            button.removeAttribute("title");
+            // React won't restore a prop value it thinks is unchanged, so
+            // the button's accessible name is put back by hand.
+            const original = originalTitles.get(button);
+            if (original !== undefined) {
+              button.title = original;
+            }
+            originalTitles.delete(button);
             clearTimers.delete(button);
           }, COPY_FAILED_FLAG_MS),
         );
