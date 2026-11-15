@@ -13,6 +13,7 @@ describe("drafting plugin state", () => {
     expect(draftingSliceConfig.initialState).toEqual({
       runs: {},
       activeCallIds: [],
+      approvals: [],
       draftedFields: {},
       liveDrafts: {},
       selections: {},
@@ -25,6 +26,7 @@ describe("drafting plugin state", () => {
       draftingSliceConfig.partialize?.({
         runs: {},
         activeCallIds: [],
+        approvals: [],
         draftedFields: {
           title: { label: "Title", value: "Draft", type: "string" },
         },
@@ -53,6 +55,7 @@ describe("drafting plugin state", () => {
     expect(getDraftingState()).toEqual({
       runs: {},
       activeCallIds: [],
+      approvals: [],
       draftedFields: {},
       liveDrafts: {},
       selections: {},

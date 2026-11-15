@@ -22,6 +22,8 @@ import type {
   DraftingSetToneResponse,
 } from "../types";
 
+/** A tool call that waits for the editor to confirm it. */
+export type DraftingApproval = components["schemas"]["DraftingApproval"];
 type DraftingCategory = components["schemas"]["DraftingDocumentCategory"];
 type DraftingDocument = components["schemas"]["DraftingDocument"];
 type DraftingAddDocumentResponse =
@@ -67,6 +69,23 @@ export async function resetDrafting(): Promise<void> {
   if (!response.ok) {
     throw new Error(`Drafting reset error: ${response.status}`);
   }
+}
+
+/** Lists the tool calls of the current session that wait for the editor. */
+export async function getDraftingApprovals(): Promise<DraftingApproval[]> {
+  const response = await apiFetch(
+    `${getConfig().apiBaseUrl}/plugins/drafting/get-approvals`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sessionId: getConfig().sessionId }),
+    },
+  );
+  if (!response.ok) {
+    throw new Error(`Drafting get-approvals error: ${response.status}`);
+  }
+  const body = (await response.json()) as { approvals: DraftingApproval[] };
+  return body.approvals;
 }
 
 /** Sets the selected tone for drafting on the current session. */

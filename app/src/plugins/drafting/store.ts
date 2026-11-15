@@ -12,6 +12,7 @@ import {
   setPluginState,
   usePluginSlice,
 } from "@/store/plugin-store";
+import type { DraftingApproval } from "./api/drafting-api";
 import type {
   DraftContext,
   DraftGroupProgress,
@@ -63,6 +64,8 @@ export interface DraftingSliceState {
    * of that run update. Empty between turns.
    */
   activeCallIds: string[];
+  /** The tool calls that wait for the editor to confirm them. */
+  approvals: DraftingApproval[];
   /** Raw drafted field values keyed by field machine name. */
   draftedFields: Record<string, unknown>;
   /**
@@ -85,6 +88,7 @@ export const draftingSliceConfig: PluginSliceConfig<DraftingSliceState> = {
   initialState: {
     runs: {},
     activeCallIds: [],
+    approvals: [],
     draftedFields: {},
     liveDrafts: {},
     selections: {},

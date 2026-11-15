@@ -18,6 +18,7 @@ import type { PaneTabItem } from "@/components/ui/pane-tabs";
 import { getConfig } from "@/config";
 import { useAppStore } from "@/store";
 import { saveDraftRevision } from "./api/drafting-api";
+import { ApprovalDialog } from "./components/approval-dialog";
 import { ArtifactPane } from "./components/artifact-pane";
 import { ContentTable } from "./components/content-table";
 import { DocumentsPanel } from "./components/documents-panel";
@@ -37,7 +38,7 @@ import { useReportPendingWork } from "./hooks/use-report-pending-work";
 import { useReportParticipants } from "./participants";
 import { useSavedVersions } from "./saved-versions";
 import { useSessionDrafts } from "./session-drafts";
-import { getDraftingState, useDraftingSlice } from "./store";
+import { getDraftingState, setDraftingState, useDraftingSlice } from "./store";
 import { appendEventToThread } from "./thread-events";
 
 /** Bridges the runtime's pending state into the shell store. */
@@ -101,7 +102,7 @@ function VersionedDraftPreview({
  * export/import. This avoids any remount or network refetch after a save.
  */
 function DraftingChat() {
-  const { draftedFields, runs, activeCallIds, activeDraftVersion } =
+  const { draftedFields, runs, activeCallIds, activeDraftVersion, approvals } =
     useDraftingSlice();
   const setPendingWork = useAppStore((s) => s.setPendingWork);
   const runtime = useDraftingRuntime();
@@ -158,6 +159,26 @@ function DraftingChat() {
       version,
     );
   }, [appendEvent, setPendingWork]);
+
+  /**
+   * Sends the editor's decision on a waiting call as a turn of its own. The
+   * call leaves the list first, so the dialog closes at once.
+   */
+  const decide = useCallback(
+    (callId: string, decision: "approve" | "reject") => {
+      setDraftingState({
+        approvals: getDraftingState().approvals.filter(
+          (approval) => approval.callId !== callId,
+        ),
+      });
+      const { messages } = runtime.thread.getState();
+      runtime.thread.startRun({
+        parentId: messages[messages.length - 1]?.id ?? null,
+        runConfig: { custom: { approval: { callId, decision } } },
+      });
+    },
+    [runtime],
+  );
 
   /** Determine what the artifact pane shows. */
   function renderArtifact() {
@@ -311,6 +332,8 @@ function DraftingChat() {
       {/* Register tool call renderers so they appear inline in chat. */}
       <DraftContentToolUI />
       <EditorialEventToolUI />
+
+      <ApprovalDialog approval={approvals[0] ?? null} onDecide={decide} />
 
       {/* Feed the shell exit guard with this plugin's pending state.
           Panel saves report themselves via useCardSelection. */}

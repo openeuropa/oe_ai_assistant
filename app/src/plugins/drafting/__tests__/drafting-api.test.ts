@@ -3,6 +3,7 @@ import { resetCsrfToken } from "@/api/csrf-token";
 import { setConfig } from "@/config";
 import {
   addDraftingDocument,
+  getDraftingApprovals,
   listDraftingDocuments,
   removeDraftingDocument,
   resetDrafting,
@@ -40,6 +41,45 @@ describe("drafting api", () => {
         body: JSON.stringify({ sessionId: "session-42" }),
       }),
     );
+  });
+
+  it("posts the sessionId to get-approvals and returns the approvals", async () => {
+    const approvals = [
+      { callId: "call_1", name: "drafting_save_draft", inputs: { version: 2 } },
+    ];
+    const fetchMock = vi
+      .fn()
+      .mockImplementation(async (url: string) =>
+        url === "/session/token"
+          ? { ok: true, text: async () => "csrf-42" }
+          : { ok: true, json: async () => ({ approvals }) },
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(getDraftingApprovals()).resolves.toEqual(approvals);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/plugins/drafting/get-approvals",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ sessionId: "session-42" }),
+      }),
+    );
+  });
+
+  it("throws when get-approvals fails", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockImplementation(async (url: string) =>
+          url === "/session/token"
+            ? { ok: true, text: async () => "csrf-42" }
+            : { ok: false, status: 500 },
+        ),
+    );
+
+    await expect(getDraftingApprovals()).rejects.toThrow();
   });
 
   it("posts the template and sessionId to set-template", async () => {
