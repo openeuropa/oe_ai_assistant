@@ -17,6 +17,7 @@ use Drupal\oe_ai_assistant\Neuron\Chat\History\EditorialMessageStore;
 use Drupal\oe_ai_assistant\Neuron\Chat\Messages\Stream\Adapters\PatchedVercelAIAdapter;
 use Drupal\oe_ai_assistant\Plugin\NeuronWorkflow\Editorial\EditorialResources;
 use Drupal\oe_ai_assistant\Plugin\NeuronWorkflow\Editorial\Events\ChatTurnEvent;
+use Drupal\oe_ai_assistant\Plugin\NeuronWorkflow\Editorial\Nodes\ApprovalNode;
 use Drupal\oe_ai_assistant\Plugin\NeuronWorkflow\Editorial\Nodes\ChatNode;
 use Drupal\oe_ai_assistant\Plugin\NeuronWorkflow\Editorial\Nodes\ChatResumeNode;
 use Drupal\oe_ai_assistant\Plugin\NeuronWorkflow\Editorial\Nodes\DraftContentNode;
@@ -69,13 +70,14 @@ final class EditorialWorkflow extends NeuronWorkflowPluginBase {
     // resolves its resources once the stream is open, and building the agent
     // is what reads the session's template and the provider. So a stale
     // template becomes a clean 400 while the endpoint can still answer one.
-    // The node that resumes the turn also needs the instance that suspended.
+    // The nodes that resume the turn also need the instance that suspended.
     $agent = $this->agents->createAgent('editorial', ['session' => $this->session()]);
 
     return [
       new ChatNode($agent),
       new DraftContentNode(),
       new ChatResumeNode($agent),
+      new ApprovalNode($agent),
     ];
   }
 
@@ -111,8 +113,8 @@ final class EditorialWorkflow extends NeuronWorkflowPluginBase {
   /**
    * {@inheritdoc}
    *
-   * A caller hands the editor's message over on the start event, so this is
-   * only the fallback for a run nobody gave one to.
+   * A caller hands the editor's message or decision over on the start
+   * event, so this is only the fallback for a run nobody gave one to.
    */
   protected function startEvent(): Event {
     return new ChatTurnEvent('');

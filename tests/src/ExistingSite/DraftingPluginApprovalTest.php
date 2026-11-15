@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\oe_ai_assistant\ExistingSite;
 
+use Drupal\node\Entity\Node;
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
 use Drupal\oe_ai_assistant_test\Plugin\AiProvider\MockAiProvider;
 use Drupal\oe_ai_assistant_test\Plugin\AiProvider\MockResponse;
@@ -12,6 +13,7 @@ use NeuronAI\Workflow\Persistence\PersistenceInterface;
 use NeuronAI\Workflow\WorkflowEngine;
 use NeuronAI\Workflow\WorkflowRunSnapshot;
 use NeuronAI\Workflow\WorkflowStatus;
+use PHPUnit\Framework\Attributes\DataProvider;
 
 /**
  * Integration tests for saving a draft through the gated agent tool.
@@ -165,13 +167,166 @@ class DraftingPluginApprovalTest extends DraftingPluginTestBase {
   }
 
   /**
-   * Creates a logged-in user's session holding "Draft 1".
+   * Tests that an approved save writes an unpublished revision.
    */
-  private function sessionWithDraft(): AiEditorialSessionInterface {
-    $user = $this->createUser([
-      'use oe ai assistant',
-      'create oe_news content',
+  public function testApprovedSaveWritesAnUnpublishedRevision(): void {
+    $session = $this->sessionWithDraft();
+    $this->askToSave($session, 1);
+    MockAiProvider::enqueue(new MockResponse(text: 'Draft 1 is saved.'));
+
+    $decided = $this->decide($session, 'call_save', 'approve');
+
+    $this->assertSame(200, $decided['status']);
+    $result = json_decode($this->toolOutput($decided['events'], 'call_save')['output'], TRUE);
+    $this->assertSame(1, $result['version']);
+    $node = Node::load($result['nodeId']);
+    $this->assertSame('Draft one', $node->getTitle());
+    $this->assertSame('draft', $node->get('moderation_state')->value);
+    $this->assertSame([], $this->getApprovals($session));
+    $calls = array_merge([], ...array_column($this->getMessages($session), 'toolCalls'));
+    $this->assertSame(['drafting_save_draft'], array_column(array_column($calls, 'function'), 'name'));
+    $this->assertSame(['version', 'nodeId', 'previewUrl'], array_keys($calls[0]['result']));
+  }
+
+  /**
+   * Tests that a cancelled save writes nothing and a later one waits again.
+   */
+  public function testCancelledSaveWritesNothingAndAsksAgainLater(): void {
+    $session = $this->sessionWithDraft();
+    $this->askToSave($session, 1);
+    MockAiProvider::enqueue(new MockResponse(text: 'Draft 1 is not saved.'));
+
+    $decided = $this->decide($session, 'call_save', 'reject');
+
+    $this->assertSame(200, $decided['status']);
+    $this->assertSame([], $this->newNodeIds());
+    $this->assertSame([], $this->getApprovals($session));
+    $log = MockAiProvider::getCallLog();
+    $this->assertStringContainsString('The editor cancelled this save.', json_encode(end($log)['messages']));
+
+    $this->askToSave($session, 1, 'call_save_2');
+    $this->assertSame('call_save_2', $this->getApprovals($session)[0]['callId']);
+  }
+
+  /**
+   * Tests that an approved save the editor may not write answers why.
+   */
+  public function testApprovedSaveWithoutPermissionAnswersTheSaversMessage(): void {
+    $session = $this->sessionWithDraft(['use oe ai assistant']);
+    $this->askToSave($session, 1);
+    MockAiProvider::enqueue(new MockResponse(text: 'Draft 1 is not saved.'));
+
+    $decided = $this->decide($session, 'call_save', 'approve');
+
+    $this->assertSame(200, $decided['status']);
+    $this->assertSame(
+      ['version' => 1, 'error' => 'You do not have permission to create oe_news content.'],
+      json_decode($this->toolOutput($decided['events'], 'call_save')['output'], TRUE),
+    );
+    $this->assertSame([], $this->newNodeIds());
+  }
+
+  /**
+   * Tests that two saves of one reply wait for a decision each.
+   */
+  public function testTwoSavesInOneReplyAreDecidedOneByOne(): void {
+    $session = $this->sessionWithDraft();
+    $this->seedDraft($session, 2, ['title' => [['value' => 'Draft two']]]);
+    MockAiProvider::enqueue(new MockResponse(
+      toolCalls: [
+        [
+          'id' => 'call_a',
+          'type' => 'function',
+          'function' => ['name' => 'drafting_save_draft', 'arguments' => json_encode(['version' => 1])],
+        ],
+        [
+          'id' => 'call_b',
+          'type' => 'function',
+          'function' => ['name' => 'drafting_save_draft', 'arguments' => json_encode(['version' => 2])],
+        ],
+      ],
+    ));
+    $asked = $this->httpPost('/api/ai/plugins/drafting/chat', [
+      'message' => 'Save drafts 1 and 2.',
+      'sessionId' => $session->id(),
     ]);
+    $this->assertEquals(200, $asked['status'], substr($asked['body'], 0, 500));
+    $this->assertSame(['call_a', 'call_b'], array_column($this->getApprovals($session), 'callId'));
+
+    $this->assertSame(200, $this->decide($session, 'call_a', 'approve')['status']);
+    $this->assertSame([], $this->newNodeIds());
+    $this->assertSame(['call_b'], array_column($this->getApprovals($session), 'callId'));
+
+    MockAiProvider::enqueue(new MockResponse(text: 'Draft 1 is saved, draft 2 is not.'));
+    $this->assertSame(200, $this->decide($session, 'call_b', 'reject')['status']);
+    $nodeIds = $this->newNodeIds();
+    $this->assertCount(1, $nodeIds);
+    $this->assertSame('Draft one', Node::load(reset($nodeIds))->getTitle());
+  }
+
+  /**
+   * Tests that a second decision on the same save is refused.
+   */
+  public function testRepeatedDecisionIsRefused(): void {
+    $session = $this->sessionWithDraft();
+    $this->askToSave($session, 1);
+    MockAiProvider::enqueue(new MockResponse(text: 'Draft 1 is saved.'));
+    $this->assertSame(200, $this->decide($session, 'call_save', 'approve')['status']);
+
+    $this->assertSame(400, $this->decide($session, 'call_save', 'approve')['status']);
+    $this->assertCount(1, $this->newNodeIds());
+  }
+
+  /**
+   * Tests that a decision after a reset is refused.
+   */
+  public function testDecisionAfterResetIsRefused(): void {
+    $session = $this->sessionWithDraft();
+    $this->askToSave($session, 1);
+    $this->httpPost('/api/ai/plugins/drafting/reset', ['sessionId' => $session->id()]);
+
+    $this->assertSame(400, $this->decide($session, 'call_save', 'approve')['status']);
+    $this->assertSame([], $this->newNodeIds());
+  }
+
+  /**
+   * Tests that a malformed decision is refused and the save keeps waiting.
+   */
+  #[DataProvider('malformedApprovals')]
+  public function testMalformedApprovalIsRefused(mixed $approval): void {
+    $session = $this->sessionWithDraft();
+    $this->askToSave($session, 1);
+
+    $result = $this->httpPost('/api/ai/plugins/drafting/chat', [
+      'sessionId' => $session->id(),
+      'runConfig' => ['custom' => ['approval' => $approval]],
+    ]);
+
+    $this->assertSame(400, $result['status'], substr($result['body'], 0, 500));
+    $this->assertSame('invalid_request', json_decode($result['body'], TRUE)['code']);
+    $this->assertSame(['call_save'], array_column($this->getApprovals($session), 'callId'));
+  }
+
+  /**
+   * Decisions the chat action refuses.
+   */
+  public static function malformedApprovals(): array {
+    return [
+      'unknown decision' => [['callId' => 'call_save', 'decision' => 'maybe']],
+      'no call id' => [['decision' => 'approve']],
+      'not an object' => ['approve'],
+      'unknown call' => [['callId' => 'call_nope', 'decision' => 'approve']],
+    ];
+  }
+
+  /**
+   * Creates a logged-in user's session holding "Draft 1".
+   *
+   * @param array $permissions
+   *   The permissions of the user.
+   */
+  private function sessionWithDraft(array $permissions = ['use oe ai assistant', 'create oe_news content']): AiEditorialSessionInterface {
+    $user = $this->createUser($permissions);
     $this->loginUser($user);
     $session = $this->createSession($user);
     $this->seedDraft($session, 1, ['title' => [['value' => 'Draft one']]]);
@@ -218,6 +373,28 @@ class DraftingPluginApprovalTest extends DraftingPluginTestBase {
     $this->assertEquals(200, $result['status'], substr($result['body'], 0, 500));
 
     return $this->parseSseEvents($result['body']);
+  }
+
+  /**
+   * Posts the editor's decision on a waiting save to chat.
+   *
+   * @param \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $session
+   *   The session whose save to decide.
+   * @param string $callId
+   *   The id of the waiting call.
+   * @param string $decision
+   *   Either approve or reject.
+   *
+   * @return array
+   *   The response 'status' and its parsed SSE 'events'.
+   */
+  private function decide(AiEditorialSessionInterface $session, string $callId, string $decision): array {
+    $result = $this->httpPost('/api/ai/plugins/drafting/chat', [
+      'sessionId' => $session->id(),
+      'runConfig' => ['custom' => ['approval' => ['callId' => $callId, 'decision' => $decision]]],
+    ]);
+
+    return ['status' => $result['status'], 'events' => $this->parseSseEvents($result['body'])];
   }
 
   /**

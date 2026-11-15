@@ -7,18 +7,42 @@
 DraftingChatRequest:
   type: object
   required:
-    - message
     - sessionId
   properties:
     message:
       type: string
-      description: The user's drafting prompt or instruction.
+      description: >
+        The user's drafting prompt or instruction. Required unless the
+        request carries a decision.
     sessionId:
       type: string
       description: >
         The editorial session that hosts the conversation. The backend
         derives the target content type and access from the session and
         persists every turn against it.
+    runConfig:
+      type: object
+      properties:
+        custom:
+          type: object
+          properties:
+            approval:
+              type: object
+              description: >
+                The editor's decision on a call that waits for one. The turn
+                resumes that call instead of answering a message.
+              required:
+                - callId
+                - decision
+              properties:
+                callId:
+                  type: string
+                  description: The id of the waiting call.
+                decision:
+                  type: string
+                  enum:
+                    - approve
+                    - reject
 
 DraftingResetRequest:
   type: object

@@ -29,6 +29,7 @@ use Drupal\oe_ai_assistant\Service\DraftSaverInterface;
 use Drupal\oe_ai_assistant\Service\DraftingSchemaProviderInterface;
 use Drupal\oe_ai_assistant\Service\PreviewRendererInterface;
 use Drupal\oe_ai_assistant\Response\SseResponse;
+use Drupal\oe_ai_assistant\Plugin\NeuronWorkflow\Editorial\Events\ApprovalDecisionEvent;
 use Drupal\oe_ai_assistant\Plugin\NeuronWorkflow\Editorial\Events\ChatTurnEvent;
 use Drupal\oe_ai_assistant\Utility\MessageContent;
 use NeuronAI\Agent\Interrupt\ApprovalRequest;
@@ -308,25 +309,44 @@ class DraftingPlugin extends AiAssistantPluginBase {
    * SSE channel built alongside it frames and writes every protocol event.
    * This action only carries that stream to the HTTP response.
    *
+   * A body with runConfig.custom.approval carries the editor's decision on a
+   * call that waits for one, and the turn resumes that call instead of
+   * answering a message.
+   *
    * @param \Symfony\Component\HttpFoundation\Request $request
-   *   The incoming request with a chat message body.
+   *   The incoming request with a chat message or a decision.
    *
    * @return \Symfony\Component\HttpFoundation\Response
    *   An SSE streaming response.
    */
   public function chat(Request $request): Response {
     $body = $this->decodeJsonBody($request);
-    $message = $this->extractUserMessage($body);
-
-    if (empty($message)) {
-      throw new ActionException(
-        'invalid_request', 'Message is required.', 400,
-      );
-    }
-
     $session = $this->loadSession($body);
     if (!$session instanceof ContentCreationSessionInterface) {
       throw new ActionException('invalid_request', 'The editorial session does not support drafting.', 400);
+    }
+
+    // The client also sends the earlier messages, so a decision reads none.
+    $approval = $body['runConfig']['custom']['approval'] ?? NULL;
+    if ($approval !== NULL) {
+      if (!is_array($approval)
+        || !is_string($approval['callId'] ?? NULL)
+        || !in_array($approval['decision'] ?? NULL, ['approve', 'reject'], TRUE)) {
+        throw new ActionException('invalid_request', 'The decision must name a call and be approve or reject.', 400);
+      }
+      if (!in_array($approval['callId'], array_column($this->pendingApprovals($session), 'callId'), TRUE)) {
+        throw new ActionException('invalid_request', 'No save waits for that decision.', 400);
+      }
+      $event = new ApprovalDecisionEvent($approval['callId'], $approval['decision']);
+    }
+    else {
+      $message = $this->extractUserMessage($body);
+      if (empty($message)) {
+        throw new ActionException(
+          'invalid_request', 'Message is required.', 400,
+        );
+      }
+      $event = new ChatTurnEvent($message);
     }
 
     $channel = new SseChannel();
@@ -353,12 +373,12 @@ class DraftingPlugin extends AiAssistantPluginBase {
     }
 
     $logger = $this->logger;
-    $response = new SseResponse(static function () use ($workflow, $message, $channel, $logger): void {
+    $response = new SseResponse(static function () use ($workflow, $event, $channel, $logger): void {
       try {
         // A run executes while its generator is advanced, and run() is what
         // advances it to the end. The channel wrote every event as the run
         // produced it, so nothing here reads what it answers.
-        $workflow->run(ExecutionRequest::start(new ChatTurnEvent($message)));
+        $workflow->run(ExecutionRequest::start($event));
       }
       catch (\Throwable $e) {
         // Never let an exception escape into the open SSE stream: Drupal's
@@ -481,9 +501,9 @@ class DraftingPlugin extends AiAssistantPluginBase {
   /**
    * The tool calls of a row, as the editor's transcript renders them.
    *
-   * A settled call carries its result. A run suspends on an approval-gated
-   * call, which has no result yet, and the editor sees a running card. A call
-   * a later row settled belongs to that row.
+   * A settled call carries its result. An unsettled save waits for the
+   * editor's decision, which the dialog shows, so it draws no card. A call a
+   * later row settled belongs to that row.
    *
    * @param \Drupal\ai_neuron\Entity\NeuronMessageInterface $row
    *   The stored message.
@@ -518,13 +538,8 @@ class DraftingPlugin extends AiAssistantPluginBase {
       // The key sits in a text column, so check its shape too.
       static fn ($tool): bool => is_array($tool)
         && isset($tool['name'], $tool['callId'])
-        && !isset($settled[(string) $tool['callId']]),
-    );
-
-    // The dialog is what shows a waiting save.
-    $unsettled = array_filter(
-      $unsettled,
-      static fn (array $tool): bool => $tool['name'] !== SaveDraftNeuronTool::TOOL_ID,
+        && !isset($settled[(string) $tool['callId']])
+        && $tool['name'] !== SaveDraftNeuronTool::TOOL_ID,
     );
 
     return array_map(

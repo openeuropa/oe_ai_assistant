@@ -449,10 +449,21 @@ export interface components {
             }[];
         };
         DraftingChatRequest: {
-            /** @description The user's drafting prompt or instruction. */
-            message: string;
+            /** @description The user's drafting prompt or instruction. Required unless the request carries a decision. */
+            message?: string;
             /** @description The editorial session that hosts the conversation. The backend derives the target content type and access from the session and persists every turn against it. */
             sessionId: string;
+            runConfig?: {
+                custom?: {
+                    /** @description The editor's decision on a call that waits for one. The turn resumes that call instead of answering a message. */
+                    approval?: {
+                        /** @description The id of the waiting call. */
+                        callId: string;
+                        /** @enum {string} */
+                        decision: "approve" | "reject";
+                    };
+                };
+            };
         };
         DraftingResetRequest: {
             /** @description The editorial session whose conversation to reset. */
