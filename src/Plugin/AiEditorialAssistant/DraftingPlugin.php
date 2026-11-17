@@ -441,6 +441,9 @@ class DraftingPlugin extends AiAssistantPluginBase {
               'bundle' => $context['bundle'],
               // The context definition is string-typed; NULL becomes ''.
               'template' => $context['template'] ?? '',
+              // Pin the session so the schema can advertise only its own
+              // publishable assets as attachable.
+              'session_id' => (string) $session->id(),
             ],
             // Pin the session so the model cannot read another session's
             // draft history.

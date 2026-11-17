@@ -178,7 +178,7 @@ abstract class DocumentRepositoryBase implements DocumentRepositoryInterface {
    * @return \Drupal\media\MediaInterface[]
    *   The document media entities.
    */
-  private function loadAll(AiEditorialSessionInterface $session): array {
+  protected function loadAll(AiEditorialSessionInterface $session): array {
     if ($session->isNew()) {
       return [];
     }
@@ -202,7 +202,7 @@ abstract class DocumentRepositoryBase implements DocumentRepositoryInterface {
    * @throws \Drupal\oe_ai_assistant\Exception\ActionException
    *   When the document does not exist or belongs elsewhere.
    */
-  private function loadOwned(AiEditorialSessionInterface $session, string $documentId): MediaInterface {
+  protected function loadOwned(AiEditorialSessionInterface $session, string $documentId): MediaInterface {
     $media = $this->entityTypeManager->getStorage('media')->load($documentId);
     if ($media instanceof MediaInterface
       && $media->bundle() === $this->getMediaBundle()
@@ -407,7 +407,7 @@ abstract class DocumentRepositoryBase implements DocumentRepositoryInterface {
    * @return \Drupal\file\FileInterface|null
    *   The referenced file, if available.
    */
-  private function getFile(MediaInterface $media): ?FileInterface {
+  protected function getFile(MediaInterface $media): ?FileInterface {
     if (!$media->hasField($this->getSourceField())) {
       return NULL;
     }

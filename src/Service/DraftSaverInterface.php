@@ -44,7 +44,8 @@ interface DraftSaverInterface {
    *     only).
    *   - 'forbidden' (403) if the user lacks create permission (first save)
    *     or update access on the session's node (later saves).
-   *   - 'invalid_request' (400) if $templateId cannot be resolved.
+   *   - 'invalid_request' (400) if $templateId cannot be resolved, or if a
+   *     written media reference is not a publishable asset of the session.
    *   - 'invalid_payload' (400) if the entity builder rejects
    *     the payload.
    */

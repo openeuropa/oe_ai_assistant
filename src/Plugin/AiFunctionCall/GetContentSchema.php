@@ -10,7 +10,11 @@ use Drupal\ai\Attribute\FunctionCall;
 use Drupal\ai\Base\FunctionCallBase;
 use Drupal\ai\Service\FunctionCalling\FunctionCallInterface;
 use Drupal\ai\Service\FunctionCalling\StructuredExecutableFunctionCallInterface;
+use Drupal\Core\Entity\EntityTypeManagerInterface;
+use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
+use Drupal\oe_ai_assistant\Service\Drafting\PublishableAssetRepository;
 use Drupal\oe_ai_assistant\Service\DraftingSchemaProviderInterface;
+use Drupal\oe_ai_assistant\Service\PublishableAssetSchemaEnricherInterface;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 
@@ -45,6 +49,12 @@ use Symfony\Component\DependencyInjection\ContainerInterface;
       description: new TranslatableMarkup("The drafting template id to restrict the schema to."),
       required: FALSE,
     ),
+    'session_id' => new ContextDefinition(
+      data_type: 'string',
+      label: new TranslatableMarkup("Editorial session id"),
+      description: new TranslatableMarkup("The editorial session whose publishable assets may be attached. Pinned server-side."),
+      required: FALSE,
+    ),
   ],
 )]
 class GetContentSchema extends FunctionCallBase implements StructuredExecutableFunctionCallInterface {
@@ -55,6 +65,27 @@ class GetContentSchema extends FunctionCallBase implements StructuredExecutableF
    * @var \Drupal\oe_ai_assistant\Service\DraftingSchemaProviderInterface
    */
   protected DraftingSchemaProviderInterface $schemaProvider;
+
+  /**
+   * The publishable-asset schema enricher.
+   *
+   * @var \Drupal\oe_ai_assistant\Service\PublishableAssetSchemaEnricherInterface
+   */
+  protected PublishableAssetSchemaEnricherInterface $assetSchemaEnricher;
+
+  /**
+   * The publishable asset repository.
+   *
+   * @var \Drupal\oe_ai_assistant\Service\Drafting\PublishableAssetRepository
+   */
+  protected PublishableAssetRepository $publishableAssetRepository;
+
+  /**
+   * The entity type manager.
+   *
+   * @var \Drupal\Core\Entity\EntityTypeManagerInterface
+   */
+  protected EntityTypeManagerInterface $entityTypeManager;
 
   /**
    * The module logger channel.
@@ -83,6 +114,9 @@ class GetContentSchema extends FunctionCallBase implements StructuredExecutableF
       $container, $configuration, $plugin_id, $plugin_definition
     );
     $instance->schemaProvider = $container->get(DraftingSchemaProviderInterface::class);
+    $instance->assetSchemaEnricher = $container->get(PublishableAssetSchemaEnricherInterface::class);
+    $instance->publishableAssetRepository = $container->get(PublishableAssetRepository::class);
+    $instance->entityTypeManager = $container->get('entity_type.manager');
     $instance->moduleLogger = $container->get('logger.channel.oe_ai_assistant');
     return $instance;
   }
@@ -99,6 +133,7 @@ class GetContentSchema extends FunctionCallBase implements StructuredExecutableF
     // The context is string-typed; treat an unset or empty value as NULL so
     // the provider auto-selects a template.
     $templateId = ($values['template'] ?? '') !== '' ? (string) $values['template'] : NULL;
+    $sessionId = (string) ($values['session_id'] ?? '');
 
     if (empty($bundle)) {
       $this->output = ['error' => 'Bundle is required.'];
@@ -106,7 +141,16 @@ class GetContentSchema extends FunctionCallBase implements StructuredExecutableF
     }
 
     try {
-      $this->output = $this->schemaProvider->groups($entityTypeId, $bundle, $templateId);
+      $groups = $this->schemaProvider->groups($entityTypeId, $bundle, $templateId);
+      // Pin the session's publishable assets onto the matching media fields,
+      // so the LLM may only attach an asset the editor uploaded here. The
+      // save-side guard enforces the same scope; this advertises it.
+      $this->output = $this->assetSchemaEnricher->enrich(
+        $groups,
+        $entityTypeId,
+        $bundle,
+        $this->resolveSessionAssetIds($sessionId),
+      );
     }
     catch (\InvalidArgumentException $e) {
       // Invalid input (e.g. a bad template id): report it to the LLM.
@@ -117,6 +161,29 @@ class GetContentSchema extends FunctionCallBase implements StructuredExecutableF
       $this->moduleLogger->error('get_content_schema failed: @message', ['@message' => $e->getMessage()]);
       $this->output = ['error' => 'The content schema could not be loaded.'];
     }
+  }
+
+  /**
+   * Resolves a session's publishable-asset ids from the pinned session id.
+   *
+   * @param string $sessionId
+   *   The fixed session_id context value; empty when none was pinned.
+   *
+   * @return int[]
+   *   The media ids of the session's publishable assets, empty when the id
+   *   is absent or does not resolve to an editorial session.
+   */
+  private function resolveSessionAssetIds(string $sessionId): array {
+    if ($sessionId === '') {
+      return [];
+    }
+    $session = $this->entityTypeManager
+      ->getStorage('ai_editorial_session')
+      ->load($sessionId);
+    if (!$session instanceof AiEditorialSessionInterface) {
+      return [];
+    }
+    return $this->publishableAssetRepository->getSessionAssetIds($session);
   }
 
   /**
