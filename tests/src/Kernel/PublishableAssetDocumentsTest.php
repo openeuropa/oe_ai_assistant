@@ -8,6 +8,8 @@ use Drupal\file\FileInterface;
 use Drupal\media\MediaInterface;
 use Drupal\oe_ai_assistant\Plugin\AiAssistantPluginManager;
 use Drupal\oe_ai_assistant\Service\Drafting\DocumentExtractionProcessorInterface;
+use Drupal\oe_ai_assistant\Service\Drafting\EditorialContext;
+use Drupal\oe_ai_assistant\Service\Drafting\PublishableAssetRepository;
 use PHPUnit\Framework\Attributes\Group;
 use Symfony\Component\HttpFoundation\JsonResponse;
 
@@ -169,6 +171,98 @@ class PublishableAssetDocumentsTest extends AiEditorialSessionKernelTestBase {
     );
     $this->assertTrue($media->get(DocumentExtractionProcessorInterface::EXTRACT_FIELD)->isEmpty());
     $this->assertTrue($media->get(DocumentExtractionProcessorInterface::SUMMARY_FIELD)->isEmpty());
+  }
+
+  /**
+   * Tests that the drafting context exposes the session's asset references.
+   *
+   * Builds the editorial context the way DraftingPlugin::chat() does: the
+   * publishable asset repository describes the session, the descriptors feed
+   * EditorialContext, and its publishable assets prompt is what reaches the
+   * model. Asserts both assets (with their descriptions) are exposed and that
+   * adding or removing one is reflected on the next build, which is the
+   * ticket's acceptance scenario.
+   */
+  public function testDraftingContextExposesAssetReferences(): void {
+    $owner = $this->createUser();
+    $this->container->get('current_user')->setAccount($owner);
+    $session = $this->createSession($owner);
+    $plugin = $this->container->get(AiAssistantPluginManager::class)
+      ->createInstance('drafting');
+    $repository = $this->container->get(PublishableAssetRepository::class);
+
+    // Upload two assets and give each a description, standing in for the
+    // extraction pipeline so the test stays about injection, not extraction.
+    $firstId = $plugin->executeAction(
+      'add-document',
+      $this->createUploadRequest((string) $session->id(), 'publishable', 'report.txt', 'First asset.'),
+    )['document']['id'];
+    $this->setAssetSummary($firstId, 'Quarterly emissions report.');
+    $secondId = $plugin->executeAction(
+      'add-document',
+      $this->createUploadRequest((string) $session->id(), 'publishable', 'summit.txt', 'Second asset.'),
+    )['document']['id'];
+    $this->setAssetSummary($secondId, 'Photo of the summit opening.');
+
+    // Both assets, with their descriptions, reach the model.
+    $prompt = $this->buildPublishableAssetsPrompt($repository, $session);
+    $this->assertStringContainsString('### Asset ' . $firstId, $prompt);
+    $this->assertStringContainsString('Description: Quarterly emissions report.', $prompt);
+    $this->assertStringContainsString('### Asset ' . $secondId, $prompt);
+    $this->assertStringContainsString('Description: Photo of the summit opening.', $prompt);
+
+    // Removing one asset is reflected on the next build.
+    $plugin->executeAction('remove-document', $this->createJsonRequest([
+      'sessionId' => (string) $session->id(),
+      'category' => 'publishable',
+      'documentId' => $secondId,
+    ]));
+    $prompt = $this->buildPublishableAssetsPrompt($repository, $session);
+    $this->assertStringContainsString('### Asset ' . $firstId, $prompt);
+    $this->assertStringNotContainsString('### Asset ' . $secondId, $prompt);
+    $this->assertStringNotContainsString('Photo of the summit opening.', $prompt);
+
+    // Adding a third asset is reflected on the next build.
+    $thirdId = $plugin->executeAction(
+      'add-document',
+      $this->createUploadRequest((string) $session->id(), 'publishable', 'map.txt', 'Third asset.'),
+    )['document']['id'];
+    $this->setAssetSummary($thirdId, 'Regional funding map.');
+    $prompt = $this->buildPublishableAssetsPrompt($repository, $session);
+    $this->assertStringContainsString('### Asset ' . $firstId, $prompt);
+    $this->assertStringContainsString('### Asset ' . $thirdId, $prompt);
+    $this->assertStringContainsString('Description: Regional funding map.', $prompt);
+  }
+
+  /**
+   * Builds the publishable assets prompt from a live describe() of a session.
+   *
+   * Mirrors the DraftingPlugin wiring: the repository describes the session's
+   * assets and the descriptors feed an EditorialContext whose prompt is what
+   * the plugin appends to the system prompt.
+   */
+  private function buildPublishableAssetsPrompt(PublishableAssetRepository $repository, $session): string {
+    $context = new EditorialContext(
+      toneId: NULL,
+      toneLabel: NULL,
+      tonePrompt: NULL,
+      templateId: NULL,
+      templateLabel: NULL,
+      contextDocuments: [],
+      publishableAssets: $repository->describe($session),
+    );
+
+    return $context->toPublishableAssetsPrompt();
+  }
+
+  /**
+   * Writes a description onto a publishable asset media entity.
+   */
+  private function setAssetSummary(string $mediaId, string $summary): void {
+    $media = $this->container->get('entity_type.manager')->getStorage('media')->load($mediaId);
+    $this->assertInstanceOf(MediaInterface::class, $media);
+    $media->set(DocumentExtractionProcessorInterface::SUMMARY_FIELD, $summary);
+    $media->save();
   }
 
   /**

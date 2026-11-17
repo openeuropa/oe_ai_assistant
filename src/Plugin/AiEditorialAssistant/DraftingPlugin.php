@@ -357,15 +357,25 @@ class DraftingPlugin extends AiAssistantPluginBase {
     $router = $this->aiAgentManager->createInstance('oe_drafting_router');
 
     // Build the system prompt with schema groups appended, then the
-    // context documents: the router needs them to answer questions about
-    // the material and to warn about documents still being processed. The
-    // tone stays out of the router prompt; it only steers the sub-agents.
+    // context documents and the publishable assets: the router needs the
+    // documents to answer questions about the material and to warn about
+    // documents still being processed, and the assets so it knows which
+    // material can be embedded in the output. The tone stays out of the
+    // router prompt; it only steers the sub-agents.
     $systemPrompt = $this->buildSystemPrompt(
       $router->getSystemPrompt(), $context
     );
     $contextDocumentsPrompt = $editorialContext->toContextDocumentsPrompt();
     if ($contextDocumentsPrompt !== '') {
       $systemPrompt .= "\n\n" . $contextDocumentsPrompt . "\n";
+    }
+    // Append the publishable assets as references the model can place in the
+    // output. They are distinct from context documents: material to embed,
+    // not background reading. Injected on every turn, so the block reflects
+    // the latest add/remove.
+    $publishableAssetsPrompt = $editorialContext->toPublishableAssetsPrompt();
+    if ($publishableAssetsPrompt !== '') {
+      $systemPrompt .= "\n\n" . $publishableAssetsPrompt . "\n";
     }
 
     // Collect tools: get_content_schema from agent config +
@@ -944,8 +954,8 @@ class DraftingPlugin extends AiAssistantPluginBase {
    * source of tone wording; an invalid stored tone is a 400 exactly as the
    * former router prompt injection made it. Labels are captured at request
    * time so the provenance snapshot survives later renames. Context
-   * documents come from their repository with their extracts, so the
-   * prompts reflect the latest state on every call.
+   * documents and publishable assets come from their repositories with the
+   * latest state, so the prompts reflect every CRUD change on each call.
    *
    * @param \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $session
    *   The session hosting the conversation.
@@ -976,6 +986,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
       templateId: $template?->id(),
       templateLabel: $template?->label(),
       contextDocuments: $this->contextDocumentRepository->describe($session),
+      publishableAssets: $this->publishableAssetRepository->describe($session),
     );
   }
 
