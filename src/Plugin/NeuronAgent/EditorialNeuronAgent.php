@@ -6,18 +6,12 @@ namespace Drupal\oe_ai_assistant\Plugin\NeuronAgent;
 
 use Drupal\ai_neuron\Attribute\NeuronAgent;
 use Drupal\ai_neuron\NeuronStreamAdapter;
-use Drupal\ai_neuron\Providers\ProviderFactoryInterface;
-use Drupal\ai_neuron\Tools\NeuronToolManagerInterface;
-use Drupal\ai_neuron\Workflow\NeuronWorkflowManagerInterface;
-use Drupal\Core\Logger\LoggerChannelInterface;
 use Drupal\Core\Plugin\Context\EntityContextDefinition;
 use Drupal\Core\StringTranslation\TranslatableMarkup;
 use Drupal\oe_ai_assistant\Entity\Bundle\ContentCreationSessionInterface;
 use Drupal\oe_ai_assistant\Neuron\Agent\EditorialAgent;
 use Drupal\oe_ai_assistant\Neuron\Chat\Messages\Stream\Adapters\PatchedVercelAIAdapter;
-use NeuronAI\Agent\Agent;
 use NeuronAI\Workflow\Streaming\Adapter\StreamAdapterInterface;
-use Symfony\Component\DependencyInjection\Attribute\Autowire;
 
 /**
  * The agent that talks to the editor and drafts through tools.
@@ -45,35 +39,6 @@ final class EditorialNeuronAgent extends EditorialSessionAgentBase {
    * The id this agent is registered under.
    */
   public const string PLUGIN_ID = 'editorial';
-
-  public function __construct(
-    array $configuration,
-    $plugin_id,
-    $plugin_definition,
-    ProviderFactoryInterface $providers,
-    NeuronToolManagerInterface $toolManager,
-    private readonly NeuronWorkflowManagerInterface $workflows,
-    #[Autowire(service: 'logger.channel.oe_ai_assistant')]
-    private readonly LoggerChannelInterface $logger,
-  ) {
-    parent::__construct($configuration, $plugin_id, $plugin_definition, $providers, $toolManager);
-  }
-
-  /**
-   * {@inheritdoc}
-   *
-   * DeferredCallsNode starts a workflow to write a draft, and the base class
-   * assembles the agent with nothing that builds one. So the manager and the
-   * session are handed over here, once the agent exists.
-   */
-  public function getNeuron(): Agent {
-    $agent = parent::getNeuron();
-    assert($agent instanceof EditorialAgent);
-    $session = $this->getContextValue('session');
-    assert($session instanceof ContentCreationSessionInterface);
-
-    return $agent->forEditorialSession($this->workflows, $this->logger, $session);
-  }
 
   /**
    * {@inheritdoc}

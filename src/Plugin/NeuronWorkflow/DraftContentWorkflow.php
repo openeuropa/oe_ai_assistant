@@ -22,9 +22,9 @@ use Symfony\Component\DependencyInjection\Attribute\Autowire;
 /**
  * Writes one draft of a session, and stores it under the next version.
  *
- * DeferredCallsNode starts this to answer a drafting_draft_content call. Each
- * field group is drafted by the draft_group workflow, and the editor watches
- * the groups fill in as this run reports them.
+ * WorkflowToolNode runs this instead of executing drafting_draft_content.
+ * Each field group is drafted by the draft_group workflow, and the editor
+ * watches the groups fill in as this run reports them.
  */
 #[NeuronWorkflow(
   id: 'draft_content',
