@@ -12,6 +12,8 @@ use Drupal\oe_ai_assistant\Service\AiEditorialContext;
 use Drupal\oe_ai_assistant\Service\AiEditorialContextInterface;
 use Drupal\oe_ai_assistant\Service\Drafting\ContextDocumentRepository;
 use Drupal\oe_ai_assistant\Service\Drafting\DocumentRepositoryInterface;
+use Drupal\oe_ai_assistant_test\Plugin\AiProvider\MockAiProvider;
+use Drupal\oe_ai_assistant_test\Plugin\AiProvider\MockResponse;
 use Drupal\taxonomy\Entity\Term;
 use Drupal\taxonomy\TermInterface;
 
@@ -21,6 +23,18 @@ use Drupal\taxonomy\TermInterface;
  * @group oe_ai_assistant
  */
 class EditorialContextToolsTest extends AiEditorialSessionKernelTestBase {
+
+  /**
+   * {@inheritdoc}
+   */
+  protected function setUp(): void {
+    parent::setUp();
+    $this->enableModules(['oe_ai_assistant_test']);
+    $this->config('ai.settings')
+      ->set('default_providers', ['chat' => ['provider_id' => 'mock_ai', 'model_id' => 'mock-model']])
+      ->save();
+    MockAiProvider::reset();
+  }
 
   /**
    * The editorial agent carries the two context tools and tells the model so.
@@ -78,14 +92,12 @@ class EditorialContextToolsTest extends AiEditorialSessionKernelTestBase {
   }
 
   /**
-   * Tests that the context tool reports the tone label, never its guidelines.
+   * Tests that the context tool reports the tone, never its guidelines text.
    *
-   * The summary is reported, never the extracted text: that's what
-   * context_read_document is for. The guidelines text is held back for the
-   * reason stated in GetEditorialContextNeuronTool::__invoke(): a tool
-   * result is saved as a thread row, and a guidelines text baked in here
-   * would go stale, with nothing marking it as such, if the editor later
-   * changed the tone.
+   * The guidelines text never reaches the sub-agent's system prompt or its
+   * answer: context_read_document, not this tool, is what reads a
+   * document's full text, and tonePrompt() on EditorialSessionAgentBase -
+   * not this tool - is what carries tone guidelines to a drafter.
    */
   public function testContextToolReportsTheToneLabelNeverItsGuidelines(): void {
     $session = $this->stubbedSession([
@@ -96,17 +108,16 @@ class EditorialContextToolsTest extends AiEditorialSessionKernelTestBase {
       self::document('1', 'done', 'Full text of one.', 'Summary one.'),
     ]);
 
-    $result = json_decode($this->contextTool($session), TRUE);
+    MockAiProvider::enqueue(new MockResponse('Formal tone; one document attached, summarised below.'));
+    $answer = json_decode($this->contextTool($session, 'What tone and documents are set up?'), TRUE);
 
-    $this->assertSame(
-      ['id' => '3', 'label' => 'Formal', 'description' => ''],
-      $result['tone']['selected'],
-    );
-    $this->assertNull($result['template']['selected']);
-    $this->assertCount(1, $result['documents']);
-    $this->assertSame('Summary one.', $result['documents'][0]['summary']);
-    $this->assertArrayNotHasKey('extract', $result['documents'][0]);
-    $this->assertStringNotContainsString('Full text of one.', $this->contextTool($session));
+    $this->assertSame('Formal tone; one document attached, summarised below.', $answer['answer']);
+
+    $prompt = MockAiProvider::getCallLog()[0]['system_prompt'];
+    $this->assertStringContainsString('- Selected: Formal', $prompt);
+    $this->assertStringContainsString('Summary one.', $prompt);
+    $this->assertStringNotContainsString('Full text of one.', $prompt);
+    $this->assertStringNotContainsString('Use professional, institutional language.', $prompt);
   }
 
   /**
@@ -115,15 +126,18 @@ class EditorialContextToolsTest extends AiEditorialSessionKernelTestBase {
   public function testContextToolReportsNothingSetUp(): void {
     $session = $this->stubbedSession(NULL, []);
 
-    $result = json_decode($this->contextTool($session), TRUE);
+    MockAiProvider::enqueue(new MockResponse('Nothing is set up yet.'));
+    $answer = json_decode($this->contextTool($session, 'What is set up?'), TRUE);
 
-    $this->assertNull($result['tone']['selected']);
-    $this->assertNull($result['template']['selected']);
-    $this->assertSame([], $result['documents']);
+    $this->assertSame('Nothing is set up yet.', $answer['answer']);
+
+    $prompt = MockAiProvider::getCallLog()[0]['system_prompt'];
+    $this->assertSame(2, substr_count($prompt, '- Selected: none selected'));
+    $this->assertStringContainsString('Documents: none attached.', $prompt);
   }
 
   /**
-   * Tests that the tool reports the tones and templates on offer.
+   * Tests that the tool answers from the tones and templates on offer.
    *
    * The session only records what the editor picked, so without the
    * options the agent can't answer "which tones can I choose from?". The
@@ -145,28 +159,22 @@ class EditorialContextToolsTest extends AiEditorialSessionKernelTestBase {
     $session = $this->createSession($this->createUser());
     $session->set('tone', $formal->id())->set('template', 'news_brief')->save();
 
-    $payload = $this->contextTool($session);
-    $result = json_decode($payload, TRUE);
+    MockAiProvider::enqueue(new MockResponse('Formal is selected; Plain is also available, and so is News brief.'));
+    $answer = json_decode($this->contextTool($session, 'Which tones and templates can I pick from?'), TRUE);
 
-    $labels = array_column($result['tone']['options'], 'label');
-    sort($labels);
-    $this->assertSame(['Formal', 'Plain'], $labels);
-    $this->assertSame([
-      'id' => (string) $formal->id(),
-      'label' => 'Formal',
-      'description' => 'Short, institutional sentences.',
-    ], $result['tone']['selected']);
-    $this->assertContains($result['tone']['selected'], $result['tone']['options']);
+    $this->assertSame('Formal is selected; Plain is also available, and so is News brief.', $answer['answer']);
 
-    $this->assertSame([
-      ['id' => 'news_brief', 'label' => 'News brief', 'description' => 'A short news item.'],
-    ], $result['template']['options']);
-    $this->assertSame($result['template']['options'][0], $result['template']['selected']);
+    $prompt = MockAiProvider::getCallLog()[0]['system_prompt'];
+    $this->assertStringContainsString('- Selected: Formal - Short, institutional sentences.', $prompt);
+    $this->assertStringContainsString('  - Formal: Short, institutional sentences.', $prompt);
+    $this->assertStringContainsString('  - Plain: Everyday words and short sentences.', $prompt);
+    $this->assertStringContainsString('- Selected: News brief - A short news item.', $prompt);
+    $this->assertStringContainsString('  - News brief: A short news item.', $prompt);
 
     // An option names and describes a tone. The guidelines text stays out
-    // of the payload, for the selected tone as much as for the others.
-    $this->assertStringNotContainsString('Use professional, institutional language.', $payload);
-    $this->assertStringNotContainsString('Write plainly.', $payload);
+    // of the prompt, for the selected tone as much as for the others.
+    $this->assertStringNotContainsString('Use professional, institutional language.', $prompt);
+    $this->assertStringNotContainsString('Write plainly.', $prompt);
   }
 
   /**
@@ -238,15 +246,15 @@ class EditorialContextToolsTest extends AiEditorialSessionKernelTestBase {
   }
 
   /**
-   * Builds the context tool bound to the session, and calls it.
+   * Builds the context tool bound to the session, and asks it one question.
    */
-  private function contextTool(AiEditorialSessionInterface $session): string {
+  private function contextTool(AiEditorialSessionInterface $session, string $question): string {
     $tool = $this->container->get(NeuronToolManagerInterface::class)->createTool(
       'context_get_editorial_context',
       ['session' => $session],
     );
 
-    return (string) $tool();
+    return (string) $tool($question);
   }
 
   /**
