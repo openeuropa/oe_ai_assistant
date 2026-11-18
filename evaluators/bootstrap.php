@@ -24,15 +24,6 @@ $autoloader = require __DIR__ . '/../vendor/autoload.php';
 // else and the evaluators fail with file-not-found.
 chdir(__DIR__ . '/../web');
 
-// The CLI looks for evaluation.php in the working directory as well, so
-// after the chdir() it looks in web/, which is gitignored and can't hold
-// our tracked config. This throwaway shim sends the lookup back to the
-// real evaluation.php at the module root.
-$shim = __DIR__ . '/../web/evaluation.php';
-if (!file_exists($shim)) {
-  file_put_contents($shim, "<?php\n\nreturn require __DIR__ . '/../evaluation.php';\n");
-}
-
 $request = Request::createFromGlobals();
 $kernel = DrupalKernel::createFromRequest($request, $autoloader, 'prod');
 $kernel->boot();
