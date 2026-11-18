@@ -5,31 +5,27 @@ declare(strict_types=1);
 namespace Drupal\Tests\oe_ai_assistant\Kernel;
 
 use Drupal\ai_neuron\Agent\NeuronAgentManagerInterface;
-use Drupal\ai_neuron\Workflow\NeuronWorkflowManagerInterface;
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
 use Drupal\oe_ai_assistant\Neuron\Chat\History\EditorialMessageStore;
 use Drupal\oe_ai_assistant\Plugin\AiAssistantPluginManager;
-use Drupal\oe_ai_assistant\Plugin\NeuronWorkflow\Editorial\Events\ChatTurnEvent;
 use Drupal\oe_ai_assistant\Service\DraftingSchemaProvider;
 use Drupal\oe_ai_assistant\Service\DraftingSchemaProviderInterface;
 use Drupal\oe_ai_assistant_test\Plugin\AiProvider\MockAiProvider;
 use Drupal\oe_ai_assistant_test\Plugin\NeuronTool\FailingNeuronTool;
 use Drupal\oe_ai_assistant_test\Plugin\AiProvider\MockResponse;
-use NeuronAI\Agent\AgentInterface;
+use NeuronAI\Agent\AgentState;
+use NeuronAI\Chat\Messages\ToolCallMessage;
 use NeuronAI\Chat\Messages\UserMessage;
-use NeuronAI\Workflow\Executor\ExecutionRequest;
-use NeuronAI\Workflow\WorkflowState;
-use NeuronAI\Workflow\WorkflowStatus;
+use NeuronAI\Tools\ToolCall;
 use Psr\Log\AbstractLogger;
 use Symfony\Component\HttpFoundation\Request;
 
 /**
  * Drives one whole turn of an editorial session.
  *
- * The turn runs the workflow the chat endpoint runs, with the same start
- * event, so this covers the agent, the deferred call, the node that drafts
- * and the group drafter together. The endpoint adds the request, the channel
- * and the response around it.
+ * The turn runs the agent the chat endpoint runs, so this covers the model,
+ * the deferred call, the node that drafts and the group drafter together.
+ * The endpoint adds the request, the channel and the response around it.
  *
  * @group oe_ai_assistant
  */
@@ -73,7 +69,7 @@ class DraftingTurnTest extends AiEditorialSessionKernelTestBase {
 
     $state = $this->turn($session, 'Please draft it, go ahead.');
 
-    $this->assertSame('Draft 1 is ready.', $state->get('answer'));
+    $this->assertSame('Draft 1 is ready.', $state->getMessage()?->getContent());
 
     // One call drafted the whole set, and its result names the draft without
     // carrying any of its content back into the conversation.
@@ -468,21 +464,20 @@ class DraftingTurnTest extends AiEditorialSessionKernelTestBase {
   /**
    * A turn whose process died while drafting does not block the next one.
    *
-   * A run left suspended makes every later turn of the session fail. The
-   * next turn drops that run and answers the open call, so the conversation
+   * A call nothing answered leaves the model a question with no reply. The
+   * next turn answers it before it asks anything, so the conversation
    * continues.
    */
   public function testTurnAfterTheDraftDiedAnswersAgain(): void {
     $session = $this->createSession($this->createUser());
 
     MockAiProvider::reset();
-    $agent = $this->deadDraft($session);
-    $this->assertSame(WorkflowStatus::Suspended, $agent->inspect()?->status);
+    $this->deadDraft($session);
 
     MockAiProvider::enqueue(new MockResponse(text: 'The draft did not finish.'));
     $state = $this->turn($session, 'Is the draft ready?');
 
-    $this->assertSame('The draft did not finish.', $state->get('answer'));
+    $this->assertSame('The draft did not finish.', $state->getMessage()?->getContent());
 
     // An open call leaves the model a question nothing replied to. The new
     // turn answers the call, so the model reads a settled turn.
@@ -667,24 +662,22 @@ class DraftingTurnTest extends AiEditorialSessionKernelTestBase {
   }
 
   /**
-   * Leaves the agent on the call that asks for a draft.
+   * Leaves the conversation on a drafting call nothing answered.
    *
-   * Nothing writes the draft and nothing submits the result. A process that
-   * dies while it drafts a group leaves the session in this state.
+   * ToolNode writes the call to the conversation before anything drafts, so
+   * a process that dies while it drafts leaves the call stored with no
+   * result. A draft suspends nothing, so that state is reached by writing
+   * the rows rather than by interrupting a run.
    *
    * @param \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $session
    *   The session the turn belongs to.
-   *
-   * @return \NeuronAI\Agent\AgentInterface
-   *   The agent that asked.
    */
-  private function deadDraft(AiEditorialSessionInterface $session): AgentInterface {
-    MockAiProvider::enqueue($this->toolCall());
-    $agent = $this->container->get(NeuronAgentManagerInterface::class)
-      ->createAgent('editorial', ['session' => $session]);
-    iterator_to_array($agent->stream(new UserMessage('Please draft it, go ahead.')), FALSE);
-
-    return $agent;
+  private function deadDraft(AiEditorialSessionInterface $session): void {
+    $store = $this->container->get(EditorialMessageStore::class)->forSession($session);
+    $store->append($session->editorialThread(), new UserMessage('Please draft it, go ahead.'));
+    $store->append($session->editorialThread(), new ToolCallMessage(NULL, [
+      new ToolCall('drafting_draft_content', 'call_dead', [], NULL, TRUE),
+    ]));
   }
 
   /**
@@ -724,13 +717,13 @@ class DraftingTurnTest extends AiEditorialSessionKernelTestBase {
    * @param string $message
    *   What the editor sent.
    *
-   * @return \NeuronAI\Workflow\WorkflowState
+   * @return \NeuronAI\Agent\AgentState
    *   The state of the finished run.
    */
-  private function turn(AiEditorialSessionInterface $session, string $message): WorkflowState {
-    return $this->container->get(NeuronWorkflowManagerInterface::class)
-      ->createWorkflow('editorial_turn', [], ['session' => $session])
-      ->run(ExecutionRequest::start(new ChatTurnEvent($message)));
+  private function turn(AiEditorialSessionInterface $session, string $message): AgentState {
+    return $this->container->get(NeuronAgentManagerInterface::class)
+      ->createAgent('editorial', ['session' => $session])
+      ->chat(new UserMessage($message));
   }
 
   /**
