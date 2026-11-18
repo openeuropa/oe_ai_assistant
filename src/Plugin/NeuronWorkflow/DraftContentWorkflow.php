@@ -58,8 +58,8 @@ final class DraftContentWorkflow extends NeuronWorkflowPluginBase {
   /**
    * {@inheritdoc}
    *
-   * Neuron serializes a node when a run pauses, so the node is given the call
-   * id rather than this plugin to read it off.
+   * A plugin is not the node it builds, so what the node needs of the run's
+   * context is handed to it here.
    */
   protected function nodes(): array {
     return [new DraftContentNode((string) $this->getContextValue('call'))];

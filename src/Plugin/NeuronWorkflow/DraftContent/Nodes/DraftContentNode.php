@@ -6,7 +6,7 @@ namespace Drupal\oe_ai_assistant\Plugin\NeuronWorkflow\DraftContent\Nodes;
 
 use Drupal\Component\Utility\Crypt;
 use Drupal\oe_ai_assistant\Exception\SchemaRetriesExhaustedException;
-use Drupal\oe_ai_assistant\Neuron\Agent\Nodes\DeferredCallsNode;
+use Drupal\oe_ai_assistant\Neuron\DeferredWorkflowInterface;
 use Drupal\oe_ai_assistant\Neuron\Chat\Messages\EditorialAssistantMessage;
 use Drupal\oe_ai_assistant\Plugin\NeuronWorkflow\DraftContent\DraftContentResources;
 use Drupal\oe_ai_assistant\Plugin\NeuronWorkflow\DraftContent\Events\DraftContentRequestEvent;
@@ -221,7 +221,7 @@ final class DraftContentNode extends Node {
       $result = ['error' => $message, 'group' => $failed, 'version' => $version];
     }
 
-    $state->set(DeferredCallsNode::RESULT_KEY, $result);
+    $state->set(DeferredWorkflowInterface::RESULT_KEY, $result);
 
     return new StopEvent();
   }

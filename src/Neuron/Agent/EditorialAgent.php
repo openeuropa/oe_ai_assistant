@@ -70,35 +70,17 @@ final class EditorialAgent extends Agent {
 
   /**
    * {@inheritdoc}
+   *
+   * A graph is built fresh for every segment of a run, and a node is never
+   * stored, so the node of this module is handed its services here rather
+   * than reading them off the resources of the run.
    */
   protected function nodes(): array {
     return array_map(
-      static fn (NodeInterface $node): NodeInterface => $node instanceof AwaitToolResultsNode
-        ? new DeferredCallsNode()
+      fn (NodeInterface $node): NodeInterface => $node instanceof AwaitToolResultsNode
+        ? new DeferredCallsNode($this->workflows, $this->logger, $this->session)
         : $node,
       parent::nodes(),
-    );
-  }
-
-  /**
-   * {@inheritdoc}
-   *
-   * DeferredCallsNode needs the session and the manager that builds a
-   * workflow, and Neuron's own AgentResources carries neither.
-   * EditorialResources adds them to what the parent assembled.
-   */
-  protected function resources(): EditorialResources {
-    $resources = parent::resources();
-
-    return new EditorialResources(
-      $resources->provider,
-      $resources->history,
-      $resources->instructions,
-      $resources->tools,
-      $resources->context,
-      $this->workflows,
-      $this->logger,
-      $this->session,
     );
   }
 
