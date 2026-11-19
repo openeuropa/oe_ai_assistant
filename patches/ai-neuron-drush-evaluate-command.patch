@@ -1,0 +1,122 @@
+diff --git a/src/Drush/Commands/NeuronEvaluationCommands.php b/src/Drush/Commands/NeuronEvaluationCommands.php
+new file mode 100644
+index 0000000..6c49144
+--- /dev/null
++++ b/src/Drush/Commands/NeuronEvaluationCommands.php
+@@ -0,0 +1,116 @@
++<?php
++
++declare(strict_types=1);
++
++namespace Drupal\ai_neuron\Drush\Commands;
++
++use Drupal\Core\Extension\ModuleExtensionList;
++use Drush\Attributes as CLI;
++use Drush\Commands\DrushCommands;
++use NeuronAI\Console\Evaluation\EvaluationCommand;
++use Symfony\Component\DependencyInjection\ContainerInterface;
++
++/**
++ * Runs Neuron AI evaluators.
++ */
++final class NeuronEvaluationCommands extends DrushCommands {
++
++  public function __construct(
++    private readonly ModuleExtensionList $moduleList,
++    private readonly string $appRoot,
++  ) {
++    parent::__construct();
++  }
++
++  /**
++   * {@inheritdoc}
++   */
++  public static function create(ContainerInterface $container): self {
++    return new self(
++      $container->get('extension.list.module'),
++      $container->getParameter('app.root'),
++    );
++  }
++
++  /**
++   * Runs the Neuron AI evaluators an enabled module ships.
++   *
++   * @return int
++   *   0 if every evaluator passed, 1 otherwise - the same contract
++   *   EvaluationCommand::run() reports to the standalone CLI.
++   */
++  #[CLI\Command(name: 'ai-neuron:evaluate', aliases: ['neuron-evaluate'])]
++  #[CLI\Argument(name: 'path', description: "Directory to discover evaluators in. Defaults to every enabled module's own evaluators/ directory.")]
++  #[CLI\Option(name: 'concurrency', description: 'Run dataset items in N parallel processes (requires pcntl, posix and spatie/fork).')]
++  #[CLI\Option(name: 'cache', description: 'Serve unchanged run() outputs from the evaluation cache.')]
++  #[CLI\Option(name: 'fresh', description: 'Re-run everything and overwrite the evaluation cache.')]
++  #[CLI\Usage(name: 'drush ai-neuron:evaluate', description: "Runs every enabled module's evaluators/ directory.")]
++  #[CLI\Usage(name: 'drush ai-neuron:evaluate web/modules/custom/my_module/evaluators', description: 'Runs one directory only.')]
++  public function evaluate(
++    ?string $path = NULL,
++    array $options = [
++      'concurrency' => 1,
++      'cache' => FALSE,
++      'fresh' => FALSE,
++    ],
++  ): int {
++    $directories = $path !== NULL ? [$path] : $this->discoverEvaluatorDirectories();
++
++    if ($directories === []) {
++      $this->io()->warning('No evaluators/ directory found in any enabled module.');
++      return 0;
++    }
++
++    $exitCode = 0;
++    foreach ($directories as $directory) {
++      if (count($directories) > 1) {
++        $this->io()->section($directory);
++      }
++
++      $exitCode = max($exitCode, (new EvaluationCommand())->run($this->commandArgs($directory, $options)));
++    }
++
++    return $exitCode;
++  }
++
++  /**
++   * Builds the argv-style array EvaluationCommand::run() expects.
++   *
++   * @return array<string>
++   *   The argv-style array.
++   */
++  private function commandArgs(string $directory, array $options): array {
++    $args = ['ai-neuron:evaluate', $directory, '--verbose'];
++
++    if ((int) $options['concurrency'] > 1) {
++      $args[] = '--concurrency=' . (int) $options['concurrency'];
++    }
++    if ($options['cache']) {
++      $args[] = '--cache';
++    }
++    if ($options['fresh']) {
++      $args[] = '--fresh';
++    }
++
++    return $args;
++  }
++
++  /**
++   * Finds every enabled module's own evaluators/ directory, if it has one.
++   *
++   * @return string[]
++   *   The discovered directories.
++   */
++  private function discoverEvaluatorDirectories(): array {
++    $directories = [];
++    foreach ($this->moduleList->getList() as $module) {
++      $candidate = $this->appRoot . '/' . $module->getPath() . '/evaluators';
++      if (is_dir($candidate)) {
++        $directories[] = $candidate;
++      }
++    }
++
++    return $directories;
++  }
++
++}
