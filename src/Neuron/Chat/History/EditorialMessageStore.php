@@ -9,6 +9,8 @@ use Drupal\Core\Entity\ContentEntityInterface;
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
 use Drupal\oe_ai_assistant\Neuron\Chat\Messages\EditorialAssistantMessage;
 use NeuronAI\Chat\Messages\Message;
+use NeuronAI\Chat\Messages\ToolResultMessage;
+use NeuronAI\Tools\ApprovalState;
 
 /**
  * Records which editorial session a conversation belongs to.
@@ -51,6 +53,10 @@ final class EditorialMessageStore extends DrupalMessageStore {
    * {@inheritdoc}
    */
   protected function preSave(ContentEntityInterface $entity, Message $message): void {
+    if ($message instanceof ToolResultMessage) {
+      $this->keepRefusalsPlain($entity, $message);
+    }
+
     $session = $this->session();
     if ($session === NULL) {
       return;
@@ -63,6 +69,40 @@ final class EditorialMessageStore extends DrupalMessageStore {
     if ($message instanceof EditorialAssistantMessage && $message->getDraftVersion() !== NULL) {
       $entity->set('oe_draft_version', $message->getDraftVersion());
     }
+  }
+
+  /**
+   * Keeps a refused call with the instruction the editor gave, and no more.
+   *
+   * Neuron settles a refused call with a sentence telling the model never to
+   * attempt the tool again. Later turns read the conversation from these
+   * rows, so the model would refuse the editor the next time they ask for
+   * the same thing. A refusal answers one request, so the row keeps the
+   * instruction alone. A message that carries no refusal is left as it is.
+   *
+   * @param \Drupal\Core\Entity\ContentEntityInterface $entity
+   *   The unsaved row.
+   * @param \NeuronAI\Chat\Messages\ToolResultMessage $message
+   *   The results the row stores.
+   */
+  private function keepRefusalsPlain(ContentEntityInterface $entity, ToolResultMessage $message): void {
+    $refused = FALSE;
+    foreach ($message->getToolCalls() as $call) {
+      $instruction = $call->getRejectReason();
+      if ($call->getApprovalState() === ApprovalState::Rejected && $instruction !== NULL) {
+        $call->setResult($instruction);
+        $refused = TRUE;
+      }
+    }
+    if (!$refused) {
+      return;
+    }
+
+    // The row was built before this ran, so its meta column is written again
+    // the way the parent store writes it: everything but the role and content.
+    $meta = $message->jsonSerialize();
+    unset($meta['role'], $meta['content']);
+    $entity->set('meta', json_encode($meta, JSON_THROW_ON_ERROR));
   }
 
   /**

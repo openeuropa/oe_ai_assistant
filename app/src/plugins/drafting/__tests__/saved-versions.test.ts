@@ -1,9 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { extractSavedVersions } from "../saved-versions";
 
-/** Builds an editorial_event tool-call part in the assistant-ui shape. */
-function eventPart(args: Record<string, unknown>) {
-  return { type: "tool-call", toolName: "editorial_event", args };
+/** Builds a drafting_save_draft tool-call part, with an optional result. */
+function savePart(result?: unknown) {
+  return { type: "tool-call", toolName: "drafting_save_draft", result };
+}
+
+/** A saved result for the given version, as the reloaded transcript returns it. */
+function saved(version: number) {
+  return { version, nodeId: String(version), previewUrl: "/node/1/latest" };
 }
 
 describe("extractSavedVersions", () => {
@@ -11,25 +16,30 @@ describe("extractSavedVersions", () => {
     expect(extractSavedVersions([])).toEqual(new Set());
   });
 
-  it("collects the versions named by save events", () => {
+  it("collects the versions of saved results, reloaded or live", () => {
     const messages = [
-      { content: [eventPart({ eventType: "save", version: 2 })] },
-      { content: [eventPart({ eventType: "save", version: 1 })] },
+      { content: [savePart(saved(2))] },
+      { content: [savePart(JSON.stringify(saved(1)))] },
     ];
     expect(extractSavedVersions(messages)).toEqual(new Set([1, 2]));
   });
 
-  it("ignores other events, non-numeric versions and other tools", () => {
+  it("ignores failed, cancelled and unanswered saves, other tools and save chips", () => {
     const messages = [
-      { content: [eventPart({ eventType: "tone", version: 3 })] },
-      { content: [eventPart({ eventType: "save", version: "4" })] },
-      { content: [eventPart({ eventType: "save" })] },
+      { content: [savePart({ version: 3, error: "No such draft." })] },
+      { content: [savePart([])] },
+      { content: [savePart()] },
       {
         content: [
           {
             type: "tool-call",
             toolName: "drafting_draft_content",
-            args: { version: 5 },
+            result: saved(5),
+          },
+          {
+            type: "tool-call",
+            toolName: "editorial_event",
+            args: { eventType: "save", version: 4 },
           },
         ],
       },
