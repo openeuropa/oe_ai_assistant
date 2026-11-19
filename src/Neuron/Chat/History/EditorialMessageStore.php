@@ -8,7 +8,6 @@ use Drupal\ai_neuron\Chat\History\DrupalMessageStore;
 use Drupal\Core\Entity\ContentEntityInterface;
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
 use Drupal\oe_ai_assistant\Neuron\Chat\Messages\EditorialAssistantMessage;
-use Drupal\oe_ai_assistant\Plugin\NeuronTool\SaveDraftNeuronTool;
 use NeuronAI\Chat\Messages\Message;
 use NeuronAI\Chat\Messages\ToolResultMessage;
 use NeuronAI\Tools\ApprovalState;
@@ -55,7 +54,7 @@ final class EditorialMessageStore extends DrupalMessageStore {
    */
   protected function preSave(ContentEntityInterface $entity, Message $message): void {
     if ($message instanceof ToolResultMessage) {
-      $this->storeCancelledSaves($entity, $message);
+      $this->keepRefusalsPlain($entity, $message);
     }
 
     $session = $this->session();
@@ -73,27 +72,29 @@ final class EditorialMessageStore extends DrupalMessageStore {
   }
 
   /**
-   * Stores a cancelled save with the cancel text alone.
+   * Keeps a refused call with the instruction the editor gave, and no more.
    *
-   * Neuron answers a rejected call with a wrapper that tells the model never
-   * to call the tool again, and the model then refuses the editor's next
-   * request to save. Later turns read the result from this row, so the row
-   * keeps only the cancel text.
+   * Neuron settles a refused call with a sentence telling the model never to
+   * attempt the tool again. Later turns read the conversation from these
+   * rows, so the model would refuse the editor the next time they ask for
+   * the same thing. A refusal answers one request, so the row keeps the
+   * instruction alone. A message that carries no refusal is left as it is.
    *
    * @param \Drupal\Core\Entity\ContentEntityInterface $entity
    *   The unsaved row.
    * @param \NeuronAI\Chat\Messages\ToolResultMessage $message
    *   The results the row stores.
    */
-  private function storeCancelledSaves(ContentEntityInterface $entity, ToolResultMessage $message): void {
-    $cancelled = FALSE;
+  private function keepRefusalsPlain(ContentEntityInterface $entity, ToolResultMessage $message): void {
+    $refused = FALSE;
     foreach ($message->getToolCalls() as $call) {
-      if ($call->getName() === SaveDraftNeuronTool::TOOL_ID && $call->getApprovalState() === ApprovalState::Rejected) {
-        $call->setResult(SaveDraftNeuronTool::CANCELLED . '.');
-        $cancelled = TRUE;
+      $instruction = $call->getRejectReason();
+      if ($call->getApprovalState() === ApprovalState::Rejected && $instruction !== NULL) {
+        $call->setResult($instruction);
+        $refused = TRUE;
       }
     }
-    if (!$cancelled) {
+    if (!$refused) {
       return;
     }
 
