@@ -16,6 +16,7 @@ use Drupal\oe_ai_assistant_test\Plugin\AiProvider\MockResponse;
 use NeuronAI\Agent\AgentState;
 use NeuronAI\Chat\Messages\ToolCallMessage;
 use NeuronAI\Chat\Messages\UserMessage;
+use NeuronAI\Exceptions\ToolException;
 use NeuronAI\Tools\ToolCall;
 use Psr\Log\AbstractLogger;
 use Symfony\Component\HttpFoundation\Request;
@@ -322,6 +323,39 @@ class DraftingTurnTest extends AiEditorialSessionKernelTestBase {
     $rows = $session->conversationThreads()[$this->thread($session, 1, 'main_fields')];
     $task = (string) ($rows[0]->getContent()[0]['content'] ?? '');
     $this->assertStringContainsString('2026 sett counts in Flanders', $task);
+  }
+
+  /**
+   * Two drafting calls under one id are refused before either runs.
+   *
+   * A draft reports its progress under the id of the call that asked for
+   * it, and the stream frames its result under the same id. Two drafts
+   * sharing an id overwrite each other's progress, and the editor reads
+   * one result for two drafts.
+   */
+  public function testTwoDraftCallsUnderOneIdAreRefused(): void {
+    $session = $this->createSession($this->createUser());
+
+    MockAiProvider::reset();
+    MockAiProvider::enqueue($this->twoDraftCalls('call_same', 'call_same'));
+
+    $this->expectException(ToolException::class);
+    $this->expectExceptionMessage("'call_same' twice");
+    $this->turn($session, 'Draft it twice.');
+  }
+
+  /**
+   * A drafting call with no id of its own is refused.
+   */
+  public function testADraftCallWithoutAnIdIsRefused(): void {
+    $session = $this->createSession($this->createUser());
+
+    MockAiProvider::reset();
+    MockAiProvider::enqueue($this->twoDraftCalls('', ''));
+
+    $this->expectException(ToolException::class);
+    $this->expectExceptionMessage('returned none');
+    $this->turn($session, 'Draft it twice.');
   }
 
   /**
@@ -793,6 +827,27 @@ class DraftingTurnTest extends AiEditorialSessionKernelTestBase {
     MockAiProvider::enqueue(new MockResponse(text: self::MAIN_FIELDS));
     MockAiProvider::enqueue(new MockResponse(text: self::PARAGRAPHS));
     MockAiProvider::enqueue(new MockResponse(text: $answer));
+  }
+
+  /**
+   * A reply that asks for two drafts, under the call ids given.
+   *
+   * @param string $first
+   *   The id of the first call. An empty string sends none.
+   * @param string $second
+   *   The id of the second call.
+   */
+  private function twoDraftCalls(string $first, string $second): MockResponse {
+    $call = static fn (string $id): array => [
+      'id' => $id,
+      'type' => 'function',
+      'function' => [
+        'name' => 'drafting_draft_content',
+        'arguments' => json_encode(['brief' => self::BRIEF], JSON_THROW_ON_ERROR),
+      ],
+    ];
+
+    return new MockResponse(toolCalls: [$call($first), $call($second)]);
   }
 
   /**
