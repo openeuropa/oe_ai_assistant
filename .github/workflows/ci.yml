@@ -88,7 +88,10 @@ jobs:
 
   app-test:
     name: App Test
-    runs-on: ubuntu-latest
+    # Playwright ships no dependency recipe for Ubuntu 26.04, which
+    # ubuntu-latest now resolves to, so installing the browsers fails. This
+    # job runs on the newest image Playwright supports.
+    runs-on: ubuntu-24.04
     defaults:
       run:
         working-directory: app
