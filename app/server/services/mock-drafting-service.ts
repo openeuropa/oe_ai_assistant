@@ -17,8 +17,6 @@ import type {
 import type {
   ChatOptions,
   DraftingService,
-  DraftSavePayload,
-  DraftSaveResult,
   StreamEvent,
 } from "./drafting-service";
 import { emitDraftToolCall, extractFieldsToStream } from "./drafting-service";
@@ -99,12 +97,10 @@ function isDraftRequest(message: string, fieldsToStream: string[]): boolean {
 }
 
 export class MockDraftingService implements DraftingService {
-  private nextNodeId = 42000;
-
   /**
    * Draft history per session: fields keyed by version, mirroring the
-   * Drupal backend's drafting_draft_content result history. The save action
-   * resolves the requested version from here.
+   * Drupal backend's drafting_draft_content result history. Its size numbers
+   * the next draft version.
    */
   private readonly draftsBySession = new Map<
     string,
@@ -145,7 +141,7 @@ export class MockDraftingService implements DraftingService {
           ? fixture.drafts.regenerated
           : fixture.drafts.initial;
 
-        // Record the draft under the next version so save can resolve it.
+        // Record the draft under the next version.
         const versions =
           this.draftsBySession.get(sessionId) ??
           new Map<number, Record<string, unknown>>();
@@ -186,23 +182,6 @@ export class MockDraftingService implements DraftingService {
 
   getMessages(sessionId: string): TranscriptMessage[] {
     return this.store.getTranscript(sessionId);
-  }
-
-  save(body: DraftSavePayload): DraftSaveResult | null {
-    // Resolve the requested version from the session's draft history,
-    // the way the Drupal backend does; unknown versions are rejected.
-    const fields = this.draftsBySession
-      .get(body.sessionId ?? "")
-      ?.get(body.version ?? 0);
-    if (!fields) {
-      return null;
-    }
-    this.nextNodeId += 1;
-    const nodeId = String(this.nextNodeId);
-    return {
-      nodeId,
-      previewUrl: `/node/${nodeId}/latest`,
-    };
   }
 
   private async *createTextStep(text: string): AsyncGenerator<StreamEvent> {

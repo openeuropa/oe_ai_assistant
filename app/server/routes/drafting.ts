@@ -4,11 +4,10 @@
  * Thin Express route handlers that delegate to the active
  * drafting service. Depending on the selected dev mode, the
  * chat endpoint is either fixture-backed mock streaming or
- * Mistral-backed integration streaming. Save remains mocked.
+ * Mistral-backed integration streaming.
  *
  * POST /api/plugins/drafting/chat   - SSE stream (mock or Mistral)
  * POST /api/plugins/drafting/reset  - Clear conversation
- * POST /api/plugins/drafting/save   - Mock save
  * POST /api/plugins/drafting/set-tone - Validate selected tone
  * POST /api/plugins/drafting/set-template - Validate selected template
  * POST /api/plugins/drafting/add-document - Mock document upload
@@ -245,30 +244,16 @@ export function createDraftingRouter(service: DraftingService): Router {
     res.json({ messages: service.getMessages(sessionId) });
   });
 
-  /** POST /save - Mock: save a session draft version as a node. */
-  router.post("/save", (req, res) => {
-    const { sessionId, version } = req.body as {
-      sessionId?: string;
-      version?: number;
-    };
-
-    if (!sessionId || typeof version !== "number") {
-      res.status(400).json({
-        code: "bad_request",
-        message: "sessionId and version are required",
-      });
+  /** POST /get-approvals - The standalone server gates no calls, so none wait. */
+  router.post("/get-approvals", (req, res) => {
+    const sessionId = (req.body as { sessionId?: string })?.sessionId;
+    if (!sessionId) {
+      res
+        .status(400)
+        .json({ code: "bad_request", message: "sessionId is required" });
       return;
     }
-
-    const result = service.save({ sessionId, version });
-    if (!result) {
-      res.status(400).json({
-        code: "invalid_request",
-        message: `Draft ${version} does not exist in this session.`,
-      });
-      return;
-    }
-    res.json(result);
+    res.json({ approvals: [] });
   });
 
   /**

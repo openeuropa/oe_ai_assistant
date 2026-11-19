@@ -32,12 +32,13 @@ final class ChatNode extends AgentNode {
   }
 
   /**
-   * Frees the conversation of a turn that asked for a draft and never read it.
+   * Frees the conversation of a run that waits on a call nobody will answer.
    *
    * A run that stays suspended makes every later turn of the session fail.
    * The editor sends a message and reads an error. A run reaches that state
    * when the process dies after the call that asks for a draft, before the
-   * same request submits the result. So this turn drops the run, and the
+   * same request submits the result, or when the editor sends a message
+   * while a save waits for a decision. So this turn drops the run, and the
    * agent reads the open call as interrupted.
    *
    * @param \Drupal\oe_ai_assistant\Plugin\NeuronWorkflow\Editorial\EditorialResources $resources
@@ -52,12 +53,13 @@ final class ChatNode extends AgentNode {
     // The agent refuses to drop a run that waits on a tool call. A later
     // turn answers such a call with an interruption error, and a person who
     // meant to submit the result loses the chance. Nobody submits this
-    // result, because the request that asked for the draft is gone. So an
+    // result, because the request that asked for the draft is gone, and the
+    // editor who sent a message has left the waiting save undecided. So an
     // engine built on the agent's persistence drops the run.
     (new WorkflowEngine($resources->persistence))
       ->abandon((string) $this->agent->getWorkflowId());
 
-    $resources->logger->notice('Dropped the suspended run @run of session @session. It asked for a draft and nothing submitted the result.', [
+    $resources->logger->notice('Dropped the suspended run @run of session @session. It waited on a call that nothing answered.', [
       '@run' => $run->runId,
       '@session' => (string) $resources->session->id(),
     ]);

@@ -14,14 +14,14 @@ import type { components } from "@/api/schema";
 import { getConfig } from "@/config";
 import type {
   DraftingChatRequest,
-  DraftingSaveRequest,
-  DraftingSaveResponse,
   DraftingSetTemplateRequest,
   DraftingSetTemplateResponse,
   DraftingSetToneRequest,
   DraftingSetToneResponse,
 } from "../types";
 
+/** A tool call that waits for the editor to confirm it. */
+export type DraftingApproval = components["schemas"]["DraftingApproval"];
 type DraftingCategory = components["schemas"]["DraftingDocumentCategory"];
 type DraftingDocument = components["schemas"]["DraftingDocument"];
 type DraftingAddDocumentResponse =
@@ -69,6 +69,23 @@ export async function resetDrafting(): Promise<void> {
   }
 }
 
+/** Lists the tool calls of the current session that wait for the editor. */
+export async function getDraftingApprovals(): Promise<DraftingApproval[]> {
+  const response = await apiFetch(
+    `${getConfig().apiBaseUrl}/plugins/drafting/get-approvals`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sessionId: getConfig().sessionId }),
+    },
+  );
+  if (!response.ok) {
+    throw new Error(`Drafting get-approvals error: ${response.status}`);
+  }
+  const body = (await response.json()) as { approvals: DraftingApproval[] };
+  return body.approvals;
+}
+
 /** Sets the selected tone for drafting on the current session. */
 export async function setDraftingTone(
   request: DraftingSetToneRequest,
@@ -86,29 +103,6 @@ export async function setDraftingTone(
     throw new Error(`Drafting set-tone error: ${response.status}`);
   }
   return (await response.json()) as DraftingSetToneResponse;
-}
-
-/**
- * Saves one of the current session's draft versions as an unpublished
- * node. The backend resolves the drafted fields from its own draft
- * history, so the request only names the version.
- */
-export async function saveDraftRevision(
-  request: DraftingSaveRequest,
-): Promise<DraftingSaveResponse> {
-  const response = await apiFetch(
-    `${getConfig().apiBaseUrl}/plugins/drafting/save`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      // Scope the save to the current editorial session.
-      body: JSON.stringify({ ...request, sessionId: getConfig().sessionId }),
-    },
-  );
-  if (!response.ok) {
-    throw new Error(`Drafting save error: ${response.status}`);
-  }
-  return (await response.json()) as DraftingSaveResponse;
 }
 
 /** Sets the selected drafting template on the current session. */

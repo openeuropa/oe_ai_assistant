@@ -17,6 +17,7 @@ use Drupal\oe_ai_assistant\Neuron\Chat\History\EditorialMessageStore;
 use Drupal\oe_ai_assistant\Neuron\Chat\Messages\Stream\Adapters\PatchedVercelAIAdapter;
 use Drupal\oe_ai_assistant\Plugin\NeuronWorkflow\Editorial\EditorialResources;
 use Drupal\oe_ai_assistant\Plugin\NeuronWorkflow\Editorial\Events\ChatTurnEvent;
+use Drupal\oe_ai_assistant\Plugin\NeuronWorkflow\Editorial\Nodes\ApprovalNode;
 use Drupal\oe_ai_assistant\Plugin\NeuronWorkflow\Editorial\Nodes\ChatNode;
 use Drupal\oe_ai_assistant\Plugin\NeuronWorkflow\Editorial\Nodes\ChatResumeNode;
 use Drupal\oe_ai_assistant\Plugin\NeuronWorkflow\Editorial\Nodes\DraftContentNode;
@@ -28,9 +29,10 @@ use Symfony\Component\DependencyInjection\Attribute\Autowire;
 /**
  * Serves one turn of an editorial session.
  *
- * The turn is a cycle: the agent answers the editor or asks for a draft, the
- * run writes the draft, and the agent reads it and answers. A node ends when
- * it returns an event, so the three steps are three nodes and the run records
+ * A turn starts from the editor's message or from the editor's decision on a
+ * waiting save. Either way the agent answers or asks for a draft. When it
+ * asks, the run writes the draft and the agent reads it and answers. A node
+ * ends when it returns an event, so each step is a node and the run records
  * each one. A failure then repeats one step rather than the whole turn.
  */
 #[NeuronWorkflow(
@@ -69,13 +71,14 @@ final class EditorialWorkflow extends NeuronWorkflowPluginBase {
     // resolves its resources once the stream is open, and building the agent
     // is what reads the session's template and the provider. So a stale
     // template becomes a clean 400 while the endpoint can still answer one.
-    // The node that resumes the turn also needs the instance that suspended.
+    // The nodes that resume the turn also need the instance that suspended.
     $agent = $this->agents->createAgent('editorial', ['session' => $this->session()]);
 
     return [
       new ChatNode($agent),
       new DraftContentNode(),
       new ChatResumeNode($agent),
+      new ApprovalNode($agent),
     ];
   }
 
@@ -111,8 +114,8 @@ final class EditorialWorkflow extends NeuronWorkflowPluginBase {
   /**
    * {@inheritdoc}
    *
-   * A caller hands the editor's message over on the start event, so this is
-   * only the fallback for a run nobody gave one to.
+   * A caller hands the editor's message or decision over on the start
+   * event, so this is only the fallback for a run nobody gave one to.
    */
   protected function startEvent(): Event {
     return new ChatTurnEvent('');

@@ -110,7 +110,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/plugins/drafting/save": {
+    "/plugins/drafting/get-approvals": {
         parameters: {
             query?: never;
             header?: never;
@@ -119,8 +119,8 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Save a session draft version as an unpublished node */
-        post: operations["postDraftingSave"];
+        /** List the tool calls that wait for the editor's decision */
+        post: operations["postDraftingGetApprovals"];
         delete?: never;
         options?: never;
         head?: never;
@@ -432,10 +432,21 @@ export interface components {
             }[];
         };
         DraftingChatRequest: {
-            /** @description The user's drafting prompt or instruction. */
-            message: string;
+            /** @description The user's drafting prompt or instruction. Required unless the request carries a decision. */
+            message?: string;
             /** @description The editorial session that hosts the conversation. The backend derives the target content type and access from the session and persists every turn against it. */
             sessionId: string;
+            runConfig?: {
+                custom?: {
+                    /** @description The editor's decision on a call that waits for one. The turn resumes that call instead of answering a message. */
+                    approval?: {
+                        /** @description The id of the waiting call. */
+                        callId: string;
+                        /** @enum {string} */
+                        decision: "approve" | "reject";
+                    };
+                };
+            };
         };
         DraftingResetRequest: {
             /** @description The editorial session whose conversation to reset. */
@@ -445,18 +456,23 @@ export interface components {
             /** @description Confirmation status (e.g. "ok"). */
             status: string;
         };
-        /** @description Save one of the session's drafts as an unpublished revision. The backend resolves the target content type and the drafted field values from the session and its draft history, so the client only names the version being saved; a client can never save field data the session did not produce. */
-        DraftingSaveRequest: {
-            /** @description The editorial session that owns the draft. */
+        DraftingGetApprovalsRequest: {
+            /** @description The editorial session whose waiting calls to list. */
             sessionId: string;
-            /** @description The draft version to save, matching the version of a drafting_draft_content result in the session transcript (the version shown in the artifact pane and the version rail). */
-            version: number;
         };
-        DraftingSaveResponse: {
-            /** @description The ID of the created node. */
-            nodeId: string;
-            /** @description URL to preview the created draft node. */
-            previewUrl: string;
+        /** @description A tool call that waits for the editor's decision. */
+        DraftingApproval: {
+            /** @description The id of the tool call. */
+            callId: string;
+            /** @description The machine name of the tool. */
+            name: string;
+            /** @description The arguments the model gave the tool. */
+            inputs: {
+                [key: string]: unknown;
+            };
+        };
+        DraftingGetApprovalsResponse: {
+            approvals: components["schemas"]["DraftingApproval"][];
         };
         DraftingSetToneRequest: {
             /** @description The editorial session on which the selected tone is saved. */
@@ -811,7 +827,7 @@ export interface operations {
             };
         };
     };
-    postDraftingSave: {
+    postDraftingGetApprovals: {
         parameters: {
             query?: never;
             header?: never;
@@ -820,17 +836,17 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["DraftingSaveRequest"];
+                "application/json": components["schemas"]["DraftingGetApprovalsRequest"];
             };
         };
         responses: {
-            /** @description Created node details */
+            /** @description The waiting calls, empty when none waits */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["DraftingSaveResponse"];
+                    "application/json": components["schemas"]["DraftingGetApprovalsResponse"];
                 };
             };
         };

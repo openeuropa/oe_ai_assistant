@@ -8,7 +8,10 @@ use Drupal\ai_neuron\Chat\History\DrupalMessageStore;
 use Drupal\Core\Entity\ContentEntityInterface;
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
 use Drupal\oe_ai_assistant\Neuron\Chat\Messages\EditorialAssistantMessage;
+use Drupal\oe_ai_assistant\Plugin\NeuronTool\SaveDraftNeuronTool;
 use NeuronAI\Chat\Messages\Message;
+use NeuronAI\Chat\Messages\ToolResultMessage;
+use NeuronAI\Tools\ApprovalState;
 
 /**
  * Records which editorial session a conversation belongs to.
@@ -51,6 +54,10 @@ final class EditorialMessageStore extends DrupalMessageStore {
    * {@inheritdoc}
    */
   protected function preSave(ContentEntityInterface $entity, Message $message): void {
+    if ($message instanceof ToolResultMessage) {
+      $this->storeCancelledSaves($entity, $message);
+    }
+
     $session = $this->session();
     if ($session === NULL) {
       return;
@@ -63,6 +70,38 @@ final class EditorialMessageStore extends DrupalMessageStore {
     if ($message instanceof EditorialAssistantMessage && $message->getDraftVersion() !== NULL) {
       $entity->set('oe_draft_version', $message->getDraftVersion());
     }
+  }
+
+  /**
+   * Stores a cancelled save with the cancel text alone.
+   *
+   * Neuron answers a rejected call with a wrapper that tells the model never
+   * to call the tool again, and the model then refuses the editor's next
+   * request to save. Later turns read the result from this row, so the row
+   * keeps only the cancel text.
+   *
+   * @param \Drupal\Core\Entity\ContentEntityInterface $entity
+   *   The unsaved row.
+   * @param \NeuronAI\Chat\Messages\ToolResultMessage $message
+   *   The results the row stores.
+   */
+  private function storeCancelledSaves(ContentEntityInterface $entity, ToolResultMessage $message): void {
+    $cancelled = FALSE;
+    foreach ($message->getToolCalls() as $call) {
+      if ($call->getName() === SaveDraftNeuronTool::TOOL_ID && $call->getApprovalState() === ApprovalState::Rejected) {
+        $call->setResult(SaveDraftNeuronTool::CANCELLED . '.');
+        $cancelled = TRUE;
+      }
+    }
+    if (!$cancelled) {
+      return;
+    }
+
+    // The row was built before this ran, so its meta column is written again
+    // the way the parent store writes it: everything but the role and content.
+    $meta = $message->jsonSerialize();
+    unset($meta['role'], $meta['content']);
+    $entity->set('meta', json_encode($meta, JSON_THROW_ON_ERROR));
   }
 
   /**

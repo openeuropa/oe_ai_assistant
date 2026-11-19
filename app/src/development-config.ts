@@ -17,6 +17,7 @@ export const developmentConfig = {
       toolLabels: {
         drafting_draft_content: "Draft content",
         drafting_get_history: "Get draft history",
+        drafting_save_draft: "Save draft",
       },
       preview: {
         // Served by the Express mock API during standalone development.

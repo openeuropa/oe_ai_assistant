@@ -7,18 +7,42 @@
 DraftingChatRequest:
   type: object
   required:
-    - message
     - sessionId
   properties:
     message:
       type: string
-      description: The user's drafting prompt or instruction.
+      description: >
+        The user's drafting prompt or instruction. Required unless the
+        request carries a decision.
     sessionId:
       type: string
       description: >
         The editorial session that hosts the conversation. The backend
         derives the target content type and access from the session and
         persists every turn against it.
+    runConfig:
+      type: object
+      properties:
+        custom:
+          type: object
+          properties:
+            approval:
+              type: object
+              description: >
+                The editor's decision on a call that waits for one. The turn
+                resumes that call instead of answering a message.
+              required:
+                - callId
+                - decision
+              properties:
+                callId:
+                  type: string
+                  description: The id of the waiting call.
+                decision:
+                  type: string
+                  enum:
+                    - approve
+                    - reject
 
 DraftingResetRequest:
   type: object
@@ -38,40 +62,43 @@ DraftingResetResponse:
       type: string
       description: Confirmation status (e.g. "ok").
 
-DraftingSaveRequest:
+DraftingGetApprovalsRequest:
   type: object
-  description: >
-    Save one of the session's drafts as an unpublished revision. The
-    backend resolves the target content type and the drafted field
-    values from the session and its draft history, so the client only
-    names the version being saved; a client can never save field data
-    the session did not produce.
   required:
     - sessionId
-    - version
   properties:
     sessionId:
       type: string
-      description: The editorial session that owns the draft.
-    version:
-      type: integer
-      description: >
-        The draft version to save, matching the version of a
-        drafting_draft_content result in the session transcript (the version
-        shown in the artifact pane and the version rail).
+      description: The editorial session whose waiting calls to list.
 
-DraftingSaveResponse:
+DraftingApproval:
+  type: object
+  description: A tool call that waits for the editor's decision.
+  required:
+    - callId
+    - name
+    - inputs
+  properties:
+    callId:
+      type: string
+      description: The id of the tool call.
+    name:
+      type: string
+      description: The machine name of the tool.
+    inputs:
+      type: object
+      additionalProperties: true
+      description: The arguments the model gave the tool.
+
+DraftingGetApprovalsResponse:
   type: object
   required:
-    - nodeId
-    - previewUrl
+    - approvals
   properties:
-    nodeId:
-      type: string
-      description: The ID of the created node.
-    previewUrl:
-      type: string
-      description: URL to preview the created draft node.
+    approvals:
+      type: array
+      items:
+        $ref: "../../openapi.yaml#/components/schemas/DraftingApproval"
 
 DraftingSetToneRequest:
   type: object

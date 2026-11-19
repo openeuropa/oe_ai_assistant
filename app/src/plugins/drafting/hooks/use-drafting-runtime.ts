@@ -26,6 +26,7 @@ import { useMemo } from "react";
 import { getCsrfHeaders } from "@/api/csrf-token";
 import { getSessionMessages } from "@/api/session-messages";
 import { getConfig } from "@/config";
+import { getDraftingApprovals } from "../api/drafting-api";
 import type { DraftContext, DraftGroupProgress } from "../draft-result";
 import { parseDraftResult } from "../draft-result";
 import { toThreadMessages } from "../hydrate-transcript";
@@ -112,6 +113,20 @@ function settleActiveRuns(error: string): void {
 }
 
 /**
+ * Asks the site which calls wait for the editor and stores the answer.
+ *
+ * A failure is logged and the stored list stays as it was, because the
+ * dialog is a convenience over the thread and must not break it.
+ */
+export async function refreshApprovals(): Promise<void> {
+  try {
+    setDraftingState({ approvals: await getDraftingApprovals() });
+  } catch (error) {
+    console.error("[drafting] Could not load the waiting approvals:", error);
+  }
+}
+
+/**
  * Returns an assistant-ui runtime backed by the Data Stream Protocol.
  *
  * The runtime sends POST requests to /api/plugins/drafting/chat
@@ -137,6 +152,7 @@ export function useDraftingRuntime() {
     () => ({
       async load() {
         const messages = await getSessionMessages("drafting");
+        void refreshApprovals();
         return ExportedMessageRepository.fromArray(toThreadMessages(messages));
       },
       async append() {
@@ -262,6 +278,7 @@ export function useDraftingRuntime() {
       // ends it here. The runs themselves stay, because each card reads
       // the run its own call reported.
       settleActiveRuns("The draft did not finish.");
+      void refreshApprovals();
     },
     onCancel: () => {
       settleActiveRuns("The draft stopped before it finished.");
@@ -269,6 +286,7 @@ export function useDraftingRuntime() {
     onError: (error) => {
       console.error("[drafting] Data stream runtime error:", error);
       settleActiveRuns("The connection ended before the draft landed.");
+      void refreshApprovals();
     },
   });
 
