@@ -37,7 +37,7 @@ import { getConfig } from "@/config";
 import { formatDraftDate } from "../format-draft-date";
 import { buildPreviewUrl } from "../preview-url";
 import type { DraftingPluginConfig } from "../types";
-import { ContentTableBody, SaveConfirmDialog } from "./content-table";
+import { ContentTableBody } from "./content-table";
 
 /** The two views the pane can show. */
 type PreviewTab = "live" | "data";
@@ -66,8 +66,10 @@ interface DraftPreviewProps {
   isSaved: boolean;
   /** Tab shown on mount. Defaults to the live preview. */
   defaultTab?: PreviewTab;
-  /** Invoked after the user confirms the save dialog. */
+  /** Invoked when the editor presses Save. */
   onSave: () => void;
+  /** Blocks Save while a reply streams or a save waits for confirmation. */
+  isSaveDisabled?: boolean;
 }
 
 /** A single tab button in the header switcher. */
@@ -246,6 +248,7 @@ export function DraftPreview({
   isSaved,
   defaultTab = "live",
   onSave,
+  isSaveDisabled = false,
 }: DraftPreviewProps) {
   // The URL template comes from the host-provided plugin config.
   const draftingConfig = (getConfig().pluginConfig.drafting ??
@@ -269,7 +272,6 @@ export function DraftPreview({
   // Bumped by the reload button to remount the frame at the original
   // preview URL, undoing any navigation from links clicked inside it.
   const [reloadCount, setReloadCount] = useState(0);
-  const [showConfirm, setShowConfirm] = useState(false);
 
   return (
     <div
@@ -367,8 +369,8 @@ export function DraftPreview({
           {/* A saved version cannot be saved twice. */}
           <button
             type="button"
-            onClick={() => setShowConfirm(true)}
-            disabled={isSaved}
+            onClick={onSave}
+            disabled={isSaved || isSaveDisabled}
             className="flex h-7 cursor-pointer items-center gap-1.5 rounded-md bg-blue-600 px-3 text-xs font-medium whitespace-nowrap text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-gray-300 disabled:text-gray-500"
           >
             <Save size={12} />
@@ -390,16 +392,6 @@ export function DraftPreview({
       )}
 
       {activeTab === "data" && <ContentTableBody />}
-
-      {showConfirm && (
-        <SaveConfirmDialog
-          onConfirm={() => {
-            setShowConfirm(false);
-            onSave();
-          }}
-          onCancel={() => setShowConfirm(false)}
-        />
-      )}
     </div>
   );
 }

@@ -9,14 +9,19 @@
  */
 
 import type { ToolCallMessagePartProps } from "@assistant-ui/react";
-import { makeAssistantToolUI } from "@assistant-ui/react";
-import { Check, Loader2, PenLine, Wrench, X } from "lucide-react";
+import { makeAssistantToolUI, useAuiState } from "@assistant-ui/react";
+import { Check, Loader2, PenLine, Save, Wrench, X } from "lucide-react";
+import type { ReactNode } from "react";
+import { Button } from "@/components/ui/button";
+import { useApprovalDecision } from "../approval-decision";
 import type { DraftRunStatus } from "../draft-result";
 import { parseDraftResult } from "../draft-result";
+import { readSaveState, type SaveArgs } from "../save-result";
 import { useSavedVersions } from "../saved-versions";
 import { useSessionDrafts } from "../session-drafts";
 import { setDraftingState, useDraftingSlice } from "../store";
 import { toolLabel } from "../tool-labels";
+import { useWaitingSaves } from "../waiting-saves";
 import { DraftCard } from "./draft-card";
 import { EventChip } from "./event-chip";
 
@@ -27,6 +32,8 @@ export function ToolCallCard({
   detail,
   status,
   onClick,
+  children,
+  className = "my-4",
 }: {
   icon: typeof PenLine;
   label: string;
@@ -34,13 +41,16 @@ export function ToolCallCard({
   status: { type: string };
   /** When set, the card becomes a button that runs this on click. */
   onClick?: () => void;
+  /** Extra content under the detail line, such as a link. */
+  children?: ReactNode;
+  /** Outer spacing, for a card that stands outside the transcript. */
+  className?: string;
 }) {
   const isRunning = status.type === "running";
   const isError = status.type === "incomplete" || status.type === "error";
   const isDone = status.type === "complete";
 
-  const base =
-    "my-4 flex w-full items-start gap-3 rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-left";
+  const base = `${className} flex w-full items-start gap-3 rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-left`;
   const interactive = onClick
     ? " cursor-pointer transition-colors hover:border-gray-300 hover:bg-gray-50"
     : "";
@@ -63,6 +73,7 @@ export function ToolCallCard({
           <span className="text-sm font-medium text-gray-700">{label}</span>
         </div>
         {detail && <p className="mt-0.5 text-xs text-gray-400">{detail}</p>}
+        {children}
       </div>
     </>
   );
@@ -169,6 +180,94 @@ export const DraftContentToolUI = makeAssistantToolUI<
           }
         />
       </>
+    );
+  },
+});
+
+/** UI for the drafting_save_draft tool call. */
+export const SaveDraftToolUI = makeAssistantToolUI<SaveArgs, unknown>({
+  toolName: "drafting_save_draft",
+  render: ({ args, result, status, toolName, toolCallId }) => {
+    const label = toolLabel(toolName);
+    const decide = useApprovalDecision();
+    const waiting = useWaitingSaves();
+    // A decision runs as a turn of its own, and a second one started while
+    // it streams would abort it.
+    const isRunning = useAuiState((s) => s.thread.isRunning);
+    const saved = readSaveState(args, result, status.type === "running");
+
+    if (saved.status === "running") {
+      return <ToolCallCard icon={Save} label={label} status={status} />;
+    }
+
+    if (saved.status === "waiting") {
+      // The decision turn previews the call again before answering it, so
+      // the part that asked keeps no result of its own. Reading the whole
+      // thread is what retires this card once any part answers the call.
+      if (!waiting.some((save) => save.callId === toolCallId)) {
+        return null;
+      }
+
+      return (
+        <ToolCallCard
+          icon={Save}
+          label={label}
+          detail={`Save Draft ${saved.version} as a new unpublished revision?`}
+          status={{ type: "requires-action" }}
+        >
+          <div className="mt-2 flex gap-2">
+            <Button
+              size="sm"
+              className="cursor-pointer"
+              disabled={isRunning}
+              onClick={() => decide(toolCallId, "approve")}
+            >
+              Save
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className="cursor-pointer"
+              disabled={isRunning}
+              onClick={() => decide(toolCallId, "reject")}
+            >
+              Cancel
+            </Button>
+          </div>
+        </ToolCallCard>
+      );
+    }
+
+    if (saved.status === "saved") {
+      return (
+        <ToolCallCard
+          icon={Save}
+          label={label}
+          detail="Saved as an unpublished revision"
+          status={{ type: "complete" }}
+        >
+          <a
+            href={saved.previewUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="mt-1 inline-block text-xs text-blue-600 hover:underline"
+          >
+            Open preview
+          </a>
+        </ToolCallCard>
+      );
+    }
+    return (
+      <ToolCallCard
+        icon={Save}
+        label={label}
+        detail={
+          saved.status === "not_saved"
+            ? `Not saved: ${saved.error}`
+            : "Cancelled"
+        }
+        status={{ type: "incomplete" }}
+      />
     );
   },
 });

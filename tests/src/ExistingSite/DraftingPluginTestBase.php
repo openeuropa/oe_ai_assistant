@@ -12,6 +12,9 @@ use Drupal\oe_ai_assistant\Neuron\Chat\Messages\EditorialAssistantMessage;
 use Drupal\oe_ai_assistant_test\Plugin\AiProvider\MockAiProvider;
 use Drupal\Tests\oe_ai_assistant\Traits\ExistingSiteConfigBackupTrait;
 use Drupal\user\UserInterface;
+use NeuronAI\Workflow\Persistence\PersistenceInterface;
+use NeuronAI\Workflow\WorkflowEngine;
+use NeuronAI\Workflow\WorkflowStatus;
 use weitzman\DrupalTestTraits\ExistingSiteBase;
 
 /**
@@ -38,6 +41,13 @@ abstract class DraftingPluginTestBase extends ExistingSiteBase {
    * @var \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface[]
    */
   protected array $sessions = [];
+
+  /**
+   * The IDs of existing entities before the test, keyed by entity type.
+   *
+   * @var array
+   */
+  protected array $existingEntityIds = [];
 
   /**
    * The CSRF token of the logged-in browser session, fetched on demand.
@@ -81,14 +91,29 @@ abstract class DraftingPluginTestBase extends ExistingSiteBase {
    * {@inheritdoc}
    */
   protected function tearDown(): void {
-    // Remove any conversation messages persisted against the test sessions.
-    foreach ($this->sessions as $session) {
-      $session->deleteConversation();
+    try {
+      // Remove any conversation messages persisted against the test
+      // sessions.
+      foreach ($this->sessions as $session) {
+        $session->deleteConversation();
+        $engine = new WorkflowEngine(\Drupal::service(PersistenceInterface::class));
+        // The engine throws on a run that is still leased, and a test
+        // aborted mid-turn leaves one behind. Thrown from tearDown, that
+        // would replace the failure the test was reporting, so only drop
+        // a run that has suspended.
+        if ($engine->inspect($session->editorialThread())?->status === WorkflowStatus::Suspended) {
+          $engine->abandon($session->editorialThread());
+        }
+      }
     }
-
-    MockAiProvider::reset();
-    $this->restoreConfiguration();
-    parent::tearDown();
+    finally {
+      // Reset these whatever happened above. The mock queue and the
+      // provider configuration outlive the test, and the next one reads
+      // both.
+      MockAiProvider::reset();
+      $this->restoreConfiguration();
+      parent::tearDown();
+    }
   }
 
   /**
@@ -290,6 +315,102 @@ abstract class DraftingPluginTestBase extends ExistingSiteBase {
       $this->fail(sprintf('Term "%s" was not found in "%s".', $name, $vid));
     }
     return (string) $term->id();
+  }
+
+  /**
+   * Seeds a completed draft version into the session's drafts thread.
+   *
+   * A draft is a row of the session's drafts thread. The editor's own
+   * conversation holds none.
+   *
+   * @param \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $session
+   *   The session hosting the conversation.
+   * @param int $version
+   *   The draft version number.
+   * @param array $fields
+   *   The drafted field values, keyed by field machine name.
+   * @param string|null $templateId
+   *   The template id to snapshot in the result context, or NULL for none.
+   */
+  protected function seedDraft(AiEditorialSessionInterface $session, int $version, array $fields, ?string $templateId = NULL): void {
+    assert($session instanceof ContentCreationSessionInterface);
+    $this->storeDraft($session, [
+      'version' => $version,
+      'run' => sprintf('draft_%d.abcdef', $version),
+      'context' => [
+        'tone' => NULL,
+        'template' => $templateId !== NULL ? ['id' => $templateId, 'label' => $templateId] : NULL,
+        'documents' => [],
+      ],
+      'fields' => $fields,
+    ]);
+  }
+
+  /**
+   * Records existing entity IDs so test-created entities can be cleaned up.
+   */
+  protected function trackEntityType(string $entityType): void {
+    $this->existingEntityIds[$entityType] = \Drupal::entityTypeManager()
+      ->getStorage($entityType)
+      ->getQuery()
+      ->accessCheck(FALSE)
+      ->execute();
+  }
+
+  /**
+   * Deletes entities created during the test.
+   */
+  protected function deleteTestEntities(): void {
+    foreach ($this->existingEntityIds as $entityType => $previousIds) {
+      $storage = \Drupal::entityTypeManager()->getStorage($entityType);
+      $currentIds = $storage->getQuery()->accessCheck(FALSE)->execute();
+      $newIds = array_diff($currentIds, $previousIds);
+      if ($newIds) {
+        $storage->delete($storage->loadMultiple($newIds));
+      }
+    }
+  }
+
+  /**
+   * Parses SSE events from a raw response body string.
+   *
+   * Each SSE frame is a "data: <json>\n\n" block. This method splits
+   * the body, decodes the JSON, and returns structured event data.
+   *
+   * @param string $body
+   *   The raw SSE response body.
+   *
+   * @return array
+   *   Array of parsed event arrays, each with a 'type' key.
+   */
+  protected function parseSseEvents(string $body): array {
+    $events = [];
+    $frames = preg_split('/\n\n+/', trim($body));
+
+    foreach ($frames as $frame) {
+      $frame = trim($frame);
+      if ($frame === '') {
+        continue;
+      }
+
+      $data = '';
+      foreach (explode("\n", $frame) as $line) {
+        if (str_starts_with($line, 'data: ')) {
+          $data .= substr($line, 6);
+        }
+      }
+
+      if ($data === '' || $data === '[DONE]') {
+        continue;
+      }
+
+      $decoded = json_decode($data, TRUE);
+      if (is_array($decoded) && isset($decoded['type'])) {
+        $events[] = $decoded;
+      }
+    }
+
+    return $events;
   }
 
 }

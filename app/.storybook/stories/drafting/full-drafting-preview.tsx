@@ -361,14 +361,6 @@ const transcript: SessionMessage[] = [
       "'must prepare to comply' where the duties are not yet applicable.",
     toolCalls: draftCall(5, "Formal", v5Fields),
   },
-  // Saving happens through the pane's Save button, which records a
-  // durable timeline event; no chat exchange is involved.
-  {
-    role: "event",
-    type: "save",
-    summary: "Draft 5 saved as unpublished revision",
-    at: "2026-08-19T10:25:00Z",
-  },
 
   // Ana Silva restructures the piece for the website layout.
   {
@@ -433,13 +425,6 @@ const transcript: SessionMessage[] = [
       "the restructuring. All aligned now, and the quote attribution " +
       "matches the official title. This is Draft 8, ready for scheduling.",
     toolCalls: draftCall(8, "Formal", v8Fields),
-  },
-  // Peter saves the final version through the pane's Save button.
-  {
-    role: "event",
-    type: "save",
-    summary: "Draft 8 saved as unpublished revision",
-    at: "2026-08-19T12:40:00Z",
   },
 ];
 
@@ -590,7 +575,7 @@ export function FullDraftingPreview() {
             transcript always carries drafts, so the rail can restore it. */}
         {hasArtifact && (
           <ArtifactPane canCollapse>
-            <ContentTable onSave={() => {}} />
+            <ContentTable />
           </ArtifactPane>
         )}
 

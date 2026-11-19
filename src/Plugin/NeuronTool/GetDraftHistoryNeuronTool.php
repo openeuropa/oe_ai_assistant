@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Drupal\oe_ai_assistant\Plugin\NeuronTool;
 
 use Drupal\ai_neuron\Attribute\NeuronTool;
-use Drupal\ai_neuron\Tools\NeuronToolPluginBase;
 use Drupal\Core\Plugin\Context\EntityContextDefinition;
 use Drupal\Core\StringTranslation\TranslatableMarkup;
 
@@ -30,13 +29,13 @@ use Drupal\Core\StringTranslation\TranslatableMarkup;
     ),
   ],
 )]
-final class GetDraftHistoryNeuronTool extends NeuronToolPluginBase {
+final class GetDraftHistoryNeuronTool extends EditorialToolBase {
 
   /**
    * Returns the drafts of the session as JSON.
    */
   public function __invoke(): string {
-    return json_encode(['drafts' => $this->getContextValue('session')->listDrafts()]);
+    return $this->encode(['drafts' => $this->getContextValue('session')->listDrafts()]);
   }
 
 }
