@@ -40,7 +40,7 @@ final class AttachedDocumentsListEvaluator extends BaseEvaluator {
   }
 
   /**
-   * Returns the one scripted document pair this evaluator replays.
+   * Returns the one pair of fixture documents this evaluator runs with.
    */
   public function getDataset(): DatasetInterface {
     return new ArrayDataset([
@@ -64,7 +64,7 @@ final class AttachedDocumentsListEvaluator extends BaseEvaluator {
    * right after the first document is attached, right after the second is
    * attached too, and right after the first is removed again.
    *
-   * @return array<string, string>
+   * @return array
    *   The final answer of each checkpoint's turn, keyed 'after_first_attached',
    *   'after_second_attached' and 'after_first_removed'.
    */
@@ -95,10 +95,10 @@ final class AttachedDocumentsListEvaluator extends BaseEvaluator {
     }
     finally {
       $switcher->switchBack();
-      // Nested, so a failure reloading or deleting the session (assert() is
-      // a no-op once zend.assertions is off, so loadUnchanged() returning
-      // NULL would otherwise fatal here) never leaves the throwaway user
-      // behind.
+      // Nested so the throwaway user is deleted even when reloading or
+      // deleting the session throws. With zend.assertions off the assert()
+      // in reloadSession() is a no-op, so a session that is already gone
+      // would fatal here on a NULL.
       try {
         $this->reloadSession($sessionId)->delete();
       }
@@ -118,9 +118,9 @@ final class AttachedDocumentsListEvaluator extends BaseEvaluator {
    * Loads the session again, the way every HTTP request does.
    *
    * ContentCreationSession::brief() reads the document list once and then
-   * keeps it on the object. No HTTP request notices, since each one loads its
-   * own session. Holding on to a single object here would pin every turn to
-   * the empty document list we read before the first document was attached.
+   * caches it on the object. That never shows up over HTTP, because every
+   * request loads its own session. If we held on to one object here, each
+   * turn would keep seeing the empty list we read before the first attach.
    */
   private function reloadSession(int $id): AiEditorialSessionInterface {
     $session = \Drupal::entityTypeManager()->getStorage('ai_editorial_session')->loadUnchanged($id);
@@ -130,7 +130,7 @@ final class AttachedDocumentsListEvaluator extends BaseEvaluator {
   }
 
   /**
-   * Asks the agent to list context documents, returns just that turn's answer.
+   * Asks the agent to list context documents and returns that turn's answer.
    */
   private function listContextDocuments(NeuronAgentManagerInterface $manager, AiEditorialSessionInterface $session): string {
     $agent = $this->editorialAgent($manager, $session);
@@ -140,7 +140,7 @@ final class AttachedDocumentsListEvaluator extends BaseEvaluator {
   }
 
   /**
-   * Judges each checkpoint's answer for which document names it lists.
+   * Checks which document names each checkpoint's answer lists.
    */
   public function evaluate(mixed $output, array $datasetItem): void {
     assert(is_array($output));
@@ -169,9 +169,8 @@ final class AttachedDocumentsListEvaluator extends BaseEvaluator {
    * Builds an editorial agent on the session's persisted thread.
    *
    * Every turn gets its own agent, the way EditorialWorkflow::nodes() builds
-   * one per request. What carries the conversation over is the stored thread,
-   * not the agent object, so a new agent picks up where the last turn left
-   * off.
+   * one per request. The conversation is carried by the stored thread, not by
+   * the agent object, so a new agent picks up where the last turn left off.
    */
   private function editorialAgent(NeuronAgentManagerInterface $manager, AiEditorialSessionInterface $session): Agent {
     return $manager->createAgent('editorial', ['session' => $session]);
