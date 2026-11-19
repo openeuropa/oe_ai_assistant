@@ -123,7 +123,7 @@ class DraftingTurnTest extends AiEditorialSessionKernelTestBase {
     $this->turn($session, 'Draft it now.');
 
     MockAiProvider::reset();
-    $this->enqueueTurn('Draft 2 is ready.');
+    $this->enqueueTurn('Draft 2 is ready.', 'Draft another one.');
     $this->turn($session, 'Draft another one.');
 
     $threads = $session->conversationThreads();
@@ -132,7 +132,10 @@ class DraftingTurnTest extends AiEditorialSessionKernelTestBase {
     $this->assertStringContainsString('Editor: We are writing about the floods in Valencia.', $task);
     $this->assertStringContainsString('Assistant: Tell me when you are ready.', $task);
     $this->assertStringContainsString('Assistant: Draft 1 is ready.', $task);
-    $this->assertStringContainsString('Editor: Draft another one.', $task);
+    // This turn is still open while the drafters run, so its message is not
+    // in the conversation block. The drafter gets it as the brief instead.
+    $this->assertStringContainsString('What the editor asked for:', $task);
+    $this->assertStringContainsString('Draft another one.', $task);
 
     // The conversation names the drafts it produced and carries none of them.
     $this->assertStringNotContainsString('field_teaser', $task);
@@ -305,14 +308,14 @@ class DraftingTurnTest extends AiEditorialSessionKernelTestBase {
    * The drafters read the message that asked for the draft.
    *
    * The store closes a turn on the answer that ends it, and this call comes
-   * before that answer, so the turn that asked is still open while the
-   * drafters run.
+   * before that answer. So the turn that asked is still open while the
+   * drafters run, and its message reaches them as the brief.
    */
   public function testDraftersReadTheTurnThatAskedForTheDraft(): void {
     $session = $this->createSession($this->createUser());
 
     MockAiProvider::reset();
-    $this->enqueueTurn();
+    $this->enqueueTurn(brief: 'Write about the 2026 sett counts in Flanders.');
 
     $this->turn($session, 'Write about the 2026 sett counts in Flanders.');
 
@@ -333,12 +336,18 @@ class DraftingTurnTest extends AiEditorialSessionKernelTestBase {
         [
           'id' => 'call_1',
           'type' => 'function',
-          'function' => ['name' => 'drafting_draft_content', 'arguments' => '{}'],
+          'function' => [
+            'name' => 'drafting_draft_content',
+            'arguments' => json_encode(['brief' => self::BRIEF], JSON_THROW_ON_ERROR),
+          ],
         ],
         [
           'id' => 'call_2',
           'type' => 'function',
-          'function' => ['name' => 'drafting_draft_content', 'arguments' => '{}'],
+          'function' => [
+            'name' => 'drafting_draft_content',
+            'arguments' => json_encode(['brief' => self::BRIEF], JSON_THROW_ON_ERROR),
+          ],
         ],
       ],
     ));
@@ -554,15 +563,15 @@ class DraftingTurnTest extends AiEditorialSessionKernelTestBase {
   /**
    * A drafter is told the editor's message once, not twice.
    *
-   * The task includes the session's conversation, and the message that asked
-   * for the draft is the last turn in it. Quoting that message again would
-   * send it, and pay for it, twice in every group of every draft.
+   * The task carries the brief and the session's conversation. A turn closes
+   * on the answer that ends it, so the asking turn is in neither place twice.
+   * A second copy would be sent, and paid for, in every group of every draft.
    */
   public function testDrafterReadsTheEditorsMessageOnce(): void {
     $session = $this->createSession($this->createUser());
 
     MockAiProvider::reset();
-    $this->enqueueTurn();
+    $this->enqueueTurn(brief: 'Write about the floods in Valencia.');
 
     $this->turn($session, 'Write about the floods in Valencia.');
 
@@ -592,7 +601,7 @@ class DraftingTurnTest extends AiEditorialSessionKernelTestBase {
       ->forSession($session)
       ->archive($session->editorialThread(), 2);
 
-    $this->enqueueTurn();
+    $this->enqueueTurn(brief: 'Draft it now.');
     $this->turn($session, 'Draft it now.');
 
     $rows = $session->conversationThreads()[$this->thread($session, 1, 'main_fields')];
@@ -723,7 +732,7 @@ class DraftingTurnTest extends AiEditorialSessionKernelTestBase {
   private function turn(AiEditorialSessionInterface $session, string $message): AgentState {
     return $this->container->get(NeuronAgentManagerInterface::class)
       ->createAgent('editorial', ['session' => $session])
-      ->chat(new UserMessage($message));
+      ->chat(new UserMessage($message), TRUE);
   }
 
   /**
@@ -756,6 +765,11 @@ class DraftingTurnTest extends AiEditorialSessionKernelTestBase {
   }
 
   /**
+   * The brief a queued tool call sends when the test gives none.
+   */
+  private const BRIEF = 'Draft it, go ahead.';
+
+  /**
    * The main_fields answer of a news article.
    */
   private const MAIN_FIELDS = '{"title": [{"value": "T"}], "field_teaser": [{"value": "S"}]}';
@@ -771,28 +785,35 @@ class DraftingTurnTest extends AiEditorialSessionKernelTestBase {
    *
    * @param string $answer
    *   What the editorial agent tells the editor about the draft it stored.
+   * @param string $brief
+   *   What the tool call says the editor asked for.
    */
-  private function enqueueTurn(string $answer = 'Draft 1 is ready.'): void {
-    MockAiProvider::enqueue($this->toolCall());
+  private function enqueueTurn(string $answer = 'Draft 1 is ready.', string $brief = self::BRIEF): void {
+    MockAiProvider::enqueue($this->toolCall('call_1', $brief));
     MockAiProvider::enqueue(new MockResponse(text: self::MAIN_FIELDS));
     MockAiProvider::enqueue(new MockResponse(text: self::PARAGRAPHS));
     MockAiProvider::enqueue(new MockResponse(text: $answer));
   }
 
   /**
-   * The editorial agent's call of the drafting tool, which takes no inputs.
+   * The editorial agent's call of the drafting tool, with its brief.
    *
    * @param string $callId
    *   The id the model gives the call. A turn that asks twice needs a
    *   different one for each call.
+   * @param string $brief
+   *   What the tool call says the editor asked for.
    */
-  private function toolCall(string $callId = 'call_1'): MockResponse {
+  private function toolCall(string $callId = 'call_1', string $brief = self::BRIEF): MockResponse {
     return new MockResponse(
       toolCalls: [
         [
           'id' => $callId,
           'type' => 'function',
-          'function' => ['name' => 'drafting_draft_content', 'arguments' => '{}'],
+          'function' => [
+            'name' => 'drafting_draft_content',
+            'arguments' => json_encode(['brief' => $brief], JSON_THROW_ON_ERROR),
+          ],
         ],
       ],
     );

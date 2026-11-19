@@ -6,7 +6,7 @@ namespace Drupal\oe_ai_assistant\Plugin\NeuronWorkflow\DraftContent\Nodes;
 
 use Drupal\Component\Utility\Crypt;
 use Drupal\oe_ai_assistant\Exception\SchemaRetriesExhaustedException;
-use Drupal\oe_ai_assistant\Neuron\DeferredWorkflowInterface;
+use Drupal\oe_ai_assistant\Neuron\ToolWorkflowInterface;
 use Drupal\oe_ai_assistant\Neuron\Chat\Messages\EditorialAssistantMessage;
 use Drupal\oe_ai_assistant\Plugin\NeuronWorkflow\DraftContent\DraftContentResources;
 use Drupal\oe_ai_assistant\Plugin\NeuronWorkflow\DraftContent\Events\DraftContentRequestEvent;
@@ -36,9 +36,13 @@ final class DraftContentNode extends Node {
    * @param string $callId
    *   The tool call this draft answers. It names the progress the editor
    *   watches, and the records that keep a replayed step from drafting twice.
+   * @param string $brief
+   *   What the editor asked for, as the agent passed it to the tool. Empty
+   *   when the agent sent none.
    */
   public function __construct(
     private readonly string $callId,
+    private readonly string $brief,
   ) {}
 
   /**
@@ -221,7 +225,7 @@ final class DraftContentNode extends Node {
       $result = ['error' => $message, 'group' => $failed, 'version' => $version];
     }
 
-    $state->set(DeferredWorkflowInterface::RESULT_KEY, $result);
+    $state->set(ToolWorkflowInterface::RESULT_KEY, $result);
 
     return new StopEvent();
   }
@@ -413,6 +417,13 @@ final class DraftContentNode extends Node {
    */
   private function task(string $conversation, array $answers): string {
     $task = $conversation;
+
+    // The conversation block only has turns that have been closed. The turn
+    // that asked for this draft is still open while the tool runs, so only
+    // the brief has the editor's request.
+    if ($this->brief !== '') {
+      $task .= "What the editor asked for:\n" . $this->brief . "\n\n";
+    }
 
     // A later group must fit the title and the summary the main group wrote,
     // so the task carries them.

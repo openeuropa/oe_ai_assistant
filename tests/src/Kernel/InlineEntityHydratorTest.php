@@ -37,6 +37,7 @@ class InlineEntityHydratorTest extends KernelTestBase {
     'field',
     'filter',
     'text',
+    'text_with_summary',
     'node',
     'serialization',
     'datetime',

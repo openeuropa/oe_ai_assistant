@@ -12,16 +12,18 @@ use Drupal\Core\StringTranslation\TranslatableMarkup;
 use Drupal\oe_ai_assistant\Neuron\Tools\WorkflowToolProxy;
 use Drupal\oe_ai_assistant\Neuron\Tools\WorkflowToolInterface;
 use NeuronAI\Exceptions\ToolException;
+use NeuronAI\Tools\PropertyType;
 use NeuronAI\Tools\Tool;
 use NeuronAI\Tools\ToolCall;
+use NeuronAI\Tools\ToolProperty;
 use NeuronAI\Workflow\Workflow;
 
 /**
  * Asks the run for the next draft of the session.
  *
- * A tool runs between two yields of the agent that called it, so it cannot
- * report the drafting of a group back to the editor. The work is a workflow
- * instead, which WorkflowToolNode runs in place of executing this tool.
+ * A draft takes minutes, and the editor watches the groups fill in while it
+ * is written. So the work is the draft_content workflow, which
+ * WorkflowToolNode runs in place of executing this tool.
  */
 #[NeuronTool(
   id: RequestDraftNeuronTool::TOOL_ID,
@@ -56,9 +58,9 @@ final class RequestDraftNeuronTool extends NeuronToolPluginBase implements Workf
   /**
    * {@inheritdoc}
    *
-   * A node reads the tools of a run off the registry, which holds the Neuron
-   * object rather than this plugin. So the object it is given says that its
-   * work is a workflow, and asks this plugin for it.
+   * WorkflowToolNode finds this tool in the registry as a Neuron object, not
+   * as a plugin. So the object handed over is a WorkflowToolProxy, which
+   * forwards workflow() back here.
    */
   public function getNeuron(): Tool {
     return WorkflowToolProxy::make(
@@ -71,11 +73,32 @@ final class RequestDraftNeuronTool extends NeuronToolPluginBase implements Workf
 
   /**
    * {@inheritdoc}
+   *
+   * The drafters read the session's conversation, and conversationTurns()
+   * only returns turns that have been closed. The turn that asks for a draft
+   * is still open while this tool runs, so its message is missing from the
+   * conversation. The agent repeats it in this property.
+   */
+  protected function properties(): array {
+    return [
+      ToolProperty::make(
+        'brief',
+        PropertyType::STRING,
+        'What the editor asked for, in their own words. Quote the request'
+        . ' that asked for this draft rather than summarising it.',
+        TRUE,
+      ),
+    ];
+  }
+
+  /**
+   * {@inheritdoc}
    */
   public function workflow(ToolCall $call): Workflow {
     return $this->workflows->createWorkflow('draft_content', [], [
       'session' => $this->getContextValue('session'),
       'call' => (string) $call->getCallId(),
+      'brief' => (string) ($call->getInput('brief') ?? ''),
     ]);
   }
 
@@ -83,8 +106,8 @@ final class RequestDraftNeuronTool extends NeuronToolPluginBase implements Workf
    * {@inheritdoc}
    *
    * @throws \NeuronAI\Exceptions\ToolException
-   *   Always. The workflow of this tool answers its calls, so a node that
-   *   executes it instead has not read workflow().
+   *   Always. The workflow of this tool answers its calls, so nothing should
+   *   execute it.
    */
   public function __invoke(): string {
     throw new ToolException(sprintf(

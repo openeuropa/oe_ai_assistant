@@ -39,6 +39,10 @@ use Symfony\Component\DependencyInjection\Attribute\Autowire;
       data_type: 'string',
       label: new TranslatableMarkup('Tool call'),
     ),
+    'brief' => new ContextDefinition(
+      data_type: 'string',
+      label: new TranslatableMarkup('Editorial brief'),
+    ),
   ],
 )]
 final class DraftContentWorkflow extends NeuronWorkflowPluginBase {
@@ -62,7 +66,10 @@ final class DraftContentWorkflow extends NeuronWorkflowPluginBase {
    * context is handed to it here.
    */
   protected function nodes(): array {
-    return [new DraftContentNode((string) $this->getContextValue('call'))];
+    return [new DraftContentNode(
+      (string) $this->getContextValue('call'),
+      (string) $this->getContextValue('brief'),
+    )];
   }
 
   /**

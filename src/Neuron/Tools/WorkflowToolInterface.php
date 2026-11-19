@@ -8,30 +8,28 @@ use NeuronAI\Tools\ToolCall;
 use NeuronAI\Workflow\Workflow;
 
 /**
- * A tool plugin whose work is a workflow, run where the call is executed.
+ * A tool whose work is a workflow, run in place of the call.
  *
- * A tool runs between two yields of the agent that called it, so a tool that
- * does its own work cannot report progress. WorkflowToolNode runs the
- * workflow of such a tool instead, and what the run reports travels on into
- * the stream of the turn.
+ * Work that takes minutes goes in a workflow, which can report progress
+ * while it runs. WorkflowToolNode drives that run where it would otherwise
+ * execute the tool.
  *
- * The run answers the call, so it must finish inside the request: a workflow
- * that pauses leaves a call nothing can settle, and is reported to the model
- * as a failed tool.
+ * The run has to answer the call inside the request. A run that pauses
+ * leaves the call with no result, so the node refuses it and the call fails.
  */
 interface WorkflowToolInterface {
 
   /**
-   * The run that produces the result of one call.
+   * Builds the workflow that answers one call.
    *
-   * Called once per call, so the run reads the id and the inputs of the call
-   * it answers.
+   * The workflow needs an id of its own. The turn is itself a run, and the
+   * node refuses a workflow that comes back under the turn's id.
    *
    * @param \NeuronAI\Tools\ToolCall $call
    *   The call to answer.
    *
    * @return \NeuronAI\Workflow\Workflow
-   *   The run, built and ready.
+   *   The workflow, built and ready to run.
    */
   public function workflow(ToolCall $call): Workflow;
 

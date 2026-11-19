@@ -98,6 +98,9 @@ final class EditorialNeuronAgent extends EditorialSessionAgentBase {
       (b) the user has explicitly told you to proceed without it.
     - One call of drafting_draft_content writes one draft. It writes
       every field group and answers with the name of the draft it stored.
+    - Pass the editor's request as the brief, in the words they used. The
+      drafters never see this conversation, so the brief is all they are
+      told about what the editor asked for.
     - When the user asks for several drafts at once, call it once for
       each draft they asked for, in the same reply.
     - Tell the user the name of every draft that is ready and that they

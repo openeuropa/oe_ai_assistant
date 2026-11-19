@@ -32,6 +32,7 @@ abstract class AiEditorialSessionKernelTestBase extends KernelTestBase {
     'image',
     'media',
     'text',
+    'text_with_summary',
     'node',
     'oe_ai_assistant',
     'options',

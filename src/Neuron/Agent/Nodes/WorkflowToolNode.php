@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\oe_ai_assistant\Neuron\Agent\Nodes;
 
-use Drupal\oe_ai_assistant\Neuron\DeferredWorkflowInterface;
+use Drupal\oe_ai_assistant\Neuron\ToolWorkflowInterface;
 use Drupal\oe_ai_assistant\Neuron\Tools\WorkflowToolInterface;
 use NeuronAI\Agent\AgentState;
 use NeuronAI\Agent\Nodes\ToolNode;
@@ -22,28 +22,32 @@ use NeuronAI\Tools\ToolRegistry;
  * Runs the workflow of a tool that has one, instead of executing the tool.
  *
  * A tool runs between two yields of the agent that called it, so a tool that
- * does its own work cannot report progress. The work of such a tool is a
- * workflow, and this node drives that run where it would have executed the
- * tool, forwarding what the run reports into the stream of the turn.
+ * does its own work cannot report progress. A tool that implements
+ * WorkflowToolInterface puts that work in a workflow, and this node drives
+ * the run in place of the call, yielding what it reports into the stream of
+ * the turn.
  *
- * Everything else is the tool node of Neuron: the approval gate, the call
- * budget, the one result message of the batch and the return to inference.
+ * The rest is Neuron's ToolNode. The approval gate, the call budget, the one
+ * result message of the batch and the return to inference are all the
+ * parent's.
  */
 final class WorkflowToolNode extends ToolNode {
 
   /**
    * {@inheritdoc}
    *
-   * The branch is the only change: a tool with a workflow has it run here,
-   * between the chunks that open and close the call, so what the run reports
-   * reaches the editor while it works.
+   * The parent executes every local call, and a tool whose work is a workflow
+   * has nothing to execute. Its run is driven here instead, between the
+   * chunks that open and close the call, so what it reports reaches the
+   * editor while the call is still open.
    */
   protected function executeLocalTools(array $calls, string $messageId, AgentState $state, ToolRegistry $tools): \Generator {
     $local = array_diff_key($calls, $this->filterDeferredCalls($calls));
     foreach ($local as $index => $call) {
       yield new ToolCallChunk($messageId, $call);
-      // A rejected call runs nothing, and the tool node stops for one on its
-      // own, so it answers that case for a tool with a workflow too.
+      // A rejected call must not run. executeSingleTool() returns early for
+      // one and leaves its rejection result in place, so a rejected call
+      // goes there even when its tool has a workflow.
       if ($call->getApprovalState() !== ApprovalState::Rejected
         && $this->findLiveTool($call->getName(), $tools) instanceof WorkflowToolInterface) {
         yield from $this->executeToolWorkflow($call, $index, $state, $tools);
@@ -60,11 +64,10 @@ final class WorkflowToolNode extends ToolNode {
   /**
    * Runs the workflow of one call, and settles the call with its result.
    *
-   * This follows executeSingleTool(), which is where the policy of a call
-   * lives: a rejected call does not run, the run counts against the call's
-   * budget, the work is recorded at most once so a crash settles the call as
-   * interrupted rather than running it twice, and a failure reaches the model
-   * through the tool error handler.
+   * The policy of a call is the one in executeSingleTool(). The run counts
+   * against the tool's budget, and a result already recorded is restored
+   * rather than run again. A failure goes to the tool error handler, and what
+   * the handler returns is what the model reads.
    *
    * @param \NeuronAI\Tools\ToolCall $call
    *   The call to answer.
@@ -89,8 +92,9 @@ final class WorkflowToolNode extends ToolNode {
       $result = $this->recallMemo($memoKey);
       if ($result === NULL) {
         $result = yield from $this->runWorkflowOf($call, $state, $tools);
-        // A closure cannot yield on behalf of this generator, so the result
-        // is recorded after the run rather than around it.
+        // We can't wrap the run in memoize(), because its closure would
+        // have to yield on behalf of this generator. So the result is
+        // recorded once the run is over.
         $result = $this->memoize($memoKey, static fn (): string|ToolOutput => $result);
       }
 
@@ -111,7 +115,7 @@ final class WorkflowToolNode extends ToolNode {
   }
 
   /**
-   * Drives the run of one call and reads what it answered.
+   * Drives the workflow of one call and reads the result off its state.
    *
    * @param \NeuronAI\Tools\ToolCall $call
    *   The call to answer.
@@ -124,25 +128,29 @@ final class WorkflowToolNode extends ToolNode {
    *   Yields what the run reports. Returns the result of the call.
    *
    * @throws \NeuronAI\Exceptions\WorkflowException
-   *   When the run shares the id of the turn, or pauses.
+   *   When the run cannot answer the call.
    */
   private function runWorkflowOf(ToolCall $call, AgentState $state, ToolRegistry $tools): \Generator {
     $tool = $this->findLiveTool($call->getName(), $tools);
     assert($tool instanceof WorkflowToolInterface);
     $workflow = $tool->workflow($call);
 
-    // One id holds one live run, so a tool that handed back the turn's own
-    // run would deadlock on itself.
-    if ($workflow->getWorkflowId() === $state->getWorkflowId()) {
+    // One workflow id holds one live run, and the turn is holding its own.
+    // The engine would refuse a run under that id, with a message about a
+    // run in flight rather than about the tool that asked for it. Neither
+    // side is required to carry an id, and two runs without one do not
+    // collide.
+    $turnId = $state->getWorkflowId();
+    if ($turnId !== NULL && $workflow->getWorkflowId() === $turnId) {
       throw new WorkflowException(sprintf(
         'The workflow of the "%s" tool runs under the id of the turn that called it.',
         $call->getName(),
       ));
     }
 
-    // A run of its own is one step of this turn, and a step renews the lease
-    // of the turn when it commits. This step commits after every call of the
-    // reply, so a run that takes minutes renews it here.
+    // The turn's lease is renewed when a step commits, and this step commits
+    // only after every call of the reply has run. A tool's run can take
+    // minutes, so the lease is renewed here before it starts.
     $this->heartbeat();
 
     $reports = $workflow->events();
@@ -160,7 +168,7 @@ final class WorkflowToolNode extends ToolNode {
       ));
     }
 
-    $result = $outcome->get(DeferredWorkflowInterface::RESULT_KEY);
+    $result = $outcome->get(ToolWorkflowInterface::RESULT_KEY);
     if (!is_array($result)) {
       throw new WorkflowException(sprintf(
         'The workflow of the "%s" tool stored no result.',

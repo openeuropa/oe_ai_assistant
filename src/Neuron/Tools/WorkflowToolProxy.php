@@ -11,17 +11,17 @@ use NeuronAI\Workflow\Workflow;
 /**
  * The Neuron tool of a plugin whose work is a workflow.
  *
- * A node reads the tools of a run off the registry, which holds the Neuron
- * object and not the plugin behind it. So the object says that its work is a
- * workflow, and asks the plugin for the one that answers a call.
+ * A node looks a tool up in the registry of the run, which holds this object
+ * and not the plugin behind it. So this is where WorkflowToolInterface has to
+ * be declared, and workflow() is forwarded to the plugin.
  */
 final class WorkflowToolProxy extends NeuronProxyTool implements WorkflowToolInterface {
 
   /**
    * The plugin that builds the workflow.
    *
-   * The plugin the parent runs is its own, and private, so the one this asks
-   * for a workflow is kept here.
+   * NeuronProxyTool holds the plugin it runs in a private property, so this
+   * class keeps a reference of its own.
    */
   private readonly WorkflowToolInterface $plugin;
 
@@ -33,7 +33,7 @@ final class WorkflowToolProxy extends NeuronProxyTool implements WorkflowToolInt
    * @param string|null $description
    *   What the model is told the tool does.
    * @param array $properties
-   *   The arguments the model may pass.
+   *   The inputs the tool declares.
    * @param \Drupal\oe_ai_assistant\Neuron\Tools\WorkflowToolInterface $plugin
    *   The plugin that builds the workflow, and that the tool runs.
    */

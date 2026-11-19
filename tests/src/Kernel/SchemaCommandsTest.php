@@ -32,6 +32,7 @@ class SchemaCommandsTest extends KernelTestBase {
     'options',
     'system',
     'text',
+    'text_with_summary',
     'user',
     'workflows',
     'content_moderation',

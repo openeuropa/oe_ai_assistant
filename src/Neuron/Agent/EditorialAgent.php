@@ -12,19 +12,18 @@ use NeuronAI\Workflow\NodeInterface;
 /**
  * The editor's agent, which runs the workflow of a tool that has one.
  *
- * A tool of this module does its work in a workflow, so that the work can
- * report progress while it runs. Neuron's tool node executes a tool and waits
- * for what it returns, so nodes() swaps it for one that runs that workflow
- * instead. One run then serves a whole turn, and it is the run the chat
- * endpoint is streaming.
+ * Neuron's ToolNode executes a tool and waits for what it returns, so a tool
+ * that takes minutes cannot report its progress. WorkflowToolNode takes its
+ * place here, and drives the tool's workflow inside the run the chat endpoint
+ * is streaming.
  */
 final class EditorialAgent extends Agent {
 
   /**
    * {@inheritdoc}
    *
-   * The node takes the call budget and the error handler this agent was
-   * configured with, because the node it stands in for is built with both.
+   * A node built here starts from its own defaults, so the call budget and
+   * the error handler this agent was configured with are handed over again.
    */
   protected function nodes(): array {
     return array_map(
