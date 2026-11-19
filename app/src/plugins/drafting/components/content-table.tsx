@@ -8,14 +8,8 @@
  */
 
 import DOMPurify from "dompurify";
-import { Save } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { useDraftingSlice } from "../store";
-
-/** Props for the content table. */
-interface ContentTableProps {
-  onSave: () => void;
-}
 
 /**
  * Derives a human-readable label from a field machine name.
@@ -203,46 +197,6 @@ function InlineEntityItems({ items }: { items: unknown[] }) {
   );
 }
 
-/** Confirmation dialog for saving the draft. */
-export function SaveConfirmDialog({
-  onConfirm,
-  onCancel,
-}: {
-  onConfirm: () => void;
-  onCancel: () => void;
-}) {
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <div className="mx-4 w-full max-w-sm rounded-lg bg-white p-6 shadow-xl">
-        <h3 className="text-base font-semibold text-gray-900">
-          Save draft revision?
-        </h3>
-        <p className="mt-2 text-sm text-gray-500">
-          This will save the drafted content as a new{" "}
-          <strong>unpublished</strong> revision.
-        </p>
-        <div className="mt-5 flex justify-end gap-3">
-          <button
-            type="button"
-            onClick={onCancel}
-            className="cursor-pointer rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            onClick={onConfirm}
-            className="flex cursor-pointer items-center gap-1.5 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
-          >
-            <Save size={14} />
-            Save as draft
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 /**
  * Scrollable table of drafted field values, without the pane header.
  * Reads the drafted fields from the store so any pane chrome (the
@@ -301,44 +255,25 @@ export function ContentTableBody() {
 }
 
 /** The content table showing drafted field values. */
-export function ContentTable({ onSave }: ContentTableProps) {
+export function ContentTable() {
   const { draftedFields, activeDraftVersion } = useDraftingSlice();
   const entries = Object.entries(draftedFields);
-  const [showConfirm, setShowConfirm] = useState(false);
 
   if (entries.length === 0) return null;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       {/* Header naming the open draft version when known. */}
-      <div className="flex h-12 shrink-0 items-center justify-between border-b border-gray-200 px-4">
+      <div className="flex h-12 shrink-0 items-center border-b border-gray-200 px-4">
         <h2 className="text-base font-semibold text-gray-900">
           {activeDraftVersion !== null
             ? `Draft ${activeDraftVersion}`
             : "Drafted Content"}
         </h2>
-        <button
-          type="button"
-          onClick={() => setShowConfirm(true)}
-          className="flex cursor-pointer items-center gap-1.5 rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700"
-        >
-          <Save size={12} />
-          Save draft
-        </button>
       </div>
 
       {/* Field rows */}
       <ContentTableBody />
-
-      {showConfirm && (
-        <SaveConfirmDialog
-          onConfirm={() => {
-            setShowConfirm(false);
-            onSave();
-          }}
-          onCancel={() => setShowConfirm(false)}
-        />
-      )}
     </div>
   );
 }

@@ -3,21 +3,22 @@
  *
  * Split-panel layout: chat on the left, content artifact on the right.
  * DraftingChat owns the assistant-ui runtime, the tone/template/documents
- * hooks, and the tab construction. After a successful save it splices a
- * local event chip into the thread state via appendEventToThread so the
- * chip appears instantly without any remount or refetch.
+ * hooks, and the tab construction. The pane's Save button sends the chat
+ * message "Save draft {n}." and the editor confirms the resulting save call
+ * in a dialog. Tone and template changes splice a local event chip into the
+ * thread state via appendEventToThread so the chip appears instantly without
+ * any remount or refetch.
  *
  * DraftingRoot is a thin shell that renders DraftingChat.
  */
 
-import { AssistantRuntimeProvider } from "@assistant-ui/react";
+import { AssistantRuntimeProvider, useAuiState } from "@assistant-ui/react";
 import { FileText, LayoutTemplate, Loader2, Megaphone } from "lucide-react";
 import { type ReactNode, useCallback } from "react";
 import { CardSelectPane } from "@/components/ui/card-select-pane";
 import type { PaneTabItem } from "@/components/ui/pane-tabs";
 import { getConfig } from "@/config";
-import { useAppStore } from "@/store";
-import { saveDraftRevision } from "./api/drafting-api";
+import { ApprovalDecisionProvider, type Decision } from "./approval-decision";
 import { ArtifactPane } from "./components/artifact-pane";
 import { ContentTable } from "./components/content-table";
 import { DocumentsPanel } from "./components/documents-panel";
@@ -28,6 +29,7 @@ import { PaneBusyOverlay } from "./components/pane-busy-overlay";
 import {
   DraftContentToolUI,
   EditorialEventToolUI,
+  SaveDraftToolUI,
 } from "./components/tool-uis";
 import { useDraftingDocuments } from "./hooks/use-drafting-documents";
 import { useDraftingRuntime } from "./hooks/use-drafting-runtime";
@@ -37,8 +39,9 @@ import { useReportPendingWork } from "./hooks/use-report-pending-work";
 import { useReportParticipants } from "./participants";
 import { useSavedVersions } from "./saved-versions";
 import { useSessionDrafts } from "./session-drafts";
-import { getDraftingState, useDraftingSlice } from "./store";
+import { useDraftingSlice } from "./store";
 import { appendEventToThread } from "./thread-events";
+import { useWaitingSaves } from "./waiting-saves";
 
 /** Bridges the runtime's pending state into the shell store. */
 function PendingWorkReporter() {
@@ -68,8 +71,8 @@ function SessionArtifactPane({ children }: { children: ReactNode }) {
 
 /**
  * Preview pane for a versioned draft, stamped with its creation time.
- * Reads the thread for the timestamp, so it must render inside the
- * AssistantRuntimeProvider.
+ * Save stays disabled while a reply streams or a save waits for the editor.
+ * Reads the thread, so it must render inside the AssistantRuntimeProvider.
  */
 function VersionedDraftPreview({
   version,
@@ -80,6 +83,8 @@ function VersionedDraftPreview({
 }) {
   const sessionDrafts = useSessionDrafts();
   const savedVersions = useSavedVersions();
+  const waitingSaves = useWaitingSaves();
+  const isRunning = useAuiState((s) => s.thread.isRunning);
   const activeDraft = sessionDrafts.find((draft) => draft.version === version);
   return (
     <DraftPreview
@@ -88,6 +93,7 @@ function VersionedDraftPreview({
       createdAt={activeDraft?.createdAt ?? null}
       isSaved={savedVersions.has(version)}
       onSave={onSave}
+      isSaveDisabled={isRunning || waitingSaves.length > 0}
     />
   );
 }
@@ -96,14 +102,15 @@ function VersionedDraftPreview({
  * Inner component that owns the assistant-ui runtime and all runtime-dependent
  * state, including tone/template/documents hooks and composer tab construction.
  *
- * Save handlers capture labels before calling submitValues() and splice a
- * local event chip (or error chip on failure) directly into the thread via
- * export/import. This avoids any remount or network refetch after a save.
+ * The pane's Save button appends "Save draft {n}." to the thread, which makes
+ * the agent call the save tool. The call waits for the editor's decision in
+ * the approval dialog. Tone and template handlers capture labels before
+ * calling submitValues() and splice a local event chip (or error chip on
+ * failure) directly into the thread, without any remount or network refetch.
  */
 function DraftingChat() {
   const { draftedFields, runs, activeCallIds, activeDraftVersion } =
     useDraftingSlice();
-  const setPendingWork = useAppStore((s) => s.setPendingWork);
   const runtime = useDraftingRuntime();
   const tone = useDraftingTone();
   const documents = useDraftingDocuments();
@@ -122,42 +129,31 @@ function DraftingChat() {
    * not change the runtime reference.
    */
   const appendEvent = useCallback(
-    (eventType: string, summary: string, version?: number) =>
-      appendEventToThread(runtime.thread, { eventType, summary, version }),
+    (eventType: string, summary: string) =>
+      appendEventToThread(runtime.thread, { eventType, summary }),
     [runtime],
   );
 
   /**
-   * Saves the draft version open in the artifact pane via the save
-   * endpoint. The backend resolves the fields for that version from its
-   * own draft history, so saving an older version saves exactly what
-   * the pane shows. The in-flight request reports pending work so the
-   * exit guard blocks navigation, and the outcome lands in the thread
-   * as a local event chip (the backend records the matching durable
-   * event row).
+   * Answers one waiting save as a turn of its own.
+   *
+   * Recording the call id in decidedSaves is what retires the card that
+   * asked, while the answer is still on its way. See waiting-saves.ts.
    */
-  const handleSave = useCallback(async () => {
-    const version = getDraftingState().activeDraftVersion;
-    if (version === null) {
-      // Legacy unversioned drafts cannot be addressed by the contract.
-      appendEvent("error", "This draft has no version and cannot be saved");
-      return;
-    }
-    setPendingWork("drafting:save", true);
-    try {
-      await saveDraftRevision({ version });
-    } catch {
-      appendEvent("error", `Draft ${version} could not be saved`);
-      return;
-    } finally {
-      setPendingWork("drafting:save", false);
-    }
-    appendEvent(
-      "save",
-      `Draft ${version} saved as unpublished revision`,
-      version,
-    );
-  }, [appendEvent, setPendingWork]);
+  const decide = useCallback(
+    (callId: string, decision: Decision) => {
+      const { messages } = runtime.thread.getState();
+      // The runtime's onError already reports a failed run; the rejection
+      // carries nothing more.
+      Promise.resolve(
+        runtime.thread.startRun({
+          parentId: messages[messages.length - 1]?.id ?? null,
+          runConfig: { custom: { approval: { callId, decision } } },
+        }),
+      ).catch(() => {});
+    },
+    [runtime],
+  );
 
   /** Determine what the artifact pane shows. */
   function renderArtifact() {
@@ -168,11 +164,13 @@ function DraftingChat() {
       return (
         <VersionedDraftPreview
           version={activeDraftVersion}
-          onSave={handleSave}
+          onSave={() =>
+            runtime.thread.append(`Save draft ${activeDraftVersion}.`)
+          }
         />
       );
     }
-    return <ContentTable onSave={handleSave} />;
+    return <ContentTable />;
   }
 
   // Editorial context panels, shown as pill buttons under the composer.
@@ -308,40 +306,43 @@ function DraftingChat() {
 
   return (
     <AssistantRuntimeProvider runtime={runtime}>
-      {/* Register tool call renderers so they appear inline in chat. */}
-      <DraftContentToolUI />
-      <EditorialEventToolUI />
+      <ApprovalDecisionProvider value={decide}>
+        {/* Register tool call renderers so they appear inline in chat. */}
+        <DraftContentToolUI />
+        <EditorialEventToolUI />
+        <SaveDraftToolUI />
 
-      {/* Feed the shell exit guard with this plugin's pending state.
+        {/* Feed the shell exit guard with this plugin's pending state.
           Panel saves report themselves via useCardSelection. */}
-      <PendingWorkReporter />
-      {/* Feed the session header with the chat participants. */}
-      <ParticipantsReporter />
+        <PendingWorkReporter />
+        {/* Feed the session header with the chat participants. */}
+        <ParticipantsReporter />
 
-      <div className="flex min-h-0 flex-1">
-        {/* Left panel: chat, always flexing into the width the pane
+        <div className="flex min-h-0 flex-1">
+          {/* Left panel: chat, always flexing into the width the pane
             leaves free; the thread centers its own content. The faint
             gray well makes the white composer and cards stand out. */}
-        <div className="flex min-h-0 flex-1 flex-col bg-gray-50">
-          <DraftingThread tabs={tabs} />
-        </div>
+          <div className="flex min-h-0 flex-1 flex-col bg-gray-50">
+            <DraftingThread tabs={tabs} />
+          </div>
 
-        {/* Middle panel appears once the session holds a draft. While the
+          {/* Middle panel appears once the session holds a draft. While the
             run writes the next one the pane still holds the previous draft,
             which the editor must not read as the current one, so the busy
             surface covers it until the new draft lands. */}
-        {hasFields && (
-          <SessionArtifactPane>
-            <div className="relative flex min-h-0 flex-1 flex-col">
-              {renderArtifact()}
-              {isDrafting && <PaneBusyOverlay />}
-            </div>
-          </SessionArtifactPane>
-        )}
+          {hasFields && (
+            <SessionArtifactPane>
+              <div className="relative flex min-h-0 flex-1 flex-col">
+                {renderArtifact()}
+                {isDrafting && <PaneBusyOverlay />}
+              </div>
+            </SessionArtifactPane>
+          )}
 
-        {/* Right edge: the always-present draft rail driving the pane. */}
-        <DraftRail />
-      </div>
+          {/* Right edge: the always-present draft rail driving the pane. */}
+          <DraftRail />
+        </div>
+      </ApprovalDecisionProvider>
     </AssistantRuntimeProvider>
   );
 }

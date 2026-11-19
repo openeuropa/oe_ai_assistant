@@ -10,6 +10,7 @@ use Drupal\Core\Plugin\Context\EntityContextDefinition;
 use Drupal\Core\StringTranslation\TranslatableMarkup;
 use Drupal\oe_ai_assistant\Entity\Bundle\ContentCreationSessionInterface;
 use Drupal\oe_ai_assistant\Neuron\Agent\EditorialAgent;
+use Drupal\oe_ai_assistant\Plugin\NeuronTool\SaveDraftNeuronTool;
 use Drupal\oe_ai_assistant\Neuron\Chat\Messages\Stream\Adapters\PatchedVercelAIAdapter;
 use NeuronAI\Workflow\Streaming\Adapter\StreamAdapterInterface;
 
@@ -25,6 +26,7 @@ use NeuronAI\Workflow\Streaming\Adapter\StreamAdapterInterface;
   tools: [
     'drafting_get_history',
     'drafting_draft_content',
+    SaveDraftNeuronTool::TOOL_ID,
   ],
   context_definitions: [
     'session' => new EntityContextDefinition(
@@ -110,6 +112,15 @@ final class EditorialNeuronAgent extends EditorialSessionAgentBase {
       reported, and do not claim a draft is ready.
     - The field groups below are the ones a new draft follows.
     - Answer questions about earlier drafts with drafting_get_history.
+    - When the editor asks to save a draft, call drafting_save_draft
+      with the version of that draft. The editor confirms on the card
+      before anything is written.
+    - Report only what the result says: a nodeId means the draft was
+      saved as an unpublished revision, an error means it was not, and
+      a cancelled call means the editor chose not to save it.
+    - Never say a draft is saved before the result arrives.
+    - A cancelled save applies to that request only. When the editor
+      asks to save again, call drafting_save_draft again.
     - You can have normal conversations with the user at any point.
     PROMPT;
 
