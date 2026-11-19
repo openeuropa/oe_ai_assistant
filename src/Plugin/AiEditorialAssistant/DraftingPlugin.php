@@ -362,9 +362,13 @@ class DraftingPlugin extends AiAssistantPluginBase {
     // A message instead of a decision means the editor is leaving that save
     // alone. Its run is still suspended under the session's id, and the
     // engine refuses to start a turn over a suspended run. So the run is
-    // abandoned and the message is answered instead.
+    // dropped from the store and the message is answered instead.
+    //
+    // Agent::abandon() refuses a run that waits on a call, because the call
+    // would go unanswered. The call is answered: the next run settles it as
+    // interrupted before it asks the model anything.
     if ($decisions === NULL && $agent->inspect()?->status === WorkflowStatus::Suspended) {
-      $agent->abandon();
+      (new WorkflowEngine($this->persistence))->abandon($session->editorialThread());
     }
 
     // The engine keeps one run per id, and every turn of this session runs
