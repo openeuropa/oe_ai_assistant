@@ -66,10 +66,12 @@ final class DraftContentWorkflow extends NeuronWorkflowPluginBase {
    * context is handed to it here.
    */
   protected function nodes(): array {
-    return [new DraftContentNode(
+    $node = new DraftContentNode(
       (string) $this->getContextValue('call'),
       (string) $this->getContextValue('brief'),
-    )];
+    );
+
+    return [$node];
   }
 
   /**

@@ -13,7 +13,6 @@ dependencies:
   - drupal:options
   - drupal:taxonomy
   - drupal:text
-  - drupal:text_with_summary
   - drupal:workflows
   - oe_ai_provider_gpt_at_ec:oe_ai_provider_gpt_at_ec
   - ai:ai_provider_openai
