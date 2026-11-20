@@ -145,12 +145,17 @@ abstract class EditorialSessionAgentBase extends NeuronAgentPluginBase {
   /**
    * Builds the context documents block of the prompts.
    *
-   * Each document gets a heading with its title and file name, so the agents
-   * can tell which one the editor refers to. Under the heading goes the
-   * extracted text, or a note that the content isn't available. Text is
-   * capped per document and over all of them: a document whose text doesn't
-   * fit in what is left of the budget contributes its summary instead, and
-   * counts as not available while it has none.
+   * Each document gets a heading with its title, ID and file name. The
+   * title and file name let the agents tell documents apart when the editor
+   * refers to one by name, and the ID is there so a drafter can call
+   * context_read_document for the full text of a document we could only
+   * summarize here, or whose text isn't extracted yet.
+   *
+   * Under the heading goes the extracted text, or a note that the content
+   * isn't available. Text is capped per document and over all of them: a
+   * document whose text doesn't fit in what is left of the budget
+   * contributes its summary instead, and counts as not available while it
+   * has none.
    *
    * @return string
    *   The prompt block, or an empty string without context documents.
@@ -165,9 +170,11 @@ abstract class EditorialSessionAgentBase extends NeuronAgentPluginBase {
     $budget = self::MAX_TOTAL_CHARS;
     foreach ($documents as $document) {
       $lines[] = '';
-      $heading = '### ' . (string) ($document['title'] ?? $document['id'] ?? 'Document');
+      $id = (string) ($document['id'] ?? '');
+      $title = (string) ($document['title'] ?? ($id !== '' ? $id : 'Document'));
+      $heading = sprintf('### %s (ID: %s', $title, $id);
       $filename = trim((string) ($document['filename'] ?? ''));
-      $lines[] = $filename === '' ? $heading : sprintf('%s (file: %s)', $heading, $filename);
+      $lines[] = $filename === '' ? $heading . ')' : sprintf('%s, file: %s)', $heading, $filename);
       $extract = trim((string) ($document['extract'] ?? ''));
       [$extract, $truncated] = DocumentExtractTruncator::truncate($extract);
       $summary = trim((string) ($document['summary'] ?? ''));

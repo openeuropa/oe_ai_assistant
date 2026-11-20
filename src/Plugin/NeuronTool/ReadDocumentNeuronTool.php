@@ -16,15 +16,15 @@ use NeuronAI\Tools\ToolProperty;
 /**
  * Returns the extracted text of one attached document.
  *
- * The editorial context tool lists the documents with their summaries; this
- * reads the one the answer actually needs, so a long briefing is only
+ * A caller's own prompt lists the documents by ID alongside a summary or a
+ * not-available note; this reads one in full, so a long briefing is only
  * spelled out when it is used.
  */
 #[NeuronTool(
   id: 'context_read_document',
   description: 'Returns the full text of one document attached to this session.'
-  . ' Call it when a summary is not enough to answer, naming the'
-  . ' document by the ID context_get_editorial_context reported.',
+  . ' Call it when a summary is not enough, naming the document by the ID'
+  . ' shown for it.',
   label: new TranslatableMarkup('Read document'),
   context_definitions: [
     'session' => new EntityContextDefinition(

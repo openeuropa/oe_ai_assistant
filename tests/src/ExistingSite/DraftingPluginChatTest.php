@@ -371,7 +371,7 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
     $session = $this->createSession($user);
 
     [$processedId, $processedTitle] = $this->uploadDocument($session, 'briefing.txt', 'Alpha briefing content for the draft.');
-    [, $pendingTitle] = $this->uploadDocument($session, 'pending.txt', 'Not processed.');
+    [$pendingId, $pendingTitle] = $this->uploadDocument($session, 'pending.txt', 'Not processed.');
     MockAiProvider::enqueue(new MockResponse(text: 'Briefing summary.'));
     $result = $this->httpPost('/api/ai/plugins/drafting/extract-document', [
       'sessionId' => $session->id(),
@@ -396,8 +396,8 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
     $this->assertCount(4, $log);
     foreach ([0, 1, 2, 3] as $callIndex) {
       $prompt = $log[$callIndex]['system_prompt'];
-      $this->assertStringContainsString("### $processedTitle (file: $processedTitle)\nAlpha briefing content for the draft.", $prompt);
-      $this->assertStringContainsString("### $pendingTitle (file: $pendingTitle)\nNot processed yet", $prompt);
+      $this->assertStringContainsString("### $processedTitle (ID: $processedId, file: $processedTitle)\nAlpha briefing content for the draft.", $prompt);
+      $this->assertStringContainsString("### $pendingTitle (ID: $pendingId, file: $pendingTitle)\nNot processed yet", $prompt);
     }
   }
 
