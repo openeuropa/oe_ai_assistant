@@ -2,27 +2,26 @@
 
 declare(strict_types=1);
 
-namespace Drupal\oe_ai_assistant\Plugin\NeuronWorkflow\Editorial\Nodes;
+namespace Drupal\oe_ai_assistant\Plugin\NeuronWorkflow\DraftContent\Nodes;
 
 use Drupal\Component\Utility\Crypt;
 use Drupal\oe_ai_assistant\Exception\SchemaRetriesExhaustedException;
+use Drupal\oe_ai_assistant\Neuron\ToolWorkflowInterface;
 use Drupal\oe_ai_assistant\Neuron\Chat\Messages\EditorialAssistantMessage;
+use Drupal\oe_ai_assistant\Plugin\NeuronWorkflow\DraftContent\DraftContentResources;
+use Drupal\oe_ai_assistant\Plugin\NeuronWorkflow\DraftContent\Events\DraftContentRequestEvent;
 use Drupal\oe_ai_assistant\Plugin\NeuronWorkflow\Drafting\Nodes\ValidateNode;
-use Drupal\oe_ai_assistant\Plugin\NeuronWorkflow\Editorial\Events\DraftingRequestedEvent;
-use Drupal\oe_ai_assistant\Plugin\NeuronWorkflow\Editorial\Events\DraftStoredEvent;
-use Drupal\oe_ai_assistant\Plugin\NeuronWorkflow\Editorial\EditorialResources;
 use NeuronAI\Agent\Adapters\Events\ActivityStreamEvent;
 use NeuronAI\Agent\Adapters\Events\CustomStreamEvent;
+use NeuronAI\Workflow\Events\StopEvent;
 use NeuronAI\Workflow\Node;
 use NeuronAI\Workflow\WorkflowState;
 
 /**
- * Writes a draft for every call of a reply, a field group at a time.
+ * Writes one draft of a session, a field group at a time.
  *
- * The drafting runs here rather than inside the tool the model called, so it
- * can yield while it works and the editor sees which group it is writing. Each
- * group is drafted by the drafting workflow, which checks the answer
- * against the schema of the group and asks again while it does not match.
+ * The editor watches the groups fill in, so this node yields where each one
+ * stands as it reaches it.
  */
 final class DraftContentNode extends Node {
 
@@ -32,65 +31,61 @@ final class DraftContentNode extends Node {
   private const MAIN_GROUP = 'main_fields';
 
   /**
-   * Writes one draft for every call that asked, and reports each one.
+   * Builds the node.
+   *
+   * @param string $callId
+   *   The tool call this draft answers. It names the progress the editor
+   *   watches, and the records that keep a replayed step from drafting twice.
+   * @param string $brief
+   *   What the editor asked for, as the agent passed it to the tool. Empty
+   *   when the agent sent none.
    */
-  public function __invoke(DraftingRequestedEvent $event, WorkflowState $state, EditorialResources $resources): \Generator {
-    // A draft takes its number from the drafts the session stores, and it
-    // stores nothing until it writes its last group. Two drafts that run
-    // at the same time would both answer Draft 1, and the editor would
-    // open one of the two. So this loop writes the draft of one call at a
-    // time.
-    $results = [];
-    foreach ($event->callIds as $callId) {
-      $result = yield from $this->draft($resources, $callId);
-      $results[$callId] = ['result' => $result];
-    }
-    $state->set('results', $results);
-
-    return new DraftStoredEvent();
-  }
+  public function __construct(
+    private readonly string $callId,
+    private readonly string $brief,
+  ) {}
 
   /**
-   * Writes the draft that one call asked for.
+   * Writes the draft, a field group at a time, and records the outcome.
    *
-   * @param \Drupal\oe_ai_assistant\Plugin\NeuronWorkflow\Editorial\EditorialResources $resources
-   *   What this run shares.
-   * @param string $callId
-   *   The call this draft answers.
-   *
-   * @return \Generator
-   *   Yields the progress of the draft. Returns what the model receives,
-   *   which is the name of the draft or what stopped it.
+   * Each group is drafted by the draft_group workflow, which checks the
+   * answer against the schema of the group and asks again while it does not
+   * match.
    */
-  private function draft(EditorialResources $resources, string $callId): \Generator {
+  public function __invoke(
+    DraftContentRequestEvent $event,
+    WorkflowState $state,
+    DraftContentResources $resources,
+  ): \Generator {
+    $callId = $this->callId;
     $groups = $resources->session->getFieldGroups();
     $total = count($groups);
-    // The run already told the editor the name of this draft. A step that
-    // runs again reads nextVersion() a second time, and that reading
-    // answers a higher number once the session stores a draft. The draft
-    // would land under a name the editor never saw. So the memo keeps the
-    // first reading, under the id of the call.
+    // The run already told the editor the name of this draft. A replayed
+    // step calls nextVersion() again, which returns a higher number once a
+    // draft has been stored, so we would promise "Draft 3" and then store
+    // "Draft 4". Memoizing per call id pins the version to the first
+    // reading.
     $version = (int) $this->memoize(
       'version.' . $callId,
       fn (): int => $resources->session->nextVersion(),
     );
     $run = $this->runId($version);
-    // Read the conversation once for the whole draft. It can't change while
-    // we draft the groups, so re-reading it for each group would only repeat
-    // the same query.
+    // The conversation can't change while the groups are drafted, so reading
+    // it per group would repeat the same query. It is read once here, for the
+    // whole draft.
     $conversation = $this->conversation($resources);
     $answers = [];
     $index = 0;
     $failed = '';
 
-    // Read before the first group, so the stored draft and the card the
-    // editor watches carry the same snapshot of what the editor set up. A
-    // reading in the catch could throw a second time.
+    // The card the editor watches and the stored draft must show the same
+    // setup, and snapshot() can throw. So it is read once here, before the
+    // first group, and the catch block reuses what it returned.
     $context = $this->snapshot($resources);
 
-    // The editor's card draws its rows from this list. The list travels
-    // before the first group is drafted, so the card shows every group of the
-    // content type from the start and fills them in as the run reaches them.
+    // The editor should see every group of the content type from the start,
+    // not one row turning up at a time. So the rows of the card are built
+    // here and sent with draft-started, before the first group is drafted.
     $progress = [];
     foreach ($groups as $group) {
       $groupId = (string) $group['groupId'];
@@ -109,9 +104,9 @@ final class DraftContentNode extends Node {
     ]);
 
     try {
-      // A content type with no field group assembles a draft of no fields.
-      // The editor is then told a draft is ready, and opens an empty form.
-      // So the run fails and the model reports it.
+      // A content type with no field group would produce a draft with no
+      // fields. The editor would be told a draft is ready and would open an
+      // empty form. So the run fails here and the model reports it.
       if ($groups === []) {
         throw new \RuntimeException(sprintf(
           'The "%s" content type has no field group to draft.',
@@ -124,10 +119,10 @@ final class DraftContentNode extends Node {
         $groupId = (string) $group['groupId'];
         $failed = $groupId;
 
-        // A group this node already drafted keeps that draft, and replays
-        // none of its progress. A closure cannot yield into this generator,
-        // so the node reads the recorded value back rather than wrapping the
-        // drafting in memoize().
+        // On a retry, a group that was already drafted keeps that draft and
+        // is not reported as "drafting" again. We can't wrap the drafting in
+        // memoize(), because it has to yield and a closure can't yield on
+        // behalf of this generator. So the recorded value is read back here.
         $fields = $this->recallMemo('group.' . $callId . '.' . $groupId);
 
         if (!is_array($fields)) {
@@ -152,10 +147,10 @@ final class DraftContentNode extends Node {
         'fields' => $fields,
       ]);
 
-      // The field values reach no model, so the pane cannot read them off the
-      // tool result. They go out as their own part, which is what shows the
-      // draft without waiting for a reload. The part is a convenience: a
-      // reload reads the draft back from the drafts thread.
+      // The tool result holds no field values, so the pane can't read them
+      // off it. They are sent as an event of their own instead, which is what
+      // shows the draft without a reload. After a reload the pane reads the
+      // draft back from the drafts thread.
       yield new CustomStreamEvent('drafted-fields', [
         'version' => $version,
         'callId' => $callId,
@@ -164,21 +159,22 @@ final class DraftContentNode extends Node {
         'groups' => array_values($progress),
         'error' => '',
         'fields' => $fields,
-        // The row the draft sits in is stamped by the site, and a reload
-        // reads the time back off it. The browser clock would disagree with
-        // that, so the time the site kept travels with the draft.
+        // After a reload the pane shows the timestamp of the row the draft
+        // was stored in, and the browser clock would disagree with it. So
+        // server time is sent here, and the two match.
         'createdAt' => date('c'),
       ]);
 
-      // A draft holds every field of the content type, and the agent replays
-      // its thread on every turn. So the model is told the name of the draft,
-      // and the fields stay in the drafts thread.
+      // A draft holds every field of the content type, and the agent re-sends
+      // its whole thread on every turn, so fields in a tool result would be
+      // paid for on every later request. The model is only told the name of
+      // the draft, and the fields stay in the drafts thread.
       $result = ['draft' => sprintf('Draft %d', $version), 'version' => $version];
     }
     catch (\Throwable $e) {
-      // The set is incomplete, so this run stores no field. The model has to
-      // learn which group stopped it: an editor told a draft is ready, who
-      // then opens half a content type, learns nothing.
+      // The editor only ever reads the short message built below, so the
+      // group, the session and the run go to the log for whoever has to work
+      // out why the draft failed.
       $resources->logger->error('Drafting @group of session @session failed in run @run: @message', [
         '@group' => $failed === '' ? 'the set' : sprintf('the "%s" group', $failed),
         '@session' => (string) $resources->session->id(),
@@ -187,9 +183,10 @@ final class DraftContentNode extends Node {
         'exception' => $e,
       ]);
 
-      // A raw message can carry a gateway response, and the agent repeats to
-      // the editor what it reads. A schema miss names the fields of the
-      // editor's own template, so that one is passed on.
+      // An exception message can carry a gateway response, and the agent
+      // repeats to the editor whatever this result holds. A schema failure
+      // only names fields of the editor's own template, so that one is passed
+      // on and the rest become a fixed sentence.
       $message = match (TRUE) {
         $e instanceof SchemaRetriesExhaustedException => $e->getMessage(),
         $failed === '' => 'The draft could not be written.',
@@ -203,8 +200,9 @@ final class DraftContentNode extends Node {
       }
 
       // The editor reads the card again after a reload, so a run that failed
-      // is stored the way a run that worked is. The record holds no field,
-      // which is what keeps it out of the drafts the editor can open.
+      // is stored the way a run that worked is. Its status is "failed", which
+      // is how listDrafts() and getDraftContent() keep it out of the drafts
+      // the editor can open.
       $this->storeDraft($resources, [
         'version' => $version,
         'run' => $run,
@@ -227,7 +225,9 @@ final class DraftContentNode extends Node {
       $result = ['error' => $message, 'group' => $failed, 'version' => $version];
     }
 
-    return $result;
+    $state->set(ToolWorkflowInterface::RESULT_KEY, $result);
+
+    return new StopEvent();
   }
 
   /**
@@ -250,11 +250,10 @@ final class DraftContentNode extends Node {
   private function progress(string $callId, array $group, string $status, int $index, int $total): ActivityStreamEvent {
     $groupId = (string) $group['groupId'];
 
-    // Two drafts of one reply write the same groups. An event replaces the
-    // row of the card that carries its id. An id of the group alone would
-    // give both drafts one set of rows. The second draft would then reset
-    // the rows the first draft filled. So the id names the call and the
-    // group.
+    // Two drafts of one reply write the same groups, and the card replaces
+    // the row whose id the event carries. An id built from the group alone
+    // would give both drafts one set of rows, and the second draft would
+    // reset the rows the first one filled. So the id names the call too.
     return new ActivityStreamEvent(
       id: sprintf('draft:%s.%s', $callId, $groupId),
       type: 'drafting',
@@ -272,7 +271,7 @@ final class DraftContentNode extends Node {
   /**
    * Runs the drafter of one group and reports the values it wrote.
    *
-   * @param \Drupal\oe_ai_assistant\Plugin\NeuronWorkflow\Editorial\EditorialResources $resources
+   * @param \Drupal\oe_ai_assistant\Plugin\NeuronWorkflow\DraftContent\DraftContentResources $resources
    *   What this run shares.
    * @param array $group
    *   The group definition, with its id and its schema slice.
@@ -287,7 +286,7 @@ final class DraftContentNode extends Node {
    * @throws \Drupal\oe_ai_assistant\Exception\SchemaRetriesExhaustedException
    *   When no answer of the drafter matched the group schema.
    */
-  private function draftGroup(EditorialResources $resources, array $group, string $run, string $task): array {
+  private function draftGroup(DraftContentResources $resources, array $group, string $run, string $task): array {
     $state = $resources->workflows->createWorkflow('draft_group', [], [
       'session' => $resources->session,
       'group' => (string) $group['groupId'],
@@ -300,13 +299,13 @@ final class DraftContentNode extends Node {
   }
 
   /**
-   * Names this run, so two runs of one draft never share a conversation.
+   * Names this run, so two attempts at one draft never share a conversation.
    *
-   * A retried step drafts the version it took the first time. A name built
-   * from the version alone would name the drafter thread of the attempt
-   * that failed. The drafter would answer from a conversation that already
-   * failed. So a random segment separates the two runs. The version ties
-   * the run to the draft it wrote.
+   * A replayed step drafts the version it took the first time. A name built
+   * from the version alone would point at the drafter thread of the attempt
+   * that failed, and the drafter would answer from that conversation. So a
+   * random segment separates the two, and the version ties the run to the
+   * draft it wrote.
    *
    * @param int $version
    *   The version this run drafts.
@@ -321,19 +320,19 @@ final class DraftContentNode extends Node {
   /**
    * Keeps the draft in a thread of its own.
    *
-   * A draft holds every field of the content type, which no model needs to
-   * read back. Nothing runs an agent on this thread, so the draft is as
-   * large as the content type needs. A reader asks for one draft, so the
-   * message names its version and the store records it on the row.
+   * No model has to read a draft back, and no agent runs on this thread, so
+   * a record can be as large as the content type needs. A reader asks for one
+   * draft, so the message names its version and the store records it on the
+   * row.
    *
-   * @param \Drupal\oe_ai_assistant\Plugin\NeuronWorkflow\Editorial\EditorialResources $resources
+   * @param \Drupal\oe_ai_assistant\Plugin\NeuronWorkflow\DraftContent\DraftContentResources $resources
    *   What this run shares.
    * @param array $draft
    *   The record of the run: its version, the run that wrote it, its status,
    *   the snapshot of what the editor set up, the groups with the status each
    *   one reached, and the field values.
    */
-  private function storeDraft(EditorialResources $resources, array $draft): void {
+  private function storeDraft(DraftContentResources $resources, array $draft): void {
     $message = (new EditorialAssistantMessage(json_encode($draft)))
       ->setDraftVersion((string) $draft['version']);
 
@@ -343,18 +342,18 @@ final class DraftContentNode extends Node {
   /**
    * What the editor set up, as a draft of this run records it.
    *
-   * Ids travel with the labels read at request time, so a draft keeps what the
-   * editor saw even if a term or a template is renamed later. The file name
-   * and the extracted text stay out: a draft records which documents were
-   * used, not their contents.
+   * The labels are stored next to the ids, as they read now, so a draft keeps
+   * what the editor saw even if a term or a template is renamed later. The
+   * file name and the extracted text are dropped, because a draft records
+   * which documents were used and not what they contain.
    *
-   * @param \Drupal\oe_ai_assistant\Plugin\NeuronWorkflow\Editorial\EditorialResources $resources
+   * @param \Drupal\oe_ai_assistant\Plugin\NeuronWorkflow\DraftContent\DraftContentResources $resources
    *   What this run shares.
    *
    * @return array
    *   The snapshot.
    */
-  private function snapshot(EditorialResources $resources): array {
+  private function snapshot(DraftContentResources $resources): array {
     return [
       'tone' => $resources->session->getTone(),
       'template' => $resources->session->getTemplate(),
@@ -368,10 +367,10 @@ final class DraftContentNode extends Node {
   /**
    * Merges what each group answered into one field map.
    *
-   * A model does not always key its answer the way the schema asks. The
-   * main group comes back carrying fields that belong to another group. So
-   * we take from each answer only the fields of the group that answered,
-   * and drop the rest.
+   * A model does not always key its answer the way the schema asks, and the
+   * main group can come back with fields that belong to another group. So we
+   * take from each answer only the fields of the group that answered, and
+   * drop the rest.
    *
    * @param array $groups
    *   The field groups of the run, each with groupId and fieldNames.
@@ -411,13 +410,20 @@ final class DraftContentNode extends Node {
    *   The conversation block from conversation(), empty when the session has
    *   no turns yet.
    * @param array $answers
-   *   What the groups drafted so far answered, keyed by group id.
+   *   What the groups drafted so far wrote, keyed by group id.
    *
    * @return string
    *   The task.
    */
   private function task(string $conversation, array $answers): string {
     $task = $conversation;
+
+    // The conversation block only has turns that have been closed. The turn
+    // that asked for this draft is still open while the tool runs, so only
+    // the brief has the editor's request.
+    if ($this->brief !== '') {
+      $task .= "What the editor asked for:\n" . $this->brief . "\n\n";
+    }
 
     // A later group must fit the title and the summary the main group wrote,
     // so the task carries them.
@@ -435,13 +441,13 @@ final class DraftContentNode extends Node {
    * This reads the editorial thread only. The drafts don't show up in it,
    * because each group's drafter writes to a thread of its own.
    *
-   * @param \Drupal\oe_ai_assistant\Plugin\NeuronWorkflow\Editorial\EditorialResources $resources
+   * @param \Drupal\oe_ai_assistant\Plugin\NeuronWorkflow\DraftContent\DraftContentResources $resources
    *   What this run shares.
    *
    * @return string
    *   The conversation block, empty when the session has no turns yet.
    */
-  private function conversation(EditorialResources $resources): string {
+  private function conversation(DraftContentResources $resources): string {
     $turns = $resources->session->conversationTurns();
     if ($turns === []) {
       return '';

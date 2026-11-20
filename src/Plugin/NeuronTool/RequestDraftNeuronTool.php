@@ -5,18 +5,25 @@ declare(strict_types=1);
 namespace Drupal\oe_ai_assistant\Plugin\NeuronTool;
 
 use Drupal\ai_neuron\Attribute\NeuronTool;
-use Drupal\ai_neuron\Tools\DeferredToolPluginInterface;
 use Drupal\ai_neuron\Tools\NeuronToolPluginBase;
+use Drupal\ai_neuron\Workflow\NeuronWorkflowManagerInterface;
+use Drupal\Core\Plugin\Context\EntityContextDefinition;
 use Drupal\Core\StringTranslation\TranslatableMarkup;
+use Drupal\oe_ai_assistant\Neuron\Tools\WorkflowToolProxy;
+use Drupal\oe_ai_assistant\Neuron\Tools\WorkflowToolInterface;
 use NeuronAI\Exceptions\ToolException;
+use NeuronAI\Tools\PropertyType;
+use NeuronAI\Tools\Tool;
+use NeuronAI\Tools\ToolCall;
+use NeuronAI\Tools\ToolProperty;
+use NeuronAI\Workflow\Workflow;
 
 /**
  * Asks the run for the next draft of the session.
  *
- * A tool runs between two yields of the agent that called it, so it cannot
- * stream the drafting of a group back to the editor. This call is deferred
- * instead: it suspends the agent, a node of the run writes the draft and
- * streams while it does, and the result reaches the model afterwards.
+ * A draft takes minutes, and the editor watches the groups fill in while it
+ * is written. So the work is the draft_content workflow, which
+ * WorkflowToolNode runs in place of executing this tool.
  */
 #[NeuronTool(
   id: RequestDraftNeuronTool::TOOL_ID,
@@ -25,23 +32,86 @@ use NeuronAI\Exceptions\ToolException;
   . ' draft ("Draft 1", "Draft 2", and so on) and gives its version;'
   . ' drafting_get_history lists the drafts of this session.',
   label: new TranslatableMarkup('Draft content'),
+  context_definitions: [
+    'session' => new EntityContextDefinition(
+      data_type: 'entity:ai_editorial_session',
+      label: new TranslatableMarkup('Editorial session'),
+    ),
+  ],
 )]
-final class RequestDraftNeuronTool extends NeuronToolPluginBase implements DeferredToolPluginInterface {
+final class RequestDraftNeuronTool extends NeuronToolPluginBase implements WorkflowToolInterface {
 
   /**
    * The id this tool is registered under.
    */
   public const string TOOL_ID = 'drafting_draft_content';
 
+  public function __construct(
+    array $configuration,
+    $plugin_id,
+    $plugin_definition,
+    private readonly NeuronWorkflowManagerInterface $workflows,
+  ) {
+    parent::__construct($configuration, $plugin_id, $plugin_definition);
+  }
+
+  /**
+   * {@inheritdoc}
+   *
+   * WorkflowToolNode finds this tool in the registry as a Neuron object, not
+   * as a plugin. So the object handed over is a WorkflowToolProxy, which
+   * forwards workflow() back here.
+   */
+  public function getNeuron(): Tool {
+    return WorkflowToolProxy::make(
+      $this->getPluginId(),
+      $this->description(),
+      $this->properties(),
+      $this,
+    );
+  }
+
+  /**
+   * {@inheritdoc}
+   *
+   * The drafters read the session's conversation, and conversationTurns()
+   * only returns turns that have been closed. The turn that asks for a draft
+   * is still open while this tool runs, so its message is missing from the
+   * conversation. The agent repeats it in this property.
+   */
+  protected function properties(): array {
+    return [
+      ToolProperty::make(
+        'brief',
+        PropertyType::STRING,
+        'What the editor asked for, in their own words. Quote the request'
+        . ' that asked for this draft rather than summarising it.',
+        TRUE,
+      ),
+    ];
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function workflow(ToolCall $call): Workflow {
+    return $this->workflows->createWorkflow('draft_content', [], [
+      'session' => $this->getContextValue('session'),
+      'call' => (string) $call->getCallId(),
+      'brief' => (string) ($call->getInput('brief') ?? ''),
+    ]);
+  }
+
   /**
    * {@inheritdoc}
    *
    * @throws \NeuronAI\Exceptions\ToolException
-   *   Always. The run writes the draft, so a call here is a mistake.
+   *   Always. The workflow of this tool answers its calls, so nothing should
+   *   execute it.
    */
   public function __invoke(): string {
     throw new ToolException(sprintf(
-      'The "%s" tool is drafted by the run: submit its result instead of executing it.',
+      'The "%s" tool is answered by its workflow, not by executing it.',
       self::TOOL_ID,
     ));
   }

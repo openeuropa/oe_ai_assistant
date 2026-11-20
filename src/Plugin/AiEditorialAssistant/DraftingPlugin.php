@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Drupal\oe_ai_assistant\Plugin\AiEditorialAssistant;
 
 use Drupal\ai_neuron\Tools\NeuronToolManagerInterface;
-use Drupal\ai_neuron\Workflow\NeuronWorkflowManagerInterface;
+use Drupal\ai_neuron\Agent\NeuronAgentManagerInterface;
 use Drupal\ai_neuron\Channel\SseChannel;
 use Drupal\ai_neuron\Entity\NeuronMessageInterface;
 use Drupal\Core\Cache\RefinableCacheableDependencyInterface;
@@ -28,10 +28,11 @@ use Drupal\oe_ai_assistant\Service\DraftSaverInterface;
 use Drupal\oe_ai_assistant\Service\DraftingSchemaProviderInterface;
 use Drupal\oe_ai_assistant\Service\PreviewRendererInterface;
 use Drupal\oe_ai_assistant\Response\SseResponse;
-use Drupal\oe_ai_assistant\Plugin\NeuronWorkflow\Editorial\Events\ChatTurnEvent;
 use Drupal\oe_ai_assistant\Utility\MessageContent;
-use NeuronAI\Workflow\Executor\ExecutionRequest;
+use NeuronAI\Chat\Messages\UserMessage;
 use NeuronAI\Workflow\Streaming\ProtocolEvent;
+use NeuronAI\Workflow\Workflow;
+use NeuronAI\Workflow\WorkflowStatus;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\File\Exception\FileException;
 use Symfony\Component\HttpFoundation\Request;
@@ -64,11 +65,11 @@ class DraftingPlugin extends AiAssistantPluginBase {
   private const string TEMPLATE_FIELD = 'template';
 
   /**
-   * Builds the run that serves one turn.
+   * Builds the agent that serves one turn.
    *
-   * @var \Drupal\ai_neuron\Workflow\NeuronWorkflowManagerInterface
+   * @var \Drupal\ai_neuron\Agent\NeuronAgentManagerInterface
    */
-  protected NeuronWorkflowManagerInterface $workflows;
+  protected NeuronAgentManagerInterface $agents;
 
   /**
    * The drafting schema provider.
@@ -136,7 +137,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
     $plugin_definition,
   ): static {
     $instance = parent::create($container, $configuration, $plugin_id, $plugin_definition);
-    $instance->workflows = $container->get(NeuronWorkflowManagerInterface::class);
+    $instance->agents = $container->get(NeuronAgentManagerInterface::class);
     $instance->schemaProvider = $container->get(DraftingSchemaProviderInterface::class);
     $instance->draftSaver = $container->get(DraftSaverInterface::class);
     $instance->aiEditorialContext = $container->get(AiEditorialContextInterface::class);
@@ -315,18 +316,17 @@ class DraftingPlugin extends AiAssistantPluginBase {
     }
 
     $channel = new SseChannel();
-    // Building the run builds the agent of its chat nodes, which resolves the
-    // session's template: its instructions() reads the schema groups. So a
-    // stale stored template surfaces here, and becomes a clean 400 rather
-    // than an error page in the middle of an open stream. Catching the
-    // narrower subclass rather than the base \InvalidArgumentException
-    // matters: the same build resolves the provider and the channel, and
-    // either can throw the base class for reasons that are a site
-    // misconfiguration rather than the editor's. Those must not be
-    // downgraded into a 400 that echoes their raw message.
+    // The template or the tone a session stores can go stale, and the editor
+    // should get a clean 400 for that rather than an error page inside an
+    // open stream. Building the agent resolves both, because the prompt names
+    // the schema groups of the template, so the failure surfaces here. Only
+    // those two subclasses are caught. The same build resolves the provider
+    // and the channel, and either can throw the base
+    // \InvalidArgumentException for reasons that are a site misconfiguration
+    // rather than the editor's, carrying internals the editor must not read.
     try {
-      $workflow = $this->workflows->withChannel($channel)->createWorkflow(
-        plugin_id: 'editorial_turn',
+      $agent = $this->agents->withChannel($channel)->createAgent(
+        plugin_id: 'editorial',
         contexts: ['session' => $session],
       );
     }
@@ -337,13 +337,26 @@ class DraftingPlugin extends AiAssistantPluginBase {
       throw new ActionException('invalid_context', $e->getMessage(), 400);
     }
 
+    // The engine keeps one run per id, and every turn of this session runs
+    // under the id the session names. A turn that is still streaming holds
+    // that id, and the engine would refuse a second start inside the open
+    // stream. So the status is read off the run here and answered with a 409.
+    if ($this->turnInFlight($agent)) {
+      throw new ActionException(
+        'conflict',
+        'The assistant is still working on this session. Wait for it to finish.',
+        409,
+      );
+    }
+
     $logger = $this->logger;
-    $response = new SseResponse(static function () use ($workflow, $message, $channel, $logger): void {
+    $response = new SseResponse(static function () use ($agent, $message, $channel, $logger): void {
       try {
-        // A run executes while its generator is advanced, and run() is what
+        // A run executes while its generator is advanced, and chat() is what
         // advances it to the end. The channel wrote every event as the run
-        // produced it, so nothing here reads what it answers.
-        $workflow->run(ExecutionRequest::start(new ChatTurnEvent($message)));
+        // produced it, so nothing here reads what it answers. Without the
+        // stream flag the editor reads the reply only once the turn ends.
+        $agent->chat(new UserMessage($message), TRUE);
       }
       catch (\Throwable $e) {
         // Never let an exception escape into the open SSE stream: Drupal's
@@ -574,6 +587,26 @@ class DraftingPlugin extends AiAssistantPluginBase {
     }
 
     return $session->getDraftRun((int) $result['version']) ?? $result;
+  }
+
+  /**
+   * Whether a turn of this session is still running.
+   *
+   * A run holds a lease while it works, and the engine refuses to start a
+   * second run over it. It replaces a run whose lease has run out, so that
+   * one counts as gone.
+   *
+   * @param \NeuronAI\Workflow\Workflow $workflow
+   *   The run of the session.
+   *
+   * @return bool
+   *   TRUE when a new turn cannot start.
+   */
+  private function turnInFlight(Workflow $workflow): bool {
+    $run = $workflow->inspect();
+
+    return $run?->status === WorkflowStatus::Running
+      && ($run->leaseExpiresAt === NULL || $run->leaseExpiresAt > time());
   }
 
   /**
