@@ -23,7 +23,7 @@ use Drupal\oe_ai_assistant\Service\DraftingSchemaProviderInterface;
  * can't repeat a tone or a document list that has changed since.
  */
 #[NeuronAgent(
-  id: EditorialContextAnswerNeuronAgent::PLUGIN_ID,
+  id: GetEditorialContextNeuronAgent::PLUGIN_ID,
   label: new TranslatableMarkup('Editorial context answer'),
   description: new TranslatableMarkup("Answers one question about the session's current tone, template and attached documents."),
   operation_type: 'chat',
@@ -34,7 +34,7 @@ use Drupal\oe_ai_assistant\Service\DraftingSchemaProviderInterface;
     ),
   ],
 )]
-final class EditorialContextAnswerNeuronAgent extends NeuronAgentPluginBase {
+final class GetEditorialContextNeuronAgent extends NeuronAgentPluginBase {
 
   /**
    * The ID this agent is registered under.
@@ -174,9 +174,9 @@ final class EditorialContextAnswerNeuronAgent extends NeuronAgentPluginBase {
   /**
    * Renders the documents block.
    *
-   * Each heading carries the document's ID alongside its title, because
-   * context_read_document needs that ID and this is the only place the
-   * sub-agent's answer can learn it from.
+   * Each heading carries the document's ID alongside its title. The ID only
+   * ends up in our answer if it's in this prompt, and EditorialNeuronAgent
+   * needs it to call context_read_document for the full text.
    *
    * @return string
    *   The rendered block.

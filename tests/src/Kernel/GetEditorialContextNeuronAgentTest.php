@@ -26,7 +26,7 @@ use NeuronAI\Chat\Messages\UserMessage;
  *
  * @group oe_ai_assistant
  */
-class EditorialContextAnswerNeuronAgentTest extends AiEditorialSessionKernelTestBase {
+class GetEditorialContextNeuronAgentTest extends AiEditorialSessionKernelTestBase {
 
   /**
    * {@inheritdoc}
@@ -126,9 +126,9 @@ class EditorialContextAnswerNeuronAgentTest extends AiEditorialSessionKernelTest
   /**
    * Tests that each document is rendered with its ID and processing state.
    *
-   * The ID has to appear even though it is not what a human would read
-   * first, because it is the only place this agent's answer can carry the
-   * ID context_read_document needs to look the document up again.
+   * The ID has to show up in the prompt even though an editor wouldn't read
+   * it first. That's the only way it ends up in the agent's answer, which is
+   * where EditorialNeuronAgent reads it to call context_read_document.
    */
   public function testRendersDocumentsWithIdAndProcessingState(): void {
     $documents = [

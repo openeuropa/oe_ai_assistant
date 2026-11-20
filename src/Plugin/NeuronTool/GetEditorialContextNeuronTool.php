@@ -9,7 +9,7 @@ use Drupal\ai_neuron\Attribute\NeuronTool;
 use Drupal\ai_neuron\Tools\NeuronToolPluginBase;
 use Drupal\Core\Plugin\Context\EntityContextDefinition;
 use Drupal\Core\StringTranslation\TranslatableMarkup;
-use Drupal\oe_ai_assistant\Plugin\NeuronAgent\EditorialContextAnswerNeuronAgent;
+use Drupal\oe_ai_assistant\Plugin\NeuronAgent\GetEditorialContextNeuronAgent;
 use NeuronAI\Chat\Messages\UserMessage;
 use NeuronAI\Tools\PropertyType;
 use NeuronAI\Tools\ToolProperty;
@@ -18,11 +18,11 @@ use NeuronAI\Workflow\Persistence\InMemoryPersistence;
 /**
  * Answers one question about what the editor set up for this session.
  *
- * We hand the question to EditorialContextAnswerNeuronAgent and return its
+ * We hand the question to GetEditorialContextNeuronAgent and return its
  * answer, not the session data itself. That agent is built fresh for every
  * call, so it answers from the tone, the template and the documents as they
- * stand now, and not from what Editorial said about them earlier in the
- * conversation.
+ * stand now, and not from what EditorialNeuronAgent said about them earlier
+ * in the conversation.
  */
 #[NeuronTool(
   id: 'context_get_editorial_context',
@@ -75,7 +75,7 @@ final class GetEditorialContextNeuronTool extends NeuronToolPluginBase {
     $session = $this->getContextValue('session');
 
     $agent = $this->agentManager->createAgent(
-      EditorialContextAnswerNeuronAgent::PLUGIN_ID,
+      GetEditorialContextNeuronAgent::PLUGIN_ID,
       ['session' => $session],
     );
     // Keep the workflow state in memory. Every call opens a thread of its
