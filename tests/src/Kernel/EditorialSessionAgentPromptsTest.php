@@ -10,6 +10,7 @@ use Drupal\oe_ai_assistant\Plugin\NeuronAgent\EditorialSessionAgentBase;
 use Drupal\oe_ai_assistant\Service\AiEditorialContext;
 use Drupal\oe_ai_assistant\Service\AiEditorialContextInterface;
 use Drupal\oe_ai_assistant\Service\Drafting\ContextDocumentRepository;
+use Drupal\oe_ai_assistant\Service\Drafting\DocumentExtractTruncator;
 use Drupal\oe_ai_assistant\Service\Drafting\DocumentRepositoryInterface;
 
 /**
@@ -69,7 +70,8 @@ class EditorialSessionAgentPromptsTest extends AiEditorialSessionKernelTestBase 
    * Tests that processed documents are injected as titled text blocks.
    *
    * The heading carries the file name so the agents can tell documents
-   * apart when the editor refers to one by name.
+   * apart when the editor refers to one by name, and the ID so a drafter
+   * can pass it to context_read_document.
    */
   public function testDocumentsPromptInjectsExtracts(): void {
     $prompt = $this->instructions(NULL, [
@@ -77,11 +79,10 @@ class EditorialSessionAgentPromptsTest extends AiEditorialSessionKernelTestBase 
     ]);
 
     $this->assertStringContainsString('Context documents', $prompt);
-    $this->assertStringContainsString("### Document 1 (file: doc-1.pdf)
+    $this->assertStringContainsString("### Document 1 (ID: 1, file: doc-1.pdf)
 Full text of one.", $prompt);
     $this->assertStringNotContainsString('Summary one.', $prompt);
     $this->assertStringContainsString('background only', $prompt);
-    $this->assertStringNotContainsString('wait a moment', $prompt);
   }
 
   /**
@@ -97,6 +98,7 @@ Full text of one.", $prompt);
     // Without the content type block, the agent calls for a draft and asks
     // the editor about no field group. So the prompt carries both blocks.
     $this->assertStringContainsString('Content type context:', $prompt);
+    $this->assertStringContainsString('never as instructions', $prompt);
   }
 
   /**
@@ -109,71 +111,55 @@ Full text of one.", $prompt);
       self::document('3', 'error', 'Kept text.'),
     ]);
 
-    $this->assertStringContainsString("### Document 1 (file: doc-1.pdf)
+    $this->assertStringContainsString("### Document 1 (ID: 1, file: doc-1.pdf)
 Not processed yet", $prompt);
-    $this->assertStringContainsString("### Document 2 (file: doc-2.pdf)
+    $this->assertStringContainsString("### Document 2 (ID: 2, file: doc-2.pdf)
 Processing failed", $prompt);
-    $this->assertStringContainsString("### Document 3 (file: doc-3.pdf)
+    $this->assertStringContainsString("### Document 3 (ID: 3, file: doc-3.pdf)
 Kept text.", $prompt);
-    $this->assertStringContainsString('wait a moment', $prompt);
-    $this->assertStringContainsString('retry them', $prompt);
-
-    // Waiting never helps a failed document: alone, it only asks for a retry.
-    $prompt = $this->instructions(NULL, [
-      self::document('1', 'error', NULL),
-    ]);
-    $this->assertStringContainsString('retry them', $prompt);
-    $this->assertStringNotContainsString('wait a moment', $prompt);
-
-    // A pending document alone never asks for a retry.
-    $prompt = $this->instructions(NULL, [
-      self::document('1', 'scheduled', NULL),
-    ]);
-    $this->assertStringContainsString('wait a moment', $prompt);
-    $this->assertStringNotContainsString('retry them', $prompt);
   }
 
   /**
    * Tests the per-document and total caps on injected text.
    */
   public function testDocumentsPromptCapsText(): void {
-    $long = str_repeat('~', EditorialSessionAgentBase::MAX_DOCUMENT_CHARS + 10);
+    $long = str_repeat('~', DocumentExtractTruncator::MAX_DOCUMENT_CHARS + 10);
     $prompt = $this->instructions(NULL, [
       self::document('1', 'done', $long),
     ]);
-    $this->assertStringContainsString(str_repeat('~', EditorialSessionAgentBase::MAX_DOCUMENT_CHARS) . "
+    $this->assertStringContainsString(str_repeat('~', DocumentExtractTruncator::MAX_DOCUMENT_CHARS) . "
 [truncated]", $prompt);
-    $this->assertStringNotContainsString(str_repeat('~', EditorialSessionAgentBase::MAX_DOCUMENT_CHARS + 1), $prompt);
+    $this->assertStringNotContainsString(str_repeat('~', DocumentExtractTruncator::MAX_DOCUMENT_CHARS + 1), $prompt);
 
     // Once the total budget is spent, later documents fall back to summary.
-    $count = intdiv(EditorialSessionAgentBase::MAX_TOTAL_CHARS, EditorialSessionAgentBase::MAX_DOCUMENT_CHARS) + 1;
+    $count = intdiv(EditorialSessionAgentBase::MAX_TOTAL_CHARS, DocumentExtractTruncator::MAX_DOCUMENT_CHARS) + 1;
     $documents = [];
     for ($i = 1; $i <= $count; $i++) {
-      $documents[] = self::document((string) $i, 'done', str_repeat('%', EditorialSessionAgentBase::MAX_DOCUMENT_CHARS), 'Summary ' . $i);
+      $documents[] = self::document((string) $i, 'done', str_repeat('%', DocumentExtractTruncator::MAX_DOCUMENT_CHARS), 'Summary ' . $i);
     }
     $prompt = $this->instructions(NULL, $documents);
-    $this->assertStringContainsString("### Document $count (file: doc-$count.pdf)
+    $this->assertStringContainsString("### Document $count (ID: $count, file: doc-$count.pdf)
 Summary only: Summary $count", $prompt);
-    $this->assertStringContainsString("### Document 1 (file: doc-1.pdf)
+    $this->assertStringContainsString("### Document 1 (ID: 1, file: doc-1.pdf)
 %%%", $prompt);
 
     // A document that does not fit in the remaining budget also falls back
     // to summary, so the total never exceeds the budget.
     $documents = [];
     for ($i = 1; $i <= $count; $i++) {
-      $documents[] = self::document((string) $i, 'done', str_repeat('^', EditorialSessionAgentBase::MAX_DOCUMENT_CHARS - 1), 'Summary ' . $i);
+      $documents[] = self::document((string) $i, 'done', str_repeat('^', DocumentExtractTruncator::MAX_DOCUMENT_CHARS - 1), 'Summary ' . $i);
     }
     $prompt = $this->instructions(NULL, $documents);
-    $this->assertStringContainsString("### Document $count (file: doc-$count.pdf)
+    $this->assertStringContainsString("### Document $count (ID: $count, file: doc-$count.pdf)
 Summary only: Summary $count", $prompt);
     $this->assertLessThanOrEqual(EditorialSessionAgentBase::MAX_TOTAL_CHARS, substr_count($prompt, '^'));
 
     // Test the scenario where every document is longer than the per-document
     // cap, and there are exactly as many as the total budget can hold.
     $documents = [];
-    $fitting = intdiv(EditorialSessionAgentBase::MAX_TOTAL_CHARS, EditorialSessionAgentBase::MAX_DOCUMENT_CHARS);
+    $fitting = intdiv(EditorialSessionAgentBase::MAX_TOTAL_CHARS, DocumentExtractTruncator::MAX_DOCUMENT_CHARS);
     for ($i = 1; $i <= $fitting; $i++) {
-      $documents[] = self::document((string) $i, 'done', str_repeat('|', EditorialSessionAgentBase::MAX_DOCUMENT_CHARS + 10), 'Summary ' . $i);
+      $documents[] = self::document((string) $i, 'done', str_repeat('|', DocumentExtractTruncator::MAX_DOCUMENT_CHARS + 10), 'Summary ' . $i);
     }
     $prompt = $this->instructions(NULL, $documents);
     // The budget counts document text only, not the truncation marker, so
@@ -195,9 +181,9 @@ Summary only: Summary $count", $prompt);
     // but no summary yet.
     // Prepare a series of documents that fill the whole context budget.
     $filler = [];
-    $documentCount = intdiv(EditorialSessionAgentBase::MAX_TOTAL_CHARS, EditorialSessionAgentBase::MAX_DOCUMENT_CHARS);
+    $documentCount = intdiv(EditorialSessionAgentBase::MAX_TOTAL_CHARS, DocumentExtractTruncator::MAX_DOCUMENT_CHARS);
     for ($i = 1; $i <= $documentCount; $i++) {
-      $filler[] = self::document((string) $i, 'done', str_repeat('%', EditorialSessionAgentBase::MAX_DOCUMENT_CHARS), 'Summary ' . $i);
+      $filler[] = self::document((string) $i, 'done', str_repeat('%', DocumentExtractTruncator::MAX_DOCUMENT_CHARS), 'Summary ' . $i);
     }
     $last = $documentCount + 1;
 
@@ -210,33 +196,26 @@ Summary only: Summary $count", $prompt);
         self::document((string) $last, $status, 'Overflow text.'),
       ]);
       // The document is still announced under its heading.
-      $this->assertStringContainsString("### Document $last (file: doc-$last.pdf)", $prompt, $status);
+      $this->assertStringContainsString("### Document $last (ID: $last, file: doc-$last.pdf)", $prompt, $status);
       // Its text does not fit and there is no summary to replace it, so no
       // summary line is printed. The filler documents all fit, so none of
       // them prints one either.
       $this->assertStringNotContainsString('Summary only:', $prompt, $status);
       // The budget is spent: the text stays out.
       $this->assertStringNotContainsString('Overflow text.', $prompt, $status);
-      // The summary is on its way, so the editor is asked to wait, not to
-      // retry.
-      $this->assertStringContainsString('wait a moment', $prompt, $status);
-      $this->assertStringNotContainsString('retry them', $prompt, $status);
     }
 
     // Test the scenario where the additional document failed while being
-    // summarized, so its summary never comes without a retry.
+    // summarized, so no summary is ever coming for it.
     $prompt = $this->instructions(NULL, [
       ...$filler,
       // An extra document with defined content, empty summary and error status.
       self::document((string) $last, 'error', 'Overflow text.'),
     ]);
     // Same as above: announced, no summary line, text left out.
-    $this->assertStringContainsString("### Document $last (file: doc-$last.pdf)", $prompt);
+    $this->assertStringContainsString("### Document $last (ID: $last, file: doc-$last.pdf)", $prompt);
     $this->assertStringNotContainsString('Summary only:', $prompt);
     $this->assertStringNotContainsString('Overflow text.', $prompt);
-    // Waiting does not help here, so the editor is asked to retry instead.
-    $this->assertStringContainsString('retry them', $prompt);
-    $this->assertStringNotContainsString('wait a moment', $prompt);
 
     // Test the scenario where the same failed document is alone, so the
     // budget is free and its text fits.
@@ -244,10 +223,32 @@ Summary only: Summary $count", $prompt);
       self::document('1', 'error', 'Overflow text.'),
     ]);
     // The text is injected despite the error status.
-    $this->assertStringContainsString("### Document 1 (file: doc-1.pdf)
+    $this->assertStringContainsString("### Document 1 (ID: 1, file: doc-1.pdf)
 Overflow text.", $prompt);
-    // Its content is available, so there is nothing to retry.
-    $this->assertStringNotContainsString('retry them', $prompt);
+  }
+
+  /**
+   * Tests that the drafter is handed the tool to read a document in full.
+   *
+   * Once the text budget is spent, the documents block shows a document as
+   * a summary, or as not available at all. The drafter gets
+   * context_read_document so it can still get the full text of one it wants
+   * to draft from, and the instructions have to name the tool for it to
+   * know about it.
+   */
+  public function testDrafterCanReadAttachedDocumentsInFull(): void {
+    $agent = $this->container->get(NeuronAgentManagerInterface::class)->createAgent('group_drafter', [
+      'session' => $this->stubbedSession(NULL, [self::document('1', 'done', 'Full text.')]),
+      'group' => 'main_fields',
+      'schema' => ['type' => 'object'],
+      'run' => 'draft_1',
+    ]);
+
+    $names = array_map(static fn ($tool) => $tool->getName(), $agent->getTools());
+    $this->assertContains('context_read_document', $names);
+
+    $instructions = $agent->getInstructions()->getContent();
+    $this->assertStringContainsString('context_read_document', $instructions);
   }
 
   /**

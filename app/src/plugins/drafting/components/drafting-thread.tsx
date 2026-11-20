@@ -28,7 +28,7 @@ import {
   SendHorizontal,
   X,
 } from "lucide-react";
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import type { PaneTabItem } from "@/components/ui/pane-tabs";
 import { avatarColorClass, UserAvatar } from "@/components/ui/user-avatar";
 import { getConfig } from "@/config";
@@ -159,10 +159,16 @@ function MessageError() {
   );
 }
 
+/** How long the copy-failed flag stays on the button before it clears. */
+const COPY_FAILED_FLAG_MS = 2000;
+
 /**
  * Renders streamed assistant text with Streamdown for incremental
- * markdown rendering. Text deltas arrive from the LLM stream at
- * the provider's natural pace.
+ * markdown rendering.
+ *
+ * Downloads stay off: this is never real source code worth saving as a
+ * file. Streamdown's own copy button swallows clipboard failures
+ * silently, so the click listener below flags them instead.
  */
 function AssistantText({
   text,
@@ -171,9 +177,77 @@ function AssistantText({
   text: string;
   status: { type: string };
 }) {
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) {
+      return;
+    }
+
+    const clearTimers = new WeakMap<HTMLElement, number>();
+    // Only set on the first failure of a run, so a retry within the flag
+    // window restores Streamdown's own title rather than the failure text.
+    const originalTitles = new WeakMap<HTMLElement, string>();
+
+    const onClick = (event: MouseEvent) => {
+      const button = (event.target as HTMLElement).closest(
+        '[data-streamdown="code-block-copy-button"]',
+      );
+      if (!(button instanceof HTMLElement) || !navigator.clipboard) {
+        return;
+      }
+      const codeBody = button
+        .closest('[data-streamdown="code-block"]')
+        ?.querySelector('[data-streamdown="code-block-body"]');
+      // innerText, not textContent: each line renders as its own block-level
+      // span, and textContent ignores that layout, running every line
+      // together with no separator.
+      const code = codeBody instanceof HTMLElement ? codeBody.innerText : "";
+      if (!code) {
+        return;
+      }
+      navigator.clipboard.writeText(code).catch(() => {
+        const pending = clearTimers.get(button);
+        if (pending !== undefined) {
+          window.clearTimeout(pending);
+        } else {
+          originalTitles.set(button, button.title);
+        }
+        button.classList.add("streamdown-copy-failed");
+        button.title = "Copy failed: the browser refused clipboard access.";
+        clearTimers.set(
+          button,
+          window.setTimeout(() => {
+            button.classList.remove("streamdown-copy-failed");
+            // React won't restore a prop value it thinks is unchanged, so
+            // the button's accessible name is put back by hand.
+            const original = originalTitles.get(button);
+            if (original !== undefined) {
+              button.title = original;
+            }
+            originalTitles.delete(button);
+            clearTimers.delete(button);
+          }, COPY_FAILED_FLAG_MS),
+        );
+      });
+    };
+
+    container.addEventListener("click", onClick, true);
+    return () => container.removeEventListener("click", onClick, true);
+  }, []);
+
   return (
-    <div className="chat-markdown text-base prose max-w-none">
-      <Streamdown isAnimating={status.type === "running"}>{text}</Streamdown>
+    <div
+      ref={containerRef}
+      className="chat-markdown text-base prose max-w-none"
+    >
+      <Streamdown
+        isAnimating={status.type === "running"}
+        controls={{ code: { copy: true, download: false } }}
+      >
+        {text}
+      </Streamdown>
     </div>
   );
 }

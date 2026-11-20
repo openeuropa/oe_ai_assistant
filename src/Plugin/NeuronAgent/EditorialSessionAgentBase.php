@@ -9,6 +9,7 @@ use Drupal\Component\Plugin\Definition\ContextAwarePluginDefinitionInterface;
 use Drupal\ai_neuron\Agent\NeuronAgentPluginBase;
 use Drupal\Core\Logger\LoggerChannelTrait;
 use Drupal\oe_ai_assistant\Service\Drafting\DocumentExtractionProcessorInterface;
+use Drupal\oe_ai_assistant\Service\Drafting\DocumentExtractTruncator;
 use NeuronAI\Tools\ToolCall;
 use NeuronAI\Tools\ToolInterface;
 
@@ -26,11 +27,6 @@ use NeuronAI\Tools\ToolInterface;
 abstract class EditorialSessionAgentBase extends NeuronAgentPluginBase {
 
   use LoggerChannelTrait;
-
-  /**
-   * Characters of one context document extract injected into a prompt.
-   */
-  public const int MAX_DOCUMENT_CHARS = 20000;
 
   /**
    * Characters of extracted text injected over all context documents.
@@ -149,13 +145,15 @@ abstract class EditorialSessionAgentBase extends NeuronAgentPluginBase {
   /**
    * Builds the context documents block of the prompts.
    *
-   * Every attached context document appears under its title and file name,
-   * so the agents can tell which document the editor refers to: the
-   * extracted text when the pipeline produced one, otherwise a note that
-   * the content is not available. The router and the sub-agents share this
-   * block, so the assistant can ask the editor to wait for pending material
-   * or to retry failed material. Text is capped per document and over all
-   * documents; a document whose text does not fit in the remaining budget
+   * Each document gets a heading with its title, ID and file name. The
+   * title and file name let the agents tell documents apart when the editor
+   * refers to one by name, and the ID is there so a drafter can call
+   * context_read_document for the full text of a document we could only
+   * summarize here, or whose text isn't extracted yet.
+   *
+   * Under the heading goes the extracted text, or a note that the content
+   * isn't available. Text is capped per document and over all of them: a
+   * document whose text doesn't fit in what is left of the budget
    * contributes its summary instead, and counts as not available while it
    * has none.
    *
@@ -170,18 +168,15 @@ abstract class EditorialSessionAgentBase extends NeuronAgentPluginBase {
 
     $lines = ['Context documents attached by the editor as background for this draft:'];
     $budget = self::MAX_TOTAL_CHARS;
-    $pending = FALSE;
-    $failed = FALSE;
     foreach ($documents as $document) {
       $lines[] = '';
-      $heading = '### ' . (string) ($document['title'] ?? $document['id'] ?? 'Document');
+      $id = (string) ($document['id'] ?? '');
+      $title = (string) ($document['title'] ?? ($id !== '' ? $id : 'Document'));
+      $heading = sprintf('### %s (ID: %s', $title, $id);
       $filename = trim((string) ($document['filename'] ?? ''));
-      $lines[] = $filename === '' ? $heading : sprintf('%s (file: %s)', $heading, $filename);
+      $lines[] = $filename === '' ? $heading . ')' : sprintf('%s, file: %s)', $heading, $filename);
       $extract = trim((string) ($document['extract'] ?? ''));
-      $truncated = mb_strlen($extract) > self::MAX_DOCUMENT_CHARS;
-      if ($truncated) {
-        $extract = mb_substr($extract, 0, self::MAX_DOCUMENT_CHARS);
-      }
+      [$extract, $truncated] = DocumentExtractTruncator::truncate($extract);
       $summary = trim((string) ($document['summary'] ?? ''));
       if ($extract !== '' && mb_strlen($extract) <= $budget) {
         $budget -= mb_strlen($extract);
@@ -196,15 +191,11 @@ abstract class EditorialSessionAgentBase extends NeuronAgentPluginBase {
         $lines[] = 'Summary only: ' . $summary;
       }
       // The document has nothing to contribute: no text yet, or text that
-      // does not fit and no summary to stand in for it. Waiting only helps a
-      // document still in the pipeline; a failed one stays unavailable until
-      // the editor retries it.
+      // does not fit and no summary to stand in for it.
       elseif (($document['status'] ?? '') === DocumentExtractionProcessorInterface::STATE_ERROR) {
-        $failed = TRUE;
         $lines[] = 'Processing failed; its content is not available.';
       }
       else {
-        $pending = TRUE;
         $lines[] = 'Not processed yet; its content is not available.';
       }
     }
@@ -212,14 +203,6 @@ abstract class EditorialSessionAgentBase extends NeuronAgentPluginBase {
     $lines[] = '';
     $lines[] = 'Use the context documents as background only: never reproduce them verbatim and do not mention '
       . 'them unless the editor asks.';
-    if ($pending) {
-      $lines[] = 'Some documents are not available yet. Tell the editor to wait a moment for the full context, '
-        . 'or warn that a draft produced now may miss part of the briefing material.';
-    }
-    if ($failed) {
-      $lines[] = 'Some documents could not be processed. Tell the editor to retry them or to remove them, '
-        . 'and warn that a draft produced now ignores their content.';
-    }
 
     return implode("\n", $lines);
   }

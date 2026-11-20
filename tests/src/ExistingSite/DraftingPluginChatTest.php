@@ -359,15 +359,11 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
   }
 
   /**
-   * Tests that document extracts reach the field-group sub-agents.
+   * Tests that document extracts reach the editorial agent and the drafters.
    *
    * One document is processed through the real Tika service, one is left
-   * scheduled: every field-group drafter's prompt must carry the extracted
-   * text of the first and announce the second as not available yet.
-   * EditorialNeuronAgent::instructions() does not call documentsPrompt() —
-   * confirmed by reading it — so the editor-facing agent itself is not
-   * asserted on here; only EditorialSessionAgentBase's sub-agents
-   * (GroupDrafterNeuronAgent) call it.
+   * scheduled: every prompt must carry the extracted text of the first and
+   * announce the second as not available yet.
    */
   public function testDocumentExtractsReachFieldGroupSubAgents(): void {
     $user = $this->createUser(['use oe ai assistant']);
@@ -375,7 +371,7 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
     $session = $this->createSession($user);
 
     [$processedId, $processedTitle] = $this->uploadDocument($session, 'briefing.txt', 'Alpha briefing content for the draft.');
-    [, $pendingTitle] = $this->uploadDocument($session, 'pending.txt', 'Not processed.');
+    [$pendingId, $pendingTitle] = $this->uploadDocument($session, 'pending.txt', 'Not processed.');
     MockAiProvider::enqueue(new MockResponse(text: 'Briefing summary.'));
     $result = $this->httpPost('/api/ai/plugins/drafting/extract-document', [
       'sessionId' => $session->id(),
@@ -394,15 +390,14 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
     $this->assertEquals(200, $result['status'], 'Expected 200. Body: ' . substr($result['body'], 0, 500));
 
     // Four calls: the drafting agent (index 0, 3) and the two field-group
-    // sub-agents (index 1, 2). Only the sub-agent calls carry documents.
+    // sub-agents (index 1, 2).
     \Drupal::state()->resetCache();
     $log = MockAiProvider::getCallLog();
     $this->assertCount(4, $log);
-    foreach ([1, 2] as $subAgentCallIndex) {
-      $prompt = $log[$subAgentCallIndex]['system_prompt'];
-      $this->assertStringContainsString("### $processedTitle (file: $processedTitle)\nAlpha briefing content for the draft.", $prompt);
-      $this->assertStringContainsString("### $pendingTitle (file: $pendingTitle)\nNot processed yet", $prompt);
-      $this->assertStringContainsString('wait a moment', $prompt);
+    foreach ([0, 1, 2, 3] as $callIndex) {
+      $prompt = $log[$callIndex]['system_prompt'];
+      $this->assertStringContainsString("### $processedTitle (ID: $processedId, file: $processedTitle)\nAlpha briefing content for the draft.", $prompt);
+      $this->assertStringContainsString("### $pendingTitle (ID: $pendingId, file: $pendingTitle)\nNot processed yet", $prompt);
     }
   }
 

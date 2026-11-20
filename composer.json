@@ -38,12 +38,18 @@
     },
     "autoload-dev": {
         "psr-4": {
-            "Drupal\\Tests\\oe_ai_assistant\\": "./tests/src/"
+            "Drupal\\Tests\\oe_ai_assistant\\": "./tests/src/",
+            "Drupal\\oe_ai_assistant\\Evaluators\\": "./evaluators/"
         }
     },
     "extra": {
         "composer-exit-on-patch-failure": true,
         "enable-patching": true,
+        "patches": {
+            "drupal/ai_neuron": {
+                "Add a drush ai-neuron:evaluate command, not yet proposed upstream": "patches/ai-neuron-drush-evaluate-command.patch"
+            }
+        },
         "installer-paths": {
             "web/core": ["type:drupal-core"],
             "web/profiles/contrib/{$name}": ["type:drupal-profile"],
