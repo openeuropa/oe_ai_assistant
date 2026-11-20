@@ -9,6 +9,7 @@ use Drupal\Component\Plugin\Definition\ContextAwarePluginDefinitionInterface;
 use Drupal\ai_neuron\Agent\NeuronAgentPluginBase;
 use Drupal\Core\Logger\LoggerChannelTrait;
 use Drupal\oe_ai_assistant\Service\Drafting\DocumentExtractionProcessorInterface;
+use Drupal\oe_ai_assistant\Service\Drafting\DocumentExtractTruncator;
 use NeuronAI\Tools\ToolCall;
 use NeuronAI\Tools\ToolInterface;
 
@@ -28,35 +29,12 @@ abstract class EditorialSessionAgentBase extends NeuronAgentPluginBase {
   use LoggerChannelTrait;
 
   /**
-   * Characters of one context document extract injected into a prompt.
-   */
-  public const int MAX_DOCUMENT_CHARS = 20000;
-
-  /**
    * Characters of extracted text injected over all context documents.
    *
    * A context document whose text does not fit in the remaining budget
    * contributes its summary instead.
    */
   public const int MAX_TOTAL_CHARS = 60000;
-
-  /**
-   * Caps a document extract at the per-document character budget.
-   *
-   * @param string $extract
-   *   The extract to cap.
-   *
-   * @return array
-   *   Two elements: the extract, capped if needed, and whether it was
-   *   capped.
-   */
-  public static function truncateDocumentExtract(string $extract): array {
-    if (mb_strlen($extract) <= self::MAX_DOCUMENT_CHARS) {
-      return [$extract, FALSE];
-    }
-
-    return [mb_substr($extract, 0, self::MAX_DOCUMENT_CHARS), TRUE];
-  }
 
   /**
    * {@inheritdoc}
@@ -196,7 +174,7 @@ abstract class EditorialSessionAgentBase extends NeuronAgentPluginBase {
       $filename = trim((string) ($document['filename'] ?? ''));
       $lines[] = $filename === '' ? $heading : sprintf('%s (file: %s)', $heading, $filename);
       $extract = trim((string) ($document['extract'] ?? ''));
-      [$extract, $truncated] = self::truncateDocumentExtract($extract);
+      [$extract, $truncated] = DocumentExtractTruncator::truncate($extract);
       $summary = trim((string) ($document['summary'] ?? ''));
       if ($extract !== '' && mb_strlen($extract) <= $budget) {
         $budget -= mb_strlen($extract);

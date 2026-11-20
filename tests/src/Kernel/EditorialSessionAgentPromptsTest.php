@@ -10,6 +10,7 @@ use Drupal\oe_ai_assistant\Plugin\NeuronAgent\EditorialSessionAgentBase;
 use Drupal\oe_ai_assistant\Service\AiEditorialContext;
 use Drupal\oe_ai_assistant\Service\AiEditorialContextInterface;
 use Drupal\oe_ai_assistant\Service\Drafting\ContextDocumentRepository;
+use Drupal\oe_ai_assistant\Service\Drafting\DocumentExtractTruncator;
 use Drupal\oe_ai_assistant\Service\Drafting\DocumentRepositoryInterface;
 
 /**
@@ -138,19 +139,19 @@ Kept text.", $prompt);
    * Tests the per-document and total caps on injected text.
    */
   public function testDocumentsPromptCapsText(): void {
-    $long = str_repeat('~', EditorialSessionAgentBase::MAX_DOCUMENT_CHARS + 10);
+    $long = str_repeat('~', DocumentExtractTruncator::MAX_DOCUMENT_CHARS + 10);
     $prompt = $this->instructions(NULL, [
       self::document('1', 'done', $long),
     ]);
-    $this->assertStringContainsString(str_repeat('~', EditorialSessionAgentBase::MAX_DOCUMENT_CHARS) . "
+    $this->assertStringContainsString(str_repeat('~', DocumentExtractTruncator::MAX_DOCUMENT_CHARS) . "
 [truncated]", $prompt);
-    $this->assertStringNotContainsString(str_repeat('~', EditorialSessionAgentBase::MAX_DOCUMENT_CHARS + 1), $prompt);
+    $this->assertStringNotContainsString(str_repeat('~', DocumentExtractTruncator::MAX_DOCUMENT_CHARS + 1), $prompt);
 
     // Once the total budget is spent, later documents fall back to summary.
-    $count = intdiv(EditorialSessionAgentBase::MAX_TOTAL_CHARS, EditorialSessionAgentBase::MAX_DOCUMENT_CHARS) + 1;
+    $count = intdiv(EditorialSessionAgentBase::MAX_TOTAL_CHARS, DocumentExtractTruncator::MAX_DOCUMENT_CHARS) + 1;
     $documents = [];
     for ($i = 1; $i <= $count; $i++) {
-      $documents[] = self::document((string) $i, 'done', str_repeat('%', EditorialSessionAgentBase::MAX_DOCUMENT_CHARS), 'Summary ' . $i);
+      $documents[] = self::document((string) $i, 'done', str_repeat('%', DocumentExtractTruncator::MAX_DOCUMENT_CHARS), 'Summary ' . $i);
     }
     $prompt = $this->instructions(NULL, $documents);
     $this->assertStringContainsString("### Document $count (file: doc-$count.pdf)
@@ -162,7 +163,7 @@ Summary only: Summary $count", $prompt);
     // to summary, so the total never exceeds the budget.
     $documents = [];
     for ($i = 1; $i <= $count; $i++) {
-      $documents[] = self::document((string) $i, 'done', str_repeat('^', EditorialSessionAgentBase::MAX_DOCUMENT_CHARS - 1), 'Summary ' . $i);
+      $documents[] = self::document((string) $i, 'done', str_repeat('^', DocumentExtractTruncator::MAX_DOCUMENT_CHARS - 1), 'Summary ' . $i);
     }
     $prompt = $this->instructions(NULL, $documents);
     $this->assertStringContainsString("### Document $count (file: doc-$count.pdf)
@@ -172,9 +173,9 @@ Summary only: Summary $count", $prompt);
     // Test the scenario where every document is longer than the per-document
     // cap, and there are exactly as many as the total budget can hold.
     $documents = [];
-    $fitting = intdiv(EditorialSessionAgentBase::MAX_TOTAL_CHARS, EditorialSessionAgentBase::MAX_DOCUMENT_CHARS);
+    $fitting = intdiv(EditorialSessionAgentBase::MAX_TOTAL_CHARS, DocumentExtractTruncator::MAX_DOCUMENT_CHARS);
     for ($i = 1; $i <= $fitting; $i++) {
-      $documents[] = self::document((string) $i, 'done', str_repeat('|', EditorialSessionAgentBase::MAX_DOCUMENT_CHARS + 10), 'Summary ' . $i);
+      $documents[] = self::document((string) $i, 'done', str_repeat('|', DocumentExtractTruncator::MAX_DOCUMENT_CHARS + 10), 'Summary ' . $i);
     }
     $prompt = $this->instructions(NULL, $documents);
     // The budget counts document text only, not the truncation marker, so
@@ -196,9 +197,9 @@ Summary only: Summary $count", $prompt);
     // but no summary yet.
     // Prepare a series of documents that fill the whole context budget.
     $filler = [];
-    $documentCount = intdiv(EditorialSessionAgentBase::MAX_TOTAL_CHARS, EditorialSessionAgentBase::MAX_DOCUMENT_CHARS);
+    $documentCount = intdiv(EditorialSessionAgentBase::MAX_TOTAL_CHARS, DocumentExtractTruncator::MAX_DOCUMENT_CHARS);
     for ($i = 1; $i <= $documentCount; $i++) {
-      $filler[] = self::document((string) $i, 'done', str_repeat('%', EditorialSessionAgentBase::MAX_DOCUMENT_CHARS), 'Summary ' . $i);
+      $filler[] = self::document((string) $i, 'done', str_repeat('%', DocumentExtractTruncator::MAX_DOCUMENT_CHARS), 'Summary ' . $i);
     }
     $last = $documentCount + 1;
 
