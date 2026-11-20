@@ -20,12 +20,18 @@ final class SubagentTask {
    *   What the editorial agent asked the subagent to do.
    * @param array $inputs
    *   Every input of the call, as the model sent them.
+   * @param bool $continuation
+   *   Whether the task continues one that waited for the editor.
+   * @param int $turn
+   *   How many times the task was continued, which is 0 for a new task.
    */
   public function __construct(
     public readonly string $taskId,
     public readonly string $callId,
     public readonly string $prompt,
     public readonly array $inputs = [],
+    public readonly bool $continuation = FALSE,
+    public readonly int $turn = 0,
   ) {}
 
 }

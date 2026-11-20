@@ -27,6 +27,7 @@ use Drupal\oe_ai_assistant\Service\DraftAssemblerInterface;
 use Drupal\oe_ai_assistant\Service\DraftSaverInterface;
 use Drupal\oe_ai_assistant\Service\DraftingSchemaProviderInterface;
 use Drupal\oe_ai_assistant\Service\PreviewRendererInterface;
+use Drupal\oe_ai_assistant\Service\Subagent\SubagentTaskLedger;
 use Drupal\oe_ai_assistant\Response\SseResponse;
 use Drupal\oe_ai_assistant\Utility\MessageContent;
 use NeuronAI\Chat\Messages\UserMessage;
@@ -128,6 +129,13 @@ class DraftingPlugin extends AiAssistantPluginBase {
   protected NeuronToolManagerInterface $toolManager;
 
   /**
+   * The ledger of the tasks that subagents run.
+   *
+   * @var \Drupal\oe_ai_assistant\Service\Subagent\SubagentTaskLedger
+   */
+  protected SubagentTaskLedger $ledger;
+
+  /**
    * {@inheritdoc}
    */
   public static function create(
@@ -138,6 +146,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
   ): static {
     $instance = parent::create($container, $configuration, $plugin_id, $plugin_definition);
     $instance->agents = $container->get(NeuronAgentManagerInterface::class);
+    $instance->ledger = $container->get(SubagentTaskLedger::class);
     $instance->schemaProvider = $container->get(DraftingSchemaProviderInterface::class);
     $instance->draftSaver = $container->get(DraftSaverInterface::class);
     $instance->aiEditorialContext = $container->get(AiEditorialContextInterface::class);
@@ -621,6 +630,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
   public function reset(Request $request): array {
     $session = $this->loadSession($this->decodeJsonBody($request));
     $session->deleteConversation();
+    $this->ledger->deleteForSession((int) $session->id());
     return ['status' => 'ok'];
   }
 

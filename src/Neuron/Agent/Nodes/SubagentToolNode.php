@@ -148,14 +148,16 @@ final class SubagentToolNode extends ToolNode {
     // written here: the start before the subagent runs, the result after. A
     // replay that finds the start but no result cannot tell whether the work
     // landed, and settles the call as interrupted instead of running it again.
-    if ($this->recallMemo($startedKey) === TRUE) {
-      return $this->interruptedResult($call);
-    }
-
     $tool = $this->resolveTool($call, $tools);
     assert($tool instanceof SubagentToolInterface);
     $definition = $tool->definition();
     $task = $this->task($call, $index, $state, $definition);
+
+    if ($this->recallMemo($startedKey) === TRUE) {
+      $tool->close($task, new SubagentResult(SubagentResult::FAILED, ['error' => 'The task was interrupted before its result was recorded.']));
+
+      return $this->interruptedResult($call);
+    }
 
     // The gateway does not enforce the tool's schema. An invalid call is
     // answered with the reason, so the model can correct it, and the subagent
@@ -165,13 +167,29 @@ final class SubagentToolNode extends ToolNode {
       return ToolOutput::error($error);
     }
 
+    // The ledger refuses a continuation of a task that cannot be continued.
+    $opened = $tool->open($task);
+    if (is_string($opened)) {
+      return ToolOutput::error($opened);
+    }
+    $task = $opened;
+
     $this->memoize($startedKey, static fn (): bool => TRUE);
 
-    return yield from $this->runSubagent($definition, $task);
+    try {
+      $result = yield from $this->runSubagent($definition, $task);
+    }
+    catch (\Throwable $e) {
+      $tool->close($task, new SubagentResult(SubagentResult::FAILED, ['error' => 'The subagent failed.']));
+      throw $e;
+    }
+    $tool->close($task, $result);
+
+    return json_encode($result->toArray($task->taskId, $definition->name), JSON_THROW_ON_ERROR);
   }
 
   /**
-   * Drives the subagent of one task and encodes its result for the model.
+   * Drives the subagent of one task.
    *
    * @param \Drupal\oe_ai_assistant\Neuron\Subagent\SubagentDefinition $definition
    *   The subagent.
@@ -179,7 +197,7 @@ final class SubagentToolNode extends ToolNode {
    *   The task.
    *
    * @return \Generator
-   *   Yields what the subagent reports. Returns the result of the call.
+   *   Yields what the subagent reports. Returns the SubagentResult.
    */
   private function runSubagent(SubagentDefinition $definition, SubagentTask $task): \Generator {
     $label = [
@@ -205,7 +223,7 @@ final class SubagentToolNode extends ToolNode {
 
     yield new CustomStreamEvent(self::FINISHED_EVENT, $label + ['status' => $result->status]);
 
-    return json_encode($result->toArray($task->taskId, $definition->name), JSON_THROW_ON_ERROR);
+    return $result;
   }
 
   /**
@@ -226,12 +244,17 @@ final class SubagentToolNode extends ToolNode {
   private function task(ToolCall $call, int $index, AgentState $state, SubagentDefinition $definition): SubagentTask {
     $callId = (string) $call->getCallId();
     $prompt = $call->getInput($definition->promptProperty);
+    $continued = $call->getInput('task_id');
+
+    // A call that names a task continues it, when the subagent can be.
+    $continuation = $definition->continuable && is_string($continued) && trim($continued) !== '';
 
     return new SubagentTask(
-      self::taskId((string) $state->getWorkflowId(), (string) $state->getRunId(), $callId, $index),
+      $continuation ? trim($continued) : self::taskId((string) $state->getWorkflowId(), (string) $state->getRunId(), $callId, $index),
       $callId,
       is_string($prompt) ? $prompt : '',
       $call->getInputs(),
+      $continuation,
     );
   }
 

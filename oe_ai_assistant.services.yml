@@ -32,6 +32,10 @@ services:
 
   Drupal\oe_ai_assistant\Service\Drafting\ContextDocumentRepository: {}
 
+  Drupal\oe_ai_assistant\Service\Subagent\DocumentPager: {}
+
+  Drupal\oe_ai_assistant\Service\Subagent\SubagentTaskLedger: {}
+
   Drupal\oe_ai_assistant\Service\TextFormatResolver: {}
 
   # Drives a document through extraction and summarisation.

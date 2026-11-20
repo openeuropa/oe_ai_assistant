@@ -25,6 +25,7 @@ use NeuronAI\Workflow\Streaming\Adapter\StreamAdapterInterface;
   tools: [
     'drafting_get_history',
     'drafting_draft_content',
+    'research_documents',
   ],
   context_definitions: [
     'session' => new EntityContextDefinition(
@@ -110,6 +111,13 @@ final class EditorialNeuronAgent extends EditorialSessionAgentBase {
       reported, and do not claim a draft is ready.
     - The field groups below are the ones a new draft follows.
     - Answer questions about earlier drafts with drafting_get_history.
+    - For details buried in the attached documents, especially long ones,
+      call research_documents with a self-contained question: the
+      researcher cannot see this conversation. Base your answer on its
+      report and keep its [doc:<id> p.<n>] citations. When the result has
+      status needs_input, relay its question to the editor verbatim, and
+      once they answer call research_documents again with the same task_id
+      and their answer as the prompt.
     - You can have normal conversations with the user at any point.
     PROMPT;
 

@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace Drupal\oe_ai_assistant\Plugin\NeuronTool;
 
 use Drupal\ai_neuron\Tools\NeuronToolPluginBase;
+use Drupal\Core\Session\AccountProxyInterface;
 use Drupal\oe_ai_assistant\Neuron\Subagent\SubagentDefinition;
 use Drupal\oe_ai_assistant\Neuron\Tools\SubagentTool;
+use Drupal\oe_ai_assistant\Service\Subagent\SubagentTaskLedger;
 use NeuronAI\Exceptions\ToolException;
 use NeuronAI\Tools\Tool;
 
@@ -14,6 +16,16 @@ use NeuronAI\Tools\Tool;
  * Base class of a tool plugin whose calls a subagent answers.
  */
 abstract class SubagentToolPluginBase extends NeuronToolPluginBase {
+
+  public function __construct(
+    array $configuration,
+    $plugin_id,
+    $plugin_definition,
+    protected readonly SubagentTaskLedger $ledger,
+    protected readonly AccountProxyInterface $currentUser,
+  ) {
+    parent::__construct($configuration, $plugin_id, $plugin_definition);
+  }
 
   /**
    * Returns the subagent that answers the calls of this tool.
@@ -30,7 +42,18 @@ abstract class SubagentToolPluginBase extends NeuronToolPluginBase {
    * plugin. So the object handed over carries the definition itself.
    */
   public function getNeuron(): Tool {
-    return new SubagentTool($this->getPluginId(), $this->description(), $this->properties(), $this->definition());
+    $session = $this->getContextValue('session');
+
+    return new SubagentTool(
+      $this->getPluginId(),
+      $this->description(),
+      $this->properties(),
+      $this->definition(),
+      $this->ledger,
+      (int) $session->id(),
+      (int) $this->currentUser->id() ?: NULL,
+      $session->editorialThread(),
+    );
   }
 
   /**

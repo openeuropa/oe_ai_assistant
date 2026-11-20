@@ -7,10 +7,12 @@ namespace Drupal\oe_ai_assistant\Plugin\NeuronTool;
 use Drupal\ai_neuron\Attribute\NeuronTool;
 use Drupal\ai_neuron\Workflow\NeuronWorkflowManagerInterface;
 use Drupal\Core\Plugin\Context\EntityContextDefinition;
+use Drupal\Core\Session\AccountProxyInterface;
 use Drupal\Core\StringTranslation\TranslatableMarkup;
 use Drupal\oe_ai_assistant\Neuron\Subagent\SubagentDefinition;
 use Drupal\oe_ai_assistant\Neuron\Subagent\SubagentTask;
 use Drupal\oe_ai_assistant\Neuron\Subagent\WorkflowSubagent;
+use Drupal\oe_ai_assistant\Service\Subagent\SubagentTaskLedger;
 use NeuronAI\Tools\PropertyType;
 use NeuronAI\Tools\ToolProperty;
 use NeuronAI\Workflow\Workflow;
@@ -47,9 +49,11 @@ final class RequestDraftNeuronTool extends SubagentToolPluginBase {
     array $configuration,
     $plugin_id,
     $plugin_definition,
+    SubagentTaskLedger $ledger,
+    AccountProxyInterface $currentUser,
     private readonly NeuronWorkflowManagerInterface $workflows,
   ) {
-    parent::__construct($configuration, $plugin_id, $plugin_definition);
+    parent::__construct($configuration, $plugin_id, $plugin_definition, $ledger, $currentUser);
   }
 
   /**
