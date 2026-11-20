@@ -13,7 +13,8 @@ namespace Drupal\oe_ai_assistant\Entity;
  */
 enum ActivityType: string {
 
-  // The editor created the session, with the values the add form carried.
+  // The editor created the session. For a content creation session, the
+  // message names the tone and the template they picked.
   case SessionCreated = 'session_created';
 
   // The editor set the tone, or changed it.

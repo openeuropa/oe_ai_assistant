@@ -43,9 +43,10 @@ final class EditorialSessionHooks {
   /**
    * Implements hook_ai_editorial_session_insert().
    *
-   * Records what the session was created with. The add form writes the tone
-   * and the template with no entry of their own, so without this the record
-   * opens on a change from a value it never names.
+   * The add form sets the tone and the template, and records no entry for
+   * either. The first line of the record would then read "Tone changed
+   * from Formal to Plain.", with nothing to say the session started on
+   * Formal. So we record both values as the first entry.
    */
   #[Hook('ai_editorial_session_insert')]
   public function recordSessionCreation(EntityInterface $entity): void {
@@ -69,10 +70,10 @@ final class EditorialSessionHooks {
    * Names a selection the editor made, or reports that they made none.
    *
    * @param array|null $selection
-   *   The tone or the template, NULL when the editor picked neither.
+   *   The tone or the template, NULL when the editor picked none.
    *
    * @return string
-   *   The label in quotes, or a note that the value is not set.
+   *   The label in quotes, or "not set".
    */
   private function selected(?array $selection): string {
     return $selection === NULL

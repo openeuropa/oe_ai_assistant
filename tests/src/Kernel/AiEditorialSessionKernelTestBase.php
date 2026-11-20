@@ -135,11 +135,11 @@ abstract class AiEditorialSessionKernelTestBase extends KernelTestBase {
   }
 
   /**
-   * Creates a session whose record a test owns every entry of.
+   * Creates a session with an empty activity record.
    *
-   * Creating a session records an entry of its own. A test that asserts the
-   * whole record reads that entry as one of its own, so this helper clears
-   * the record before the test writes to it.
+   * EditorialSessionHooks::recordSessionCreation() records an entry for
+   * every new session. A test that asserts the whole record would count
+   * that entry as one of its own, so this helper deletes it.
    */
   protected function freshSession(UserInterface $owner): AiEditorialSessionInterface {
     $session = $this->createSession($owner);

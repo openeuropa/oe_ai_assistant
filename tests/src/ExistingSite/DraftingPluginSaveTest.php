@@ -249,8 +249,8 @@ class DraftingPluginSaveTest extends DraftingPluginTestBase {
     ]);
     $this->loginUser($user);
     $session = $this->createSession($user);
-    // This test asserts the whole record, and creating the session recorded
-    // an entry of its own.
+    // Creating the session records an entry of its own, and the assertions
+    // at the end cover the whole record. Delete it so only the saves remain.
     $session->deleteActivity();
 
     $this->seedDraft($session, 1, ['title' => [['value' => 'First save']]]);

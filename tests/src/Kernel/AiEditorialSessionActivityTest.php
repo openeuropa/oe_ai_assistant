@@ -28,9 +28,6 @@ class AiEditorialSessionActivityTest extends AiEditorialSessionKernelTestBase {
 
   /**
    * Creating a session records the tone and the template it was created with.
-   *
-   * The add form writes both with no entry of their own, so without this
-   * entry the record opens on a change from a value it never names.
    */
   public function testCreatingSessionRecordsWhatItWasCreatedWith(): void {
     $owner = $this->createUser();
@@ -58,7 +55,7 @@ class AiEditorialSessionActivityTest extends AiEditorialSessionKernelTestBase {
   }
 
   /**
-   * A session created with neither a tone nor a template says so.
+   * A session created without a tone or a template records both as not set.
    */
   public function testCreatingSessionReportsWhatTheEditorLeftUnset(): void {
     $session = $this->createSession($this->createUser());
