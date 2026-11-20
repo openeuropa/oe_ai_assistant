@@ -24,6 +24,8 @@ final class SubagentTask {
    *   Whether the task continues one that waited for the editor.
    * @param int $turn
    *   How many times the task was continued, which is 0 for a new task.
+   * @param bool $background
+   *   Whether the task runs in the background, after the turn that asked.
    */
   public function __construct(
     public readonly string $taskId,
@@ -32,6 +34,7 @@ final class SubagentTask {
     public readonly array $inputs = [],
     public readonly bool $continuation = FALSE,
     public readonly int $turn = 0,
+    public readonly bool $background = FALSE,
   ) {}
 
 }

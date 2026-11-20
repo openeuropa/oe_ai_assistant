@@ -1,0 +1,4 @@
+web_extra_daemons:
+  - name: subagent-worker
+    command: "bash -c 'while true; do /var/www/html/vendor/bin/drush oe-ai:subagents:sweep -q; /var/www/html/vendor/bin/drush queue:run oe_ai_assistant_subagent_task --time-limit=50 -q; sleep 2; done'"
+    directory: /var/www/html

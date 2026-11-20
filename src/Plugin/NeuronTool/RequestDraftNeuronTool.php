@@ -89,6 +89,7 @@ final class RequestDraftNeuronTool extends SubagentToolPluginBase {
         'task' => $task->taskId,
       ])),
       promptProperty: 'brief',
+      background: TRUE,
     );
   }
 

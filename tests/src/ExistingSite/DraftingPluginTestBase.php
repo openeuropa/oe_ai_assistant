@@ -75,6 +75,10 @@ abstract class DraftingPluginTestBase extends ExistingSiteBase {
       ->save();
 
     MockAiProvider::reset();
+
+    // The DDEV worker runs against this site. A background task a test queues
+    // must stay queued, because the mock provider answers only this process.
+    \Drupal::state()->set('oe_ai_assistant.subagent_worker_paused', TRUE);
   }
 
   /**
@@ -86,6 +90,7 @@ abstract class DraftingPluginTestBase extends ExistingSiteBase {
       $session->deleteConversation();
     }
 
+    \Drupal::state()->delete('oe_ai_assistant.subagent_worker_paused');
     MockAiProvider::reset();
     $this->restoreConfiguration();
     parent::tearDown();

@@ -25,6 +25,11 @@ final class SubagentResult {
   public const string FAILED = 'failed';
 
   /**
+   * The task was queued to run in the background.
+   */
+  public const string PENDING = 'pending';
+
+  /**
    * Builds the result.
    *
    * @param string $status

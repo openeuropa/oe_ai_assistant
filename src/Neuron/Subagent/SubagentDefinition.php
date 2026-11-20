@@ -20,12 +20,15 @@ final class SubagentDefinition {
    *   The tool input that carries what the subagent is asked to do.
    * @param bool $continuable
    *   Whether a later call can continue a task that waits for the editor.
+   * @param bool $background
+   *   Whether a call can ask to run the task in the background.
    */
   public function __construct(
     public readonly string $name,
     public readonly SubagentInterface $subagent,
     public readonly string $promptProperty = 'prompt',
     public readonly bool $continuable = FALSE,
+    public readonly bool $background = FALSE,
   ) {}
 
   /**

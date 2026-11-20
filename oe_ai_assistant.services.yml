@@ -36,6 +36,12 @@ services:
 
   Drupal\oe_ai_assistant\Service\Subagent\SubagentTaskLedger: {}
 
+  Drupal\oe_ai_assistant\Service\Subagent\SubagentRunner:
+    arguments:
+      $logger: '@logger.channel.oe_ai_assistant'
+
+  Drupal\oe_ai_assistant\Service\Subagent\SubagentDispatcher: {}
+
   Drupal\oe_ai_assistant\Service\TextFormatResolver: {}
 
   # Drives a document through extraction and summarisation.

@@ -17,6 +17,11 @@ use NeuronAI\Tools\Tool;
 final class SubagentTool extends Tool implements SubagentToolInterface {
 
   /**
+   * The most background tasks a session runs at once.
+   */
+  public const int MAX_BACKGROUND = 3;
+
+  /**
    * Builds the tool.
    *
    * @param string $name
@@ -71,6 +76,12 @@ final class SubagentTool extends Tool implements SubagentToolInterface {
    * {@inheritdoc}
    */
   public function open(SubagentTask $task): SubagentTask|string {
+    // The cap is checked before the task is recorded, so a refused task
+    // leaves no row behind.
+    if ($task->background && $this->ledger->activeBackground($this->sessionId) >= self::MAX_BACKGROUND) {
+      return sprintf('At most %d background tasks can run at once in this session. Wait for one to finish, or run this one now.', self::MAX_BACKGROUND);
+    }
+
     if (!$task->continuation) {
       $this->ledger->record(
         $task->taskId,
@@ -81,17 +92,18 @@ final class SubagentTool extends Tool implements SubagentToolInterface {
         $this->parentThread,
         $this->uid,
         $task->inputs,
+        $task->background,
       );
 
       return $task;
     }
 
-    $turn = $this->ledger->continueTask($task->taskId, $this->sessionId, $this->name);
+    $turn = $this->ledger->continueTask($task->taskId, $this->sessionId, $this->name, $task->inputs, $task->background);
     if (is_string($turn)) {
       return $turn;
     }
 
-    return new SubagentTask($task->taskId, $task->callId, $task->prompt, $task->inputs, TRUE, $turn);
+    return new SubagentTask($task->taskId, $task->callId, $task->prompt, $task->inputs, TRUE, $turn, $task->background);
   }
 
   /**

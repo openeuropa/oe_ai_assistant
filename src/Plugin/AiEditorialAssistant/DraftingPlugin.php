@@ -20,6 +20,7 @@ use Drupal\oe_ai_assistant\Service\Drafting\DocumentRepositoryInterface;
 use Drupal\oe_ai_assistant\Entity\Bundle\ContentCreationSessionInterface;
 use Drupal\oe_ai_assistant\Exception\DraftingTemplateException;
 use Drupal\oe_ai_assistant\Exception\DraftingToneException;
+use Drupal\oe_ai_assistant\Neuron\Subagent\SubagentResult;
 use Drupal\oe_ai_assistant\Plugin\AiAssistantPluginBase;
 use Drupal\oe_ai_assistant\Plugin\NeuronTool\RequestDraftNeuronTool;
 use Drupal\oe_ai_assistant\Service\AiEditorialContextInterface;
@@ -27,6 +28,7 @@ use Drupal\oe_ai_assistant\Service\DraftAssemblerInterface;
 use Drupal\oe_ai_assistant\Service\DraftSaverInterface;
 use Drupal\oe_ai_assistant\Service\DraftingSchemaProviderInterface;
 use Drupal\oe_ai_assistant\Service\PreviewRendererInterface;
+use Drupal\oe_ai_assistant\Service\Subagent\SubagentDispatcher;
 use Drupal\oe_ai_assistant\Service\Subagent\SubagentTaskLedger;
 use Drupal\oe_ai_assistant\Response\SseResponse;
 use Drupal\oe_ai_assistant\Utility\MessageContent;
@@ -136,6 +138,13 @@ class DraftingPlugin extends AiAssistantPluginBase {
   protected SubagentTaskLedger $ledger;
 
   /**
+   * Queues the background tasks a turn created.
+   *
+   * @var \Drupal\oe_ai_assistant\Service\Subagent\SubagentDispatcher
+   */
+  protected SubagentDispatcher $dispatcher;
+
+  /**
    * {@inheritdoc}
    */
   public static function create(
@@ -147,6 +156,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
     $instance = parent::create($container, $configuration, $plugin_id, $plugin_definition);
     $instance->agents = $container->get(NeuronAgentManagerInterface::class);
     $instance->ledger = $container->get(SubagentTaskLedger::class);
+    $instance->dispatcher = $container->get(SubagentDispatcher::class);
     $instance->schemaProvider = $container->get(DraftingSchemaProviderInterface::class);
     $instance->draftSaver = $container->get(DraftSaverInterface::class);
     $instance->aiEditorialContext = $container->get(AiEditorialContextInterface::class);
@@ -359,7 +369,9 @@ class DraftingPlugin extends AiAssistantPluginBase {
     }
 
     $logger = $this->logger;
-    $response = new SseResponse(static function () use ($agent, $message, $channel, $logger): void {
+    $dispatcher = $this->dispatcher;
+    $sessionId = (int) $session->id();
+    $response = new SseResponse(static function () use ($agent, $message, $channel, $logger, $dispatcher, $sessionId): void {
       try {
         // A run executes while its generator is advanced, and chat() is what
         // advances it to the end. The channel wrote every event as the run
@@ -377,6 +389,21 @@ class DraftingPlugin extends AiAssistantPluginBase {
         $channel->send(new ProtocolEvent('error', [
           'errorText' => 'The assistant request failed. Please try again.',
         ]));
+      }
+      finally {
+        // A background task is queued only once the turn that created it has
+        // stored its tool call, whatever way the turn ended.
+        try {
+          $dispatcher->dispatchSession($sessionId);
+        }
+        catch (\Throwable $e) {
+          // The sweep queues what this missed.
+          $logger->error('Queueing the background tasks of session @id failed: @message', [
+            '@id' => $sessionId,
+            '@message' => $e->getMessage(),
+            'exception' => $e,
+          ]);
+        }
       }
     },
       200,
@@ -584,6 +611,11 @@ class DraftingPlugin extends AiAssistantPluginBase {
    */
   private function joinDraftToolResult(ContentCreationSessionInterface $session, string $toolName, array $result): array {
     if ($toolName !== RequestDraftNeuronTool::TOOL_ID) {
+      return $result;
+    }
+
+    // A background task answers with a handle, and the card reads it as such.
+    if (($result['status'] ?? NULL) === SubagentResult::PENDING) {
       return $result;
     }
 

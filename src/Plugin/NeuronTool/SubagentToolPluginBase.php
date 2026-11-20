@@ -10,7 +10,9 @@ use Drupal\oe_ai_assistant\Neuron\Subagent\SubagentDefinition;
 use Drupal\oe_ai_assistant\Neuron\Tools\SubagentTool;
 use Drupal\oe_ai_assistant\Service\Subagent\SubagentTaskLedger;
 use NeuronAI\Exceptions\ToolException;
+use NeuronAI\Tools\PropertyType;
 use NeuronAI\Tools\Tool;
+use NeuronAI\Tools\ToolProperty;
 
 /**
  * Base class of a tool plugin whose calls a subagent answers.
@@ -43,12 +45,22 @@ abstract class SubagentToolPluginBase extends NeuronToolPluginBase {
    */
   public function getNeuron(): Tool {
     $session = $this->getContextValue('session');
+    $definition = $this->definition();
+    $properties = $this->properties();
+    if ($definition->background) {
+      $properties[] = ToolProperty::make(
+        'run_in_background',
+        PropertyType::BOOLEAN,
+        'true to run the task in the background, so the conversation stays free; the result arrives later in a system message. Leave it out to wait for the result now.',
+        FALSE,
+      );
+    }
 
     return new SubagentTool(
       $this->getPluginId(),
       $this->description(),
-      $this->properties(),
-      $this->definition(),
+      $properties,
+      $definition,
       $this->ledger,
       (int) $session->id(),
       (int) $this->currentUser->id() ?: NULL,

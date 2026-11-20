@@ -91,6 +91,7 @@ final class ResearchNeuronTool extends SubagentToolPluginBase {
       ),
       promptProperty: 'prompt',
       continuable: TRUE,
+      background: TRUE,
     );
   }
 

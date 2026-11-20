@@ -40,6 +40,11 @@ final class SubagentToolNode extends ToolNode {
   public const string STARTED_EVENT = 'subagent-started';
 
   /**
+   * The stream event that reports a task queued to run in the background.
+   */
+  public const string QUEUED_EVENT = 'subagent-queued';
+
+  /**
    * The stream event that closes a subagent's run.
    */
   public const string FINISHED_EVENT = 'subagent-finished';
@@ -174,6 +179,17 @@ final class SubagentToolNode extends ToolNode {
     }
     $task = $opened;
 
+    // A background task is queued when the turn ends. The call is answered
+    // with a handle now, and the ledger row is what the worker runs from.
+    if ($task->background) {
+      yield new CustomStreamEvent(self::QUEUED_EVENT, $this->label($task, $definition));
+
+      return json_encode(
+        (new SubagentResult(SubagentResult::PENDING, ['note' => 'The task runs in the background. Its result arrives later in a system message; do not wait for it and do not call this tool again for it.']))->toArray($task->taskId, $definition->name),
+        JSON_THROW_ON_ERROR,
+      );
+    }
+
     $this->memoize($startedKey, static fn (): bool => TRUE);
 
     try {
@@ -200,11 +216,7 @@ final class SubagentToolNode extends ToolNode {
    *   Yields what the subagent reports. Returns the SubagentResult.
    */
   private function runSubagent(SubagentDefinition $definition, SubagentTask $task): \Generator {
-    $label = [
-      'callId' => $task->callId,
-      'taskId' => $task->taskId,
-      'subagent' => $definition->name,
-    ];
+    $label = $this->label($task, $definition);
 
     yield new CustomStreamEvent(self::STARTED_EVENT, $label);
 
@@ -224,6 +236,17 @@ final class SubagentToolNode extends ToolNode {
     yield new CustomStreamEvent(self::FINISHED_EVENT, $label + ['status' => $result->status]);
 
     return $result;
+  }
+
+  /**
+   * Builds the label that names a task in the events of the stream.
+   */
+  private function label(SubagentTask $task, SubagentDefinition $definition): array {
+    return [
+      'callId' => $task->callId,
+      'taskId' => $task->taskId,
+      'subagent' => $definition->name,
+    ];
   }
 
   /**
@@ -255,6 +278,7 @@ final class SubagentToolNode extends ToolNode {
       is_string($prompt) ? $prompt : '',
       $call->getInputs(),
       $continuation,
+      background: $definition->background && in_array($call->getInput('run_in_background'), [TRUE, 'true', 1], TRUE),
     );
   }
 
