@@ -16,6 +16,7 @@ import { setDraftingState } from "../store";
 import {
   ACTIVE_POLL_DELAY_MS,
   AFTER_RUN_POLL_DELAY_MS,
+  deliveryBackoff,
   IDLE_POLL_DELAY_MS,
   nextReloadDecision,
   noticeSummary,
@@ -95,6 +96,12 @@ export function useSubagentTasks(
     let delivered: ReadonlySet<string> | null = null;
     // The tasks this tab delivered itself.
     const ownDeliveries = new Set<string>();
+    // The tasks of the delivery turn in flight; they join ownDeliveries only
+    // when the turn ends without failure.
+    let pendingTasks: SubagentTasksResponse["tasks"] = [];
+    // Deliveries that failed in a row, and when the next attempt may start.
+    let failures = 0;
+    let retryAt = 0;
 
     const schedule = (delay: number) => {
       if (stopped) return;
@@ -131,22 +138,25 @@ export function useSubagentTasks(
         (task) => task.deliveryState === "waiting",
       );
       control.delivering = true;
-      for (const task of waiting) {
-        ownDeliveries.add(task.taskId);
-      }
+      pendingTasks = waiting;
       try {
         appendEventToThread(runtime.thread, {
           eventType: "background_results",
           summary: noticeSummary(waiting),
         });
-        runtime.thread.startRun({
-          parentId: runtime.thread.export().headId ?? null,
-          sourceId: null,
-          runConfig: { custom: { deliver: true } },
+        // A transport failure can reject instead of reaching the runtime's
+        // error callback; ending the delivery twice is harmless.
+        Promise.resolve(
+          runtime.thread.startRun({
+            parentId: runtime.thread.export().headId ?? null,
+            sourceId: null,
+            runConfig: { custom: { deliver: true } },
+          }),
+        ).catch(() => {
+          if (control.delivering) control.onDeliveryEnd(true);
         });
       } catch {
-        control.delivering = false;
-        void reload();
+        control.onDeliveryEnd(true);
       }
     };
 
@@ -179,7 +189,8 @@ export function useSubagentTasks(
           shouldDeliver(response, {
             threadRunning,
             delivering: control.delivering,
-          })
+          }) &&
+          Date.now() >= retryAt
         ) {
           deliver(response);
           delay = ACTIVE_POLL_DELAY_MS;
@@ -195,11 +206,27 @@ export function useSubagentTasks(
     }
 
     control.onDeliveryEnd = (failed) => {
+      if (!control.delivering) return;
       control.delivering = false;
+      const tasks = pendingTasks;
+      pendingTasks = [];
       if (failed) {
+        failures += 1;
+        retryAt = Date.now() + deliveryBackoff(failures);
         // The claim was lost or refused: the spliced chip and the empty
         // reply do not exist on the server, so the server's thread replaces
         // them without telling the editor.
+        void reload();
+        return;
+      }
+      failures = 0;
+      retryAt = 0;
+      for (const task of tasks) {
+        ownDeliveries.add(task.taskId);
+      }
+      // The drafter ran in the worker, so its tool part in the live thread is
+      // still pending; the stored draft joins in on a reload.
+      if (tasks.some((task) => task.tool === "drafting_draft_content")) {
         void reload();
       }
     };

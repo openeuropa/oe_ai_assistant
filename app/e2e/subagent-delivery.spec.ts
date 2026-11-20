@@ -237,4 +237,93 @@ test.describe("Background result delivery", () => {
     expect(messageCalls).toBe(2);
     expect(chatCalls).toBe(0);
   });
+
+  test("a failed delivery backs off and does not block the later reload", async ({
+    page,
+  }) => {
+    const chatTimes: number[] = [];
+    let messageCalls = 0;
+    let workerDelivered = false;
+
+    await page.route("**/session/token", (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "text/plain",
+        body: "e2e-csrf-token",
+      }),
+    );
+    await page.route("**/api/plugins/drafting/get-messages", (route) => {
+      messageCalls += 1;
+      return route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ messages: HISTORY }),
+      });
+    });
+    // The results wait until the test lets the worker deliver them.
+    await page.route("**/api/plugins/drafting/tasks", (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          tasks: [
+            workerDelivered ? { ...TASK, deliveryState: "delivered" } : TASK,
+          ],
+          deliverable: !workerDelivered,
+          busy: false,
+          revision: workerDelivered ? "4.4" : "2.2",
+        }),
+      }),
+    );
+    await page.route("**/api/plugins/drafting/chat", (route) => {
+      chatTimes.push(Date.now());
+      return route.abort();
+    });
+
+    await page.goto("/#/drafting");
+    await expect.poll(() => chatTimes.length, { timeout: 30000 }).toBe(2);
+    expect(chatTimes[1] - chatTimes[0]).toBeGreaterThanOrEqual(4000);
+
+    const before = messageCalls;
+    workerDelivered = true;
+    await expect
+      .poll(() => messageCalls, { timeout: 30000 })
+      .toBeGreaterThan(before);
+  });
+
+  test("an own delivery of a draft task reloads the thread", async ({
+    page,
+  }) => {
+    const seen = await mockApiRoutes(page, (route) =>
+      route.fulfill({
+        status: 200,
+        headers: {
+          "Content-Type": "text/event-stream",
+          "Cache-Control": "no-cache",
+          "x-vercel-ai-ui-message-stream": "v1",
+        },
+        body: buildSseBody(DELIVERY_EVENTS),
+      }),
+    );
+    // The default tasks mock reports TASK, which is not a draft task.
+    await page.route("**/api/plugins/drafting/tasks", (route) => {
+      const first = seen.chatBodies.length === 0;
+      const draft = { ...TASK, tool: "drafting_draft_content" };
+      return route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          tasks: [first ? draft : { ...draft, deliveryState: "delivered" }],
+          deliverable: first,
+          busy: false,
+          revision: "2.2",
+        }),
+      });
+    });
+
+    await page.goto("/#/drafting");
+    // The own delivery is followed by a second load of the transcript.
+    await expect.poll(() => seen.messageCalls, { timeout: 15000 }).toBe(2);
+    expect(seen.chatBodies).toHaveLength(1);
+  });
 });

@@ -4,6 +4,7 @@
 
 import { describe, expect, it } from "vitest";
 import {
+  deliveryBackoff,
   isActive,
   nextReloadDecision,
   noticeSummary,
@@ -217,5 +218,22 @@ describe("nextReloadDecision", () => {
     expect(
       nextReloadDecision(deferred.delivered, delivered("sub_1"), quiet),
     ).toMatchObject({ reload: true });
+  });
+});
+
+describe("deliveryBackoff", () => {
+  it("does not wait without failures", () => {
+    expect(deliveryBackoff(0)).toBe(0);
+  });
+
+  it("doubles from 5 s with each failure", () => {
+    expect([1, 2, 3, 4].map(deliveryBackoff)).toEqual([
+      5000, 10000, 20000, 40000,
+    ]);
+  });
+
+  it("caps at 60 s", () => {
+    expect(deliveryBackoff(5)).toBe(60000);
+    expect(deliveryBackoff(50)).toBe(60000);
   });
 });

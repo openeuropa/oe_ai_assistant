@@ -31,6 +31,27 @@ export const IDLE_POLL_DELAY_MS = 20000;
 /** Delay before the poll that follows the end of a run of this tab. */
 export const AFTER_RUN_POLL_DELAY_MS = 1000;
 
+/** Wait before the next delivery after the first failed one. */
+export const DELIVERY_BACKOFF_BASE_MS = 5000;
+
+/** Longest wait between two delivery attempts. */
+export const DELIVERY_BACKOFF_MAX_MS = 60000;
+
+/**
+ * Returns how long to wait before the next delivery attempt.
+ *
+ * @param failures The number of deliveries that failed in a row.
+ */
+export function deliveryBackoff(failures: number): number {
+  if (failures <= 0) {
+    return 0;
+  }
+  return Math.min(
+    DELIVERY_BACKOFF_BASE_MS * 2 ** (failures - 1),
+    DELIVERY_BACKOFF_MAX_MS,
+  );
+}
+
 /**
  * Tells whether some background task is still on its way to the thread.
  *
