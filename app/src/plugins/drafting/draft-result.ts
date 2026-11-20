@@ -51,6 +51,10 @@ export interface DraftGroupProgress {
   status: DraftGroupStatus;
   /** The error recorded for a failed group. Absent for every other status. */
   error?: string;
+  /** The attempt at the group, from one, while the drafter writes it. */
+  attempt?: number;
+  /** How many characters the drafter has written, while it writes. */
+  chars?: number;
 }
 
 /**
@@ -199,4 +203,14 @@ export function parseDraftResult(result: unknown): ParsedDraftResult {
 
   // Legacy flat map: the whole result object is the fields map.
   return { ...empty, fields: result };
+}
+
+/**
+ * Says how far the drafter of a group has written, e.g. "1.2k chars · attempt 2".
+ */
+export function groupProgress(chars: number, attempt: number): string {
+  const size =
+    chars < 1000 ? `${chars} chars` : `${(chars / 1000).toFixed(1)}k chars`;
+
+  return attempt > 1 ? `${size} · attempt ${attempt}` : size;
 }

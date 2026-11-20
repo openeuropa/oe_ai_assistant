@@ -166,11 +166,13 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
       array_search($activity[0], $events, TRUE),
       'data-draft-started must arrive before the first activity frame.',
     );
-    // One drafting frame and one drafted frame per group, for two groups: 4.
-    // An exact count, not a floor, so a regression that delivers every frame
-    // twice is caught here rather than only as a UI bug.
-    $this->assertCount(4, $activity,
-      'One drafting frame and one drafted frame per group.');
+    // Per group: the drafting frame, one progress frame (each answer is
+    // shorter than the progress step, so only its first chunk reports), and
+    // the drafted frame. For two groups: 6. An exact count, not a floor, so a
+    // regression that delivers every frame twice is caught here rather than
+    // only as a UI bug.
+    $this->assertCount(6, $activity,
+      'One drafting, one progress and one drafted frame per group.');
 
     // Every frame names its group, its label and its status, which is what
     // app/src/plugins/drafting/hooks/use-drafting-runtime.ts merges by group.
@@ -183,7 +185,7 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
       $statusesByGroup[$step['group']][] = $step['status'];
     }
     $this->assertArrayHasKey('main_fields', $statusesByGroup);
-    $this->assertSame(['drafting', 'drafted'], $statusesByGroup['main_fields']);
+    $this->assertSame(['drafting', 'drafting', 'drafted'], $statusesByGroup['main_fields']);
 
     // Exactly one data-drafted-fields frame, after the last activity frame,
     // carrying the version, the editorial context snapshot and the whole

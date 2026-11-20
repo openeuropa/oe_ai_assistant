@@ -50,6 +50,10 @@ interface DraftingActivity {
     status: keyof typeof ACTIVITY_STATUS;
     index: number;
     total: number;
+    /** The attempt at the group, from one. Sent while the drafter writes. */
+    attempt?: number;
+    /** How many characters the drafter has written so far. */
+    chars?: number;
   };
 }
 
@@ -244,10 +248,13 @@ export function useDraftingRuntime(delivery: DeliveryControl) {
           return;
         }
         const status = ACTIVITY_STATUS[activity.data.status];
+        const { attempt, chars } = activity.data;
         updateRun(activity.data.callId, (run) => ({
           ...run,
           groups: run.groups.map((group) =>
-            group.id === activity.data.group ? { ...group, status } : group,
+            group.id === activity.data.group
+              ? { ...group, status, attempt, chars }
+              : group,
           ),
         }));
       }

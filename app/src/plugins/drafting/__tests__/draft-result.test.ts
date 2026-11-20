@@ -6,7 +6,7 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { parseDraftResult } from "../draft-result";
+import { groupProgress, parseDraftResult } from "../draft-result";
 
 describe("parseDraftResult", () => {
   it("parses the versioned shape with full context", () => {
@@ -212,5 +212,16 @@ describe("parseDraftResult with a background task", () => {
     expect(parsed.version).toBeNull();
     expect(parsed.fields).toEqual({});
     expect(parsed.status).toBe("drafted");
+  });
+});
+
+describe("groupProgress", () => {
+  it("counts characters, and kilo-characters from 1000", () => {
+    expect(groupProgress(380, 1)).toBe("380 chars");
+    expect(groupProgress(1240, 1)).toBe("1.2k chars");
+  });
+
+  it("names the attempt only after a retry", () => {
+    expect(groupProgress(400, 2)).toBe("400 chars · attempt 2");
   });
 });
