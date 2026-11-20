@@ -68,8 +68,7 @@ final class EditorialNeuronAgent extends EditorialSessionAgentBase {
    * other block of this prompt names the attachment, so the agent has no
    * text to answer from. The editor also hears nothing about a document
    * that is still in extraction, or one whose extraction failed. The
-   * documents block carries the text and both warnings. This agent writes
-   * no field of the draft, so the prompt omits the tone.
+   * documents block carries the text and both warnings.
    */
   protected function instructions(): string {
     // The tools describe themselves; this is the policy for using them.
@@ -132,9 +131,34 @@ final class EditorialNeuronAgent extends EditorialSessionAgentBase {
     - You can have normal conversations with the user at any point.
     PROMPT;
 
-    $blocks = array_filter([$this->contentTypePrompt(), $this->documentsPrompt()]);
+    $blocks = array_filter([$this->contentTypePrompt(), $this->toneSettingPrompt(), $this->documentsPrompt()]);
 
     return $instructions . "\n\n" . implode("\n\n", $blocks) . "\n";
+  }
+
+  /**
+   * Renders which tone the editor selected for the drafts.
+   *
+   * @return string
+   *   The prompt block.
+   */
+  private function toneSettingPrompt(): string {
+    // This agent writes no field of the draft, so it is not told to follow
+    // the tone. It is told which tone is set, so it can answer the editor
+    // about it, and that the drafters follow it.
+    $tone = $this->getContextValue('session')->getTone();
+    $label = trim((string) ($tone['label'] ?? ''));
+    if ($label === '') {
+      return "Tone:\nThe editor has selected no tone. The drafters write without tone guidelines.\n";
+    }
+
+    $prompt = "Tone:\nThe editor selected the tone \"" . $label . '". The drafters follow it in every draft.';
+    $guidelines = trim((string) ($tone['prompt'] ?? ''));
+    if ($guidelines !== '') {
+      $prompt .= "\nIts guidelines: " . $guidelines;
+    }
+
+    return $prompt . "\nYou cannot change the tone; the editor selects it in the assistant.\n";
   }
 
   /**
