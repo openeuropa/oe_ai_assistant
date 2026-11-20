@@ -347,7 +347,7 @@ class DraftingTurnTest extends AiEditorialSessionKernelTestBase {
   /**
    * A drafting call with no id of its own is refused.
    */
-  public function testADraftCallWithoutAnIdIsRefused(): void {
+  public function testDraftCallWithoutAnIdIsRefused(): void {
     $session = $this->createSession($this->createUser());
 
     MockAiProvider::reset();
