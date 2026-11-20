@@ -8,6 +8,7 @@ use Drupal\Core\Url;
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
 use Drupal\oe_ai_assistant\Entity\Bundle\ContentCreationSessionInterface;
 use Drupal\oe_ai_assistant\Neuron\Chat\History\EditorialMessageStore;
+use Drupal\oe_ai_assistant\Service\Subagent\SubagentTaskLedger;
 use Drupal\oe_ai_assistant\Neuron\Chat\Messages\EditorialAssistantMessage;
 use Drupal\oe_ai_assistant_test\Plugin\AiProvider\MockAiProvider;
 use Drupal\Tests\oe_ai_assistant\Traits\ExistingSiteConfigBackupTrait;
@@ -88,6 +89,7 @@ abstract class DraftingPluginTestBase extends ExistingSiteBase {
     // Remove any conversation messages persisted against the test sessions.
     foreach ($this->sessions as $session) {
       $session->deleteConversation();
+      \Drupal::service(SubagentTaskLedger::class)->deleteForSession((int) $session->id());
     }
 
     \Drupal::state()->delete('oe_ai_assistant.subagent_worker_paused');

@@ -28,14 +28,16 @@ use Drupal\oe_ai_assistant\Service\DraftAssemblerInterface;
 use Drupal\oe_ai_assistant\Service\DraftSaverInterface;
 use Drupal\oe_ai_assistant\Service\DraftingSchemaProviderInterface;
 use Drupal\oe_ai_assistant\Service\PreviewRendererInterface;
+use Drupal\oe_ai_assistant\Service\Subagent\EditorialTurnGuard;
+use Drupal\oe_ai_assistant\Service\Subagent\SubagentDelivery;
 use Drupal\oe_ai_assistant\Service\Subagent\SubagentDispatcher;
+use Drupal\oe_ai_assistant\Service\Subagent\SubagentPresence;
 use Drupal\oe_ai_assistant\Service\Subagent\SubagentTaskLedger;
 use Drupal\oe_ai_assistant\Response\SseResponse;
 use Drupal\oe_ai_assistant\Utility\MessageContent;
 use NeuronAI\Chat\Messages\UserMessage;
+use NeuronAI\Exceptions\RunInFlightException;
 use NeuronAI\Workflow\Streaming\ProtocolEvent;
-use NeuronAI\Workflow\Workflow;
-use NeuronAI\Workflow\WorkflowStatus;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\File\Exception\FileException;
 use Symfony\Component\HttpFoundation\Request;
@@ -145,6 +147,27 @@ class DraftingPlugin extends AiAssistantPluginBase {
   protected SubagentDispatcher $dispatcher;
 
   /**
+   * Tells whether the editorial run of a session can take a new turn.
+   *
+   * @var \Drupal\oe_ai_assistant\Service\Subagent\EditorialTurnGuard
+   */
+  protected EditorialTurnGuard $turnGuard;
+
+  /**
+   * Delivers the results of background tasks to the conversation.
+   *
+   * @var \Drupal\oe_ai_assistant\Service\Subagent\SubagentDelivery
+   */
+  protected SubagentDelivery $delivery;
+
+  /**
+   * Remembers which sessions have a browser that polls.
+   *
+   * @var \Drupal\oe_ai_assistant\Service\Subagent\SubagentPresence
+   */
+  protected SubagentPresence $presence;
+
+  /**
    * {@inheritdoc}
    */
   public static function create(
@@ -157,6 +180,9 @@ class DraftingPlugin extends AiAssistantPluginBase {
     $instance->agents = $container->get(NeuronAgentManagerInterface::class);
     $instance->ledger = $container->get(SubagentTaskLedger::class);
     $instance->dispatcher = $container->get(SubagentDispatcher::class);
+    $instance->turnGuard = $container->get(EditorialTurnGuard::class);
+    $instance->delivery = $container->get(SubagentDelivery::class);
+    $instance->presence = $container->get(SubagentPresence::class);
     $instance->schemaProvider = $container->get(DraftingSchemaProviderInterface::class);
     $instance->draftSaver = $container->get(DraftSaverInterface::class);
     $instance->aiEditorialContext = $container->get(AiEditorialContextInterface::class);
@@ -175,6 +201,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
     return parent::getActionMap() + [
       'chat' => $this->chat(...),
       'get-messages' => $this->getMessages(...),
+      'tasks' => $this->tasks(...),
       'reset' => $this->reset(...),
       'save' => $this->save(...),
       'set-tone' => $this->setTone(...),
@@ -193,6 +220,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
   public function getRequestSchemas(): array {
     return parent::getRequestSchemas() + [
       'get-messages' => 'GetMessagesRequest',
+      'tasks' => 'DraftingTasksRequest',
       'reset' => 'DraftingResetRequest',
       'save' => 'DraftingSaveRequest',
       'set-tone' => 'DraftingSetToneRequest',
@@ -321,6 +349,13 @@ class DraftingPlugin extends AiAssistantPluginBase {
    */
   public function chat(Request $request): Response {
     $body = $this->decodeJsonBody($request);
+
+    // A delivery turn carries no message of the editor's. The results of the
+    // background tasks the session holds are its message.
+    if (($body['runConfig']['custom']['deliver'] ?? FALSE) === TRUE) {
+      return $this->deliverResults($body);
+    }
+
     $message = $this->extractUserMessage($body);
 
     if (empty($message)) {
@@ -360,7 +395,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
     // under the id the session names. A turn that is still streaming holds
     // that id, and the engine would refuse a second start inside the open
     // stream. So the status is read off the run here and answered with a 409.
-    if ($this->turnInFlight($agent)) {
+    if ($this->turnGuard->isBusy($session)) {
       throw new ActionException(
         'conflict',
         'The assistant is still working on this session. Wait for it to finish.',
@@ -370,14 +405,22 @@ class DraftingPlugin extends AiAssistantPluginBase {
 
     $logger = $this->logger;
     $dispatcher = $this->dispatcher;
+    $delivery = $this->delivery;
+    $ledger = $this->ledger;
     $sessionId = (int) $session->id();
-    $response = new SseResponse(static function () use ($agent, $message, $channel, $logger, $dispatcher, $sessionId): void {
+    $response = new SseResponse(static function () use ($agent, $message, $channel, $logger, $dispatcher, $delivery, $ledger, $sessionId): void {
       try {
         // A run executes while its generator is advanced, and chat() is what
         // advances it to the end. The channel wrote every event as the run
         // produced it, so nothing here reads what it answers. Without the
         // stream flag the editor reads the reply only once the turn ends.
         $agent->chat(new UserMessage($message), TRUE);
+      }
+      catch (RunInFlightException) {
+        // Another request took the run between the check and the start.
+        $channel->send(new ProtocolEvent('error', [
+          'errorText' => 'The assistant is still working on this session. Wait for it to finish.',
+        ]));
       }
       catch (\Throwable $e) {
         // Never let an exception escape into the open SSE stream: Drupal's
@@ -392,9 +435,13 @@ class DraftingPlugin extends AiAssistantPluginBase {
       }
       finally {
         // A background task is queued only once the turn that created it has
-        // stored its tool call, whatever way the turn ended.
+        // stored its tool call, whatever way the turn ended. A result that
+        // waits gets a delivery job as well.
         try {
           $dispatcher->dispatchSession($sessionId);
+          if ($ledger->hasWaiting($sessionId)) {
+            $delivery->enqueue($sessionId);
+          }
         }
         catch (\Throwable $e) {
           // The sweep queues what this missed.
@@ -415,6 +462,59 @@ class DraftingPlugin extends AiAssistantPluginBase {
     );
 
     return $response;
+  }
+
+  /**
+   * Streams the notification turn for the results that wait in a session.
+   *
+   * @param array $body
+   *   The decoded chat request.
+   *
+   * @return \Symfony\Component\HttpFoundation\Response
+   *   An SSE streaming response.
+   */
+  private function deliverResults(array $body): Response {
+    $session = $this->loadSession($body);
+    if (!$session instanceof ContentCreationSessionInterface) {
+      throw new ActionException('invalid_request', 'The editorial session does not support drafting.', 400);
+    }
+
+    if ($this->turnGuard->isBusy($session)) {
+      throw new ActionException(
+        'conflict',
+        'The assistant is still working on this session. Wait for it to finish.',
+        409,
+      );
+    }
+    if (!$this->ledger->hasWaiting((int) $session->id())) {
+      throw new ActionException('nothing_to_deliver', 'No background result waits for delivery.', 409);
+    }
+
+    $channel = new SseChannel();
+    $logger = $this->logger;
+    $delivery = $this->delivery;
+
+    return new SseResponse(static function () use ($session, $channel, $logger, $delivery): void {
+      try {
+        // Another claimant can take the results between the check and here.
+        if ($delivery->deliver($session, $channel) !== SubagentDelivery::DELIVERED) {
+          $channel->send(new ProtocolEvent('error', ['errorText' => 'nothing_to_deliver']));
+        }
+      }
+      catch (\Throwable $e) {
+        $logger->error('Delivering the background results failed: @message', [
+          '@message' => $e->getMessage(),
+          'exception' => $e,
+        ]);
+        $channel->send(new ProtocolEvent('error', [
+          'errorText' => 'The assistant request failed. Please try again.',
+        ]));
+      }
+    },
+      200,
+      ['x-vercel-ai-ui-message-stream' => 'v1'],
+      "data: [DONE]\n\n",
+    );
   }
 
   /**
@@ -482,6 +582,14 @@ class DraftingPlugin extends AiAssistantPluginBase {
       // RFC 3339 so clients can render local timestamps.
       $at = date('c', (int) $row->get('created')->value);
 
+      // The system wrote a notice into the conversation. The editor reads it
+      // as an event, and never as a message of their own.
+      $notice = $row->getMeta()['__meta']['oe_ai_notice'] ?? NULL;
+      if (is_array($notice)) {
+        $messages[] = $this->noticeEvent($notice, $at);
+        continue;
+      }
+
       // Neuron stores a tool result under the user role. The editor reads
       // the model's action instead.
       $toolCalls = $this->toolCallsOf($row, $settled, $session);
@@ -510,6 +618,114 @@ class DraftingPlugin extends AiAssistantPluginBase {
     }
 
     return ['messages' => $messages];
+  }
+
+  /**
+   * Builds the transcript event of a notice the system wrote.
+   *
+   * @param array $notice
+   *   The notice, as the delivery stored it.
+   * @param string $at
+   *   The RFC 3339 time of the notice.
+   *
+   * @return array
+   *   The event item, shaped {role, type, summary, at, delivery, tasks}.
+   */
+  private function noticeEvent(array $notice, string $at): array {
+    $tasks = [];
+    foreach ((array) ($notice['tasks'] ?? []) as $task) {
+      $tasks[] = [
+        'id' => (string) ($task['task_id'] ?? ''),
+        'subagent' => (string) ($task['subagent'] ?? ''),
+        'status' => (string) ($task['status'] ?? ''),
+      ];
+    }
+
+    return [
+      'role' => 'event',
+      'type' => (string) ($notice['type'] ?? 'background_results'),
+      'summary' => $tasks === []
+        ? 'Background results arrived.'
+        : 'Background results arrived: ' . implode(', ', array_map(
+          static fn (array $task): string => $task['subagent'] . ' ' . $task['status'],
+          $tasks,
+        )) . '.',
+      'at' => $at,
+      'delivery' => (string) ($notice['delivery'] ?? ''),
+      'tasks' => $tasks,
+    ];
+  }
+
+  /**
+   * Reports the background tasks of the session and whether results wait.
+   *
+   * @param \Symfony\Component\HttpFoundation\Request $request
+   *   The incoming request.
+   *
+   * @return array
+   *   The newest tasks, whether a delivery can start, whether the assistant
+   *   is busy, and a revision that changes when the conversation grows.
+   */
+  public function tasks(Request $request): array {
+    $session = $this->loadSession($this->decodeJsonBody($request));
+    if (!$session instanceof ContentCreationSessionInterface) {
+      throw new ActionException('invalid_request', 'The editorial session does not support drafting.', 400);
+    }
+    $sessionId = (int) $session->id();
+
+    // A browser that polls is the one that delivers, so the worker waits.
+    $this->presence->touch($sessionId);
+
+    $tasks = array_map(static function (array $row): array {
+      $prompt = (string) ($row['input']['prompt'] ?? $row['input']['brief'] ?? '');
+
+      return [
+        'taskId' => $row['task_id'],
+        'subagent' => $row['subagent'],
+        'tool' => $row['tool'],
+        'status' => $row['status'],
+        'mode' => $row['mode'],
+        'deliveryState' => $row['delivery_state'],
+        'prompt' => mb_substr($prompt, 0, 200),
+        'created' => (int) $row['created'],
+        'changed' => (int) $row['changed'],
+      ];
+    }, $this->ledger->recent($sessionId, 20));
+
+    $busy = $this->turnGuard->isBusy($session);
+
+    return [
+      'tasks' => $tasks,
+      'deliverable' => !$busy && $this->ledger->hasWaiting($sessionId),
+      'busy' => $busy,
+      'revision' => $this->threadRevision($session),
+    ];
+  }
+
+  /**
+   * Names the state of the editorial thread, so a change of it shows.
+   *
+   * @param \Drupal\oe_ai_assistant\Entity\Bundle\ContentCreationSessionInterface $session
+   *   The session.
+   *
+   * @return string
+   *   The row count and the newest row id of the thread.
+   */
+  private function threadRevision(ContentCreationSessionInterface $session): string {
+    $storage = $this->entityTypeManager->getStorage('neuron_message');
+    $count = (int) $storage->getQuery()
+      ->accessCheck(FALSE)
+      ->condition('thread_id', $session->editorialThread())
+      ->count()
+      ->execute();
+    $newest = $storage->getQuery()
+      ->accessCheck(FALSE)
+      ->condition('thread_id', $session->editorialThread())
+      ->sort('id', 'DESC')
+      ->range(0, 1)
+      ->execute();
+
+    return $count . '.' . (int) (reset($newest) ?: 0);
   }
 
   /**
@@ -628,26 +844,6 @@ class DraftingPlugin extends AiAssistantPluginBase {
     }
 
     return $session->getDraftRun((int) $result['version']) ?? $result;
-  }
-
-  /**
-   * Whether a turn of this session is still running.
-   *
-   * A run holds a lease while it works, and the engine refuses to start a
-   * second run over it. It replaces a run whose lease has run out, so that
-   * one counts as gone.
-   *
-   * @param \NeuronAI\Workflow\Workflow $workflow
-   *   The run of the session.
-   *
-   * @return bool
-   *   TRUE when a new turn cannot start.
-   */
-  private function turnInFlight(Workflow $workflow): bool {
-    $run = $workflow->inspect();
-
-    return $run?->status === WorkflowStatus::Running
-      && ($run->leaseExpiresAt === NULL || $run->leaseExpiresAt > time());
   }
 
   /**

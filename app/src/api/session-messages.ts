@@ -30,7 +30,7 @@ export interface SessionMessage {
   /** CMS user id of the author (user items in shared sessions). */
   userId?: string;
   toolCalls?: SessionToolCall[];
-  /** Event type, e.g. "session_start", "tone", "template" (event items). */
+  /** Event type, e.g. "session_start", "tone", "template", "background_results" (event items). */
   type?: string;
   /** Human-readable event summary (event items). */
   summary?: string;
@@ -38,6 +38,10 @@ export interface SessionMessage {
   at?: string;
   /** The draft version a "save" event persisted (event items). */
   version?: number;
+  /** Id of the delivery that announced background results (event items). */
+  delivery?: string;
+  /** The tasks a "background_results" event announced (event items). */
+  tasks?: Array<{ id: string; subagent: string; status: string }>;
 }
 
 /**

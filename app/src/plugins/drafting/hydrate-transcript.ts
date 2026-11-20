@@ -7,8 +7,12 @@
  * tool-call part so they are visible in the thread.
  */
 
-import type { ThreadMessageLike } from "@assistant-ui/react";
+import {
+  ExportedMessageRepository,
+  type ThreadMessageLike,
+} from "@assistant-ui/react";
 import type { SessionMessage } from "@/api/session-messages";
+import { getSessionMessages } from "@/api/session-messages";
 import { parseDraftResult } from "./draft-result";
 
 /**
@@ -130,4 +134,12 @@ export function toThreadMessages(
   return messages
     .map((m, i) => toThreadMessage(m, i))
     .filter((m): m is ThreadMessageLike => m !== null);
+}
+
+/**
+ * Loads the persisted transcript as a repository the thread can import.
+ */
+export async function loadThreadRepository(): Promise<ExportedMessageRepository> {
+  const messages = await getSessionMessages("drafting");
+  return ExportedMessageRepository.fromArray(toThreadMessages(messages));
 }

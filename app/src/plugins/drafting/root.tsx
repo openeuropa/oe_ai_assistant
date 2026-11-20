@@ -28,12 +28,17 @@ import { PaneBusyOverlay } from "./components/pane-busy-overlay";
 import {
   DraftContentToolUI,
   EditorialEventToolUI,
+  ResearchToolUI,
 } from "./components/tool-uis";
 import { useDraftingDocuments } from "./hooks/use-drafting-documents";
 import { useDraftingRuntime } from "./hooks/use-drafting-runtime";
 import { useDraftingTemplate } from "./hooks/use-drafting-template";
 import { useDraftingTone } from "./hooks/use-drafting-tone";
 import { useReportPendingWork } from "./hooks/use-report-pending-work";
+import {
+  useDeliveryControl,
+  useSubagentTasks,
+} from "./hooks/use-subagent-tasks";
 import { useReportParticipants } from "./participants";
 import { useSavedVersions } from "./saved-versions";
 import { useSessionDrafts } from "./session-drafts";
@@ -104,7 +109,10 @@ function DraftingChat() {
   const { draftedFields, runs, activeCallIds, activeDraftVersion } =
     useDraftingSlice();
   const setPendingWork = useAppStore((s) => s.setPendingWork);
-  const runtime = useDraftingRuntime();
+  const delivery = useDeliveryControl();
+  const runtime = useDraftingRuntime(delivery);
+  // Follow the background subagent tasks and deliver their results.
+  useSubagentTasks(runtime, delivery);
   const tone = useDraftingTone();
   const documents = useDraftingDocuments();
   const template = useDraftingTemplate();
@@ -310,6 +318,7 @@ function DraftingChat() {
     <AssistantRuntimeProvider runtime={runtime}>
       {/* Register tool call renderers so they appear inline in chat. */}
       <DraftContentToolUI />
+      <ResearchToolUI />
       <EditorialEventToolUI />
 
       {/* Feed the shell exit guard with this plugin's pending state.

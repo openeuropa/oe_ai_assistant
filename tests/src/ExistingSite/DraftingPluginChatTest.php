@@ -6,6 +6,8 @@ namespace Drupal\Tests\oe_ai_assistant\ExistingSite;
 
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
 use Drupal\oe_ai_assistant\Entity\Bundle\ContentCreationSessionInterface;
+use Drupal\oe_ai_assistant\Service\Subagent\SubagentPresence;
+use Drupal\oe_ai_assistant\Service\Subagent\SubagentTaskLedger;
 use Drupal\oe_ai_assistant_test\Plugin\AiProvider\MockAiProvider;
 use Drupal\oe_ai_assistant_test\Plugin\AiProvider\MockResponse;
 
@@ -828,6 +830,112 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
 
     $this->assertSame([], $session->conversationThreads(),
       'Reset must delete every message hosted by the session.');
+  }
+
+  /**
+   * Tests that the tasks action reports tasks and the delivery state.
+   */
+  public function testTasksActionReportsDeliverable(): void {
+    $user = $this->createUser(['use oe ai assistant']);
+    $this->loginUser($user);
+    $session = $this->createSession($user);
+
+    $result = $this->httpPost('/api/ai/plugins/drafting/tasks', ['sessionId' => $session->id()]);
+    $this->assertEquals(200, $result['status'], substr($result['body'], 0, 500));
+    $empty = json_decode($result['body'], TRUE);
+    $this->assertSame([], $empty['tasks']);
+    $this->assertFalse($empty['deliverable']);
+    $this->assertFalse($empty['busy']);
+    $this->assertMatchesRegularExpression('/^\d+\.\d+$/', $empty['revision']);
+    $this->assertTrue(\Drupal::service(SubagentPresence::class)->isPresent((int) $session->id()));
+
+    $taskId = $this->seedWaitingResult($session, str_repeat('Find the funding. ', 30));
+    $result = $this->httpPost('/api/ai/plugins/drafting/tasks', ['sessionId' => $session->id()]);
+    $this->assertEquals(200, $result['status']);
+    $data = json_decode($result['body'], TRUE);
+    $this->assertTrue($data['deliverable']);
+    $this->assertFalse($data['busy']);
+    $this->assertCount(1, $data['tasks']);
+    $task = $data['tasks'][0];
+    $this->assertSame($taskId, $task['taskId']);
+    $this->assertSame('researcher', $task['subagent']);
+    $this->assertSame('research_documents', $task['tool']);
+    $this->assertSame('completed', $task['status']);
+    $this->assertSame('background', $task['mode']);
+    $this->assertSame('waiting', $task['deliveryState']);
+    $this->assertSame(200, mb_strlen($task['prompt']));
+    $this->assertIsInt($task['created']);
+    $this->assertIsInt($task['changed']);
+
+    // A request without a session is refused as the other actions refuse it.
+    $this->assertEquals(400, $this->httpPost('/api/ai/plugins/drafting/tasks', [])['status']);
+  }
+
+  /**
+   * Tests that a delivery request streams the notification turn live.
+   */
+  public function testDeliverModeStreamsNotificationTurn(): void {
+    $user = $this->createUser(['use oe ai assistant']);
+    $this->loginUser($user);
+    $session = $this->createSession($user);
+    $taskId = $this->seedWaitingResult($session, 'Find the funding.');
+
+    MockAiProvider::enqueue(new MockResponse(text: 'The research found the funding.'));
+    $result = $this->httpPost('/api/ai/plugins/drafting/chat', [
+      'sessionId' => $session->id(),
+      'runConfig' => ['custom' => ['deliver' => TRUE]],
+      'messages' => [],
+    ]);
+
+    $this->assertEquals(200, $result['status'], substr($result['body'], 0, 500));
+    $events = $this->parseSseEvents($result['body']);
+    $this->assertNotContains('error', array_column($events, 'type'));
+    $text = implode('', array_map(static fn (array $e): string => $e['delta'] ?? '', array_filter($events, static fn (array $e): bool => $e['type'] === 'text-delta')));
+    $this->assertStringContainsString('The research found the funding.', $text);
+
+    $row = \Drupal::service(SubagentTaskLedger::class)->load($taskId);
+    $this->assertSame('delivered', $row['delivery_state']);
+
+    $messages = $this->getMessages($session);
+    $this->assertSame(['event', 'assistant'], array_column($messages, 'role'));
+    $this->assertSame('background_results', $messages[0]['type']);
+    $this->assertSame($row['delivery_id'], $messages[0]['delivery']);
+    $this->assertSame([['id' => $taskId, 'subagent' => 'researcher', 'status' => 'completed']], $messages[0]['tasks']);
+    $this->assertSame('The research found the funding.', $messages[1]['content']);
+  }
+
+  /**
+   * Tests that a delivery request with nothing waiting is refused.
+   */
+  public function testDeliverModeWithNothingWaitingIs409(): void {
+    $user = $this->createUser(['use oe ai assistant']);
+    $this->loginUser($user);
+    $session = $this->createSession($user);
+
+    $result = $this->httpPost('/api/ai/plugins/drafting/chat', [
+      'sessionId' => $session->id(),
+      'runConfig' => ['custom' => ['deliver' => TRUE]],
+      'messages' => [],
+    ]);
+
+    $this->assertEquals(409, $result['status'], substr($result['body'], 0, 500));
+    $this->assertStringContainsString('nothing_to_deliver', $result['body']);
+  }
+
+  /**
+   * Records a finished background task whose result waits for delivery.
+   *
+   * @return string
+   *   The task id.
+   */
+  private function seedWaitingResult(AiEditorialSessionInterface $session, string $prompt): string {
+    $ledger = \Drupal::service(SubagentTaskLedger::class);
+    $taskId = 'sub_' . bin2hex(random_bytes(12));
+    $ledger->record($taskId, (int) $session->id(), 'research_documents', 'researcher', 'call_' . $taskId, $session->editorialThread(), (int) $session->getOwnerId(), ['prompt' => $prompt], TRUE);
+    $ledger->claim($taskId, 'worker-1', 300);
+    $ledger->finishClaimed($taskId, 'worker-1', 'completed', ['report' => 'Funding is 5M.']);
+
+    return $taskId;
   }
 
   /**

@@ -242,4 +242,31 @@ describe("toThreadMessages", () => {
       custom: { userName: "Maria Rossi", userId: "2" },
     });
   });
+
+  it("maps a background_results event to an event chip showing its summary", () => {
+    const input: SessionMessage[] = [
+      {
+        role: "event",
+        type: "background_results",
+        summary: "Background results arrived: researcher completed.",
+        at: "2026-11-20T10:00:00+00:00",
+        delivery: "dlv_1",
+        tasks: [{ id: "sub_1", subagent: "researcher", status: "completed" }],
+      },
+      { role: "assistant", content: "The research found two sources." },
+    ];
+
+    const result = toThreadMessages(input);
+
+    expect(result).toHaveLength(2);
+    const [notice] = result;
+    if (!notice) throw new Error("expected a message");
+    expect(notice.role).toBe("assistant");
+    const part = (notice.content as AnyPart[])[0];
+    expect(part.toolName).toBe("editorial_event");
+    expect(part.args.eventType).toBe("background_results");
+    expect(part.args.summary).toBe(
+      "Background results arrived: researcher completed.",
+    );
+  });
 });

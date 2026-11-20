@@ -17,6 +17,16 @@ final class SubagentDispatcher {
    */
   public const string QUEUE = 'oe_ai_assistant_subagent_task';
 
+  /**
+   * The queue of the deliveries, and the id of the worker plugin that reads it.
+   */
+  public const string DELIVERY_QUEUE = 'oe_ai_assistant_subagent_delivery';
+
+  /**
+   * How long a result waits before the sweep queues its delivery, in seconds.
+   */
+  private const int DELIVERY_SWEEP_AFTER = 30;
+
   public function __construct(
     private readonly SubagentTaskLedger $ledger,
     private readonly QueueFactory $queueFactory,
@@ -39,11 +49,28 @@ final class SubagentDispatcher {
   /**
    * Queues the background tasks that no queue item is going to run.
    *
+   * It also queues the delivery of every session whose results wait.
+   *
    * @return int
    *   The number of tasks queued.
    */
   public function sweep(): int {
-    return $this->dispatch($this->ledger->stale($this->time->getCurrentTime()));
+    $now = $this->time->getCurrentTime();
+    foreach ($this->ledger->sessionsWithWaiting($now - self::DELIVERY_SWEEP_AFTER) as $sessionId) {
+      $this->enqueueDelivery($sessionId);
+    }
+
+    return $this->dispatch($this->ledger->stale($now));
+  }
+
+  /**
+   * Queues the delivery of the results that wait in a session.
+   *
+   * @param int $sessionId
+   *   The id of the session.
+   */
+  public function enqueueDelivery(int $sessionId): void {
+    $this->queueFactory->get(self::DELIVERY_QUEUE)->createItem(['session_id' => $sessionId]);
   }
 
   /**

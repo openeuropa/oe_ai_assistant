@@ -42,6 +42,14 @@ services:
 
   Drupal\oe_ai_assistant\Service\Subagent\SubagentDispatcher: {}
 
+  Drupal\oe_ai_assistant\Service\Subagent\EditorialTurnGuard: {}
+
+  Drupal\oe_ai_assistant\Service\Subagent\SubagentPresence: {}
+
+  Drupal\oe_ai_assistant\Service\Subagent\SubagentDelivery:
+    arguments:
+      $logger: '@logger.channel.oe_ai_assistant'
+
   Drupal\oe_ai_assistant\Service\TextFormatResolver: {}
 
   # Drives a document through extraction and summarisation.

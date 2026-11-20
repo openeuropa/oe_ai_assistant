@@ -28,6 +28,7 @@ type DraftingAddDocumentResponse =
   components["schemas"]["DraftingAddDocumentResponse"];
 type DraftingListDocumentsResponse =
   components["schemas"]["DraftingListDocumentsResponse"];
+type DraftingTasksResponse = components["schemas"]["DraftingTasksResponse"];
 type DraftingRemoveDocumentResponse =
   components["schemas"]["DraftingRemoveDocumentResponse"];
 type DraftingExtractDocumentResponse =
@@ -250,4 +251,25 @@ export async function removeDraftingDocument(
     throw new Error(`Drafting remove-document error: ${response.status}`);
   }
   return (await response.json()) as DraftingRemoveDocumentResponse;
+}
+
+/**
+ * Lists the background subagent tasks of the current session.
+ *
+ * Asking also tells the backend this browser is present, so a finished
+ * result waits for the tab to deliver it instead of the worker.
+ */
+export async function getSubagentTasks(): Promise<DraftingTasksResponse> {
+  const response = await apiFetch(
+    `${getConfig().apiBaseUrl}/plugins/drafting/tasks`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sessionId: getConfig().sessionId }),
+    },
+  );
+  if (!response.ok) {
+    throw new Error(`Drafting tasks error: ${response.status}`);
+  }
+  return (await response.json()) as DraftingTasksResponse;
 }

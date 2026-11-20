@@ -59,6 +59,21 @@ final class SubagentTaskLedger {
    */
   public const string WAITING = 'waiting';
 
+  /**
+   * A claimant holds the result and is delivering it.
+   */
+  public const string CLAIMED = 'claimed';
+
+  /**
+   * The result reached the conversation.
+   */
+  public const string DELIVERED = 'delivered';
+
+  /**
+   * How long a delivery claim holds before another claimant may take it over.
+   */
+  public const int CLAIM_TTL = 120;
+
   public function __construct(
     private readonly Connection $database,
     private readonly TimeInterface $time,
@@ -424,6 +439,182 @@ final class SubagentTaskLedger {
       ->orderBy('task_id')
       ->execute()
       ->fetchAllAssoc('task_id', \PDO::FETCH_ASSOC);
+
+    return array_map($this->decode(...), $rows);
+  }
+
+  /**
+   * Claims every result of a session that waits for delivery, at once.
+   *
+   * @param int $sessionId
+   *   The id of the session.
+   * @param string $deliveryId
+   *   The id the delivery gets.
+   * @param int $now
+   *   The time to judge by.
+   *
+   * @return array[]
+   *   The rows claimed, oldest first. Empty when another claimant got there
+   *   first or nothing waits.
+   */
+  public function claimDelivery(int $sessionId, string $deliveryId, int $now): array {
+    // One statement takes the waiting rows and the rows whose claimant went
+    // silent, so two claimants never hold the same row.
+    $update = $this->database->update(self::TABLE);
+    $update->fields([
+      'delivery_state' => self::CLAIMED,
+      'delivery_id' => $deliveryId,
+      'delivery_claimed' => $now,
+    ])
+      ->condition('session_id', $sessionId)
+      ->condition($update->orConditionGroup()
+        ->condition('delivery_state', self::WAITING)
+        ->condition($update->andConditionGroup()
+          ->condition('delivery_state', self::CLAIMED)
+          ->condition('delivery_claimed', $now - self::CLAIM_TTL, '<')));
+    if ($update->execute() === 0) {
+      return [];
+    }
+
+    $rows = $this->database->select(self::TABLE, 't')
+      ->fields('t')
+      ->condition('delivery_id', $deliveryId)
+      ->orderBy('changed')
+      ->orderBy('task_id')
+      ->execute()
+      ->fetchAllAssoc('task_id', \PDO::FETCH_ASSOC);
+
+    return array_values(array_map($this->decode(...), $rows));
+  }
+
+  /**
+   * Lists the deliveries whose claim lapsed without an outcome.
+   *
+   * @param int $sessionId
+   *   The id of the session.
+   * @param int $now
+   *   The time to judge by.
+   *
+   * @return string[]
+   *   The delivery ids.
+   */
+  public function staleDeliveryIds(int $sessionId, int $now): array {
+    return array_values(array_unique($this->database->select(self::TABLE, 't')
+      ->fields('t', ['delivery_id'])
+      ->condition('session_id', $sessionId)
+      ->condition('delivery_state', self::CLAIMED)
+      ->condition('delivery_claimed', $now - self::CLAIM_TTL, '<')
+      ->execute()
+      ->fetchCol()));
+  }
+
+  /**
+   * Records that a delivery reached the conversation.
+   *
+   * @param string $deliveryId
+   *   The id of the delivery.
+   */
+  public function markDelivered(string $deliveryId): void {
+    $this->database->update(self::TABLE)
+      ->fields(['delivery_state' => self::DELIVERED])
+      ->condition('delivery_id', $deliveryId)
+      ->condition('delivery_state', self::CLAIMED)
+      ->execute();
+  }
+
+  /**
+   * Gives the results of a delivery back, so another attempt may claim them.
+   *
+   * @param string $deliveryId
+   *   The id of the delivery.
+   */
+  public function releaseDelivery(string $deliveryId): void {
+    $this->database->update(self::TABLE)
+      ->fields([
+        'delivery_state' => self::WAITING,
+        'delivery_id' => NULL,
+        'delivery_claimed' => NULL,
+      ])
+      ->condition('delivery_id', $deliveryId)
+      ->condition('delivery_state', self::CLAIMED)
+      ->execute();
+  }
+
+  /**
+   * Tells whether a result of the session waits for delivery.
+   *
+   * @param int $sessionId
+   *   The id of the session.
+   */
+  public function hasWaiting(int $sessionId): bool {
+    return $this->oldestWaiting($sessionId) !== NULL;
+  }
+
+  /**
+   * Returns when the oldest waiting result of a session was settled.
+   *
+   * @param int $sessionId
+   *   The id of the session.
+   *
+   * @return int|null
+   *   The time, or NULL when nothing waits.
+   */
+  public function oldestWaiting(int $sessionId): ?int {
+    $query = $this->database->select(self::TABLE, 't');
+    $query->addExpression('MIN(t.changed)', 'oldest');
+    $value = $query
+      ->condition('session_id', $sessionId)
+      ->condition('delivery_state', self::WAITING)
+      ->execute()
+      ->fetchField();
+
+    return $value === NULL || $value === FALSE ? NULL : (int) $value;
+  }
+
+  /**
+   * Lists the sessions whose results wait, or whose claim went silent.
+   *
+   * @param int $changedBefore
+   *   Only results settled before this time count.
+   *
+   * @return int[]
+   *   The session ids.
+   */
+  public function sessionsWithWaiting(int $changedBefore): array {
+    $query = $this->database->select(self::TABLE, 't')
+      ->fields('t', ['session_id'])
+      ->distinct();
+    $query->condition($query->orConditionGroup()
+      ->condition($query->andConditionGroup()
+        ->condition('delivery_state', self::WAITING)
+        ->condition('changed', $changedBefore, '<'))
+      ->condition($query->andConditionGroup()
+        ->condition('delivery_state', self::CLAIMED)
+        ->condition('delivery_claimed', $changedBefore - self::CLAIM_TTL, '<')));
+
+    return array_map('intval', $query->execute()->fetchCol());
+  }
+
+  /**
+   * Returns the newest tasks of a session.
+   *
+   * @param int $sessionId
+   *   The id of the session.
+   * @param int $limit
+   *   The most tasks to return.
+   *
+   * @return array[]
+   *   The rows, newest first.
+   */
+  public function recent(int $sessionId, int $limit): array {
+    $rows = $this->database->select(self::TABLE, 't')
+      ->fields('t')
+      ->condition('session_id', $sessionId)
+      ->orderBy('created', 'DESC')
+      ->orderBy('task_id', 'DESC')
+      ->range(0, $limit)
+      ->execute()
+      ->fetchAll(\PDO::FETCH_ASSOC);
 
     return array_map($this->decode(...), $rows);
   }

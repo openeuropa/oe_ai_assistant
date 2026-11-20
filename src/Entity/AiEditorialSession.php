@@ -174,6 +174,11 @@ class AiEditorialSession extends ContentEntityBase implements AiEditorialSession
         continue;
       }
 
+      // A notice the system wrote is no turn of the editor's conversation.
+      if (isset($row->getMeta()['__meta']['oe_ai_notice'])) {
+        continue;
+      }
+
       $text = MessageContent::toText((array) ($row->getContent() ?? []));
       // A tool result carries no content at all, so its text is empty and
       // the row is skipped.

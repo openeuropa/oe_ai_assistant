@@ -191,3 +191,18 @@ describe("parseDraftResult", () => {
     expect(result.fields).toEqual({});
   });
 });
+
+describe("parseDraftResult with a background task", () => {
+  it("reads the pending answer of a queued draft as no draft", () => {
+    const parsed = parseDraftResult({
+      task_id: "sub_1",
+      subagent: "drafter",
+      status: "pending",
+      note: "Queued.",
+    });
+
+    expect(parsed.version).toBeNull();
+    expect(parsed.fields).toEqual({});
+    expect(parsed.status).toBe("drafted");
+  });
+});

@@ -12,6 +12,7 @@
  */
 
 import type { components } from "@/api/schema";
+import { isPendingSubagentResult } from "./subagent-result";
 
 /** Tone snapshot stored on a draft: id, label, and the raw guidelines. */
 export interface DraftToneSnapshot {
@@ -149,6 +150,12 @@ export function parseDraftResult(result: unknown): ParsedDraftResult {
   };
 
   if (!isPlainObject(result)) {
+    return { ...empty, fields: {} };
+  }
+
+  // A draft handed to a background subagent answers with the task it
+  // queued. The legacy branch below would read that task as a fields map.
+  if (isPendingSubagentResult(result)) {
     return { ...empty, fields: {} };
   }
 

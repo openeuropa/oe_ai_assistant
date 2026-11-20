@@ -31,6 +31,7 @@ final class SubagentRunner {
 
   public function __construct(
     private readonly SubagentTaskLedger $ledger,
+    private readonly SubagentDispatcher $dispatcher,
     private readonly EntityTypeManagerInterface $entityTypeManager,
     private readonly AccountSwitcherInterface $accountSwitcher,
     private readonly NeuronToolManagerInterface $toolManager,
@@ -97,7 +98,9 @@ final class SubagentRunner {
       $result = $reports->getReturn();
       assert($result instanceof SubagentResult);
 
-      $this->ledger->finishClaimed($taskId, $worker, $result->status, $result->data);
+      if ($this->ledger->finishClaimed($taskId, $worker, $result->status, $result->data)) {
+        $this->dispatcher->enqueueDelivery((int) $row['session_id']);
+      }
     }
     catch (\Throwable $e) {
       $this->logger->error('Background subagent task @task failed: @message', [
@@ -105,7 +108,9 @@ final class SubagentRunner {
         '@message' => $e->getMessage(),
         'exception' => $e,
       ]);
-      $this->ledger->finishClaimed($taskId, $worker, SubagentResult::FAILED, ['error' => 'The subagent failed.']);
+      if ($this->ledger->finishClaimed($taskId, $worker, SubagentResult::FAILED, ['error' => 'The subagent failed.'])) {
+        $this->dispatcher->enqueueDelivery((int) $row['session_id']);
+      }
     }
     finally {
       $this->accountSwitcher->switchBack();

@@ -20,6 +20,74 @@ DraftingChatRequest:
         derives the target content type and access from the session and
         persists every turn against it.
 
+DraftingTasksRequest:
+  type: object
+  required:
+    - sessionId
+  properties:
+    sessionId:
+      type: string
+      description: The editorial session whose background tasks to report.
+
+DraftingTask:
+  type: object
+  required:
+    - taskId
+    - subagent
+    - tool
+    - status
+    - mode
+    - deliveryState
+    - prompt
+    - created
+    - changed
+  properties:
+    taskId:
+      type: string
+    subagent:
+      type: string
+    tool:
+      type: string
+    status:
+      type: string
+    mode:
+      type: string
+      enum: [foreground, background]
+    deliveryState:
+      type: string
+      enum: [none, waiting, claimed, delivered]
+    prompt:
+      type: string
+      description: The prompt or brief of the call, cut to 200 characters.
+    created:
+      type: integer
+      description: UNIX time the task was recorded.
+    changed:
+      type: integer
+      description: UNIX time the task last changed.
+
+DraftingTasksResponse:
+  type: object
+  required:
+    - tasks
+    - deliverable
+    - busy
+    - revision
+  properties:
+    tasks:
+      type: array
+      items:
+        $ref: "../../openapi.yaml#/components/schemas/DraftingTask"
+    deliverable:
+      type: boolean
+      description: Whether results wait and the assistant can take them now.
+    busy:
+      type: boolean
+      description: Whether a turn of the session is running.
+    revision:
+      type: string
+      description: Changes whenever the editorial thread gains a message.
+
 DraftingResetRequest:
   type: object
   required:
