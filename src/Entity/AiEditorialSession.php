@@ -9,6 +9,7 @@ use Drupal\Core\Entity\ContentEntityBase;
 use Drupal\Core\Entity\EntityChangedTrait;
 use Drupal\Core\Entity\EntityStorageInterface;
 use Drupal\Core\Entity\EntityTypeInterface;
+use Drupal\Core\Entity\Query\QueryInterface;
 use Drupal\Core\Field\BaseFieldDefinition;
 use Drupal\node\NodeInterface;
 use Drupal\oe_ai_assistant\Utility\MessageContent;
@@ -49,6 +50,7 @@ use Drupal\user\EntityOwnerTrait;
  *   links = {
  *     "canonical" = "/admin/content/ai/{ai_editorial_session}",
  *     "history" = "/admin/content/ai/{ai_editorial_session}/history",
+ *     "activity" = "/admin/content/ai/{ai_editorial_session}/activity",
  *     "add-page" = "/admin/content/ai/add",
  *     "add-form" = "/admin/content/ai/add/{ai_editorial_session_type}",
  *     "delete-form" = "/admin/content/ai/{ai_editorial_session}/delete",
@@ -237,6 +239,88 @@ class AiEditorialSession extends ContentEntityBase implements AiEditorialSession
   public function deleteConversation(): void {
     $storage = \Drupal::entityTypeManager()->getStorage('neuron_message');
     $storage->delete($storage->loadByProperties(['oe_ai_session' => (int) $this->id()]));
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function recordActivity(ActivityType $type, string $message, string|int|float ...$arguments): void {
+    try {
+      $this->activityStorage()->create([
+        'session' => $this->id(),
+        'type' => $type->value,
+        'uid' => \Drupal::currentUser()->id(),
+        // The created field defaults to the time the request came in. A
+        // chat request can draft for a minute, so two drafts of one reply
+        // would share one timestamp. We take the current time here.
+        'created' => \Drupal::time()->getCurrentTime(),
+        'message' => $arguments === [] ? $message : sprintf($message, ...$arguments),
+      ])->save();
+    }
+    catch (\Throwable $e) {
+      // The caller has already made the change it reports, for example
+      // a saved tone. If this write throws, the editor gets a 500 for a
+      // change that did save. So we log the failure and return.
+      \Drupal::logger('oe_ai_assistant')->error('The activity of session @session could not be recorded: @message', [
+        '@session' => (string) $this->id(),
+        '@message' => $e->getMessage(),
+        'exception' => $e,
+      ]);
+    }
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function getLatestActivity(?int $limit = NULL): array {
+    $storage = $this->activityStorage();
+    // Two entries can share a second, so we sort by id and not by the
+    // created time. The query gives us the newest entries first, and
+    // ksort() puts them back in the order they happened.
+    $query = $this->activityQuery()->sort('id', 'DESC');
+    if ($limit !== NULL) {
+      $query->range(0, $limit);
+    }
+    $ids = $query->execute();
+    $entries = $storage->loadMultiple($ids);
+    ksort($entries);
+
+    return array_values($entries);
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function countActivity(): int {
+    return (int) $this->activityQuery()->count()->execute();
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function deleteActivity(): void {
+    $storage = $this->activityStorage();
+    $storage->delete($storage->loadMultiple($this->activityQuery()->execute()));
+  }
+
+  /**
+   * Returns the storage that holds the activity entries.
+   */
+  private function activityStorage(): EntityStorageInterface {
+    return \Drupal::entityTypeManager()->getStorage('ai_editorial_session_activity');
+  }
+
+  /**
+   * Starts a query over the activity entries of this session.
+   *
+   * Callers reach these entries only through the session, and the
+   * session's own access check has already run. So the query skips the
+   * access check.
+   */
+  private function activityQuery(): QueryInterface {
+    return $this->activityStorage()->getQuery()
+      ->accessCheck(FALSE)
+      ->condition('session', (int) $this->id());
   }
 
   /**

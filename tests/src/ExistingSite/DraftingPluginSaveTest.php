@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\oe_ai_assistant\ExistingSite;
 
+use Drupal\oe_ai_assistant\Entity\ActivityType;
+use Drupal\oe_ai_assistant\Entity\AiEditorialSessionActivityInterface;
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
 use Drupal\oe_ai_assistant\Entity\Bundle\ContentCreationSessionInterface;
 
@@ -247,6 +249,9 @@ class DraftingPluginSaveTest extends DraftingPluginTestBase {
     ]);
     $this->loginUser($user);
     $session = $this->createSession($user);
+    // Creating the session records an entry of its own, and the assertions
+    // at the end cover the whole record. Delete it so only the saves remain.
+    $session->deleteActivity();
 
     $this->seedDraft($session, 1, ['title' => [['value' => 'First save']]]);
     $this->seedDraft($session, 2, ['title' => [['value' => 'Second save']]]);
@@ -294,6 +299,22 @@ class DraftingPluginSaveTest extends DraftingPluginTestBase {
     /** @var \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $reloaded */
     $reloaded = $sessionStorage->load($session->id());
     $this->assertEquals($firstBody['nodeId'], $reloaded->getNode()->id());
+
+    $entries = $session->getLatestActivity(100);
+    $this->assertSame([
+      sprintf('Draft 1 saved to the CMS as a new node (node %s).', $firstBody['nodeId']),
+      sprintf('Draft 2 saved to the CMS as a new revision of node %s.', $firstBody['nodeId']),
+    ], array_map(
+      static fn (AiEditorialSessionActivityInterface $entry): string => $entry->getMessage(),
+      $entries,
+    ));
+    $this->assertSame(
+      [ActivityType::DraftSaved, ActivityType::DraftSaved],
+      array_map(
+        static fn (AiEditorialSessionActivityInterface $entry): ActivityType => $entry->getType(),
+        $entries,
+      ),
+    );
   }
 
   /**

@@ -119,35 +119,6 @@ describe("toThreadMessages", () => {
     expect(parts[1].toolCallId).not.toBe(parts[2].toolCallId);
   });
 
-  it("maps an event item to an editorial_event tool-call part", () => {
-    const input: SessionMessage[] = [
-      {
-        role: "event",
-        type: "tone",
-        summary: "Tone set to Formal.",
-        at: "2026-08-12T10:00:00Z",
-      },
-    ];
-
-    const result = toThreadMessages(input);
-
-    expect(result).toHaveLength(1);
-    const [message] = result;
-    if (!message) throw new Error("expected a message");
-    // Events are surfaced as assistant messages so they appear in the thread.
-    expect(message.role).toBe("assistant");
-    const part = (message.content as AnyPart[])[0];
-    expect(part.type).toBe("tool-call");
-    expect(part.toolCallId).toBe("event-0");
-    expect(part.toolName).toBe("editorial_event");
-    expect(part.args).toEqual({
-      eventType: "tone",
-      summary: "Tone set to Formal.",
-      at: "2026-08-12T10:00:00Z",
-    });
-    expect(part.result).toEqual({});
-  });
-
   it("maps a get_draft_history tool call to a tool-call part with parsed args", () => {
     const args = { sessionId: "abc-123" };
     const historyResult = { drafts: [] };
@@ -205,16 +176,7 @@ describe("toThreadMessages", () => {
     expect(part.result).toEqual({});
   });
 
-  it("carries the saved version on save event parts", () => {
-    const [message] = toThreadMessages([
-      { role: "event", type: "save", summary: "Draft 2 saved", version: 2 },
-    ]);
-    if (!message) throw new Error("expected a message");
-    const part = (message.content as AnyPart[])[0];
-    expect(part.args).toMatchObject({ eventType: "save", version: 2 });
-  });
-
-  it("drops items that have no content, no tool calls, and are not events", () => {
+  it("drops items that have no content and no tool calls", () => {
     // An assistant item with empty content and no tool calls produces nothing.
     const input: SessionMessage[] = [
       {

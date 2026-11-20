@@ -362,6 +362,36 @@ class AiEditorialSessionDashboardTest extends AiEditorialSessionBrowserTestBase 
   }
 
   /**
+   * Tests the history and activity pages check access to the session.
+   */
+  public function testSessionSubpagesCheckAccessToTheSession(): void {
+    $permissions = [
+      'view_update own sessions',
+      'access content',
+      'access ai editorial session neuron history',
+      'access ai editorial session activity',
+    ];
+    $owner = $this->drupalCreateUser($permissions);
+    $other_user = $this->drupalCreateUser($permissions);
+
+    $session = $this->createSession($owner);
+
+    $this->drupalLogin($owner);
+    $this->drupalGet($session->toUrl('history'));
+    $this->assertSession()->statusCodeEquals(200);
+    $this->drupalGet($session->toUrl('activity'));
+    $this->assertSession()->statusCodeEquals(200);
+
+    // The other user holds both permissions, so a 403 here can only come
+    // from the _entity_access requirement on a session they don't own.
+    $this->drupalLogin($other_user);
+    $this->drupalGet($session->toUrl('history'));
+    $this->assertSession()->statusCodeEquals(403);
+    $this->drupalGet($session->toUrl('activity'));
+    $this->assertSession()->statusCodeEquals(403);
+  }
+
+  /**
    * Tests creating a drafting session from the add flow.
    */
   public function testAddSessionFlow(): void {

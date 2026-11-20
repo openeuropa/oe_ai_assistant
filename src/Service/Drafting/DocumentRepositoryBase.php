@@ -13,6 +13,7 @@ use Drupal\file\Plugin\Field\FieldType\FileItem;
 use Drupal\file\Upload\FileUploadHandlerInterface;
 use Drupal\file\Upload\UploadedFileInterface;
 use Drupal\media\MediaInterface;
+use Drupal\oe_ai_assistant\Entity\ActivityType;
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
 use Drupal\oe_ai_assistant\Exception\ActionException;
 use Psr\Log\LoggerInterface;
@@ -22,11 +23,12 @@ use Symfony\Component\DependencyInjection\Attribute\Autowire;
  * Base implementation of the session document lifecycle.
  *
  * A document is a media entity that references its editorial session, the
- * way a conversation message references its host. Adding a document only
- * creates a media entity and removing one only deletes it, so concurrent
- * uploads never write the same row and need no lock. Concrete repositories
- * only declare the storage details of their document category (media
- * bundle, source field, category name).
+ * way a conversation message references its host. Adding a document creates
+ * a media entity and an activity entry, and removing one deletes the media
+ * entity and adds a second entry. Each call writes its own rows, so
+ * concurrent uploads never write the same row and need no lock. Concrete
+ * repositories only declare the storage details of their document category
+ * (media bundle, source field, category name).
  */
 abstract class DocumentRepositoryBase implements DocumentRepositoryInterface {
 
@@ -112,6 +114,12 @@ abstract class DocumentRepositoryBase implements DocumentRepositoryInterface {
       throw $e;
     }
 
+    $session->recordActivity(
+      ActivityType::DocumentAdded,
+      'Document "%s" attached.',
+      $this->getFilename($media),
+    );
+
     return $this->serialize($media);
   }
 
@@ -126,7 +134,13 @@ abstract class DocumentRepositoryBase implements DocumentRepositoryInterface {
    * {@inheritdoc}
    */
   public function remove(AiEditorialSessionInterface $session, string $documentId): void {
-    $this->deleteDocument($this->loadOwned($session, $documentId));
+    $media = $this->loadOwned($session, $documentId);
+    // Deleting the document takes its file with it, and the name we
+    // record lives on the file. So we read the name before the delete.
+    $filename = $this->getFilename($media);
+    $this->deleteDocument($media);
+
+    $session->recordActivity(ActivityType::DocumentRemoved, 'Document "%s" removed.', $filename);
   }
 
   /**

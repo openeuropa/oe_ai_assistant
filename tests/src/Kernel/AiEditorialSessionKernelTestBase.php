@@ -66,6 +66,7 @@ abstract class AiEditorialSessionKernelTestBase extends KernelTestBase {
     $this->installEntitySchema('user');
     $this->installEntitySchema('node');
     $this->installEntitySchema('ai_editorial_session');
+    $this->installEntitySchema('ai_editorial_session_activity');
     $this->installEntitySchema('neuron_message');
     $this->installSchema('ai_neuron', ['neuron_workflow_store']);
 
@@ -129,6 +130,20 @@ abstract class AiEditorialSessionKernelTestBase extends KernelTestBase {
         'content_type' => 'oe_news',
       ]);
     $session->save();
+
+    return $session;
+  }
+
+  /**
+   * Creates a session with an empty activity record.
+   *
+   * EditorialSessionHooks::recordSessionCreation() records an entry for
+   * every new session. A test that asserts the whole record would count
+   * that entry as one of its own, so this helper deletes it.
+   */
+  protected function freshSession(UserInterface $owner): AiEditorialSessionInterface {
+    $session = $this->createSession($owner);
+    $session->deleteActivity();
 
     return $session;
   }
