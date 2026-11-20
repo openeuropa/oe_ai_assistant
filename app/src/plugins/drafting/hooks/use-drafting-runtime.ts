@@ -33,6 +33,7 @@ import {
   type LiveDraft,
   setDraftingState,
 } from "../store";
+import { applySubagentEvent } from "../subagent-runs";
 import { type DeliveryControl, reportRunEnd } from "./use-subagent-tasks";
 
 /**
@@ -159,6 +160,14 @@ export function useDraftingRuntime(delivery: DeliveryControl) {
     },
     // Handle custom data-* events from the UI message stream.
     onData: (data) => {
+      // A subagent reports its work under the id of the call that asked.
+      // The events are folded into one run per call for the subagent card.
+      const { subagentRuns } = getDraftingState();
+      const nextRuns = applySubagentEvent(subagentRuns, data.name, data.data);
+      if (nextRuns !== subagentRuns) {
+        setDraftingState({ subagentRuns: nextRuns });
+      }
+
       // The run names its groups before it drafts the first one, so the card
       // of the call that asked shows every row from the start.
       if (data.name === "draft-started") {

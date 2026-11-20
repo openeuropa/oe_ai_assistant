@@ -55,7 +55,7 @@ DraftingTask:
       enum: [foreground, background]
     deliveryState:
       type: string
-      enum: [none, waiting, claimed, delivered]
+      enum: [none, waiting, claimed, delivered, consumed, failed]
     prompt:
       type: string
       description: The prompt or brief of the call, cut to 200 characters.

@@ -11,7 +11,7 @@ import {
   ExportedMessageRepository,
   type ThreadMessageLike,
 } from "@assistant-ui/react";
-import type { SessionMessage } from "@/api/session-messages";
+import type { SessionMessage, SessionToolCall } from "@/api/session-messages";
 import { getSessionMessages } from "@/api/session-messages";
 import { parseDraftResult } from "./draft-result";
 
@@ -35,6 +35,17 @@ function safeParseArgs(raw: string | undefined): Record<string, unknown> {
   } catch {
     return {};
   }
+}
+
+/**
+ * Returns the result of a call with the ledger state the backend joined.
+ *
+ * The state travels inside the result so the card of a pending background
+ * call can report how its task ended after a reload.
+ */
+function resultWithLive(call: SessionToolCall): unknown {
+  const result = call.result ?? {};
+  return call.live ? { ...result, live: call.live } : result;
 }
 
 /**
@@ -88,7 +99,7 @@ export function toThreadMessage(
         toolCallId: `draft-${index}-${toolIndex++}`,
         toolName: "drafting_draft_content",
         args: { fields: parsed.fields },
-        result: call.result ?? {},
+        result: resultWithLive(call),
       });
     } else {
       // General tool call: forward name, safe-parsed args, and raw result.
@@ -97,7 +108,7 @@ export function toThreadMessage(
         toolCallId: `tool-${index}-${toolIndex++}`,
         toolName: name,
         args: safeParseArgs(call.function?.arguments),
-        result: call.result ?? {},
+        result: resultWithLive(call),
       });
     }
   }

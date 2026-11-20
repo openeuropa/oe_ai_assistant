@@ -547,7 +547,7 @@ export interface components {
             /** @enum {string} */
             mode: "foreground" | "background";
             /** @enum {string} */
-            deliveryState: "none" | "waiting" | "claimed" | "delivered";
+            deliveryState: "none" | "waiting" | "claimed" | "delivered" | "consumed" | "failed";
             /** @description The prompt or brief of the call, cut to 200 characters. */
             prompt: string;
             /** @description UNIX time the task was recorded. */

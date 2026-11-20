@@ -18,6 +18,8 @@ export interface SessionToolCall {
   function?: { name?: string; arguments?: string };
   /** Structured tool output (e.g. drafted field values). */
   result?: Record<string, unknown>;
+  /** Where the ledger holds the task of a settled subagent call. */
+  live?: { status: string; deliveryState: string };
 }
 
 /** A single user-visible transcript entry from get-messages. */

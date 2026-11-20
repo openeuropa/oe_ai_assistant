@@ -751,10 +751,18 @@ class DraftingPlugin extends AiAssistantPluginBase {
 
     if (($meta['type'] ?? '') === 'tool_call_result') {
       return array_map(
-        fn (array $result): array => [
-          'function' => ['name' => $result['name']],
-          'result' => $this->joinDraftToolResult($session, $result['name'], $result['result']),
-        ],
+        function (array $result) use ($session): array {
+          $call = [
+            'function' => ['name' => $result['name']],
+            'result' => $this->joinDraftToolResult($session, $result['name'], $result['result']),
+          ];
+          $live = $this->liveTaskStatus($session, $result['result']);
+          if ($live !== NULL) {
+            $call['live'] = $live;
+          }
+
+          return $call;
+        },
         $row->getToolResults(),
       );
     }
@@ -771,22 +779,56 @@ class DraftingPlugin extends AiAssistantPluginBase {
         && !isset($settled[(string) $tool['callId']]),
     );
 
+    // The turn that asked for a draft may still be writing it.
+    $busy = NULL;
+
     return array_map(
-      static function (array $tool): array {
+      function (array $tool) use ($session, &$busy): array {
         $call = ['function' => ['name' => (string) $tool['name']]];
 
         // A call with no result draws a card that spins forever. A
-        // drafting call settles in the request that asked for it, so a
-        // call the transcript finds open wrote no draft. The transcript
-        // hands that call a failure as its result.
+        // drafting call settles in the request that asked for it. While a
+        // turn of the session still runs, the open call is that turn's and
+        // reads as running. Once no turn runs, the call wrote no draft and
+        // the transcript hands it a failure as its result.
         if ((string) $tool['name'] === RequestDraftNeuronTool::TOOL_ID) {
-          $call['result'] = self::failedDraft('');
+          $busy ??= $this->turnGuard->isBusy($session);
+          $call['result'] = $busy ? ['status' => 'running'] : self::failedDraft('');
         }
 
         return $call;
       },
       array_values($unsettled),
     );
+  }
+
+  /**
+   * Reads where the task of a settled subagent call stands in the ledger.
+   *
+   * @param \Drupal\oe_ai_assistant\Entity\Bundle\ContentCreationSessionInterface $session
+   *   The session hosting the thread.
+   * @param array $result
+   *   The call's own settled result.
+   *
+   * @return array|null
+   *   The ledger status and delivery state of the task, or NULL when the
+   *   result names no task of this session.
+   */
+  private function liveTaskStatus(ContentCreationSessionInterface $session, array $result): ?array {
+    $taskId = $result['task_id'] ?? NULL;
+    if (!is_string($taskId) || $taskId === '') {
+      return NULL;
+    }
+
+    $task = $this->ledger->load($taskId);
+    if ($task === NULL || (int) $task['session_id'] !== (int) $session->id()) {
+      return NULL;
+    }
+
+    return [
+      'status' => (string) $task['status'],
+      'deliveryState' => (string) $task['delivery_state'],
+    ];
   }
 
   /**

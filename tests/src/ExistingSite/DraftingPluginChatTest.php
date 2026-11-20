@@ -4,12 +4,15 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\oe_ai_assistant\ExistingSite;
 
+use Drupal\ai_neuron\Agent\NeuronAgentManagerInterface;
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
 use Drupal\oe_ai_assistant\Entity\Bundle\ContentCreationSessionInterface;
+use Drupal\oe_ai_assistant\Service\Subagent\EditorialTurnGuard;
 use Drupal\oe_ai_assistant\Service\Subagent\SubagentPresence;
 use Drupal\oe_ai_assistant\Service\Subagent\SubagentTaskLedger;
 use Drupal\oe_ai_assistant_test\Plugin\AiProvider\MockAiProvider;
 use Drupal\oe_ai_assistant_test\Plugin\AiProvider\MockResponse;
+use NeuronAI\Chat\Messages\UserMessage;
 
 /**
  * Integration tests for the DraftingPlugin chat action.
@@ -800,6 +803,110 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
     );
     $this->assertSame('drafting_get_history', $calls[1]['function']['name']);
     $this->assertArrayNotHasKey('result', $calls[1]);
+  }
+
+  /**
+   * Tests that a settled call of a subagent tool carries its ledger state.
+   *
+   * A pending background card reads it after a reload to say whether the
+   * results arrived.
+   */
+  public function testGetMessagesAddsLiveSubagentStatus(): void {
+    $user = $this->createUser(['use oe ai assistant']);
+    $this->loginUser($user);
+    $session = $this->createSession($user);
+    $thread = 'editorial.session_' . $session->id();
+
+    $taskId = $this->seedWaitingResult($session, 'Find the funding.');
+    \Drupal::service(SubagentTaskLedger::class)->claimDelivery((int) $session->id(), 'delivery_1', \Drupal::time()->getRequestTime());
+    \Drupal::service(SubagentTaskLedger::class)->markDelivered('delivery_1');
+
+    $this->seedNeuronRow($session, $thread, [
+      'role' => 'user',
+      'meta' => json_encode([
+        'type' => 'tool_call_result',
+        'tools' => [
+          [
+            'name' => 'research_documents',
+            'result' => ['task_id' => $taskId, 'subagent' => 'researcher', 'status' => 'pending'],
+          ],
+          [
+            'name' => 'research_documents',
+            'result' => ['task_id' => 'sub_unknown', 'subagent' => 'researcher', 'status' => 'pending'],
+          ],
+          ['name' => 'drafting_get_history', 'result' => ['versions' => []]],
+        ],
+      ]),
+    ]);
+
+    $messages = array_values(array_filter(
+      $this->getMessages($session),
+      fn($m) => $m['role'] !== 'event',
+    ));
+
+    $calls = $messages[0]['toolCalls'];
+    $this->assertSame(['status' => 'completed', 'deliveryState' => 'delivered'], $calls[0]['live']);
+    $this->assertSame('pending', $calls[0]['result']['status']);
+    $this->assertArrayNotHasKey('live', $calls[1]);
+    $this->assertArrayNotHasKey('live', $calls[2]);
+  }
+
+  /**
+   * Tests that an open drafting call runs while a turn of the session runs.
+   *
+   * It fails only once no turn runs, because the request that asked for the
+   * draft is the one that settles it.
+   */
+  public function testGetMessagesKeepsTheOpenDraftRunningWhileBusy(): void {
+    $user = $this->createUser(['use oe ai assistant']);
+    $this->loginUser($user);
+    $session = $this->createSession($user);
+    $thread = 'editorial.session_' . $session->id();
+
+    // One chunk in, the turn holds its lease.
+    MockAiProvider::enqueue(new MockResponse(text: 'Working on it.'));
+    $stream = \Drupal::service(NeuronAgentManagerInterface::class)
+      ->createAgent('editorial', ['session' => $session])
+      ->stream(new UserMessage('Hello'));
+    $stream->current();
+    $this->assertTrue(\Drupal::service(EditorialTurnGuard::class)->isBusy($session));
+
+    // The call the turn opened has no result yet.
+    $this->seedNeuronRow($session, $thread, [
+      'role' => 'assistant',
+      'meta' => json_encode([
+        'type' => 'tool_call',
+        'tools' => [
+          ['name' => 'drafting_draft_content', 'callId' => 'call_9', 'inputs' => []],
+        ],
+      ]),
+    ]);
+
+    $calls = $this->openCalls($session);
+    $this->assertSame(['status' => 'running'], $calls[0]['result']);
+
+    // Draining the stream ends the turn and releases the lease.
+    iterator_to_array($stream, FALSE);
+    $this->assertFalse(\Drupal::service(EditorialTurnGuard::class)->isBusy($session));
+
+    $calls = $this->openCalls($session);
+    $this->assertSame('failed', $calls[0]['result']['status']);
+  }
+
+  /**
+   * Returns the tool calls of the first transcript item that has any.
+   *
+   * @return array
+   *   The calls.
+   */
+  private function openCalls(AiEditorialSessionInterface $session): array {
+    foreach ($this->getMessages($session) as $message) {
+      if (!empty($message['toolCalls'])) {
+        return $message['toolCalls'];
+      }
+    }
+
+    return [];
   }
 
   /**

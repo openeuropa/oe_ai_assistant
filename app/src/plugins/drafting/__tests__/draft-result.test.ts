@@ -127,6 +127,14 @@ describe("parseDraftResult", () => {
     expect(parsed.error).toBe("");
   });
 
+  it("reads a run the transcript reports as still running", () => {
+    const parsed = parseDraftResult({ status: "running" });
+
+    expect(parsed.status).toBe("running");
+    expect(parsed.version).toBeNull();
+    expect(parsed.fields).toEqual({});
+  });
+
   it("reads the groups and the failure of a run that stopped", () => {
     const groups = [
       { id: "main_fields", label: "Main fields", status: "drafted" },

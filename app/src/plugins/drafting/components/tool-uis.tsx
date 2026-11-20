@@ -10,7 +10,7 @@
 
 import type { ToolCallMessagePartProps } from "@assistant-ui/react";
 import { makeAssistantToolUI } from "@assistant-ui/react";
-import { Check, Loader2, PenLine, Search, Wrench, X } from "lucide-react";
+import { Check, Loader2, PenLine, Wrench, X } from "lucide-react";
 import type { DraftRunStatus } from "../draft-result";
 import { parseDraftResult } from "../draft-result";
 import { useSavedVersions } from "../saved-versions";
@@ -20,6 +20,7 @@ import { parseSubagentResult } from "../subagent-result";
 import { toolLabel } from "../tool-labels";
 import { DraftCard } from "./draft-card";
 import { EventChip } from "./event-chip";
+import { SubagentCard } from "./subagent-card";
 
 /** Shared wrapper for tool call cards in the chat. */
 export function ToolCallCard({
@@ -194,47 +195,16 @@ export const ResearchToolUI = makeAssistantToolUI<
   Record<string, unknown>
 >({
   toolName: "research_documents",
-  render: ({ result, status, toolName }) => {
-    const parsed = parseSubagentResult(result);
-
-    // A call with no readable result yet is still running, or its result
-    // is not one a subagent wrote; the card then keeps the call's status.
-    if (parsed === null) {
-      return (
-        <ToolCallCard
-          icon={Search}
-          label={toolLabel(toolName)}
-          status={status}
-        />
-      );
-    }
-
-    if (parsed.status === "pending" || parsed.status === "running") {
-      return (
-        <ToolCallCard
-          icon={Search}
-          label={toolLabel(toolName)}
-          detail="Researching in the background…"
-          status={{ type: "running" }}
-        />
-      );
-    }
-
-    // A failed run still answers its call, so the status comes from the
-    // result and not from the call.
-    const failed = parsed.status === "failed" || parsed.status === "stopped";
-    const detail =
-      parsed.status === "completed"
-        ? parsed.report
-        : parsed.status === "needs_input"
-          ? parsed.question
-          : parsed.error || "The research did not finish.";
+  render: ({ result, status, toolCallId, toolName }) => {
+    // The stream names the run under the id of the call that asked. A
+    // reloaded thread has none, and the card reads the result alone.
+    const run = useDraftingSlice().subagentRuns[toolCallId];
     return (
-      <ToolCallCard
-        icon={Search}
-        label={toolLabel(toolName)}
-        detail={detail}
-        status={{ type: failed ? "incomplete" : "complete" }}
+      <SubagentCard
+        toolName={toolName}
+        run={run}
+        result={parseSubagentResult(result)}
+        isRunning={status.type === "running"}
       />
     );
   },

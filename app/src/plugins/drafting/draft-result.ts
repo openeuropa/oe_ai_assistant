@@ -182,6 +182,12 @@ export function parseDraftResult(result: unknown): ParsedDraftResult {
     };
   }
 
+  // The transcript reports a call whose turn still runs as running. It has
+  // no version yet, and the card keeps spinning until the run settles.
+  if (result["status"] === "running") {
+    return { ...empty, status: "running", fields: {} };
+  }
+
   // Legacy flat map: the whole result object is the fields map.
   return { ...empty, fields: result };
 }
