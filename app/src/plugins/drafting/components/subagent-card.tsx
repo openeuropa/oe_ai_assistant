@@ -21,6 +21,11 @@ import {
 } from "lucide-react";
 import { type ReactNode, useMemo } from "react";
 import { Streamdown } from "streamdown";
+
+import {
+  safeMarkdownComponents,
+  safeMarkdownDisallowedElements,
+} from "@/lib/safe-markdown";
 import { useDraftingSlice } from "../store";
 import {
   type CitationStatus,
@@ -236,7 +241,9 @@ export function CitedMarkdown({
   return (
     <Streamdown
       isAnimating={isAnimating ?? false}
+      disallowedElements={safeMarkdownDisallowedElements}
       components={{
+        ...safeMarkdownComponents,
         a: ({ href, children }) => {
           const token = href?.startsWith("#cite-")
             ? tokens[Number(href.slice("#cite-".length))]

@@ -134,6 +134,17 @@ function oe_ai_assistant_schema(): array {
         'not null' => FALSE,
         'description' => 'When the delivery was claimed.',
       ],
+      'delivery_attempts' => [
+        'type' => 'int',
+        'not null' => TRUE,
+        'default' => 0,
+        'description' => 'How many deliveries of the result failed.',
+      ],
+      'delivery_retry_at' => [
+        'type' => 'int',
+        'not null' => FALSE,
+        'description' => 'When a failed delivery may be tried again.',
+      ],
       'dispatched' => [
         'type' => 'int',
         'not null' => FALSE,

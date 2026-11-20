@@ -12,6 +12,7 @@ use Drupal\Core\Session\AnonymousUserSession;
 use Drupal\oe_ai_assistant\Neuron\Subagent\SubagentResult;
 use Drupal\oe_ai_assistant\Neuron\Subagent\SubagentTask;
 use Drupal\oe_ai_assistant\Neuron\Tools\SubagentToolInterface;
+use Drupal\user\UserInterface;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -57,13 +58,22 @@ final class SubagentRunner {
       return;
     }
 
+    // The account is checked again, because it may have lost its access
+    // since the task was queued.
     $uid = $row['uid'] === NULL ? NULL : (int) $row['uid'];
-    $this->accountSwitcher->switchTo($uid === NULL
-      ? new AnonymousUserSession()
-      : ($this->entityTypeManager->getStorage('user')->load($uid) ?? new AnonymousUserSession()));
+    $user = $uid === NULL ? NULL : $this->entityTypeManager->getStorage('user')->load($uid);
+    $session = $this->entityTypeManager->getStorage('ai_editorial_session')->load($row['session_id']);
+    if ($session !== NULL
+      && (!$user instanceof UserInterface || !$user->isActive() || !$user->hasPermission('use oe ai assistant') || !$session->access('view', $user))) {
+      $this->logger->warning('Background subagent task @task is not run, because its user can no longer run it.', ['@task' => $taskId]);
+      $this->ledger->finishClaimed($taskId, $worker, SubagentResult::FAILED, ['error' => 'The user of the task can no longer run it.'], SubagentTaskLedger::NONE);
+
+      return;
+    }
+
+    $this->accountSwitcher->switchTo($user ?? new AnonymousUserSession());
 
     try {
-      $session = $this->entityTypeManager->getStorage('ai_editorial_session')->load($row['session_id']);
       if ($session === NULL) {
         $this->ledger->finishClaimed($taskId, $worker, SubagentResult::FAILED, ['error' => 'The session of the task no longer exists.']);
 

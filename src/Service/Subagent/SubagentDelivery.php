@@ -33,7 +33,7 @@ final class SubagentDelivery {
   public const string BUSY = 'busy';
 
   /**
-   * The notification turn failed; the results wait.
+   * The notification turn failed; the results wait for a later attempt.
    */
   public const string FAILED = 'failed';
 
@@ -67,13 +67,17 @@ final class SubagentDelivery {
 
     // A claimant that died after its turn got through left its rows claimed.
     // The notice carries the delivery id as its message id, so the thread
-    // tells whether that turn was stored.
+    // tells whether that turn was stored. A claim whose turn was not stored
+    // counts as a failed attempt, so a delivery that kills its claimant ends.
     $stale = $this->ledger->staleDeliveryIds($sessionId, $now);
     if ($stale !== []) {
       $stored = $this->storedMessageIds($session, $stale);
-      foreach ($stale as $deliveryId) {
-        if (in_array($deliveryId, $stored, TRUE)) {
-          $this->ledger->markDelivered($deliveryId);
+      foreach ($stale as $staleId) {
+        if (in_array($staleId, $stored, TRUE)) {
+          $this->ledger->markDelivered($staleId);
+        }
+        else {
+          $this->ledger->releaseDelivery($staleId, TRUE);
         }
       }
     }
@@ -95,8 +99,8 @@ final class SubagentDelivery {
       return self::BUSY;
     }
     catch (\Throwable $e) {
-      $this->ledger->releaseDelivery($deliveryId);
-      // The sweep queues the delivery again.
+      // The results wait for a later attempt, until they run out of attempts.
+      $this->ledger->releaseDelivery($deliveryId, TRUE);
       $this->logger->error('Delivering the background results of session @id failed: @message', [
         '@id' => $sessionId,
         '@message' => $e->getMessage(),
@@ -145,15 +149,16 @@ final class SubagentDelivery {
         'status' => $row['status'],
       ];
       // json_encode() escapes every slash, because JSON_UNESCAPED_SLASHES is
-      // not set. A result therefore never holds the characters "</", and
-      // nothing in it can close its task block or the message block.
+      // not set, and JSON_HEX_TAG and JSON_HEX_AMP escape "<", ">" and "&". A
+      // result therefore holds no tag, so nothing in it can close its task
+      // block or the message block, or pass for one.
       $blocks[] = sprintf(
         '<task id="%s" subagent="%s" tool="%s" status="%s">%s</task %s>',
         $row['task_id'],
         $row['subagent'],
         $row['tool'],
         $row['status'],
-        json_encode($row['result'], JSON_PARTIAL_OUTPUT_ON_ERROR) ?: 'null',
+        json_encode($row['result'], JSON_HEX_TAG | JSON_HEX_AMP | JSON_PARTIAL_OUTPUT_ON_ERROR) ?: 'null',
         $deliveryId,
       );
     }

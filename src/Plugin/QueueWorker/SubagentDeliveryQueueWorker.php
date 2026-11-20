@@ -13,7 +13,6 @@ use Drupal\Core\Queue\DelayedRequeueException;
 use Drupal\Core\Queue\QueueWorkerBase;
 use Drupal\Core\Queue\SuspendQueueException;
 use Drupal\Core\Session\AccountSwitcherInterface;
-use Drupal\Core\Session\AnonymousUserSession;
 use Drupal\Core\State\StateInterface;
 use Drupal\Core\StringTranslation\TranslatableMarkup;
 use Drupal\oe_ai_assistant\Entity\Bundle\ContentCreationSessionInterface;
@@ -21,6 +20,8 @@ use Drupal\oe_ai_assistant\Service\Subagent\SubagentDelivery;
 use Drupal\oe_ai_assistant\Service\Subagent\SubagentDispatcher;
 use Drupal\oe_ai_assistant\Service\Subagent\SubagentPresence;
 use Drupal\oe_ai_assistant\Service\Subagent\SubagentTaskLedger;
+use Drupal\user\UserInterface;
+use Psr\Log\LoggerInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 
 /**
@@ -50,6 +51,7 @@ final class SubagentDeliveryQueueWorker extends QueueWorkerBase implements Conta
     private readonly AccountSwitcherInterface $accountSwitcher,
     private readonly TimeInterface $time,
     private readonly KeyValueExpirableFactoryInterface $keyValueExpirable,
+    private readonly LoggerInterface $logger,
   ) {
     parent::__construct($configuration, $plugin_id, $plugin_definition);
   }
@@ -70,6 +72,7 @@ final class SubagentDeliveryQueueWorker extends QueueWorkerBase implements Conta
       $container->get('account_switcher'),
       $container->get('datetime.time'),
       $container->get('keyvalue.expirable'),
+      $container->get('logger.channel.oe_ai_assistant'),
     );
   }
 
@@ -87,7 +90,9 @@ final class SubagentDeliveryQueueWorker extends QueueWorkerBase implements Conta
       // The item stays or comes back, so the session stays marked as queued.
       $requeued = TRUE;
       if ($exception instanceof DelayedRequeueException) {
-        $queued->setWithExpire($sessionKey, TRUE, SubagentDispatcher::DELIVERY_QUEUED_TTL);
+        // The mark outlives the delay, so no second item is queued meanwhile.
+        $ttl = max(SubagentDispatcher::DELIVERY_QUEUED_TTL, $exception->getDelay() + 30);
+        $queued->setWithExpire($sessionKey, TRUE, $ttl);
       }
       throw $exception;
     }
@@ -127,7 +132,13 @@ final class SubagentDeliveryQueueWorker extends QueueWorkerBase implements Conta
 
     // The turn runs for the owner of the session, as a request of theirs would.
     $owner = $session->getOwner();
-    $this->accountSwitcher->switchTo($owner ?? new AnonymousUserSession());
+    if (!$owner instanceof UserInterface || !$owner->isActive() || !$owner->hasPermission('use oe ai assistant') || !$session->access('view', $owner)) {
+      $this->ledger->failDeliveries($sessionId);
+      $this->logger->warning('The results of session @id are not delivered, because its owner can no longer use the assistant.', ['@id' => $sessionId]);
+
+      return;
+    }
+    $this->accountSwitcher->switchTo($owner);
     try {
       $outcome = $this->delivery->deliver($session);
     }
@@ -137,6 +148,14 @@ final class SubagentDeliveryQueueWorker extends QueueWorkerBase implements Conta
 
     if ($outcome === SubagentDelivery::BUSY) {
       throw new DelayedRequeueException(3);
+    }
+
+    // A failed turn is tried again once its results are due.
+    if ($outcome === SubagentDelivery::FAILED) {
+      $retry = $this->ledger->nextRetry($sessionId);
+      if ($retry !== NULL) {
+        throw new DelayedRequeueException(max(1, $retry - $this->time->getCurrentTime()));
+      }
     }
   }
 

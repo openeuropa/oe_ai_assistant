@@ -6,6 +6,7 @@ namespace Drupal\oe_ai_assistant\Service\Subagent;
 
 use Drupal\Component\Datetime\TimeInterface;
 use Drupal\Core\Database\Connection;
+use Drupal\Core\Database\Query\ConditionInterface;
 use Drupal\Core\Database\Query\Update;
 use Drupal\oe_ai_assistant\Neuron\Subagent\SubagentResult;
 
@@ -78,6 +79,28 @@ final class SubagentTaskLedger {
    * The task was stopped before it ran, or its stop was requested.
    */
   public const string STOPPED = 'stopped';
+
+  /**
+   * The task has no result to deliver.
+   */
+  public const string NONE = 'none';
+
+  /**
+   * The result could not be delivered, and no further attempt is made.
+   */
+  public const string DELIVERY_FAILED = 'failed';
+
+  /**
+   * The most failed deliveries a result gets.
+   */
+  public const int MAX_DELIVERY_ATTEMPTS = 5;
+
+  /**
+   * How long a dispatched pending task waits before it counts as lost.
+   *
+   * It matches the lease of the runner, which is private there.
+   */
+  public const int REDISPATCH_AFTER = 300;
 
   /**
    * How long a delivery claim holds before another claimant may take it over.
@@ -200,6 +223,44 @@ final class SubagentTaskLedger {
   public function activeBackground(int $sessionId): int {
     return (int) $this->database->select(self::TABLE, 't')
       ->condition('session_id', $sessionId)
+      ->condition('mode', self::BACKGROUND)
+      ->condition('status', [self::PENDING, self::RUNNING], 'IN')
+      ->countQuery()
+      ->execute()
+      ->fetchField();
+  }
+
+  /**
+   * Counts the background tasks of a user that have not finished.
+   *
+   * @param int|null $uid
+   *   The id of the user, or NULL for tasks without one.
+   *
+   * @return int
+   *   The number of background tasks that are pending or running.
+   */
+  public function activeBackgroundForUser(?int $uid): int {
+    $query = $this->database->select(self::TABLE, 't')
+      ->condition('mode', self::BACKGROUND)
+      ->condition('status', [self::PENDING, self::RUNNING], 'IN');
+    if ($uid === NULL) {
+      $query->isNull('uid');
+    }
+    else {
+      $query->condition('uid', $uid);
+    }
+
+    return (int) $query->countQuery()->execute()->fetchField();
+  }
+
+  /**
+   * Counts the background tasks of the site that have not finished.
+   *
+   * @return int
+   *   The number of background tasks that are pending or running.
+   */
+  public function activeBackgroundTotal(): int {
+    return (int) $this->database->select(self::TABLE, 't')
       ->condition('mode', self::BACKGROUND)
       ->condition('status', [self::PENDING, self::RUNNING], 'IN')
       ->countQuery()
@@ -445,13 +506,18 @@ final class SubagentTaskLedger {
       ->orderBy('task_id');
 
     // A task of the turn in flight is not queued before the turn ends, so a
-    // pending task is only stale once it has waited a while.
+    // pending task that was never queued is only stale once it has waited a
+    // while. A queued one may sit behind other items, so it is only taken
+    // for lost once a worker's lease on it would have lapsed.
     $pending = $query->andConditionGroup()
       ->condition('status', self::PENDING)
-      ->condition('changed', $now - self::STALE_AFTER, '<')
       ->condition($query->orConditionGroup()
-        ->isNull('dispatched')
-        ->condition('dispatched', $now - self::STALE_AFTER, '<'));
+        ->condition($query->andConditionGroup()
+          ->isNull('dispatched')
+          ->condition('changed', $now - self::STALE_AFTER, '<'))
+        ->condition($query->andConditionGroup()
+          ->isNotNull('dispatched')
+          ->condition('dispatched', $now - self::REDISPATCH_AFTER, '<')));
     $running = $query->andConditionGroup()
       ->condition('status', self::RUNNING)
       ->condition('lease_expires', $now, '<');
@@ -536,7 +602,7 @@ final class SubagentTaskLedger {
   }
 
   /**
-   * Claims every result of a session that waits for delivery, at once.
+   * Claims the results of a session that wait for delivery, at once.
    *
    * @param int $sessionId
    *   The id of the session.
@@ -547,23 +613,33 @@ final class SubagentTaskLedger {
    *
    * @return array[]
    *   The rows claimed, oldest first. Empty when another claimant got there
-   *   first or nothing waits.
+   *   first or nothing is due.
    */
   public function claimDelivery(int $sessionId, string $deliveryId, int $now): array {
-    // One statement takes the waiting rows and the rows whose claimant went
-    // silent, so two claimants never hold the same row.
+    // A result that failed before is delivered alone, so one bad result
+    // cannot keep the others from reaching the conversation.
+    $failedBefore = $this->database->select(self::TABLE, 't');
+    $failedBefore->addField('t', 'task_id');
+    $this->dueWaiting($failedBefore, $sessionId, $now);
+    $taskId = $failedBefore
+      ->condition('delivery_attempts', 0, '>')
+      ->orderBy('changed')
+      ->orderBy('task_id')
+      ->range(0, 1)
+      ->execute()
+      ->fetchField();
+
+    // One statement takes the rows, so two claimants never hold the same one.
     $update = $this->database->update(self::TABLE);
     $update->fields([
       'delivery_state' => self::CLAIMED,
       'delivery_id' => $deliveryId,
       'delivery_claimed' => $now,
-    ])
-      ->condition('session_id', $sessionId)
-      ->condition($update->orConditionGroup()
-        ->condition('delivery_state', self::WAITING)
-        ->condition($update->andConditionGroup()
-          ->condition('delivery_state', self::CLAIMED)
-          ->condition('delivery_claimed', $now - self::CLAIM_TTL, '<')));
+    ]);
+    $this->dueWaiting($update, $sessionId, $now);
+    if ($taskId !== FALSE && $taskId !== NULL) {
+      $update->condition('task_id', $taskId);
+    }
     if ($update->execute() === 0) {
       return [];
     }
@@ -577,6 +653,24 @@ final class SubagentTaskLedger {
       ->fetchAllAssoc('task_id', \PDO::FETCH_ASSOC);
 
     return array_values(array_map($this->decode(...), $rows));
+  }
+
+  /**
+   * Restricts a statement to the results of a session that are due.
+   *
+   * @param \Drupal\Core\Database\Query\ConditionInterface $query
+   *   The statement.
+   * @param int $sessionId
+   *   The id of the session.
+   * @param int $now
+   *   The time to judge by.
+   */
+  private function dueWaiting(ConditionInterface $query, int $sessionId, int $now): void {
+    $query->condition('session_id', $sessionId)
+      ->condition('delivery_state', self::WAITING)
+      ->condition($query->orConditionGroup()
+        ->isNull('delivery_retry_at')
+        ->condition('delivery_retry_at', $now, '<='));
   }
 
   /**
@@ -619,21 +713,89 @@ final class SubagentTaskLedger {
    *
    * @param string $deliveryId
    *   The id of the delivery.
+   * @param bool $failed
+   *   Whether the delivery failed, which counts as an attempt and delays the
+   *   next one. A delivery that only found the conversation busy is no failure.
    */
-  public function releaseDelivery(string $deliveryId): void {
-    $this->database->update(self::TABLE)
-      ->fields([
-        'delivery_state' => self::WAITING,
-        'delivery_id' => NULL,
-        'delivery_claimed' => NULL,
-      ])
+  public function releaseDelivery(string $deliveryId, bool $failed = FALSE): void {
+    if (!$failed) {
+      $this->database->update(self::TABLE)
+        ->fields([
+          'delivery_state' => self::WAITING,
+          'delivery_id' => NULL,
+          'delivery_claimed' => NULL,
+        ])
+        ->condition('delivery_id', $deliveryId)
+        ->condition('delivery_state', self::CLAIMED)
+        ->execute();
+
+      return;
+    }
+
+    $rows = $this->database->select(self::TABLE, 't')
+      ->fields('t', ['task_id', 'delivery_attempts'])
       ->condition('delivery_id', $deliveryId)
       ->condition('delivery_state', self::CLAIMED)
+      ->execute()
+      ->fetchAll();
+    $now = $this->time->getCurrentTime();
+    foreach ($rows as $row) {
+      $attempts = (int) $row->delivery_attempts + 1;
+      $exhausted = $attempts >= self::MAX_DELIVERY_ATTEMPTS;
+      // The row is only updated while this delivery still holds it.
+      $this->database->update(self::TABLE)
+        ->fields([
+          'delivery_state' => $exhausted ? self::DELIVERY_FAILED : self::WAITING,
+          'delivery_attempts' => $attempts,
+          'delivery_retry_at' => $exhausted ? NULL : $now + min(30 * 2 ** ($attempts - 1), 600),
+          'delivery_id' => NULL,
+          'delivery_claimed' => NULL,
+        ])
+        ->condition('task_id', $row->task_id)
+        ->condition('delivery_id', $deliveryId)
+        ->condition('delivery_state', self::CLAIMED)
+        ->execute();
+    }
+  }
+
+  /**
+   * Gives up delivering the waiting results of a session.
+   *
+   * @param int $sessionId
+   *   The id of the session.
+   */
+  public function failDeliveries(int $sessionId): void {
+    $this->database->update(self::TABLE)
+      ->fields(['delivery_state' => self::DELIVERY_FAILED, 'delivery_retry_at' => NULL])
+      ->condition('session_id', $sessionId)
+      ->condition('delivery_state', self::WAITING)
       ->execute();
   }
 
   /**
-   * Tells whether a result of the session waits for delivery.
+   * Returns when the next failed delivery of a session may be tried again.
+   *
+   * @param int $sessionId
+   *   The id of the session.
+   *
+   * @return int|null
+   *   The time, or NULL when no result waits for a later attempt.
+   */
+  public function nextRetry(int $sessionId): ?int {
+    $query = $this->database->select(self::TABLE, 't');
+    $query->addExpression('MIN(t.delivery_retry_at)', 'next');
+    $value = $query
+      ->condition('session_id', $sessionId)
+      ->condition('delivery_state', self::WAITING)
+      ->condition('delivery_retry_at', $this->time->getCurrentTime(), '>')
+      ->execute()
+      ->fetchField();
+
+    return $value === NULL || $value === FALSE ? NULL : (int) $value;
+  }
+
+  /**
+   * Tells whether a result of the session is due for delivery.
    *
    * @param int $sessionId
    *   The id of the session.
@@ -649,14 +811,13 @@ final class SubagentTaskLedger {
    *   The id of the session.
    *
    * @return int|null
-   *   The time, or NULL when nothing waits.
+   *   The time, or NULL when nothing is due.
    */
   public function oldestWaiting(int $sessionId): ?int {
     $query = $this->database->select(self::TABLE, 't');
     $query->addExpression('MIN(t.changed)', 'oldest');
+    $this->dueWaiting($query, $sessionId, $this->time->getCurrentTime());
     $value = $query
-      ->condition('session_id', $sessionId)
-      ->condition('delivery_state', self::WAITING)
       ->execute()
       ->fetchField();
 
@@ -679,7 +840,10 @@ final class SubagentTaskLedger {
     $query->condition($query->orConditionGroup()
       ->condition($query->andConditionGroup()
         ->condition('delivery_state', self::WAITING)
-        ->condition('changed', $changedBefore, '<'))
+        ->condition('changed', $changedBefore, '<')
+        ->condition($query->orConditionGroup()
+          ->isNull('delivery_retry_at')
+          ->condition('delivery_retry_at', $this->time->getCurrentTime(), '<=')))
       ->condition($query->andConditionGroup()
         ->condition('delivery_state', self::CLAIMED)
         ->condition('delivery_claimed', $changedBefore - self::CLAIM_TTL, '<')));

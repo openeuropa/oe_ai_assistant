@@ -59,7 +59,7 @@ class SubagentControlTest extends AiEditorialSessionKernelTestBase {
    * Tests that a pending task that was stopped never runs.
    */
   public function testStoppedPendingTaskNeverRuns(): void {
-    $session = $this->createSession($this->createUser());
+    $session = $this->createSession($this->createUser(['use oe ai assistant']));
     $taskId = $this->recordBackground($session, 'sub_aaaaaaaaaaaaaaaaaaaaaaaa');
 
     $this->assertSame('stopped', $this->ledger->stop($taskId, (int) $session->id()));
@@ -81,7 +81,7 @@ class SubagentControlTest extends AiEditorialSessionKernelTestBase {
    * Tests that a running task stops at its next check, and delivers nothing.
    */
   public function testRunningTaskStopsAtNextCheck(): void {
-    $session = $this->createSession($this->createUser());
+    $session = $this->createSession($this->createUser(['use oe ai assistant']));
     $taskId = $this->recordBackground($session, 'sub_aaaaaaaaaaaaaaaaaaaaaaaa');
     $ledger = $this->ledger;
     $sessionId = (int) $session->id();
@@ -167,7 +167,7 @@ class SubagentControlTest extends AiEditorialSessionKernelTestBase {
    * Tests that the check tool hands over a waiting result once.
    */
   public function testCheckTasksConsumesWaitingResult(): void {
-    $session = $this->createSession($this->createUser());
+    $session = $this->createSession($this->createUser(['use oe ai assistant']));
     $taskId = $this->recordBackground($session, 'sub_aaaaaaaaaaaaaaaaaaaaaaaa');
     $this->ledger->claim($taskId, 'worker-1', 300);
     $this->ledger->finishClaimed($taskId, 'worker-1', 'completed', ['report' => 'Funding is 5M.']);
@@ -202,7 +202,7 @@ class SubagentControlTest extends AiEditorialSessionKernelTestBase {
    * Tests that a task of no session or of another one cannot be stopped.
    */
   public function testStopUnknownTask(): void {
-    $owner = $this->createUser();
+    $owner = $this->createUser(['use oe ai assistant']);
     $session = $this->createSession($owner);
     $other = $this->createSession($owner);
     $taskId = $this->recordBackground($other, 'sub_aaaaaaaaaaaaaaaaaaaaaaaa');
@@ -238,6 +238,8 @@ class SubagentControlTest extends AiEditorialSessionKernelTestBase {
    * Runs one turn of the editorial agent.
    */
   private function turn(AiEditorialSessionInterface $session, string $message): void {
+    // The tools record the current user as the user of the tasks.
+    $this->container->get('current_user')->setAccount($session->getOwner());
     $this->container->get(NeuronAgentManagerInterface::class)
       ->createAgent('editorial', ['session' => $session])
       ->chat(new UserMessage($message), TRUE);

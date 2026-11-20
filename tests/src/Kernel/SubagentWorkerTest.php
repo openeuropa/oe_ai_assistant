@@ -67,7 +67,7 @@ class SubagentWorkerTest extends AiEditorialSessionKernelTestBase {
    * Tests that a background call answers with a handle and runs later.
    */
   public function testBackgroundCallReturnsHandle(): void {
-    $session = $this->createSession($this->createUser());
+    $session = $this->createSession($this->createUser(['use oe ai assistant']));
     $id = $this->createExtractedDocument($session, 'Annual report', 'Funding is 5M euros.');
 
     MockAiProvider::enqueue($this->toolCall('research_documents', [
@@ -115,7 +115,7 @@ class SubagentWorkerTest extends AiEditorialSessionKernelTestBase {
    * Tests that only one of two workers wins a task.
    */
   public function testSecondClaimLoses(): void {
-    $session = $this->createSession($this->createUser());
+    $session = $this->createSession($this->createUser(['use oe ai assistant']));
     $taskId = $this->recordBackground($session, 'sub_aaaaaaaaaaaaaaaaaaaaaaaa');
 
     $first = $this->ledger->claim($taskId, 'worker-1', 300);
@@ -134,7 +134,7 @@ class SubagentWorkerTest extends AiEditorialSessionKernelTestBase {
    * Tests that a claim whose lease lapsed is taken over.
    */
   public function testExpiredClaimIsReclaimed(): void {
-    $session = $this->createSession($this->createUser());
+    $session = $this->createSession($this->createUser(['use oe ai assistant']));
     $taskId = $this->recordBackground($session, 'sub_aaaaaaaaaaaaaaaaaaaaaaaa');
     $this->ledger->claim($taskId, 'worker-1', 300);
 
@@ -152,7 +152,7 @@ class SubagentWorkerTest extends AiEditorialSessionKernelTestBase {
    * Tests that a task that was claimed three times fails on the fourth claim.
    */
   public function testFourthClaimFailsTheTask(): void {
-    $session = $this->createSession($this->createUser());
+    $session = $this->createSession($this->createUser(['use oe ai assistant']));
     $taskId = $this->recordBackground($session, 'sub_aaaaaaaaaaaaaaaaaaaaaaaa');
 
     for ($attempt = 1; $attempt <= 3; $attempt++) {
@@ -172,7 +172,7 @@ class SubagentWorkerTest extends AiEditorialSessionKernelTestBase {
    * Tests that a background draft writes one version, and only once.
    */
   public function testBackgroundDraftWritesOneVersion(): void {
-    $session = $this->createSession($this->createUser());
+    $session = $this->createSession($this->createUser(['use oe ai assistant']));
 
     MockAiProvider::enqueue($this->toolCall('drafting_draft_content', [
       'brief' => 'Draft it.',
@@ -206,7 +206,7 @@ class SubagentWorkerTest extends AiEditorialSessionKernelTestBase {
    * Tests that a session runs at most three background tasks at once.
    */
   public function testAtMostThreeBackgroundTasks(): void {
-    $session = $this->createSession($this->createUser());
+    $session = $this->createSession($this->createUser(['use oe ai assistant']));
 
     foreach (['a', 'b', 'c'] as $letter) {
       $this->recordBackground($session, 'sub_' . str_repeat($letter, 24));
@@ -229,10 +229,96 @@ class SubagentWorkerTest extends AiEditorialSessionKernelTestBase {
   }
 
   /**
+   * Tests that a user runs at most five background tasks across sessions.
+   */
+  public function testAtMostFiveBackgroundTasksPerUser(): void {
+    $owner = $this->createUser(['use oe ai assistant']);
+    $first = $this->createSession($owner);
+    $second = $this->createSession($owner);
+    foreach (['a', 'b', 'c'] as $letter) {
+      $this->recordBackground($first, 'sub_' . str_repeat($letter, 24));
+    }
+    foreach (['d', 'e'] as $letter) {
+      $this->recordBackground($second, 'sub_' . str_repeat($letter, 24));
+    }
+    $this->assertSame(5, $this->ledger->activeBackgroundForUser((int) $owner->id()));
+    $this->assertSame(0, $this->ledger->activeBackgroundForUser(NULL));
+
+    MockAiProvider::enqueue($this->toolCall('research_documents', ['prompt' => 'One more.', 'run_in_background' => TRUE]));
+    MockAiProvider::enqueue(new MockResponse(text: 'Too many tasks.'));
+    $this->turn($second, 'One more.');
+
+    $result = $this->results($second, 'research_documents')[0];
+    $this->assertStringContainsString('You already have 5 background tasks running', json_encode($result));
+    $this->assertCount(2, $this->ledger->forSession((int) $second->id()));
+  }
+
+  /**
+   * Tests that the site runs at most twenty background tasks.
+   */
+  public function testAtMostTwentyBackgroundTasksOnTheSite(): void {
+    $other = $this->createUser(['use oe ai assistant']);
+    for ($i = 0; $i < 20; $i++) {
+      $session = $this->createSession($other);
+      $this->ledger->record(sprintf('sub_%024d', $i), (int) $session->id(), 'research_documents', 'researcher', 'call_' . $i, $session->editorialThread(), (int) $other->id() + $i, ['prompt' => 'Find it.'], TRUE);
+    }
+    $this->assertSame(20, $this->ledger->activeBackgroundTotal());
+
+    $session = $this->createSession($this->createUser(['use oe ai assistant']));
+    MockAiProvider::enqueue($this->toolCall('research_documents', ['prompt' => 'One more.', 'run_in_background' => TRUE]));
+    MockAiProvider::enqueue(new MockResponse(text: 'The site is full.'));
+    $this->turn($session, 'One more.');
+
+    $result = $this->results($session, 'research_documents')[0];
+    $this->assertStringContainsString('The site is running as many background tasks as it allows.', json_encode($result));
+    $this->assertSame([], $this->ledger->forSession((int) $session->id()));
+  }
+
+  /**
+   * Tests that a queued task is only taken for lost after the lease.
+   */
+  public function testDispatchedPendingTaskIsStaleAfterTheLease(): void {
+    $session = $this->createSession($this->createUser(['use oe ai assistant']));
+    $taskId = $this->recordBackground($session, 'sub_aaaaaaaaaaaaaaaaaaaaaaaa');
+    $this->ledger->markDispatched($taskId);
+    $now = time();
+    $this->container->get('database')->update(SubagentTaskLedger::TABLE)
+      ->fields(['dispatched' => $now - 60, 'changed' => $now - 60])
+      ->condition('task_id', $taskId)
+      ->execute();
+    $this->assertNotContains($taskId, $this->ledger->stale($now));
+
+    $this->container->get('database')->update(SubagentTaskLedger::TABLE)
+      ->fields(['dispatched' => $now - 301])
+      ->condition('task_id', $taskId)
+      ->execute();
+    $this->assertContains($taskId, $this->ledger->stale($now));
+  }
+
+  /**
+   * Tests that a task of a blocked user does not run.
+   */
+  public function testBlockedUserTaskDoesNotRun(): void {
+    $owner = $this->createUser(['use oe ai assistant']);
+    $session = $this->createSession($owner);
+    $taskId = $this->recordBackground($session, 'sub_aaaaaaaaaaaaaaaaaaaaaaaa');
+    $owner->block()->save();
+
+    MockAiProvider::enqueue(new MockResponse(text: 'Should not be read.'));
+    $this->worker()->processItem(['task_id' => $taskId]);
+
+    $row = $this->ledger->load($taskId);
+    $this->assertSame('failed', $row['status']);
+    $this->assertSame('none', $row['delivery_state']);
+    $this->assertSame(['error' => 'The user of the task can no longer run it.'], $row['result']);
+    $this->assertSame([], MockAiProvider::getCallLog());
+  }
+
+  /**
    * Tests that a paused worker suspends the queue and keeps the task.
    */
   public function testPausedWorkerSuspends(): void {
-    $session = $this->createSession($this->createUser());
+    $session = $this->createSession($this->createUser(['use oe ai assistant']));
     $taskId = $this->recordBackground($session, 'sub_aaaaaaaaaaaaaaaaaaaaaaaa');
     $this->container->get('state')->set('oe_ai_assistant.subagent_worker_paused', TRUE);
 
@@ -255,7 +341,7 @@ class SubagentWorkerTest extends AiEditorialSessionKernelTestBase {
    * Tests that a call without the flag still runs inline.
    */
   public function testForegroundCallIsUnchanged(): void {
-    $session = $this->createSession($this->createUser());
+    $session = $this->createSession($this->createUser(['use oe ai assistant']));
     $this->createExtractedDocument($session, 'Annual report', 'The budget grew.');
 
     MockAiProvider::enqueue($this->toolCall('research_documents', ['prompt' => 'Find the budget.']));
@@ -314,6 +400,8 @@ class SubagentWorkerTest extends AiEditorialSessionKernelTestBase {
    * Runs one turn of the editorial agent.
    */
   private function turn(AiEditorialSessionInterface $session, string $message): void {
+    // The tools record the current user as the user of the tasks.
+    $this->container->get('current_user')->setAccount($session->getOwner());
     $this->container->get(NeuronAgentManagerInterface::class)
       ->createAgent('editorial', ['session' => $session])
       ->chat(new UserMessage($message), TRUE);

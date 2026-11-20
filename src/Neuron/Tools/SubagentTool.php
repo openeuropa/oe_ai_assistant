@@ -22,6 +22,16 @@ final class SubagentTool extends Tool implements SubagentToolInterface {
   public const int MAX_BACKGROUND = 3;
 
   /**
+   * The most background tasks a user runs at once, across sessions.
+   */
+  public const int MAX_BACKGROUND_PER_USER = 5;
+
+  /**
+   * The most background tasks the site runs at once.
+   */
+  public const int MAX_BACKGROUND_TOTAL = 20;
+
+  /**
    * Builds the tool.
    *
    * @param string $name
@@ -76,10 +86,18 @@ final class SubagentTool extends Tool implements SubagentToolInterface {
    * {@inheritdoc}
    */
   public function open(SubagentTask $task): SubagentTask|string {
-    // The cap is checked before the task is recorded, so a refused task
+    // The caps are checked before the task is recorded, so a refused task
     // leaves no row behind.
-    if ($task->background && $this->ledger->activeBackground($this->sessionId) >= self::MAX_BACKGROUND) {
-      return sprintf('At most %d background tasks can run at once in this session. Wait for one to finish, or run this one now.', self::MAX_BACKGROUND);
+    if ($task->background) {
+      if ($this->ledger->activeBackground($this->sessionId) >= self::MAX_BACKGROUND) {
+        return sprintf('At most %d background tasks can run at once in this session. Wait for one to finish, or run this one now.', self::MAX_BACKGROUND);
+      }
+      if ($this->ledger->activeBackgroundForUser($this->uid) >= self::MAX_BACKGROUND_PER_USER) {
+        return sprintf('You already have %d background tasks running across your sessions. Wait for one to finish, or run this one now.', self::MAX_BACKGROUND_PER_USER);
+      }
+      if ($this->ledger->activeBackgroundTotal() >= self::MAX_BACKGROUND_TOTAL) {
+        return 'The site is running as many background tasks as it allows. Try again later, or run this one now.';
+      }
     }
 
     if (!$task->continuation) {

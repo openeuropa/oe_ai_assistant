@@ -18,6 +18,11 @@ import {
 
 import DOMPurify from "dompurify";
 import { Streamdown } from "streamdown";
+
+import {
+  safeMarkdownComponents,
+  safeMarkdownDisallowedElements,
+} from "@/lib/safe-markdown";
 import "streamdown/styles.css";
 import {
   AlertCircle,
@@ -189,7 +194,13 @@ function AssistantText({
           isAnimating={status.type === "running"}
         />
       ) : (
-        <Streamdown isAnimating={status.type === "running"}>{text}</Streamdown>
+        <Streamdown
+          isAnimating={status.type === "running"}
+          components={safeMarkdownComponents}
+          disallowedElements={safeMarkdownDisallowedElements}
+        >
+          {text}
+        </Streamdown>
       )}
     </div>
   );
