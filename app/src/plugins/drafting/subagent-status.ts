@@ -18,6 +18,7 @@ export type BadgeKind =
   | "delivered"
   | "needs_input"
   | "answered"
+  | "stopped"
   | "failed";
 
 /**
@@ -49,7 +50,24 @@ export function isAnswered(
 
 /** Tells whether the ledger holds the task as lost or ended in failure. */
 function isFailed(status: string): boolean {
-  return status === "failed" || status === "stopped";
+  return status === "failed";
+}
+
+/**
+ * Tells whether a task can still be stopped from its card.
+ *
+ * Only a background task that is queued or running can be: a foreground one
+ * runs inside the turn of the editor.
+ */
+export function isStoppable(
+  live: SubagentLive | null,
+  task: SubagentTask | undefined,
+): boolean {
+  return (
+    live !== null &&
+    (live.status === "pending" || live.status === "running") &&
+    task?.mode !== "foreground"
+  );
 }
 
 /** Maps a ledger state to the badge of a task that ran in the background. */
@@ -57,6 +75,7 @@ function badgeOfLive(live: SubagentLive): BadgeKind {
   if (live.status === "pending" || live.status === "running") {
     return "background";
   }
+  if (live.status === "stopped") return "stopped";
   if (isFailed(live.status)) return "failed";
   if (live.status === "needs_input") return "needs_input";
   return live.deliveryState === "delivered" || live.deliveryState === "consumed"
@@ -71,8 +90,9 @@ function badgeOfStatus(status: string): BadgeKind {
       return "completed";
     case "needs_input":
       return "needs_input";
-    case "failed":
     case "stopped":
+      return "stopped";
+    case "failed":
       return "failed";
     case "queued":
     case "pending":
@@ -130,6 +150,7 @@ export function pendingMessage(
 ): string {
   const running = `${working} in the background…`;
   if (live === null) return running;
+  if (live.status === "stopped") return "Stopped";
   if (isFailed(live.status)) return "Failed";
   if (live.status === "completed" || live.status === "needs_input") {
     return live.deliveryState === "delivered" ||

@@ -92,6 +92,32 @@ DraftingTasksResponse:
       type: string
       description: Changes whenever the editorial thread gains a message.
 
+DraftingStopTaskRequest:
+  type: object
+  required:
+    - sessionId
+    - taskId
+  properties:
+    sessionId:
+      type: string
+      description: The editorial session the task belongs to.
+    taskId:
+      type: string
+      description: The task to stop.
+
+DraftingStopTaskResponse:
+  type: object
+  required:
+    - outcome
+  properties:
+    outcome:
+      type: string
+      enum: [stopped, stopping, finished, unknown]
+      description: >-
+        stopped when the task had not started, stopping when it runs and
+        stops shortly, finished when nothing was left to stop, unknown when
+        the session has no such task.
+
 DraftingResetRequest:
   type: object
   required:

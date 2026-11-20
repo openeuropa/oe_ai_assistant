@@ -29,6 +29,11 @@ final class SubagentRunner {
    */
   private const int RENEW_EVERY = 30;
 
+  /**
+   * How often the task is checked for a stop request, in seconds.
+   */
+  private const int STOP_CHECK_EVERY = 2;
+
   public function __construct(
     private readonly SubagentTaskLedger $ledger,
     private readonly SubagentDispatcher $dispatcher,
@@ -82,10 +87,23 @@ final class SubagentRunner {
       );
 
       $lastRenewal = $this->time->getCurrentTime();
+      $lastStopCheck = $lastRenewal;
       $reports = $definition->subagent->run($task);
       foreach ($reports as $report) {
         unset($report);
-        if ($this->time->getCurrentTime() - $lastRenewal < self::RENEW_EVERY) {
+        $now = $this->time->getCurrentTime();
+        if ($now - $lastStopCheck >= self::STOP_CHECK_EVERY) {
+          $lastStopCheck = $now;
+          if ($this->ledger->stopRequested($taskId)) {
+            // The generator is dropped, so the subagent runs no further. The
+            // result is not delivered, because the editor stopped the task.
+            unset($reports);
+            $this->ledger->finishClaimed($taskId, $worker, SubagentTaskLedger::STOPPED, ['note' => 'Stopped by the editor.'], 'none');
+
+            return;
+          }
+        }
+        if ($now - $lastRenewal < self::RENEW_EVERY) {
           continue;
         }
         // A renewal that fails means the lease lapsed and another worker

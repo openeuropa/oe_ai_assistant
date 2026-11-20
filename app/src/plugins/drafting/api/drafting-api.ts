@@ -29,6 +29,8 @@ type DraftingAddDocumentResponse =
 type DraftingListDocumentsResponse =
   components["schemas"]["DraftingListDocumentsResponse"];
 type DraftingTasksResponse = components["schemas"]["DraftingTasksResponse"];
+type DraftingStopTaskResponse =
+  components["schemas"]["DraftingStopTaskResponse"];
 type DraftingRemoveDocumentResponse =
   components["schemas"]["DraftingRemoveDocumentResponse"];
 type DraftingExtractDocumentResponse =
@@ -272,4 +274,23 @@ export async function getSubagentTasks(): Promise<DraftingTasksResponse> {
     throw new Error(`Drafting tasks error: ${response.status}`);
   }
   return (await response.json()) as DraftingTasksResponse;
+}
+
+/** Asks the backend to stop a background task of the current session. */
+export async function stopSubagentTask(
+  taskId: string,
+): Promise<DraftingStopTaskResponse["outcome"]> {
+  const response = await apiFetch(
+    `${getConfig().apiBaseUrl}/plugins/drafting/stop-task`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sessionId: getConfig().sessionId, taskId }),
+    },
+  );
+  if (!response.ok) {
+    throw new Error(`Drafting stop-task error: ${response.status}`);
+  }
+  const body = (await response.json()) as DraftingStopTaskResponse;
+  return body.outcome;
 }

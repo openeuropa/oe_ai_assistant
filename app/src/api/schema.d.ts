@@ -198,6 +198,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/plugins/drafting/stop-task": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Stop a background task of the session */
+        post: operations["postDraftingStopTask"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/plugins/drafting/list-documents": {
         parameters: {
             query?: never;
@@ -565,6 +582,19 @@ export interface components {
             busy: boolean;
             /** @description Changes whenever the editorial thread gains a message. */
             revision: string;
+        };
+        DraftingStopTaskRequest: {
+            /** @description The editorial session the task belongs to. */
+            sessionId: string;
+            /** @description The task to stop. */
+            taskId: string;
+        };
+        DraftingStopTaskResponse: {
+            /**
+             * @description stopped when the task had not started, stopping when it runs and stops shortly, finished when nothing was left to stop, unknown when the session has no such task.
+             * @enum {string}
+             */
+            outcome: "stopped" | "stopping" | "finished" | "unknown";
         };
         DraftingListDocumentsRequest: {
             /** @description The editorial session whose documents should be listed. */
@@ -1005,6 +1035,40 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DraftingTasksResponse"];
+                };
+            };
+            /** @description Validation error. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    postDraftingStopTask: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DraftingStopTaskRequest"];
+            };
+        };
+        responses: {
+            /** @description What the stop did to the task */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DraftingStopTaskResponse"];
                 };
             };
             /** @description Validation error. */

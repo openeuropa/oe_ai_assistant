@@ -26,6 +26,8 @@ use NeuronAI\Workflow\Streaming\Adapter\StreamAdapterInterface;
     'drafting_get_history',
     'drafting_draft_content',
     'research_documents',
+    'subagent_check_tasks',
+    'subagent_stop_task',
   ],
   context_definitions: [
     'session' => new EntityContextDefinition(
@@ -125,6 +127,8 @@ final class EditorialNeuronAgent extends EditorialSessionAgentBase {
       run_in_background: true. Set it when the editor wants to keep working,
       or asks for it. Tell the editor the task runs in the background; its
       result arrives later in a system message, so do not wait for it.
+    - Use subagent_check_tasks to see how the tasks stand and to read a
+      finished result at once, and subagent_stop_task to stop one on request.
     - You can have normal conversations with the user at any point.
     PROMPT;
 

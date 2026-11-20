@@ -371,6 +371,87 @@ test.describe("Subagent card", () => {
     );
   });
 
+  test("Stop posts stop-task and the card then shows Stopped", async ({
+    page,
+  }) => {
+    const running = {
+      taskId: TASK_ID,
+      subagent: "researcher",
+      tool: "research_documents",
+      status: "running",
+      mode: "background",
+      deliveryState: "none",
+      continuations: 0,
+      prompt: "Research",
+      created: 1,
+      changed: 2,
+    };
+    await mockApiRoutes(page, researchStream(COMPLETED_RESULT), [running]);
+    await page.route("**/api/plugins/drafting/get-messages", (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          messages: [
+            { role: "user", content: "Research it in the background." },
+            {
+              role: "assistant",
+              at: "2026-01-01T10:00:00+00:00",
+              toolCalls: [
+                {
+                  function: { name: "research_documents" },
+                  result: {
+                    task_id: TASK_ID,
+                    subagent: "researcher",
+                    status: "pending",
+                  },
+                  live: { status: "running", deliveryState: "none" },
+                },
+              ],
+            },
+          ],
+        }),
+      }),
+    );
+    let stopBody: Record<string, unknown> | null = null;
+    await page.route("**/api/plugins/drafting/stop-task", (route) => {
+      stopBody = route.request().postDataJSON();
+      return route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ outcome: "stopped" }),
+      });
+    });
+    // Once the stop went through, the ledger reports the task as stopped.
+    await page.route("**/api/plugins/drafting/tasks", (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          tasks: [
+            stopBody === null
+              ? running
+              : { ...running, status: "stopped", changed: 3 },
+          ],
+          deliverable: false,
+          busy: false,
+          revision: "0.0",
+        }),
+      }),
+    );
+    await page.goto("/#/drafting");
+
+    await page.getByTestId("stop-task").click();
+
+    await expect(page.getByTestId("subagent-badge")).toHaveText("Stopped");
+    await expect(page.getByTestId("subagent-pending")).toHaveText("Stopped");
+    await expect(page.getByTestId("stop-task")).toHaveCount(0);
+    expect(stopBody).toEqual({
+      sessionId: expect.any(String),
+      taskId: TASK_ID,
+    });
+  });
+
   test("a call that ended in a tool error shows the reason", async ({
     page,
   }) => {

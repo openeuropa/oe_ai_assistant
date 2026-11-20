@@ -202,6 +202,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
       'chat' => $this->chat(...),
       'get-messages' => $this->getMessages(...),
       'tasks' => $this->tasks(...),
+      'stop-task' => $this->stopTask(...),
       'reset' => $this->reset(...),
       'save' => $this->save(...),
       'set-tone' => $this->setTone(...),
@@ -221,6 +222,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
     return parent::getRequestSchemas() + [
       'get-messages' => 'GetMessagesRequest',
       'tasks' => 'DraftingTasksRequest',
+      'stop-task' => 'DraftingStopTaskRequest',
       'reset' => 'DraftingResetRequest',
       'save' => 'DraftingSaveRequest',
       'set-tone' => 'DraftingSetToneRequest',
@@ -701,6 +703,25 @@ class DraftingPlugin extends AiAssistantPluginBase {
       'busy' => $busy,
       'revision' => $this->threadRevision($session),
     ];
+  }
+
+  /**
+   * Stops a background task of the session.
+   *
+   * @param \Symfony\Component\HttpFoundation\Request $request
+   *   The incoming request.
+   *
+   * @return array<string, string>
+   *   The outcome: stopped, stopping, finished or unknown.
+   */
+  public function stopTask(Request $request): array {
+    $body = $this->decodeJsonBody($request);
+    $session = $this->loadSession($body);
+    if (!$session instanceof ContentCreationSessionInterface) {
+      throw new ActionException('invalid_request', 'The editorial session does not support drafting.', 400);
+    }
+
+    return ['outcome' => $this->ledger->stop((string) ($body['taskId'] ?? ''), (int) $session->id())];
   }
 
   /**

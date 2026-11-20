@@ -11,16 +11,23 @@
 import type { ToolCallMessagePartProps } from "@assistant-ui/react";
 import { makeAssistantToolUI } from "@assistant-ui/react";
 import { Check, Loader2, PenLine, Wrench, X } from "lucide-react";
+import type { ReactNode } from "react";
 import type { DraftRunStatus } from "../draft-result";
 import { parseDraftResult } from "../draft-result";
 import { useSavedVersions } from "../saved-versions";
 import { useSessionDrafts } from "../session-drafts";
 import { setDraftingState, useDraftingSlice } from "../store";
 import { parseSubagentResult } from "../subagent-result";
-import { badgeKind, effectiveLive, pendingMessage } from "../subagent-status";
+import {
+  badgeKind,
+  effectiveLive,
+  isStoppable,
+  pendingMessage,
+} from "../subagent-status";
 import { toolLabel } from "../tool-labels";
 import { DraftCard } from "./draft-card";
 import { EventChip } from "./event-chip";
+import { StopTaskButton } from "./stop-task-button";
 import { SubagentCard } from "./subagent-card";
 
 /** Shared wrapper for tool call cards in the chat. */
@@ -30,6 +37,7 @@ export function ToolCallCard({
   detail,
   status,
   onClick,
+  action,
 }: {
   icon: typeof PenLine;
   label: string;
@@ -37,6 +45,8 @@ export function ToolCallCard({
   status: { type: string };
   /** When set, the card becomes a button that runs this on click. */
   onClick?: () => void;
+  /** A control shown at the end of the card. */
+  action?: ReactNode;
 }) {
   const isRunning = status.type === "running";
   const isError = status.type === "incomplete" || status.type === "error";
@@ -67,6 +77,7 @@ export function ToolCallCard({
         </div>
         {detail && <p className="mt-0.5 text-xs text-gray-400">{detail}</p>}
       </div>
+      {action}
     </>
   );
 
@@ -117,7 +128,8 @@ export const DraftContentToolUI = makeAssistantToolUI<
     // ledger instead of reading a failed or empty draft.
     const pending = parseSubagentResult(result);
     if (pending?.status === "pending") {
-      const live = effectiveLive(pending.live, tasksById[pending.taskId]);
+      const task = tasksById[pending.taskId];
+      const live = effectiveLive(pending.live, task);
       const kind =
         live === null
           ? "background"
@@ -136,10 +148,15 @@ export const DraftContentToolUI = makeAssistantToolUI<
             type:
               kind === "background"
                 ? "running"
-                : kind === "failed"
+                : kind === "failed" || kind === "stopped"
                   ? "incomplete"
                   : "complete",
           }}
+          action={
+            isStoppable(live, task) ? (
+              <StopTaskButton taskId={pending.taskId} />
+            ) : undefined
+          }
         />
       );
     }

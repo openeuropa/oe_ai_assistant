@@ -4,6 +4,7 @@ import {
   badgeKind,
   effectiveLive,
   isAnswered,
+  isStoppable,
   pendingMessage,
 } from "../subagent-status";
 import type { SubagentTask } from "../subagent-tasks";
@@ -157,5 +158,44 @@ describe("pendingMessage", () => {
         "Drafting",
       ),
     ).toBe("Done, waiting to be delivered");
+    expect(
+      pendingMessage({ status: "stopped", deliveryState: "none" }, "Drafting"),
+    ).toBe("Stopped");
+  });
+});
+
+describe("isStoppable", () => {
+  it("allows a stop while a background task is pending or running", () => {
+    const running = { status: "running", deliveryState: "none" };
+    expect(isStoppable(running, task({ status: "running" }))).toBe(true);
+    expect(isStoppable({ ...running, status: "pending" }, undefined)).toBe(
+      true,
+    );
+  });
+
+  it("refuses a stop for a settled or foreground task", () => {
+    expect(isStoppable(null, undefined)).toBe(false);
+    expect(
+      isStoppable({ status: "stopped", deliveryState: "none" }, undefined),
+    ).toBe(false);
+    expect(
+      isStoppable(
+        { status: "running", deliveryState: "none" },
+        task({ status: "running", mode: "foreground" }),
+      ),
+    ).toBe(false);
+  });
+});
+
+describe("stopped tasks", () => {
+  it("read as Stopped, not as failed", () => {
+    expect(
+      badgeKind({
+        result: result(),
+        live: { status: "stopped", deliveryState: "none" },
+        answered: false,
+        abandoned: false,
+      }),
+    ).toBe("stopped");
   });
 });

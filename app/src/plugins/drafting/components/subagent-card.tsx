@@ -40,9 +40,11 @@ import {
   badgeKind,
   effectiveLive,
   isAnswered,
+  isStoppable,
   pendingMessage,
 } from "../subagent-status";
 import { toolLabel } from "../tool-labels";
+import { StopTaskButton } from "./stop-task-button";
 
 /** Props for SubagentCard. */
 export interface SubagentCardProps {
@@ -82,6 +84,10 @@ const BADGES: Record<BadgeKind, Badge> = {
   },
   answered: {
     label: "Answered",
+    className: `${BADGE_BASE} border-gray-200 bg-gray-50 text-gray-500`,
+  },
+  stopped: {
+    label: "Stopped",
     className: `${BADGE_BASE} border-gray-200 bg-gray-50 text-gray-500`,
   },
   failed: {
@@ -365,7 +371,15 @@ function ResultBody({
     );
   }
 
-  if (result.status === "failed" || result.status === "stopped") {
+  if (result.status === "stopped") {
+    return (
+      <p className="mt-2 text-sm text-gray-500" data-testid="subagent-pending">
+        Stopped
+      </p>
+    );
+  }
+
+  if (result.status === "failed") {
     return (
       <Callout icon={TriangleAlert} className="border-red-200 bg-red-50">
         <p className="text-red-700">
@@ -450,6 +464,7 @@ export function SubagentCard({
         <span className="min-w-0 flex-1 truncate text-sm font-medium text-gray-700">
           {title}
         </span>
+        {isStoppable(live, task) && <StopTaskButton taskId={taskId} />}
         <span className={badge.className} data-testid="subagent-badge">
           {badge.label}
         </span>

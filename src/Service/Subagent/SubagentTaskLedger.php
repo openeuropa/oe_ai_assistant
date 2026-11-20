@@ -70,6 +70,16 @@ final class SubagentTaskLedger {
   public const string DELIVERED = 'delivered';
 
   /**
+   * The model read the result through a tool, so nothing delivers it.
+   */
+  public const string CONSUMED = 'consumed';
+
+  /**
+   * The task was stopped before it ran, or its stop was requested.
+   */
+  public const string STOPPED = 'stopped';
+
+  /**
    * How long a delivery claim holds before another claimant may take it over.
    */
   public const int CLAIM_TTL = 120;
@@ -316,16 +326,19 @@ final class SubagentTaskLedger {
    *   The status the task ends in.
    * @param array $result
    *   The result of the task.
+   * @param string $deliveryState
+   *   The delivery state the task gets, "waiting" unless nothing is to be
+   *   delivered.
    *
    * @return bool
    *   FALSE when the worker no longer holds the task, and nothing changed.
    */
-  public function finishClaimed(string $taskId, string $worker, string $status, array $result): bool {
+  public function finishClaimed(string $taskId, string $worker, string $status, array $result, string $deliveryState = self::WAITING): bool {
     return $this->database->update(self::TABLE)
       ->fields([
         'status' => $status,
         'result' => json_encode($result, JSON_THROW_ON_ERROR | JSON_PARTIAL_OUTPUT_ON_ERROR),
-        'delivery_state' => self::WAITING,
+        'delivery_state' => $deliveryState,
         'claimed_by' => NULL,
         'lease_expires' => NULL,
         'changed' => $this->time->getCurrentTime(),
@@ -333,6 +346,85 @@ final class SubagentTaskLedger {
       ->condition('task_id', $taskId)
       ->condition('claimed_by', $worker)
       ->execute() === 1;
+  }
+
+  /**
+   * Marks a waiting result as read by the model, so it is not delivered.
+   *
+   * @param string $taskId
+   *   The id of the task.
+   * @param int $sessionId
+   *   The id of the session.
+   *
+   * @return bool
+   *   TRUE when this call took the result, FALSE when it was not waiting.
+   */
+  public function consume(string $taskId, int $sessionId): bool {
+    return $this->database->update(self::TABLE)
+      ->fields(['delivery_state' => self::CONSUMED])
+      ->condition('task_id', $taskId)
+      ->condition('session_id', $sessionId)
+      ->condition('delivery_state', self::WAITING)
+      ->execute() === 1;
+  }
+
+  /**
+   * Stops a task of a session, or asks the worker that runs it to stop.
+   *
+   * @param string $taskId
+   *   The id of the task.
+   * @param int $sessionId
+   *   The id of the session.
+   *
+   * @return string
+   *   "stopped" for a task that had not started, "stopping" for a background
+   *   task that runs, "finished" for any other task, and "unknown" when the
+   *   session has no such task.
+   */
+  public function stop(string $taskId, int $sessionId): string {
+    $row = $this->load($taskId);
+    if ($row === NULL || (int) $row['session_id'] !== $sessionId) {
+      return 'unknown';
+    }
+
+    $now = $this->time->getRequestTime();
+    $stopped = $this->database->update(self::TABLE)
+      ->fields([
+        'status' => self::STOPPED,
+        'result' => json_encode(['note' => 'Stopped by the editor.'], JSON_THROW_ON_ERROR),
+        'changed' => $now,
+      ])
+      ->condition('task_id', $taskId)
+      ->condition('status', self::PENDING)
+      ->execute();
+    if ($stopped === 1) {
+      return 'stopped';
+    }
+
+    // A worker may have claimed the task since it was read, so the flag is
+    // set by a statement that checks the status again.
+    $requested = $this->database->update(self::TABLE)
+      ->fields(['stop_requested' => 1, 'changed' => $now])
+      ->condition('task_id', $taskId)
+      ->condition('mode', self::BACKGROUND)
+      ->condition('status', self::RUNNING)
+      ->execute();
+
+    return $requested === 1 ? 'stopping' : 'finished';
+  }
+
+  /**
+   * Tells whether a stop was requested for a task.
+   *
+   * @param string $taskId
+   *   The id of the task.
+   */
+  public function stopRequested(string $taskId): bool {
+    return (bool) $this->database->select(self::TABLE, 't')
+      ->fields('t', ['stop_requested'])
+      ->condition('task_id', $taskId)
+      ->execute()
+      ->fetchField();
   }
 
   /**
