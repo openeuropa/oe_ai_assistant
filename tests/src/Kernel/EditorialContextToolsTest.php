@@ -338,6 +338,12 @@ class EditorialContextToolsTest extends AiEditorialSessionKernelTestBase {
 
     $result = json_decode($this->sessionDocumentsTool($session), TRUE);
 
+    // The ID has to be here: GetEditorialContextNeuronAgent can only pass
+    // on an ID its tools gave it, and EditorialNeuronAgent needs it back to
+    // call context_read_document.
+    $this->assertSame('1', $result['documents'][0]['id']);
+    $this->assertSame('Document 1', $result['documents'][0]['title']);
+    $this->assertSame('doc-1.pdf', $result['documents'][0]['filename']);
     $this->assertSame('A summary.', $result['documents'][0]['summary']);
     $this->assertNull($result['documents'][0]['note']);
     $this->assertNull($result['documents'][1]['summary']);
