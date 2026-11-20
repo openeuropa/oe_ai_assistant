@@ -24,7 +24,7 @@ use NeuronAI\UniqueIdGenerator;
  * instructions instead, and the tool returns only the answer.
  */
 #[NeuronAgent(
-  id: SessionActivityNeuronAgent::PLUGIN_ID,
+  id: GetSessionActivityNeuronAgent::PLUGIN_ID,
   label: new TranslatableMarkup('Session activity'),
   description: new TranslatableMarkup('Answers one question about what happened in an editorial session.'),
   operation_type: 'chat',
@@ -35,12 +35,12 @@ use NeuronAI\UniqueIdGenerator;
     ),
   ],
 )]
-final class SessionActivityNeuronAgent extends NeuronAgentPluginBase {
+final class GetSessionActivityNeuronAgent extends NeuronAgentPluginBase {
 
   /**
    * The id this agent is registered under.
    */
-  public const string PLUGIN_ID = 'session_activity';
+  public const string PLUGIN_ID = 'get_session_activity';
 
   /**
    * How many of the most recent entries the prompt carries.
@@ -70,42 +70,48 @@ final class SessionActivityNeuronAgent extends NeuronAgentPluginBase {
    * user message.
    */
   protected function instructions(): string {
+    $instructions = <<<'INSTRUCTIONS'
+    You answer one question about what happened in one editorial session.
+
+    Answer from the record below and from nothing else. You answer another
+    agent and not the editor, so write no greeting, no apology and no offer
+    of more help.
+
+    Be precise, and report every value the record holds for what you answer:
+    the tone and the template by name, including the one they replaced, the
+    document by its file name, the draft by its number, the node by its id,
+    who did it, and when. An answer that reports a change without its values
+    is incomplete. Say how many times something happened when the question
+    counts, and name each occurrence.
+
+    Never guess a time or an order of events. Say that the record does not
+    hold the answer when it does not.
+
+    Each line of the record gives the time in UTC, who did it, and what they
+    did. The editor who asks the question is named "you".
+    INSTRUCTIONS;
+
+    return $instructions . "\n\n" . $this->record() . "\n";
+  }
+
+  /**
+   * Renders the record the answer comes from.
+   *
+   * @return string
+   *   The entries, oldest first, or a note that the record holds none.
+   */
+  private function record(): string {
     $entries = $this->session()->getLatestActivity(self::MAX_ENTRIES);
-
-    $lines = [
-      'You answer one question about what happened in one editorial session.',
-      '',
-      'Answer from the record below and from nothing else. You answer another',
-      'agent and not the editor, so write no greeting, no apology and no offer',
-      'of more help.',
-      '',
-      'Be precise, and report every value the record holds for what you',
-      'answer: the tone and the template by name, including the one they',
-      'replaced, the document by its file name, the draft by its number, the',
-      'node by its id, who did it, and when. An answer that reports a change',
-      'without its values is incomplete. Say how many times something happened',
-      'when the question counts, and name each occurrence.',
-      '',
-      'Never guess a time or an order of events. Say that the record does not',
-      'hold the answer when it does not.',
-      '',
-      'The record lists what happened, oldest first. Each line gives the time',
-      'in UTC, who did it, and what they did. The editor who asks the question',
-      'is named "you" in the record.',
-      '',
-    ];
-
     if ($entries === []) {
-      $lines[] = 'The record is empty. Nothing has happened in this session yet.';
-
-      return implode("\n", $lines);
+      return 'The record is empty. Nothing has happened in this session yet.';
     }
 
+    $lines = ['The record, oldest first:'];
     $omitted = $this->omitted(count($entries));
     if ($omitted > 0) {
       $lines[] = sprintf('The %d entries before the first one below are not shown.', $omitted);
-      $lines[] = '';
     }
+    $lines[] = '';
 
     foreach ($entries as $entry) {
       // Drupal formats dates in the timezone of the account that asks, so

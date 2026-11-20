@@ -11,7 +11,7 @@ use Drupal\oe_ai_assistant\Entity\ActivityType;
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionActivityInterface;
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
 use Drupal\oe_ai_assistant\Plugin\AiAssistantPluginManager;
-use Drupal\oe_ai_assistant\Plugin\NeuronAgent\SessionActivityNeuronAgent;
+use Drupal\oe_ai_assistant\Plugin\NeuronAgent\GetSessionActivityNeuronAgent;
 use Drupal\oe_ai_assistant_test\Plugin\AiProvider\MockAiProvider;
 use Drupal\oe_ai_assistant_test\Plugin\AiProvider\MockResponse;
 use Drupal\taxonomy\Entity\Term;
@@ -27,11 +27,54 @@ use Symfony\Component\HttpFoundation\Request;
 class AiEditorialSessionActivityTest extends AiEditorialSessionKernelTestBase {
 
   /**
+   * Creating a session records the tone and the template it was created with.
+   *
+   * The add form writes both with no entry of their own, so without this
+   * entry the record opens on a change from a value it never names.
+   */
+  public function testCreatingSessionRecordsWhatItWasCreatedWith(): void {
+    $owner = $this->createUser();
+    $this->container->get('current_user')->setAccount($owner);
+    $tone = $this->createTone('Formal');
+    $this->createTemplate('news_a', 'News A');
+
+    $session = $this->container->get('entity_type.manager')
+      ->getStorage('ai_editorial_session')
+      ->create([
+        'type' => 'content_creation',
+        'uid' => $owner->id(),
+        'content_type' => 'oe_news',
+        'tone' => $tone->id(),
+        'template' => 'news_a',
+      ]);
+    $session->save();
+
+    $this->assertSame(
+      ['Session created with tone "Formal" and template "News A".'],
+      $this->messages($session),
+    );
+    $this->assertSame([ActivityType::SessionCreated], $this->types($session));
+    $this->assertSame((int) $owner->id(), (int) $session->getLatestActivity()[0]->getOwnerId());
+  }
+
+  /**
+   * A session created with neither a tone nor a template says so.
+   */
+  public function testCreatingSessionReportsWhatTheEditorLeftUnset(): void {
+    $session = $this->createSession($this->createUser());
+
+    $this->assertSame(
+      ['Session created with tone not set and template not set.'],
+      $this->messages($session),
+    );
+  }
+
+  /**
    * An entry records its session, its author, its message and its time.
    */
   public function testEntryRecordsWhatHappened(): void {
     $owner = $this->createUser();
-    $session = $this->createSession($owner);
+    $session = $this->freshSession($owner);
     $this->container->get('current_user')->setAccount($owner);
 
     $session->recordActivity(ActivityType::ToneChanged, 'Tone set to "%s".', 'Formal');
@@ -54,7 +97,7 @@ class AiEditorialSessionActivityTest extends AiEditorialSessionKernelTestBase {
    */
   public function testEntryRecordsTheActingUser(): void {
     $owner = $this->createUser();
-    $session = $this->createSession($owner);
+    $session = $this->freshSession($owner);
     $collaborator = $this->createUser();
     $this->container->get('current_user')->setAccount($collaborator);
 
@@ -69,7 +112,7 @@ class AiEditorialSessionActivityTest extends AiEditorialSessionKernelTestBase {
    */
   public function testEntryCannotBeUpdated(): void {
     $owner = $this->createUser();
-    $session = $this->createSession($owner);
+    $session = $this->freshSession($owner);
     $this->container->get('current_user')->setAccount($owner);
     $session->recordActivity(ActivityType::ToneChanged, 'Tone set to "Formal".');
     $entry = $session->getLatestActivity(100)[0];
@@ -84,7 +127,7 @@ class AiEditorialSessionActivityTest extends AiEditorialSessionKernelTestBase {
    * The latest entries come back oldest first, and a limit keeps the newest.
    */
   public function testLatestReturnsTheNewestEntriesOldestFirst(): void {
-    $session = $this->createSession($this->createUser());
+    $session = $this->freshSession($this->createUser());
     foreach (['one', 'two', 'three'] as $message) {
       $session->recordActivity(ActivityType::ToneChanged, $message);
     }
@@ -110,8 +153,8 @@ class AiEditorialSessionActivityTest extends AiEditorialSessionKernelTestBase {
    */
   public function testSessionReadsOnlyItsOwnEntries(): void {
     $owner = $this->createUser();
-    $session = $this->createSession($owner);
-    $other = $this->createSession($owner);
+    $session = $this->freshSession($owner);
+    $other = $this->freshSession($owner);
 
     $session->recordActivity(ActivityType::ToneChanged, 'mine');
     $other->recordActivity(ActivityType::ToneChanged, 'theirs');
@@ -132,8 +175,8 @@ class AiEditorialSessionActivityTest extends AiEditorialSessionKernelTestBase {
    */
   public function testDeletingSessionDeletesItsEntries(): void {
     $owner = $this->createUser();
-    $session = $this->createSession($owner);
-    $other = $this->createSession($owner);
+    $session = $this->freshSession($owner);
+    $other = $this->freshSession($owner);
     $session->recordActivity(ActivityType::ToneChanged, 'mine');
     $other->recordActivity(ActivityType::ToneChanged, 'theirs');
 
@@ -165,7 +208,7 @@ class AiEditorialSessionActivityTest extends AiEditorialSessionKernelTestBase {
   public function testSetToneRecordsTheToneTheEditorPicked(): void {
     $owner = $this->createUser(['use oe ai assistant', 'view_update own sessions']);
     $this->container->get('current_user')->setAccount($owner);
-    $session = $this->createSession($owner);
+    $session = $this->freshSession($owner);
     $formal = $this->createTone('Formal');
     $plain = $this->createTone('Plain');
 
@@ -191,7 +234,7 @@ class AiEditorialSessionActivityTest extends AiEditorialSessionKernelTestBase {
   public function testSetTemplateRecordsTheTemplateTheEditorPicked(): void {
     $owner = $this->createUser(['use oe ai assistant', 'view_update own sessions']);
     $this->container->get('current_user')->setAccount($owner);
-    $session = $this->createSession($owner);
+    $session = $this->freshSession($owner);
     $this->createTemplate('news_a', 'News A');
     $this->createTemplate('news_b', 'News B');
 
@@ -214,7 +257,7 @@ class AiEditorialSessionActivityTest extends AiEditorialSessionKernelTestBase {
   public function testAgentPromptCarriesTheActivityOfTheSession(): void {
     $owner = $this->createUser();
     $this->container->get('current_user')->setAccount($owner);
-    $session = $this->createSession($owner);
+    $session = $this->freshSession($owner);
     $session->recordActivity(ActivityType::ToneChanged, 'Tone set to "Formal".');
 
     $this->assertStringContainsString(
@@ -255,7 +298,7 @@ class AiEditorialSessionActivityTest extends AiEditorialSessionKernelTestBase {
    * The prompt of a session nothing happened in says the record is empty.
    */
   public function testAgentPromptReportsAnEmptyRecord(): void {
-    $session = $this->createSession($this->createUser());
+    $session = $this->freshSession($this->createUser());
 
     $this->assertStringContainsString(
       'The record is empty.',
@@ -270,8 +313,8 @@ class AiEditorialSessionActivityTest extends AiEditorialSessionKernelTestBase {
    * the first thing that happened, and tell the editor so.
    */
   public function testAgentPromptReportsHowManyEntriesItLeftOut(): void {
-    $session = $this->createSession($this->createUser());
-    $total = SessionActivityNeuronAgent::MAX_ENTRIES + 3;
+    $session = $this->freshSession($this->createUser());
+    $total = GetSessionActivityNeuronAgent::MAX_ENTRIES + 3;
     for ($i = 1; $i <= $total; $i++) {
       $session->recordActivity(ActivityType::ToneChanged, 'Entry %d', $i);
     }
@@ -362,7 +405,7 @@ class AiEditorialSessionActivityTest extends AiEditorialSessionKernelTestBase {
   public function testActivityPageListsEveryEntry(): void {
     $owner = $this->createUser();
     $this->container->get('current_user')->setAccount($owner);
-    $session = $this->createSession($owner);
+    $session = $this->freshSession($owner);
     $session->recordActivity(ActivityType::ToneChanged, 'Tone set to "%s".', 'Formal');
     $session->recordActivity(ActivityType::DraftGenerated, 'Draft %d generated.', 1);
 
@@ -386,7 +429,7 @@ class AiEditorialSessionActivityTest extends AiEditorialSessionKernelTestBase {
    * The activity page of a session with no entries shows a message and no row.
    */
   public function testActivityPageListsNoRowForAnEmptySession(): void {
-    $table = $this->activityPage($this->createSession($this->createUser()))['activity'];
+    $table = $this->activityPage($this->freshSession($this->createUser()))['activity'];
 
     $this->assertSame([], $table['#rows']);
     $this->assertNotEmpty((string) $table['#empty']);
@@ -420,7 +463,7 @@ class AiEditorialSessionActivityTest extends AiEditorialSessionKernelTestBase {
   public function testResetRecordsThatTheDraftsWereCleared(): void {
     $owner = $this->createUser(['use oe ai assistant', 'view_update own sessions']);
     $this->container->get('current_user')->setAccount($owner);
-    $session = $this->createSession($owner);
+    $session = $this->freshSession($owner);
 
     $this->action($session, 'reset', []);
 
@@ -449,7 +492,7 @@ class AiEditorialSessionActivityTest extends AiEditorialSessionKernelTestBase {
     $this->mockChatProvider();
 
     return $this->container->get(NeuronAgentManagerInterface::class)
-      ->createAgent(SessionActivityNeuronAgent::PLUGIN_ID, ['session' => $session]);
+      ->createAgent(GetSessionActivityNeuronAgent::PLUGIN_ID, ['session' => $session]);
   }
 
   /**

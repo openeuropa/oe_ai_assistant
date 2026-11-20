@@ -82,7 +82,7 @@ class DraftingPluginDocumentsTest extends AiEditorialSessionKernelTestBase {
   public function testDocumentActions(): void {
     $owner = $this->createUser();
     $this->container->get('current_user')->setAccount($owner);
-    $session = $this->createSession($owner);
+    $session = $this->freshSession($owner);
     $plugin = $this->container->get(AiAssistantPluginManager::class)
       ->createInstance('drafting');
 

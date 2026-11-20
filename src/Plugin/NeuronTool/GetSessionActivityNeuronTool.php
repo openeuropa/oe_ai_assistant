@@ -9,7 +9,7 @@ use Drupal\ai_neuron\Attribute\NeuronTool;
 use Drupal\ai_neuron\Tools\NeuronToolPluginBase;
 use Drupal\Core\Plugin\Context\EntityContextDefinition;
 use Drupal\Core\StringTranslation\TranslatableMarkup;
-use Drupal\oe_ai_assistant\Plugin\NeuronAgent\SessionActivityNeuronAgent;
+use Drupal\oe_ai_assistant\Plugin\NeuronAgent\GetSessionActivityNeuronAgent;
 use NeuronAI\Chat\Messages\UserMessage;
 use NeuronAI\Tools\PropertyType;
 use NeuronAI\Tools\ToolProperty;
@@ -18,7 +18,7 @@ use NeuronAI\Tools\ToolProperty;
  * Answers a question about what happened in this session.
  *
  * The editorial agent binds the session as tool context, so the model
- * cannot ask about another session. SessionActivityNeuronAgent reads the
+ * cannot ask about another session. GetSessionActivityNeuronAgent reads the
  * activity record, and we return only its answer, so the editorial thread
  * never stores the record itself.
  */
@@ -51,7 +51,7 @@ final class GetSessionActivityNeuronTool extends NeuronToolPluginBase {
   /**
    * {@inheritdoc}
    *
-   * SessionActivityNeuronAgent never sees the editorial conversation. A
+   * GetSessionActivityNeuronAgent never sees the editorial conversation. A
    * follow-up such as "how many times?" means nothing on its own, so the
    * question has to carry what it refers to.
    */
@@ -72,7 +72,7 @@ final class GetSessionActivityNeuronTool extends NeuronToolPluginBase {
    * Answers the question from the activity record of the session.
    */
   public function __invoke(string $question): string {
-    $agent = $this->agents->createAgent(SessionActivityNeuronAgent::PLUGIN_ID, [
+    $agent = $this->agents->createAgent(GetSessionActivityNeuronAgent::PLUGIN_ID, [
       'session' => $this->getContextValue('session'),
     ]);
 

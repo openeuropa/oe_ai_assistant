@@ -135,6 +135,20 @@ abstract class AiEditorialSessionKernelTestBase extends KernelTestBase {
   }
 
   /**
+   * Creates a session whose record a test owns every entry of.
+   *
+   * Creating a session records an entry of its own. A test that asserts the
+   * whole record reads that entry as one of its own, so this helper clears
+   * the record before the test writes to it.
+   */
+  protected function freshSession(UserInterface $owner): AiEditorialSessionInterface {
+    $session = $this->createSession($owner);
+    $session->deleteActivity();
+
+    return $session;
+  }
+
+  /**
    * Creates a published node for collaboration tests.
    */
   protected function createPublishedNode(string $type, string $title): NodeInterface {

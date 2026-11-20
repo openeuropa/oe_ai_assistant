@@ -7,8 +7,10 @@ namespace Drupal\oe_ai_assistant\Hook;
 use Drupal\Core\DependencyInjection\AutowireTrait;
 use Drupal\Core\Entity\EntityInterface;
 use Drupal\Core\Hook\Attribute\Hook;
+use Drupal\oe_ai_assistant\Entity\ActivityType;
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
 use Drupal\oe_ai_assistant\Entity\Bundle\ContentCreationSession;
+use Drupal\oe_ai_assistant\Entity\Bundle\ContentCreationSessionInterface;
 use Drupal\oe_ai_assistant\Service\Drafting\ContextDocumentRepository;
 use Drupal\oe_ai_assistant\Service\Drafting\DocumentRepositoryInterface;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
@@ -36,6 +38,46 @@ final class EditorialSessionHooks {
     if (isset($bundles['ai_editorial_session']['content_creation'])) {
       $bundles['ai_editorial_session']['content_creation']['class'] = ContentCreationSession::class;
     }
+  }
+
+  /**
+   * Implements hook_ai_editorial_session_insert().
+   *
+   * Records what the session was created with. The add form writes the tone
+   * and the template with no entry of their own, so without this the record
+   * opens on a change from a value it never names.
+   */
+  #[Hook('ai_editorial_session_insert')]
+  public function recordSessionCreation(EntityInterface $entity): void {
+    assert($entity instanceof AiEditorialSessionInterface);
+
+    if (!$entity instanceof ContentCreationSessionInterface) {
+      $entity->recordActivity(ActivityType::SessionCreated, 'Session created.');
+
+      return;
+    }
+
+    $entity->recordActivity(
+      ActivityType::SessionCreated,
+      'Session created with tone %s and template %s.',
+      $this->selected($entity->getTone()),
+      $this->selected($entity->getTemplate()),
+    );
+  }
+
+  /**
+   * Names a selection the editor made, or reports that they made none.
+   *
+   * @param array|null $selection
+   *   The tone or the template, NULL when the editor picked neither.
+   *
+   * @return string
+   *   The label in quotes, or a note that the value is not set.
+   */
+  private function selected(?array $selection): string {
+    return $selection === NULL
+      ? 'not set'
+      : sprintf('"%s"', (string) ($selection['label'] ?? ''));
   }
 
   /**

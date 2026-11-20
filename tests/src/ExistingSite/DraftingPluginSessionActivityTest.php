@@ -40,7 +40,7 @@ class DraftingPluginSessionActivityTest extends DraftingPluginTestBase {
         ],
       ],
     ));
-    // The mock answers in call order. SessionActivityNeuronAgent runs
+    // The mock answers in call order. GetSessionActivityNeuronAgent runs
     // inside the tool call and answers first, then the editorial agent
     // reports that answer to the editor.
     MockAiProvider::enqueue(new MockResponse(text: 'Formal came first.'));

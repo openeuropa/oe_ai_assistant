@@ -63,7 +63,7 @@ class DraftingTurnTest extends AiEditorialSessionKernelTestBase {
    * deferred call of the drafting tool runs two group drafters.
    */
   public function testTurnDraftsEveryGroupAndVersionsTheDraft(): void {
-    $session = $this->createSession($this->createUser());
+    $session = $this->freshSession($this->createUser());
 
     MockAiProvider::reset();
     $this->enqueueTurn();
@@ -237,7 +237,7 @@ class DraftingTurnTest extends AiEditorialSessionKernelTestBase {
    * A group that never matches its schema fails the run and stores no draft.
    */
   public function testGroupThatNeverMatchesFailsTheRun(): void {
-    $session = $this->createSession($this->createUser());
+    $session = $this->freshSession($this->createUser());
 
     MockAiProvider::reset();
     MockAiProvider::enqueue($this->toolCall());
