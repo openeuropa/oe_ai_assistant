@@ -246,6 +246,107 @@ class EditorialContextToolsTest extends AiEditorialSessionKernelTestBase {
   }
 
   /**
+   * Tests that the tone options tool reports the selected tone and options.
+   */
+  public function testToneOptionsToolReportsSelectedAndAvailableTone(): void {
+    $formal = $this->createTone('Formal', 'Short, institutional sentences.', 'Use professional, institutional language.');
+    $this->createTone('Plain', 'Everyday words and short sentences.', 'Write plainly.');
+    $session = $this->createSession($this->createUser());
+    $session->set('tone', $formal->id())->save();
+
+    $result = json_decode($this->toneOptionsTool($session), TRUE);
+
+    $this->assertSame([
+      'id' => (string) $formal->id(),
+      'label' => 'Formal',
+      'description' => 'Short, institutional sentences.',
+    ], $result['selected']);
+    $this->assertCount(2, $result['options']);
+    // The tone's AI guidelines never reach this tool's output.
+    $this->assertStringNotContainsString('Use professional, institutional language.', json_encode($result));
+  }
+
+  /**
+   * Tests that the tone options tool reports no selection, options still on.
+   */
+  public function testToneOptionsToolReportsNoneSelectedButOptionsListed(): void {
+    $this->createTone('Formal', 'Short, institutional sentences.', 'Use professional, institutional language.');
+    $session = $this->createSession($this->createUser());
+
+    $result = json_decode($this->toneOptionsTool($session), TRUE);
+
+    $this->assertNull($result['selected']);
+    $this->assertCount(1, $result['options']);
+  }
+
+  /**
+   * Tests that the template options tool reports the selected template.
+   */
+  public function testTemplateOptionsToolReportsSelectedAndAvailableTemplate(): void {
+    AiDraftingTemplate::create([
+      'id' => 'news_brief',
+      'label' => 'News brief',
+      'description' => 'A short news item.',
+      'status' => TRUE,
+      'content_type' => 'oe_news',
+      'fields' => ['title' => ['prompt' => 'Title.']],
+    ])->save();
+    $session = $this->createSession($this->createUser());
+    $session->set('template', 'news_brief')->save();
+
+    $result = json_decode($this->templateOptionsTool($session), TRUE);
+
+    $this->assertSame('News brief', $result['selected']['label']);
+    $this->assertCount(1, $result['options']);
+  }
+
+  /**
+   * Tests that the documents tool reports a summary or a status note.
+   */
+  public function testSessionDocumentsToolReportsSummaryOrStatusNote(): void {
+    $session = $this->stubbedSession(NULL, [
+      self::document('1', 'done', 'Full text.', 'A summary.'),
+      self::document('2', 'scheduled', NULL),
+      self::document('3', 'error', NULL),
+    ]);
+
+    $result = json_decode($this->sessionDocumentsTool($session), TRUE);
+
+    $this->assertSame('A summary.', $result['documents'][0]['summary']);
+    $this->assertNull($result['documents'][0]['note']);
+    $this->assertNull($result['documents'][1]['summary']);
+    $this->assertSame('Not processed yet; its content is not available.', $result['documents'][1]['note']);
+    $this->assertSame('Processing failed; its content is not available.', $result['documents'][2]['note']);
+    // Never the full text: context_read_document is what reads that.
+    $this->assertStringNotContainsString('Full text.', json_encode($result['documents'][0]));
+  }
+
+  /**
+   * Tests that the documents tool reports an empty list when none attached.
+   */
+  public function testSessionDocumentsToolReportsNoDocumentsAttached(): void {
+    $session = $this->stubbedSession(NULL, []);
+
+    $result = json_decode($this->sessionDocumentsTool($session), TRUE);
+
+    $this->assertSame([], $result['documents']);
+  }
+
+  /**
+   * Tests that a document's summary is reported even when its status errored.
+   */
+  public function testSessionDocumentsToolReportsSummaryEvenWhenStatusIsError(): void {
+    $session = $this->stubbedSession(NULL, [
+      self::document('1', 'error', NULL, 'Kept summary.'),
+    ]);
+
+    $result = json_decode($this->sessionDocumentsTool($session), TRUE);
+
+    $this->assertSame('Kept summary.', $result['documents'][0]['summary']);
+    $this->assertNull($result['documents'][0]['note']);
+  }
+
+  /**
    * Builds the context tool bound to the session, and asks it one question.
    */
   private function contextTool(AiEditorialSessionInterface $session, string $question): string {
@@ -267,6 +368,42 @@ class EditorialContextToolsTest extends AiEditorialSessionKernelTestBase {
     );
 
     return (string) $tool(document: $document);
+  }
+
+  /**
+   * Builds the tone options tool bound to the session, and calls it.
+   */
+  private function toneOptionsTool(AiEditorialSessionInterface $session): string {
+    $tool = $this->container->get(NeuronToolManagerInterface::class)->createTool(
+      'context_get_tone_options',
+      ['session' => $session],
+    );
+
+    return (string) $tool();
+  }
+
+  /**
+   * Builds the template options tool bound to the session, and calls it.
+   */
+  private function templateOptionsTool(AiEditorialSessionInterface $session): string {
+    $tool = $this->container->get(NeuronToolManagerInterface::class)->createTool(
+      'context_get_template_options',
+      ['session' => $session],
+    );
+
+    return (string) $tool();
+  }
+
+  /**
+   * Builds the session documents tool bound to the session, and calls it.
+   */
+  private function sessionDocumentsTool(AiEditorialSessionInterface $session): string {
+    $tool = $this->container->get(NeuronToolManagerInterface::class)->createTool(
+      'context_get_session_documents',
+      ['session' => $session],
+    );
+
+    return (string) $tool();
   }
 
   /**
