@@ -14,6 +14,7 @@ use Drupal\ai\OperationType\Chat\ChatInput;
 use Drupal\ai\OperationType\Chat\ChatInterface;
 use Drupal\ai\OperationType\Chat\ChatMessage;
 use Drupal\ai\OperationType\Chat\ChatOutput;
+use Drupal\ai\OperationType\Chat\Tools\ToolsFunctionOutput;
 
 /**
  * Programmable mock AI provider with FIFO response queue.
@@ -153,6 +154,23 @@ class MockAiProvider extends AiProviderClientBase implements ChatInterface {
     // on the output, which is where drupal/ai reports it; a streamed
     // response carries it on the message instead.
     $message = new ChatMessage('assistant', $response->text);
+    if ($response->toolCalls !== NULL) {
+      // Mirrors MockChatMessageIterator::getTools(): complete-at-once tool
+      // calls, not the OpenAI incremental delta format setTools() elsewhere
+      // assembles from.
+      $tools = [];
+      foreach ($response->toolCalls as $toolCall) {
+        $fn = $toolCall['function'] ?? [];
+        $arguments = $fn['arguments'] ?? [];
+        if (is_string($arguments)) {
+          $arguments = json_decode($arguments, TRUE) ?? [];
+        }
+        $output = new ToolsFunctionOutput(NULL, $toolCall['id'] ?? '', $arguments);
+        $output->setName($fn['name'] ?? '');
+        $tools[] = $output;
+      }
+      $message->setTools($tools);
+    }
     $usage = $response->tokenUsage === NULL ? NULL : new TokenUsageDto(
       input: $response->tokenUsage['input'] ?? 0,
       output: $response->tokenUsage['output'] ?? 0,

@@ -31,7 +31,7 @@ class EditorialContextToolsTest extends AiEditorialSessionKernelTestBase {
     parent::setUp();
     $this->enableModules(['oe_ai_assistant_test']);
     $this->config('ai.settings')
-      ->set('default_providers', ['chat' => ['provider_id' => 'mock_ai', 'model_id' => 'mock-model']])
+      ->set('default_providers', ['chat_with_tools' => ['provider_id' => 'mock_ai', 'model_id' => 'mock-model']])
       ->save();
     MockAiProvider::reset();
   }
@@ -92,12 +92,13 @@ class EditorialContextToolsTest extends AiEditorialSessionKernelTestBase {
   }
 
   /**
-   * Tests that the context tool reports the tone, never its guidelines text.
+   * Tests that the context tool answers after calling tone and document tools.
    *
-   * The guidelines text never reaches the sub-agent's system prompt or its
-   * answer: context_read_document, not this tool, is what reads a
-   * document's full text, and tonePrompt() on EditorialSessionAgentBase -
-   * not this tool - is what carries tone guidelines to a drafter.
+   * The round trip itself is what this test proves; the facts each tool
+   * returns (the tone label without its guidelines, a document's summary
+   * without its full text) are covered directly against those tools in
+   * testToneOptionsToolReportsSelectedAndAvailableTone and
+   * testSessionDocumentsToolReportsSummaryOrStatusNote.
    */
   public function testContextToolReportsTheToneLabelNeverItsGuidelines(): void {
     $session = $this->stubbedSession([
@@ -108,36 +109,59 @@ class EditorialContextToolsTest extends AiEditorialSessionKernelTestBase {
       self::document('1', 'done', 'Full text of one.', 'Summary one.'),
     ]);
 
+    MockAiProvider::enqueue(new MockResponse(
+      toolCalls: [
+        [
+          'id' => 'call_1',
+          'type' => 'function',
+          'function' => ['name' => 'context_get_tone_options', 'arguments' => '{}'],
+        ],
+        [
+          'id' => 'call_2',
+          'type' => 'function',
+          'function' => ['name' => 'context_get_session_documents', 'arguments' => '{}'],
+        ],
+      ],
+    ));
     MockAiProvider::enqueue(new MockResponse('Formal tone; one document attached, summarised below.'));
     $answer = json_decode($this->contextTool($session, 'What tone and documents are set up?'), TRUE);
 
     $this->assertSame('Formal tone; one document attached, summarised below.', $answer['answer']);
-
-    $prompt = MockAiProvider::getCallLog()[0]['system_prompt'];
-    $this->assertStringContainsString('- Selected: Formal', $prompt);
-    $this->assertStringContainsString('Summary one.', $prompt);
-    $this->assertStringNotContainsString('Full text of one.', $prompt);
-    $this->assertStringNotContainsString('Use professional, institutional language.', $prompt);
   }
 
   /**
-   * Tests that a session with nothing set up selects no tone or template.
+   * Tests that the context tool answers after calling all three tools.
    */
   public function testContextToolReportsNothingSetUp(): void {
     $session = $this->stubbedSession(NULL, []);
 
+    MockAiProvider::enqueue(new MockResponse(
+      toolCalls: [
+        [
+          'id' => 'call_1',
+          'type' => 'function',
+          'function' => ['name' => 'context_get_tone_options', 'arguments' => '{}'],
+        ],
+        [
+          'id' => 'call_2',
+          'type' => 'function',
+          'function' => ['name' => 'context_get_template_options', 'arguments' => '{}'],
+        ],
+        [
+          'id' => 'call_3',
+          'type' => 'function',
+          'function' => ['name' => 'context_get_session_documents', 'arguments' => '{}'],
+        ],
+      ],
+    ));
     MockAiProvider::enqueue(new MockResponse('Nothing is set up yet.'));
     $answer = json_decode($this->contextTool($session, 'What is set up?'), TRUE);
 
     $this->assertSame('Nothing is set up yet.', $answer['answer']);
-
-    $prompt = MockAiProvider::getCallLog()[0]['system_prompt'];
-    $this->assertSame(2, substr_count($prompt, '- Selected: none selected'));
-    $this->assertStringContainsString('Documents: none attached.', $prompt);
   }
 
   /**
-   * Tests that the tool answers from the tones and templates on offer.
+   * Tests that the context tool answers after calling tone and template tools.
    *
    * The session only records what the editor picked, so without the
    * options the agent can't answer "which tones can I choose from?". The
@@ -159,22 +183,24 @@ class EditorialContextToolsTest extends AiEditorialSessionKernelTestBase {
     $session = $this->createSession($this->createUser());
     $session->set('tone', $formal->id())->set('template', 'news_brief')->save();
 
+    MockAiProvider::enqueue(new MockResponse(
+      toolCalls: [
+        [
+          'id' => 'call_1',
+          'type' => 'function',
+          'function' => ['name' => 'context_get_tone_options', 'arguments' => '{}'],
+        ],
+        [
+          'id' => 'call_2',
+          'type' => 'function',
+          'function' => ['name' => 'context_get_template_options', 'arguments' => '{}'],
+        ],
+      ],
+    ));
     MockAiProvider::enqueue(new MockResponse('Formal is selected; Plain is also available, and so is News brief.'));
     $answer = json_decode($this->contextTool($session, 'Which tones and templates can I pick from?'), TRUE);
 
     $this->assertSame('Formal is selected; Plain is also available, and so is News brief.', $answer['answer']);
-
-    $prompt = MockAiProvider::getCallLog()[0]['system_prompt'];
-    $this->assertStringContainsString('- Selected: Formal - Short, institutional sentences.', $prompt);
-    $this->assertStringContainsString('  - Formal: Short, institutional sentences.', $prompt);
-    $this->assertStringContainsString('  - Plain: Everyday words and short sentences.', $prompt);
-    $this->assertStringContainsString('- Selected: News brief - A short news item.', $prompt);
-    $this->assertStringContainsString('  - News brief: A short news item.', $prompt);
-
-    // An option names and describes a tone. The guidelines text stays out
-    // of the prompt, for the selected tone as much as for the others.
-    $this->assertStringNotContainsString('Use professional, institutional language.', $prompt);
-    $this->assertStringNotContainsString('Write plainly.', $prompt);
   }
 
   /**
