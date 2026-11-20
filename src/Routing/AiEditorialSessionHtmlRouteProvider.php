@@ -51,6 +51,10 @@ class AiEditorialSessionHtmlRouteProvider extends AdminHtmlRouteProvider {
         '_title_callback' => '\Drupal\oe_ai_assistant\Controller\SessionConversationHistoryController::title',
       ])
       ->setRequirement('_permission', 'access ai editorial session neuron history')
+      // The permission says who may open a session subpage, not which
+      // sessions. Without the entity check, anyone who has it can read
+      // every editor's session by walking the ids in the URL.
+      ->setRequirement('_entity_access', $entity_type_id . '.view')
       ->setOption('_admin_route', TRUE)
       ->setOption('parameters', [
         $entity_type_id => ['type' => 'entity:' . $entity_type_id],
@@ -80,9 +84,6 @@ class AiEditorialSessionHtmlRouteProvider extends AdminHtmlRouteProvider {
         '_title_callback' => '\Drupal\oe_ai_assistant\Controller\SessionActivityController::title',
       ])
       ->setRequirement('_permission', 'access ai editorial session activity')
-      // The permission says who may read an activity record. It does not
-      // say whose. Without the entity check, a holder of the permission
-      // reads every session by walking the ids.
       ->setRequirement('_entity_access', $entity_type_id . '.view')
       ->setOption('_admin_route', TRUE)
       ->setOption('parameters', [
