@@ -102,7 +102,7 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
         [
           'id' => 'call_1',
           'type' => 'function',
-          'function' => ['name' => 'drafting_draft_content', 'arguments' => '{}'],
+          'function' => ['name' => 'drafting_draft_content', 'arguments' => '{"brief": "Draft a news article."}'],
         ],
       ],
     ));
@@ -132,6 +132,20 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
     // no view of how many groups remain. So the frame names the call it
     // answers, and lists every group as pending before the first activity
     // frame.
+    // The drafter subagent opens and closes its run around the draft's own
+    // frames, under the call it answers.
+    $types = array_column($events, 'type');
+    $subagentStarted = array_search('data-subagent-started', $types, TRUE);
+    $subagentFinished = array_search('data-subagent-finished', $types, TRUE);
+    $this->assertNotFalse($subagentStarted, 'A data-subagent-started frame.');
+    $this->assertNotFalse($subagentFinished, 'A data-subagent-finished frame.');
+    $this->assertLessThan(array_search('data-draft-started', $types, TRUE), $subagentStarted);
+    $this->assertGreaterThan(array_search('data-drafted-fields', $types, TRUE), $subagentFinished);
+    $this->assertSame('call_1', $events[$subagentStarted]['data']['callId']);
+    $this->assertSame('drafter', $events[$subagentStarted]['data']['subagent']);
+    $this->assertMatchesRegularExpression('/^sub_[0-9a-f]{24}$/', $events[$subagentStarted]['data']['taskId']);
+    $this->assertSame('completed', $events[$subagentFinished]['data']['status']);
+
     $started = array_values(array_filter($events, fn($e) => $e['type'] === 'data-draft-started'));
     $this->assertCount(1, $started, 'Exactly one data-draft-started frame.');
     $this->assertSame(1, $started[0]['data']['version']);
@@ -1042,7 +1056,7 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
         [
           'id' => 'call_1',
           'type' => 'function',
-          'function' => ['name' => 'drafting_draft_content', 'arguments' => '{}'],
+          'function' => ['name' => 'drafting_draft_content', 'arguments' => '{"brief": "Draft a news article."}'],
         ],
       ],
     ));

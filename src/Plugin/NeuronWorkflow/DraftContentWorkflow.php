@@ -22,9 +22,9 @@ use Symfony\Component\DependencyInjection\Attribute\Autowire;
 /**
  * Writes one draft of a session, and stores it under the next version.
  *
- * WorkflowToolNode runs this instead of executing drafting_draft_content.
- * Each field group is drafted by the draft_group workflow, and the editor
- * watches the groups fill in as this run reports them.
+ * The drafter subagent runs this to answer drafting_draft_content. Each field
+ * group is drafted by the draft_group workflow, and the editor watches the
+ * groups fill in as this run reports them.
  */
 #[NeuronWorkflow(
   id: 'draft_content',
@@ -42,6 +42,10 @@ use Symfony\Component\DependencyInjection\Attribute\Autowire;
     'brief' => new ContextDefinition(
       data_type: 'string',
       label: new TranslatableMarkup('Editorial brief'),
+    ),
+    'task' => new ContextDefinition(
+      data_type: 'string',
+      label: new TranslatableMarkup('Subagent task'),
     ),
   ],
 )]
@@ -89,6 +93,16 @@ final class DraftContentWorkflow extends NeuronWorkflowPluginBase {
       $this->logger,
       $session,
     );
+  }
+
+  /**
+   * {@inheritdoc}
+   *
+   * The run is named after the task it answers, so a later start of the same
+   * task finds the run, and the records it keeps, instead of drafting again.
+   */
+  protected function runKey(): string {
+    return (string) $this->getContextValue('task');
   }
 
   /**

@@ -80,10 +80,12 @@ exist until you also build the app yourself or pull the pre-built release artifa
 
 ## Architecture
 
-A chat turn is one run of the `editorial` agent. The agent calls the drafting tool, which is deferred, so
-`DeferredCallsNode` answers that call by running the `draft_content` workflow and the turn carries on to the
-inference that reports it. `draft_content` runs `draft_group` once per field group, to write and validate the
-fields of that group. In the diagram, rounded boxes are agents, rectangles are workflow nodes, orange is the
+A chat turn is one run of the `editorial` agent. Some of its tools hand their calls to a subagent: a child run
+with an id of its own, derived from the call. `SubagentToolNode` takes the place of Neuron's `ToolNode`, runs the
+subagent inside the tool step, relays what it reports into the turn's stream, and settles the call with the
+subagent's result before the turn carries on to the next inference. The drafting tool is answered by the drafter
+subagent, which runs the `draft_content` workflow. `draft_content` runs `draft_group` once per field group, to write
+and validate the fields of that group. In the diagram, rounded boxes are agents, rectangles are workflow nodes, orange is the
 streaming path and grey is stored state.
 
 ```mermaid
@@ -96,18 +98,16 @@ flowchart LR
     direction TB
     AS["AgentStartNode"]
     CN["ChatNode<br/>Neuron's own"]
-    TN["ToolNode<br/>defers the draft call"]
-    DN["DeferredCallsNode<br/>answers it, then settles the batch"]
+    TN["SubagentToolNode<br/>runs the drafter subagent, then settles the batch"]
     AE(("AgentEndNode"))
 
     AS -- "AIInferenceEvent" --> CN
     CN -- "ToolCallEvent" --> TN
     CN -- "AgentOutputEvent" --> AE
-    TN -- "AwaitToolResultsEvent" --> DN
-    DN -- "AIInferenceEvent" --> CN
+    TN -- "AIInferenceEvent" --> CN
   end
 
-  subgraph DC["draft_content workflow, one run per call"]
+  subgraph DC["draft_content workflow, one run per task"]
     direction TB
     DCN["DraftContentNode<br/>groups, assemble, store"]
   end
@@ -134,15 +134,15 @@ flowchart LR
   end
 
   DP -- "chat(UserMessage, stream)" --> AS
-  DN == "events() per call" ==> DCN
+  TN == "events() per task" ==> DCN
   DCN == "run() per group" ==> DR
   VA == "valid: StopEvent, fields" ==> DCN
   DCN -- "append(draft JSON)" --> DT
-  DCN -. "result: Draft N" .-> DN
-  ET -. "yield: agent chunks, data-draft-started, data-drafted-fields" .-> AD
+  DCN -. "result: Draft N" .-> TN
+  ET -. "yield: agent chunks, data-subagent-*, data-draft-started, data-drafted-fields" .-> AD
   RS -. "text/event-stream" .-> B
 
-  class AG,DR agent
+  class DR agent
   class DP,AS,CN,TN,DN,DCN,VA,RE node
   class B,AD,CH,RS stream
   class DT,AE store

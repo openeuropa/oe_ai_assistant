@@ -5,16 +5,13 @@ declare(strict_types=1);
 namespace Drupal\oe_ai_assistant\Plugin\NeuronTool;
 
 use Drupal\ai_neuron\Attribute\NeuronTool;
-use Drupal\ai_neuron\Tools\NeuronToolPluginBase;
 use Drupal\ai_neuron\Workflow\NeuronWorkflowManagerInterface;
 use Drupal\Core\Plugin\Context\EntityContextDefinition;
 use Drupal\Core\StringTranslation\TranslatableMarkup;
-use Drupal\oe_ai_assistant\Neuron\Tools\WorkflowToolProxy;
-use Drupal\oe_ai_assistant\Neuron\Tools\WorkflowToolInterface;
-use NeuronAI\Exceptions\ToolException;
+use Drupal\oe_ai_assistant\Neuron\Subagent\SubagentDefinition;
+use Drupal\oe_ai_assistant\Neuron\Subagent\SubagentTask;
+use Drupal\oe_ai_assistant\Neuron\Subagent\WorkflowSubagent;
 use NeuronAI\Tools\PropertyType;
-use NeuronAI\Tools\Tool;
-use NeuronAI\Tools\ToolCall;
 use NeuronAI\Tools\ToolProperty;
 use NeuronAI\Workflow\Workflow;
 
@@ -22,8 +19,8 @@ use NeuronAI\Workflow\Workflow;
  * Asks the run for the next draft of the session.
  *
  * A draft takes minutes, and the editor watches the groups fill in while it
- * is written. So the work is the draft_content workflow, which
- * WorkflowToolNode runs in place of executing this tool.
+ * is written. So the call is answered by the drafter subagent, whose work is
+ * the draft_content workflow.
  */
 #[NeuronTool(
   id: RequestDraftNeuronTool::TOOL_ID,
@@ -39,7 +36,7 @@ use NeuronAI\Workflow\Workflow;
     ),
   ],
 )]
-final class RequestDraftNeuronTool extends NeuronToolPluginBase implements WorkflowToolInterface {
+final class RequestDraftNeuronTool extends SubagentToolPluginBase {
 
   /**
    * The id this tool is registered under.
@@ -53,22 +50,6 @@ final class RequestDraftNeuronTool extends NeuronToolPluginBase implements Workf
     private readonly NeuronWorkflowManagerInterface $workflows,
   ) {
     parent::__construct($configuration, $plugin_id, $plugin_definition);
-  }
-
-  /**
-   * {@inheritdoc}
-   *
-   * WorkflowToolNode finds this tool in the registry as a Neuron object, not
-   * as a plugin. So the object handed over is a WorkflowToolProxy, which
-   * forwards workflow() back here.
-   */
-  public function getNeuron(): Tool {
-    return WorkflowToolProxy::make(
-      $this->getPluginId(),
-      $this->description(),
-      $this->properties(),
-      $this,
-    );
   }
 
   /**
@@ -94,26 +75,17 @@ final class RequestDraftNeuronTool extends NeuronToolPluginBase implements Workf
   /**
    * {@inheritdoc}
    */
-  public function workflow(ToolCall $call): Workflow {
-    return $this->workflows->createWorkflow('draft_content', [], [
-      'session' => $this->getContextValue('session'),
-      'call' => (string) $call->getCallId(),
-      'brief' => (string) ($call->getInput('brief') ?? ''),
-    ]);
-  }
-
-  /**
-   * {@inheritdoc}
-   *
-   * @throws \NeuronAI\Exceptions\ToolException
-   *   Always. The workflow of this tool answers its calls, so nothing should
-   *   execute it.
-   */
-  public function __invoke(): string {
-    throw new ToolException(sprintf(
-      'The "%s" tool is answered by its workflow, not by executing it.',
-      self::TOOL_ID,
-    ));
+  protected function definition(): SubagentDefinition {
+    return new SubagentDefinition(
+      'drafter',
+      new WorkflowSubagent(fn (SubagentTask $task): Workflow => $this->workflows->createWorkflow('draft_content', [], [
+        'session' => $this->getContextValue('session'),
+        'call' => $task->callId,
+        'brief' => $task->prompt,
+        'task' => $task->taskId,
+      ])),
+      promptProperty: 'brief',
+    );
   }
 
 }
