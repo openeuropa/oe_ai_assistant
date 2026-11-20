@@ -1,16 +1,16 @@
 diff --git a/src/Drush/Commands/NeuronEvaluationCommands.php b/src/Drush/Commands/NeuronEvaluationCommands.php
 new file mode 100644
-index 0000000..6c49144
+index 0000000..0a713b0
 --- /dev/null
 +++ b/src/Drush/Commands/NeuronEvaluationCommands.php
-@@ -0,0 +1,116 @@
+@@ -0,0 +1,127 @@
 +<?php
 +
 +declare(strict_types=1);
 +
 +namespace Drupal\ai_neuron\Drush\Commands;
 +
-+use Drupal\Core\Extension\ModuleExtensionList;
++use Drupal\Core\Extension\ModuleHandlerInterface;
 +use Drush\Attributes as CLI;
 +use Drush\Commands\DrushCommands;
 +use NeuronAI\Console\Evaluation\EvaluationCommand;
@@ -22,7 +22,7 @@ index 0000000..6c49144
 +final class NeuronEvaluationCommands extends DrushCommands {
 +
 +  public function __construct(
-+    private readonly ModuleExtensionList $moduleList,
++    private readonly ModuleHandlerInterface $moduleHandler,
 +    private readonly string $appRoot,
 +  ) {
 +    parent::__construct();
@@ -33,24 +33,24 @@ index 0000000..6c49144
 +   */
 +  public static function create(ContainerInterface $container): self {
 +    return new self(
-+      $container->get('extension.list.module'),
++      $container->get('module_handler'),
 +      $container->getParameter('app.root'),
 +    );
 +  }
 +
 +  /**
-+   * Runs the Neuron AI evaluators an enabled module ships.
++   * Runs the Neuron AI evaluators an enabled contrib or custom module ships.
 +   *
 +   * @return int
 +   *   0 if every evaluator passed, 1 otherwise - the same contract
 +   *   EvaluationCommand::run() reports to the standalone CLI.
 +   */
 +  #[CLI\Command(name: 'ai-neuron:evaluate', aliases: ['neuron-evaluate'])]
-+  #[CLI\Argument(name: 'path', description: "Directory to discover evaluators in. Defaults to every enabled module's own evaluators/ directory.")]
++  #[CLI\Argument(name: 'path', description: "Directory to discover evaluators in. Defaults to every enabled contrib/custom module's own evaluators/ directory.")]
 +  #[CLI\Option(name: 'concurrency', description: 'Run dataset items in N parallel processes (requires pcntl, posix and spatie/fork).')]
 +  #[CLI\Option(name: 'cache', description: 'Serve unchanged run() outputs from the evaluation cache.')]
 +  #[CLI\Option(name: 'fresh', description: 'Re-run everything and overwrite the evaluation cache.')]
-+  #[CLI\Usage(name: 'drush ai-neuron:evaluate', description: "Runs every enabled module's evaluators/ directory.")]
++  #[CLI\Usage(name: 'drush ai-neuron:evaluate', description: "Runs every enabled contrib/custom module's evaluators/ directory.")]
 +  #[CLI\Usage(name: 'drush ai-neuron:evaluate web/modules/custom/my_module/evaluators', description: 'Runs one directory only.')]
 +  public function evaluate(
 +    ?string $path = NULL,
@@ -60,11 +60,20 @@ index 0000000..6c49144
 +      'fresh' => FALSE,
 +    ],
 +  ): int {
-+    $directories = $path !== NULL ? [$path] : $this->discoverEvaluatorDirectories();
++    if ($path !== NULL) {
++      $directories = [$path];
++    }
++    else {
++      $candidates = $this->candidateDirectories();
++      $directories = array_values(array_filter($candidates, 'is_dir'));
 +
-+    if ($directories === []) {
-+      $this->io()->warning('No evaluators/ directory found in any enabled module.');
-+      return 0;
++      if ($directories === []) {
++        $this->io()->warning(sprintf(
++          "No evaluators directory found in any enabled contrib/custom module. The following paths were checked:\n%s",
++          implode("\n", array_map(static fn (string $candidate): string => "  - {$candidate}", $candidates)),
++        ));
++        return 0;
++      }
 +    }
 +
 +    $exitCode = 0;
@@ -102,18 +111,20 @@ index 0000000..6c49144
 +  }
 +
 +  /**
-+   * Finds every enabled module's own evaluators/ directory, if it has one.
++   * Builds every enabled non-core module's candidate evaluators directory path.
 +   *
 +   * @return string[]
-+   *   The discovered directories.
++   *   The candidate directory paths.
 +   */
-+  private function discoverEvaluatorDirectories(): array {
++  private function candidateDirectories(): array {
 +    $directories = [];
-+    foreach ($this->moduleList->getList() as $module) {
-+      $candidate = $this->appRoot . '/' . $module->getPath() . '/evaluators';
-+      if (is_dir($candidate)) {
-+        $directories[] = $candidate;
++    foreach ($this->moduleHandler->getModuleList() as $module) {
++      if (str_starts_with($module->getPath(), 'core/')) {
++        // No core noise needed, skip it. It will never ship evaluators.
++        continue;
 +      }
++
++      $directories[] = $this->appRoot . '/' . $module->getPath() . '/evaluators';
 +    }
 +
 +    return $directories;
