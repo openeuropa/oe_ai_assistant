@@ -13,6 +13,7 @@ describe("drafting plugin state", () => {
     expect(draftingSliceConfig.initialState).toEqual({
       runs: {},
       subagentRuns: {},
+      tasksById: {},
       documentTitles: {},
       activeCallIds: [],
       draftedFields: {},
@@ -27,6 +28,7 @@ describe("drafting plugin state", () => {
       draftingSliceConfig.partialize?.({
         runs: {},
         subagentRuns: {},
+        tasksById: {},
         documentTitles: {},
         activeCallIds: [],
         draftedFields: {
@@ -57,6 +59,7 @@ describe("drafting plugin state", () => {
     expect(getDraftingState()).toEqual({
       runs: {},
       subagentRuns: {},
+      tasksById: {},
       documentTitles: {},
       activeCallIds: [],
       draftedFields: {},

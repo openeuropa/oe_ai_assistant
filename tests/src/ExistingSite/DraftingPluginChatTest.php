@@ -852,6 +852,107 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
   }
 
   /**
+   * Tests that a completed background draft reaches the transcript as a draft.
+   */
+  public function testGetMessagesJoinsCompletedBackgroundDraft(): void {
+    $user = $this->createUser(['use oe ai assistant']);
+    $this->loginUser($user);
+    $session = $this->createSession($user);
+    $thread = 'editorial.session_' . $session->id();
+    assert($session instanceof ContentCreationSessionInterface);
+
+    $ledger = \Drupal::service(SubagentTaskLedger::class);
+    $taskId = 'sub_' . bin2hex(random_bytes(12));
+    $ledger->record($taskId, (int) $session->id(), 'drafting_draft_content', 'drafter', 'call_' . $taskId, $thread, (int) $user->id(), ['brief' => 'Draft it.'], TRUE);
+    $ledger->claim($taskId, 'worker-1', 300);
+    $ledger->finishClaimed($taskId, 'worker-1', 'completed', ['draft' => 'Draft 1', 'version' => 1]);
+
+    $draft = [
+      'version' => 1,
+      'run' => 'draft_1.abcdef',
+      'status' => 'drafted',
+      'context' => [
+        'tone' => NULL,
+        'template' => ['id' => 'news_with_paragraphs', 'label' => 'News with paragraphs'],
+        'documents' => [],
+      ],
+      'groups' => [['id' => 'main_fields', 'label' => 'Main fields', 'status' => 'drafted']],
+      'fields' => ['title' => [['value' => 'Test Title']]],
+    ];
+    $this->storeDraft($session, $draft);
+
+    $failedId = 'sub_' . bin2hex(random_bytes(12));
+    $ledger->record($failedId, (int) $session->id(), 'drafting_draft_content', 'drafter', 'call_' . $failedId, $thread, (int) $user->id(), ['brief' => 'Again.'], TRUE);
+    $ledger->claim($failedId, 'worker-1', 300);
+    $ledger->finishClaimed($failedId, 'worker-1', 'failed', ['error' => 'The drafter broke.']);
+
+    $openId = 'sub_' . bin2hex(random_bytes(12));
+    $ledger->record($openId, (int) $session->id(), 'drafting_draft_content', 'drafter', 'call_' . $openId, $thread, (int) $user->id(), ['brief' => 'More.'], TRUE);
+
+    $this->seedNeuronRow($session, $thread, [
+      'role' => 'user',
+      'meta' => json_encode([
+        'type' => 'tool_call_result',
+        'tools' => array_map(
+          static fn (string $id): array => [
+            'name' => 'drafting_draft_content',
+            'result' => ['task_id' => $id, 'subagent' => 'drafter', 'status' => 'pending'],
+          ],
+          [$taskId, $failedId, $openId],
+        ),
+      ]),
+    ]);
+
+    $messages = array_values(array_filter(
+      $this->getMessages($session),
+      fn($m) => $m['role'] !== 'event',
+    ));
+
+    $calls = $messages[0]['toolCalls'];
+    $this->assertSame($draft + ['live' => ['status' => 'completed', 'deliveryState' => 'waiting']], $calls[0]['result']);
+    $this->assertSame('failed', $calls[1]['result']['status']);
+    $this->assertSame('The drafter broke.', $calls[1]['result']['error']);
+    $this->assertSame('pending', $calls[2]['result']['status']);
+    $this->assertSame($openId, $calls[2]['result']['task_id']);
+    $this->assertSame('pending', $calls[2]['result']['live']['status']);
+  }
+
+  /**
+   * Tests that a subagent that throws closes its card as failed in the stream.
+   */
+  public function testFailedSubagentStreamsFinishedFailed(): void {
+    $user = $this->createUser(['use oe ai assistant']);
+    $this->loginUser($user);
+    $session = $this->createSession($user);
+
+    MockAiProvider::enqueue(new MockResponse(
+      toolCalls: [
+        [
+          'id' => 'call_1',
+          'type' => 'function',
+          'function' => ['name' => 'research_documents', 'arguments' => '{"prompt": "Find the funding."}'],
+        ],
+      ],
+    ));
+    MockAiProvider::enqueue(new MockResponse(error: new \RuntimeException('Provider down.')));
+    MockAiProvider::enqueue(new MockResponse(text: 'The research failed.'));
+
+    $result = $this->httpPost('/api/ai/plugins/drafting/chat', [
+      'message' => 'What is the funding?',
+      'sessionId' => $session->id(),
+    ]);
+    $this->assertEquals(200, $result['status'], substr($result['body'], 0, 500));
+
+    $finished = array_values(array_filter(
+      $this->parseSseEvents($result['body']),
+      static fn (array $e): bool => $e['type'] === 'data-subagent-finished',
+    ));
+    $this->assertCount(1, $finished);
+    $this->assertSame('failed', $finished[0]['data']['status']);
+    $this->assertSame('call_1', $finished[0]['data']['callId']);
+  }
+
+  /**
    * Tests that an open drafting call runs while a turn of the session runs.
    *
    * It fails only once no turn runs, because the request that asked for the
@@ -970,6 +1071,7 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
     $this->assertSame('completed', $task['status']);
     $this->assertSame('background', $task['mode']);
     $this->assertSame('waiting', $task['deliveryState']);
+    $this->assertSame(0, $task['continuations']);
     $this->assertSame(200, mb_strlen($task['prompt']));
     $this->assertIsInt($task['created']);
     $this->assertIsInt($task['changed']);

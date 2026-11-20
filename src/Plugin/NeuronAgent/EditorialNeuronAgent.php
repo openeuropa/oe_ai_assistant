@@ -117,7 +117,10 @@ final class EditorialNeuronAgent extends EditorialSessionAgentBase {
       report and keep its [doc:<id> p.<n>] citations. When the result has
       status needs_input, relay its question to the editor verbatim, and
       once they answer call research_documents again with the same task_id
-      and their answer as the prompt.
+      and their answer as the prompt. Pass task_id only to answer a question
+      the researcher itself asked, meaning its result had status needs_input.
+      If you asked the editor yourself, start a new task with their answer
+      in the prompt.
     - research_documents and drafting_draft_content accept
       run_in_background: true. Set it when the editor wants to keep working,
       or asks for it. Tell the editor the task runs in the background; its

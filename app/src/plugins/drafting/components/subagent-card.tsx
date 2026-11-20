@@ -12,6 +12,7 @@ import {
   BadgeCheck,
   Check,
   CircleHelp,
+  FileText,
   Loader2,
   type LucideIcon,
   Search,
@@ -22,6 +23,7 @@ import { type ReactNode, useMemo } from "react";
 import { Streamdown } from "streamdown";
 import { useDraftingSlice } from "../store";
 import {
+  type CitationStatus,
   type ReportToken,
   type SubagentCallResult,
   type SubagentLive,
@@ -33,6 +35,13 @@ import {
   type SubagentStep,
   summarizeStepInput,
 } from "../subagent-runs";
+import {
+  type BadgeKind,
+  badgeKind,
+  effectiveLive,
+  isAnswered,
+  pendingMessage,
+} from "../subagent-status";
 import { toolLabel } from "../tool-labels";
 
 /** Props for SubagentCard. */
@@ -45,6 +54,8 @@ export interface SubagentCardProps {
   result: SubagentCallResult | null;
   /** Whether the call itself is still waiting for its result. */
   isRunning: boolean;
+  /** The error text of a call that ended in a tool error. */
+  errorText?: string | undefined;
 }
 
 /** What the badge in the header says and how it looks. */
@@ -56,38 +67,36 @@ interface Badge {
 const BADGE_BASE =
   "inline-flex shrink-0 items-center rounded-full border px-2 py-0.5 text-xs font-medium";
 
-/** Returns the header badge of a card. */
-function badgeFor(status: string): Badge {
-  switch (status) {
-    case "completed":
-      return {
-        label: "Completed",
-        className: `${BADGE_BASE} border-green-200 bg-green-50 text-green-700`,
-      };
-    case "needs_input":
-      return {
-        label: "Needs input",
-        className: `${BADGE_BASE} border-amber-200 bg-amber-50 text-amber-700`,
-      };
-    case "failed":
-    case "stopped":
-      return {
-        label: "Failed",
-        className: `${BADGE_BASE} border-red-200 bg-red-50 text-red-600`,
-      };
-    case "queued":
-    case "pending":
-      return {
-        label: "In the background",
-        className: `${BADGE_BASE} border-gray-200 bg-gray-50 text-gray-500`,
-      };
-    default:
-      return {
-        label: "Running",
-        className: `${BADGE_BASE} border-blue-200 bg-blue-50 text-blue-600`,
-      };
-  }
-}
+const BADGES: Record<BadgeKind, Badge> = {
+  completed: {
+    label: "Completed",
+    className: `${BADGE_BASE} border-green-200 bg-green-50 text-green-700`,
+  },
+  delivered: {
+    label: "Delivered",
+    className: `${BADGE_BASE} border-green-200 bg-green-50 text-green-700`,
+  },
+  needs_input: {
+    label: "Needs input",
+    className: `${BADGE_BASE} border-amber-200 bg-amber-50 text-amber-700`,
+  },
+  answered: {
+    label: "Answered",
+    className: `${BADGE_BASE} border-gray-200 bg-gray-50 text-gray-500`,
+  },
+  failed: {
+    label: "Failed",
+    className: `${BADGE_BASE} border-red-200 bg-red-50 text-red-600`,
+  },
+  background: {
+    label: "Background",
+    className: `${BADGE_BASE} border-gray-200 bg-gray-50 text-gray-500`,
+  },
+  running: {
+    label: "Running",
+    className: `${BADGE_BASE} border-blue-200 bg-blue-50 text-blue-600`,
+  },
+};
 
 /** Names the subagent the way the header shows it: researcher, Researcher. */
 function subagentTitle(name: string, fallback: string): string {
@@ -135,22 +144,56 @@ function StepList({ steps }: { steps: SubagentStep[] }) {
   );
 }
 
-/** The small chip that stands for one cited page. */
-function CitationChip({
+/** The look of a chip, by how well its pages are backed. */
+const CHIP_LOOK: Record<CitationStatus, { icon: LucideIcon; look: string }> = {
+  verified: {
+    icon: BadgeCheck,
+    look: "border-green-200 bg-green-50 text-green-700",
+  },
+  partial: {
+    icon: CircleHelp,
+    look: "border-lime-200 bg-lime-50 text-lime-700",
+  },
+  unverified: {
+    icon: CircleHelp,
+    look: "border-amber-200 bg-amber-50 text-amber-700",
+  },
+  neutral: {
+    icon: FileText,
+    look: "border-gray-200 bg-gray-50 text-gray-600",
+  },
+};
+
+const CHIP_TITLE: Record<CitationStatus, string> = {
+  verified: "Verified in the document",
+  partial: "Some of the pages are verified",
+  unverified: "Not verified",
+  neutral: "Cited from the documents",
+};
+
+/** The small chip that stands for one cited marker, with all its pages. */
+export function CitationChip({
   token,
 }: {
   token: Extract<ReportToken, { type: "citation" }>;
 }) {
-  const Icon = token.verified ? BadgeCheck : CircleHelp;
-  const look = token.verified
-    ? "border-green-200 bg-green-50 text-green-700"
-    : "border-amber-200 bg-amber-50 text-amber-700";
+  const { icon: Icon, look } = CHIP_LOOK[token.status];
+  // An editorial reply carries no verification, so its chip has no attribute.
+  const verifiedAttr =
+    token.status === "neutral"
+      ? undefined
+      : token.verified
+        ? "true"
+        : token.partial
+          ? "partial"
+          : "false";
   return (
     <span
       className={`mx-0.5 inline-flex items-center gap-1 rounded-full border px-1.5 py-px align-baseline text-xs ${look}`}
-      title={token.verified ? "Verified in the document" : "Not verified"}
+      title={CHIP_TITLE[token.status]}
       data-testid="citation-chip"
-      data-verified={token.verified ? "true" : "false"}
+      data-status={token.status}
+      data-verified={verifiedAttr}
     >
       <Icon size={11} className="shrink-0" aria-hidden="true" />
       {token.label}
@@ -163,10 +206,19 @@ function escapeLabel(label: string): string {
   return label.replace(/[\\[\]]/g, "\\$&");
 }
 
-/** The report as markdown, with each marker drawn as a citation chip. */
-function Report({ tokens }: { tokens: ReportToken[] }) {
-  // The markers become links to #cite-<n>, and the link renderer draws the
-  // chip of token n. That keeps the chips inline in the markdown flow.
+/**
+ * Markdown whose citation markers are drawn as chips.
+ *
+ * The markers become links to #cite-<n>, and the link renderer draws the chip
+ * of token n. That keeps the chips inline in the markdown flow.
+ */
+export function CitedMarkdown({
+  tokens,
+  isAnimating,
+}: {
+  tokens: ReportToken[];
+  isAnimating?: boolean;
+}) {
   const markdown = tokens
     .map((token, index) =>
       token.type === "text"
@@ -176,25 +228,33 @@ function Report({ tokens }: { tokens: ReportToken[] }) {
     .join("");
 
   return (
+    <Streamdown
+      isAnimating={isAnimating ?? false}
+      components={{
+        a: ({ href, children }) => {
+          const token = href?.startsWith("#cite-")
+            ? tokens[Number(href.slice("#cite-".length))]
+            : undefined;
+          if (token?.type === "citation") {
+            return <CitationChip token={token} />;
+          }
+          return <span>{children}</span>;
+        },
+      }}
+    >
+      {markdown}
+    </Streamdown>
+  );
+}
+
+/** The report as markdown, with each marker drawn as a citation chip. */
+function Report({ tokens }: { tokens: ReportToken[] }) {
+  return (
     <div
       className="chat-markdown prose prose-sm mt-3 max-w-none"
       data-testid="subagent-report"
     >
-      <Streamdown
-        components={{
-          a: ({ href, children }) => {
-            const token = href?.startsWith("#cite-")
-              ? tokens[Number(href.slice("#cite-".length))]
-              : undefined;
-            if (token?.type === "citation") {
-              return <CitationChip token={token} />;
-            }
-            return <span>{children}</span>;
-          },
-        }}
-      >
-        {markdown}
-      </Streamdown>
+      <CitedMarkdown tokens={tokens} />
     </div>
   );
 }
@@ -212,37 +272,31 @@ function CitationList({
       <ul className="mt-1 space-y-0.5" data-testid="citation-list">
         {tokens.map((token) => (
           <li
-            key={`${token.documentId}-${token.page}`}
+            key={`${token.documentId}-${token.pages.join(",")}`}
             className="flex items-center gap-1.5 text-xs text-gray-600"
             data-verified={token.verified ? "true" : "false"}
           >
             {token.verified ? (
               <BadgeCheck size={12} className="text-green-600" />
             ) : (
-              <CircleHelp size={12} className="text-amber-600" />
+              <CircleHelp
+                size={12}
+                className={token.partial ? "text-lime-600" : "text-amber-600"}
+              />
             )}
             {token.label}
             <span className="text-gray-400">
-              {token.verified ? "verified" : "not verified"}
+              {token.verified
+                ? "verified"
+                : token.partial
+                  ? "partly verified"
+                  : "not verified"}
             </span>
           </li>
         ))}
       </ul>
     </div>
   );
-}
-
-/** What a pending background call says, read off the ledger after a reload. */
-function pendingMessage(live: SubagentLive | null): string {
-  if (live === null) return "Researching in the background…";
-  if (live.status === "failed" || live.status === "stopped") return "Failed";
-  if (live.status === "completed" || live.status === "needs_input") {
-    return live.deliveryState === "delivered" ||
-      live.deliveryState === "consumed"
-      ? "Done, results delivered"
-      : "Done, waiting to be delivered";
-  }
-  return "Researching in the background…";
 }
 
 /** A box that sets a message apart from the rest of the card. */
@@ -268,9 +322,15 @@ function Callout({
 /** The body the settled result gives the card. */
 function ResultBody({
   result,
+  live,
+  answered,
   titles,
 }: {
   result: SubagentCallResult;
+  /** The ledger state the card follows. */
+  live: SubagentLive | null;
+  /** Whether the editor's answer moved a question of the task on. */
+  answered: boolean;
   titles: Record<string, string>;
 }) {
   const tokens = useMemo(
@@ -281,12 +341,22 @@ function ResultBody({
   if (result.status === "pending" || result.status === "running") {
     return (
       <p className="mt-2 text-sm text-gray-500" data-testid="subagent-pending">
-        {pendingMessage(result.live)}
+        {pendingMessage(live, "Researching")}
       </p>
     );
   }
 
   if (result.status === "needs_input") {
+    if (answered) {
+      return (
+        <p
+          className="mt-2 text-sm text-gray-400"
+          data-testid="subagent-answered"
+        >
+          Answered — continued below
+        </p>
+      );
+    }
     return (
       <Callout icon={CircleHelp} className="border-amber-200 bg-amber-50">
         <p className="font-medium text-amber-800">The researcher asks:</p>
@@ -338,19 +408,28 @@ export function SubagentCard({
   run,
   result,
   isRunning,
+  errorText,
 }: SubagentCardProps) {
-  const { documentTitles } = useDraftingSlice();
+  const { documentTitles, tasksById } = useDraftingSlice();
   // A call that ended with no result and no run left nothing to follow, as
   // when a reloaded thread finds the call open.
   const abandoned = result === null && !run && !isRunning;
-  const status = abandoned
-    ? "failed"
-    : (result?.status ?? run?.status ?? "running");
-  // A pending background call settles at once, so the run says whether the
-  // worker has it yet. A settled foreground call has the final word itself.
-  const badge = badgeFor(
-    result?.status === "pending" && run ? run.status : status,
-  );
+  // The ledger of the latest poll says more than the call's own result: a
+  // background call settles at once, and a question may be answered since.
+  const taskId = result?.taskId || run?.taskId || "";
+  const task = taskId === "" ? undefined : tasksById[taskId];
+  const live = effectiveLive(result?.live ?? null, task);
+  const answered = isAnswered(result, task);
+  const kind = badgeKind({
+    result,
+    runStatus: run?.status,
+    live,
+    answered,
+    // A call that ended in a tool error has nothing more to follow.
+    abandoned: abandoned || (result === null && Boolean(errorText)),
+  });
+  const badge = BADGES[kind];
+  const failed = kind === "failed";
   const title = subagentTitle(
     result?.subagent || run?.subagent || "",
     toolLabel(toolName),
@@ -364,7 +443,7 @@ export function SubagentCard({
     <div
       className="my-4 w-full rounded-lg border border-gray-200 bg-white px-3 py-2.5"
       data-testid="subagent-card"
-      data-status={status}
+      data-status={kind}
     >
       <div className="flex items-center gap-2">
         <Search size={14} className="shrink-0 text-gray-400" />
@@ -390,11 +469,22 @@ export function SubagentCard({
       )}
 
       {result ? (
-        <ResultBody result={result} titles={documentTitles} />
+        <ResultBody
+          result={result}
+          live={live}
+          answered={answered}
+          titles={documentTitles}
+        />
+      ) : failed ? (
+        <Callout icon={TriangleAlert} className="border-red-200 bg-red-50">
+          <p className="text-red-700" data-testid="subagent-error">
+            {errorText
+              ? `Couldn't continue the task: ${errorText}`
+              : "The research did not finish."}
+          </p>
+        </Callout>
       ) : (
-        <p className="mt-2 text-sm text-gray-500">
-          {abandoned ? "The research did not finish." : "Researching…"}
-        </p>
+        <p className="mt-2 text-sm text-gray-500">Researching…</p>
       )}
     </div>
   );

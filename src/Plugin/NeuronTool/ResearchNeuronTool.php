@@ -25,7 +25,9 @@ use NeuronAI\Tools\ToolProperty;
   description: 'Researches the documents attached to this session and returns a report whose'
   . ' claims cite [doc:<id> p.<n>]. Use it for details from the attached documents,'
   . ' especially long ones. When the result has status needs_input, relay its question'
-  . ' to the editor verbatim, and send the answer as prompt with the same task_id.',
+  . ' to the editor verbatim, and send the answer as prompt with the same task_id.'
+  . ' Pass task_id only to answer a question the researcher itself asked. If you asked'
+  . ' the editor something yourself, start a new task with their answer in the prompt.',
   label: new TranslatableMarkup('Research documents'),
   context_definitions: [
     'session' => new EntityContextDefinition(
@@ -67,8 +69,9 @@ final class ResearchNeuronTool extends SubagentToolPluginBase {
       ToolProperty::make(
         'task_id',
         PropertyType::STRING,
-        'Only to continue a task whose result had status needs_input: its task_id.'
-        . ' The prompt is then the editor\'s answer.',
+        'Only to answer a question the researcher itself asked, meaning its result had'
+        . ' status needs_input: its task_id. The prompt is then the editor\'s answer.'
+        . ' If you asked the editor yourself, start a new task instead.',
         FALSE,
       ),
     ];

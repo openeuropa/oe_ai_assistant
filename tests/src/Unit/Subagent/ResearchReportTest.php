@@ -6,6 +6,7 @@ namespace Drupal\Tests\oe_ai_assistant\Unit\Subagent;
 
 use Drupal\oe_ai_assistant\Neuron\Subagent\ResearchReport;
 use Drupal\Tests\UnitTestCase;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
 
 /**
@@ -57,6 +58,33 @@ class ResearchReportTest extends UnitTestCase {
    */
   public function testNoCitations(): void {
     $this->assertSame(['report' => 'Nothing.', 'citations' => []], ResearchReport::parse('Nothing.', []));
+  }
+
+  /**
+   * Tests that ranges and lists of pages expand into single-page citations.
+   */
+  #[DataProvider('pageMarkers')]
+  public function testPageMarkers(string $marker, array $pages): void {
+    $citations = ResearchReport::parse('Claim ' . $marker . '.', [])['citations'];
+
+    $this->assertSame($pages, array_column($citations, 'page'));
+    $this->assertSame([3], array_unique(array_column($citations, 'document_id')));
+  }
+
+  /**
+   * Provides the forms of a marker and the pages each one cites.
+   */
+  public static function pageMarkers(): array {
+    return [
+      'single' => ['[doc:3 p.4]', [4]],
+      'en dash range' => ['[doc:3 p.4–5]', [4, 5]],
+      'hyphen range' => ['[doc:3 p.4-6]', [4, 5, 6]],
+      'pp range' => ['[doc:3 pp.4–5]', [4, 5]],
+      'list with p' => ['[doc:3 p.4, p.9]', [4, 9]],
+      'list with bare page' => ['[doc:3 p.4, 9]', [4, 9]],
+      'list with range' => ['[doc:3 p.4, 7-8]', [4, 7, 8]],
+      'range capped at 20 pages' => ['[doc:3 p.1-90]', range(1, 20)],
+    ];
   }
 
 }

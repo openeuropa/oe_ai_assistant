@@ -686,6 +686,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
         'status' => $row['status'],
         'mode' => $row['mode'],
         'deliveryState' => $row['delivery_state'],
+        'continuations' => (int) $row['continuations'],
         'prompt' => mb_substr($prompt, 0, 200),
         'created' => (int) $row['created'],
         'changed' => (int) $row['changed'],
@@ -872,9 +873,10 @@ class DraftingPlugin extends AiAssistantPluginBase {
       return $result;
     }
 
-    // A background task answers with a handle, and the card reads it as such.
+    // A background task answers with a handle. The ledger says whether it
+    // wrote a draft since, and the card reads that draft like any other.
     if (($result['status'] ?? NULL) === SubagentResult::PENDING) {
-      return $result;
+      return $this->joinBackgroundDraft($session, $result);
     }
 
     if (!isset($result['version'])) {
@@ -886,6 +888,39 @@ class DraftingPlugin extends AiAssistantPluginBase {
     }
 
     return $session->getDraftRun((int) $result['version']) ?? $result;
+  }
+
+  /**
+   * Replaces the pending result of a background draft with where it stands.
+   *
+   * @param \Drupal\oe_ai_assistant\Entity\Bundle\ContentCreationSessionInterface $session
+   *   The session hosting the drafts thread.
+   * @param array $result
+   *   The pending result of the call.
+   *
+   * @return array
+   *   The stored record of a completed draft, the failure of a failed one,
+   *   or the pending result, each with the ledger state under "live".
+   */
+  private function joinBackgroundDraft(ContentCreationSessionInterface $session, array $result): array {
+    $live = $this->liveTaskStatus($session, $result);
+    if ($live === NULL) {
+      return $result;
+    }
+
+    $task = $this->ledger->load((string) $result['task_id']);
+    $outcome = (array) ($task['result'] ?? []);
+    if ($live['status'] === SubagentResult::COMPLETED && isset($outcome['version'])) {
+      $record = $session->getDraftRun((int) $outcome['version']);
+      if ($record !== NULL) {
+        return $record + ['live' => $live];
+      }
+    }
+    elseif ($live['status'] === SubagentResult::FAILED) {
+      return self::failedDraft((string) ($outcome['error'] ?? '')) + ['live' => $live];
+    }
+
+    return $result + ['live' => $live];
   }
 
   /**

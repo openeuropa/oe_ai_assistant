@@ -34,7 +34,10 @@ import { avatarColorClass, UserAvatar } from "@/components/ui/user-avatar";
 import { getConfig } from "@/config";
 import { useAppStore } from "@/store";
 import { resolveMessageAuthor } from "../participants";
+import { useDraftingSlice } from "../store";
+import { hasCitations, splitCitations } from "../subagent-result";
 import { ContextButtons } from "./context-buttons";
+import { CitedMarkdown } from "./subagent-card";
 import { ToolFallbackCard } from "./tool-uis";
 
 /** Welcome message shown when the chat is empty. */
@@ -171,9 +174,23 @@ function AssistantText({
   text: string;
   status: { type: string };
 }) {
+  const { documentTitles } = useDraftingSlice();
+  // The agent cites the documents with the markers of the researcher's
+  // report. The reply carries no verification, so its chips are neutral.
+  const tokens = useMemo(
+    () => (hasCitations(text) ? splitCitations(text, documentTitles) : null),
+    [text, documentTitles],
+  );
   return (
     <div className="chat-markdown text-base prose max-w-none">
-      <Streamdown isAnimating={status.type === "running"}>{text}</Streamdown>
+      {tokens ? (
+        <CitedMarkdown
+          tokens={tokens}
+          isAnimating={status.type === "running"}
+        />
+      ) : (
+        <Streamdown isAnimating={status.type === "running"}>{text}</Streamdown>
+      )}
     </div>
   );
 }

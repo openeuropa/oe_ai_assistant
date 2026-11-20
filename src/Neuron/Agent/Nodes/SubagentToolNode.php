@@ -197,6 +197,8 @@ final class SubagentToolNode extends ToolNode {
     }
     catch (\Throwable $e) {
       $tool->close($task, new SubagentResult(SubagentResult::FAILED, ['error' => 'The subagent failed.']));
+      // The run opened a card in the stream, and the failure closes it.
+      yield new CustomStreamEvent(self::FINISHED_EVENT, $this->label($task, $definition) + ['status' => SubagentResult::FAILED]);
       throw $e;
     }
     $tool->close($task, $result);

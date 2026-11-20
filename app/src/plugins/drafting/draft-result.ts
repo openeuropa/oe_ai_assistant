@@ -182,6 +182,15 @@ export function parseDraftResult(result: unknown): ParsedDraftResult {
     };
   }
 
+  // The tool error handler answers a call that threw with {tool, error}.
+  if (
+    typeof result["tool"] === "string" &&
+    typeof result["error"] === "string" &&
+    !("status" in result)
+  ) {
+    return { ...empty, status: "failed", error: result["error"], fields: {} };
+  }
+
   // The transcript reports a call whose turn still runs as running. It has
   // no version yet, and the card keeps spinning until the run settles.
   if (result["status"] === "running") {

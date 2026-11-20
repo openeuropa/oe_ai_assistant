@@ -19,8 +19,12 @@ final class SubagentPresence {
 
   /**
    * How long a mark lasts without being renewed, in seconds.
+   *
+   * It is tied to the idle poll of the browser (IDLE_POLL_DELAY_MS in
+   * subagent-tasks.ts, 20 s): keep it at least twice that, so an idle tab
+   * stays present between two polls.
    */
-  private const int TTL = 15;
+  private const int TTL = 45;
 
   /**
    * The store of the marks.

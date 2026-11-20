@@ -21,6 +21,7 @@ function task(overrides: Partial<SubagentTask> = {}): SubagentTask {
     status: "completed",
     mode: "background",
     deliveryState: "none",
+    continuations: 0,
     prompt: "Look it up",
     created: 1,
     changed: 2,
@@ -159,41 +160,62 @@ describe("noticeSummary", () => {
 });
 
 describe("nextReloadDecision", () => {
-  const quiet = { threadRunning: false, localRunSinceLastPoll: false };
+  const quiet = { threadRunning: false, ownDeliveries: new Set<string>() };
+  const delivered = (...ids: string[]) =>
+    response({
+      tasks: ids.map((id) => task({ taskId: id, deliveryState: "delivered" })),
+    });
 
-  it("adopts the first revision without a reload", () => {
-    expect(
-      nextReloadDecision(null, response({ revision: "2.5" }), quiet),
-    ).toEqual({ reload: false, revision: "2.5" });
+  it("only sets the baseline on the first poll", () => {
+    const decision = nextReloadDecision(null, delivered("sub_1"), quiet);
+
+    expect(decision.reload).toBe(false);
+    expect([...decision.delivered]).toEqual(["sub_1"]);
   });
 
-  it("does nothing when the revision is the same", () => {
+  it("does nothing while no task is newly delivered", () => {
     expect(
-      nextReloadDecision("1.1", response({ revision: "1.1" }), quiet).reload,
+      nextReloadDecision(new Set(["sub_1"]), delivered("sub_1"), quiet).reload,
     ).toBe(false);
+    expect(nextReloadDecision(new Set(), response(), quiet).reload).toBe(false);
   });
 
-  it("reloads when the revision changed behind the tab's back", () => {
-    expect(
-      nextReloadDecision("1.1", response({ revision: "3.4" }), quiet),
-    ).toEqual({ reload: true, revision: "3.4" });
+  it("reloads when someone else delivered a task", () => {
+    const decision = nextReloadDecision(new Set(), delivered("sub_1"), quiet);
+
+    expect(decision.reload).toBe(true);
+    expect([...decision.delivered]).toEqual(["sub_1"]);
   });
 
-  it("adopts silently while the thread is running", () => {
+  it("does not reload for a task this tab delivered itself", () => {
+    const decision = nextReloadDecision(new Set(), delivered("sub_1"), {
+      ...quiet,
+      ownDeliveries: new Set(["sub_1"]),
+    });
+
+    expect(decision.reload).toBe(false);
+    expect([...decision.delivered]).toEqual(["sub_1"]);
+  });
+
+  it("reloads for a foreign task delivered beside an own one", () => {
     expect(
-      nextReloadDecision("1.1", response({ revision: "3.4" }), {
+      nextReloadDecision(new Set(), delivered("sub_1", "sub_2"), {
         ...quiet,
-        threadRunning: true,
-      }),
-    ).toEqual({ reload: false, revision: "3.4" });
+        ownDeliveries: new Set(["sub_1"]),
+      }).reload,
+    ).toBe(true);
   });
 
-  it("adopts silently after a run of this tab", () => {
+  it("defers the reload while the thread is running", () => {
+    const running = { ...quiet, threadRunning: true };
+    const deferred = nextReloadDecision(new Set(), delivered("sub_1"), running);
+
+    expect(deferred.reload).toBe(false);
+    expect([...deferred.delivered]).toEqual([]);
+
+    // The next poll, once the run ended, still sees the task as new.
     expect(
-      nextReloadDecision("1.1", response({ revision: "3.4" }), {
-        ...quiet,
-        localRunSinceLastPoll: true,
-      }),
-    ).toEqual({ reload: false, revision: "3.4" });
+      nextReloadDecision(deferred.delivered, delivered("sub_1"), quiet),
+    ).toMatchObject({ reload: true });
   });
 });

@@ -548,6 +548,8 @@ export interface components {
             mode: "foreground" | "background";
             /** @enum {string} */
             deliveryState: "none" | "waiting" | "claimed" | "delivered" | "consumed" | "failed";
+            /** @description How many times the task was continued with an answer of the editor. */
+            continuations: number;
             /** @description The prompt or brief of the call, cut to 200 characters. */
             prompt: string;
             /** @description UNIX time the task was recorded. */

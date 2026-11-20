@@ -34,6 +34,7 @@ import {
   setDraftingState,
 } from "../store";
 import { applySubagentEvent } from "../subagent-runs";
+import { ACTIVE_POLL_DELAY_MS } from "../subagent-tasks";
 import { type DeliveryControl, reportRunEnd } from "./use-subagent-tasks";
 
 /**
@@ -166,6 +167,11 @@ export function useDraftingRuntime(delivery: DeliveryControl) {
       const nextRuns = applySubagentEvent(subagentRuns, data.name, data.data);
       if (nextRuns !== subagentRuns) {
         setDraftingState({ subagentRuns: nextRuns });
+      }
+      // A task queued for the background is on its way to the thread, so the
+      // tab polls at the active cadence from now on.
+      if (data.name === "subagent-queued") {
+        delivery.pollWithin(ACTIVE_POLL_DELAY_MS);
       }
 
       // The run names its groups before it drafts the first one, so the card

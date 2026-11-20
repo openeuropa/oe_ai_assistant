@@ -165,4 +165,76 @@ test.describe("Background result delivery", () => {
     await expect(page.getByText("I started the research.")).toBeVisible();
     expect(seen.chatBodies).toHaveLength(1);
   });
+
+  test("a delivery the worker made shows in the open tab", async ({ page }) => {
+    let delivered = false;
+    let messageCalls = 0;
+    let chatCalls = 0;
+
+    await page.route("**/session/token", (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "text/plain",
+        body: "e2e-csrf-token",
+      }),
+    );
+    // The first load has no reply. The reload after the worker's delivery
+    // has the notice and the reply the worker wrote.
+    await page.route("**/api/plugins/drafting/get-messages", (route) => {
+      messageCalls += 1;
+      const messages =
+        messageCalls === 1
+          ? HISTORY
+          : [
+              ...HISTORY,
+              {
+                role: "event",
+                type: "background_results",
+                summary: NOTICE,
+                at: "2026-01-01T10:00:00+00:00",
+                tasks: [],
+              },
+              { role: "assistant", content: REPLY },
+            ];
+      return route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ messages }),
+      });
+    });
+    // The task runs until the test flips it to delivered, with no deliver
+    // request from this tab in between.
+    await page.route("**/api/plugins/drafting/tasks", (route) => {
+      return route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          tasks: [
+            !delivered
+              ? { ...TASK, status: "running", deliveryState: "none" }
+              : { ...TASK, deliveryState: "delivered" },
+          ],
+          deliverable: false,
+          busy: false,
+          revision: delivered ? "4.4" : "2.2",
+        }),
+      });
+    });
+    await page.route("**/api/plugins/drafting/chat", (route) => {
+      chatCalls += 1;
+      return route.abort();
+    });
+
+    await page.goto("/#/drafting");
+    await expect(page.getByText("I started the research.")).toBeVisible({
+      timeout: 15000,
+    });
+    await expect(page.getByText(REPLY)).toBeHidden();
+
+    // The worker delivers while the tab sits idle; the next poll shows it.
+    delivered = true;
+    await expect(page.getByText(REPLY)).toBeVisible({ timeout: 15000 });
+    expect(messageCalls).toBe(2);
+    expect(chatCalls).toBe(0);
+  });
 });

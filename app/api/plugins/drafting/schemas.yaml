@@ -38,6 +38,7 @@ DraftingTask:
     - status
     - mode
     - deliveryState
+    - continuations
     - prompt
     - created
     - changed
@@ -56,6 +57,9 @@ DraftingTask:
     deliveryState:
       type: string
       enum: [none, waiting, claimed, delivered, consumed, failed]
+    continuations:
+      type: integer
+      description: How many times the task was continued with an answer of the editor.
     prompt:
       type: string
       description: The prompt or brief of the call, cut to 200 characters.

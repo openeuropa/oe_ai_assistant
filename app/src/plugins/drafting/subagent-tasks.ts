@@ -19,8 +19,17 @@ export type SubagentTasksResponse =
 /** Delay between polls while a task is in flight or results wait. */
 export const ACTIVE_POLL_DELAY_MS = 3000;
 
-/** Delay between polls while nothing is in flight. */
+/**
+ * Delay between polls while nothing is in flight.
+ *
+ * It is tied to SubagentPresence::TTL on the server (45 s): the presence mark
+ * of an idle tab must outlast two idle polls, so keep the TTL at least twice
+ * this delay.
+ */
 export const IDLE_POLL_DELAY_MS = 20000;
+
+/** Delay before the poll that follows the end of a run of this tab. */
+export const AFTER_RUN_POLL_DELAY_MS = 1000;
 
 /**
  * Tells whether some background task is still on its way to the thread.
@@ -88,37 +97,54 @@ export function noticeSummary(
     : `Background results arrived: ${parts.join(", ")}.`;
 }
 
-/** What the tab knows about its own runs since the previous poll. */
+/** What the tab knows about its own deliveries when a poll answers. */
 export interface ReloadState {
   /** Whether a turn of this thread is streaming. */
   threadRunning: boolean;
-  /** Whether this tab ran a turn since the previous poll answered. */
-  localRunSinceLastPoll: boolean;
+  /** The ids of the tasks this tab delivered itself. */
+  ownDeliveries: ReadonlySet<string>;
 }
 
-/** The outcome of comparing the thread revision with the last one seen. */
+/** The outcome of comparing the delivered tasks with the ones seen before. */
 export interface ReloadDecision {
   /** Whether the thread must be reloaded from the server. */
   reload: boolean;
-  /** The revision to remember for the next comparison. */
-  revision: string;
+  /** The ids of the delivered tasks to remember for the next comparison. */
+  delivered: ReadonlySet<string>;
+}
+
+/** Returns the ids of the tasks whose result reached the conversation. */
+export function deliveredIds(response: SubagentTasksResponse): Set<string> {
+  return new Set(
+    response.tasks
+      .filter((task) => task.deliveryState === "delivered")
+      .map((task) => task.taskId),
+  );
 }
 
 /**
- * Decides whether the thread changed behind this tab's back.
+ * Decides whether someone else delivered into the thread behind this tab.
  *
- * Rows this tab wrote itself are already on screen, and a streaming thread
- * must not be replaced, so both adopt the new revision without a reload. The
- * first poll has no revision to compare and adopts as well.
+ * A task that newly shows as delivered and is not one this tab delivered
+ * itself reached the thread through the worker or another tab, so the tab
+ * does not have its rows. The first poll has nothing to compare and only
+ * sets the baseline. A streaming thread must not be replaced, so while it
+ * runs the baseline stays where it was and the next poll decides again.
  */
 export function nextReloadDecision(
-  prevRevision: string | null,
+  previous: ReadonlySet<string> | null,
   response: SubagentTasksResponse,
   state: ReloadState,
 ): ReloadDecision {
-  const changed = prevRevision !== null && prevRevision !== response.revision;
-  return {
-    reload: changed && !state.threadRunning && !state.localRunSinceLastPoll,
-    revision: response.revision,
-  };
+  const delivered = deliveredIds(response);
+  if (previous === null) {
+    return { reload: false, delivered };
+  }
+  if (state.threadRunning) {
+    return { reload: false, delivered: previous };
+  }
+  const foreign = [...delivered].some(
+    (id) => !previous.has(id) && !state.ownDeliveries.has(id),
+  );
+  return { reload: foreign, delivered };
 }

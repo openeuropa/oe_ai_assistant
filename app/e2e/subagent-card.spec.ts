@@ -25,6 +25,20 @@ const COMPLETED_RESULT = {
   ],
 };
 
+const RANGE_RESULT = {
+  task_id: TASK_ID,
+  subagent: "researcher",
+  status: "completed",
+  report:
+    "The budget grew over two years [doc:1 p.4–5], then fell [doc:9 p.2, 7].",
+  citations: [
+    { document_id: 1, page: 4, verified: true },
+    { document_id: 1, page: 5, verified: true },
+    { document_id: 9, page: 2, verified: true },
+    { document_id: 9, page: 7, verified: false },
+  ],
+};
+
 const NEEDS_INPUT_RESULT = {
   task_id: TASK_ID,
   subagent: "researcher",
@@ -111,7 +125,11 @@ function researchStream(result: Record<string, unknown>) {
 }
 
 /** Registers the mocks the tests share and serves the given chat frames. */
-async function mockApiRoutes(page: Page, frames: Record<string, unknown>[]) {
+async function mockApiRoutes(
+  page: Page,
+  frames: Record<string, unknown>[],
+  tasks: Record<string, unknown>[] = [],
+) {
   await page.route("**/session/token", (route) =>
     route.fulfill({
       status: 200,
@@ -131,7 +149,7 @@ async function mockApiRoutes(page: Page, frames: Record<string, unknown>[]) {
       status: 200,
       contentType: "application/json",
       body: JSON.stringify({
-        tasks: [],
+        tasks,
         deliverable: false,
         busy: false,
         revision: "0.0",
@@ -262,5 +280,115 @@ test.describe("Subagent card", () => {
     await expect(page.getByTestId("subagent-pending")).toHaveText(
       "Done, results delivered",
     );
+  });
+
+  test("a range or a list of pages is one chip", async ({ page }) => {
+    await mockApiRoutes(page, researchStream(RANGE_RESULT));
+    await sendMessage(page);
+
+    const chips = page
+      .getByTestId("subagent-card")
+      .getByTestId("citation-chip");
+    await expect(chips).toHaveCount(2);
+    await expect(chips.first()).toContainText("Briefing note.pdf · p.4–5");
+    await expect(chips.first()).toHaveAttribute("data-verified", "true");
+    await expect(chips.nth(1)).toContainText("Document 9 · p.2, 7");
+    await expect(chips.nth(1)).toHaveAttribute("data-verified", "partial");
+  });
+
+  test("a question the task moved on from reads as answered", async ({
+    page,
+  }) => {
+    await mockApiRoutes(page, researchStream(NEEDS_INPUT_RESULT), [
+      {
+        taskId: TASK_ID,
+        subagent: "researcher",
+        tool: "research_documents",
+        status: "completed",
+        mode: "foreground",
+        deliveryState: "none",
+        continuations: 1,
+        prompt: "Research",
+        created: 1,
+        changed: 2,
+      },
+    ]);
+    await sendMessage(page);
+
+    await expect(page.getByTestId("subagent-answered")).toHaveText(
+      "Answered — continued below",
+    );
+    await expect(page.getByTestId("subagent-badge")).toHaveText("Answered");
+  });
+
+  test("a pending call follows the ledger of the poll", async ({ page }) => {
+    await mockApiRoutes(page, researchStream(COMPLETED_RESULT), [
+      {
+        taskId: TASK_ID,
+        subagent: "researcher",
+        tool: "research_documents",
+        status: "completed",
+        mode: "background",
+        deliveryState: "delivered",
+        continuations: 0,
+        prompt: "Research",
+        created: 1,
+        changed: 2,
+      },
+    ]);
+    await page.route("**/api/plugins/drafting/get-messages", (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          messages: [
+            { role: "user", content: "Research it in the background." },
+            {
+              role: "assistant",
+              at: "2026-01-01T10:00:00+00:00",
+              toolCalls: [
+                {
+                  function: { name: "research_documents" },
+                  result: {
+                    task_id: TASK_ID,
+                    subagent: "researcher",
+                    status: "pending",
+                  },
+                  live: { status: "running", deliveryState: "none" },
+                },
+              ],
+            },
+          ],
+        }),
+      }),
+    );
+    await page.goto("/#/drafting");
+
+    // The transcript said running; the poll says the result was delivered.
+    await expect(page.getByTestId("subagent-badge")).toHaveText("Delivered");
+    await expect(page.getByTestId("subagent-pending")).toHaveText(
+      "Done, results delivered",
+    );
+  });
+
+  test("a call that ended in a tool error shows the reason", async ({
+    page,
+  }) => {
+    const frames = researchStream(COMPLETED_RESULT).map((frame) =>
+      frame["type"] === "tool-output-available"
+        ? {
+            type: "tool-output-error",
+            toolCallId: CALL_ID,
+            errorText: "That task is not waiting for an answer.",
+          }
+        : frame,
+    );
+    await mockApiRoutes(page, frames);
+    await sendMessage(page);
+
+    await expect(page.getByTestId("subagent-error")).toHaveText(
+      "Couldn't continue the task: That task is not waiting for an answer.",
+    );
+    await expect(page.getByTestId("subagent-badge")).toHaveText("Failed");
   });
 });

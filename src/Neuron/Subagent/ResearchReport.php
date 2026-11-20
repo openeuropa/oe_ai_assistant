@@ -10,6 +10,11 @@ namespace Drupal\oe_ai_assistant\Neuron\Subagent;
 final class ResearchReport {
 
   /**
+   * The most pages a range of a marker expands to.
+   */
+  private const int MAX_RANGE = 20;
+
+  /**
    * Parses a report.
    *
    * @param string $text
@@ -22,20 +27,45 @@ final class ResearchReport {
    *   the researcher read the page it cites or a search returned it.
    */
   public static function parse(string $text, array $log): array {
-    preg_match_all('/\[doc:(\d+)\s+p\.(\d+)\]/', $text, $matches, PREG_SET_ORDER);
+    // A marker names one page, a range of pages, or a list of both.
+    preg_match_all('/\[doc:(\d+)\s+pp?\.\s*(\d+(?:\s*[\x{2013}-]\s*\d+)?(?:\s*,\s*(?:pp?\.\s*)?\d+(?:\s*[\x{2013}-]\s*\d+)?)*)\]/u', $text, $matches, PREG_SET_ORDER);
 
     $citations = [];
     foreach ($matches as $match) {
       $documentId = (int) $match[1];
-      $page = (int) $match[2];
-      $citations[$documentId . ':' . $page] ??= [
-        'document_id' => $documentId,
-        'page' => $page,
-        'verified' => self::seen($log, $documentId, $page),
-      ];
+      foreach (self::pages($match[2]) as $page) {
+        $citations[$documentId . ':' . $page] ??= [
+          'document_id' => $documentId,
+          'page' => $page,
+          'verified' => self::seen($log, $documentId, $page),
+        ];
+      }
     }
 
     return ['report' => $text, 'citations' => array_values($citations)];
+  }
+
+  /**
+   * Expands the pages of a marker into a list of page numbers.
+   *
+   * @param string $spec
+   *   The pages of a marker, such as "4", "4-5" or "4, 7-8".
+   *
+   * @return int[]
+   *   The pages, a range counting at most MAX_RANGE of them.
+   */
+  private static function pages(string $spec): array {
+    $pages = [];
+    foreach (explode(',', $spec) as $part) {
+      $bounds = preg_split('/\s*[\x{2013}-]\s*/u', preg_replace('/^\s*pp?\.\s*/', '', $part));
+      $first = (int) $bounds[0];
+      $last = isset($bounds[1]) ? max($first, min((int) $bounds[1], $first + self::MAX_RANGE - 1)) : $first;
+      foreach (range($first, $last) as $page) {
+        $pages[] = $page;
+      }
+    }
+
+    return $pages;
   }
 
   /**

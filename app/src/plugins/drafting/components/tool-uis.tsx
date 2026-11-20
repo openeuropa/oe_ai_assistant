@@ -17,6 +17,7 @@ import { useSavedVersions } from "../saved-versions";
 import { useSessionDrafts } from "../session-drafts";
 import { setDraftingState, useDraftingSlice } from "../store";
 import { parseSubagentResult } from "../subagent-result";
+import { badgeKind, effectiveLive, pendingMessage } from "../subagent-status";
 import { toolLabel } from "../tool-labels";
 import { DraftCard } from "./draft-card";
 import { EventChip } from "./event-chip";
@@ -107,19 +108,38 @@ export const DraftContentToolUI = makeAssistantToolUI<
     // The run streams its progress under the id of the call that asked for
     // the draft. A reload reports no run, and the result then carries the
     // record the backend joins onto it.
-    const run = useDraftingSlice().runs[toolCallId];
+    const { runs, tasksById } = useDraftingSlice();
+    const run = runs[toolCallId];
     const parsed = parseDraftResult(result);
 
     // A draft handed to a background subagent has no version yet. The
-    // result of the call only names the task, so the card says the draft
-    // is on its way instead of reading a failed or empty draft.
-    if (parseSubagentResult(result)?.status === "pending") {
+    // result of the call only names the task, so the card follows the
+    // ledger instead of reading a failed or empty draft.
+    const pending = parseSubagentResult(result);
+    if (pending?.status === "pending") {
+      const live = effectiveLive(pending.live, tasksById[pending.taskId]);
+      const kind =
+        live === null
+          ? "background"
+          : badgeKind({
+              result: pending,
+              live,
+              answered: false,
+              abandoned: false,
+            });
       return (
         <ToolCallCard
           icon={PenLine}
           label={toolLabel(toolName)}
-          detail="Drafting in the background…"
-          status={{ type: "running" }}
+          detail={pendingMessage(live, "Drafting")}
+          status={{
+            type:
+              kind === "background"
+                ? "running"
+                : kind === "failed"
+                  ? "incomplete"
+                  : "complete",
+          }}
         />
       );
     }
@@ -195,16 +215,23 @@ export const ResearchToolUI = makeAssistantToolUI<
   Record<string, unknown>
 >({
   toolName: "research_documents",
-  render: ({ result, status, toolCallId, toolName }) => {
+  render: ({ result, status, toolCallId, toolName, isError }) => {
     // The stream names the run under the id of the call that asked. A
     // reloaded thread has none, and the card reads the result alone.
     const run = useDraftingSlice().subagentRuns[toolCallId];
+    const parsed = parseSubagentResult(result);
+    // A call that ended in a tool error carries the reason as plain text.
+    const errorText =
+      parsed === null && typeof result === "string" && result !== ""
+        ? result
+        : undefined;
     return (
       <SubagentCard
         toolName={toolName}
         run={run}
-        result={parseSubagentResult(result)}
-        isRunning={status.type === "running"}
+        result={parsed}
+        isRunning={status.type === "running" && !isError}
+        errorText={errorText}
       />
     );
   },

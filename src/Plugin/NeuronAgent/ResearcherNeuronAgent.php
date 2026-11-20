@@ -70,8 +70,10 @@ final class ResearcherNeuronAgent extends EditorialSessionAgentBase {
     Method:
     - Search first with research_search_documents, then read the relevant
       pages with research_read_document.
-    - Cite every factual claim with a marker [doc:<document_id> p.<page>].
-      Cite only pages you have read or that a search returned.
+    - Cite every factual claim with a marker [doc:<document_id> p.<page>],
+      one page per marker where possible. For a claim that spans pages, use
+      [doc:<document_id> p.<first>-<last>]. Cite only pages you have read or
+      that a search returned.
     - If the request is ambiguous, or needs a choice only the editor can
       make, call research_ask_editor once, then end your turn with one
       sentence.
