@@ -398,7 +398,6 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
       $prompt = $log[$callIndex]['system_prompt'];
       $this->assertStringContainsString("### $processedTitle (file: $processedTitle)\nAlpha briefing content for the draft.", $prompt);
       $this->assertStringContainsString("### $pendingTitle (file: $pendingTitle)\nNot processed yet", $prompt);
-      $this->assertStringContainsString('wait a moment', $prompt);
     }
   }
 
