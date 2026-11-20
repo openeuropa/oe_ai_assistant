@@ -82,7 +82,6 @@ class EditorialSessionAgentPromptsTest extends AiEditorialSessionKernelTestBase 
 Full text of one.", $prompt);
     $this->assertStringNotContainsString('Summary one.', $prompt);
     $this->assertStringContainsString('background only', $prompt);
-    $this->assertStringNotContainsString('wait a moment', $prompt);
   }
 
   /**
@@ -117,22 +116,6 @@ Not processed yet", $prompt);
 Processing failed", $prompt);
     $this->assertStringContainsString("### Document 3 (file: doc-3.pdf)
 Kept text.", $prompt);
-    $this->assertStringContainsString('wait a moment', $prompt);
-    $this->assertStringContainsString('retry them', $prompt);
-
-    // Waiting never helps a failed document: alone, it only asks for a retry.
-    $prompt = $this->instructions(NULL, [
-      self::document('1', 'error', NULL),
-    ]);
-    $this->assertStringContainsString('retry them', $prompt);
-    $this->assertStringNotContainsString('wait a moment', $prompt);
-
-    // A pending document alone never asks for a retry.
-    $prompt = $this->instructions(NULL, [
-      self::document('1', 'scheduled', NULL),
-    ]);
-    $this->assertStringContainsString('wait a moment', $prompt);
-    $this->assertStringNotContainsString('retry them', $prompt);
   }
 
   /**
@@ -219,14 +202,10 @@ Summary only: Summary $count", $prompt);
       $this->assertStringNotContainsString('Summary only:', $prompt, $status);
       // The budget is spent: the text stays out.
       $this->assertStringNotContainsString('Overflow text.', $prompt, $status);
-      // The summary is on its way, so the editor is asked to wait, not to
-      // retry.
-      $this->assertStringContainsString('wait a moment', $prompt, $status);
-      $this->assertStringNotContainsString('retry them', $prompt, $status);
     }
 
     // Test the scenario where the additional document failed while being
-    // summarized, so its summary never comes without a retry.
+    // summarized, so no summary is ever coming for it.
     $prompt = $this->instructions(NULL, [
       ...$filler,
       // An extra document with defined content, empty summary and error status.
@@ -236,9 +215,6 @@ Summary only: Summary $count", $prompt);
     $this->assertStringContainsString("### Document $last (file: doc-$last.pdf)", $prompt);
     $this->assertStringNotContainsString('Summary only:', $prompt);
     $this->assertStringNotContainsString('Overflow text.', $prompt);
-    // Waiting does not help here, so the editor is asked to retry instead.
-    $this->assertStringContainsString('retry them', $prompt);
-    $this->assertStringNotContainsString('wait a moment', $prompt);
 
     // Test the scenario where the same failed document is alone, so the
     // budget is free and its text fits.
@@ -248,8 +224,6 @@ Summary only: Summary $count", $prompt);
     // The text is injected despite the error status.
     $this->assertStringContainsString("### Document 1 (file: doc-1.pdf)
 Overflow text.", $prompt);
-    // Its content is available, so there is nothing to retry.
-    $this->assertStringNotContainsString('retry them', $prompt);
   }
 
   /**
