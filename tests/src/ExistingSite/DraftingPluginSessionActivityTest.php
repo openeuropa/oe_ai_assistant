@@ -61,16 +61,15 @@ class DraftingPluginSessionActivityTest extends DraftingPluginTestBase {
     $this->assertSame('context_get_session_activity', $results[0]['name']);
     $this->assertSame(['answer' => 'Formal came first.'], $results[0]['result']);
 
-    // The answering agent got the whole record. Both sentences are there,
-    // in the order they happened, each with the editor who did it.
+    // The answering agent gets the whole record in its prompt. The editor
+    // who asked reads as "you" there, not under their display name.
     $prompt = $this->activityPrompt();
-    $this->assertStringContainsString(
-      sprintf('| %s | Tone set to "Formal".', $user->getDisplayName()),
-      $prompt,
-    );
-    $this->assertStringContainsString(
-      sprintf('| %s | Tone changed from "Formal" to "Technical".', $user->getDisplayName()),
-      $prompt,
+    $this->assertStringContainsString('| you | Tone set to "Formal".', $prompt);
+    $this->assertStringContainsString('| you | Tone changed from "Formal" to "Technical".', $prompt);
+    // The record runs oldest first, so the tone picked first comes first.
+    $this->assertLessThan(
+      strpos($prompt, 'Tone changed from'),
+      strpos($prompt, 'Tone set to'),
     );
   }
 
