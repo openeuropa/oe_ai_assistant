@@ -11,9 +11,12 @@ use Drupal\oe_ai_assistant\Entity\ActivityType;
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionActivityInterface;
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
 use Drupal\oe_ai_assistant\Plugin\AiAssistantPluginManager;
-use Drupal\oe_ai_assistant\Plugin\NeuronTool\GetSessionActivityNeuronTool;
+use Drupal\oe_ai_assistant\Plugin\NeuronAgent\SessionActivityNeuronAgent;
+use Drupal\oe_ai_assistant_test\Plugin\AiProvider\MockAiProvider;
+use Drupal\oe_ai_assistant_test\Plugin\AiProvider\MockResponse;
 use Drupal\taxonomy\Entity\Term;
 use Drupal\taxonomy\TermInterface;
+use NeuronAI\Agent\Agent;
 use PHPUnit\Framework\Attributes\Group;
 use Symfony\Component\HttpFoundation\Request;
 
@@ -206,71 +209,129 @@ class AiEditorialSessionActivityTest extends AiEditorialSessionKernelTestBase {
   }
 
   /**
-   * The tool reports what happened, who did it and when.
+   * The prompt carries what happened in the session, who did it and when.
    */
-  public function testToolReportsTheActivityOfTheSession(): void {
+  public function testAgentPromptCarriesTheActivityOfTheSession(): void {
     $owner = $this->createUser();
     $this->container->get('current_user')->setAccount($owner);
     $session = $this->createSession($owner);
     $session->recordActivity(ActivityType::ToneChanged, 'Tone set to "Formal".');
 
-    $result = json_decode($this->activityTool($session), TRUE);
-
-    $this->assertSame(0, $result['earlier_entries_omitted']);
-    $this->assertCount(1, $result['activity']);
-    $this->assertSame('Tone set to "Formal".', $result['activity'][0]['message']);
-    $this->assertSame($owner->getDisplayName(), $result['activity'][0]['by']);
-    $this->assertSame(
-      gmdate('c', $session->getLatestActivity(100)[0]->getCreatedTime()),
-      $result['activity'][0]['at'],
+    $this->assertStringContainsString(
+      sprintf(
+        '%s | you | Tone set to "Formal".',
+        gmdate('c', $session->getLatestActivity()[0]->getCreatedTime()),
+      ),
+      $this->activityPrompt($session),
     );
   }
 
   /**
-   * A session nothing happened in reports an empty activity.
-   */
-  public function testToolReportsAnEmptyActivity(): void {
-    $session = $this->createSession($this->createUser());
-
-    $this->assertSame(
-      ['activity' => [], 'earlier_entries_omitted' => 0],
-      json_decode($this->activityTool($session), TRUE),
-    );
-  }
-
-  /**
-   * A history longer than the cap reports how many entries it left out.
+   * The record calls the editor asking "you" and names everyone else.
    *
-   * Without the count, the model reads the oldest entry it got as the
-   * first thing that happened, and tells the editor so.
+   * An editor asks what they themselves did. A name on its own does not
+   * tell the model which of the names is theirs.
    */
-  public function testToolReportsHowManyEntriesItLeftOut(): void {
+  public function testAgentPromptNamesTheEditorAsking(): void {
+    $owner = $this->createUser();
+    $other = $this->createUser();
+    $session = $this->createSession($owner);
+
+    $this->container->get('current_user')->setAccount($other);
+    $session->recordActivity(ActivityType::ToneChanged, 'Tone set to "Formal".');
+    $this->container->get('current_user')->setAccount($owner);
+    $session->recordActivity(ActivityType::ToneChanged, 'Tone changed to "Technical".');
+
+    $prompt = $this->activityPrompt($session);
+
+    $this->assertStringContainsString(
+      sprintf('| %s | Tone set to "Formal".', $other->getDisplayName()),
+      $prompt,
+    );
+    $this->assertStringContainsString('| you | Tone changed to "Technical".', $prompt);
+  }
+
+  /**
+   * The prompt of a session nothing happened in says the record is empty.
+   */
+  public function testAgentPromptReportsAnEmptyRecord(): void {
     $session = $this->createSession($this->createUser());
-    $total = GetSessionActivityNeuronTool::MAX_ENTRIES + 3;
+
+    $this->assertStringContainsString(
+      'The record is empty.',
+      $this->activityPrompt($session),
+    );
+  }
+
+  /**
+   * A record longer than the cap says how many entries the prompt omits.
+   *
+   * Without the count, the model would read the oldest entry it got as
+   * the first thing that happened, and tell the editor so.
+   */
+  public function testAgentPromptReportsHowManyEntriesItLeftOut(): void {
+    $session = $this->createSession($this->createUser());
+    $total = SessionActivityNeuronAgent::MAX_ENTRIES + 3;
     for ($i = 1; $i <= $total; $i++) {
       $session->recordActivity(ActivityType::ToneChanged, 'Entry %d', $i);
     }
 
-    $result = json_decode($this->activityTool($session), TRUE);
+    $prompt = $this->activityPrompt($session);
 
-    $this->assertCount(GetSessionActivityNeuronTool::MAX_ENTRIES, $result['activity']);
-    $this->assertSame(3, $result['earlier_entries_omitted']);
-    $this->assertSame('Entry 4', $result['activity'][0]['message']);
-    $this->assertSame('Entry ' . $total, $result['activity'][GetSessionActivityNeuronTool::MAX_ENTRIES - 1]['message']);
+    $this->assertStringContainsString('The 3 entries before the first one below are not shown.', $prompt);
+    $this->assertStringNotContainsString("| Entry 3\n", $prompt);
+    $this->assertStringContainsString("| Entry 4\n", $prompt);
+    $this->assertStringContainsString('| Entry ' . $total, $prompt);
   }
 
   /**
-   * The tool reads the session it serves, and no other.
+   * The prompt carries the record of the session it serves, and no other.
    */
-  public function testToolReadsOnlyItsOwnSession(): void {
+  public function testAgentPromptReadsOnlyItsOwnSession(): void {
     $owner = $this->createUser();
     $session = $this->createSession($owner);
     $this->createSession($owner)->recordActivity(ActivityType::ToneChanged, 'theirs');
     $session->recordActivity(ActivityType::ToneChanged, 'mine');
 
-    $result = json_decode($this->activityTool($session), TRUE);
+    $prompt = $this->activityPrompt($session);
 
-    $this->assertSame(['mine'], array_column($result['activity'], 'message'));
+    $this->assertStringContainsString('| mine', $prompt);
+    $this->assertStringNotContainsString('theirs', $prompt);
+  }
+
+  /**
+   * Each run of the answering agent opens a conversation of its own.
+   *
+   * A reused thread would replay the record we already sent, which is the
+   * cost the agent exists to avoid.
+   */
+  public function testEachRunOpensItsOwnThread(): void {
+    $session = $this->createSession($this->createUser());
+
+    $this->assertNotSame(
+      $this->activityAgent($session)->getThreadId(),
+      $this->activityAgent($session)->getThreadId(),
+    );
+  }
+
+  /**
+   * The tool hands the question to the agent and returns the answer.
+   */
+  public function testToolReturnsTheAnswerOfTheAgent(): void {
+    $this->mockChatProvider();
+    MockAiProvider::enqueue(new MockResponse(text: 'You picked Formal first.'));
+    $session = $this->createSession($this->createUser());
+    $session->recordActivity(ActivityType::ToneChanged, 'Tone set to "Formal".');
+
+    $tool = $this->container->get(NeuronToolManagerInterface::class)->createTool(
+      'context_get_session_activity',
+      ['session' => $session],
+    );
+
+    $this->assertSame(
+      ['answer' => 'You picked Formal first.'],
+      json_decode((string) $tool('Which tone did I pick first?'), TRUE),
+    );
   }
 
   /**
@@ -375,15 +436,31 @@ class AiEditorialSessionActivityTest extends AiEditorialSessionKernelTestBase {
   }
 
   /**
-   * Builds the activity tool bound to the session, and calls it.
+   * Returns the instructions the answering agent runs with.
    */
-  private function activityTool(AiEditorialSessionInterface $session): string {
-    $tool = $this->container->get(NeuronToolManagerInterface::class)->createTool(
-      'context_get_session_activity',
-      ['session' => $session],
-    );
+  private function activityPrompt(AiEditorialSessionInterface $session): string {
+    return $this->activityAgent($session)->getInstructions()->getContent();
+  }
 
-    return (string) $tool();
+  /**
+   * Builds the agent that answers questions about the session.
+   */
+  private function activityAgent(AiEditorialSessionInterface $session): Agent {
+    $this->mockChatProvider();
+
+    return $this->container->get(NeuronAgentManagerInterface::class)
+      ->createAgent(SessionActivityNeuronAgent::PLUGIN_ID, ['session' => $session]);
+  }
+
+  /**
+   * Points the chat operation at the mock provider.
+   */
+  private function mockChatProvider(): void {
+    $this->enableModules(['oe_ai_assistant_test']);
+    $this->config('ai.settings')
+      ->set('default_providers', ['chat' => ['provider_id' => 'mock_ai', 'model_id' => 'mock-model']])
+      ->save();
+    MockAiProvider::reset();
   }
 
   /**

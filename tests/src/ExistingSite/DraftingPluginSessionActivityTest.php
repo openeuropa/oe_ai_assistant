@@ -10,10 +10,10 @@ use Drupal\oe_ai_assistant_test\Plugin\AiProvider\MockResponse;
 /**
  * Integration test for the session activity tool.
  *
- * The editor picks two tones over HTTP, then asks the assistant about
- * them. The mock provider scripts the reply, so what this pins is the
- * tool result the turn recorded: the sentences the two set-tone calls
- * wrote, in order, with their author.
+ * The editor picks two tones over HTTP, then asks the assistant about them.
+ * The mock provider scripts both replies, so what the test pins is who
+ * reads the record. The answering agent gets it in its prompt, and the
+ * result the editorial thread keeps holds only the answer.
  */
 class DraftingPluginSessionActivityTest extends DraftingPluginTestBase {
 
@@ -33,10 +33,17 @@ class DraftingPluginSessionActivityTest extends DraftingPluginTestBase {
         [
           'id' => 'call_1',
           'type' => 'function',
-          'function' => ['name' => 'context_get_session_activity', 'arguments' => '{}'],
+          'function' => [
+            'name' => 'context_get_session_activity',
+            'arguments' => '{"question": "Which tone did I pick first?"}',
+          ],
         ],
       ],
     ));
+    // The mock answers in call order. SessionActivityNeuronAgent runs
+    // inside the tool call and answers first, then the editorial agent
+    // reports that answer to the editor.
+    MockAiProvider::enqueue(new MockResponse(text: 'Formal came first.'));
     MockAiProvider::enqueue(new MockResponse(text: 'You picked Formal first.'));
 
     $result = $this->httpPost('/api/ai/plugins/drafting/chat', [
@@ -48,18 +55,37 @@ class DraftingPluginSessionActivityTest extends DraftingPluginTestBase {
       'Expected 200 response. Body: ' . substr($result['body'], 0, 500));
     $this->assertStringContainsString('You picked Formal first.', $this->streamedText($result['body']));
 
+    // The tool result the editorial thread keeps holds the answer and
+    // none of the record.
     $results = $session->conversationToolResults();
     $this->assertSame('context_get_session_activity', $results[0]['name']);
-    $activity = $results[0]['result'];
-    $this->assertSame(0, $activity['earlier_entries_omitted']);
-    $this->assertSame([
-      'Tone set to "Formal".',
-      'Tone changed from "Formal" to "Technical".',
-    ], array_column($activity['activity'], 'message'));
-    $this->assertSame(
-      [$user->getDisplayName(), $user->getDisplayName()],
-      array_column($activity['activity'], 'by'),
+    $this->assertSame(['answer' => 'Formal came first.'], $results[0]['result']);
+
+    // The answering agent got the whole record. Both sentences are there,
+    // in the order they happened, each with the editor who did it.
+    $prompt = $this->activityPrompt();
+    $this->assertStringContainsString(
+      sprintf('| %s | Tone set to "Formal".', $user->getDisplayName()),
+      $prompt,
     );
+    $this->assertStringContainsString(
+      sprintf('| %s | Tone changed from "Formal" to "Technical".', $user->getDisplayName()),
+      $prompt,
+    );
+  }
+
+  /**
+   * Reads the prompt the session_activity agent ran with.
+   */
+  private function activityPrompt(): string {
+    foreach (MockAiProvider::getCallLog() as $call) {
+      $prompt = (string) ($call['system_prompt'] ?? '');
+      if (str_contains($prompt, 'You answer one question about what happened')) {
+        return $prompt;
+      }
+    }
+
+    $this->fail('The session_activity agent was never called.');
   }
 
   /**

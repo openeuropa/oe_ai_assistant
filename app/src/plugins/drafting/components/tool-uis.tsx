@@ -260,7 +260,7 @@ function makeSimpleToolUI<TArgs, TResult>(
 
 /** UI for the context_get_session_activity tool call. */
 export const GetSessionActivityToolUI = makeSimpleToolUI<
-  Record<string, never>,
+  { question: string },
   unknown
 >("context_get_session_activity", History);
 
