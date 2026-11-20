@@ -8,8 +8,8 @@ use Drupal\ai_neuron\Attribute\NeuronTool;
 use Drupal\ai_neuron\Tools\NeuronToolPluginBase;
 use Drupal\Core\Plugin\Context\EntityContextDefinition;
 use Drupal\Core\StringTranslation\TranslatableMarkup;
-use Drupal\oe_ai_assistant\Plugin\NeuronAgent\EditorialSessionAgentBase;
 use Drupal\oe_ai_assistant\Service\Drafting\DocumentExtractionProcessorInterface;
+use Drupal\oe_ai_assistant\Service\Drafting\DocumentExtractTruncator;
 use NeuronAI\Tools\PropertyType;
 use NeuronAI\Tools\ToolProperty;
 
@@ -71,7 +71,7 @@ final class ReadDocumentNeuronTool extends NeuronToolPluginBase {
     }
 
     $extract = trim((string) ($descriptor['extract'] ?? ''));
-    [$extract, $truncated] = EditorialSessionAgentBase::truncateDocumentExtract($extract);
+    [$extract, $truncated] = DocumentExtractTruncator::truncate($extract);
     $summary = trim((string) ($descriptor['summary'] ?? ''));
     $status = (string) ($descriptor['status'] ?? '');
 
