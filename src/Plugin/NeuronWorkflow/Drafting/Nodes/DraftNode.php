@@ -58,10 +58,12 @@ final class DraftNode extends Node {
     // A correction turn is the next attempt at the same group.
     $attempt = (int) $state->get(RetryNode::ATTEMPTS_KEY, 0) + 1;
     $chars = 0;
+    $lastEvent = microtime(TRUE);
 
     // The answer is JSON, which means nothing to the editor while it grows.
-    // So the chunks are not passed on. The node reports the first chunk, and
-    // then one event for each PROGRESS_EVERY characters. The stream also
+    // So the chunks are not passed on. The node reports the first chunk, then
+    // one event for each PROGRESS_EVERY characters, and one when a second has
+    // passed since the last event and the answer grew. The stream also
     // keeps the call alive: a provider behind a gateway can refuse a call
     // that sends nothing until it finishes.
     $chunks = $agent->stream(new UserMessage($event->message));
@@ -71,7 +73,8 @@ final class DraftNode extends Node {
       }
       $before = $chars;
       $chars += mb_strlen($chunk->content);
-      if ($before === 0 || intdiv($chars, self::PROGRESS_EVERY) > intdiv($before, self::PROGRESS_EVERY)) {
+      if ($before === 0 || intdiv($chars, self::PROGRESS_EVERY) > intdiv($before, self::PROGRESS_EVERY) || microtime(TRUE) - $lastEvent >= 1.0) {
+        $lastEvent = microtime(TRUE);
         yield new CustomStreamEvent(self::PROGRESS_EVENT, [
           'group' => $this->group,
           'attempt' => $attempt,

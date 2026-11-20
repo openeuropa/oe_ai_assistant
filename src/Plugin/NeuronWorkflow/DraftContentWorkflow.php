@@ -10,12 +10,17 @@ use Drupal\ai_neuron\Workflow\NeuronWorkflowPluginBase;
 use Drupal\Core\Logger\LoggerChannelInterface;
 use Drupal\Core\Plugin\Context\ContextDefinition;
 use Drupal\Core\Plugin\Context\EntityContextDefinition;
+use Drupal\Core\Queue\QueueFactory;
+use Drupal\Core\Session\AccountProxyInterface;
 use Drupal\Core\StringTranslation\TranslatableMarkup;
 use Drupal\oe_ai_assistant\Entity\Bundle\ContentCreationSessionInterface;
 use Drupal\oe_ai_assistant\Neuron\Chat\History\EditorialMessageStore;
 use Drupal\oe_ai_assistant\Plugin\NeuronWorkflow\DraftContent\DraftContentResources;
 use Drupal\oe_ai_assistant\Plugin\NeuronWorkflow\DraftContent\Events\DraftContentRequestEvent;
 use Drupal\oe_ai_assistant\Plugin\NeuronWorkflow\DraftContent\Nodes\DraftContentNode;
+use Drupal\oe_ai_assistant\Plugin\QueueWorker\DraftGroupQueueWorker;
+use Drupal\oe_ai_assistant\Service\Drafting\DraftGroupJobs;
+use Drupal\oe_ai_assistant\Service\Drafting\DraftGroupRunner;
 use NeuronAI\Workflow\Events\Event;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 
@@ -59,6 +64,10 @@ final class DraftContentWorkflow extends NeuronWorkflowPluginBase {
     private readonly EditorialMessageStore $store,
     #[Autowire(service: 'logger.channel.oe_ai_assistant')]
     private readonly LoggerChannelInterface $logger,
+    private readonly DraftGroupJobs $jobs,
+    private readonly DraftGroupRunner $groupRunner,
+    private readonly QueueFactory $queueFactory,
+    private readonly AccountProxyInterface $currentUser,
   ) {
     parent::__construct($configuration, $plugin_id, $plugin_definition);
   }
@@ -73,6 +82,7 @@ final class DraftContentWorkflow extends NeuronWorkflowPluginBase {
     $node = new DraftContentNode(
       (string) $this->getContextValue('call'),
       (string) $this->getContextValue('brief'),
+      (string) $this->getContextValue('task'),
     );
 
     return [$node];
@@ -92,6 +102,10 @@ final class DraftContentWorkflow extends NeuronWorkflowPluginBase {
       $this->store->forSession($session),
       $this->logger,
       $session,
+      $this->jobs,
+      $this->groupRunner,
+      $this->queueFactory->get(DraftGroupQueueWorker::QUEUE),
+      $this->currentUser->isAuthenticated() ? (int) $this->currentUser->id() : NULL,
     );
   }
 

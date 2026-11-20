@@ -36,6 +36,12 @@ services:
 
   Drupal\oe_ai_assistant\Service\Subagent\SubagentTaskLedger: {}
 
+  Drupal\oe_ai_assistant\Service\Subagent\TaskAccount: {}
+
+  Drupal\oe_ai_assistant\Service\Drafting\DraftGroupJobs: {}
+
+  Drupal\oe_ai_assistant\Service\Drafting\DraftGroupRunner: {}
+
   Drupal\oe_ai_assistant\Service\Subagent\SubagentRunner:
     arguments:
       $logger: '@logger.channel.oe_ai_assistant'

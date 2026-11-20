@@ -7,6 +7,7 @@ namespace Drupal\oe_ai_assistant\Service\Subagent;
 use Drupal\Component\Datetime\TimeInterface;
 use Drupal\Core\KeyValueStore\KeyValueExpirableFactoryInterface;
 use Drupal\Core\Queue\QueueFactory;
+use Drupal\oe_ai_assistant\Service\Drafting\DraftGroupJobs;
 
 /**
  * Puts the background tasks of subagents on the queue their worker reads.
@@ -43,6 +44,7 @@ final class SubagentDispatcher {
     private readonly QueueFactory $queueFactory,
     private readonly TimeInterface $time,
     private readonly KeyValueExpirableFactoryInterface $keyValueExpirable,
+    private readonly DraftGroupJobs $draftGroupJobs,
   ) {}
 
   /**
@@ -68,6 +70,7 @@ final class SubagentDispatcher {
    */
   public function sweep(): int {
     $now = $this->time->getCurrentTime();
+    $this->draftGroupJobs->deleteFinishedBefore($now - 86400);
     foreach ($this->ledger->sessionsWithWaiting($now - self::DELIVERY_SWEEP_AFTER) as $sessionId) {
       $this->enqueueDelivery($sessionId);
     }

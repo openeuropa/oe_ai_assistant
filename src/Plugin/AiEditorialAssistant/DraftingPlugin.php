@@ -17,6 +17,7 @@ use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
 use Drupal\oe_ai_assistant\Exception\ActionException;
 use Drupal\oe_ai_assistant\Service\Drafting\ContextDocumentRepository;
 use Drupal\oe_ai_assistant\Service\Drafting\DocumentRepositoryInterface;
+use Drupal\oe_ai_assistant\Service\Drafting\DraftGroupJobs;
 use Drupal\oe_ai_assistant\Entity\Bundle\ContentCreationSessionInterface;
 use Drupal\oe_ai_assistant\Exception\DraftingTemplateException;
 use Drupal\oe_ai_assistant\Exception\DraftingToneException;
@@ -140,6 +141,11 @@ class DraftingPlugin extends AiAssistantPluginBase {
   protected SubagentTaskLedger $ledger;
 
   /**
+   * The jobs that draft the field groups of a draft in parallel.
+   */
+  protected DraftGroupJobs $draftGroupJobs;
+
+  /**
    * Queues the background tasks a turn created.
    *
    * @var \Drupal\oe_ai_assistant\Service\Subagent\SubagentDispatcher
@@ -179,6 +185,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
     $instance = parent::create($container, $configuration, $plugin_id, $plugin_definition);
     $instance->agents = $container->get(NeuronAgentManagerInterface::class);
     $instance->ledger = $container->get(SubagentTaskLedger::class);
+    $instance->draftGroupJobs = $container->get(DraftGroupJobs::class);
     $instance->dispatcher = $container->get(SubagentDispatcher::class);
     $instance->turnGuard = $container->get(EditorialTurnGuard::class);
     $instance->delivery = $container->get(SubagentDelivery::class);
@@ -957,6 +964,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
     $session = $this->loadSession($this->decodeJsonBody($request));
     $session->deleteConversation();
     $this->ledger->deleteForSession((int) $session->id());
+    $this->draftGroupJobs->deleteForSession((int) $session->id());
     return ['status' => 'ok'];
   }
 

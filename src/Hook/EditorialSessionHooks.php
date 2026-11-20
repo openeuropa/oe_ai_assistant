@@ -11,6 +11,7 @@ use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
 use Drupal\oe_ai_assistant\Entity\Bundle\ContentCreationSession;
 use Drupal\oe_ai_assistant\Service\Drafting\ContextDocumentRepository;
 use Drupal\oe_ai_assistant\Service\Drafting\DocumentRepositoryInterface;
+use Drupal\oe_ai_assistant\Service\Drafting\DraftGroupJobs;
 use Drupal\oe_ai_assistant\Service\Subagent\SubagentTaskLedger;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 
@@ -25,6 +26,7 @@ final class EditorialSessionHooks {
     #[Autowire(service: ContextDocumentRepository::class)]
     private readonly DocumentRepositoryInterface $contextDocumentRepository,
     private readonly SubagentTaskLedger $ledger,
+    private readonly DraftGroupJobs $draftGroupJobs,
   ) {}
 
   /**
@@ -51,6 +53,7 @@ final class EditorialSessionHooks {
 
     $entity->deleteConversation();
     $this->ledger->deleteForSession((int) $entity->id());
+    $this->draftGroupJobs->deleteForSession((int) $entity->id());
   }
 
   /**

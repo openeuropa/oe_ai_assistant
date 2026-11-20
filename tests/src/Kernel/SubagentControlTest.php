@@ -13,6 +13,7 @@ use Drupal\oe_ai_assistant\Service\Subagent\SubagentDelivery;
 use Drupal\oe_ai_assistant\Service\Subagent\SubagentDispatcher;
 use Drupal\oe_ai_assistant\Service\Subagent\SubagentRunner;
 use Drupal\oe_ai_assistant\Service\Subagent\SubagentTaskLedger;
+use Drupal\oe_ai_assistant\Service\Subagent\TaskAccount;
 use Drupal\oe_ai_assistant_test\Plugin\AiProvider\MockAiProvider;
 use Drupal\oe_ai_assistant_test\Plugin\AiProvider\MockResponse;
 use NeuronAI\Chat\Messages\UserMessage;
@@ -145,6 +146,7 @@ class SubagentControlTest extends AiEditorialSessionKernelTestBase {
       $this->ledger,
       $this->container->get(SubagentDispatcher::class),
       $this->container->get('entity_type.manager'),
+      $this->container->get(TaskAccount::class),
       $this->container->get(AccountSwitcherInterface::class),
       $this->container->get(NeuronToolManagerInterface::class),
       $clock,

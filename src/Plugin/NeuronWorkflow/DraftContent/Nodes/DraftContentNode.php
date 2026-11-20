@@ -5,13 +5,13 @@ declare(strict_types=1);
 namespace Drupal\oe_ai_assistant\Plugin\NeuronWorkflow\DraftContent\Nodes;
 
 use Drupal\Component\Utility\Crypt;
+use Drupal\oe_ai_assistant\Exception\DraftGroupFailedException;
 use Drupal\oe_ai_assistant\Exception\SchemaRetriesExhaustedException;
 use Drupal\oe_ai_assistant\Neuron\ToolWorkflowInterface;
 use Drupal\oe_ai_assistant\Neuron\Chat\Messages\EditorialAssistantMessage;
 use Drupal\oe_ai_assistant\Plugin\NeuronWorkflow\DraftContent\DraftContentResources;
 use Drupal\oe_ai_assistant\Plugin\NeuronWorkflow\DraftContent\Events\DraftContentRequestEvent;
-use Drupal\oe_ai_assistant\Plugin\NeuronWorkflow\Drafting\Nodes\DraftNode;
-use Drupal\oe_ai_assistant\Plugin\NeuronWorkflow\Drafting\Nodes\ValidateNode;
+use Drupal\oe_ai_assistant\Service\Drafting\DraftGroupJobs;
 use NeuronAI\Agent\Adapters\Events\ActivityStreamEvent;
 use NeuronAI\Agent\Adapters\Events\CustomStreamEvent;
 use NeuronAI\Workflow\Events\StopEvent;
@@ -40,10 +40,14 @@ final class DraftContentNode extends Node {
    * @param string $brief
    *   What the editor asked for, as the agent passed it to the tool. Empty
    *   when the agent sent none.
+   * @param string $task
+   *   The id of the subagent task that runs this draft. It names the jobs of
+   *   the groups.
    */
   public function __construct(
     private readonly string $callId,
     private readonly string $brief,
+    private readonly string $task,
   ) {}
 
   /**
@@ -51,7 +55,8 @@ final class DraftContentNode extends Node {
    *
    * Each group is drafted by the draft_group workflow, which checks the
    * answer against the schema of the group and asks again while it does not
-   * match.
+   * match. The main group is drafted here first. The others are queued as
+   * jobs for the workers, and this run drafts any job no worker has claimed.
    */
   public function __invoke(
     DraftContentRequestEvent $event,
@@ -76,6 +81,10 @@ final class DraftContentNode extends Node {
     // whole draft.
     $conversation = $this->conversation($resources);
     $answers = [];
+    // The groups still to be drafted by a worker or by this run, and how each
+    // running job was last reported, keyed by group id.
+    $remaining = [];
+    $seen = [];
     $index = 0;
     $failed = '';
 
@@ -115,9 +124,33 @@ final class DraftContentNode extends Node {
         ));
       }
 
+      $positions = [];
+      foreach ($groups as $position => $group) {
+        $positions[(string) $group['groupId']] = $position + 1;
+      }
+
+      // What the inline drafting shares with the join loop, so both report the
+      // jobs of the workers from the same state.
+      $watch = new \stdClass();
+      $watch->remaining = &$remaining;
+      $watch->answers = &$answers;
+      $watch->progress = &$progress;
+      $watch->seen = &$seen;
+      $watch->failed = &$failed;
+      $watch->positions = $positions;
+      $watch->total = $total;
+
+      // The main group goes first and inline, because the others are told
+      // what it wrote.
+      $others = [];
       foreach ($groups as $group) {
-        $index++;
         $groupId = (string) $group['groupId'];
+        if ($groupId !== self::MAIN_GROUP) {
+          $others[$groupId] = $group;
+          continue;
+        }
+
+        $index = $positions[$groupId];
         $failed = $groupId;
 
         // On a retry, a group that was already drafted keeps that draft and
@@ -128,7 +161,7 @@ final class DraftContentNode extends Node {
 
         if (!is_array($fields)) {
           yield $this->progress($callId, $group, 'drafting', $index, $total);
-          $fields = yield from $this->draftGroup($resources, $group, $run, $this->task($conversation, $answers), $callId, $index, $total);
+          $fields = yield from $this->runGroup($resources, $group, $run, $this->task($conversation, $answers), $index, $total, '', '', $watch);
           $fields = $this->memoize('group.' . $callId . '.' . $groupId, static fn (): array => $fields);
         }
 
@@ -136,6 +169,80 @@ final class DraftContentNode extends Node {
         $progress[$groupId]['status'] = 'drafted';
         $answers[$groupId] = $fields;
         $failed = '';
+      }
+
+      // The other groups are queued as jobs. A replay finds the rows and
+      // queues nothing.
+      $inputs = [];
+      foreach ($others as $groupId => $group) {
+        $fields = $this->recallMemo('group.' . $callId . '.' . $groupId);
+        if (is_array($fields)) {
+          yield $this->progress($callId, $group, 'drafted', $positions[$groupId], $total);
+          $progress[$groupId]['status'] = 'drafted';
+          $answers[$groupId] = $fields;
+          continue;
+        }
+
+        $inputs[$groupId] = [
+          'task' => $this->task($conversation, $answers),
+          'schema' => (array) $group['schemaSlice'],
+        ];
+        $jobId = DraftGroupJobs::jobId($this->task, $callId, $groupId);
+        if ($resources->jobs->record($jobId, (int) $resources->session->id(), $resources->uid, $this->task, $callId, $groupId, $run, $inputs[$groupId])) {
+          $resources->groupQueue->createItem(['job_id' => $jobId]);
+        }
+        $remaining[$groupId] = $group;
+      }
+
+      $worker = sprintf('parent:%s:%d:%s', gethostname(), getmypid(), bin2hex(random_bytes(4)));
+      try {
+        while ($remaining !== []) {
+          // A job no worker holds is drafted here, in group order. Without a
+          // worker this run drafts every group itself.
+          foreach ($remaining as $groupId => $group) {
+            $jobId = DraftGroupJobs::jobId($this->task, $callId, $groupId);
+            if ($resources->jobs->claim($jobId, $worker) === NULL) {
+              continue;
+            }
+
+            $index = $positions[$groupId];
+            $failed = $groupId;
+            yield $this->progress($callId, $group, 'drafting', $index, $total);
+            try {
+              $fields = yield from $this->runGroup($resources, $group, $run, $inputs[$groupId]['task'], $index, $total, $jobId, $worker, $watch);
+            }
+            catch (SchemaRetriesExhaustedException $e) {
+              $resources->jobs->finish($jobId, $worker, DraftGroupJobs::FAILED, NULL, $e->getMessage());
+              throw $e;
+            }
+            catch (\Throwable $e) {
+              $resources->jobs->finish($jobId, $worker, DraftGroupJobs::FAILED, NULL, 'The group could not be drafted.');
+              throw $e;
+            }
+            // The fields are used even when the job was lost meanwhile.
+            $resources->jobs->finish($jobId, $worker, DraftGroupJobs::DONE, $fields);
+            $fields = $this->memoize('group.' . $callId . '.' . $groupId, static fn (): array => $fields);
+
+            yield $this->progress($callId, $group, 'drafted', $index, $total);
+            $progress[$groupId]['status'] = 'drafted';
+            $answers[$groupId] = $fields;
+            $failed = '';
+            unset($remaining[$groupId]);
+            continue 2;
+          }
+
+          // Every job is held by a worker or settled, so this run reports
+          // what the workers wrote.
+          $changed = yield from $this->reportJobs($resources, $watch);
+
+          $this->heartbeat();
+          if (!$changed) {
+            usleep(500000);
+          }
+        }
+      }
+      finally {
+        $resources->jobs->abandonDraft($this->task, $callId);
       }
 
       $fields = $this->assemble($groups, $answers);
@@ -189,7 +296,8 @@ final class DraftContentNode extends Node {
       // only names fields of the editor's own template, so that one is passed
       // on and the rest become a fixed sentence.
       $message = match (TRUE) {
-        $e instanceof SchemaRetriesExhaustedException => $e->getMessage(),
+        $e instanceof SchemaRetriesExhaustedException,
+        $e instanceof DraftGroupFailedException => $e->getMessage(),
         $failed === '' => 'The draft could not be written.',
         default => 'The group could not be drafted.',
       };
@@ -272,7 +380,7 @@ final class DraftContentNode extends Node {
   }
 
   /**
-   * Runs the drafter of one group and reports the values it wrote.
+   * Runs the drafter of one group in this process and reports its progress.
    *
    * @param \Drupal\oe_ai_assistant\Plugin\NeuronWorkflow\DraftContent\DraftContentResources $resources
    *   What this run shares.
@@ -282,12 +390,17 @@ final class DraftContentNode extends Node {
    *   The run this draft belongs to.
    * @param string $task
    *   What to tell the drafter.
-   * @param string $callId
-   *   The call whose draft this group belongs to.
    * @param int $index
    *   Which group of the set this is, counting from one.
    * @param int $total
    *   How many groups the draft holds.
+   * @param string $jobId
+   *   The job this run holds for the group, empty when there is none.
+   * @param string $worker
+   *   The worker id that holds the job.
+   * @param \stdClass|null $watch
+   *   The state reportJobs() works on. When set, the other jobs of the draft
+   *   are reported as this group is drafted.
    *
    * @return \Generator
    *   Yields how far the drafter has written. Returns the field values it
@@ -296,32 +409,100 @@ final class DraftContentNode extends Node {
    * @throws \Drupal\oe_ai_assistant\Exception\SchemaRetriesExhaustedException
    *   When no answer of the drafter matched the group schema.
    */
-  private function draftGroup(DraftContentResources $resources, array $group, string $run, string $task, string $callId, int $index, int $total): \Generator {
-    $events = $resources->workflows->createWorkflow('draft_group', [], [
-      'session' => $resources->session,
-      'group' => (string) $group['groupId'],
-      'schema' => (array) $group['schemaSlice'],
-      'task' => $task,
-      'run' => $run,
-    ])->events();
+  private function runGroup(DraftContentResources $resources, array $group, string $run, string $task, int $index, int $total, string $jobId = '', string $worker = '', ?\stdClass $watch = NULL): \Generator {
+    $drafting = $resources->groupRunner->run($resources->session, (string) $group['groupId'], (array) $group['schemaSlice'], $task, $run);
+    $lastRenewal = time();
+    $lastReport = microtime(TRUE);
 
-    foreach ($events as $event) {
+    foreach ($drafting as $detail) {
       // This step commits only after the last group, and a group can take
       // minutes. So the lease of the run is renewed as the drafter reports.
       // heartbeat() writes only once half the lease has passed.
       $this->heartbeat();
 
-      // Only the progress of the drafter reaches the editor, as an update of
-      // the row of its group.
-      if ($event instanceof CustomStreamEvent && $event->name === DraftNode::PROGRESS_EVENT && is_array($event->value)) {
-        yield $this->progress($callId, $group, 'drafting', $index, $total, [
-          'attempt' => (int) ($event->value['attempt'] ?? 1),
-          'chars' => (int) ($event->value['chars'] ?? 0),
-        ]);
+      // The lease of the job is renewed at most every 30 seconds.
+      if ($jobId !== '' && time() - $lastRenewal >= 30) {
+        $resources->jobs->renew($jobId, $worker);
+        $lastRenewal = time();
+      }
+
+      yield $this->progress($this->callId, $group, 'drafting', $index, $total, $detail);
+
+      // The workers write while this group is drafted, and the editor should
+      // see their groups move meanwhile. So their jobs are read at most once
+      // a second.
+      if ($watch !== NULL && $watch->remaining !== [] && microtime(TRUE) - $lastReport >= 1.0) {
+        $lastReport = microtime(TRUE);
+        yield from $this->reportJobs($resources, $watch, (string) $group['groupId']);
       }
     }
 
-    return (array) $events->getReturn()->get(ValidateNode::FIELDS_KEY, []);
+    return (array) $drafting->getReturn();
+  }
+
+  /**
+   * Reports what the workers wrote for the groups still to be drafted.
+   *
+   * @param \Drupal\oe_ai_assistant\Plugin\NeuronWorkflow\DraftContent\DraftContentResources $resources
+   *   What this run shares.
+   * @param \stdClass $watch
+   *   The state shared with the caller, by reference: remaining, answers,
+   *   progress, seen, failed, plus positions and total.
+   * @param string $skip
+   *   The group this run drafts itself, which is not reported from its job.
+   *
+   * @return \Generator
+   *   Yields the progress events. Returns whether anything was reported.
+   *
+   * @throws \Drupal\oe_ai_assistant\Exception\DraftGroupFailedException
+   *   When a job failed or was abandoned.
+   */
+  private function reportJobs(DraftContentResources $resources, \stdClass $watch, string $skip = ''): \Generator {
+    $callId = $this->callId;
+    $total = $watch->total;
+    $changed = FALSE;
+    $rows = $resources->jobs->forDraft($this->task, $callId);
+    foreach ($watch->remaining as $groupId => $group) {
+      if ($groupId === $skip) {
+        continue;
+      }
+
+      $row = $rows[$groupId] ?? NULL;
+      $status = $row['status'] ?? DraftGroupJobs::FAILED;
+      $index = $watch->positions[$groupId];
+
+      if ($status === DraftGroupJobs::RUNNING) {
+        $detail = is_array($row['progress']) ? $row['progress'] : [];
+        if (!array_key_exists($groupId, $watch->seen)) {
+          $watch->seen[$groupId] = $detail;
+          $changed = TRUE;
+          yield $this->progress($callId, $group, 'drafting', $index, $total);
+        }
+        elseif ($watch->seen[$groupId] !== $detail) {
+          $watch->seen[$groupId] = $detail;
+          $changed = TRUE;
+          yield $this->progress($callId, $group, 'drafting', $index, $total, [
+            'attempt' => (int) ($detail['attempt'] ?? 1),
+            'chars' => (int) ($detail['chars'] ?? 0),
+          ]);
+        }
+      }
+      elseif ($status === DraftGroupJobs::DONE) {
+        $fields = (array) $row['result'];
+        $fields = $this->memoize('group.' . $callId . '.' . $groupId, static fn (): array => $fields);
+        yield $this->progress($callId, $group, 'drafted', $index, $total);
+        $watch->progress[$groupId]['status'] = 'drafted';
+        $watch->answers[$groupId] = $fields;
+        unset($watch->remaining[$groupId]);
+        $changed = TRUE;
+      }
+      elseif ($status !== DraftGroupJobs::PENDING) {
+        $watch->failed = $groupId;
+        throw new DraftGroupFailedException((string) ($row['error'] ?? '') ?: 'The group could not be drafted.');
+      }
+    }
+
+    return $changed;
   }
 
   /**

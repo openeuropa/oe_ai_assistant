@@ -170,5 +170,116 @@ function oe_ai_assistant_schema(): array {
     ],
   ];
 
+  $schema['oe_ai_assistant_draft_group_job'] = [
+    'description' => 'The field groups of a draft that workers draft in parallel.',
+    'fields' => [
+      'job_id' => [
+        'type' => 'varchar',
+        'length' => 64,
+        'not null' => TRUE,
+        'description' => 'The id of the job.',
+      ],
+      'session_id' => [
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'description' => 'The id of the editorial session.',
+      ],
+      'uid' => [
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => FALSE,
+        'description' => 'The user the job runs for.',
+      ],
+      'draft_task' => [
+        'type' => 'varchar',
+        'length' => 64,
+        'not null' => TRUE,
+        'description' => 'The task of the draft the group belongs to.',
+      ],
+      'call_id' => [
+        'type' => 'varchar',
+        'length' => 128,
+        'not null' => TRUE,
+        'description' => 'The id of the call that asked for the draft.',
+      ],
+      'group_id' => [
+        'type' => 'varchar',
+        'length' => 128,
+        'not null' => TRUE,
+        'description' => 'The id of the field group.',
+      ],
+      'run' => [
+        'type' => 'varchar',
+        'length' => 128,
+        'not null' => TRUE,
+        'description' => 'The run that names the drafter conversations.',
+      ],
+      'input' => [
+        'type' => 'text',
+        'size' => 'big',
+        'not null' => TRUE,
+        'description' => 'The schema and the task of the group, as JSON.',
+      ],
+      'status' => [
+        'type' => 'varchar',
+        'length' => 16,
+        'not null' => TRUE,
+        'default' => 'pending',
+        'description' => 'The status of the job.',
+      ],
+      'attempts' => [
+        'type' => 'int',
+        'not null' => TRUE,
+        'default' => 0,
+        'description' => 'How many times the job was claimed.',
+      ],
+      'claimed_by' => [
+        'type' => 'varchar',
+        'length' => 128,
+        'not null' => FALSE,
+        'description' => 'The worker that holds the job.',
+      ],
+      'lease_expires' => [
+        'type' => 'int',
+        'not null' => FALSE,
+        'description' => 'When the claim on the job lapses.',
+      ],
+      'progress' => [
+        'type' => 'text',
+        'not null' => FALSE,
+        'description' => 'How far the drafter has written, as JSON.',
+      ],
+      'result' => [
+        'type' => 'text',
+        'size' => 'big',
+        'not null' => FALSE,
+        'description' => 'The field values of the group, as JSON.',
+      ],
+      'error' => [
+        'type' => 'text',
+        'not null' => FALSE,
+        'description' => 'Why the job failed.',
+      ],
+      'created' => [
+        'type' => 'int',
+        'not null' => TRUE,
+        'default' => 0,
+        'description' => 'When the job was recorded.',
+      ],
+      'changed' => [
+        'type' => 'int',
+        'not null' => TRUE,
+        'default' => 0,
+        'description' => 'When the job last changed.',
+      ],
+    ],
+    'primary key' => ['job_id'],
+    'indexes' => [
+      'session_id' => ['session_id'],
+      'draft' => ['draft_task', 'call_id'],
+    ],
+  ];
+
   return $schema;
 }

@@ -20,7 +20,7 @@ use Drupal\oe_ai_assistant\Service\Subagent\SubagentDelivery;
 use Drupal\oe_ai_assistant\Service\Subagent\SubagentDispatcher;
 use Drupal\oe_ai_assistant\Service\Subagent\SubagentPresence;
 use Drupal\oe_ai_assistant\Service\Subagent\SubagentTaskLedger;
-use Drupal\user\UserInterface;
+use Drupal\oe_ai_assistant\Service\Subagent\TaskAccount;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 
@@ -52,6 +52,7 @@ final class SubagentDeliveryQueueWorker extends QueueWorkerBase implements Conta
     private readonly TimeInterface $time,
     private readonly KeyValueExpirableFactoryInterface $keyValueExpirable,
     private readonly LoggerInterface $logger,
+    private readonly TaskAccount $taskAccount,
   ) {
     parent::__construct($configuration, $plugin_id, $plugin_definition);
   }
@@ -73,6 +74,7 @@ final class SubagentDeliveryQueueWorker extends QueueWorkerBase implements Conta
       $container->get('datetime.time'),
       $container->get('keyvalue.expirable'),
       $container->get('logger.channel.oe_ai_assistant'),
+      $container->get(TaskAccount::class),
     );
   }
 
@@ -131,8 +133,8 @@ final class SubagentDeliveryQueueWorker extends QueueWorkerBase implements Conta
     }
 
     // The turn runs for the owner of the session, as a request of theirs would.
-    $owner = $session->getOwner();
-    if (!$owner instanceof UserInterface || !$owner->isActive() || !$owner->hasPermission('use oe ai assistant') || !$session->access('view', $owner)) {
+    $owner = $this->taskAccount->resolve((int) $session->getOwnerId(), $session);
+    if ($owner === NULL) {
       $this->ledger->failDeliveries($sessionId);
       $this->logger->warning('The results of session @id are not delivered, because its owner can no longer use the assistant.', ['@id' => $sessionId]);
 
