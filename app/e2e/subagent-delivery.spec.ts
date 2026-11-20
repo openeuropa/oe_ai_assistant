@@ -284,11 +284,11 @@ test.describe("Background result delivery", () => {
     await expect.poll(() => chatTimes.length, { timeout: 30000 }).toBe(2);
     expect(chatTimes[1] - chatTimes[0]).toBeGreaterThanOrEqual(4000);
 
-    const before = messageCalls;
+    // The failed deliveries restore the thread locally; only the initial
+    // load reached the server.
+    expect(messageCalls).toBe(1);
     workerDelivered = true;
-    await expect
-      .poll(() => messageCalls, { timeout: 30000 })
-      .toBeGreaterThan(before);
+    await expect.poll(() => messageCalls, { timeout: 30000 }).toBe(2);
   });
 
   test("an own delivery of a draft task reloads the thread", async ({

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Drupal\oe_ai_assistant\Service\Subagent;
 
 use Drupal\Component\Datetime\TimeInterface;
+use Drupal\Core\KeyValueStore\KeyValueExpirableFactoryInterface;
 use Drupal\Core\Queue\QueueFactory;
 
 /**
@@ -27,10 +28,21 @@ final class SubagentDispatcher {
    */
   private const int DELIVERY_SWEEP_AFTER = 30;
 
+  /**
+   * The key-value collection that marks the sessions with a queued delivery.
+   */
+  public const string DELIVERY_QUEUED_COLLECTION = 'oe_ai_assistant.subagent_delivery_queued';
+
+  /**
+   * How long a queued mark lasts, in seconds; it covers a lost queue item.
+   */
+  public const int DELIVERY_QUEUED_TTL = 120;
+
   public function __construct(
     private readonly SubagentTaskLedger $ledger,
     private readonly QueueFactory $queueFactory,
     private readonly TimeInterface $time,
+    private readonly KeyValueExpirableFactoryInterface $keyValueExpirable,
   ) {}
 
   /**
@@ -66,11 +78,16 @@ final class SubagentDispatcher {
   /**
    * Queues the delivery of the results that wait in a session.
    *
+   * A session with a delivery already queued gets no second item.
+   *
    * @param int $sessionId
    *   The id of the session.
    */
   public function enqueueDelivery(int $sessionId): void {
-    $this->queueFactory->get(self::DELIVERY_QUEUE)->createItem(['session_id' => $sessionId]);
+    $queued = $this->keyValueExpirable->get(self::DELIVERY_QUEUED_COLLECTION);
+    if ($queued->setWithExpireIfNotExists((string) $sessionId, TRUE, self::DELIVERY_QUEUED_TTL)) {
+      $this->queueFactory->get(self::DELIVERY_QUEUE)->createItem(['session_id' => $sessionId]);
+    }
   }
 
   /**

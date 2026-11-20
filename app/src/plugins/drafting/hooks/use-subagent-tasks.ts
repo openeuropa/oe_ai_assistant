@@ -99,6 +99,9 @@ export function useSubagentTasks(
     // The tasks of the delivery turn in flight; they join ownDeliveries only
     // when the turn ends without failure.
     let pendingTasks: SubagentTasksResponse["tasks"] = [];
+    // The thread as it was before the notice chip was spliced in.
+    let snapshot: ReturnType<AssistantRuntime["thread"]["export"]> | null =
+      null;
     // Deliveries that failed in a row, and when the next attempt may start.
     let failures = 0;
     let retryAt = 0;
@@ -140,6 +143,7 @@ export function useSubagentTasks(
       control.delivering = true;
       pendingTasks = waiting;
       try {
+        snapshot = runtime.thread.export();
         appendEventToThread(runtime.thread, {
           eventType: "background_results",
           summary: noticeSummary(waiting),
@@ -205,6 +209,17 @@ export function useSubagentTasks(
       schedule(Math.min(delay, askedDelay));
     }
 
+    const restore = () => {
+      const saved = snapshot;
+      snapshot = null;
+      if (saved === null || stopped) return;
+      try {
+        runtime.thread.import(saved);
+      } catch {
+        void reload();
+      }
+    };
+
     control.onDeliveryEnd = (failed) => {
       if (!control.delivering) return;
       control.delivering = false;
@@ -214,9 +229,9 @@ export function useSubagentTasks(
         failures += 1;
         retryAt = Date.now() + deliveryBackoff(failures);
         // The claim was lost or refused: the spliced chip and the empty
-        // reply do not exist on the server, so the server's thread replaces
-        // them without telling the editor.
-        void reload();
+        // reply do not exist on the server, so the thread goes back to how
+        // it was before the splice, without a request.
+        restore();
         return;
       }
       failures = 0;

@@ -321,6 +321,26 @@ class SubagentDeliveryTest extends AiEditorialSessionKernelTestBase {
   }
 
   /**
+   * Tests that repeated enqueues of a session's delivery make one item.
+   */
+  public function testEnqueueDeliveryDeduplicates(): void {
+    $session = $this->createSession($this->createUser());
+    $sessionId = (int) $session->id();
+    $this->waitingTask($session, 'a');
+    $dispatcher = $this->container->get(SubagentDispatcher::class);
+    $queue = $this->container->get('queue')->get(SubagentDispatcher::DELIVERY_QUEUE);
+
+    $dispatcher->enqueueDelivery($sessionId);
+    $dispatcher->enqueueDelivery($sessionId);
+    $dispatcher->enqueueDelivery($sessionId);
+    $this->assertSame(1, $queue->numberOfItems());
+
+    $this->worker()->processItem(['session_id' => $sessionId]);
+    $dispatcher->enqueueDelivery($sessionId);
+    $this->assertSame(2, $queue->numberOfItems());
+  }
+
+  /**
    * Records a finished background task whose result waits for delivery.
    */
   private function waitingTask(AiEditorialSessionInterface $session, string $letter, array $result = ['report' => 'Funding is 5M.']): string {

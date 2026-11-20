@@ -6,6 +6,7 @@ namespace Drupal\oe_ai_assistant\Plugin\QueueWorker;
 
 use Drupal\Component\Datetime\TimeInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
+use Drupal\Core\KeyValueStore\KeyValueExpirableFactoryInterface;
 use Drupal\Core\Plugin\ContainerFactoryPluginInterface;
 use Drupal\Core\Queue\Attribute\QueueWorker;
 use Drupal\Core\Queue\DelayedRequeueException;
@@ -48,6 +49,7 @@ final class SubagentDeliveryQueueWorker extends QueueWorkerBase implements Conta
     private readonly EntityTypeManagerInterface $entityTypeManager,
     private readonly AccountSwitcherInterface $accountSwitcher,
     private readonly TimeInterface $time,
+    private readonly KeyValueExpirableFactoryInterface $keyValueExpirable,
   ) {
     parent::__construct($configuration, $plugin_id, $plugin_definition);
   }
@@ -67,6 +69,7 @@ final class SubagentDeliveryQueueWorker extends QueueWorkerBase implements Conta
       $container->get('entity_type.manager'),
       $container->get('account_switcher'),
       $container->get('datetime.time'),
+      $container->get('keyvalue.expirable'),
     );
   }
 
@@ -74,6 +77,34 @@ final class SubagentDeliveryQueueWorker extends QueueWorkerBase implements Conta
    * {@inheritdoc}
    */
   public function processItem($data): void {
+    $queued = $this->keyValueExpirable->get(SubagentDispatcher::DELIVERY_QUEUED_COLLECTION);
+    $sessionKey = (string) (int) $data['session_id'];
+    $requeued = FALSE;
+    try {
+      $this->deliver($data);
+    }
+    catch (DelayedRequeueException | SuspendQueueException $exception) {
+      // The item stays or comes back, so the session stays marked as queued.
+      $requeued = TRUE;
+      if ($exception instanceof DelayedRequeueException) {
+        $queued->setWithExpire($sessionKey, TRUE, SubagentDispatcher::DELIVERY_QUEUED_TTL);
+      }
+      throw $exception;
+    }
+    finally {
+      if (!$requeued) {
+        $queued->delete($sessionKey);
+      }
+    }
+  }
+
+  /**
+   * Delivers the results of the session the item names.
+   *
+   * @param array $data
+   *   The queue item data.
+   */
+  private function deliver(array $data): void {
     // The queue keeps the item, so the delivery runs once the worker resumes.
     if ($this->state->get(SubagentTaskQueueWorker::PAUSED_STATE)) {
       throw new SuspendQueueException('The subagent worker is paused.');
