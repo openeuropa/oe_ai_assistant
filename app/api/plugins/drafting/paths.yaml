@@ -20,6 +20,60 @@ chat:
         content:
           text/event-stream: {}
 
+tasks:
+  post:
+    operationId: postDraftingTasks
+    summary: List the background tasks of the session and whether results wait
+    tags: [Drafting]
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: "../../openapi.yaml#/components/schemas/DraftingTasksRequest"
+    responses:
+      "200":
+        description: The newest background tasks and the delivery state
+        content:
+          application/json:
+            schema:
+              $ref: "../../openapi.yaml#/components/schemas/DraftingTasksResponse"
+      "400":
+        description: Validation error.
+        content:
+          application/json:
+            schema:
+              $ref: "../../openapi.yaml#/components/schemas/ApiError"
+      "403":
+        $ref: "../../openapi.yaml#/components/responses/Forbidden"
+
+stopTask:
+  post:
+    operationId: postDraftingStopTask
+    summary: Stop a background task of the session
+    tags: [Drafting]
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: "../../openapi.yaml#/components/schemas/DraftingStopTaskRequest"
+    responses:
+      "200":
+        description: What the stop did to the task
+        content:
+          application/json:
+            schema:
+              $ref: "../../openapi.yaml#/components/schemas/DraftingStopTaskResponse"
+      "400":
+        description: Validation error.
+        content:
+          application/json:
+            schema:
+              $ref: "../../openapi.yaml#/components/schemas/ApiError"
+      "403":
+        $ref: "../../openapi.yaml#/components/responses/Forbidden"
+
 reset:
   post:
     operationId: postDraftingReset

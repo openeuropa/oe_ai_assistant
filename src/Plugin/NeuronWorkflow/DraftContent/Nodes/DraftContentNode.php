@@ -10,6 +10,7 @@ use Drupal\oe_ai_assistant\Neuron\ToolWorkflowInterface;
 use Drupal\oe_ai_assistant\Neuron\Chat\Messages\EditorialAssistantMessage;
 use Drupal\oe_ai_assistant\Plugin\NeuronWorkflow\DraftContent\DraftContentResources;
 use Drupal\oe_ai_assistant\Plugin\NeuronWorkflow\DraftContent\Events\DraftContentRequestEvent;
+use Drupal\oe_ai_assistant\Plugin\NeuronWorkflow\Drafting\Nodes\DraftNode;
 use Drupal\oe_ai_assistant\Plugin\NeuronWorkflow\Drafting\Nodes\ValidateNode;
 use NeuronAI\Agent\Adapters\Events\ActivityStreamEvent;
 use NeuronAI\Agent\Adapters\Events\CustomStreamEvent;
@@ -127,7 +128,7 @@ final class DraftContentNode extends Node {
 
         if (!is_array($fields)) {
           yield $this->progress($callId, $group, 'drafting', $index, $total);
-          $fields = $this->draftGroup($resources, $group, $run, $this->task($conversation, $answers));
+          $fields = yield from $this->draftGroup($resources, $group, $run, $this->task($conversation, $answers), $callId, $index, $total);
           $fields = $this->memoize('group.' . $callId . '.' . $groupId, static fn (): array => $fields);
         }
 
@@ -243,11 +244,13 @@ final class DraftContentNode extends Node {
    *   Which group of the set this is, counting from one.
    * @param int $total
    *   How many groups the draft holds.
+   * @param array $detail
+   *   How far the drafter has written: the attempt and the characters.
    *
    * @return \NeuronAI\Agent\Adapters\Events\ActivityStreamEvent
    *   The progress event.
    */
-  private function progress(string $callId, array $group, string $status, int $index, int $total): ActivityStreamEvent {
+  private function progress(string $callId, array $group, string $status, int $index, int $total, array $detail = []): ActivityStreamEvent {
     $groupId = (string) $group['groupId'];
 
     // Two drafts of one reply write the same groups, and the card replaces
@@ -264,7 +267,7 @@ final class DraftContentNode extends Node {
         'status' => $status,
         'index' => $index,
         'total' => $total,
-      ],
+      ] + $detail,
     );
   }
 
@@ -279,23 +282,46 @@ final class DraftContentNode extends Node {
    *   The run this draft belongs to.
    * @param string $task
    *   What to tell the drafter.
+   * @param string $callId
+   *   The call whose draft this group belongs to.
+   * @param int $index
+   *   Which group of the set this is, counting from one.
+   * @param int $total
+   *   How many groups the draft holds.
    *
-   * @return array
-   *   The field values the drafter wrote.
+   * @return \Generator
+   *   Yields how far the drafter has written. Returns the field values it
+   *   wrote.
    *
    * @throws \Drupal\oe_ai_assistant\Exception\SchemaRetriesExhaustedException
    *   When no answer of the drafter matched the group schema.
    */
-  private function draftGroup(DraftContentResources $resources, array $group, string $run, string $task): array {
-    $state = $resources->workflows->createWorkflow('draft_group', [], [
+  private function draftGroup(DraftContentResources $resources, array $group, string $run, string $task, string $callId, int $index, int $total): \Generator {
+    $events = $resources->workflows->createWorkflow('draft_group', [], [
       'session' => $resources->session,
       'group' => (string) $group['groupId'],
       'schema' => (array) $group['schemaSlice'],
       'task' => $task,
       'run' => $run,
-    ])->run();
+    ])->events();
 
-    return (array) $state->get(ValidateNode::FIELDS_KEY, []);
+    foreach ($events as $event) {
+      // This step commits only after the last group, and a group can take
+      // minutes. So the lease of the run is renewed as the drafter reports.
+      // heartbeat() writes only once half the lease has passed.
+      $this->heartbeat();
+
+      // Only the progress of the drafter reaches the editor, as an update of
+      // the row of its group.
+      if ($event instanceof CustomStreamEvent && $event->name === DraftNode::PROGRESS_EVENT && is_array($event->value)) {
+        yield $this->progress($callId, $group, 'drafting', $index, $total, [
+          'attempt' => (int) ($event->value['attempt'] ?? 1),
+          'chars' => (int) ($event->value['chars'] ?? 0),
+        ]);
+      }
+    }
+
+    return (array) $events->getReturn()->get(ValidateNode::FIELDS_KEY, []);
   }
 
   /**

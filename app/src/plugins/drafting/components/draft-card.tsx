@@ -21,11 +21,12 @@ import {
   PenLine,
 } from "lucide-react";
 import { type ReactNode, useState } from "react";
-import type {
-  DraftContext,
-  DraftDocumentSnapshot,
-  DraftGroupProgress,
-  DraftRunStatus,
+import {
+  type DraftContext,
+  type DraftDocumentSnapshot,
+  type DraftGroupProgress,
+  type DraftRunStatus,
+  groupProgress,
 } from "../draft-result";
 import { formatDraftDateShort } from "../format-draft-date";
 import { DocumentDetailsDialog } from "./document-details-dialog";
@@ -259,6 +260,11 @@ function GroupRow({ group }: { group: DraftGroupProgress }) {
         />
       )}
       <span className={style.labelClass}>{group.label}</span>
+      {group.status === "drafting" && group.chars ? (
+        <span className="text-gray-400" data-testid="group-progress">
+          {groupProgress(group.chars, group.attempt ?? 1)}
+        </span>
+      ) : null}
     </div>
   );
 }

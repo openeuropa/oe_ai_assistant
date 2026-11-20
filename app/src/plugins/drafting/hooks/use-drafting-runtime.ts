@@ -17,24 +17,25 @@
 
 import {
   CompositeAttachmentAdapter,
-  ExportedMessageRepository,
   SimpleImageAttachmentAdapter,
   SimpleTextAttachmentAdapter,
 } from "@assistant-ui/react";
 import { useDataStreamRuntime } from "@assistant-ui/react-data-stream";
 import { useMemo } from "react";
 import { getCsrfHeaders } from "@/api/csrf-token";
-import { getSessionMessages } from "@/api/session-messages";
 import { getConfig } from "@/config";
 import type { DraftContext, DraftGroupProgress } from "../draft-result";
 import { parseDraftResult } from "../draft-result";
-import { toThreadMessages } from "../hydrate-transcript";
+import { loadThreadRepository } from "../hydrate-transcript";
 import {
   type DraftRunProgress,
   getDraftingState,
   type LiveDraft,
   setDraftingState,
 } from "../store";
+import { applySubagentEvent } from "../subagent-runs";
+import { ACTIVE_POLL_DELAY_MS } from "../subagent-tasks";
+import { type DeliveryControl, reportRunEnd } from "./use-subagent-tasks";
 
 /**
  * One group's progress, as the drafting node reports it.
@@ -49,6 +50,10 @@ interface DraftingActivity {
     status: keyof typeof ACTIVITY_STATUS;
     index: number;
     total: number;
+    /** The attempt at the group, from one. Sent while the drafter writes. */
+    attempt?: number;
+    /** How many characters the drafter has written so far. */
+    chars?: number;
   };
 }
 
@@ -119,8 +124,12 @@ function settleActiveRuns(error: string): void {
  * all event parsing, message rendering, and streaming state. The
  * conversation is scoped to the current editorial session; history
  * and every turn are persisted server side against that session.
+ *
+ * @param delivery Shared with useSubagentTasks, which starts the delivery
+ *   turns. A run that ends while it is flagged there is a delivery turn:
+ *   its failure reloads the thread quietly instead of reporting an error.
  */
-export function useDraftingRuntime() {
+export function useDraftingRuntime(delivery: DeliveryControl) {
   // Accept images and common document types as attachments.
   const attachmentAdapter = useMemo(
     () =>
@@ -135,10 +144,7 @@ export function useDraftingRuntime() {
   // backend records turns during chat, so append is a no-op here.
   const historyAdapter = useMemo(
     () => ({
-      async load() {
-        const messages = await getSessionMessages("drafting");
-        return ExportedMessageRepository.fromArray(toThreadMessages(messages));
-      },
+      load: loadThreadRepository,
       async append() {
         // Turns are persisted server side by the chat endpoint.
       },
@@ -159,6 +165,19 @@ export function useDraftingRuntime() {
     },
     // Handle custom data-* events from the UI message stream.
     onData: (data) => {
+      // A subagent reports its work under the id of the call that asked.
+      // The events are folded into one run per call for the subagent card.
+      const { subagentRuns } = getDraftingState();
+      const nextRuns = applySubagentEvent(subagentRuns, data.name, data.data);
+      if (nextRuns !== subagentRuns) {
+        setDraftingState({ subagentRuns: nextRuns });
+      }
+      // A task queued for the background is on its way to the thread, so the
+      // tab polls at the active cadence from now on.
+      if (data.name === "subagent-queued") {
+        delivery.pollWithin(ACTIVE_POLL_DELAY_MS);
+      }
+
       // The run names its groups before it drafts the first one, so the card
       // of the call that asked shows every row from the start.
       if (data.name === "draft-started") {
@@ -229,10 +248,13 @@ export function useDraftingRuntime() {
           return;
         }
         const status = ACTIVITY_STATUS[activity.data.status];
+        const { attempt, chars } = activity.data;
         updateRun(activity.data.callId, (run) => ({
           ...run,
           groups: run.groups.map((group) =>
-            group.id === activity.data.group ? { ...group, status } : group,
+            group.id === activity.data.group
+              ? { ...group, status, attempt, chars }
+              : group,
           ),
         }));
       }
@@ -257,18 +279,29 @@ export function useDraftingRuntime() {
         }));
       }
     },
-    onFinish: () => {
+    onFinish: (message) => {
       // The stream reported no end for a run still running, so the turn
       // ends it here. The runs themselves stay, because each card reads
       // the run its own call reported.
       settleActiveRuns("The draft did not finish.");
+      // An error frame ends the stream normally and marks the message, so
+      // a delivery that lost its claim arrives here.
+      const failed =
+        message.status?.type === "incomplete" &&
+        message.status.reason === "error";
+      reportRunEnd(delivery, failed);
     },
     onCancel: () => {
       settleActiveRuns("The draft stopped before it finished.");
+      reportRunEnd(delivery, false);
     },
     onError: (error) => {
-      console.error("[drafting] Data stream runtime error:", error);
       settleActiveRuns("The connection ended before the draft landed.");
+      // A refused delivery (409) is expected when another tab or the worker
+      // got there first, and the hook reloads the thread for it.
+      if (!reportRunEnd(delivery, true)) {
+        console.error("[drafting] Data stream runtime error:", error);
+      }
     },
   });
 

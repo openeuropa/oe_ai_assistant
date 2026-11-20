@@ -6,7 +6,7 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { parseDraftResult } from "../draft-result";
+import { groupProgress, parseDraftResult } from "../draft-result";
 
 describe("parseDraftResult", () => {
   it("parses the versioned shape with full context", () => {
@@ -127,6 +127,14 @@ describe("parseDraftResult", () => {
     expect(parsed.error).toBe("");
   });
 
+  it("reads a run the transcript reports as still running", () => {
+    const parsed = parseDraftResult({ status: "running" });
+
+    expect(parsed.status).toBe("running");
+    expect(parsed.version).toBeNull();
+    expect(parsed.fields).toEqual({});
+  });
+
   it("reads the groups and the failure of a run that stopped", () => {
     const groups = [
       { id: "main_fields", label: "Main fields", status: "drafted" },
@@ -189,5 +197,31 @@ describe("parseDraftResult", () => {
     expect(result.version).toBeNull();
     expect(result.context).toBeNull();
     expect(result.fields).toEqual({});
+  });
+});
+
+describe("parseDraftResult with a background task", () => {
+  it("reads the pending answer of a queued draft as no draft", () => {
+    const parsed = parseDraftResult({
+      task_id: "sub_1",
+      subagent: "drafter",
+      status: "pending",
+      note: "Queued.",
+    });
+
+    expect(parsed.version).toBeNull();
+    expect(parsed.fields).toEqual({});
+    expect(parsed.status).toBe("drafted");
+  });
+});
+
+describe("groupProgress", () => {
+  it("counts characters, and kilo-characters from 1000", () => {
+    expect(groupProgress(380, 1)).toBe("380 chars");
+    expect(groupProgress(1240, 1)).toBe("1.2k chars");
+  });
+
+  it("names the attempt only after a retry", () => {
+    expect(groupProgress(400, 2)).toBe("400 chars · attempt 2");
   });
 });

@@ -4,10 +4,15 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\oe_ai_assistant\ExistingSite;
 
+use Drupal\ai_neuron\Agent\NeuronAgentManagerInterface;
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
 use Drupal\oe_ai_assistant\Entity\Bundle\ContentCreationSessionInterface;
+use Drupal\oe_ai_assistant\Service\Subagent\EditorialTurnGuard;
+use Drupal\oe_ai_assistant\Service\Subagent\SubagentPresence;
+use Drupal\oe_ai_assistant\Service\Subagent\SubagentTaskLedger;
 use Drupal\oe_ai_assistant_test\Plugin\AiProvider\MockAiProvider;
 use Drupal\oe_ai_assistant_test\Plugin\AiProvider\MockResponse;
+use NeuronAI\Chat\Messages\UserMessage;
 
 /**
  * Integration tests for the DraftingPlugin chat action.
@@ -102,7 +107,7 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
         [
           'id' => 'call_1',
           'type' => 'function',
-          'function' => ['name' => 'drafting_draft_content', 'arguments' => '{}'],
+          'function' => ['name' => 'drafting_draft_content', 'arguments' => '{"brief": "Draft a news article."}'],
         ],
       ],
     ));
@@ -132,6 +137,20 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
     // no view of how many groups remain. So the frame names the call it
     // answers, and lists every group as pending before the first activity
     // frame.
+    // The drafter subagent opens and closes its run around the draft's own
+    // frames, under the call it answers.
+    $types = array_column($events, 'type');
+    $subagentStarted = array_search('data-subagent-started', $types, TRUE);
+    $subagentFinished = array_search('data-subagent-finished', $types, TRUE);
+    $this->assertNotFalse($subagentStarted, 'A data-subagent-started frame.');
+    $this->assertNotFalse($subagentFinished, 'A data-subagent-finished frame.');
+    $this->assertLessThan(array_search('data-draft-started', $types, TRUE), $subagentStarted);
+    $this->assertGreaterThan(array_search('data-drafted-fields', $types, TRUE), $subagentFinished);
+    $this->assertSame('call_1', $events[$subagentStarted]['data']['callId']);
+    $this->assertSame('drafter', $events[$subagentStarted]['data']['subagent']);
+    $this->assertMatchesRegularExpression('/^sub_[0-9a-f]{24}$/', $events[$subagentStarted]['data']['taskId']);
+    $this->assertSame('completed', $events[$subagentFinished]['data']['status']);
+
     $started = array_values(array_filter($events, fn($e) => $e['type'] === 'data-draft-started'));
     $this->assertCount(1, $started, 'Exactly one data-draft-started frame.');
     $this->assertSame(1, $started[0]['data']['version']);
@@ -147,11 +166,13 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
       array_search($activity[0], $events, TRUE),
       'data-draft-started must arrive before the first activity frame.',
     );
-    // One drafting frame and one drafted frame per group, for two groups: 4.
-    // An exact count, not a floor, so a regression that delivers every frame
-    // twice is caught here rather than only as a UI bug.
-    $this->assertCount(4, $activity,
-      'One drafting frame and one drafted frame per group.');
+    // Per group: the drafting frame, one progress frame (each answer is
+    // shorter than the progress step, so only its first chunk reports), and
+    // the drafted frame. For two groups: 6. An exact count, not a floor, so a
+    // regression that delivers every frame twice is caught here rather than
+    // only as a UI bug.
+    $this->assertCount(6, $activity,
+      'One drafting, one progress and one drafted frame per group.');
 
     // Every frame names its group, its label and its status, which is what
     // app/src/plugins/drafting/hooks/use-drafting-runtime.ts merges by group.
@@ -164,7 +185,7 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
       $statusesByGroup[$step['group']][] = $step['status'];
     }
     $this->assertArrayHasKey('main_fields', $statusesByGroup);
-    $this->assertSame(['drafting', 'drafted'], $statusesByGroup['main_fields']);
+    $this->assertSame(['drafting', 'drafting', 'drafted'], $statusesByGroup['main_fields']);
 
     // Exactly one data-drafted-fields frame, after the last activity frame,
     // carrying the version, the editorial context snapshot and the whole
@@ -787,6 +808,211 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
   }
 
   /**
+   * Tests that a settled call of a subagent tool carries its ledger state.
+   *
+   * A pending background card reads it after a reload to say whether the
+   * results arrived.
+   */
+  public function testGetMessagesAddsLiveSubagentStatus(): void {
+    $user = $this->createUser(['use oe ai assistant']);
+    $this->loginUser($user);
+    $session = $this->createSession($user);
+    $thread = 'editorial.session_' . $session->id();
+
+    $taskId = $this->seedWaitingResult($session, 'Find the funding.');
+    \Drupal::service(SubagentTaskLedger::class)->claimDelivery((int) $session->id(), 'delivery_1', \Drupal::time()->getRequestTime());
+    \Drupal::service(SubagentTaskLedger::class)->markDelivered('delivery_1');
+
+    $this->seedNeuronRow($session, $thread, [
+      'role' => 'user',
+      'meta' => json_encode([
+        'type' => 'tool_call_result',
+        'tools' => [
+          [
+            'name' => 'research_documents',
+            'result' => ['task_id' => $taskId, 'subagent' => 'researcher', 'status' => 'pending'],
+          ],
+          [
+            'name' => 'research_documents',
+            'result' => ['task_id' => 'sub_unknown', 'subagent' => 'researcher', 'status' => 'pending'],
+          ],
+          ['name' => 'drafting_get_history', 'result' => ['versions' => []]],
+        ],
+      ]),
+    ]);
+
+    $messages = array_values(array_filter(
+      $this->getMessages($session),
+      fn($m) => $m['role'] !== 'event',
+    ));
+
+    $calls = $messages[0]['toolCalls'];
+    $this->assertSame(['status' => 'completed', 'deliveryState' => 'delivered'], $calls[0]['live']);
+    $this->assertSame('pending', $calls[0]['result']['status']);
+    $this->assertArrayNotHasKey('live', $calls[1]);
+    $this->assertArrayNotHasKey('live', $calls[2]);
+  }
+
+  /**
+   * Tests that a completed background draft reaches the transcript as a draft.
+   */
+  public function testGetMessagesJoinsCompletedBackgroundDraft(): void {
+    $user = $this->createUser(['use oe ai assistant']);
+    $this->loginUser($user);
+    $session = $this->createSession($user);
+    $thread = 'editorial.session_' . $session->id();
+    assert($session instanceof ContentCreationSessionInterface);
+
+    $ledger = \Drupal::service(SubagentTaskLedger::class);
+    $taskId = 'sub_' . bin2hex(random_bytes(12));
+    $ledger->record($taskId, (int) $session->id(), 'drafting_draft_content', 'drafter', 'call_' . $taskId, $thread, (int) $user->id(), ['brief' => 'Draft it.'], TRUE);
+    $ledger->claim($taskId, 'worker-1', 300);
+    $ledger->finishClaimed($taskId, 'worker-1', 'completed', ['draft' => 'Draft 1', 'version' => 1]);
+
+    $draft = [
+      'version' => 1,
+      'run' => 'draft_1.abcdef',
+      'status' => 'drafted',
+      'context' => [
+        'tone' => NULL,
+        'template' => ['id' => 'news_with_paragraphs', 'label' => 'News with paragraphs'],
+        'documents' => [],
+      ],
+      'groups' => [['id' => 'main_fields', 'label' => 'Main fields', 'status' => 'drafted']],
+      'fields' => ['title' => [['value' => 'Test Title']]],
+    ];
+    $this->storeDraft($session, $draft);
+
+    $failedId = 'sub_' . bin2hex(random_bytes(12));
+    $ledger->record($failedId, (int) $session->id(), 'drafting_draft_content', 'drafter', 'call_' . $failedId, $thread, (int) $user->id(), ['brief' => 'Again.'], TRUE);
+    $ledger->claim($failedId, 'worker-1', 300);
+    $ledger->finishClaimed($failedId, 'worker-1', 'failed', ['error' => 'The drafter broke.']);
+
+    $openId = 'sub_' . bin2hex(random_bytes(12));
+    $ledger->record($openId, (int) $session->id(), 'drafting_draft_content', 'drafter', 'call_' . $openId, $thread, (int) $user->id(), ['brief' => 'More.'], TRUE);
+
+    $this->seedNeuronRow($session, $thread, [
+      'role' => 'user',
+      'meta' => json_encode([
+        'type' => 'tool_call_result',
+        'tools' => array_map(
+          static fn (string $id): array => [
+            'name' => 'drafting_draft_content',
+            'result' => ['task_id' => $id, 'subagent' => 'drafter', 'status' => 'pending'],
+          ],
+          [$taskId, $failedId, $openId],
+        ),
+      ]),
+    ]);
+
+    $messages = array_values(array_filter(
+      $this->getMessages($session),
+      fn($m) => $m['role'] !== 'event',
+    ));
+
+    $calls = $messages[0]['toolCalls'];
+    $this->assertSame($draft + ['live' => ['status' => 'completed', 'deliveryState' => 'waiting']], $calls[0]['result']);
+    $this->assertSame('failed', $calls[1]['result']['status']);
+    $this->assertSame('The drafter broke.', $calls[1]['result']['error']);
+    $this->assertSame('pending', $calls[2]['result']['status']);
+    $this->assertSame($openId, $calls[2]['result']['task_id']);
+    $this->assertSame('pending', $calls[2]['result']['live']['status']);
+  }
+
+  /**
+   * Tests that a subagent that throws closes its card as failed in the stream.
+   */
+  public function testFailedSubagentStreamsFinishedFailed(): void {
+    $user = $this->createUser(['use oe ai assistant']);
+    $this->loginUser($user);
+    $session = $this->createSession($user);
+
+    MockAiProvider::enqueue(new MockResponse(
+      toolCalls: [
+        [
+          'id' => 'call_1',
+          'type' => 'function',
+          'function' => ['name' => 'research_documents', 'arguments' => '{"prompt": "Find the funding."}'],
+        ],
+      ],
+    ));
+    MockAiProvider::enqueue(new MockResponse(error: new \RuntimeException('Provider down.')));
+    MockAiProvider::enqueue(new MockResponse(text: 'The research failed.'));
+
+    $result = $this->httpPost('/api/ai/plugins/drafting/chat', [
+      'message' => 'What is the funding?',
+      'sessionId' => $session->id(),
+    ]);
+    $this->assertEquals(200, $result['status'], substr($result['body'], 0, 500));
+
+    $finished = array_values(array_filter(
+      $this->parseSseEvents($result['body']),
+      static fn (array $e): bool => $e['type'] === 'data-subagent-finished',
+    ));
+    $this->assertCount(1, $finished);
+    $this->assertSame('failed', $finished[0]['data']['status']);
+    $this->assertSame('call_1', $finished[0]['data']['callId']);
+  }
+
+  /**
+   * Tests that an open drafting call runs while a turn of the session runs.
+   *
+   * It fails only once no turn runs, because the request that asked for the
+   * draft is the one that settles it.
+   */
+  public function testGetMessagesKeepsTheOpenDraftRunningWhileBusy(): void {
+    $user = $this->createUser(['use oe ai assistant']);
+    $this->loginUser($user);
+    $session = $this->createSession($user);
+    $thread = 'editorial.session_' . $session->id();
+
+    // One chunk in, the turn holds its lease.
+    MockAiProvider::enqueue(new MockResponse(text: 'Working on it.'));
+    $stream = \Drupal::service(NeuronAgentManagerInterface::class)
+      ->createAgent('editorial', ['session' => $session])
+      ->stream(new UserMessage('Hello'));
+    $stream->current();
+    $this->assertTrue(\Drupal::service(EditorialTurnGuard::class)->isBusy($session));
+
+    // The call the turn opened has no result yet.
+    $this->seedNeuronRow($session, $thread, [
+      'role' => 'assistant',
+      'meta' => json_encode([
+        'type' => 'tool_call',
+        'tools' => [
+          ['name' => 'drafting_draft_content', 'callId' => 'call_9', 'inputs' => []],
+        ],
+      ]),
+    ]);
+
+    $calls = $this->openCalls($session);
+    $this->assertSame(['status' => 'running'], $calls[0]['result']);
+
+    // Draining the stream ends the turn and releases the lease.
+    iterator_to_array($stream, FALSE);
+    $this->assertFalse(\Drupal::service(EditorialTurnGuard::class)->isBusy($session));
+
+    $calls = $this->openCalls($session);
+    $this->assertSame('failed', $calls[0]['result']['status']);
+  }
+
+  /**
+   * Returns the tool calls of the first transcript item that has any.
+   *
+   * @return array
+   *   The calls.
+   */
+  private function openCalls(AiEditorialSessionInterface $session): array {
+    foreach ($this->getMessages($session) as $message) {
+      if (!empty($message['toolCalls'])) {
+        return $message['toolCalls'];
+      }
+    }
+
+    return [];
+  }
+
+  /**
    * Tests that reset clears the whole conversation for the session.
    *
    * Provider-independent: it seeds rows and asserts they are deleted.
@@ -814,6 +1040,113 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
 
     $this->assertSame([], $session->conversationThreads(),
       'Reset must delete every message hosted by the session.');
+  }
+
+  /**
+   * Tests that the tasks action reports tasks and the delivery state.
+   */
+  public function testTasksActionReportsDeliverable(): void {
+    $user = $this->createUser(['use oe ai assistant']);
+    $this->loginUser($user);
+    $session = $this->createSession($user);
+
+    $result = $this->httpPost('/api/ai/plugins/drafting/tasks', ['sessionId' => $session->id()]);
+    $this->assertEquals(200, $result['status'], substr($result['body'], 0, 500));
+    $empty = json_decode($result['body'], TRUE);
+    $this->assertSame([], $empty['tasks']);
+    $this->assertFalse($empty['deliverable']);
+    $this->assertFalse($empty['busy']);
+    $this->assertMatchesRegularExpression('/^\d+\.\d+$/', $empty['revision']);
+    $this->assertTrue(\Drupal::service(SubagentPresence::class)->isPresent((int) $session->id()));
+
+    $taskId = $this->seedWaitingResult($session, str_repeat('Find the funding. ', 30));
+    $result = $this->httpPost('/api/ai/plugins/drafting/tasks', ['sessionId' => $session->id()]);
+    $this->assertEquals(200, $result['status']);
+    $data = json_decode($result['body'], TRUE);
+    $this->assertTrue($data['deliverable']);
+    $this->assertFalse($data['busy']);
+    $this->assertCount(1, $data['tasks']);
+    $task = $data['tasks'][0];
+    $this->assertSame($taskId, $task['taskId']);
+    $this->assertSame('researcher', $task['subagent']);
+    $this->assertSame('research_documents', $task['tool']);
+    $this->assertSame('completed', $task['status']);
+    $this->assertSame('background', $task['mode']);
+    $this->assertSame('waiting', $task['deliveryState']);
+    $this->assertSame(0, $task['continuations']);
+    $this->assertSame(200, mb_strlen($task['prompt']));
+    $this->assertIsInt($task['created']);
+    $this->assertIsInt($task['changed']);
+
+    // A request without a session is refused as the other actions refuse it.
+    $this->assertEquals(400, $this->httpPost('/api/ai/plugins/drafting/tasks', [])['status']);
+  }
+
+  /**
+   * Tests that a delivery request streams the notification turn live.
+   */
+  public function testDeliverModeStreamsNotificationTurn(): void {
+    $user = $this->createUser(['use oe ai assistant']);
+    $this->loginUser($user);
+    $session = $this->createSession($user);
+    $taskId = $this->seedWaitingResult($session, 'Find the funding.');
+
+    MockAiProvider::enqueue(new MockResponse(text: 'The research found the funding.'));
+    $result = $this->httpPost('/api/ai/plugins/drafting/chat', [
+      'sessionId' => $session->id(),
+      'runConfig' => ['custom' => ['deliver' => TRUE]],
+      'messages' => [],
+    ]);
+
+    $this->assertEquals(200, $result['status'], substr($result['body'], 0, 500));
+    $events = $this->parseSseEvents($result['body']);
+    $this->assertNotContains('error', array_column($events, 'type'));
+    $text = implode('', array_map(static fn (array $e): string => $e['delta'] ?? '', array_filter($events, static fn (array $e): bool => $e['type'] === 'text-delta')));
+    $this->assertStringContainsString('The research found the funding.', $text);
+
+    $row = \Drupal::service(SubagentTaskLedger::class)->load($taskId);
+    $this->assertSame('delivered', $row['delivery_state']);
+
+    $messages = $this->getMessages($session);
+    $this->assertSame(['event', 'assistant'], array_column($messages, 'role'));
+    $this->assertSame('background_results', $messages[0]['type']);
+    $this->assertSame($row['delivery_id'], $messages[0]['delivery']);
+    $this->assertSame([['id' => $taskId, 'subagent' => 'researcher', 'status' => 'completed']], $messages[0]['tasks']);
+    $this->assertSame('The research found the funding.', $messages[1]['content']);
+  }
+
+  /**
+   * Tests that a delivery request with nothing waiting is refused.
+   */
+  public function testDeliverModeWithNothingWaitingIs409(): void {
+    $user = $this->createUser(['use oe ai assistant']);
+    $this->loginUser($user);
+    $session = $this->createSession($user);
+
+    $result = $this->httpPost('/api/ai/plugins/drafting/chat', [
+      'sessionId' => $session->id(),
+      'runConfig' => ['custom' => ['deliver' => TRUE]],
+      'messages' => [],
+    ]);
+
+    $this->assertEquals(409, $result['status'], substr($result['body'], 0, 500));
+    $this->assertStringContainsString('nothing_to_deliver', $result['body']);
+  }
+
+  /**
+   * Records a finished background task whose result waits for delivery.
+   *
+   * @return string
+   *   The task id.
+   */
+  private function seedWaitingResult(AiEditorialSessionInterface $session, string $prompt): string {
+    $ledger = \Drupal::service(SubagentTaskLedger::class);
+    $taskId = 'sub_' . bin2hex(random_bytes(12));
+    $ledger->record($taskId, (int) $session->id(), 'research_documents', 'researcher', 'call_' . $taskId, $session->editorialThread(), (int) $session->getOwnerId(), ['prompt' => $prompt], TRUE);
+    $ledger->claim($taskId, 'worker-1', 300);
+    $ledger->finishClaimed($taskId, 'worker-1', 'completed', ['report' => 'Funding is 5M.']);
+
+    return $taskId;
   }
 
   /**
@@ -1042,7 +1375,7 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
         [
           'id' => 'call_1',
           'type' => 'function',
-          'function' => ['name' => 'drafting_draft_content', 'arguments' => '{}'],
+          'function' => ['name' => 'drafting_draft_content', 'arguments' => '{"brief": "Draft a news article."}'],
         ],
       ],
     ));

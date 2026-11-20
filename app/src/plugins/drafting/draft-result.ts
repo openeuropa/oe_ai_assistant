@@ -12,6 +12,7 @@
  */
 
 import type { components } from "@/api/schema";
+import { isPendingSubagentResult } from "./subagent-result";
 
 /** Tone snapshot stored on a draft: id, label, and the raw guidelines. */
 export interface DraftToneSnapshot {
@@ -50,6 +51,10 @@ export interface DraftGroupProgress {
   status: DraftGroupStatus;
   /** The error recorded for a failed group. Absent for every other status. */
   error?: string;
+  /** The attempt at the group, from one, while the drafter writes it. */
+  attempt?: number;
+  /** How many characters the drafter has written, while it writes. */
+  chars?: number;
 }
 
 /**
@@ -152,6 +157,12 @@ export function parseDraftResult(result: unknown): ParsedDraftResult {
     return { ...empty, fields: {} };
   }
 
+  // A draft handed to a background subagent answers with the task it
+  // queued. The legacy branch below would read that task as a fields map.
+  if (isPendingSubagentResult(result)) {
+    return { ...empty, fields: {} };
+  }
+
   if (typeof result["version"] === "number") {
     return {
       version: result["version"],
@@ -175,6 +186,31 @@ export function parseDraftResult(result: unknown): ParsedDraftResult {
     };
   }
 
+  // The tool error handler answers a call that threw with {tool, error}.
+  if (
+    typeof result["tool"] === "string" &&
+    typeof result["error"] === "string" &&
+    !("status" in result)
+  ) {
+    return { ...empty, status: "failed", error: result["error"], fields: {} };
+  }
+
+  // The transcript reports a call whose turn still runs as running. It has
+  // no version yet, and the card keeps spinning until the run settles.
+  if (result["status"] === "running") {
+    return { ...empty, status: "running", fields: {} };
+  }
+
   // Legacy flat map: the whole result object is the fields map.
   return { ...empty, fields: result };
+}
+
+/**
+ * Says how far the drafter of a group has written, e.g. "1.2k chars · attempt 2".
+ */
+export function groupProgress(chars: number, attempt: number): string {
+  const size =
+    chars < 1000 ? `${chars} chars` : `${(chars / 1000).toFixed(1)}k chars`;
+
+  return attempt > 1 ? `${size} · attempt ${attempt}` : size;
 }

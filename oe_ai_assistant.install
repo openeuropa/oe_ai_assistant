@@ -1,0 +1,174 @@
+<?php
+
+/**
+ * @file
+ * Install, schema and uninstall hooks of the AI assistant module.
+ */
+
+declare(strict_types=1);
+
+/**
+ * Implements hook_schema().
+ */
+function oe_ai_assistant_schema(): array {
+  $schema['oe_ai_assistant_subagent_task'] = [
+    'description' => 'The tasks that subagents run for an editorial session.',
+    'fields' => [
+      'task_id' => [
+        'type' => 'varchar',
+        'length' => 32,
+        'not null' => TRUE,
+        'description' => 'The id of the task.',
+      ],
+      'session_id' => [
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'description' => 'The id of the editorial session.',
+      ],
+      'tool' => [
+        'type' => 'varchar',
+        'length' => 64,
+        'not null' => TRUE,
+        'description' => 'The tool whose call the task answers.',
+      ],
+      'subagent' => [
+        'type' => 'varchar',
+        'length' => 64,
+        'not null' => TRUE,
+        'description' => 'The name of the subagent.',
+      ],
+      'mode' => [
+        'type' => 'varchar',
+        'length' => 16,
+        'not null' => TRUE,
+        'default' => 'foreground',
+        'description' => 'How the task runs.',
+      ],
+      'call_id' => [
+        'type' => 'varchar',
+        'length' => 128,
+        'not null' => TRUE,
+        'description' => 'The id of the tool call that started the task.',
+      ],
+      'parent_thread' => [
+        'type' => 'varchar',
+        'length' => 128,
+        'not null' => TRUE,
+        'description' => 'The thread of the agent that made the call.',
+      ],
+      'child_id' => [
+        'type' => 'varchar',
+        'length' => 191,
+        'not null' => FALSE,
+        'description' => 'The id of the child run.',
+      ],
+      'uid' => [
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => FALSE,
+        'description' => 'The user the task runs for.',
+      ],
+      'input' => [
+        'type' => 'text',
+        'not null' => TRUE,
+        'description' => 'The inputs of the call, as JSON.',
+      ],
+      'status' => [
+        'type' => 'varchar',
+        'length' => 16,
+        'not null' => TRUE,
+        'description' => 'The status of the task.',
+      ],
+      'continuations' => [
+        'type' => 'int',
+        'not null' => TRUE,
+        'default' => 0,
+        'description' => 'How many times the task was continued.',
+      ],
+      'attempts' => [
+        'type' => 'int',
+        'not null' => TRUE,
+        'default' => 0,
+        'description' => 'How many times the task was attempted.',
+      ],
+      'stop_requested' => [
+        'type' => 'int',
+        'size' => 'tiny',
+        'not null' => TRUE,
+        'default' => 0,
+        'description' => 'Whether a stop was requested.',
+      ],
+      'claimed_by' => [
+        'type' => 'varchar',
+        'length' => 64,
+        'not null' => FALSE,
+        'description' => 'The worker that holds the task.',
+      ],
+      'lease_expires' => [
+        'type' => 'int',
+        'not null' => FALSE,
+        'description' => 'When the claim on the task lapses.',
+      ],
+      'result' => [
+        'type' => 'text',
+        'size' => 'big',
+        'not null' => FALSE,
+        'description' => 'The result of the task, as JSON.',
+      ],
+      'delivery_state' => [
+        'type' => 'varchar',
+        'length' => 16,
+        'not null' => TRUE,
+        'default' => 'none',
+        'description' => 'Whether the result was delivered to the conversation.',
+      ],
+      'delivery_id' => [
+        'type' => 'varchar',
+        'length' => 64,
+        'not null' => FALSE,
+        'description' => 'The id of the delivery.',
+      ],
+      'delivery_claimed' => [
+        'type' => 'int',
+        'not null' => FALSE,
+        'description' => 'When the delivery was claimed.',
+      ],
+      'delivery_attempts' => [
+        'type' => 'int',
+        'not null' => TRUE,
+        'default' => 0,
+        'description' => 'How many deliveries of the result failed.',
+      ],
+      'delivery_retry_at' => [
+        'type' => 'int',
+        'not null' => FALSE,
+        'description' => 'When a failed delivery may be tried again.',
+      ],
+      'dispatched' => [
+        'type' => 'int',
+        'not null' => FALSE,
+        'description' => 'When the job of a background task was queued.',
+      ],
+      'created' => [
+        'type' => 'int',
+        'not null' => TRUE,
+        'default' => 0,
+        'description' => 'When the task was recorded.',
+      ],
+      'changed' => [
+        'type' => 'int',
+        'not null' => TRUE,
+        'default' => 0,
+        'description' => 'When the task last changed.',
+      ],
+    ],
+    'primary key' => ['task_id'],
+    'indexes' => [
+      'session_id' => ['session_id'],
+      'delivery' => ['delivery_state', 'session_id'],
+    ],
+  ];
+
+  return $schema;
+}

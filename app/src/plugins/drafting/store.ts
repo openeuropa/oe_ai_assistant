@@ -18,6 +18,8 @@ import type {
   DraftRunStatus,
   ParsedDraftResult,
 } from "./draft-result";
+import type { SubagentRuns } from "./subagent-runs";
+import type { SubagentTask } from "./subagent-tasks";
 
 const PLUGIN_ID = "drafting";
 
@@ -59,6 +61,25 @@ export interface DraftingSliceState {
    */
   runs: Record<string, DraftRunProgress>;
   /**
+   * The subagent runs seen in this session, keyed by the id of the tool call
+   * that asked for them (transient). The subagent card of a call reads the
+   * run its own call reported; a reloaded thread has none and shows the
+   * result alone.
+   */
+  subagentRuns: SubagentRuns;
+  /**
+   * The background tasks of the session, as the latest poll of the tasks
+   * endpoint reported them, keyed by task id (transient). The subagent cards
+   * follow the ledger through it while the tab is open.
+   */
+  tasksById: Record<string, SubagentTask>;
+  /**
+   * The titles of the session documents, keyed by document id (transient).
+   * The documents hook keeps it current, and the cards of a report read it
+   * to name the sources they cite.
+   */
+  documentTitles: Record<string, string>;
+  /**
    * The calls the run in flight settles, which is what the progress events
    * of that run update. Empty between turns.
    */
@@ -84,6 +105,9 @@ export interface DraftingSliceState {
 export const draftingSliceConfig: PluginSliceConfig<DraftingSliceState> = {
   initialState: {
     runs: {},
+    subagentRuns: {},
+    tasksById: {},
+    documentTitles: {},
     activeCallIds: [],
     draftedFields: {},
     liveDrafts: {},

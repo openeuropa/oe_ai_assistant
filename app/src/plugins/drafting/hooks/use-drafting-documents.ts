@@ -8,6 +8,7 @@ import {
   removeDraftingDocument,
 } from "../api/drafting-api";
 import { countUnsettled, isDocumentSettled } from "../document-status";
+import { setDraftingState } from "../store";
 import type { DraftingDocument, DraftingDocumentCategory } from "../types";
 
 export type { DraftingDocument } from "../types";
@@ -120,6 +121,12 @@ export function useDraftingDocuments(
   const setSelected = useCallback((documents: DraftingDocument[]) => {
     selectedRef.current = documents;
     setSelectedState(documents);
+    // The cards of a research report name their sources from this map.
+    setDraftingState({
+      documentTitles: Object.fromEntries(
+        documents.map((document) => [document.id, document.title]),
+      ),
+    });
   }, []);
 
   /**

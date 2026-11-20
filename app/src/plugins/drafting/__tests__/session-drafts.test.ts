@@ -221,4 +221,32 @@ describe("extractSessionDrafts", () => {
 
     expect(drafts[0]?.createdAt).toEqual(new Date("2026-11-09T09:40:00+00:00"));
   });
+
+  it("picks up a background draft the transcript joined with its record", () => {
+    const drafts = extractSessionDrafts([
+      {
+        content: [
+          draftPart({
+            version: 1,
+            status: "drafted",
+            context: { tone: null, template: null, documents: [] },
+            groups: [],
+            fields: { title: "Background" },
+            live: { status: "completed", deliveryState: "waiting" },
+          }),
+          // A background draft still on its way is no draft yet.
+          draftPart({
+            task_id: "sub_2",
+            subagent: "drafter",
+            status: "pending",
+            live: { status: "running", deliveryState: "none" },
+          }),
+        ],
+      },
+    ]);
+
+    expect(drafts).toHaveLength(1);
+    expect(drafts[0]?.version).toBe(1);
+    expect(drafts[0]?.fields).toEqual({ title: "Background" });
+  });
 });

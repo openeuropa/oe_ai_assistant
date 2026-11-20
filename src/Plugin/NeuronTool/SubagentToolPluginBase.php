@@ -1,0 +1,81 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Drupal\oe_ai_assistant\Plugin\NeuronTool;
+
+use Drupal\ai_neuron\Tools\NeuronToolPluginBase;
+use Drupal\Core\Session\AccountProxyInterface;
+use Drupal\oe_ai_assistant\Neuron\Subagent\SubagentDefinition;
+use Drupal\oe_ai_assistant\Neuron\Tools\SubagentTool;
+use Drupal\oe_ai_assistant\Service\Subagent\SubagentTaskLedger;
+use NeuronAI\Exceptions\ToolException;
+use NeuronAI\Tools\PropertyType;
+use NeuronAI\Tools\Tool;
+use NeuronAI\Tools\ToolProperty;
+
+/**
+ * Base class of a tool plugin whose calls a subagent answers.
+ */
+abstract class SubagentToolPluginBase extends NeuronToolPluginBase {
+
+  public function __construct(
+    array $configuration,
+    $plugin_id,
+    $plugin_definition,
+    protected readonly SubagentTaskLedger $ledger,
+    protected readonly AccountProxyInterface $currentUser,
+  ) {
+    parent::__construct($configuration, $plugin_id, $plugin_definition);
+  }
+
+  /**
+   * Returns the subagent that answers the calls of this tool.
+   *
+   * @return \Drupal\oe_ai_assistant\Neuron\Subagent\SubagentDefinition
+   *   The definition.
+   */
+  abstract protected function definition(): SubagentDefinition;
+
+  /**
+   * {@inheritdoc}
+   *
+   * The node finds the tool in the registry as a Neuron object, not as this
+   * plugin. So the object handed over carries the definition itself.
+   */
+  public function getNeuron(): Tool {
+    $session = $this->getContextValue('session');
+    $definition = $this->definition();
+    $properties = $this->properties();
+    if ($definition->background) {
+      $properties[] = ToolProperty::make(
+        'run_in_background',
+        PropertyType::BOOLEAN,
+        'true to run the task in the background, so the conversation stays free; the result arrives later in a system message. Leave it out to wait for the result now.',
+        FALSE,
+      );
+    }
+
+    return new SubagentTool(
+      $this->getPluginId(),
+      $this->description(),
+      $properties,
+      $definition,
+      $this->ledger,
+      (int) $session->id(),
+      (int) $this->currentUser->id() ?: NULL,
+      $session->editorialThread(),
+    );
+  }
+
+  /**
+   * Refuses to run, because the subagent answers the calls of this tool.
+   *
+   * @throws \NeuronAI\Exceptions\ToolException
+   *   Always.
+   */
+  public function __invoke(): string {
+    throw new ToolException(sprintf('The "%s" tool is answered by its subagent, not by executing it.', $this->getPluginId()));
+  }
+
+}

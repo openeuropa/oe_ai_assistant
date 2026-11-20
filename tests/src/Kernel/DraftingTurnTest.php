@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Drupal\Tests\oe_ai_assistant\Kernel;
 
 use Drupal\ai_neuron\Agent\NeuronAgentManagerInterface;
+use Drupal\ai_neuron\Workflow\NeuronWorkflowManagerInterface;
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
 use Drupal\oe_ai_assistant\Neuron\Chat\History\EditorialMessageStore;
 use Drupal\oe_ai_assistant\Plugin\AiAssistantPluginManager;
@@ -13,6 +14,7 @@ use Drupal\oe_ai_assistant\Service\DraftingSchemaProviderInterface;
 use Drupal\oe_ai_assistant_test\Plugin\AiProvider\MockAiProvider;
 use Drupal\oe_ai_assistant_test\Plugin\NeuronTool\FailingNeuronTool;
 use Drupal\oe_ai_assistant_test\Plugin\AiProvider\MockResponse;
+use NeuronAI\Agent\Adapters\Events\ActivityStreamEvent;
 use NeuronAI\Agent\AgentState;
 use NeuronAI\Chat\Messages\ToolCallMessage;
 use NeuronAI\Chat\Messages\UserMessage;
@@ -77,7 +79,7 @@ class DraftingTurnTest extends AiEditorialSessionKernelTestBase {
     $results = $session->conversationToolResults();
     $this->assertCount(1, $results);
     $this->assertSame('drafting_draft_content', $results[0]['name']);
-    $this->assertSame(['draft' => 'Draft 1', 'version' => 1], $results[0]['result']);
+    $this->assertDraftResult(1, $results[0]['result']);
 
     // The draft holds what the two groups wrote, assembled in code.
     $drafts = $session->listDrafts();
@@ -229,6 +231,46 @@ class DraftingTurnTest extends AiEditorialSessionKernelTestBase {
   }
 
   /**
+   * The run reports how far the drafter of each group has written.
+   */
+  public function testGroupProgressReportsWhatTheDrafterWrote(): void {
+    $session = $this->createSession($this->createUser());
+
+    MockAiProvider::reset();
+    // The main_fields drafter misses the schema once, so it writes twice.
+    MockAiProvider::enqueue(new MockResponse(text: '{"title": [{"value": "T"}]}'));
+    MockAiProvider::enqueue(new MockResponse(text: self::MAIN_FIELDS));
+    MockAiProvider::enqueue(new MockResponse(text: self::PARAGRAPHS));
+
+    $events = $this->container->get(NeuronWorkflowManagerInterface::class)
+      ->createWorkflow('draft_content', [], [
+        'session' => $session,
+        'call' => 'call_1',
+        'brief' => self::BRIEF,
+        'task' => 'sub_progress',
+      ])
+      ->events();
+
+    $steps = [];
+    foreach ($events as $event) {
+      if ($event instanceof ActivityStreamEvent && $event->type === 'drafting' && $event->data['group'] === 'main_fields') {
+        $steps[] = $event->data;
+      }
+    }
+
+    // The row opens, each attempt reports what it wrote, and the row closes.
+    $this->assertSame(['drafting', 'drafting', 'drafting', 'drafted'], array_column($steps, 'status'));
+    $this->assertArrayNotHasKey('chars', $steps[0]);
+    $this->assertSame([1, 2], [$steps[1]['attempt'], $steps[2]['attempt']]);
+    $this->assertGreaterThan(0, $steps[1]['chars']);
+    $this->assertGreaterThan(0, $steps[2]['chars']);
+    $this->assertArrayNotHasKey('chars', $steps[3]);
+
+    // The progress changes nothing in what the run stores.
+    $this->assertSame(['Draft 1'], array_column($session->listDrafts(), 'name'));
+  }
+
+  /**
    * A group that never matches its schema fails the run and stores no draft.
    */
   public function testGroupThatNeverMatchesFailsTheRun(): void {
@@ -292,10 +334,12 @@ class DraftingTurnTest extends AiEditorialSessionKernelTestBase {
 
     $results = $session->conversationToolResults();
     $this->assertSame([
+      'subagent' => 'drafter',
+      'status' => 'failed',
       'error' => 'The group could not be drafted.',
       'group' => 'main_fields',
       'version' => 1,
-    ], $results[0]['result']);
+    ], array_diff_key($results[0]['result'], ['task_id' => TRUE]));
     $this->assertSame([], $session->listDrafts());
 
     // What the site saw is in the log, with the run that saw it.
@@ -399,8 +443,10 @@ class DraftingTurnTest extends AiEditorialSessionKernelTestBase {
     // the drafters of its own groups.
     $results = $session->conversationToolResults();
     $this->assertCount(2, $results);
-    $this->assertSame(['draft' => 'Draft 1', 'version' => 1], $results[0]['result']);
-    $this->assertSame(['draft' => 'Draft 2', 'version' => 2], $results[1]['result']);
+    $this->assertDraftResult(1, $results[0]['result']);
+    $this->assertDraftResult(2, $results[1]['result']);
+    // Each call is its own task.
+    $this->assertNotSame($results[0]['result']['task_id'], $results[1]['result']['task_id']);
     $this->assertCount(2, preg_grep('@\.group_main_fields$@', array_keys($session->conversationThreads())));
   }
 
@@ -422,10 +468,12 @@ class DraftingTurnTest extends AiEditorialSessionKernelTestBase {
 
     $this->assertSame([], $session->listDrafts());
     $this->assertSame([
+      'subagent' => 'drafter',
+      'status' => 'failed',
       'error' => 'The draft could not be written.',
       'group' => '',
       'version' => 1,
-    ], $session->conversationToolResults()[0]['result']);
+    ], array_diff_key($session->conversationToolResults()[0]['result'], ['task_id' => TRUE]));
   }
 
   /**
@@ -813,6 +861,77 @@ class DraftingTurnTest extends AiEditorialSessionKernelTestBase {
    */
   private const PARAGRAPHS = '{"field_content_paragraphs": [{"field_text_body": [{"value": "<p>B</p>"}],'
     . ' "type": [{"target_id": "text_block"}]}]}';
+
+  /**
+   * A call that misses its brief is answered with the reason, and drafts none.
+   *
+   * The gateway does not enforce the tool's schema, so the call can arrive
+   * without its required input. The drafters would then write about a subject
+   * nobody gave them.
+   */
+  public function testDraftCallWithoutBriefIsAnError(): void {
+    $session = $this->createSession($this->createUser());
+
+    MockAiProvider::reset();
+    MockAiProvider::enqueue(new MockResponse(
+      toolCalls: [
+        [
+          'id' => 'call_1',
+          'type' => 'function',
+          'function' => ['name' => 'drafting_draft_content', 'arguments' => '{}'],
+        ],
+      ],
+    ));
+    MockAiProvider::enqueue(new MockResponse(text: 'What should the draft be about?'));
+
+    $state = $this->turn($session, 'Draft it.');
+
+    $this->assertSame('What should the draft be about?', $state->getMessage()?->getContent());
+    $this->assertSame([], $session->listDrafts());
+    $results = $session->conversationToolResults();
+    $this->assertCount(1, $results);
+    $this->assertStringContainsString('brief', json_encode($results[0]['result'], JSON_THROW_ON_ERROR));
+    // No drafter ran, so nothing is left in the queue for one.
+    $this->assertTrue(MockAiProvider::isEmpty());
+  }
+
+  /**
+   * A call whose brief is blank is answered with the reason, and drafts none.
+   */
+  public function testDraftCallWithBlankBriefIsAnError(): void {
+    $session = $this->createSession($this->createUser());
+
+    MockAiProvider::reset();
+    MockAiProvider::enqueue($this->toolCall('call_1', '   '));
+    MockAiProvider::enqueue(new MockResponse(text: 'What should the draft be about?'));
+
+    $this->turn($session, 'Draft it.');
+
+    $this->assertSame([], $session->listDrafts());
+    $results = $session->conversationToolResults();
+    $this->assertCount(1, $results);
+    $this->assertStringContainsString('Parameter \"brief\" must not be empty.', json_encode($results[0]['result'], JSON_THROW_ON_ERROR));
+    $this->assertTrue(MockAiProvider::isEmpty());
+  }
+
+  /**
+   * Asserts the result a drafting call settled with.
+   *
+   * @param int $version
+   *   The version the call should have stored.
+   * @param array $result
+   *   The settled result.
+   */
+  private function assertDraftResult(int $version, array $result): void {
+    $this->assertMatchesRegularExpression('/^sub_[0-9a-f]{24}$/', $result['task_id'] ?? '');
+    unset($result['task_id']);
+    $this->assertSame([
+      'subagent' => 'drafter',
+      'status' => 'completed',
+      'draft' => 'Draft ' . $version,
+      'version' => $version,
+    ], $result);
+  }
 
   /**
    * Queues the responses of a turn that drafts both groups on first ask.

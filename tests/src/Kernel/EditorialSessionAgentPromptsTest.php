@@ -100,6 +100,24 @@ Full text of one.", $prompt);
   }
 
   /**
+   * Tests that the editorial agent is told which tone is set.
+   */
+  public function testEditorialAgentIsToldTheTone(): void {
+    $prompt = $this->editorialInstructions([], [
+      'id' => '3',
+      'label' => 'Formal',
+      'prompt' => 'Use professional, institutional language.',
+    ]);
+
+    $this->assertStringContainsString('The editor selected the tone "Formal".', $prompt);
+    $this->assertStringContainsString('Its guidelines: Use professional, institutional language.', $prompt);
+    // The agent writes no field, so it is not told to follow the tone.
+    $this->assertStringNotContainsString('Follow the tone guidelines', $prompt);
+
+    $this->assertStringContainsString('The editor has selected no tone.', $this->editorialInstructions([]));
+  }
+
+  /**
    * Tests that unprocessed and failed documents are announced, not read.
    */
   public function testDocumentsPromptAnnouncesPendingDocuments(): void {
@@ -295,13 +313,15 @@ Overflow text.", $prompt);
    *
    * @param array $documents
    *   The documents the session is set up with.
+   * @param array|null $tone
+   *   The tone the session is set up with.
    *
    * @return string
    *   The instructions.
    */
-  private function editorialInstructions(array $documents): string {
+  private function editorialInstructions(array $documents, ?array $tone = NULL): string {
     $agent = $this->container->get(NeuronAgentManagerInterface::class)
-      ->createAgent('editorial', ['session' => $this->stubbedSession(NULL, $documents)]);
+      ->createAgent('editorial', ['session' => $this->stubbedSession($tone, $documents)]);
 
     return $agent->getInstructions()->getContent();
   }

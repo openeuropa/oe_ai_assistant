@@ -25,6 +25,9 @@ use NeuronAI\Workflow\Streaming\Adapter\StreamAdapterInterface;
   tools: [
     'drafting_get_history',
     'drafting_draft_content',
+    'research_documents',
+    'subagent_check_tasks',
+    'subagent_stop_task',
   ],
   context_definitions: [
     'session' => new EntityContextDefinition(
@@ -65,8 +68,7 @@ final class EditorialNeuronAgent extends EditorialSessionAgentBase {
    * other block of this prompt names the attachment, so the agent has no
    * text to answer from. The editor also hears nothing about a document
    * that is still in extraction, or one whose extraction failed. The
-   * documents block carries the text and both warnings. This agent writes
-   * no field of the draft, so the prompt omits the tone.
+   * documents block carries the text and both warnings.
    */
   protected function instructions(): string {
     // The tools describe themselves; this is the policy for using them.
@@ -110,12 +112,53 @@ final class EditorialNeuronAgent extends EditorialSessionAgentBase {
       reported, and do not claim a draft is ready.
     - The field groups below are the ones a new draft follows.
     - Answer questions about earlier drafts with drafting_get_history.
+    - For details buried in the attached documents, especially long ones,
+      call research_documents with a self-contained question: the
+      researcher cannot see this conversation. Base your answer on its
+      report and keep its [doc:<id> p.<n>] citations. When the result has
+      status needs_input, relay its question to the editor verbatim, and
+      once they answer call research_documents again with the same task_id
+      and their answer as the prompt. Pass task_id only to answer a question
+      the researcher itself asked, meaning its result had status needs_input.
+      If you asked the editor yourself, start a new task with their answer
+      in the prompt.
+    - research_documents and drafting_draft_content accept
+      run_in_background: true. Set it when the editor wants to keep working,
+      or asks for it. Tell the editor the task runs in the background; its
+      result arrives later in a system message, so do not wait for it.
+    - Use subagent_check_tasks to see how the tasks stand and to read a
+      finished result at once, and subagent_stop_task to stop one on request.
     - You can have normal conversations with the user at any point.
     PROMPT;
 
-    $blocks = array_filter([$this->contentTypePrompt(), $this->documentsPrompt()]);
+    $blocks = array_filter([$this->contentTypePrompt(), $this->toneSettingPrompt(), $this->documentsPrompt()]);
 
     return $instructions . "\n\n" . implode("\n\n", $blocks) . "\n";
+  }
+
+  /**
+   * Renders which tone the editor selected for the drafts.
+   *
+   * @return string
+   *   The prompt block.
+   */
+  private function toneSettingPrompt(): string {
+    // This agent writes no field of the draft, so it is not told to follow
+    // the tone. It is told which tone is set, so it can answer the editor
+    // about it, and that the drafters follow it.
+    $tone = $this->getContextValue('session')->getTone();
+    $label = trim((string) ($tone['label'] ?? ''));
+    if ($label === '') {
+      return "Tone:\nThe editor has selected no tone. The drafters write without tone guidelines.\n";
+    }
+
+    $prompt = "Tone:\nThe editor selected the tone \"" . $label . '". The drafters follow it in every draft.';
+    $guidelines = trim((string) ($tone['prompt'] ?? ''));
+    if ($guidelines !== '') {
+      $prompt .= "\nIts guidelines: " . $guidelines;
+    }
+
+    return $prompt . "\nYou cannot change the tone; the editor selects it in the assistant.\n";
   }
 
   /**

@@ -181,6 +181,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/plugins/drafting/tasks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** List the background tasks of the session and whether results wait */
+        post: operations["postDraftingTasks"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/plugins/drafting/stop-task": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Stop a background task of the session */
+        post: operations["postDraftingStopTask"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/plugins/drafting/list-documents": {
         parameters: {
             query?: never;
@@ -517,6 +551,50 @@ export interface components {
         };
         DraftingAddDocumentResponse: {
             document: components["schemas"]["DraftingDocument"];
+        };
+        DraftingTasksRequest: {
+            /** @description The editorial session whose background tasks to report. */
+            sessionId: string;
+        };
+        DraftingTask: {
+            taskId: string;
+            subagent: string;
+            tool: string;
+            status: string;
+            /** @enum {string} */
+            mode: "foreground" | "background";
+            /** @enum {string} */
+            deliveryState: "none" | "waiting" | "claimed" | "delivered" | "consumed" | "failed";
+            /** @description How many times the task was continued with an answer of the editor. */
+            continuations: number;
+            /** @description The prompt or brief of the call, cut to 200 characters. */
+            prompt: string;
+            /** @description UNIX time the task was recorded. */
+            created: number;
+            /** @description UNIX time the task last changed. */
+            changed: number;
+        };
+        DraftingTasksResponse: {
+            tasks: components["schemas"]["DraftingTask"][];
+            /** @description Whether results wait and the assistant can take them now. */
+            deliverable: boolean;
+            /** @description Whether a turn of the session is running. */
+            busy: boolean;
+            /** @description Changes whenever the editorial thread gains a message. */
+            revision: string;
+        };
+        DraftingStopTaskRequest: {
+            /** @description The editorial session the task belongs to. */
+            sessionId: string;
+            /** @description The task to stop. */
+            taskId: string;
+        };
+        DraftingStopTaskResponse: {
+            /**
+             * @description stopped when the task had not started, stopping when it runs and stops shortly, finished when nothing was left to stop, unknown when the session has no such task.
+             * @enum {string}
+             */
+            outcome: "stopped" | "stopping" | "finished" | "unknown";
         };
         DraftingListDocumentsRequest: {
             /** @description The editorial session whose documents should be listed. */
@@ -923,6 +1001,74 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DraftingAddDocumentResponse"];
+                };
+            };
+            /** @description Validation error. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    postDraftingTasks: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DraftingTasksRequest"];
+            };
+        };
+        responses: {
+            /** @description The newest background tasks and the delivery state */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DraftingTasksResponse"];
+                };
+            };
+            /** @description Validation error. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    postDraftingStopTask: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DraftingStopTaskRequest"];
+            };
+        };
+        responses: {
+            /** @description What the stop did to the task */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DraftingStopTaskResponse"];
                 };
             };
             /** @description Validation error. */

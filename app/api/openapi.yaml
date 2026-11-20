@@ -70,6 +70,10 @@ paths:
     $ref: "plugins/drafting/paths.yaml#/setTemplate"
   /plugins/drafting/add-document:
     $ref: "plugins/drafting/paths.yaml#/addDocument"
+  /plugins/drafting/tasks:
+    $ref: "plugins/drafting/paths.yaml#/tasks"
+  /plugins/drafting/stop-task:
+    $ref: "plugins/drafting/paths.yaml#/stopTask"
   /plugins/drafting/list-documents:
     $ref: "plugins/drafting/paths.yaml#/listDocuments"
   /plugins/drafting/remove-document:
@@ -189,6 +193,16 @@ components:
       $ref: "plugins/drafting/schemas.yaml#/DraftingAddDocumentRequest"
     DraftingAddDocumentResponse:
       $ref: "plugins/drafting/schemas.yaml#/DraftingAddDocumentResponse"
+    DraftingTasksRequest:
+      $ref: "plugins/drafting/schemas.yaml#/DraftingTasksRequest"
+    DraftingTask:
+      $ref: "plugins/drafting/schemas.yaml#/DraftingTask"
+    DraftingTasksResponse:
+      $ref: "plugins/drafting/schemas.yaml#/DraftingTasksResponse"
+    DraftingStopTaskRequest:
+      $ref: "plugins/drafting/schemas.yaml#/DraftingStopTaskRequest"
+    DraftingStopTaskResponse:
+      $ref: "plugins/drafting/schemas.yaml#/DraftingStopTaskResponse"
     DraftingListDocumentsRequest:
       $ref: "plugins/drafting/schemas.yaml#/DraftingListDocumentsRequest"
     DraftingListDocumentsResponse:

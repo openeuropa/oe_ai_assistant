@@ -51,6 +51,12 @@ final class EditorialMessageStore extends DrupalMessageStore {
    * {@inheritdoc}
    */
   protected function preSave(ContentEntityInterface $entity, Message $message): void {
+    // The system wrote a notice, and the user who happens to be current when it
+    // is stored did not.
+    if ($message->getMetadata('oe_ai_notice') !== NULL) {
+      $entity->set('uid', NULL);
+    }
+
     $session = $this->session();
     if ($session === NULL) {
       return;
