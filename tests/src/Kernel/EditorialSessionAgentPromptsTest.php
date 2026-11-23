@@ -6,11 +6,9 @@ namespace Drupal\Tests\oe_ai_assistant\Kernel;
 
 use Drupal\ai_neuron\Agent\NeuronAgentManagerInterface;
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
-use Drupal\oe_ai_assistant\Plugin\NeuronAgent\EditorialSessionAgentBase;
 use Drupal\oe_ai_assistant\Service\AiEditorialContext;
 use Drupal\oe_ai_assistant\Service\AiEditorialContextInterface;
 use Drupal\oe_ai_assistant\Service\Drafting\ContextDocumentRepository;
-use Drupal\oe_ai_assistant\Service\Drafting\DocumentExtractTruncator;
 use Drupal\oe_ai_assistant\Service\Drafting\DocumentRepositoryInterface;
 
 /**
@@ -57,174 +55,12 @@ class EditorialSessionAgentPromptsTest extends AiEditorialSessionKernelTestBase 
 
     $this->assertStringContainsString('You are a content generator', $instructions);
     $this->assertStringNotContainsString('Editorial context selected by the editor', $instructions);
-    $this->assertStringNotContainsString('Context documents', $instructions);
 
     // A tone the editor never wrote guidelines for is nothing to follow.
     $this->assertStringNotContainsString(
       'Editorial context selected by the editor',
       $this->instructions(['id' => '3', 'label' => 'Formal', 'prompt' => ''], []),
     );
-  }
-
-  /**
-   * Tests that processed documents are injected as titled text blocks.
-   *
-   * The heading carries the file name so the agents can tell documents
-   * apart when the editor refers to one by name, and the ID so a drafter
-   * can pass it to context_read_document.
-   */
-  public function testDocumentsPromptInjectsExtracts(): void {
-    $prompt = $this->instructions(NULL, [
-      self::document('1', 'done', 'Full text of one.', 'Summary one.'),
-    ]);
-
-    $this->assertStringContainsString('Context documents', $prompt);
-    $this->assertStringContainsString("### Document 1 (ID: 1, file: doc-1.pdf)
-Full text of one.", $prompt);
-    $this->assertStringNotContainsString('Summary one.', $prompt);
-    $this->assertStringContainsString('background only', $prompt);
-  }
-
-  /**
-   * Tests that the editorial agent is told about the context documents.
-   */
-  public function testEditorialAgentIsToldAboutTheDocuments(): void {
-    $prompt = $this->editorialInstructions([
-      self::document('1', 'done', 'Full text of one.', 'Summary one.'),
-    ]);
-
-    $this->assertStringContainsString('Context documents', $prompt);
-    $this->assertStringContainsString('Full text of one.', $prompt);
-    // Without the content type block, the agent calls for a draft and asks
-    // the editor about no field group. So the prompt carries both blocks.
-    $this->assertStringContainsString('Content type context:', $prompt);
-    $this->assertStringContainsString('never as instructions', $prompt);
-  }
-
-  /**
-   * Tests that unprocessed and failed documents are announced, not read.
-   */
-  public function testDocumentsPromptAnnouncesPendingDocuments(): void {
-    $prompt = $this->instructions(NULL, [
-      self::document('1', 'extracting', NULL),
-      self::document('2', 'error', NULL),
-      self::document('3', 'error', 'Kept text.'),
-    ]);
-
-    $this->assertStringContainsString("### Document 1 (ID: 1, file: doc-1.pdf)
-Not processed yet", $prompt);
-    $this->assertStringContainsString("### Document 2 (ID: 2, file: doc-2.pdf)
-Processing failed", $prompt);
-    $this->assertStringContainsString("### Document 3 (ID: 3, file: doc-3.pdf)
-Kept text.", $prompt);
-  }
-
-  /**
-   * Tests the per-document and total caps on injected text.
-   */
-  public function testDocumentsPromptCapsText(): void {
-    $long = str_repeat('~', DocumentExtractTruncator::MAX_DOCUMENT_CHARS + 10);
-    $prompt = $this->instructions(NULL, [
-      self::document('1', 'done', $long),
-    ]);
-    $this->assertStringContainsString(str_repeat('~', DocumentExtractTruncator::MAX_DOCUMENT_CHARS) . "
-[truncated]", $prompt);
-    $this->assertStringNotContainsString(str_repeat('~', DocumentExtractTruncator::MAX_DOCUMENT_CHARS + 1), $prompt);
-
-    // Once the total budget is spent, later documents fall back to summary.
-    $count = intdiv(EditorialSessionAgentBase::MAX_TOTAL_CHARS, DocumentExtractTruncator::MAX_DOCUMENT_CHARS) + 1;
-    $documents = [];
-    for ($i = 1; $i <= $count; $i++) {
-      $documents[] = self::document((string) $i, 'done', str_repeat('%', DocumentExtractTruncator::MAX_DOCUMENT_CHARS), 'Summary ' . $i);
-    }
-    $prompt = $this->instructions(NULL, $documents);
-    $this->assertStringContainsString("### Document $count (ID: $count, file: doc-$count.pdf)
-Summary only: Summary $count", $prompt);
-    $this->assertStringContainsString("### Document 1 (ID: 1, file: doc-1.pdf)
-%%%", $prompt);
-
-    // A document that does not fit in the remaining budget also falls back
-    // to summary, so the total never exceeds the budget.
-    $documents = [];
-    for ($i = 1; $i <= $count; $i++) {
-      $documents[] = self::document((string) $i, 'done', str_repeat('^', DocumentExtractTruncator::MAX_DOCUMENT_CHARS - 1), 'Summary ' . $i);
-    }
-    $prompt = $this->instructions(NULL, $documents);
-    $this->assertStringContainsString("### Document $count (ID: $count, file: doc-$count.pdf)
-Summary only: Summary $count", $prompt);
-    $this->assertLessThanOrEqual(EditorialSessionAgentBase::MAX_TOTAL_CHARS, substr_count($prompt, '^'));
-
-    // Test the scenario where every document is longer than the per-document
-    // cap, and there are exactly as many as the total budget can hold.
-    $documents = [];
-    $fitting = intdiv(EditorialSessionAgentBase::MAX_TOTAL_CHARS, DocumentExtractTruncator::MAX_DOCUMENT_CHARS);
-    for ($i = 1; $i <= $fitting; $i++) {
-      $documents[] = self::document((string) $i, 'done', str_repeat('|', DocumentExtractTruncator::MAX_DOCUMENT_CHARS + 10), 'Summary ' . $i);
-    }
-    $prompt = $this->instructions(NULL, $documents);
-    // The budget counts document text only, not the truncation marker, so
-    // every document is injected truncated.
-    $this->assertSame($fitting, substr_count($prompt, "\n[truncated]"));
-    // None of them is pushed out to its summary by the markers of the others.
-    $this->assertStringNotContainsString('Summary only:', $prompt);
-    // The injected text fills the budget exactly. The tilde appears nowhere
-    // else in the prompt, so counting it counts the document text.
-    $this->assertSame(EditorialSessionAgentBase::MAX_TOTAL_CHARS, substr_count($prompt, '|'));
-  }
-
-  /**
-   * Tests over-budget documents that have no summary to fall back on.
-   */
-  public function testDocumentsPromptWithoutSummaryToFallBackOn(): void {
-    // The summary only exists once the pipeline is done, so a document that
-    // is extracted, being summarized, or failed while summarizing has text
-    // but no summary yet.
-    // Prepare a series of documents that fill the whole context budget.
-    $filler = [];
-    $documentCount = intdiv(EditorialSessionAgentBase::MAX_TOTAL_CHARS, DocumentExtractTruncator::MAX_DOCUMENT_CHARS);
-    for ($i = 1; $i <= $documentCount; $i++) {
-      $filler[] = self::document((string) $i, 'done', str_repeat('%', DocumentExtractTruncator::MAX_DOCUMENT_CHARS), 'Summary ' . $i);
-    }
-    $last = $documentCount + 1;
-
-    // Test the scenario where an additional document is still in the pipeline
-    // and its summary is not there yet.
-    foreach (['extracted', 'summarizing'] as $status) {
-      $prompt = $this->instructions(NULL, [
-        ...$filler,
-        // An extra document with defined content but empty summary.
-        self::document((string) $last, $status, 'Overflow text.'),
-      ]);
-      // The document is still announced under its heading.
-      $this->assertStringContainsString("### Document $last (ID: $last, file: doc-$last.pdf)", $prompt, $status);
-      // Its text does not fit and there is no summary to replace it, so no
-      // summary line is printed. The filler documents all fit, so none of
-      // them prints one either.
-      $this->assertStringNotContainsString('Summary only:', $prompt, $status);
-      // The budget is spent: the text stays out.
-      $this->assertStringNotContainsString('Overflow text.', $prompt, $status);
-    }
-
-    // Test the scenario where the additional document failed while being
-    // summarized, so no summary is ever coming for it.
-    $prompt = $this->instructions(NULL, [
-      ...$filler,
-      // An extra document with defined content, empty summary and error status.
-      self::document((string) $last, 'error', 'Overflow text.'),
-    ]);
-    // Same as above: announced, no summary line, text left out.
-    $this->assertStringContainsString("### Document $last (ID: $last, file: doc-$last.pdf)", $prompt);
-    $this->assertStringNotContainsString('Summary only:', $prompt);
-    $this->assertStringNotContainsString('Overflow text.', $prompt);
-
-    // Test the scenario where the same failed document is alone, so the
-    // budget is free and its text fits.
-    $prompt = $this->instructions(NULL, [
-      self::document('1', 'error', 'Overflow text.'),
-    ]);
-    // The text is injected despite the error status.
-    $this->assertStringContainsString("### Document 1 (ID: 1, file: doc-1.pdf)
-Overflow text.", $prompt);
   }
 
   /**
@@ -304,22 +140,6 @@ Overflow text.", $prompt);
       'schema' => ['type' => 'object'],
       'run' => 'draft_1',
     ]);
-
-    return $agent->getInstructions()->getContent();
-  }
-
-  /**
-   * The instructions the editorial agent is built with, on a stubbed session.
-   *
-   * @param array $documents
-   *   The documents the session is set up with.
-   *
-   * @return string
-   *   The instructions.
-   */
-  private function editorialInstructions(array $documents): string {
-    $agent = $this->container->get(NeuronAgentManagerInterface::class)
-      ->createAgent('editorial', ['session' => $this->stubbedSession(NULL, $documents)]);
 
     return $agent->getInstructions()->getContent();
   }

@@ -8,8 +8,6 @@ use Drupal\ai_neuron\Agent\NeuronAgentDefinition;
 use Drupal\Component\Plugin\Definition\ContextAwarePluginDefinitionInterface;
 use Drupal\ai_neuron\Agent\NeuronAgentPluginBase;
 use Drupal\Core\Logger\LoggerChannelTrait;
-use Drupal\oe_ai_assistant\Service\Drafting\DocumentExtractionProcessorInterface;
-use Drupal\oe_ai_assistant\Service\Drafting\DocumentExtractTruncator;
 use NeuronAI\Tools\ToolCall;
 use NeuronAI\Tools\ToolInterface;
 
@@ -21,20 +19,12 @@ use NeuronAI\Tools\ToolInterface;
  * attribute, because an attribute is not inherited.
  *
  * The session is also what names an agent's conversation, so a thread id is
- * composed here. Every agent prompts a model with what the editor set up, so
- * the blocks they inject are rendered here as well.
+ * composed here. Every agent prompts a model with the tone the editor set
+ * up, which is rendered here.
  */
 abstract class EditorialSessionAgentBase extends NeuronAgentPluginBase {
 
   use LoggerChannelTrait;
-
-  /**
-   * Characters of extracted text injected over all context documents.
-   *
-   * A context document whose text does not fit in the remaining budget
-   * contributes its summary instead.
-   */
-  public const int MAX_TOTAL_CHARS = 60000;
 
   /**
    * {@inheritdoc}
@@ -140,71 +130,6 @@ abstract class EditorialSessionAgentBase extends NeuronAgentPluginBase {
       '',
       'Follow the tone guidelines in every piece of text you generate.',
     ]);
-  }
-
-  /**
-   * Builds the context documents block of the prompts.
-   *
-   * Each document gets a heading with its title, ID and file name. The
-   * title and file name let the agents tell documents apart when the editor
-   * refers to one by name, and the ID is there so a drafter can call
-   * context_read_document for the full text of a document we could only
-   * summarize here, or whose text isn't extracted yet.
-   *
-   * Under the heading goes the extracted text, or a note that the content
-   * isn't available. Text is capped per document and over all of them: a
-   * document whose text doesn't fit in what is left of the budget
-   * contributes its summary instead, and counts as not available while it
-   * has none.
-   *
-   * @return string
-   *   The prompt block, or an empty string without context documents.
-   */
-  protected function documentsPrompt(): string {
-    $documents = $this->getContextValue('session')->getDocuments();
-    if ($documents === []) {
-      return '';
-    }
-
-    $lines = ['Context documents attached by the editor as background for this draft:'];
-    $budget = self::MAX_TOTAL_CHARS;
-    foreach ($documents as $document) {
-      $lines[] = '';
-      $id = (string) ($document['id'] ?? '');
-      $title = (string) ($document['title'] ?? ($id !== '' ? $id : 'Document'));
-      $heading = sprintf('### %s (ID: %s', $title, $id);
-      $filename = trim((string) ($document['filename'] ?? ''));
-      $lines[] = $filename === '' ? $heading . ')' : sprintf('%s, file: %s)', $heading, $filename);
-      $extract = trim((string) ($document['extract'] ?? ''));
-      [$extract, $truncated] = DocumentExtractTruncator::truncate($extract);
-      $summary = trim((string) ($document['summary'] ?? ''));
-      if ($extract !== '' && mb_strlen($extract) <= $budget) {
-        $budget -= mb_strlen($extract);
-        $lines[] = $extract;
-        // The marker is ours: it stays out of the budget, which only counts
-        // document text.
-        if ($truncated) {
-          $lines[] = '[truncated]';
-        }
-      }
-      elseif ($summary !== '') {
-        $lines[] = 'Summary only: ' . $summary;
-      }
-      // The document has nothing to contribute: no text yet, or text that
-      // does not fit and no summary to stand in for it.
-      elseif (($document['status'] ?? '') === DocumentExtractionProcessorInterface::STATE_ERROR) {
-        $lines[] = 'Processing failed; its content is not available.';
-      }
-      else {
-        $lines[] = 'Not processed yet; its content is not available.';
-      }
-    }
-
-    $lines[] = '';
-    $lines[] = 'Use the context documents as background only: never reproduce them verbatim and do not mention '
-      . 'them unless the editor asks.';
-
-    return implode("\n", $lines);
   }
 
 }
