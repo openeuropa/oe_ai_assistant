@@ -60,15 +60,16 @@ class EditorialContextToolsTest extends AiEditorialSessionKernelTestBase {
   }
 
   /**
-   * Tests that editorial agent instructions carry no document or tone text.
+   * Tests that editorial agent instructions carry no tone guidelines.
    *
-   * Both used to be injected into this prompt directly; they now reach the
-   * model only through context_get_editorial_context and
-   * context_read_document. Nothing asserted their absence here, so a
-   * regression that puts either back into instructions() would pass
-   * unnoticed.
+   * The guidelines only go into GroupDrafterNeuronAgent's prompt, through
+   * tonePrompt(), since that's the agent that writes the field text. This
+   * one only ever sees the tone's label and description, through
+   * context_get_editorial_context. Document text, unlike tone, is inlined
+   * here by design; see testEditorialAgentIsToldAboutTheDocuments in
+   * EditorialSessionAgentPromptsTest.
    */
-  public function testEditorialAgentInstructionsCarryNoDocumentOrToneText(): void {
+  public function testEditorialAgentInstructionsCarryNoToneText(): void {
     $this->enableModules(['entity_reference_revisions', 'paragraphs', 'link', 'inline_entity_form']);
     $this->installEntitySchema('paragraph');
     $this->config('ai.settings')
@@ -78,16 +79,13 @@ class EditorialContextToolsTest extends AiEditorialSessionKernelTestBase {
       'id' => '3',
       'label' => 'Formal',
       'prompt' => 'Use professional, institutional language.',
-    ], [
-      self::document('1', 'done', 'The quarterly figures are confidential.', 'Summary one.'),
-    ]);
+    ], []);
 
     $agent = $this->container->get(NeuronAgentManagerInterface::class)
       ->createAgent('editorial', ['session' => $session]);
 
     $instructions = $agent->getInstructions()->getContent();
 
-    $this->assertStringNotContainsString('The quarterly figures are confidential.', $instructions);
     $this->assertStringNotContainsString('Use professional, institutional language.', $instructions);
   }
 
