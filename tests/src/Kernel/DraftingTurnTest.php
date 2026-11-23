@@ -6,6 +6,7 @@ namespace Drupal\Tests\oe_ai_assistant\Kernel;
 
 use Drupal\ai_neuron\Agent\NeuronAgentManagerInterface;
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
+use Drupal\oe_ai_assistant\Exception\ActionException;
 use Drupal\oe_ai_assistant\Neuron\Chat\History\EditorialMessageStore;
 use Drupal\oe_ai_assistant\Plugin\AiAssistantPluginManager;
 use Drupal\oe_ai_assistant\Service\DraftingSchemaProvider;
@@ -323,6 +324,38 @@ class DraftingTurnTest extends AiEditorialSessionKernelTestBase {
     $rows = $session->conversationThreads()[$this->thread($session, 1, 'main_fields')];
     $task = (string) ($rows[0]->getContent()[0]['content'] ?? '');
     $this->assertStringContainsString('2026 sett counts in Flanders', $task);
+  }
+
+  /**
+   * A second turn is refused while the first one still runs.
+   *
+   * Every turn of a session runs under the id the session names, and the
+   * engine keeps one run per id. A second turn would be refused inside the
+   * open stream, where the editor reads an error frame instead of a status,
+   * so the endpoint answers it before the stream opens.
+   */
+  public function testASecondTurnIsRefusedWhileOneRuns(): void {
+    $session = $this->createSession($this->createUser());
+
+    MockAiProvider::reset();
+    $this->enqueueTurn();
+
+    // Advancing the stream to its first chunk starts the run and leaves it
+    // in flight, which is the state the endpoint has to answer.
+    $turn = $this->container->get(NeuronAgentManagerInterface::class)
+      ->createAgent('editorial', ['session' => $session])
+      ->stream(new UserMessage('Draft it, go ahead.'));
+    $turn->current();
+
+    try {
+      $this->chatAction($session, 'And another thing.');
+      $this->fail('The chat action served a second turn while one was running.');
+    }
+    catch (ActionException $e) {
+      $this->assertSame('conflict', $e->errorCode);
+      $this->assertSame(409, $e->statusCode);
+      $this->assertStringContainsString('still working on this session', $e->getMessage());
+    }
   }
 
   /**
@@ -827,6 +860,25 @@ class DraftingTurnTest extends AiEditorialSessionKernelTestBase {
     MockAiProvider::enqueue(new MockResponse(text: self::MAIN_FIELDS));
     MockAiProvider::enqueue(new MockResponse(text: self::PARAGRAPHS));
     MockAiProvider::enqueue(new MockResponse(text: $answer));
+  }
+
+  /**
+   * Asks the chat action for a turn, the way the endpoint does.
+   *
+   * @param \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $session
+   *   The session to chat in.
+   * @param string $message
+   *   What the editor wrote.
+   */
+  private function chatAction(AiEditorialSessionInterface $session, string $message): void {
+    $request = Request::create('/', 'POST', content: json_encode([
+      'sessionId' => (string) $session->id(),
+      'message' => $message,
+    ], JSON_THROW_ON_ERROR));
+
+    $this->container->get(AiAssistantPluginManager::class)
+      ->createInstance('drafting')
+      ->executeAction('chat', $request);
   }
 
   /**

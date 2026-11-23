@@ -80,11 +80,12 @@ exist until you also build the app yourself or pull the pre-built release artifa
 
 ## Architecture
 
-A chat turn is one run of the `editorial` agent. The agent calls the drafting tool, which is deferred, so
-`DeferredCallsNode` answers that call by running the `draft_content` workflow and the turn carries on to the
-inference that reports it. `draft_content` runs `draft_group` once per field group, to write and validate the
-fields of that group. In the diagram, rounded boxes are agents, rectangles are workflow nodes, orange is the
-streaming path and grey is stored state.
+A chat turn is one run of the `editorial` agent. The agent calls the drafting tool, whose work is the
+`draft_content` workflow: `WorkflowToolNode` runs that workflow in place of executing the tool, forwards what
+the run reports into the stream of the turn, and settles the call with its result. The turn then carries on to
+the inference that reports the draft. `draft_content` runs `draft_group` once per field group, to write and
+validate the fields of that group. In the diagram, rounded boxes are agents, rectangles are workflow nodes,
+orange is the streaming path and grey is stored state.
 
 ```mermaid
 flowchart LR
@@ -96,15 +97,13 @@ flowchart LR
     direction TB
     AS["AgentStartNode"]
     CN["ChatNode<br/>Neuron's own"]
-    TN["ToolNode<br/>defers the draft call"]
-    DN["DeferredCallsNode<br/>answers it, then settles the batch"]
+    TN["WorkflowToolNode<br/>runs the tool's workflow, settles the batch"]
     AE(("AgentEndNode"))
 
     AS -- "AIInferenceEvent" --> CN
     CN -- "ToolCallEvent" --> TN
     CN -- "AgentOutputEvent" --> AE
-    TN -- "AwaitToolResultsEvent" --> DN
-    DN -- "AIInferenceEvent" --> CN
+    TN -- "AIInferenceEvent" --> CN
   end
 
   subgraph DC["draft_content workflow, one run per call"]
@@ -134,16 +133,16 @@ flowchart LR
   end
 
   DP -- "chat(UserMessage, stream)" --> AS
-  DN == "events() per call" ==> DCN
+  TN == "events() per call" ==> DCN
   DCN == "run() per group" ==> DR
   VA == "valid: StopEvent, fields" ==> DCN
   DCN -- "append(draft JSON)" --> DT
-  DCN -. "result: Draft N" .-> DN
+  DCN -. "result: Draft N" .-> TN
   ET -. "yield: agent chunks, data-draft-started, data-drafted-fields" .-> AD
   RS -. "text/event-stream" .-> B
 
-  class AG,DR agent
-  class DP,AS,CN,TN,DN,DCN,VA,RE node
+  class DR agent
+  class DP,AS,CN,TN,DCN,VA,RE node
   class B,AD,CH,RS stream
   class DT,AE store
   style ET stroke-width:3px
