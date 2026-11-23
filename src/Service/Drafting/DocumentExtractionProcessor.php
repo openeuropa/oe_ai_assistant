@@ -292,9 +292,9 @@ final class DocumentExtractionProcessor implements DocumentExtractionProcessorIn
    * Writes a brief summary of the extract with the summary agent.
    *
    * The call is not streamed and the extract is capped so a long document
-   * never overflows the model context. We build the agent with the
-   * document's session, so the session's history page shows the call and
-   * counts its tokens.
+   * never overflows the model context. We build the agent with the document
+   * and the session it belongs to, so the session's history page shows the
+   * call and counts its tokens.
    *
    * @throws \Drupal\oe_ai_assistant\Exception\DocumentExtractionException
    *   When the document names no session, no chat provider is configured,
@@ -306,7 +306,7 @@ final class DocumentExtractionProcessor implements DocumentExtractionProcessorIn
     try {
       $agent = $this->agents->createAgent(SummaryNeuronAgent::PLUGIN_ID, [
         'session' => $session,
-        'thread_key' => $this->summaryThreadKey($media, $session),
+        'media' => $media,
       ]);
     }
     catch (\InvalidArgumentException $e) {
@@ -354,40 +354,6 @@ final class DocumentExtractionProcessor implements DocumentExtractionProcessorIn
     }
 
     return $session;
-  }
-
-  /**
-   * Names the conversation one summary run writes to.
-   *
-   * A run re-sends the whole thread it writes to, so a key built from the
-   * document alone would send the earlier attempt's extract again and
-   * charge the session for it twice. Counting the attempt gives each run a
-   * thread of its own, and the history page keeps their costs apart.
-   *
-   * @return string
-   *   The key, which the agent prefixes with its plugin id to get the
-   *   thread id.
-   */
-  private function summaryThreadKey(MediaInterface $media, AiEditorialSessionInterface $session): string {
-    $key = sprintf('session_%s.media_%s', $session->id(), $media->id());
-    $prefix = SummaryNeuronAgent::PLUGIN_ID . '.' . $key . '.attempt_';
-
-    // Group by thread_id instead of loading the rows. A row carries the
-    // message it stored, the capped extract included, and the thread names
-    // are all we need here.
-    $threads = $this->entityTypeManager->getStorage('neuron_message')
-      ->getAggregateQuery()
-      ->accessCheck(FALSE)
-      ->condition('thread_id', $prefix, 'STARTS_WITH')
-      ->groupBy('thread_id')
-      ->execute();
-
-    $attempt = 1;
-    foreach ($threads as $thread) {
-      $attempt = max($attempt, 1 + (int) substr((string) $thread['thread_id'], strlen($prefix)));
-    }
-
-    return $key . '.attempt_' . $attempt;
   }
 
   /**

@@ -5,6 +5,9 @@ declare(strict_types=1);
 namespace Drupal\Tests\oe_ai_assistant\Kernel;
 
 use Drupal\ai_neuron\Agent\NeuronAgentManagerInterface;
+use Drupal\file\Entity\File;
+use Drupal\media\Entity\Media;
+use Drupal\media\MediaInterface;
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
 use Drupal\oe_ai_assistant_test\Plugin\AiProvider\MockAiProvider;
 use Drupal\oe_ai_assistant_test\Plugin\AiProvider\MockResponse;
@@ -28,24 +31,50 @@ class SummaryNeuronAgentTest extends AiEditorialSessionKernelTestBase {
   private AiEditorialSessionInterface $session;
 
   /**
+   * The document the agent summarises.
+   */
+  private MediaInterface $media;
+
+  /**
    * {@inheritdoc}
    */
   protected function setUp(): void {
     parent::setUp();
+    $this->installSchema('file', ['file_usage']);
     $this->enableModules(['oe_ai_assistant_test']);
     $this->config('ai.settings')
       ->set('default_providers', ['chat' => ['provider_id' => 'mock_ai', 'model_id' => 'mock-model']])
       ->save();
     MockAiProvider::reset();
     $this->session = $this->createSession($this->createUser());
+    $this->media = $this->createDocument();
   }
 
   /**
-   * Builds the agent with the session context the plugin requires.
+   * Creates a context document attached to the session.
+   */
+  private function createDocument(string $name = 'brief.txt'): MediaInterface {
+    file_put_contents('public://' . $name, 'payload');
+    $file = File::create(['uri' => 'public://' . $name, 'filename' => $name, 'status' => 1]);
+    $file->save();
+    $media = Media::create([
+      'bundle' => 'ai_context_document',
+      'name' => $name,
+      'status' => 0,
+      'oe_ai_context_document' => ['target_id' => $file->id()],
+      'oe_ai_session' => ['target_id' => $this->session->id()],
+    ]);
+    $media->save();
+
+    return $media;
+  }
+
+  /**
+   * Builds the agent with the session and document context the plugin needs.
    */
   private function agent(): Agent {
     return $this->container->get(NeuronAgentManagerInterface::class)
-      ->createAgent('document_summary', ['session' => $this->session]);
+      ->createAgent('document_summary', ['session' => $this->session, 'media' => $this->media]);
   }
 
   /**
