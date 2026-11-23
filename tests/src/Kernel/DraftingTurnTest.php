@@ -335,7 +335,12 @@ class DraftingTurnTest extends AiEditorialSessionKernelTestBase {
    * so the endpoint answers it before the stream opens.
    */
   public function testASecondTurnIsRefusedWhileOneRuns(): void {
-    $session = $this->createSession($this->createUser());
+    // The action loads the session for the user who asked, so the turn is
+    // refused for holding the session's id rather than for the access it
+    // would be denied otherwise.
+    $owner = $this->createUser(['use oe ai assistant', 'view_update own sessions']);
+    $this->container->get('current_user')->setAccount($owner);
+    $session = $this->createSession($owner);
 
     MockAiProvider::reset();
     $this->enqueueTurn();
