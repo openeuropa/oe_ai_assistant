@@ -9,7 +9,6 @@ use Drupal\ai_neuron\Tools\NeuronToolPluginBase;
 use Drupal\Core\Plugin\Context\EntityContextDefinition;
 use Drupal\Core\StringTranslation\TranslatableMarkup;
 use Drupal\oe_ai_assistant\Service\Drafting\DocumentExtractionProcessorInterface;
-use Drupal\oe_ai_assistant\Service\Drafting\DocumentExtractTruncator;
 use NeuronAI\Tools\PropertyType;
 use NeuronAI\Tools\ToolProperty;
 
@@ -34,6 +33,11 @@ use NeuronAI\Tools\ToolProperty;
   ],
 )]
 final class ReadDocumentNeuronTool extends NeuronToolPluginBase {
+
+  /**
+   * Characters of one document's extracted text we hand to the model.
+   */
+  public const int MAX_DOCUMENT_CHARS = 20000;
 
   /**
    * {@inheritdoc}
@@ -71,7 +75,7 @@ final class ReadDocumentNeuronTool extends NeuronToolPluginBase {
     }
 
     $extract = trim((string) ($descriptor['extract'] ?? ''));
-    [$extract, $truncated] = DocumentExtractTruncator::truncate($extract);
+    [$extract, $truncated] = $this->truncate($extract);
     $summary = trim((string) ($descriptor['summary'] ?? ''));
     $status = (string) ($descriptor['status'] ?? '');
 
@@ -93,6 +97,24 @@ final class ReadDocumentNeuronTool extends NeuronToolPluginBase {
       'summary' => $summary,
       'note' => $note,
     ], JSON_INVALID_UTF8_SUBSTITUTE);
+  }
+
+  /**
+   * Caps an extract, and reports whether anything was cut off.
+   *
+   * @param string $extract
+   *   The extract to cap.
+   *
+   * @return array
+   *   Two elements: the extract, cut to MAX_DOCUMENT_CHARS if it was over,
+   *   and whether it was cut.
+   */
+  private function truncate(string $extract): array {
+    if (mb_strlen($extract) <= self::MAX_DOCUMENT_CHARS) {
+      return [$extract, FALSE];
+    }
+
+    return [mb_substr($extract, 0, self::MAX_DOCUMENT_CHARS), TRUE];
   }
 
 }

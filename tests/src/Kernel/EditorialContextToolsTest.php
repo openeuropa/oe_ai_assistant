@@ -10,8 +10,8 @@ use Drupal\oe_ai_assistant\Entity\AiDraftingTemplate;
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
 use Drupal\oe_ai_assistant\Service\AiEditorialContext;
 use Drupal\oe_ai_assistant\Service\AiEditorialContextInterface;
+use Drupal\oe_ai_assistant\Plugin\NeuronTool\ReadDocumentNeuronTool;
 use Drupal\oe_ai_assistant\Service\Drafting\ContextDocumentRepository;
-use Drupal\oe_ai_assistant\Service\Drafting\DocumentExtractTruncator;
 use Drupal\oe_ai_assistant\Service\Drafting\DocumentRepositoryInterface;
 use Drupal\oe_ai_assistant_test\Plugin\AiProvider\MockAiProvider;
 use Drupal\oe_ai_assistant_test\Plugin\AiProvider\MockResponse;
@@ -249,14 +249,14 @@ class EditorialContextToolsTest extends AiEditorialSessionKernelTestBase {
    * Tests that the document tool caps a long extract and reports the cut.
    */
   public function testReadDocumentCapsLongExtract(): void {
-    $long = str_repeat('a', DocumentExtractTruncator::MAX_DOCUMENT_CHARS + 10);
+    $long = str_repeat('a', ReadDocumentNeuronTool::MAX_DOCUMENT_CHARS + 10);
     $session = $this->stubbedSession(NULL, [
       self::document('1', 'done', $long),
     ]);
 
     $result = json_decode($this->documentTool($session, '1'), TRUE);
 
-    $this->assertSame(DocumentExtractTruncator::MAX_DOCUMENT_CHARS, mb_strlen($result['text']));
+    $this->assertSame(ReadDocumentNeuronTool::MAX_DOCUMENT_CHARS, mb_strlen($result['text']));
     $this->assertTrue($result['truncated']);
   }
 
