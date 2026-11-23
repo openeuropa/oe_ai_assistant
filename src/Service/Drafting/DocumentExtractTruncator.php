@@ -7,10 +7,9 @@ namespace Drupal\oe_ai_assistant\Service\Drafting;
 /**
  * Caps a single document extract at a safe character budget.
  *
- * EditorialSessionAgentBase renders every attached document into its prompt,
- * and ReadDocumentNeuronTool returns one of them in full on demand. Both have
- * to keep a single extract from flooding the model's context, so they share
- * the cap from here instead of one reaching into the other.
+ * ReadDocumentNeuronTool is this class's only caller: it keeps a single
+ * extract from flooding the model's context when an agent reads a
+ * document in full on demand.
  */
 final class DocumentExtractTruncator {
 

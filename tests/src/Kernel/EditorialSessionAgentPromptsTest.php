@@ -87,6 +87,9 @@ class EditorialSessionAgentPromptsTest extends AiEditorialSessionKernelTestBase 
     $instructions = $agent->getInstructions()->getContent();
     $this->assertStringContainsString('context_read_document', $instructions);
     $this->assertStringContainsString('context_get_session_documents', $instructions);
+    // Hedged, not mandatory: a session with no documents should never be
+    // told it must call the tool regardless.
+    $this->assertStringContainsString('may have attached', $instructions);
   }
 
   /**

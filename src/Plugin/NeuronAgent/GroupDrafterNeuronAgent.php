@@ -63,8 +63,9 @@ final class GroupDrafterNeuronAgent extends EditorialSessionAgentBase {
   /**
    * {@inheritdoc}
    *
-   * The tone steers what the drafter writes, and the documents are the
-   * material it writes from, so a drafter is told both.
+   * The tone steers what the drafter writes. Documents are discovered and
+   * read through tools rather than told inline, so the drafter fetches
+   * only what the group it is writing actually needs.
    */
   protected function instructions(): string {
     $instructions = <<<'PROMPT'
@@ -72,12 +73,13 @@ final class GroupDrafterNeuronAgent extends EditorialSessionAgentBase {
     instructions describing what content to produce. Generate a JSON
     object that conforms exactly to the given schema.
 
-    Call context_get_session_documents to see what context documents are
-    attached, each with its ID, title and either its summary or why its
-    content is not available yet. Call context_read_document with a
-    document's ID when its summary does not give you enough to draft
-    well. Once you have everything you need, return ONLY valid JSON with
-    no markdown fencing, no explanation, no commentary.
+    The editor may have attached context documents as background: call
+    context_get_session_documents to see what is attached, each with
+    its ID, title and either its summary or why its content is not
+    available yet. Call context_read_document with a document's ID
+    when its summary does not give you enough to draft well. Once you
+    have everything you need, return ONLY valid JSON with no markdown
+    fencing, no explanation, no commentary.
 
     Every field value is an array of items, each item an object with
     the property keys the schema lists, for example
