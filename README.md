@@ -80,32 +80,35 @@ exist until you also build the app yourself or pull the pre-built release artifa
 
 ## Architecture
 
-A chat turn runs as two Neuron workflows. The `editorial_turn` workflow holds the conversation and suspends the
-agent when it calls the deferred draft tool. The `draft_group` workflow runs once per field group, to write and
+A chat turn is one run of the `editorial` agent. The agent calls the drafting tool, whose work is the
+`draft_content` workflow: `WorkflowToolNode` runs that workflow in place of executing the tool, forwards what
+the run reports into the stream of the turn, and settles the call with its result. The turn then carries on to
+the inference that reports the draft. `draft_content` runs `draft_group` once per field group, to write and
 validate the fields of that group. In the diagram, rounded boxes are agents, rectangles are workflow nodes,
 orange is the streaming path and grey is stored state.
 
 ```mermaid
 flowchart LR
   B["Browser (assistant-ui)"]
-  DP["DraftingPlugin::chat()<br/>next version, withChannel(SseChannel)"]
+  DP["DraftingPlugin::chat()<br/>withChannel(SseChannel), 409 while a turn runs"]
   B -- "POST /chat" --> DP
 
-  subgraph ET["editorial_turn workflow"]
+  subgraph ET["editorial agent, one run per turn"]
     direction TB
-    CN["ChatNode<br/>handles ChatTurnEvent"]
-    AG(["EditorialNeuronAgent<br/>draft tool deferred"])
-    DC["DraftContentNode<br/>groups, assemble, store"]
-    CR["ChatResumeNode<br/>same agent instance"]
-    STOP(("StopEvent"))
+    AS["AgentStartNode"]
+    CN["ChatNode<br/>Neuron's own"]
+    TN["WorkflowToolNode<br/>runs the tool's workflow, settles the batch"]
+    AE(("AgentEndNode"))
 
-    CN -- "stream(UserMessage)" --> AG
-    AG -- "answer -> StopEvent" --> CN
-    AG -- "suspends on deferred call<br/>DraftingRequestedEvent" --> DC
-    DC -- "DraftStoredEvent" --> CR
-    CR -- "submitToolResults()->events()" --> AG
-    CR -- "drafts again<br/>DraftingRequestedEvent" --> DC
-    CR -- "answer" --> STOP
+    AS -- "AIInferenceEvent" --> CN
+    CN -- "ToolCallEvent" --> TN
+    CN -- "AgentOutputEvent" --> AE
+    TN -- "AIInferenceEvent" --> CN
+  end
+
+  subgraph DC["draft_content workflow, one run per call"]
+    direction TB
+    DCN["DraftContentNode<br/>groups, assemble, store"]
   end
 
   subgraph DG["draft_group workflow xN, one run per field group"]
@@ -129,17 +132,19 @@ flowchart LR
     CH -- "SSE frames" --> RS
   end
 
-  DP -- "run(start(ChatTurnEvent))" --> CN
-  DC == "run() per group" ==> DR
-  VA == "valid: StopEvent, fields" ==> DC
-  DC -- "append(draft JSON)" --> DT
-  ET -. "yield: agent chunks, data-drafting, data-drafted-fields" .-> AD
+  DP -- "chat(UserMessage, stream)" --> AS
+  TN == "events() per call" ==> DCN
+  DCN == "run() per group" ==> DR
+  VA == "valid: StopEvent, fields" ==> DCN
+  DCN -- "append(draft JSON)" --> DT
+  DCN -. "result: Draft N" .-> TN
+  ET -. "yield: agent chunks, data-draft-started, data-drafted-fields" .-> AD
   RS -. "text/event-stream" .-> B
 
-  class AG,DR agent
-  class DP,CN,DC,CR,VA,RE node
+  class DR agent
+  class DP,AS,CN,TN,DCN,VA,RE node
   class B,AD,CH,RS stream
-  class DT,STOP store
+  class DT,AE store
   style ET stroke-width:3px
   style DG stroke-width:3px
 ```

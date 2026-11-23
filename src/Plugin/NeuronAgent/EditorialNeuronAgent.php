@@ -5,9 +5,13 @@ declare(strict_types=1);
 namespace Drupal\oe_ai_assistant\Plugin\NeuronAgent;
 
 use Drupal\ai_neuron\Attribute\NeuronAgent;
+use Drupal\ai_neuron\NeuronStreamAdapter;
 use Drupal\Core\Plugin\Context\EntityContextDefinition;
 use Drupal\Core\StringTranslation\TranslatableMarkup;
 use Drupal\oe_ai_assistant\Entity\Bundle\ContentCreationSessionInterface;
+use Drupal\oe_ai_assistant\Neuron\Agent\EditorialAgent;
+use Drupal\oe_ai_assistant\Neuron\Chat\Messages\Stream\Adapters\PatchedVercelAIAdapter;
+use NeuronAI\Workflow\Streaming\Adapter\StreamAdapterInterface;
 
 /**
  * The agent that talks to the editor and drafts through tools.
@@ -17,6 +21,7 @@ use Drupal\oe_ai_assistant\Entity\Bundle\ContentCreationSessionInterface;
   label: new TranslatableMarkup('Editorial'),
   description: new TranslatableMarkup('Gathers requirements in conversation and drafts content per field group.'),
   operation_type: 'chat_with_tools',
+  stream_adapter: NeuronStreamAdapter::Custom,
   tools: [
     'drafting_get_history',
     'drafting_draft_content',
@@ -34,6 +39,24 @@ final class EditorialNeuronAgent extends EditorialSessionAgentBase {
    * The id this agent is registered under.
    */
   public const string PLUGIN_ID = 'editorial';
+
+  /**
+   * {@inheritdoc}
+   */
+  protected function agentClass(): string {
+    return EditorialAgent::class;
+  }
+
+  /**
+   * {@inheritdoc}
+   *
+   * Neuron's Vercel adapter leaves two gaps in the protocol, which
+   * PatchedVercelAIAdapter closes. Everything the turn yields goes through
+   * it, the chunks of the model and the progress of the drafting alike.
+   */
+  protected function customStreamAdapter(string $id): StreamAdapterInterface {
+    return new PatchedVercelAIAdapter();
+  }
 
   /**
    * {@inheritdoc}
@@ -75,6 +98,9 @@ final class EditorialNeuronAgent extends EditorialSessionAgentBase {
       (b) the user has explicitly told you to proceed without it.
     - One call of drafting_draft_content writes one draft. It writes
       every field group and answers with the name of the draft it stored.
+    - Pass the editor's request as the brief, in the words they used. The
+      drafters never see this conversation, so the brief is all they are
+      told about what the editor asked for.
     - When the user asks for several drafts at once, call it once for
       each draft they asked for, in the same reply.
     - Tell the user the name of every draft that is ready and that they
