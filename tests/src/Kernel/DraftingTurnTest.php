@@ -334,7 +334,7 @@ class DraftingTurnTest extends AiEditorialSessionKernelTestBase {
    * open stream, where the editor reads an error frame instead of a status,
    * so the endpoint answers it before the stream opens.
    */
-  public function testASecondTurnIsRefusedWhileOneRuns(): void {
+  public function testSecondTurnIsRefusedWhileOneRuns(): void {
     // The action loads the session for the user who asked, so the turn is
     // refused for holding the session's id rather than for the access it
     // would be denied otherwise.
