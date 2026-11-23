@@ -53,10 +53,13 @@ class EditorialContextToolsTest extends AiEditorialSessionKernelTestBase {
     $names = array_map(static fn ($tool) => $tool->getName(), $agent->getTools());
     $this->assertContains('context_get_editorial_context', $names);
     $this->assertContains('context_read_document', $names);
+    $this->assertContains('context_get_session_documents', $names);
 
     $instructions = $agent->getInstructions()->getContent();
     $this->assertStringContainsString('context_get_editorial_context', $instructions);
     $this->assertStringContainsString('context_read_document', $instructions);
+    $this->assertStringContainsString('context_get_session_documents', $instructions);
+    $this->assertStringContainsString('Content type context:', $instructions);
   }
 
   /**
@@ -65,9 +68,7 @@ class EditorialContextToolsTest extends AiEditorialSessionKernelTestBase {
    * The guidelines only go into GroupDrafterNeuronAgent's prompt, through
    * tonePrompt(), since that's the agent that writes the field text. This
    * one only ever sees the tone's label and description, through
-   * context_get_editorial_context. Document text, unlike tone, is inlined
-   * here by design; see testEditorialAgentIsToldAboutTheDocuments in
-   * EditorialSessionAgentPromptsTest.
+   * context_get_editorial_context.
    */
   public function testEditorialAgentInstructionsCarryNoToneText(): void {
     $this->enableModules(['entity_reference_revisions', 'paragraphs', 'link', 'inline_entity_form']);
@@ -87,6 +88,31 @@ class EditorialContextToolsTest extends AiEditorialSessionKernelTestBase {
     $instructions = $agent->getInstructions()->getContent();
 
     $this->assertStringNotContainsString('Use professional, institutional language.', $instructions);
+  }
+
+  /**
+   * Tests that editorial agent instructions carry no document text.
+   *
+   * A document's text reaches this agent only through context_read_document;
+   * it is never inlined, so the agent discovers and reads documents purely
+   * through tools.
+   */
+  public function testEditorialAgentInstructionsCarryNoDocumentText(): void {
+    $this->enableModules(['entity_reference_revisions', 'paragraphs', 'link', 'inline_entity_form']);
+    $this->installEntitySchema('paragraph');
+    $this->config('ai.settings')
+      ->set('default_providers', ['chat_with_tools' => ['provider_id' => 'mock_ai', 'model_id' => 'mock-model']])
+      ->save();
+    $session = $this->stubbedSession(NULL, [
+      self::document('1', 'done', 'The quarterly figures are confidential.'),
+    ]);
+
+    $agent = $this->container->get(NeuronAgentManagerInterface::class)
+      ->createAgent('editorial', ['session' => $session]);
+
+    $instructions = $agent->getInstructions()->getContent();
+
+    $this->assertStringNotContainsString('The quarterly figures are confidential.', $instructions);
   }
 
   /**
