@@ -22,7 +22,7 @@ use NeuronAI\Providers\AIProviderInterface;
   label: new TranslatableMarkup('Field group drafter'),
   description: new TranslatableMarkup('Writes the values of one field group against its JSON schema.'),
   operation_type: 'chat_with_structured_response',
-  tools: ['context_read_document'],
+  tools: ['context_get_session_documents', 'context_read_document'],
   context_definitions: [
     'session' => new EntityContextDefinition(
       data_type: 'entity:ai_editorial_session',
@@ -72,11 +72,12 @@ final class GroupDrafterNeuronAgent extends EditorialSessionAgentBase {
     instructions describing what content to produce. Generate a JSON
     object that conforms exactly to the given schema.
 
-    A context document below may show only a summary, or say its text is
-    not available yet: call context_read_document with its ID when you
-    need its full text to draft well. Once you have everything you need,
-    return ONLY valid JSON with no markdown fencing, no explanation, no
-    commentary.
+    Call context_get_session_documents to see what context documents are
+    attached, each with its ID, title and either its summary or why its
+    content is not available yet. Call context_read_document with a
+    document's ID when its summary does not give you enough to draft
+    well. Once you have everything you need, return ONLY valid JSON with
+    no markdown fencing, no explanation, no commentary.
 
     Every field value is an array of items, each item an object with
     the property keys the schema lists, for example
@@ -88,11 +89,11 @@ final class GroupDrafterNeuronAgent extends EditorialSessionAgentBase {
     Match the language and tone described in the instructions.
     PROMPT;
 
-    $blocks = array_filter([$this->tonePrompt(), $this->documentsPrompt()]);
+    $tonePrompt = $this->tonePrompt();
 
-    return $blocks === []
+    return $tonePrompt === ''
       ? $instructions
-      : $instructions . "\n\n" . implode("\n\n", $blocks) . "\n";
+      : $instructions . "\n\n" . $tonePrompt . "\n";
   }
 
   /**

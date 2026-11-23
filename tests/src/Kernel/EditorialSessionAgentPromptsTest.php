@@ -246,9 +246,26 @@ Overflow text.", $prompt);
 
     $names = array_map(static fn ($tool) => $tool->getName(), $agent->getTools());
     $this->assertContains('context_read_document', $names);
+    $this->assertContains('context_get_session_documents', $names);
 
     $instructions = $agent->getInstructions()->getContent();
     $this->assertStringContainsString('context_read_document', $instructions);
+    $this->assertStringContainsString('context_get_session_documents', $instructions);
+  }
+
+  /**
+   * Tests that the drafter's instructions carry no document text.
+   *
+   * A document's text reaches this agent only through context_read_document;
+   * it is never inlined, so the drafter discovers and reads documents purely
+   * through tools.
+   */
+  public function testDrafterInstructionsCarryNoDocumentText(): void {
+    $prompt = $this->instructions(NULL, [
+      self::document('1', 'done', 'Full text of one.', 'Summary one.'),
+    ]);
+
+    $this->assertStringNotContainsString('Full text of one.', $prompt);
   }
 
   /**
