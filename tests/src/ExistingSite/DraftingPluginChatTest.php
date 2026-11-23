@@ -359,19 +359,20 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
   }
 
   /**
-   * Tests that document extracts reach the editorial agent and the drafters.
+   * Tests that document extracts never reach an agent inline.
    *
-   * One document is processed through the real Tika service, one is left
-   * scheduled: every prompt must carry the extracted text of the first and
-   * announce the second as not available yet.
+   * Documents reach the drafting agent and the field-group sub-agents only
+   * through context_get_session_documents and context_read_document, never
+   * through text inlined in their system prompt, regardless of a
+   * document's processing state.
    */
-  public function testDocumentExtractsReachFieldGroupSubAgents(): void {
+  public function testDocumentExtractsDoNotReachAgentsInline(): void {
     $user = $this->createUser(['use oe ai assistant']);
     $this->loginUser($user);
     $session = $this->createSession($user);
 
     [$processedId, $processedTitle] = $this->uploadDocument($session, 'briefing.txt', 'Alpha briefing content for the draft.');
-    [$pendingId, $pendingTitle] = $this->uploadDocument($session, 'pending.txt', 'Not processed.');
+    $this->uploadDocument($session, 'pending.txt', 'Not processed.');
     MockAiProvider::enqueue(new MockResponse(text: 'Briefing summary.'));
     $result = $this->httpPost('/api/ai/plugins/drafting/extract-document', [
       'sessionId' => $session->id(),
@@ -396,8 +397,8 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
     $this->assertCount(4, $log);
     foreach ([0, 1, 2, 3] as $callIndex) {
       $prompt = $log[$callIndex]['system_prompt'];
-      $this->assertStringContainsString("### $processedTitle (ID: $processedId, file: $processedTitle)\nAlpha briefing content for the draft.", $prompt);
-      $this->assertStringContainsString("### $pendingTitle (ID: $pendingId, file: $pendingTitle)\nNot processed yet", $prompt);
+      $this->assertStringNotContainsString('Alpha briefing content for the draft.', $prompt);
+      $this->assertStringNotContainsString($processedTitle, $prompt);
     }
   }
 
