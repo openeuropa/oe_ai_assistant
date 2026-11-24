@@ -8,7 +8,7 @@
 # To add a new plugin's API:
 # 1. Create api/plugins/{pluginId}/paths.yaml and schemas.yaml.
 # 2. Add $ref entries in the paths and components/schemas sections below.
-# 3. Run `npm run api:generate` to regenerate TypeScript types.
+# 3. Run `pnpm run api:generate` to regenerate TypeScript types.
 #
 # URL structure:
 #   /api/...                          Shell-level (generic) endpoints

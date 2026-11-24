@@ -7,35 +7,62 @@ back-office, communicating exclusively through a CMS-agnostic REST API.
 ## Prerequisites
 
 - Node.js >= 22
-- npm
+- pnpm (the exact version is pinned in `package.json`)
 
 ## Getting Started
 
+Use pnpm for all frontend dependencies and commit `pnpm-lock.yaml` when they
+change. We use pnpm 10 for compatibility with the Corepack bundled in Node.js 22.
+Enable Corepack once:
+
+```bash
+corepack enable
+```
+
+Run these commands from `app/`; Corepack selects the pinned pnpm version:
+
 ```bash
 # Install dependencies
-npm install
+pnpm install
 
 # Start standalone frontend development
 # Drafting runs against fixture-backed mock data by default.
-npm run dev
+pnpm run dev
 
 # Optional: run the real Mistral-backed drafting flow instead
 cp .env.dist .env
 # then set MISTRAL_API_KEY in app/.env
-npm run dev:integration
+pnpm run dev:integration
 
 # Or run the pieces individually
-npm run dev:client              # Vite dev server only
-npm run dev:server              # Mock API server only
-npm run dev:server:integration  # Mistral-backed API server only
+pnpm run dev:client              # Vite dev server only
+pnpm run dev:server              # Mock API server only
+pnpm run dev:server:integration  # Mistral-backed API server only
 ```
+
+### Switching an existing checkout from npm
+
+Replace the old dependency directory once, then install from the pnpm lockfile:
+
+```bash
+rm -rf node_modules
+pnpm install --frozen-lockfile
+```
+
+CI, releases, and `ddev build-app` use `--frozen-lockfile` so dependency changes
+must include an updated lockfile. After pulling this migration, run `ddev restart`
+to enable Corepack and Node.js 22 in the web container.
+
+Dependency install scripts are configured in `pnpm-workspace.yaml`. Review new
+scripts with `pnpm approve-builds` and commit any resulting configuration changes.
+For future dependency patches, use `pnpm patch` and `pnpm patch-commit`.
 
 ### Supported Development Modes
 
-- `npm run dev`: default standalone workflow. No provider credentials are
+- `pnpm run dev`: default standalone workflow. No provider credentials are
   required. The drafting plugin uses deterministic fixture data from
   `server/fixtures/drafting/`.
-- `npm run dev:integration`: opt-in provider-backed workflow. This keeps the
+- `pnpm run dev:integration`: opt-in provider-backed workflow. This keeps the
   frontend running locally, but the drafting route uses the real Mistral client
   and requires `MISTRAL_API_KEY` in `app/.env`.
 
@@ -46,15 +73,15 @@ integration mode only when you need to validate prompt/provider behaviour.
 
 | Command              | Description                                   |
 |----------------------|-----------------------------------------------|
-| `npm run dev`        | Start client + standalone mock API server      |
-| `npm run dev:integration` | Start client + Mistral-backed API server |
-| `npm run build`      | Type-check and build for production            |
-| `npm run typecheck`  | Run TypeScript type checking                   |
-| `npm run lint`       | Lint with Biome                                |
-| `npm run lint:fix`   | Lint and auto-fix                              |
-| `npm run format`     | Format with Biome                              |
-| `npm run api:generate` | Regenerate TypeScript types from OpenAPI spec |
-| `npm run storybook`  | Start Storybook on port 6006                   |
+| `pnpm run dev`        | Start client + standalone mock API server      |
+| `pnpm run dev:integration` | Start client + Mistral-backed API server |
+| `pnpm run build`      | Type-check and build for production            |
+| `pnpm run typecheck`  | Run TypeScript type checking                   |
+| `pnpm run lint`       | Lint with Biome                                |
+| `pnpm run lint:fix`   | Lint and auto-fix                              |
+| `pnpm run format`     | Format with Biome                              |
+| `pnpm run api:generate` | Regenerate TypeScript types from OpenAPI spec |
+| `pnpm run storybook`  | Start Storybook on port 6006                   |
 
 ## Project Structure
 
@@ -83,14 +110,14 @@ mount the app into any DOM element.
 ### Build
 
 ```bash
-npm run build
+pnpm run build
 ```
 
 To include dev-only plugins (`echo`, `notes`) in a local build that will be
 imported into Drupal, build with:
 
 ```bash
-DEV_PLUGINS=true npm run build
+DEV_PLUGINS=true pnpm run build
 ```
 
 This produces:
@@ -211,7 +238,7 @@ The OpenAPI 3.1 specification in `api/openapi.yaml` defines every endpoint the
 app depends on. TypeScript types are generated from it:
 
 ```bash
-npm run api:generate
+pnpm run api:generate
 ```
 
 This produces `src/api/schema.d.ts`. The typed API client in `src/api/client.ts`

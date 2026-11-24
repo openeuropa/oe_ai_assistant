@@ -8,11 +8,11 @@ set -e
 
 cd /var/www/html/app
 
-echo "Installing npm dependencies..."
-npm ci
+echo "Installing pnpm dependencies..."
+pnpm install --frozen-lockfile
 
 echo "Building production bundle..."
-npm run build
+pnpm run build
 
 echo ""
 echo "Build complete: dist/"

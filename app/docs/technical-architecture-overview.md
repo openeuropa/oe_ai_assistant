@@ -152,7 +152,7 @@ This lets editors close the browser and resume exactly where they left off.
 1. **Write the OpenAPI spec** for the endpoints the plugin needs.
 2. **Generate types** from the spec (`openapi-typescript`).
 3. **Create MSW mock handlers** that return fixture data and simulated streams.
-4. **Build the plugin** against the mocked API using `npm run dev`.
+4. **Build the plugin** against the mocked API using `pnpm run dev`.
 5. **Hand off the spec** to the backend team for implementation.
 6. **Integration test** against the real backend in a staging environment.
 
@@ -160,7 +160,7 @@ Frontend and backend development proceed in parallel from step 3 onward.
 
 For the local reference server, the drafting plugin defaults to a fixture-backed
 mock mode. Real Mistral-backed drafting is available separately via
-`npm run dev:integration` when provider behaviour needs to be validated.
+`pnpm run dev:integration` when provider behaviour needs to be validated.
 
 ---
 

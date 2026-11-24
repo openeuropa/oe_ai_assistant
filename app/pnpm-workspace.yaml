@@ -1,0 +1,8 @@
+strictDepBuilds: true
+
+# Build tools need their native binaries. MSW's optional worker setup is unused.
+allowBuilds:
+  '@swc/core': true
+  esbuild: true
+  fsevents: true
+  msw: false

@@ -8,7 +8,7 @@
  * self-contained: the PHP validator cannot resolve file-based $refs.
  *
  * Run standalone:  node scripts/build-schemas.js
- * Run via build:   npm run build (chained after vite build)
+ * Run via build:   pnpm run build (chained after vite build)
  */
 
 import { writeFileSync } from "node:fs";
