@@ -117,7 +117,7 @@ abstract class DocumentRepositoryBase implements DocumentRepositoryInterface {
     $session->recordActivity(
       ActivityType::DocumentAdded,
       'Document "%s" attached.',
-      $this->getFilename($media),
+      [$this->getFilename($media)],
     );
 
     return $this->serialize($media);
@@ -140,7 +140,7 @@ abstract class DocumentRepositoryBase implements DocumentRepositoryInterface {
     $filename = $this->getFilename($media);
     $this->deleteDocument($media);
 
-    $session->recordActivity(ActivityType::DocumentRemoved, 'Document "%s" removed.', $filename);
+    $session->recordActivity(ActivityType::DocumentRemoved, 'Document "%s" removed.', [$filename]);
   }
 
   /**

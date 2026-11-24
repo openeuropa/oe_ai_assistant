@@ -93,19 +93,23 @@ interface AiEditorialSessionInterface extends ContentEntityInterface, EntityChan
   /**
    * Records one entry in the activity of this session.
    *
-   * The entry stores the current user and the time of the write. This
-   * method never throws. A write that fails only goes to the log, so
-   * recording cannot break the change the caller just made.
+   * The entry stores the time of the write. A write that fails only goes
+   * to the log, so recording cannot break the change the caller just made.
+   * A format the arguments cannot fill still throws, because that is a
+   * mistake in the caller.
    *
    * @param \Drupal\oe_ai_assistant\Entity\ActivityType $type
    *   The kind of entry to record.
    * @param string $message
    *   The sentence to record, or a sprintf() format when the call passes
    *   arguments.
-   * @param string|int|float ...$arguments
+   * @param array $arguments
    *   The values for the format.
+   * @param int|null $uid
+   *   The user the entry records. NULL takes the account that asks, which
+   *   a queue worker runs without.
    */
-  public function recordActivity(ActivityType $type, string $message, string|int|float ...$arguments): void;
+  public function recordActivity(ActivityType $type, string $message, array $arguments = [], ?int $uid = NULL): void;
 
   /**
    * Returns the most recent entries in the activity of this session.

@@ -244,17 +244,22 @@ class AiEditorialSession extends ContentEntityBase implements AiEditorialSession
   /**
    * {@inheritdoc}
    */
-  public function recordActivity(ActivityType $type, string $message, string|int|float ...$arguments): void {
+  public function recordActivity(ActivityType $type, string $message, array $arguments = [], ?int $uid = NULL): void {
+    // A format that does not match its arguments is a mistake in the
+    // caller, and sprintf() raises ArgumentCountError for it. The catch
+    // below answers for the storage, so the message is built before it.
+    $text = $arguments === [] ? $message : sprintf($message, ...$arguments);
+
     try {
       $this->activityStorage()->create([
         'session' => $this->id(),
         'type' => $type->value,
-        'uid' => \Drupal::currentUser()->id(),
+        'uid' => $uid ?? \Drupal::currentUser()->id(),
         // The created field defaults to the time the request came in. A
         // chat request can draft for a minute, so two drafts of one reply
         // would share one timestamp. We take the current time here.
         'created' => \Drupal::time()->getCurrentTime(),
-        'message' => $arguments === [] ? $message : sprintf($message, ...$arguments),
+        'message' => $text,
       ])->save();
     }
     catch (\Throwable $e) {

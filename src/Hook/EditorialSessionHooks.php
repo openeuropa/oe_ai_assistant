@@ -69,8 +69,10 @@ final class EditorialSessionHooks {
     $entity->recordActivity(
       ActivityType::SessionCreated,
       'Session created with tone %s and template %s.',
-      $this->selected($entity->get('tone')->entity),
-      $this->selected($entity->get('template')->entity),
+      [
+        $this->selected($entity->get('tone')->entity),
+        $this->selected($entity->get('template')->entity),
+      ],
     );
   }
 

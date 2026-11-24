@@ -74,7 +74,7 @@ class AiEditorialSessionActivityTest extends AiEditorialSessionKernelTestBase {
     $session = $this->freshSession($owner);
     $this->container->get('current_user')->setAccount($owner);
 
-    $session->recordActivity(ActivityType::ToneChanged, 'Tone set to "%s".', 'Formal');
+    $session->recordActivity(ActivityType::ToneChanged, 'Tone set to "%s".', ['Formal']);
 
     $entries = $session->getLatestActivity(100);
     $this->assertCount(1, $entries);
@@ -313,7 +313,7 @@ class AiEditorialSessionActivityTest extends AiEditorialSessionKernelTestBase {
     $session = $this->freshSession($this->createUser());
     $total = GetSessionActivityNeuronAgent::MAX_ENTRIES + 3;
     for ($i = 1; $i <= $total; $i++) {
-      $session->recordActivity(ActivityType::ToneChanged, 'Entry %d', $i);
+      $session->recordActivity(ActivityType::ToneChanged, 'Entry %d', [$i]);
     }
 
     $prompt = $this->activityPrompt($session);
@@ -403,8 +403,8 @@ class AiEditorialSessionActivityTest extends AiEditorialSessionKernelTestBase {
     $owner = $this->createUser();
     $this->container->get('current_user')->setAccount($owner);
     $session = $this->freshSession($owner);
-    $session->recordActivity(ActivityType::ToneChanged, 'Tone set to "%s".', 'Formal');
-    $session->recordActivity(ActivityType::DraftGenerated, 'Draft %d generated.', 1);
+    $session->recordActivity(ActivityType::ToneChanged, 'Tone set to "%s".', ['Formal']);
+    $session->recordActivity(ActivityType::DraftGenerated, 'Draft %d generated.', [1]);
 
     $rows = $this->activityPage($session)['activity']['#rows'];
 
@@ -460,6 +460,43 @@ class AiEditorialSessionActivityTest extends AiEditorialSessionKernelTestBase {
       ['invented_by_a_later_release'],
       array_column($this->activityPage($session)['activity']['#rows'], 2),
     );
+  }
+
+  /**
+   * A caller with no account of its own names the user to record.
+   *
+   * An agent that runs in a queue worker has no account attached to the
+   * request, so the entry would otherwise record the anonymous user.
+   */
+  public function testRecordingAgainstTheGivenUser(): void {
+    $actor = $this->createUser();
+    $session = $this->freshSession($this->createUser());
+    $this->container->get('current_user')->setAccount($this->createUser());
+
+    $session->recordActivity(
+      ActivityType::DraftGenerated,
+      'Draft %d generated.',
+      [1],
+      (int) $actor->id(),
+    );
+
+    $this->assertSame(
+      (int) $actor->id(),
+      (int) $session->getLatestActivity()[0]->getOwnerId(),
+    );
+  }
+
+  /**
+   * A format that does not match its arguments fails loudly.
+   *
+   * Recording swallows a storage failure, and a mistake in the caller
+   * would disappear into the same log line.
+   */
+  public function testRecordingThrowsOnAnIncompleteFormat(): void {
+    $session = $this->freshSession($this->createUser());
+
+    $this->expectException(\ArgumentCountError::class);
+    $session->recordActivity(ActivityType::DraftSaved, 'Draft %d saved as %s.', [1]);
   }
 
   /**

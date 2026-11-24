@@ -677,8 +677,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
       $isFirstSave
         ? 'Draft %d saved to the CMS as a new node (node %s).'
         : 'Draft %d saved to the CMS as a new revision of node %s.',
-      $version,
-      $result['nodeId'],
+      [$version, $result['nodeId']],
     );
 
     return $result;
@@ -891,11 +890,11 @@ class DraftingPlugin extends AiAssistantPluginBase {
    */
   private function recordSelection(AiEditorialSessionInterface $session, ActivityType $type, string $what, string $from, string $to): void {
     if ($from === '') {
-      $session->recordActivity($type, '%s set to "%s".', $what, $to);
+      $session->recordActivity($type, '%s set to "%s".', [$what, $to]);
       return;
     }
 
-    $session->recordActivity($type, '%s changed from "%s" to "%s".', $what, $from, $to);
+    $session->recordActivity($type, '%s changed from "%s" to "%s".', [$what, $from, $to]);
   }
 
   /**

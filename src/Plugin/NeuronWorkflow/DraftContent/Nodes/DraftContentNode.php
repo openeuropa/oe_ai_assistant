@@ -155,7 +155,7 @@ final class DraftContentNode extends Node {
         $resources->session->recordActivity(
           ActivityType::DraftGenerated,
           'Draft %d generated.',
-          $version,
+          [$version],
         );
 
         return TRUE;
@@ -237,17 +237,14 @@ final class DraftContentNode extends Node {
           $resources->session->recordActivity(
             ActivityType::DraftFailed,
             'Draft %d failed: %s',
-            $version,
-            $reason,
+            [$version, $reason],
           );
         }
         else {
           $resources->session->recordActivity(
             ActivityType::DraftFailed,
             'Draft %d failed in the "%s" group: %s',
-            $version,
-            $failed,
-            $reason,
+            [$version, $failed, $reason],
           );
         }
 
