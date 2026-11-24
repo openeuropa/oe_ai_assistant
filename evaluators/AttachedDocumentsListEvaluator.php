@@ -152,7 +152,7 @@ final class AttachedDocumentsListEvaluator extends BaseEvaluator {
    * first time it is read. An agent held across turns would keep reporting
    * the list as it stood when it first answered, and miss a later attach or
    * removal. So every turn gets its own agent, which is also what
-   * EditorialWorkflow::nodes() does per request, and the stored thread
+   * DraftingPlugin::chat() does per request, and the stored thread
    * carries the conversation from one turn to the next.
    */
   private function editorialAgent(NeuronAgentManagerInterface $manager, int $sessionId): Agent {
