@@ -11,6 +11,7 @@ use Drupal\ai_neuron\Tools\NeuronToolManagerInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Plugin\Context\EntityContextDefinition;
 use Drupal\Core\StringTranslation\TranslatableMarkup;
+use NeuronAI\Providers\AIProviderInterface;
 
 /**
  * The agent that summarises an attached document for the editor.
@@ -40,7 +41,7 @@ use Drupal\Core\StringTranslation\TranslatableMarkup;
 final class SummaryNeuronAgent extends NeuronAgentPluginBase {
 
   /**
-   * The id this agent is registered under.
+   * The ID this agent is registered under.
    */
   public const string PLUGIN_ID = 'document_summary';
 
@@ -62,6 +63,24 @@ final class SummaryNeuronAgent extends NeuronAgentPluginBase {
     return 'You summarise briefing documents for editors. '
       . 'Write a brief summary of the document in English, three to five sentences: '
       . 'what it is and its key points. Return only the summary.';
+  }
+
+  /**
+   * {@inheritdoc}
+   *
+   * Keep the 'oe_ai_assistant' and 'document_summary' tags alongside the
+   * one the base class derives from the plugin ID. A site's moderation or
+   * prompt-logging config may still be keyed on either of them, from when
+   * DocumentExtractionProcessor called the provider directly, and it should
+   * go on screening the one text here an editor fully controls: the
+   * document they uploaded.
+   */
+  protected function provider(): AIProviderInterface {
+    return $this->providers->create($this->operationType(), [
+      'oe_ai_assistant',
+      self::PLUGIN_ID,
+      $this->tag(),
+    ]);
   }
 
   /**

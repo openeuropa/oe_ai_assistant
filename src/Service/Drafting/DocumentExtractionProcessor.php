@@ -316,7 +316,7 @@ final class DocumentExtractionProcessor implements DocumentExtractionProcessorIn
     // Keep the workflow state in memory. The manager binds the site's
     // workflow store to every agent it builds, and a failed run leaves a
     // partition in neuron_workflow_store that only a later run under the
-    // same workflow id would sweep. Every attempt here opens a thread of
+    // same workflow ID would sweep. Every attempt here opens a thread of
     // its own, so that run never comes. The session history reads the
     // message rows, which the message store writes either way.
     $agent->setPersistence(new InMemoryPersistence());

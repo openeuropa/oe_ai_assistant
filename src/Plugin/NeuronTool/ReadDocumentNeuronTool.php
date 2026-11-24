@@ -8,6 +8,7 @@ use Drupal\ai_neuron\Attribute\NeuronTool;
 use Drupal\ai_neuron\Tools\NeuronToolPluginBase;
 use Drupal\Core\Plugin\Context\EntityContextDefinition;
 use Drupal\Core\StringTranslation\TranslatableMarkup;
+use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
 use Drupal\oe_ai_assistant\Service\Drafting\DocumentExtractionProcessorInterface;
 use NeuronAI\Tools\PropertyType;
 use NeuronAI\Tools\ToolProperty;
@@ -43,15 +44,13 @@ final class ReadDocumentNeuronTool extends NeuronToolPluginBase {
    * {@inheritdoc}
    */
   protected function properties(): array {
-    $ids = array_column($this->getContextValue('session')->getDocuments(), 'id');
-
     return [
       new ToolProperty(
         'document',
         PropertyType::STRING,
         'The ID of the document to read.',
         TRUE,
-        $ids,
+        $this->documentIds($this->getContextValue('session')),
       ),
     ];
   }
@@ -63,9 +62,9 @@ final class ReadDocumentNeuronTool extends NeuronToolPluginBase {
     $session = $this->getContextValue('session');
     $descriptor = $session->getDocument($document);
     if ($descriptor === NULL) {
-      $ids = array_column($session->getDocuments(), 'id');
+      $ids = $this->documentIds($session);
 
-      return json_encode([
+      return (string) json_encode([
         'error' => sprintf(
           'No document %s is attached to this session. The documents are: %s.',
           $document,
@@ -88,7 +87,7 @@ final class ReadDocumentNeuronTool extends NeuronToolPluginBase {
         : 'Not processed yet; its content is not available. Tell the editor to wait a moment.';
     }
 
-    return json_encode([
+    return (string) json_encode([
       'id' => $document,
       'title' => $descriptor['title'] ?? '',
       'status' => $status,
@@ -97,6 +96,13 @@ final class ReadDocumentNeuronTool extends NeuronToolPluginBase {
       'summary' => $summary,
       'note' => $note,
     ], JSON_INVALID_UTF8_SUBSTITUTE);
+  }
+
+  /**
+   * The IDs of every document attached to the session.
+   */
+  private function documentIds(AiEditorialSessionInterface $session): array {
+    return array_column($session->getDocuments(), 'id');
   }
 
   /**

@@ -8,7 +8,6 @@ use Drupal\ai_neuron\Agent\NeuronAgentDefinition;
 use Drupal\Component\Plugin\Definition\ContextAwarePluginDefinitionInterface;
 use Drupal\ai_neuron\Agent\NeuronAgentPluginBase;
 use Drupal\Core\Logger\LoggerChannelTrait;
-use NeuronAI\Tools\ToolCall;
 use NeuronAI\Tools\ToolInterface;
 
 /**
@@ -18,12 +17,13 @@ use NeuronAI\Tools\ToolInterface;
  * drafts with off that. A subclass declares the session context on its own
  * attribute, because an attribute is not inherited.
  *
- * The session is also what names an agent's conversation, so a thread id is
+ * The session is also what names an agent's conversation, so a thread ID is
  * composed here. Every agent prompts a model with the tone the editor set
  * up, which is rendered here.
  */
 abstract class EditorialSessionAgentBase extends NeuronAgentPluginBase {
 
+  use JsonToolErrorHandlerTrait;
   use LoggerChannelTrait;
 
   /**
@@ -68,41 +68,10 @@ abstract class EditorialSessionAgentBase extends NeuronAgentPluginBase {
   /**
    * {@inheritdoc}
    *
-   * Our tools return JSON to the model, so a failure is reported as JSON too,
-   * instead of the plain sentence NeuronAgentPluginBase builds. The payload
-   * names the tool, so a model that called several tools in one turn can see
-   * which one failed.
-   */
-  protected function toolErrorHandler(): ?callable {
-    $logger = $this->getLogger('oe_ai_assistant');
-
-    return static function (\Throwable $exception, ToolCall $call) use ($logger): string {
-      // Don't return the exception message to the model: a database driver
-      // puts the failing query and the host in it, and the agent repeats
-      // whatever we return to the editor. It goes to the log instead.
-      $logger->error('The @tool tool failed: @message', [
-        '@tool' => $call->getName(),
-        '@message' => $exception->getMessage(),
-        'exception' => $exception,
-      ]);
-
-      // json_encode() returns string|false and the handler has to return a
-      // string. It can only fail on data it can't encode, and all we encode
-      // is a tool name and a fixed sentence, so the cast is safe.
-      return (string) json_encode([
-        'tool' => $call->getName(),
-        'error' => 'The tool failed.',
-      ]);
-    };
-  }
-
-  /**
-   * {@inheritdoc}
-   *
    * The session is the whole key, so the next turn carries on the
    * conversation the last one left off. Keep it in step with
    * AiEditorialSession::editorialThread(), which spells out the same thread
-   * id by hand, because the transcript endpoint reads the stored rows with
+   * ID by hand, because the transcript endpoint reads the stored rows with
    * no agent to ask. A subclass that answers one question per run, like
    * GroupDrafterNeuronAgent, appends what tells its own runs apart.
    */

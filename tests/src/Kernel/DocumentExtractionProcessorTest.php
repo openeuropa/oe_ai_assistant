@@ -99,7 +99,7 @@ class DocumentExtractionProcessorTest extends AiEditorialSessionKernelTestBase {
   }
 
   /**
-   * The thread id the given summary attempt of a document writes to.
+   * The thread ID the given summary attempt of a document writes to.
    */
   private function summaryThread(MediaInterface $media, int $attempt): string {
     return sprintf(
@@ -186,7 +186,7 @@ class DocumentExtractionProcessorTest extends AiEditorialSessionKernelTestBase {
    * Tests that a summary never leaves a row in Neuron's workflow store.
    *
    * A failed run leaves its partition behind, and the only sweep of one is
-   * a later run under the same workflow id. Every summary attempt opens a
+   * a later run under the same workflow ID. Every summary attempt opens a
    * thread of its own, so no such run ever comes. The processor therefore
    * keeps the workflow state of this run in memory, and the table stays
    * empty whatever the outcome.

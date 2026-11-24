@@ -9,7 +9,6 @@ use Drupal\ai_neuron\Attribute\NeuronAgent;
 use Drupal\Core\Logger\LoggerChannelTrait;
 use Drupal\Core\Plugin\Context\EntityContextDefinition;
 use Drupal\Core\StringTranslation\TranslatableMarkup;
-use NeuronAI\Tools\ToolCall;
 
 /**
  * Answers one question about a session's current tone, template and documents.
@@ -34,39 +33,13 @@ use NeuronAI\Tools\ToolCall;
 )]
 final class GetEditorialContextNeuronAgent extends NeuronAgentPluginBase {
 
+  use JsonToolErrorHandlerTrait;
   use LoggerChannelTrait;
 
   /**
    * The ID this agent is registered under.
    */
   public const string PLUGIN_ID = 'editorial_context_answer';
-
-  /**
-   * {@inheritdoc}
-   *
-   * Same handler as EditorialSessionAgentBase::toolErrorHandler(), which we
-   * can't inherit here because this agent extends NeuronAgentPluginBase
-   * directly. Our tools answer in JSON, so a failure is reported as JSON
-   * naming the tool rather than as the plain sentence the base class returns.
-   * The exception message only goes to the log: it can name a term ID or a
-   * vocabulary, and the agent repeats to the editor whatever we return.
-   */
-  protected function toolErrorHandler(): ?callable {
-    $logger = $this->getLogger('oe_ai_assistant');
-
-    return static function (\Throwable $exception, ToolCall $call) use ($logger): string {
-      $logger->error('The @tool tool failed: @message', [
-        '@tool' => $call->getName(),
-        '@message' => $exception->getMessage(),
-        'exception' => $exception,
-      ]);
-
-      return (string) json_encode([
-        'tool' => $call->getName(),
-        'error' => 'The tool failed.',
-      ]);
-    };
-  }
 
   /**
    * {@inheritdoc}

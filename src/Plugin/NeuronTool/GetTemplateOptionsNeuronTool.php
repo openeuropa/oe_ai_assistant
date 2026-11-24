@@ -27,6 +27,8 @@ use Drupal\oe_ai_assistant\Service\DraftingSchemaProviderInterface;
 )]
 final class GetTemplateOptionsNeuronTool extends NeuronToolPluginBase {
 
+  use SelectionDescriberTrait;
+
   public function __construct(
     array $configuration,
     $plugin_id,
@@ -45,42 +47,6 @@ final class GetTemplateOptionsNeuronTool extends NeuronToolPluginBase {
     $selected = $this->describeSelection($session->getTemplate(), $options);
 
     return (string) json_encode(['selected' => $selected, 'options' => $options], JSON_INVALID_UTF8_SUBSTITUTE);
-  }
-
-  /**
-   * Describes what the session holds as one of the options.
-   *
-   * A session stores only the ID and the label of what it holds, so we read
-   * the description from the options. An option the site has since disabled
-   * is off the list, so the fallback reports the ID and the label with no
-   * description.
-   *
-   * @param array|null $selection
-   *   What the session holds, NULL when it holds nothing.
-   * @param array $options
-   *   The options to read the description from.
-   *
-   * @return array|null
-   *   The selection with its 'id', 'label' and 'description', or NULL when
-   *   the session holds nothing.
-   */
-  private function describeSelection(?array $selection, array $options): ?array {
-    if ($selection === NULL) {
-      return NULL;
-    }
-
-    $id = (string) ($selection['id'] ?? '');
-    foreach ($options as $option) {
-      if ($option['id'] === $id) {
-        return $option;
-      }
-    }
-
-    return [
-      'id' => $id,
-      'label' => $selection['label'] ?? '',
-      'description' => '',
-    ];
   }
 
 }
