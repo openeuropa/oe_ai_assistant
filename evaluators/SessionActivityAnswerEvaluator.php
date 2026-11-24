@@ -7,16 +7,12 @@ namespace Drupal\oe_ai_assistant\Evaluators;
 use Drupal\ai_neuron\Agent\NeuronAgentManagerInterface;
 use Drupal\ai_neuron\Providers\ProviderFactoryInterface;
 use Drupal\file\Upload\InputStreamUploadedFile;
-use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
 use Drupal\oe_ai_assistant\Service\Drafting\ContextDocumentRepository;
-use Drupal\taxonomy\TermInterface;
-use Drupal\user\Entity\User;
 use NeuronAI\Agent\Agent;
 use NeuronAI\Agent\AgentInterface;
 use NeuronAI\Chat\Messages\UserMessage;
 use NeuronAI\Evaluation\Assertions\Judges\CorrectnessJudge;
 use NeuronAI\Evaluation\Assertions\Trajectory\ToolWasCalled;
-use NeuronAI\Evaluation\BaseEvaluator;
 use NeuronAI\Evaluation\Contracts\DatasetInterface;
 use NeuronAI\Evaluation\Conversation\Trajectory;
 use NeuronAI\Evaluation\Dataset\ArrayDataset;
@@ -29,7 +25,7 @@ use NeuronAI\Evaluation\Dataset\ArrayDataset;
  * checkpoint asks one question right after the change it is about, so a
  * failure names the change the record lost.
  */
-final class SessionActivityAnswerEvaluator extends BaseEvaluator {
+final class SessionActivityAnswerEvaluator extends EditorialSessionEvaluatorBase {
 
   /**
    * The judge that scores each checkpoint's answer against its criteria.
@@ -85,7 +81,7 @@ final class SessionActivityAnswerEvaluator extends BaseEvaluator {
    */
   public function run(array $datasetItem): mixed {
     $input = $datasetItem['input'];
-    [$session, $owner] = $this->createSession($input['tone']);
+    [$session, $owner] = $this->createSession(['tone' => $input['tone']]);
     $sessionId = (int) $session->id();
     $switcher = \Drupal::service('account_switcher');
 
@@ -111,14 +107,7 @@ final class SessionActivityAnswerEvaluator extends BaseEvaluator {
     }
     finally {
       $switcher->switchBack();
-      // Nested so the throwaway user goes even when deleting the session
-      // throws.
-      try {
-        $this->session($sessionId)->delete();
-      }
-      finally {
-        $owner->delete();
-      }
+      $this->deleteSession($sessionId, $owner);
     }
 
     return $answers;
@@ -201,74 +190,6 @@ final class SessionActivityAnswerEvaluator extends BaseEvaluator {
     $repository->extract($this->session($sessionId), $attached['id']);
 
     return $attached['id'];
-  }
-
-  /**
-   * Loads the session again, the way every request does.
-   *
-   * ContentCreationSession caches the tone, the template and the documents
-   * on first read. Holding on to one object would show every later turn the
-   * state we read before the first change.
-   *
-   * @param int $id
-   *   The session to load.
-   *
-   * @return \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface
-   *   The session.
-   */
-  private function session(int $id): AiEditorialSessionInterface {
-    $session = \Drupal::entityTypeManager()->getStorage('ai_editorial_session')->loadUnchanged($id);
-    assert($session instanceof AiEditorialSessionInterface);
-
-    return $session;
-  }
-
-  /**
-   * Loads the tone term the site publishes under a name.
-   *
-   * @param string $label
-   *   The name of the term.
-   *
-   * @return \Drupal\taxonomy\TermInterface
-   *   The term.
-   */
-  private function tone(string $label): TermInterface {
-    $terms = \Drupal::entityTypeManager()->getStorage('taxonomy_term')
-      ->loadByProperties(['vid' => 'oe_ai_tone', 'name' => $label]);
-    $term = reset($terms);
-    if (!$term instanceof TermInterface) {
-      throw new \RuntimeException(sprintf('The site publishes no "%s" tone.', $label));
-    }
-
-    return $term;
-  }
-
-  /**
-   * Creates a throwaway session owned by a throwaway user.
-   *
-   * @param string $tone
-   *   The name of the tone term the session starts with.
-   *
-   * @return array
-   *   The new session, then the user that owns it.
-   */
-  private function createSession(string $tone): array {
-    $user = User::create([
-      'name' => 'eval-' . uniqid(),
-      'mail' => 'eval-' . uniqid() . '@example.com',
-      'status' => 1,
-    ]);
-    $user->save();
-
-    $session = \Drupal::entityTypeManager()->getStorage('ai_editorial_session')->create([
-      'type' => 'content_creation',
-      'uid' => $user->id(),
-      'content_type' => 'oe_news',
-      'tone' => $this->tone($tone)->id(),
-    ]);
-    $session->save();
-
-    return [$session, $user];
   }
 
 }
