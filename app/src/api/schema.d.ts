@@ -93,23 +93,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/plugins/drafting/reset": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Reset the drafting conversation thread */
-        post: operations["postDraftingReset"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/plugins/drafting/save": {
         parameters: {
             query?: never;
@@ -430,14 +413,6 @@ export interface components {
             message: string;
             /** @description The editorial session that hosts the conversation. The backend derives the target content type and access from the session and persists every turn against it. */
             sessionId: string;
-        };
-        DraftingResetRequest: {
-            /** @description The editorial session whose conversation to reset. */
-            sessionId: string;
-        };
-        DraftingResetResponse: {
-            /** @description Confirmation status (e.g. "ok"). */
-            status: string;
         };
         /** @description Save one of the session's drafts as an unpublished revision. The backend resolves the target content type and the drafted field values from the session and its draft history, so the client only names the version being saved; a client can never save field data the session did not produce. */
         DraftingSaveRequest: {
@@ -777,30 +752,6 @@ export interface operations {
                 };
                 content: {
                     "text/event-stream": unknown;
-                };
-            };
-        };
-    };
-    postDraftingReset: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["DraftingResetRequest"];
-            };
-        };
-        responses: {
-            /** @description Reset confirmation */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["DraftingResetResponse"];
                 };
             };
         };

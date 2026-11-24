@@ -20,24 +20,6 @@ DraftingChatRequest:
         derives the target content type and access from the session and
         persists every turn against it.
 
-DraftingResetRequest:
-  type: object
-  required:
-    - sessionId
-  properties:
-    sessionId:
-      type: string
-      description: The editorial session whose conversation to reset.
-
-DraftingResetResponse:
-  type: object
-  required:
-    - status
-  properties:
-    status:
-      type: string
-      description: Confirmation status (e.g. "ok").
-
 DraftingSaveRequest:
   type: object
   description: >

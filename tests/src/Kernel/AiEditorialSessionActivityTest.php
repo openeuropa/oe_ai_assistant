@@ -535,24 +535,6 @@ class AiEditorialSessionActivityTest extends AiEditorialSessionKernelTestBase {
   }
 
   /**
-   * Clearing a session records that its drafts went with the conversation.
-   */
-  public function testResetRecordsThatTheDraftsWereCleared(): void {
-    $owner = $this->createUser(['use oe ai assistant', 'view_update own sessions']);
-    $this->container->get('current_user')->setAccount($owner);
-    $session = $this->freshSession($owner);
-    $session->recordActivity(ActivityType::ToneChanged, 'Tone set to "Formal".');
-    $session->recordActivity(ActivityType::DraftGenerated, 'Draft %d generated.', [1]);
-
-    $this->action($session, 'reset', []);
-
-    // Draft numbering starts at 1 again, so an entry naming an old draft
-    // would name a new one too. The reset is the only entry left.
-    $this->assertSame(['Conversation and drafts cleared.'], $this->messages($session));
-    $this->assertSame([ActivityType::ConversationReset], $this->types($session));
-  }
-
-  /**
    * Builds the activity page of a session.
    */
   private function activityPage(AiEditorialSessionInterface $session): array {

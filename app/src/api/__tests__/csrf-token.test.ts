@@ -23,12 +23,12 @@ describe("csrf token", () => {
       );
     vi.stubGlobal("fetch", fetchMock);
 
-    await apiFetch("/api/plugins/drafting/reset", {
+    await apiFetch("/api/plugins/drafting/save", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: "{}",
     });
-    await apiFetch("/api/plugins/drafting/reset", { method: "POST" });
+    await apiFetch("/api/plugins/drafting/save", { method: "POST" });
 
     const tokenCalls = fetchMock.mock.calls.filter(
       ([url]) => url === "/session/token",
@@ -36,7 +36,7 @@ describe("csrf token", () => {
     expect(tokenCalls).toHaveLength(1);
     expect(tokenCalls[0]?.[1]).toEqual({ credentials: "include" });
     expect(fetchMock).toHaveBeenCalledWith(
-      "/api/plugins/drafting/reset",
+      "/api/plugins/drafting/save",
       expect.objectContaining({
         credentials: "include",
         headers: {

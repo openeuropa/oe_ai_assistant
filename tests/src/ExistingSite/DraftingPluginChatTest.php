@@ -770,36 +770,6 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
   }
 
   /**
-   * Tests that reset clears the whole conversation for the session.
-   *
-   * Provider-independent: it seeds rows and asserts they are deleted.
-   */
-  public function testResetClearsConversation(): void {
-    $user = $this->createUser(['use oe ai assistant']);
-    $this->loginUser($user);
-    $session = $this->createSession($user);
-    $thread = 'editorial.session_' . $session->id();
-
-    $this->seedNeuronRow($session, $thread, [
-      'role' => 'user',
-      'content' => json_encode([['type' => 'text', 'content' => 'Draft a news article.', 'meta' => []]]),
-    ]);
-    $this->seedNeuronRow($session, $thread, [
-      'role' => 'assistant',
-      'content' => json_encode([['type' => 'text', 'content' => 'Here is a draft.', 'meta' => []]]),
-    ]);
-
-    $result = $this->httpPost('/api/ai/plugins/drafting/reset', [
-      'sessionId' => $session->id(),
-    ]);
-    $this->assertEquals(200, $result['status']);
-    $this->assertSame(['status' => 'ok'], json_decode($result['body'], TRUE));
-
-    $this->assertSame([], $session->conversationThreads(),
-      'Reset must delete every message hosted by the session.');
-  }
-
-  /**
    * Parses SSE events from a raw response body string.
    *
    * Each SSE frame is a "data: <json>\n\n" block. This method splits

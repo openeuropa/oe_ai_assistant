@@ -157,7 +157,6 @@ class DraftingPlugin extends AiAssistantPluginBase {
     return parent::getActionMap() + [
       'chat' => $this->chat(...),
       'get-messages' => $this->getMessages(...),
-      'reset' => $this->reset(...),
       'save' => $this->save(...),
       'set-tone' => $this->setTone(...),
       'set-template' => $this->setTemplate(...),
@@ -175,7 +174,6 @@ class DraftingPlugin extends AiAssistantPluginBase {
   public function getRequestSchemas(): array {
     return parent::getRequestSchemas() + [
       'get-messages' => 'GetMessagesRequest',
-      'reset' => 'DraftingResetRequest',
       'save' => 'DraftingSaveRequest',
       'set-tone' => 'DraftingSetToneRequest',
       'set-template' => 'DraftingSetTemplateRequest',
@@ -608,31 +606,6 @@ class DraftingPlugin extends AiAssistantPluginBase {
 
     return $run?->status === WorkflowStatus::Running
       && ($run->leaseExpiresAt === NULL || $run->leaseExpiresAt > time());
-  }
-
-  /**
-   * Resets the conversation for the session.
-   *
-   * @param \Symfony\Component\HttpFoundation\Request $request
-   *   The incoming request.
-   *
-   * @return array<string, string>
-   *   A confirmation response.
-   */
-  public function reset(Request $request): array {
-    $session = $this->loadSession($this->decodeJsonBody($request));
-    $session->deleteConversation();
-    // The drafts live in the conversation, and ContentCreationSession
-    // numbers the next one from the highest it still holds. Deleting them
-    // starts the numbering at 1 again, so entries naming the old drafts
-    // would name the new ones too. The record goes with them.
-    $session->deleteActivity();
-    $session->recordActivity(
-      ActivityType::ConversationReset,
-      'Conversation and drafts cleared.',
-    );
-
-    return ['status' => 'ok'];
   }
 
   /**
