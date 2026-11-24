@@ -69,26 +69,115 @@ final class EditorialSessionHooks {
     $entity->recordActivity(
       ActivityType::SessionCreated,
       'Session created with tone %s and template %s.',
-      [
-        $this->selected($entity->get('tone')->entity),
-        $this->selected($entity->get('template')->entity),
-      ],
+      [$this->named($entity, 'tone'), $this->named($entity, 'template')],
     );
   }
 
   /**
-   * Names a selection the editor made, or reports that they made none.
+   * Implements hook_ai_editorial_session_update().
    *
-   * @param \Drupal\Core\Entity\EntityInterface|null $selection
-   *   The tone term or the template, NULL when the editor picked none.
+   * The tone and the template are fields, and every writer can set them: the
+   * add form, the two plugin actions, a migration, a script. A writer that
+   * records its own change leaves the record blind to the others, so the
+   * change is recorded here, where every save passes.
+   */
+  #[Hook('ai_editorial_session_update')]
+  public function recordSelectionChanges(EntityInterface $entity): void {
+    assert($entity instanceof AiEditorialSessionInterface);
+    $original = $entity->getOriginal();
+
+    // Only content creation sessions have the tone and template fields, and
+    // only an update has something to compare against.
+    if (!$entity->hasField('tone') || !$original instanceof AiEditorialSessionInterface) {
+      return;
+    }
+
+    $this->recordChange($entity, $original, 'tone', ActivityType::ToneChanged, 'Tone');
+    $this->recordChange($entity, $original, 'template', ActivityType::TemplateChanged, 'Template');
+  }
+
+  /**
+   * Records what one selection of the session changed from and to.
+   *
+   * @param \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $session
+   *   The session as it was saved.
+   * @param \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $original
+   *   The session as it was before the save.
+   * @param string $field
+   *   The reference field that holds the selection.
+   * @param \Drupal\oe_ai_assistant\Entity\ActivityType $type
+   *   The kind of entry to record.
+   * @param string $what
+   *   The word that opens the sentence, "Tone" or "Template".
+   */
+  private function recordChange(
+    AiEditorialSessionInterface $session,
+    AiEditorialSessionInterface $original,
+    string $field,
+    ActivityType $type,
+    string $what,
+  ): void {
+    $before = $this->selection($original, $field);
+    $after = $this->selection($session, $field);
+    if ($before['id'] === $after['id']) {
+      return;
+    }
+
+    if ($after['id'] === '') {
+      $session->recordActivity($type, '%s cleared.', [$what]);
+
+      return;
+    }
+    if ($before['id'] === '') {
+      $session->recordActivity($type, '%s set to "%s".', [$what, $after['label']]);
+
+      return;
+    }
+
+    $session->recordActivity(
+      $type,
+      '%s changed from "%s" to "%s".',
+      [$what, $before['label'], $after['label']],
+    );
+  }
+
+  /**
+   * Names the selection a field holds, or reports that it holds none.
+   *
+   * @param \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $session
+   *   The session to read.
+   * @param string $field
+   *   The reference field that holds the selection.
    *
    * @return string
    *   The label in quotes, or "not set".
    */
-  private function selected(?EntityInterface $selection): string {
-    return $selection === NULL
-      ? 'not set'
-      : sprintf('"%s"', (string) $selection->label());
+  private function named(AiEditorialSessionInterface $session, string $field): string {
+    $selection = $this->selection($session, $field);
+
+    return $selection['id'] === '' ? 'not set' : sprintf('"%s"', $selection['label']);
+  }
+
+  /**
+   * Reads the id and the label of a selection.
+   *
+   * An entry names a tone or a template by the label the editor saw. A term
+   * or a template the site deleted leaves no label to read, so the id
+   * stands in for it.
+   *
+   * @param \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $session
+   *   The session to read.
+   * @param string $field
+   *   The reference field that holds the selection.
+   *
+   * @return array
+   *   The id of the selection, and the label to name it by.
+   */
+  private function selection(AiEditorialSessionInterface $session, string $field): array {
+    $id = (string) $session->get($field)->target_id;
+    $label = (string) ($session->get($field)->entity?->label() ?? '');
+
+    return ['id' => $id, 'label' => $label !== '' ? $label : $id];
   }
 
   /**

@@ -758,7 +758,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
     // Validate before any write; getTone throws the same exception as
     // buildSelectedPrompt.
     try {
-      $tone = $this->aiEditorialContext->getTone($toneId);
+      $this->aiEditorialContext->getTone($toneId);
     }
     catch (\InvalidArgumentException $e) {
       throw new ActionException(
@@ -769,19 +769,8 @@ class DraftingPlugin extends AiAssistantPluginBase {
     }
 
     $session = $this->loadSession($body);
-    $previous = $this->selected($session, static::TONE_FIELD);
     $session->set(static::TONE_FIELD, $toneId);
     $session->save();
-
-    if ($previous['id'] !== $toneId) {
-      $this->recordSelection(
-        $session,
-        ActivityType::ToneChanged,
-        'Tone',
-        $previous['label'],
-        $this->labelOrId((string) ($tone['label'] ?? ''), $toneId),
-      );
-    }
 
     return ['status' => 'ok'];
   }
@@ -806,7 +795,6 @@ class DraftingPlugin extends AiAssistantPluginBase {
     $templateId = (string) ($body['template'] ?? '');
 
     $session = $this->loadSession($body);
-    $previous = $this->selected($session, static::TEMPLATE_FIELD);
     $session->set(static::TEMPLATE_FIELD, $templateId !== '' ? $templateId : NULL);
 
     $violations = $session->get(static::TEMPLATE_FIELD)->validate();
@@ -820,83 +808,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
 
     $session->save();
 
-    if ($previous['id'] !== $templateId) {
-      $this->recordSelection(
-        $session,
-        ActivityType::TemplateChanged,
-        'Template',
-        $previous['label'],
-        $this->selected($session, static::TEMPLATE_FIELD)['label'],
-      );
-    }
-
     return ['status' => 'ok'];
-  }
-
-  /**
-   * Reads the id and the label of a reference field of the session.
-   *
-   * An activity entry names a tone or a template by the label the editor
-   * saw. A term or a template that the site deleted leaves no label to
-   * read, so we fall back to the id.
-   *
-   * @param \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $session
-   *   The session to read.
-   * @param string $field
-   *   The reference field to read.
-   *
-   * @return array
-   *   The id and the label. Both are empty when the field holds nothing,
-   *   and both carry the id when the referenced entity is gone.
-   */
-  private function selected(AiEditorialSessionInterface $session, string $field): array {
-    $id = (string) $session->get($field)->target_id;
-
-    return [
-      'id' => $id,
-      'label' => $this->labelOrId((string) ($session->get($field)->entity?->label() ?? ''), $id),
-    ];
-  }
-
-  /**
-   * Falls back to the id of a selection when it has no label.
-   *
-   * A term named "0" has a label. A test for truthiness would read it as
-   * an empty one and report the term id to the editor instead.
-   *
-   * @param string $label
-   *   The label, empty when there is none to read.
-   * @param string $id
-   *   The id to fall back to.
-   *
-   * @return string
-   *   The label, or the id.
-   */
-  private function labelOrId(string $label, string $id): string {
-    return $label !== '' ? $label : $id;
-  }
-
-  /**
-   * Records a tone or a template selection in the activity of the session.
-   *
-   * @param \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $session
-   *   The session that holds the selection.
-   * @param \Drupal\oe_ai_assistant\Entity\ActivityType $type
-   *   The kind of entry to record.
-   * @param string $what
-   *   The word that opens the sentence, "Tone" or "Template".
-   * @param string $from
-   *   The label of the earlier selection, empty when there was none.
-   * @param string $to
-   *   The label of the new selection.
-   */
-  private function recordSelection(AiEditorialSessionInterface $session, ActivityType $type, string $what, string $from, string $to): void {
-    if ($from === '') {
-      $session->recordActivity($type, '%s set to "%s".', [$what, $to]);
-      return;
-    }
-
-    $session->recordActivity($type, '%s changed from "%s" to "%s".', [$what, $from, $to]);
   }
 
   /**
