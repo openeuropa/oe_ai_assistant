@@ -622,9 +622,11 @@ class DraftingPlugin extends AiAssistantPluginBase {
   public function reset(Request $request): array {
     $session = $this->loadSession($this->decodeJsonBody($request));
     $session->deleteConversation();
-    // The drafts live in the conversation, so this erases them too. The
-    // record still names every draft the session wrote. Without an entry
-    // the agent offers the editor drafts that no longer open.
+    // The drafts live in the conversation, and ContentCreationSession
+    // numbers the next one from the highest it still holds. Deleting them
+    // starts the numbering at 1 again, so entries naming the old drafts
+    // would name the new ones too. The record goes with them.
+    $session->deleteActivity();
     $session->recordActivity(
       ActivityType::ConversationReset,
       'Conversation and drafts cleared.',
