@@ -430,6 +430,9 @@ class AiEditorialSessionActivityTest extends AiEditorialSessionKernelTestBase {
    * entry that has no owner to depend on.
    */
   public function testActivityPageSurvivesTheDeletedActor(): void {
+    // Cancelling an account writes to users_data, which the base class
+    // leaves out because no other test here deletes a user.
+    $this->installSchema('user', ['users_data']);
     $owner = $this->createUser();
     $actor = $this->createUser();
     $session = $this->freshSession($owner);
