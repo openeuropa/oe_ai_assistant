@@ -89,6 +89,10 @@ final class GetSessionActivityNeuronAgent extends NeuronAgentPluginBase {
 
     Each line of the record gives the time in UTC, who did it, and what they
     did. The editor who asks the question is named "you".
+
+    The first line of the record says what the session was created with. It
+    is the state the session started from and not a change, so a question
+    that counts changes does not count it.
     INSTRUCTIONS;
 
     return $instructions . "\n\n" . $this->record() . "\n";

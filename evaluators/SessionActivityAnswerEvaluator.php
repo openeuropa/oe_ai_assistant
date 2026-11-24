@@ -14,7 +14,7 @@ use Drupal\user\Entity\User;
 use NeuronAI\Agent\Agent;
 use NeuronAI\Agent\AgentInterface;
 use NeuronAI\Chat\Messages\UserMessage;
-use NeuronAI\Evaluation\Assertions\AgentJudge;
+use NeuronAI\Evaluation\Assertions\Judges\CorrectnessJudge;
 use NeuronAI\Evaluation\BaseEvaluator;
 use NeuronAI\Evaluation\Contracts\DatasetInterface;
 use NeuronAI\Evaluation\Conversation\Trajectory;
@@ -59,14 +59,17 @@ final class SessionActivityAnswerEvaluator extends BaseEvaluator {
             'text' => 'The product launches on March 3rd in Brussels.',
           ],
         ],
-        // Each expectation answers the question of its own checkpoint, in
-        // the words the reply is scored against. The uploaded file carries a
-        // unique suffix, so an expectation names the start of its name.
+        // One fact per checkpoint. A judge scores a reply that answers half
+        // of a two-part question as half wrong, so the count of the tone
+        // changes and the tone before them are asked apart. The uploaded
+        // file carries a unique suffix, so an expectation names the start
+        // of its name.
         'expected_output' => [
-          'created' => 'the session is using the Formal tone',
-          'tone_changed' => 'the tone changed once, and before that it was Formal',
-          'document_attached' => 'one document is attached, and its name starts with "Press Release"',
-          'document_removed' => 'a document whose name starts with "Press Release" was attached and is now removed',
+          'created' => 'The session uses the Formal tone.',
+          'tone_change_count' => 'The tone of the session changed once.',
+          'tone_before_change' => 'Before the change the tone was Formal.',
+          'document_attached' => 'One document is attached, and its name starts with "Press Release".',
+          'document_removed' => 'A document whose name starts with "Press Release" was attached, and then removed.',
         ],
       ],
     ]);
@@ -98,10 +101,8 @@ final class SessionActivityAnswerEvaluator extends BaseEvaluator {
       ];
 
       $this->setTone($sessionId, $input['changed_tone']);
-      $answers['tone_changed'] = $this->ask(
-        $sessionId,
-        'How many times has the tone changed in this session, and what was it before?',
-      );
+      $answers['tone_change_count'] = $this->ask($sessionId, 'How many times has the tone changed in this session?');
+      $answers['tone_before_change'] = $this->ask($sessionId, 'What was the tone of this session before the last change?');
 
       $documentId = $this->attachDocument($sessionId, $input['document']);
       $answers['document_attached'] = $this->ask($sessionId, 'Which documents are attached to this session?');
@@ -129,18 +130,12 @@ final class SessionActivityAnswerEvaluator extends BaseEvaluator {
    */
   public function evaluate(mixed $output, array $datasetItem): void {
     foreach ($datasetItem['expected_output'] as $checkpoint => $expected) {
+      // CorrectnessJudge carries the criteria: it scores the reply against
+      // the expected answer for meaning and facts. A criterion written by
+      // hand scores the wording as well, and marks a correct one-line
+      // answer down for quoting the value it was asked about.
       $this->assert(
-        new AgentJudge(
-          judge: $this->judge,
-          // Score the facts and not the wording. A criterion that asks for
-          // the reply "in its own words" scores a correct one-line answer
-          // down for quoting the value it was asked about.
-          criteria: sprintf(
-            'The reply states that %s. Judge the facts only: wording, length and quoting do not matter.',
-            $expected,
-          ),
-          threshold: 0.7,
-        ),
+        new CorrectnessJudge(judge: $this->judge, expected: $expected, threshold: 0.7),
         $output[$checkpoint],
         $checkpoint,
       );
