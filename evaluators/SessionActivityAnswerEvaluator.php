@@ -62,15 +62,13 @@ final class SessionActivityAnswerEvaluator extends BaseEvaluator {
         ],
         // One fact per checkpoint. A judge scores a reply that answers half
         // of a two-part question as half wrong, so the count of the tone
-        // changes and the tone before them are asked apart. The uploaded
-        // file carries a unique suffix, so an expectation names the start
-        // of its name.
+        // changes and the tone before them are asked apart.
         'expected_output' => [
           'created' => 'The session uses the Formal tone.',
           'tone_change_count' => 'The tone of the session changed once.',
           'tone_before_change' => 'Before the change the tone was Formal.',
-          'document_attached' => 'One document is attached, and its name starts with "Press Release".',
-          'document_removed' => 'A document whose name starts with "Press Release" was attached, and then removed.',
+          'document_attached' => 'One document is attached, named "Press Release.txt".',
+          'document_removed' => 'The document "Press Release.txt" was attached, and then removed.',
         ],
       ],
     ]);
@@ -192,10 +190,10 @@ final class SessionActivityAnswerEvaluator extends BaseEvaluator {
   private function attachDocument(int $sessionId, array $document): string {
     $path = tempnam(sys_get_temp_dir(), 'eval_doc_');
     file_put_contents($path, $document['text']);
-    // Give every upload its own name. An earlier run leaves its file behind,
-    // and core would store this one as "Press Release_0.txt", which the agent
-    // then reports back.
-    $filename = $document['title'] . '-' . uniqid() . '.txt';
+    // The name is the one an expectation names, so the run deletes the
+    // session it attached to and core has the name free again. A leftover
+    // file would make core store the next one as "Press Release_0.txt".
+    $filename = $document['title'] . '.txt';
     $upload = new InputStreamUploadedFile($filename, $filename, $path, @filesize($path));
 
     $repository = \Drupal::service(ContextDocumentRepository::class);
