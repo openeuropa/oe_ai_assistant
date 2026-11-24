@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Drupal\oe_ai_assistant\Plugin\NeuronWorkflow\AmendContent\Nodes;
 
 use Drupal\Component\Utility\Crypt;
+use Drupal\Component\Utility\Unicode;
+use Drupal\oe_ai_assistant\Entity\ActivityType;
 use Drupal\oe_ai_assistant\Exception\SchemaRetriesExhaustedException;
 use Drupal\oe_ai_assistant\Neuron\ToolWorkflowInterface;
 use Drupal\oe_ai_assistant\Plugin\NeuronWorkflow\AmendContent\Events\AmendContentRequestEvent;
@@ -20,12 +22,11 @@ use NeuronAI\Workflow\WorkflowState;
 /**
  * Amends one stored draft into its next minor version, a field group at a time.
  *
- * Like DraftContentNode, the amending happens here rather than inside the
- * tool the model called, so it can yield while it works and the editor sees
- * which group is being rewritten. Each named group is drafted again through
- * draft_group, the workflow drafting_draft_content uses too, seeded with the
- * values the source draft holds for it. A group the call leaves out keeps
- * those values as they are.
+ * Like DraftContentNode, the work happens here and not inside the tool the
+ * model called, so we can yield while it runs and the editor sees which
+ * group is being rewritten. Each named group goes through draft_group again,
+ * the same workflow drafting_draft_content uses, seeded with the values the
+ * source draft holds for it. A group the call leaves out keeps those values.
  */
 final class AmendContentNode extends Node {
 
@@ -40,11 +41,15 @@ final class AmendContentNode extends Node {
    *   The version of the draft to amend.
    * @param array $groups
    *   The field group IDs to amend. Empty amends every group.
+   * @param string $brief
+   *   What the editor asked to change, as the agent passed it to the tool.
+   *   Empty when the agent sent none.
    */
   public function __construct(
     private readonly string $callId,
     private readonly string $sourceVersion,
     private readonly array $groups,
+    private readonly string $brief,
   ) {}
 
   /**
@@ -63,7 +68,13 @@ final class AmendContentNode extends Node {
         'error' => $message,
       ]);
 
-      $state->set(ToolWorkflowInterface::RESULT_KEY, ['error' => $message, 'version' => $sourceVersion]);
+      $this->recordFailure($resources, $callId, $sourceVersion, $message);
+
+      $state->set(ToolWorkflowInterface::RESULT_KEY, [
+        'error' => $message,
+        'version' => $sourceVersion,
+        'status' => 'failed',
+      ]);
 
       return new StopEvent();
     }
@@ -71,7 +82,7 @@ final class AmendContentNode extends Node {
     // Draft against the schema groups the source draft carries, not the
     // session's current ones: a template edit after the draft shouldn't
     // change what a revision of that draft asks for. A draft stored before
-    // this key existed has nothing to fall back on but the live groups.
+    // this key existed falls back to the session's live groups.
     $groups = (array) ($source['schemaGroups'] ?? $resources->session->getFieldGroups());
     $availableIds = array_column($groups, 'groupId');
     $named = array_filter(array_map('strval', $this->groups));
@@ -92,7 +103,13 @@ final class AmendContentNode extends Node {
         'error' => $message,
       ]);
 
-      $state->set(ToolWorkflowInterface::RESULT_KEY, ['error' => $message, 'version' => $sourceVersion]);
+      $this->recordFailure($resources, $callId, $sourceVersion, $message);
+
+      $state->set(ToolWorkflowInterface::RESULT_KEY, [
+        'error' => $message,
+        'version' => $sourceVersion,
+        'status' => 'failed',
+      ]);
 
       return new StopEvent();
     }
@@ -142,15 +159,33 @@ final class AmendContentNode extends Node {
         $index++;
         $failed = $groupId;
 
-        yield $this->progress($callId, $group, 'drafting', $index, $total);
+        // On a retry, reuse the answer a group already gave and don't report
+        // it as "drafting" again. We can't wrap the drafting in memoize(),
+        // because the block has to yield and a closure can't yield on behalf
+        // of this generator. So we look the answer up by hand and only draft
+        // on a miss.
+        $answer = $this->recallMemo('group.' . $callId . '.' . $groupId);
 
-        $existing = array_intersect_key($fields, array_flip($group['fieldNames']));
-        $task = $conversation
-          . "The group's current values:\n" . json_encode($existing) . "\n\n"
-          . 'Amend the fields of the provided schema to follow the editor\'s latest'
-          . ' request. Keep anything the request does not mention as it already is.';
+        if (!is_array($answer)) {
+          yield $this->progress($callId, $group, 'drafting', $index, $total);
 
-        $answer = $this->draftGroup($resources, $group, $run, $task);
+          $existing = array_intersect_key($fields, array_flip($group['fieldNames']));
+          $task = $conversation;
+          // conversationTurns() only gives us closed turns, and the turn that
+          // asked for this amendment is still open while the tool runs. Without
+          // the brief the drafter has no request to act on, so it either leaves
+          // the group as it is or invents a change nobody asked for.
+          if ($this->brief !== '') {
+            $task .= "What the editor asked for:\n" . $this->brief . "\n\n";
+          }
+          $task .= "The group's current values:\n" . json_encode($existing) . "\n\n"
+            . 'Amend the fields of the provided schema to follow that request.'
+            . ' Keep anything it does not mention as it already is.';
+
+          $answer = $this->draftGroup($resources, $group, $run, $task);
+          $answer = $this->memoize('group.' . $callId . '.' . $groupId, static fn (): array => $answer);
+        }
+
         foreach ($group['fieldNames'] as $fieldName) {
           if (array_key_exists($fieldName, $answer)) {
             $fields[$fieldName] = $answer[$fieldName];
@@ -172,6 +207,18 @@ final class AmendContentNode extends Node {
         'fields' => $fields,
         'amends' => $sourceVersion,
       ]);
+      // A resumed run replays this node with its groups already memoized,
+      // and the record is append-only. A second entry would tell the
+      // editor the same draft was amended twice.
+      $this->memoize('recorded.' . $callId, function () use ($resources, $version, $sourceVersion): bool {
+        $resources->session->recordActivity(
+          ActivityType::DraftGenerated,
+          'Draft %s amended from draft %s.',
+          [DraftVersion::display($version), DraftVersion::display($sourceVersion)],
+        );
+
+        return TRUE;
+      });
 
       yield new CustomStreamEvent('amended-fields', [
         'version' => $version,
@@ -225,6 +272,11 @@ final class AmendContentNode extends Node {
         // tied to a group has no row, so it goes here for the card header.
         'error' => $failed === '' ? $message : '',
       ]);
+      // A schema failure names every field of the template that missed, and
+      // GetSessionActivityNeuronAgent reads the whole activity record to
+      // answer one question about the session. So the entry keeps the
+      // opening of the reason and no more.
+      $this->recordFailure($resources, $callId, $sourceVersion, Unicode::truncate($message, 200, TRUE, TRUE), $failed);
 
       yield new CustomStreamEvent('amend-failed', [
         'version' => $version,
@@ -240,6 +292,46 @@ final class AmendContentNode extends Node {
     $state->set(ToolWorkflowInterface::RESULT_KEY, $result);
 
     return new StopEvent();
+  }
+
+  /**
+   * Records that this call's amendment failed, once per call.
+   *
+   * A resumed run replays this node, and the activity record is
+   * append-only, so the memo keeps a retry from telling the editor the same
+   * amendment failed twice.
+   *
+   * @param \Drupal\oe_ai_assistant\Plugin\NeuronWorkflow\DraftContent\DraftContentResources $resources
+   *   What this run shares.
+   * @param string $callId
+   *   The call this amendment answers.
+   * @param string $sourceVersion
+   *   The version the call asked to amend.
+   * @param string $message
+   *   The reason the amendment failed.
+   * @param string $group
+   *   The group the failure is tied to, or empty when it belongs to no
+   *   group.
+   */
+  private function recordFailure(DraftContentResources $resources, string $callId, string $sourceVersion, string $message, string $group = ''): void {
+    $this->memoize('recorded.' . $callId, function () use ($resources, $sourceVersion, $message, $group): bool {
+      if ($group === '') {
+        $resources->session->recordActivity(
+          ActivityType::DraftFailed,
+          'Amending draft %s failed: %s',
+          [DraftVersion::display($sourceVersion), $message],
+        );
+      }
+      else {
+        $resources->session->recordActivity(
+          ActivityType::DraftFailed,
+          'Amending draft %s failed in the "%s" group: %s',
+          [DraftVersion::display($sourceVersion), $group, $message],
+        );
+      }
+
+      return TRUE;
+    });
   }
 
   /**

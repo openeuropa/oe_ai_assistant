@@ -87,6 +87,37 @@ class AmendingTurnTest extends AiEditorialSessionKernelTestBase {
   }
 
   /**
+   * Amending tells the drafter what the editor asked for in this turn.
+   *
+   * The turn that asks for the amendment is still open while the tool runs,
+   * so conversationTurns() doesn't have it yet. Without the brief passed
+   * explicitly, the drafter has no request to act on and either leaves the
+   * field as it is or invents a change nobody asked for.
+   */
+  public function testAmendingTellsTheDrafterWhatTheEditorAskedForInThisTurn(): void {
+    $session = $this->createSession($this->createUser());
+
+    MockAiProvider::reset();
+    $this->enqueueTurn();
+    $this->turn($session, 'Please draft it, go ahead.');
+
+    MockAiProvider::reset();
+    $this->enqueueAmend('1.0', ['main_fields'], 'Change the title to Zeus is a king.');
+    $this->turn($session, 'Change the title to Zeus is a king.');
+
+    $threads = $session->conversationThreads();
+    $mainFieldsThreads = preg_grep(
+      '@\.amend_1\.1\.[A-Za-z0-9_-]{6}\.group_main_fields$@',
+      array_keys($threads),
+    );
+    $this->assertCount(1, $mainFieldsThreads, 'One thread drafted main_fields for the amendment.');
+    $task = (string) ($threads[reset($mainFieldsThreads)][0]->getContent()[0]['content'] ?? '');
+
+    $this->assertStringContainsString('What the editor asked for:', $task);
+    $this->assertStringContainsString('Change the title to Zeus is a king.', $task);
+  }
+
+  /**
    * A draft stored before schemaGroups existed still amends.
    */
   public function testAmendingDraftStoredBeforeSchemaGroupsExistedFallsBackToCurrentGroups(): void {
@@ -371,13 +402,16 @@ class AmendingTurnTest extends AiEditorialSessionKernelTestBase {
    *   The version to amend.
    * @param array $groups
    *   The field group IDs to amend. Empty amends every group.
+   * @param string $brief
+   *   What the editor asked to change, in their own words. Empty omits the
+   *   argument.
    * @param string $answer
    *   What the editorial agent tells the editor about the amendment.
    * @param string $callId
    *   The id the model gives the call.
    */
-  private function enqueueAmend(string $version, array $groups = [], string $answer = 'Draft 1.1 is ready.', string $callId = 'call_1'): void {
-    MockAiProvider::enqueue($this->amendCall($callId, $version, $groups));
+  private function enqueueAmend(string $version, array $groups = [], string $brief = '', string $answer = 'Draft 1.1 is ready.', string $callId = 'call_1'): void {
+    MockAiProvider::enqueue($this->amendCall($callId, $version, $groups, $brief));
     if ($groups === [] || in_array('main_fields', $groups, TRUE)) {
       MockAiProvider::enqueue(new MockResponse(text: self::AMENDED_MAIN_FIELDS));
     }
@@ -420,11 +454,16 @@ class AmendingTurnTest extends AiEditorialSessionKernelTestBase {
    * @param array $groups
    *   The field group IDs to amend. Empty omits the argument, amending every
    *   group.
+   * @param string $brief
+   *   What the editor asked to change. Empty omits the argument.
    */
-  private function amendCall(string $callId, string $version, array $groups = []): MockResponse {
+  private function amendCall(string $callId, string $version, array $groups = [], string $brief = ''): MockResponse {
     $arguments = ['version' => $version];
     if ($groups !== []) {
       $arguments['groups'] = $groups;
+    }
+    if ($brief !== '') {
+      $arguments['brief'] = $brief;
     }
 
     return new MockResponse(

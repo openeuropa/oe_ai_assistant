@@ -104,8 +104,11 @@ final class EditorialNeuronAgent extends EditorialSessionAgentBase {
       each draft they asked for, in the same reply.
     - When the user asks to change, revise or fix something in a draft
       that already exists, call amend_draft instead of
-      drafting_draft_content. Name the version of the draft to amend.
-      Name specific field groups only when the user asked about specific
+      drafting_draft_content. Name the version of the draft to amend, and
+      pass the editor's request as its own brief too, in the words they
+      used: the drafters amending the draft never see this conversation
+      either, and without the brief they see no request to act on. Name
+      specific field groups only when the user asked about specific
       fields; otherwise every group is amended. amend_draft writes a new
       draft, it never changes the one it started from.
     - Tell the user the name of every draft that is ready and that they

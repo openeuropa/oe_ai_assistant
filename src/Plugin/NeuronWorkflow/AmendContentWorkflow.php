@@ -47,6 +47,10 @@ use Symfony\Component\DependencyInjection\Attribute\Autowire;
       data_type: 'any',
       label: new TranslatableMarkup('Field group ids to amend'),
     ),
+    'brief' => new ContextDefinition(
+      data_type: 'string',
+      label: new TranslatableMarkup('Editorial brief'),
+    ),
   ],
 )]
 final class AmendContentWorkflow extends NeuronWorkflowPluginBase {
@@ -65,15 +69,13 @@ final class AmendContentWorkflow extends NeuronWorkflowPluginBase {
 
   /**
    * {@inheritdoc}
-   *
-   * A plugin is not the node it builds, so what the node needs of the run's
-   * context is handed to it here.
    */
   protected function nodes(): array {
     $node = new AmendContentNode(
       (string) $this->getContextValue('call'),
       (string) $this->getContextValue('version'),
       (array) $this->getContextValue('groups'),
+      (string) $this->getContextValue('brief'),
     );
 
     return [$node];

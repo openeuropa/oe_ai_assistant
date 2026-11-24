@@ -16,6 +16,7 @@ export const developmentConfig = {
       bundle: "oe_news",
       toolLabels: {
         drafting_draft_content: "Draft content",
+        amend_draft: "Amend draft",
         drafting_get_history: "Get draft history",
         context_get_session_activity: "Get session activity",
         drafting_save_draft: "Save draft",

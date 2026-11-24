@@ -20,11 +20,11 @@ use NeuronAI\Tools\ToolProperty;
 use NeuronAI\Workflow\Workflow;
 
 /**
- * Asks the run to amend a stored draft and write the result as a new one.
+ * Amends a stored draft and writes the result as a new draft version.
  *
- * An amendment takes minutes, and the editor watches the groups fill in while
- * it is written. So the work is the amend_content workflow, which
- * WorkflowToolNode runs in place of executing this tool.
+ * An amendment takes minutes, and the editor watches the groups fill in as
+ * it is written, so the work lives in the amend_content workflow:
+ * WorkflowToolNode runs that instead of executing this tool.
  */
 #[NeuronTool(
   id: AmendDraftNeuronTool::TOOL_ID,
@@ -45,7 +45,7 @@ use NeuronAI\Workflow\Workflow;
 final class AmendDraftNeuronTool extends NeuronToolPluginBase implements WorkflowToolInterface {
 
   /**
-   * The id this tool is registered under.
+   * The ID this tool is registered under.
    */
   public const string TOOL_ID = 'amend_draft';
 
@@ -61,9 +61,9 @@ final class AmendDraftNeuronTool extends NeuronToolPluginBase implements Workflo
   /**
    * {@inheritdoc}
    *
-   * WorkflowToolNode finds this tool in the registry as a Neuron object, not
-   * as a plugin. So the object handed over is a WorkflowToolProxy, which
-   * forwards workflow() back here.
+   * WorkflowToolNode looks this tool up in the registry as a Neuron object,
+   * not as a plugin, so we hand it a WorkflowToolProxy that forwards
+   * workflow() back here.
    */
   public function getNeuron(): Tool {
     return WorkflowToolProxy::make(
@@ -81,6 +81,13 @@ final class AmendDraftNeuronTool extends NeuronToolPluginBase implements Workflo
     return [
       new ToolProperty('version', PropertyType::STRING, 'The version of the draft to amend, e.g. "1" or "1.1".', TRUE),
       new ArrayProperty('groups', 'The field group IDs to amend. Omit to amend every group.'),
+      ToolProperty::make(
+        'brief',
+        PropertyType::STRING,
+        'What the editor asked to change, in their own words. Quote the'
+        . ' request that asked for this amendment rather than summarising it.',
+        TRUE,
+      ),
     ];
   }
 
@@ -93,6 +100,7 @@ final class AmendDraftNeuronTool extends NeuronToolPluginBase implements Workflo
       'call' => (string) $call->getCallId(),
       'version' => (string) ($call->getInput('version') ?? ''),
       'groups' => (array) ($call->getInput('groups') ?? []),
+      'brief' => (string) ($call->getInput('brief') ?? ''),
     ]);
   }
 
