@@ -15,7 +15,7 @@
         "cortexphp/json-repair": "^0.4",
         "cweagans/composer-patches": "^1 || ^2",
         "drupal/ai": "~1.5.3",
-        "drupal/ai_neuron": "dev-1.0.x#37a432e",
+        "drupal/ai_neuron": "dev-1.0.x#ae092f7",
         "drupal/document_loader": "^2.0",
         "drupal/key": "^1.22",
         "drupal/state_machine": "^1.14",
