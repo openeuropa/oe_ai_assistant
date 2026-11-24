@@ -15,6 +15,7 @@ use NeuronAI\Agent\Agent;
 use NeuronAI\Agent\AgentInterface;
 use NeuronAI\Chat\Messages\UserMessage;
 use NeuronAI\Evaluation\Assertions\Judges\CorrectnessJudge;
+use NeuronAI\Evaluation\Assertions\Trajectory\ToolWasCalled;
 use NeuronAI\Evaluation\BaseEvaluator;
 use NeuronAI\Evaluation\Contracts\DatasetInterface;
 use NeuronAI\Evaluation\Conversation\Trajectory;
@@ -82,7 +83,7 @@ final class SessionActivityAnswerEvaluator extends BaseEvaluator {
    *   The item to run, carrying the tones and the document under 'input'.
    *
    * @return array
-   *   The answer of each checkpoint, keyed as 'expected_output' is.
+   *   The turn of each checkpoint, keyed as 'expected_output' is.
    */
   public function run(array $datasetItem): mixed {
     $input = $datasetItem['input'];
@@ -129,36 +130,38 @@ final class SessionActivityAnswerEvaluator extends BaseEvaluator {
    * Scores each answer against what the record held when it was asked.
    */
   public function evaluate(mixed $output, array $datasetItem): void {
+    $this->assert(
+      new ToolWasCalled('context_get_session_activity'),
+      $output['created'],
+      'tool_called',
+    );
+
     foreach ($datasetItem['expected_output'] as $checkpoint => $expected) {
-      // CorrectnessJudge carries the criteria: it scores the reply against
-      // the expected answer for meaning and facts. A criterion written by
-      // hand scores the wording as well, and marks a correct one-line
-      // answer down for quoting the value it was asked about.
       $this->assert(
         new CorrectnessJudge(judge: $this->judge, expected: $expected, threshold: 0.7),
-        $output[$checkpoint],
+        $output[$checkpoint]->finalAnswer(),
         $checkpoint,
       );
     }
   }
 
   /**
-   * Asks the editorial agent one question and returns its answer.
+   * Asks the editorial agent one question and returns the turn it ran.
    *
    * @param int $sessionId
    *   The session to ask about.
    * @param string $question
    *   The question to ask.
    *
-   * @return string
-   *   The answer the turn ended on.
+   * @return \NeuronAI\Evaluation\Conversation\Trajectory
+   *   The turn, which holds its answer and the tools it called.
    */
-  private function ask(int $sessionId, string $question): string {
+  private function ask(int $sessionId, string $question): Trajectory {
     $agent = \Drupal::service(NeuronAgentManagerInterface::class)
       ->createAgent('editorial', ['session' => $this->session($sessionId)]);
     $agent->chat(new UserMessage($question));
 
-    return Trajectory::fromChatHistory($agent->getChatHistory())->finalAnswer();
+    return Trajectory::fromChatHistory($agent->getChatHistory());
   }
 
   /**

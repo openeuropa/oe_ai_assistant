@@ -92,7 +92,10 @@ final class GetSessionActivityNeuronAgent extends NeuronAgentPluginBase {
 
     The first line of the record says what the session was created with. It
     is the state the session started from and not a change, so a question
-    that counts changes does not count it.
+    that counts changes does not count it. It does hold: a value it names
+    stays in force until a later line changes it, so a question about the
+    tone or the template of the session right now is answered from the last
+    line that names one, and from the first line when no other does.
     INSTRUCTIONS;
 
     return $instructions . "\n\n" . $this->record() . "\n";
@@ -110,7 +113,7 @@ final class GetSessionActivityNeuronAgent extends NeuronAgentPluginBase {
       return 'The record is empty. Nothing has happened in this session yet.';
     }
 
-    $lines = ['The record, oldest first:'];
+    $lines = ['The record, oldest first.'];
     $omitted = $this->omitted(count($entries));
     if ($omitted > 0) {
       $lines[] = sprintf('The %d entries before the first one below are not shown.', $omitted);
