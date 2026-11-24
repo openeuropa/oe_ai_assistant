@@ -28,7 +28,7 @@ A plain `composer require` gets git source only. The `react-app` library's JS/CS
 is built from `app/` into `dist/`, which is gitignored and not committed. It won't
 exist until you also build the app yourself or pull the pre-built release artifact:
 
-- **For local/DDEV development**, use `ddev build-app` / `npm run build` as described
+- **For local/DDEV development**, use `ddev build-app` / `pnpm run build` as described
   in [React app](#react-app) below -- no extra setup needed.
 - **For production**, require
   [`openeuropa/composer-artifacts`](https://github.com/openeuropa/composer-artifacts)
@@ -204,19 +204,24 @@ definition points directly to the module root's `dist/`.
 
 ```bash
 cd app
-npm install
-npm run dev          # Vite + Express mock API (standalone, no Drupal or API key needed)
-npm run dev:integration # Vite + Express API with real Mistral drafting
-npm run build        # Production IIFE bundle -> dist/ (module root)
-npm run lint         # Biome check
-npm run typecheck    # TypeScript strict
-npm run test:e2e     # Playwright end-to-end tests
-npm run api:generate # Regenerate types from OpenAPI spec
+corepack enable     # One-time setup with Node.js 22; uses the pinned pnpm version
+pnpm install
+pnpm run dev          # Vite + Express mock API (standalone, no Drupal or API key needed)
+pnpm run dev:integration # Vite + Express API with real Mistral drafting
+pnpm run build        # Production IIFE bundle -> dist/ (module root)
+pnpm run lint         # Biome check
+pnpm run typecheck    # TypeScript strict
+pnpm run test:e2e     # Playwright end-to-end tests
+pnpm run api:generate # Regenerate types from OpenAPI spec
 ```
 
-For `npm run dev:integration`, copy `app/.env.dist` to `app/.env` and set
-`MISTRAL_API_KEY`. The default `npm run dev` path stays fixture-backed
+For `pnpm run dev:integration`, copy `app/.env.dist` to `app/.env` and set
+`MISTRAL_API_KEY`. The default `pnpm run dev` path stays fixture-backed
 and deterministic so frontend work does not depend on live provider access.
+
+See [frontend setup](app/README.md#switching-an-existing-checkout-from-npm) for
+existing checkout migration steps. Restart DDEV after pulling this migration to
+apply the Node.js 22 and Corepack settings.
 
 Or build via DDEV:
 

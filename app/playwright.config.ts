@@ -5,7 +5,7 @@ import { defineConfig } from "@playwright/test";
  *
  * Tests run against the Vite dev server (port 5173) which proxies
  * /api requests to the Express mock server (port 5150). Both are
- * started by `npm run dev`.
+ * started by `pnpm run dev`.
  */
 export default defineConfig({
   testDir: "./e2e",
@@ -15,9 +15,9 @@ export default defineConfig({
     headless: true,
   },
   // The dev server must be running before tests.
-  // Use: npm run dev & npx playwright test
+  // Use: pnpm run dev & pnpm exec playwright test
   webServer: {
-    command: "npm run dev",
+    command: "pnpm run dev",
     port: 5173,
     reuseExistingServer: true,
     timeout: 15000,

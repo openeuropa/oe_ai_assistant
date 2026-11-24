@@ -19,7 +19,7 @@ export function createMistralClient(): Mistral {
       "MISTRAL_API_KEY is not set. " +
         "Standalone mock mode does not need credentials; " +
         'for provider-backed development, copy "app/.env.dist" ' +
-        'to "app/.env" and run "npm run dev:integration".',
+        'to "app/.env" and run "pnpm run dev:integration".',
     );
   }
   return new Mistral({ apiKey: MISTRAL_API_KEY });
