@@ -59,8 +59,11 @@ class AiEditorialSessionActivity extends ContentEntityBase implements AiEditoria
   /**
    * {@inheritdoc}
    */
-  public function getType(): ActivityType {
-    return ActivityType::from((string) $this->get('type')->value);
+  public function getType(): ?ActivityType {
+    // The field takes any string, and nothing validates it on save. A row
+    // written by a release that knows a kind this one does not would make
+    // from() throw for every reader of the session.
+    return ActivityType::tryFrom((string) $this->get('type')->value);
   }
 
   /**

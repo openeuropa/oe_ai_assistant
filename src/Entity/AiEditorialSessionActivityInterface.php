@@ -24,8 +24,11 @@ interface AiEditorialSessionActivityInterface extends ContentEntityInterface, En
 
   /**
    * Returns the kind of entry this is.
+   *
+   * @return \Drupal\oe_ai_assistant\Entity\ActivityType|null
+   *   The kind, or NULL when the stored value names none this release has.
    */
-  public function getType(): ActivityType;
+  public function getType(): ?ActivityType;
 
   /**
    * Returns the sentence that says what happened.

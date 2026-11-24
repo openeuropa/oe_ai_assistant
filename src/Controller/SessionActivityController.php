@@ -60,7 +60,7 @@ final class SessionActivityController extends ControllerBase {
       $rows[] = [
         $entry->id(),
         $this->dateFormatter->format($entry->getCreatedTime(), 'short'),
-        $entry->getType()->value,
+        (string) $entry->get('type')->value,
         $this->actor($entry),
         $entry->getMessage(),
       ];
@@ -88,7 +88,13 @@ final class SessionActivityController extends ControllerBase {
       // the page, and two admins in two zones cannot share one render.
       ->addCacheContexts(['timezone']);
     foreach ($entries as $entry) {
-      $cacheability->addCacheableDependency($entry->getOwner());
+      // A cancelled account leaves the reference dangling. Core reads NULL
+      // as a dependency it cannot cache, drops the page to max-age 0 and
+      // deprecates the call, so an entry without an owner adds nothing.
+      $owner = $entry->getOwner();
+      if ($owner !== NULL) {
+        $cacheability->addCacheableDependency($owner);
+      }
     }
     $cacheability->applyTo($build);
 

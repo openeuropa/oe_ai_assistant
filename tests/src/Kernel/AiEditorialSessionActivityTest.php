@@ -423,6 +423,46 @@ class AiEditorialSessionActivityTest extends AiEditorialSessionKernelTestBase {
   }
 
   /**
+   * An entry whose author is gone leaves the page cacheable.
+   *
+   * Core reads a NULL dependency as one it cannot cache. It drops the page
+   * to max-age 0 and raises a deprecation, so the page must leave out an
+   * entry that has no owner to depend on.
+   */
+  public function testActivityPageSurvivesTheDeletedActor(): void {
+    $owner = $this->createUser();
+    $actor = $this->createUser();
+    $session = $this->freshSession($owner);
+    $this->container->get('current_user')->setAccount($actor);
+    $session->recordActivity(ActivityType::ToneChanged, 'Tone set to "Formal".');
+    $actor->delete();
+
+    $build = $this->activityPage($session);
+
+    $this->assertNotSame(0, $build['#cache']['max-age'] ?? NULL);
+    $this->assertSame(['-'], array_column($build['activity']['#rows'], 3));
+  }
+
+  /**
+   * A stored kind this release does not know leaves the page readable.
+   *
+   * Nothing validates the type field on save, so a row written by another
+   * release can name a kind this one has no case for.
+   */
+  public function testEntryOfUnknownKindIsStillRead(): void {
+    $session = $this->freshSession($this->createUser());
+    $session->recordActivity(ActivityType::ToneChanged, 'Tone set to "Formal".');
+    $entry = $session->getLatestActivity()[0];
+    $entry->set('type', 'invented_by_a_later_release')->save();
+
+    $this->assertNull($session->getLatestActivity()[0]->getType());
+    $this->assertSame(
+      ['invented_by_a_later_release'],
+      array_column($this->activityPage($session)['activity']['#rows'], 2),
+    );
+  }
+
+  /**
    * The activity page of a session with no entries shows a message and no row.
    */
   public function testActivityPageListsNoRowForAnEmptySession(): void {
