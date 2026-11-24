@@ -43,6 +43,15 @@ final class WorkflowToolNode extends ToolNode {
    */
   protected function executeLocalTools(array $calls, string $messageId, AgentState $state, ToolRegistry $tools): \Generator {
     $local = array_diff_key($calls, $this->filterDeferredCalls($calls));
+    // The run of a tool reports its progress under the id of the call it
+    // answers, and the stream frames its result under the same id. Two calls
+    // that share an id, or carry none, report over each other and one result
+    // never reaches the editor. The parent asks the same of a deferred call.
+    $this->assertUniqueCallIds(array_filter(
+      $local,
+      fn (ToolCall $call): bool => $this->findLiveTool($call->getName(), $tools) instanceof WorkflowToolInterface,
+    ));
+
     foreach ($local as $index => $call) {
       yield new ToolCallChunk($messageId, $call);
       // A rejected call must not run. executeSingleTool() returns early for

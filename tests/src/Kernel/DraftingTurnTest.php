@@ -7,6 +7,7 @@ namespace Drupal\Tests\oe_ai_assistant\Kernel;
 use Drupal\ai_neuron\Agent\NeuronAgentManagerInterface;
 use Drupal\oe_ai_assistant\Entity\ActivityType;
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
+use Drupal\oe_ai_assistant\Exception\ActionException;
 use Drupal\oe_ai_assistant\Neuron\Chat\History\EditorialMessageStore;
 use Drupal\oe_ai_assistant\Plugin\AiAssistantPluginManager;
 use Drupal\oe_ai_assistant\Service\DraftingSchemaProvider;
@@ -17,6 +18,7 @@ use Drupal\oe_ai_assistant_test\Plugin\AiProvider\MockResponse;
 use NeuronAI\Agent\AgentState;
 use NeuronAI\Chat\Messages\ToolCallMessage;
 use NeuronAI\Chat\Messages\UserMessage;
+use NeuronAI\Exceptions\ToolException;
 use NeuronAI\Tools\ToolCall;
 use Psr\Log\AbstractLogger;
 use Symfony\Component\HttpFoundation\Request;
@@ -336,6 +338,76 @@ class DraftingTurnTest extends AiEditorialSessionKernelTestBase {
     $rows = $session->conversationThreads()[$this->thread($session, 1, 'main_fields')];
     $task = (string) ($rows[0]->getContent()[0]['content'] ?? '');
     $this->assertStringContainsString('2026 sett counts in Flanders', $task);
+  }
+
+  /**
+   * A second turn is refused while the first one still runs.
+   *
+   * Every turn of a session runs under the id the session names, and the
+   * engine keeps one run per id. A second turn would be refused inside the
+   * open stream, where the editor reads an error frame instead of a status,
+   * so the endpoint answers it before the stream opens.
+   */
+  public function testSecondTurnIsRefusedWhileOneRuns(): void {
+    // The action loads the session for the user who asked, so the turn is
+    // refused for holding the session's id rather than for the access it
+    // would be denied otherwise.
+    $owner = $this->createUser(['use oe ai assistant', 'view_update own sessions']);
+    $this->container->get('current_user')->setAccount($owner);
+    $session = $this->createSession($owner);
+
+    MockAiProvider::reset();
+    $this->enqueueTurn();
+
+    // Advancing the stream to its first chunk starts the run and leaves it
+    // in flight, which is the state the endpoint has to answer.
+    $turn = $this->container->get(NeuronAgentManagerInterface::class)
+      ->createAgent('editorial', ['session' => $session])
+      ->stream(new UserMessage('Draft it, go ahead.'));
+    $turn->current();
+
+    try {
+      $this->chatAction($session, 'And another thing.');
+      $this->fail('The chat action served a second turn while one was running.');
+    }
+    catch (ActionException $e) {
+      $this->assertSame('conflict', $e->errorCode);
+      $this->assertSame(409, $e->statusCode);
+      $this->assertStringContainsString('still working on this session', $e->getMessage());
+    }
+  }
+
+  /**
+   * Two drafting calls under one id are refused before either runs.
+   *
+   * A draft reports its progress under the id of the call that asked for
+   * it, and the stream frames its result under the same id. Two drafts
+   * sharing an id overwrite each other's progress, and the editor reads
+   * one result for two drafts.
+   */
+  public function testTwoDraftCallsUnderOneIdAreRefused(): void {
+    $session = $this->createSession($this->createUser());
+
+    MockAiProvider::reset();
+    MockAiProvider::enqueue($this->twoDraftCalls('call_same', 'call_same'));
+
+    $this->expectException(ToolException::class);
+    $this->expectExceptionMessage("'call_same' twice");
+    $this->turn($session, 'Draft it twice.');
+  }
+
+  /**
+   * A drafting call with no id of its own is refused.
+   */
+  public function testDraftCallWithoutAnIdIsRefused(): void {
+    $session = $this->createSession($this->createUser());
+
+    MockAiProvider::reset();
+    MockAiProvider::enqueue($this->twoDraftCalls('', ''));
+
+    $this->expectException(ToolException::class);
+    $this->expectExceptionMessage('returned none');
+    $this->turn($session, 'Draft it twice.');
   }
 
   /**
@@ -807,6 +879,46 @@ class DraftingTurnTest extends AiEditorialSessionKernelTestBase {
     MockAiProvider::enqueue(new MockResponse(text: self::MAIN_FIELDS));
     MockAiProvider::enqueue(new MockResponse(text: self::PARAGRAPHS));
     MockAiProvider::enqueue(new MockResponse(text: $answer));
+  }
+
+  /**
+   * Asks the chat action for a turn, the way the endpoint does.
+   *
+   * @param \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $session
+   *   The session to chat in.
+   * @param string $message
+   *   What the editor wrote.
+   */
+  private function chatAction(AiEditorialSessionInterface $session, string $message): void {
+    $request = Request::create('/', 'POST', content: json_encode([
+      'sessionId' => (string) $session->id(),
+      'message' => $message,
+    ], JSON_THROW_ON_ERROR));
+
+    $this->container->get(AiAssistantPluginManager::class)
+      ->createInstance('drafting')
+      ->executeAction('chat', $request);
+  }
+
+  /**
+   * A reply that asks for two drafts, under the call ids given.
+   *
+   * @param string $first
+   *   The id of the first call. An empty string sends none.
+   * @param string $second
+   *   The id of the second call.
+   */
+  private function twoDraftCalls(string $first, string $second): MockResponse {
+    $call = static fn (string $id): array => [
+      'id' => $id,
+      'type' => 'function',
+      'function' => [
+        'name' => 'drafting_draft_content',
+        'arguments' => json_encode(['brief' => self::BRIEF], JSON_THROW_ON_ERROR),
+      ],
+    ];
+
+    return new MockResponse(toolCalls: [$call($first), $call($second)]);
   }
 
   /**
