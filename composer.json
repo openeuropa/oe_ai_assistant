@@ -38,7 +38,8 @@
     },
     "autoload-dev": {
         "psr-4": {
-            "Drupal\\Tests\\oe_ai_assistant\\": "./tests/src/"
+            "Drupal\\Tests\\oe_ai_assistant\\": "./tests/src/",
+            "Drupal\\oe_ai_assistant\\Evaluators\\": "./evaluators/"
         }
     },
     "extra": {

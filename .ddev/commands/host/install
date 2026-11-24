@@ -16,6 +16,9 @@ echo "Copying AI provider settings..."
 ddev exec 'cp /var/www/html/.ddev/settings.ai.php web/sites/default/settings.ai.php'
 ddev exec 'grep -q settings.ai.php web/sites/default/settings.php 2>/dev/null || echo "include __DIR__ . \"/settings.ai.php\";" >> web/sites/default/settings.php'
 
+echo "Linking the evaluation output configuration..."
+ddev exec 'ln -sfn ../evaluation.php web/evaluation.php'
+
 echo "Configuring the private file system path..."
 ddev exec 'mkdir -p web/sites/default/files/private'
 ddev exec 'grep -q "sites/default/files/private" web/sites/default/settings.php 2>/dev/null || echo "\$settings[\"file_private_path\"] = \"sites/default/files/private\";" >> web/sites/default/settings.php'
