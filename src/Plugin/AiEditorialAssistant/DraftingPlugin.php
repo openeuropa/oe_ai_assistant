@@ -31,6 +31,7 @@ use Drupal\oe_ai_assistant\Response\SseResponse;
 use Drupal\oe_ai_assistant\Utility\MessageContent;
 use NeuronAI\Agent\Interrupt\ApprovalRequest;
 use NeuronAI\Chat\Messages\UserMessage;
+use NeuronAI\Exceptions\WorkflowRefusedException;
 use NeuronAI\Workflow\Persistence\PersistenceInterface;
 use NeuronAI\Workflow\Streaming\ProtocolEvent;
 use NeuronAI\Workflow\WorkflowEngine;
@@ -743,7 +744,20 @@ class DraftingPlugin extends AiAssistantPluginBase {
     // A save that waits for the editor belongs to the conversation, and the
     // run that holds it lives in the workflow store rather than the thread.
     // So it is abandoned here, and deleteConversation() clears the rest.
-    (new WorkflowEngine($this->persistence))->abandon($session->editorialThread());
+    //
+    // A failed run has to go as well. A turn starts under recoverFailed, so
+    // a failed run left in the store is resumed by the next turn, against a
+    // conversation that has no thread any more.
+    //
+    // abandon() refuses a completed run, one a worker is executing, and one
+    // another request claimed while this one read it. A reset answers none
+    // of those with a 500, because it clears the thread either way.
+    try {
+      (new WorkflowEngine($this->persistence))->abandon($session->editorialThread());
+    }
+    catch (WorkflowRefusedException) {
+      // The next turn sweeps a run it can and refuses one it cannot.
+    }
     $session->deleteConversation();
     return ['status' => 'ok'];
   }
