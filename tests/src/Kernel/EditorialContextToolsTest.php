@@ -311,12 +311,13 @@ class EditorialContextToolsTest extends AiEditorialSessionKernelTestBase {
 
     $result = json_decode($this->toneOptionsTool($session), TRUE);
 
-    $this->assertSame([
+    $this->assertSame((string) $formal->id(), $result['selected']);
+    $this->assertCount(2, $result['options']);
+    $this->assertContains([
       'id' => (string) $formal->id(),
       'label' => 'Formal',
       'description' => 'Short, institutional sentences.',
-    ], $result['selected']);
-    $this->assertCount(2, $result['options']);
+    ], $result['options']);
     $this->assertStringNotContainsString('Use professional, institutional language.', json_encode($result));
   }
 
@@ -350,8 +351,10 @@ class EditorialContextToolsTest extends AiEditorialSessionKernelTestBase {
 
     $result = json_decode($this->templateOptionsTool($session), TRUE);
 
-    $this->assertSame('News brief', $result['selected']['label']);
-    $this->assertCount(1, $result['options']);
+    $this->assertSame('news_brief', $result['selected']);
+    $this->assertSame([
+      ['id' => 'news_brief', 'label' => 'News brief', 'description' => 'A short news item.'],
+    ], $result['options']);
   }
 
   /**

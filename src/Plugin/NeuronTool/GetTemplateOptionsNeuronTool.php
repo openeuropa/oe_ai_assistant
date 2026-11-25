@@ -15,8 +15,9 @@ use Drupal\oe_ai_assistant\Service\DraftingSchemaProviderInterface;
  */
 #[NeuronTool(
   id: 'context_get_template_options',
-  description: 'Returns the template selected for this session, and every template available'
-  . ' for its content type, each with its label and description.',
+  description: 'Returns the ID of the template selected for this session, and every template'
+  . ' available for its content type, each with its ID, label and description. Match the'
+  . ' selected ID against the options to name it.',
   label: new TranslatableMarkup('Get template options'),
   context_definitions: [
     'session' => new EntityContextDefinition(
@@ -26,8 +27,6 @@ use Drupal\oe_ai_assistant\Service\DraftingSchemaProviderInterface;
   ],
 )]
 final class GetTemplateOptionsNeuronTool extends NeuronToolPluginBase {
-
-  use SelectionDescriberTrait;
 
   public function __construct(
     array $configuration,
@@ -43,10 +42,12 @@ final class GetTemplateOptionsNeuronTool extends NeuronToolPluginBase {
    */
   public function __invoke(): string {
     $session = $this->getContextValue('session');
-    $options = $this->schemaProvider->availableTemplates($session->getContentType());
-    $selected = $this->describeSelection($session->getTemplate(), $options);
+    $template = $session->getTemplate();
 
-    return (string) json_encode(['selected' => $selected, 'options' => $options], JSON_INVALID_UTF8_SUBSTITUTE);
+    return (string) json_encode([
+      'selected' => $template === NULL ? NULL : $template['id'],
+      'options' => $this->schemaProvider->availableTemplates($session->getContentType()),
+    ], JSON_INVALID_UTF8_SUBSTITUTE);
   }
 
 }

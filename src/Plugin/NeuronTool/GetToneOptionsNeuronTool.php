@@ -15,8 +15,9 @@ use Drupal\oe_ai_assistant\Service\AiEditorialContextInterface;
  */
 #[NeuronTool(
   id: 'context_get_tone_options',
-  description: 'Returns the tone selected for this session, and every tone the editor can pick'
-  . ' from, each with its label and description. Never includes a tone\'s AI guidelines.',
+  description: 'Returns the ID of the tone selected for this session, and every tone the'
+  . ' editor can pick from, each with its ID, label and description. Match the selected'
+  . ' ID against the options to name it. Never includes a tone\'s AI guidelines.',
   label: new TranslatableMarkup('Get tone options'),
   context_definitions: [
     'session' => new EntityContextDefinition(
@@ -26,8 +27,6 @@ use Drupal\oe_ai_assistant\Service\AiEditorialContextInterface;
   ],
 )]
 final class GetToneOptionsNeuronTool extends NeuronToolPluginBase {
-
-  use SelectionDescriberTrait;
 
   public function __construct(
     array $configuration,
@@ -42,10 +41,15 @@ final class GetToneOptionsNeuronTool extends NeuronToolPluginBase {
    * Returns the selected tone and the available options, as JSON.
    */
   public function __invoke(): string {
-    $options = $this->editorialContext->getToneOptions();
-    $selected = $this->describeSelection($this->getContextValue('session')->getTone(), $options);
+    $tone = $this->getContextValue('session')->getTone();
 
-    return (string) json_encode(['selected' => $selected, 'options' => $options], JSON_INVALID_UTF8_SUBSTITUTE);
+    // Only the ID of the selection, which the model reads against the
+    // options below. A tone is stored with its 'prompt', the AI guidelines,
+    // and reporting the stored array would put those in the answer.
+    return (string) json_encode([
+      'selected' => $tone === NULL ? NULL : $tone['id'],
+      'options' => $this->editorialContext->getToneOptions(),
+    ], JSON_INVALID_UTF8_SUBSTITUTE);
   }
 
 }
