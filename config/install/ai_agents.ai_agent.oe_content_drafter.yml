@@ -14,10 +14,11 @@ system_prompt: |
 
   Field values must be arrays of items where each item is an object
   with property keys (e.g. "title": [{"value": "Headline"}],
-  "body": [{"value": "<p>Text</p>", "format": "full_html"}]).
+  "body": [{"value": "<p>Text</p>"}]).
   Match the schema's array/object/property shape exactly.
 
-  For formatted text fields, produce clean HTML.
+  For formatted text fields, whose value has the contentMediaType
+  text/html, produce clean HTML.
   Match the language and tone described in the instructions.
 secured_system_prompt: ''
 tools: {}

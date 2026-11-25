@@ -10,6 +10,7 @@
 import DOMPurify from "dompurify";
 import { Save } from "lucide-react";
 import { useMemo, useState } from "react";
+import { isFormattedItem } from "../formatted-text";
 import { useDraftingSlice } from "../store";
 
 /** Props for the content table. */
@@ -44,18 +45,13 @@ function extractFieldDisplay(val: unknown): {
   if (typeof val === "number" || typeof val === "boolean")
     return { text: String(val), isHtml: false };
 
-  // Drupal field array: [{value: "...", format: "full_html"}].
+  // Drupal field array: [{value: "<p>...</p>"}].
   if (Array.isArray(val) && val.length > 0) {
     const first = val[0];
 
     // Formatted text with HTML.
-    if (
-      first &&
-      typeof first === "object" &&
-      "value" in first &&
-      "format" in first
-    ) {
-      return { text: String(first.value ?? ""), isHtml: true };
+    if (isFormattedItem(first)) {
+      return { text: first.value, isHtml: true };
     }
 
     // Simple value items: [{value: "text"}].
@@ -144,8 +140,8 @@ function extractSubFieldValue(val: unknown): { text: string; isHtml: boolean } {
     return { text: "", isHtml: false };
   const first = val[0] as Record<string, unknown>;
   if (!first || typeof first !== "object") return { text: "", isHtml: false };
-  if ("format" in first && "value" in first) {
-    return { text: String(first.value ?? ""), isHtml: true };
+  if (isFormattedItem(first)) {
+    return { text: first.value, isHtml: true };
   }
   if ("value" in first)
     return { text: String(first.value ?? ""), isHtml: false };

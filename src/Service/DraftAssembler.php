@@ -21,6 +21,7 @@ class DraftAssembler implements DraftAssemblerInterface {
     private readonly AccountProxyInterface $currentUser,
     private readonly DraftingSchemaProviderInterface $schemaProvider,
     private readonly DraftEntityBuilder $draftEntityBuilder,
+    private readonly InlineEntityHydrator $inlineEntityHydrator,
     #[Autowire(service: 'logger.channel.oe_ai_assistant')]
     private readonly LoggerInterface $logger,
   ) {}
@@ -51,7 +52,8 @@ class DraftAssembler implements DraftAssemblerInterface {
       );
     }
 
-    $mergedFields = $fields;
+    // The field's configuration decides the text format, never the LLM.
+    $mergedFields = $this->inlineEntityHydrator->withoutTextFormats($fields, 'node', $bundle);
     if ($templateId !== NULL && $templateId !== '') {
       try {
         $template = $this->schemaProvider->resolveTemplate('node', $bundle, $templateId);
@@ -72,12 +74,12 @@ class DraftAssembler implements DraftAssemblerInterface {
         );
         // Template defaults win on collision, so editors keep control over
         // the values a template pins regardless of what the LLM produced.
-        $mergedFields = $resolvedDefaults + $fields;
+        $mergedFields = $resolvedDefaults + $mergedFields;
       }
     }
 
     try {
-      $built = $this->draftEntityBuilder->fromLlmFields('node', $bundle, $mergedFields);
+      $built = $this->draftEntityBuilder->fromLlmFields('node', $bundle, $mergedFields, $existingNode);
     }
     catch (\Throwable $e) {
       $this->logger->error('Failed to build draft entity: @e', ['@e' => (string) $e]);
@@ -95,20 +97,8 @@ class DraftAssembler implements DraftAssemblerInterface {
     // Transplant only the merged fields' values onto the existing node, the
     // same field-by-field idiom core's EntityResource::patch() uses for
     // updates, so fields outside this draft are left untouched.
-    foreach ($mergedFields as $fieldName => $submitted) {
-      $values = $built->get($fieldName)->getValue();
-      $existingItems = $existingNode->get($fieldName);
-      if ($existingItems->getFieldDefinition()->getFieldStorageDefinition()->getPropertyDefinition('format')) {
-        // A format the payload did not supply was resolved for a new entity;
-        // the one already stored on the item takes precedence over it.
-        foreach (array_keys($values) as $delta) {
-          $existingFormat = $existingItems->get($delta)?->format;
-          if ($existingFormat && empty($submitted[$delta]['format'])) {
-            $values[$delta]['format'] = $existingFormat;
-          }
-        }
-      }
-      $existingNode->set($fieldName, $values);
+    foreach (array_keys($mergedFields) as $fieldName) {
+      $existingNode->set($fieldName, $built->get($fieldName)->getValue());
     }
     return $existingNode;
   }

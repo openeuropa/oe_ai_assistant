@@ -123,6 +123,7 @@ class EntityJsonSchemaComposer {
     private readonly EntityTypeManagerInterface $entityTypeManager,
     private readonly EntityTypeBundleInfoInterface $bundleInfo,
     private readonly EntityFieldManagerInterface $entityFieldManager,
+    private readonly TextFormatResolver $textFormatResolver,
   ) {}
 
   /**
@@ -388,7 +389,8 @@ class EntityJsonSchemaComposer {
    *
    * Walks the item's non-computed, non-internal, non-serialized property
    * definitions and normalises each leaf via core's `'json_schema'` format.
-   * Always wraps as
+   * A text format property is left out, and the text of a formatted item is
+   * marked as `contentMediaType: text/html` instead. Always wraps as
    * `{type: "object", properties: {...}, required?: [...]}`. Single-property
    * collapse is intentionally absent because the denormalize-input shape
    * requires the LLM to emit the wrapped form (`[{"value": "..."}]`) so
@@ -414,7 +416,18 @@ class EntityJsonSchemaComposer {
 
     $properties = [];
     $required = [];
+    $formatted = $this->textFormatResolver->isFormatted($fieldItemList->getFieldDefinition());
+    $htmlSources = [];
     foreach ($itemDef->getPropertyDefinitions() as $propName => $propDef) {
+      // The field's configuration decides the text format, so the LLM is
+      // never asked for it.
+      if ($formatted && $propName === 'format') {
+        continue;
+      }
+      // A processed property names the text it renders as HTML.
+      if ($formatted && is_string($source = $propDef->getSetting('text source'))) {
+        $htmlSources[] = $source;
+      }
       if ($propDef->isComputed() || $propDef->isInternal() || in_array($propName, $serializedNames, TRUE)) {
         continue;
       }
@@ -431,6 +444,14 @@ class EntityJsonSchemaComposer {
     // without an empty 'properties' key.
     if ($properties === []) {
       return ['type' => 'object'];
+    }
+
+    // Without a format property, the media type is what tells the LLM that
+    // the text of a formatted item is HTML.
+    foreach ($htmlSources as $source) {
+      if (isset($properties[$source])) {
+        $properties[$source]['contentMediaType'] = 'text/html';
+      }
     }
 
     $schema = [

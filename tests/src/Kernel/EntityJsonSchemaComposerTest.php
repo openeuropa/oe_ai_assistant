@@ -133,18 +133,22 @@ class EntityJsonSchemaComposerTest extends KernelTestBase {
   }
 
   /**
-   * Asserts multi-property text-with-format fields wrap as object schemas.
+   * Asserts formatted text items carry HTML text and no format.
+   *
+   * The format is resolved for the current user, so the LLM is never asked
+   * for one; the media type tells it the text is HTML instead.
    */
-  public function testFormattedTextFieldHasValueAndFormatProperties(): void {
+  public function testFormattedTextFieldHasHtmlValueAndNoFormat(): void {
     $schema = $this->composer()->compose('node', 'oe_news');
     $body = $schema['properties']['field_body'];
 
     // The body field is array-wrapped with multi-property items.
     $this->assertSame('array', $body['type']);
     $this->assertSame('object', $body['items']['type']);
-    $this->assertArrayHasKey('value', $body['items']['properties']);
-    $this->assertArrayHasKey('format', $body['items']['properties']);
+    $this->assertArrayNotHasKey('format', $body['items']['properties']);
     $this->assertSame('string', $body['items']['properties']['value']['type']);
+    $this->assertSame('text/html', $body['items']['properties']['value']['contentMediaType']);
+    $this->assertSame('text/html', $body['items']['properties']['summary']['contentMediaType']);
   }
 
   /**
