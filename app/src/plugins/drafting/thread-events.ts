@@ -18,8 +18,6 @@ export interface LocalThreadEvent {
   eventType: string;
   /** Human-readable summary that appears inside the chip. */
   summary: string;
-  /** The draft version the event refers to (save events). */
-  version?: number;
 }
 
 /**
@@ -52,7 +50,6 @@ export function buildEventThreadMessage(
         args: {
           eventType: event.eventType,
           summary: event.summary,
-          ...(event.version !== undefined ? { version: event.version } : {}),
         },
         result: {},
       },

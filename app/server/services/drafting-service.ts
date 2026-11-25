@@ -59,26 +59,14 @@ export interface ChatOptions {
   entityTypeId: string;
   bundle: string;
   schema: ContentTypeSchema | null;
-}
-
-/** Request body for the save action: names a session draft version. */
-export interface DraftSavePayload {
-  sessionId?: string;
-  version?: number;
-}
-
-/** Mock save result returned by the dev server. */
-export interface DraftSaveResult {
-  nodeId: string;
-  previewUrl: string;
+  /** The editor's answer to a waiting save, null when a turn carries none. */
+  approval?: { callId: string; decision: "approve" | "reject" } | null;
 }
 
 /** Common interface implemented by all drafting services. */
 export interface DraftingService {
   chat(opts: ChatOptions): AsyncGenerator<StreamEvent>;
   reset(sessionId: string): { status: string };
-  /** Returns null when the session has no draft with that version. */
-  save(body: DraftSavePayload): DraftSaveResult | null;
   getMessages(sessionId: string): TranscriptMessage[];
 }
 
@@ -250,12 +238,6 @@ export class MistralDraftingService implements DraftingService {
 
   getMessages(sessionId: string): TranscriptMessage[] {
     return this.store.getTranscript(sessionId);
-  }
-
-  save(_body: DraftSavePayload): DraftSaveResult | null {
-    // This dev service keeps no draft history; accept any version.
-    const nodeId = String(Math.floor(Math.random() * 90000) + 10000);
-    return { nodeId, previewUrl: `/node/${nodeId}/latest` };
   }
 
   // -- Private: system prompt and tools ---------------------------

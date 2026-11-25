@@ -60,8 +60,6 @@ paths:
   # -- Plugin: drafting --
   /plugins/drafting/chat:
     $ref: "plugins/drafting/paths.yaml#/chat"
-  /plugins/drafting/save:
-    $ref: "plugins/drafting/paths.yaml#/save"
   /plugins/drafting/set-tone:
     $ref: "plugins/drafting/paths.yaml#/setTone"
   /plugins/drafting/set-template:
@@ -159,10 +157,6 @@ components:
     # -- Plugin: drafting --
     DraftingChatRequest:
       $ref: "plugins/drafting/schemas.yaml#/DraftingChatRequest"
-    DraftingSaveRequest:
-      $ref: "plugins/drafting/schemas.yaml#/DraftingSaveRequest"
-    DraftingSaveResponse:
-      $ref: "plugins/drafting/schemas.yaml#/DraftingSaveResponse"
     DraftingSetToneRequest:
       $ref: "plugins/drafting/schemas.yaml#/DraftingSetToneRequest"
     DraftingSetToneResponse:

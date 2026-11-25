@@ -205,3 +205,28 @@ describe("toThreadMessages", () => {
     });
   });
 });
+
+describe("a save that waits for the editor", () => {
+  it("hydrates with its call id, its mark, and no result", () => {
+    const [message] = toThreadMessages([
+      {
+        role: "assistant",
+        toolCalls: [
+          {
+            callId: "call_save",
+            function: {
+              name: "drafting_save_draft",
+              arguments: '{"version":2}',
+            },
+            awaitingDecision: true,
+          },
+        ],
+      },
+    ]);
+
+    const part = (message?.content as unknown as Record<string, unknown>[])[0];
+    expect(part?.["toolCallId"]).toBe("call_save");
+    expect(part?.["args"]).toEqual({ version: 2, awaitingDecision: true });
+    expect(part).not.toHaveProperty("result");
+  });
+});

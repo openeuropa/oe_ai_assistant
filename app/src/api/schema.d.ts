@@ -93,23 +93,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/plugins/drafting/save": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Save a session draft version as an unpublished node */
-        post: operations["postDraftingSave"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/plugins/drafting/set-tone": {
         parameters: {
             query?: never;
@@ -406,26 +389,44 @@ export interface components {
                 userId?: string;
                 /** @description RFC 3339 time the message was stored. */
                 at?: string;
+                /** @description The tool calls of an assistant turn, in the order the model made them. */
+                toolCalls?: {
+                    /** @description The id the editor's decision names. Sent only for a call that is waiting for one. */
+                    callId?: string;
+                    function: {
+                        /** @description The machine name of the tool. */
+                        name: string;
+                        /** @description The arguments the model gave the tool, as JSON. */
+                        arguments?: string;
+                    };
+                    /** @description What the call answered. Absent while the call waits for the editor's decision. */
+                    result?: unknown;
+                    /** @description The call waits for the editor's decision and carries no result. Its card in the transcript asks the question. */
+                    awaitingDecision?: boolean;
+                }[];
             }[];
         };
         DraftingChatRequest: {
-            /** @description The user's drafting prompt or instruction. */
-            message: string;
+            /** @description The user's drafting prompt or instruction. Required unless the request carries a decision. */
+            message?: string;
             /** @description The editorial session that hosts the conversation. The backend derives the target content type and access from the session and persists every turn against it. */
             sessionId: string;
-        };
-        /** @description Save one of the session's drafts as an unpublished revision. The backend resolves the target content type and the drafted field values from the session and its draft history, so the client only names the version being saved; a client can never save field data the session did not produce. */
-        DraftingSaveRequest: {
-            /** @description The editorial session that owns the draft. */
-            sessionId: string;
-            /** @description The draft version to save, matching the version of a drafting_draft_content result in the session transcript (the version shown in the artifact pane and the version rail). */
-            version: number;
-        };
-        DraftingSaveResponse: {
-            /** @description The ID of the created node. */
-            nodeId: string;
-            /** @description URL to preview the created draft node. */
-            previewUrl: string;
+            /** @description The conversation as the client holds it. A request that carries a decision sends it too, and the backend reads the prompt off the last user entry when there is no message property. */
+            messages?: Record<string, never>[];
+            runConfig?: {
+                custom?: {
+                    /** @description The editor's decision on a call that waits for one. The turn resumes that call instead of answering a message. */
+                    approval?: {
+                        /** @description The id of the waiting call. */
+                        callId: string;
+                        /**
+                         * @description Approving runs the call, rejecting cancels it. A rejection applies to that call only: the editor can ask for the same thing again.
+                         * @enum {string}
+                         */
+                        decision: "approve" | "reject";
+                    };
+                };
+            };
         };
         DraftingSetToneRequest: {
             /** @description The editorial session on which the selected tone is saved. */
@@ -752,30 +753,6 @@ export interface operations {
                 };
                 content: {
                     "text/event-stream": unknown;
-                };
-            };
-        };
-    };
-    postDraftingSave: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["DraftingSaveRequest"];
-            };
-        };
-        responses: {
-            /** @description Created node details */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["DraftingSaveResponse"];
                 };
             };
         };

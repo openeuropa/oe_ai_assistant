@@ -8,6 +8,7 @@ use Drupal\Component\Datetime\TimeInterface;
 use Drupal\content_moderation\ModerationInformationInterface;
 use Drupal\Core\Session\AccountProxyInterface;
 use Drupal\node\NodeInterface;
+use Drupal\oe_ai_assistant\Entity\ActivityType;
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
 
 /**
@@ -64,6 +65,17 @@ class DraftSaver implements DraftSaverInterface {
       $session->setNode((int) $node->id())->save();
     }
 
+    // The activity record follows what was written, so it is recorded here
+    // rather than in the caller. $existingNode is read before the save, so
+    // it still tells a new node from a new revision of one.
+    $session->recordActivity(
+      ActivityType::DraftSaved,
+      $existingNode === NULL
+        ? 'Draft %d saved to the CMS as a new node (node %s).'
+        : 'Draft %d saved to the CMS as a new revision of node %s.',
+      [$version, (string) $node->id()],
+    );
+
     return [
       'nodeId' => (string) $node->id(),
       'previewUrl' => $this->buildPreviewUrl($node),
@@ -80,7 +92,9 @@ class DraftSaver implements DraftSaverInterface {
    *   Relative URL for the node preview.
    */
   private function buildPreviewUrl(NodeInterface $node): string {
-    return $this->moderationInformation->isModeratedEntity($node)
+    // Core's latest-version route refuses a node with no pending revision, so
+    // only a draft saved over a published revision is previewed there.
+    return $this->moderationInformation->hasPendingRevision($node)
       ? '/node/' . $node->id() . '/latest'
       : '/node/' . $node->id();
   }

@@ -64,12 +64,20 @@ export function toThreadMessage(
       });
     } else {
       // General tool call: forward name, safe-parsed args, and raw result.
+      // A call that waits for a decision has no result. Passing `{}` as
+      // one would make the card report an outcome the server never
+      // recorded, so leave the key off. Key the part by the call id the
+      // decision names, rather than by its position.
+      const waiting = call.awaitingDecision === true;
       parts.push({
         type: "tool-call",
-        toolCallId: `tool-${index}-${toolIndex++}`,
+        toolCallId: call.callId ?? `tool-${index}-${toolIndex++}`,
         toolName: name,
-        args: safeParseArgs(call.function?.arguments),
-        result: call.result ?? {},
+        args: {
+          ...safeParseArgs(call.function?.arguments),
+          ...(waiting ? { awaitingDecision: true } : {}),
+        },
+        ...(waiting ? {} : { result: call.result ?? {} }),
       });
     }
   }
