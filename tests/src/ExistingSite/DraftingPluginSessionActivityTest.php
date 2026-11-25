@@ -64,8 +64,8 @@ class DraftingPluginSessionActivityTest extends DraftingPluginTestBase {
     // The answering agent gets the whole record in its prompt. The editor
     // who asked reads as "you" there, not under their display name.
     $prompt = $this->activityPrompt();
-    $this->assertStringContainsString('| you | Tone set to "Formal".', $prompt);
-    $this->assertStringContainsString('| you | Tone changed from "Formal" to "Technical".', $prompt);
+    $this->assertStringContainsString(',you,"Tone set to ""Formal""."', $prompt);
+    $this->assertStringContainsString(',you,"Tone changed from ""Formal"" to ""Technical""."', $prompt);
     // The record runs oldest first, so the tone picked first comes first.
     $this->assertLessThan(
       strpos($prompt, 'Tone changed from'),

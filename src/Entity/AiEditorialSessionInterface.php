@@ -123,11 +123,6 @@ interface AiEditorialSessionInterface extends ContentEntityInterface, EntityChan
   public function getLatestActivity(?int $limit = NULL): array;
 
   /**
-   * Counts the entries in the activity of this session.
-   */
-  public function countActivity(): int;
-
-  /**
    * Removes every entry in the activity of this session.
    */
   public function deleteActivity(): void;

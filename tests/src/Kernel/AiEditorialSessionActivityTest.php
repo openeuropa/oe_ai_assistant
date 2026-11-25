@@ -163,8 +163,8 @@ class AiEditorialSessionActivityTest extends AiEditorialSessionKernelTestBase {
         $session->getLatestActivity(100),
       ),
     );
-    $this->assertSame(1, $session->countActivity());
-    $this->assertSame(1, $other->countActivity());
+    $this->assertCount(1, $session->getLatestActivity());
+    $this->assertCount(1, $other->getLatestActivity());
   }
 
   /**
@@ -179,8 +179,8 @@ class AiEditorialSessionActivityTest extends AiEditorialSessionKernelTestBase {
 
     $session->delete();
 
-    $this->assertSame(0, $session->countActivity());
-    $this->assertSame(1, $other->countActivity());
+    $this->assertCount(0, $session->getLatestActivity());
+    $this->assertCount(1, $other->getLatestActivity());
   }
 
   /**
@@ -259,7 +259,7 @@ class AiEditorialSessionActivityTest extends AiEditorialSessionKernelTestBase {
 
     $this->assertStringContainsString(
       sprintf(
-        '%s | you | Tone set to "Formal".',
+        '%s,you,"Tone set to ""Formal""."',
         gmdate('c', $session->getLatestActivity()[0]->getCreatedTime()),
       ),
       $this->activityPrompt($session),
@@ -285,10 +285,10 @@ class AiEditorialSessionActivityTest extends AiEditorialSessionKernelTestBase {
     $prompt = $this->activityPrompt($session);
 
     $this->assertStringContainsString(
-      sprintf('| %s | Tone set to "Formal".', $other->getDisplayName()),
+      sprintf(',%s,"Tone set to ""Formal""."', $other->getDisplayName()),
       $prompt,
     );
-    $this->assertStringContainsString('| you | Tone changed to "Technical".', $prompt);
+    $this->assertStringContainsString(',you,"Tone changed to ""Technical""."', $prompt);
   }
 
   /**
@@ -304,24 +304,24 @@ class AiEditorialSessionActivityTest extends AiEditorialSessionKernelTestBase {
   }
 
   /**
-   * A record longer than the cap says how many entries the prompt omits.
+   * The prompt carries every entry of the record, however long it is.
    *
-   * Without the count, the model would read the oldest entry it got as
-   * the first thing that happened, and tell the editor so.
+   * The oldest entry says what the session was created with. Without it the
+   * agent can't name the tone or the template of a session nothing has
+   * changed since.
    */
-  public function testAgentPromptReportsHowManyEntriesItLeftOut(): void {
+  public function testAgentPromptCarriesEveryEntryOfTheRecord(): void {
     $session = $this->freshSession($this->createUser());
-    $total = GetSessionActivityNeuronAgent::MAX_ENTRIES + 3;
+    $total = 250;
     for ($i = 1; $i <= $total; $i++) {
       $session->recordActivity(ActivityType::ToneChanged, 'Entry %d', [$i]);
     }
 
     $prompt = $this->activityPrompt($session);
 
-    $this->assertStringContainsString('The 3 entries before the first one below are not shown.', $prompt);
-    $this->assertStringNotContainsString("| Entry 3\n", $prompt);
-    $this->assertStringContainsString("| Entry 4\n", $prompt);
-    $this->assertStringContainsString('| Entry ' . $total, $prompt);
+    $this->assertStringContainsString(',"Entry 1"' . "\n", $prompt);
+    $this->assertStringContainsString(sprintf(',"Entry %d"', $total) . "\n", $prompt);
+    $this->assertSame($total, substr_count($prompt, ',"Entry '));
   }
 
   /**
@@ -335,7 +335,7 @@ class AiEditorialSessionActivityTest extends AiEditorialSessionKernelTestBase {
 
     $prompt = $this->activityPrompt($session);
 
-    $this->assertStringContainsString('| mine', $prompt);
+    $this->assertStringContainsString(',mine', $prompt);
     $this->assertStringNotContainsString('theirs', $prompt);
   }
 

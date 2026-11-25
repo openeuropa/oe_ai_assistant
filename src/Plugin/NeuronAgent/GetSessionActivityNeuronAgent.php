@@ -14,6 +14,7 @@ use Drupal\Core\StringTranslation\TranslatableMarkup;
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionActivityInterface;
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
 use NeuronAI\UniqueIdGenerator;
+use Symfony\Component\Serializer\Encoder\CsvEncoder;
 
 /**
  * Answers one question about what happened in an editorial session.
@@ -41,15 +42,6 @@ final class GetSessionActivityNeuronAgent extends NeuronAgentPluginBase {
    * The id this agent is registered under.
    */
   public const string PLUGIN_ID = 'get_session_activity';
-
-  /**
-   * How many of the most recent entries the prompt carries.
-   *
-   * The record grows for as long as the editor works in the session, so an
-   * uncapped prompt would grow with it. The prompt carries the most recent
-   * entries and says how many it does not show.
-   */
-  public const int MAX_ENTRIES = 100;
 
   public function __construct(
     array $configuration,
@@ -87,15 +79,22 @@ final class GetSessionActivityNeuronAgent extends NeuronAgentPluginBase {
     Never guess a time or an order of events. Say that the record does not
     hold the answer when it does not.
 
-    Each line of the record gives the time in UTC, who did it, and what they
-    did. The editor who asks the question is named "you".
+    The record is the CSV between the BEGIN_ACTIVITY_CSV and END_ACTIVITY_CSV
+    markers below, and it holds every entry of the session. Its first row
+    reads "time,who,what": the time the entry was recorded, the editor it
+    belongs to, and what they did. Every time is UTC. Any field can be
+    wrapped in double quotes, and those wrapping quotes are not part of the
+    value. Inside a wrapped field, a doubled double quote is one quote
+    character. The rows run oldest first. The editor who asks the question
+    is named "you".
 
-    The first line of the record says what the session was created with. It
-    is the state the session started from and not a change, so a question
-    that counts changes does not count it. It does hold: a value it names
-    stays in force until a later line changes it, so a question about the
-    tone or the template of the session right now is answered from the last
-    line that names one, and from the first line when no other does.
+    The first row after the column names says what the session was created
+    with. It is the state the session started from and not a change, so a
+    question that counts changes does not count it. Its values stay in
+    force: a value it names holds until a later row changes it, so a
+    question about the tone or the template of the session right now is
+    answered from the last row that names one, and from the first row when
+    no other does.
     INSTRUCTIONS;
 
     return $instructions . "\n\n" . $this->record() . "\n";
@@ -105,34 +104,37 @@ final class GetSessionActivityNeuronAgent extends NeuronAgentPluginBase {
    * Renders the record the answer comes from.
    *
    * @return string
-   *   The entries, oldest first, or a note that the record holds none.
+   *   The entries as CSV between the BEGIN_ACTIVITY_CSV and
+   *   END_ACTIVITY_CSV markers, oldest first, or a note that the record is
+   *   empty.
    */
   private function record(): string {
-    $entries = $this->session()->getLatestActivity(self::MAX_ENTRIES);
+    // A long session records hundreds of entries. Each one costs a few
+    // tokens as a CSV row, so we read the record without a limit and the
+    // agent answers from all of it.
+    $entries = $this->session()->getLatestActivity();
     if ($entries === []) {
       return 'The record is empty. Nothing has happened in this session yet.';
     }
 
-    $lines = ['The record, oldest first.'];
-    $omitted = $this->omitted(count($entries));
-    if ($omitted > 0) {
-      $lines[] = sprintf('The %d entries before the first one below are not shown.', $omitted);
-    }
-    $lines[] = '';
-
+    $rows = [];
     foreach ($entries as $entry) {
-      // Drupal formats dates in the timezone of the account that asks, so
-      // date() would give two editors different times for the same entry.
-      // The instructions above promise UTC, so use gmdate().
-      $lines[] = sprintf(
-        '%s | %s | %s',
-        gmdate('c', $entry->getCreatedTime()),
-        $this->actor($entry),
-        $entry->getMessage(),
-      );
+      $rows[] = [
+        // Drupal formats dates in the timezone of the account that asks, so
+        // date() would give two editors different times for the same entry.
+        // The instructions above promise UTC, so use gmdate().
+        'time' => gmdate('c', $entry->getCreatedTime()),
+        'who' => $this->actor($entry),
+        'what' => $entry->getMessage(),
+      ];
     }
 
-    return implode("\n", $lines);
+    // The encoder writes the header from the keys above and quotes a value
+    // that needs it, which these messages do: a tone name reads Tone set to
+    // "Formal".
+    $csv = (new CsvEncoder())->encode($rows, CsvEncoder::FORMAT);
+
+    return "BEGIN_ACTIVITY_CSV\n" . $csv . 'END_ACTIVITY_CSV';
   }
 
   /**
@@ -180,25 +182,6 @@ final class GetSessionActivityNeuronAgent extends NeuronAgentPluginBase {
     }
 
     return (string) ($entry->getOwner()?->getDisplayName() ?? 'a deleted account');
-  }
-
-  /**
-   * Counts the entries the prompt does not show.
-   *
-   * @param int $shown
-   *   How many entries the prompt carries.
-   *
-   * @return int
-   *   How many older entries the prompt does not show.
-   */
-  private function omitted(int $shown): int {
-    // Fewer entries than the cap means we read the whole record, so skip
-    // the count query a capped prompt needs.
-    if ($shown < self::MAX_ENTRIES) {
-      return 0;
-    }
-
-    return max(0, $this->session()->countActivity() - $shown);
   }
 
 }

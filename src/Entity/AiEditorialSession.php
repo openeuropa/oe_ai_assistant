@@ -296,13 +296,6 @@ class AiEditorialSession extends ContentEntityBase implements AiEditorialSession
   /**
    * {@inheritdoc}
    */
-  public function countActivity(): int {
-    return (int) $this->activityQuery()->count()->execute();
-  }
-
-  /**
-   * {@inheritdoc}
-   */
   public function deleteActivity(): void {
     $storage = $this->activityStorage();
     $storage->delete($storage->loadMultiple($this->activityQuery()->execute()));
