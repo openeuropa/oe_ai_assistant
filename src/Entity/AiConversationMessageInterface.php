@@ -115,4 +115,24 @@ interface AiConversationMessageInterface extends ContentEntityInterface, EntityO
    */
   public function setMetadata(array $metadata): static;
 
+  /**
+   * Returns the drafting template id stamped on this turn, if any.
+   *
+   * Stamped on the drafting turn at draft time so provenance can attribute a
+   * saved revision to the template that produced it, even if the session's
+   * template is later changed.
+   *
+   * @return string|null
+   *   The template id, or NULL when none is stamped.
+   */
+  public function getDraftTemplateId(): ?string;
+
+  /**
+   * Stamps the drafting template id used to produce this turn.
+   *
+   * @param string|null $template_id
+   *   The template id, or NULL to clear it.
+   */
+  public function setDraftTemplateId(?string $template_id): static;
+
 }

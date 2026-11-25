@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Drupal\Tests\oe_ai_assistant\ExistingSite;
 
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
+use Drupal\oe_ai_assistant\Service\ProvenanceRecorderInterface;
 use Drupal\oe_ai_assistant_test\Plugin\AiProvider\MockAiProvider;
 use Drupal\oe_ai_assistant_test\Plugin\AiProvider\MockResponse;
 
@@ -32,6 +33,9 @@ class DraftingPluginSaveTest extends DraftingPluginTestBase {
     parent::setUp();
     $this->trackEntityType('node');
     $this->trackEntityType('paragraph');
+    $this->trackEntityType('ai_content_provenance');
+    $this->trackEntityType('ai_editorial_session');
+    $this->trackEntityType('ai_conversation_message');
   }
 
   /**
@@ -512,6 +516,86 @@ class DraftingPluginSaveTest extends DraftingPluginTestBase {
         $storage->delete($storage->loadMultiple($newIds));
       }
     }
+  }
+
+  /**
+   * Tests that an older stored draft keeps its original template provenance.
+   */
+  public function testSaveOlderDraftVersionAfterSessionTemplateChanged(): void {
+    $user = $this->createUser([
+      'use oe ai assistant',
+      'create oe_news content',
+    ]);
+    $this->loginUser($user);
+    $session = $this->createSession($user);
+
+    $templateStorage = \Drupal::entityTypeManager()->getStorage('ai_drafting_template');
+    $firstTemplate = $templateStorage->create([
+      'id' => 'provenance_first_' . uniqid(),
+      'label' => 'First provenance template',
+      'content_type' => 'oe_news',
+      'fields' => ['title' => ['prompt' => 'x']],
+    ]);
+    $firstTemplate->save();
+    $this->markEntityForCleanup($firstTemplate);
+    $session->set('template', $firstTemplate->id())->save();
+
+    $messageStorage = \Drupal::entityTypeManager()->getStorage('ai_conversation_message');
+    $firstMessage = $messageStorage->create([
+      'host_entity_type' => 'ai_editorial_session',
+      'host_entity_id' => (int) $session->id(),
+      'role' => 'assistant',
+      'agent_id' => 'orchestrator',
+      'content' => 'First draft ready.',
+      'provider' => 'mock',
+      'model' => 'mock-model',
+    ]);
+    $firstMessage->setToolCalls([
+      [
+        'type' => 'function',
+        'function' => ['name' => 'draft_content', 'arguments' => '{}'],
+        'result' => [
+          'version' => 1,
+          'context' => ['template' => ['id' => $firstTemplate->id()]],
+          'fields' => ['title' => [['value' => 'First draft']]],
+        ],
+      ],
+    ]);
+    // The next commit adds this per-turn stamp and makes the recorder use it.
+    $firstMessage->setDraftTemplateId($firstTemplate->id());
+    $firstMessage->save();
+    $pendingProvenance = \Drupal::service(ProvenanceRecorderInterface::class)
+      ->recordDraft($session, $firstMessage);
+    $this->assertNotNull($pendingProvenance);
+    $this->assertNull($pendingProvenance->getTrackedRevisionId());
+
+    $secondTemplate = $templateStorage->create([
+      'id' => 'provenance_second_' . uniqid(),
+      'label' => 'Second provenance template',
+      'content_type' => 'oe_news',
+      'fields' => ['title' => ['prompt' => 'x']],
+    ]);
+    $secondTemplate->save();
+    $this->markEntityForCleanup($secondTemplate);
+    $session->set('template', $secondTemplate->id())->save();
+
+    $result = $this->httpPost('/api/ai/plugins/drafting/save', [
+      'sessionId' => $session->id(),
+      'version' => 1,
+    ]);
+    $this->assertEquals(200, $result['status']);
+    $body = json_decode($result['body'], TRUE);
+    $node = \Drupal::entityTypeManager()->getStorage('node')->load($body['nodeId']);
+    $provenance = \Drupal::entityTypeManager()->getStorage('ai_content_provenance')->loadByProperties([
+      'entity_type' => 'node',
+      'entity_id' => $body['nodeId'],
+      'revision_id' => $node->getRevisionId(),
+    ]);
+    $this->assertNotEmpty($provenance);
+    $provenance = reset($provenance);
+    $this->assertSame((int) $pendingProvenance->id(), (int) $provenance->id());
+    $this->assertSame((int) $firstMessage->id(), (int) $provenance->getMessage()?->id());
+    $this->assertSame($firstTemplate->id(), $provenance->getTemplateId());
   }
 
 }

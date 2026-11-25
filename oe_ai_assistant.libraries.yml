@@ -22,3 +22,8 @@ session_history:
   dependencies:
     - core/drupal
     - core/once
+
+content_provenance:
+  css:
+    component:
+      css/content-provenance.css: {}

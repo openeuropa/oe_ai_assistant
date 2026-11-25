@@ -28,6 +28,7 @@ use Drupal\oe_ai_assistant\Service\DraftingOrchestratorInterface;
 use Drupal\oe_ai_assistant\Service\DraftSaverInterface;
 use Drupal\oe_ai_assistant\Service\DraftingSchemaProviderInterface;
 use Drupal\oe_ai_assistant\Service\PreviewRendererInterface;
+use Drupal\oe_ai_assistant\Service\ProvenanceRecorderInterface;
 use Drupal\oe_ai_assistant\Service\ToolExecutionLoopInterface;
 use Drupal\oe_ai_assistant\Service\UiMessageStreamInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
@@ -143,6 +144,13 @@ class DraftingPlugin extends AiAssistantPluginBase {
   protected PreviewRendererInterface $previewRenderer;
 
   /**
+   * The provenance recorder.
+   *
+   * @var \Drupal\oe_ai_assistant\Service\ProvenanceRecorderInterface
+   */
+  protected ProvenanceRecorderInterface $provenanceRecorder;
+
+  /**
    * {@inheritdoc}
    */
   public static function create(
@@ -163,6 +171,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
     $instance->inputStreamFileWriter = $container->get(InputStreamFileWriterInterface::class);
     $instance->draftAssembler = $container->get(DraftAssemblerInterface::class);
     $instance->previewRenderer = $container->get(PreviewRendererInterface::class);
+    $instance->provenanceRecorder = $container->get(ProvenanceRecorderInterface::class);
     return $instance;
   }
 
@@ -429,15 +438,32 @@ class DraftingPlugin extends AiAssistantPluginBase {
         if ($result->hasTerminalTool()
           && $result->terminalToolName === 'draft_content'
         ) {
+          // Create provenance as soon as the LLM requests a draft. The record
+          // is finalized with the entity and revision when the draft is saved.
+          if ($lastAssistant !== NULL) {
+            $lastAssistant->setDraftTemplateId($context['template']);
+            $lastAssistant->save();
+            $this->provenanceRecorder->recordDraft($session, $lastAssistant);
+          }
+
           // Run the sub-agent orchestration and keep the consolidated fields.
           // The draft_content turn is the parent each sub-agent turn nests
           // under in the recorded transcript.
-          $drafted = $this->orchestrator->run(
-            $stream, $history,
-            $context['entityTypeId'], $context['bundle'],
-            $session, $lastAssistant,
-            $editorialContext
-          );
+          try {
+            $drafted = $this->orchestrator->run(
+              $stream, $history,
+              $context['entityTypeId'], $context['bundle'],
+              $session, $lastAssistant,
+              $editorialContext
+            );
+          }
+          finally {
+            // Refresh the same pending row after sub-agents have recorded
+            // their token usage, including when orchestration fails.
+            if ($lastAssistant !== NULL) {
+              $this->provenanceRecorder->recordDraft($session, $lastAssistant);
+            }
+          }
           // Version the draft and snapshot the context that produced it.
           // Prior drafts already carry a result; the current draft_content
           // call does not yet, so the count is the number of earlier drafts.
@@ -454,7 +480,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
           // transcript keeps a provenance trace that can repopulate the
           // artifact.
           if ($lastAssistant !== NULL) {
-            $this->attachDraftResult($lastAssistant, $draftResult);
+            $this->attachDraftResult($lastAssistant, $draftResult, $context['template']);
           }
           // Stream and record a confirmation so it survives a reload. The
           // draft name in the text is how the version reaches the model on
@@ -526,7 +552,13 @@ class DraftingPlugin extends AiAssistantPluginBase {
       );
     }
 
-    $result = $this->draftSaver->save($session, $draft['fields'], $draft['templateId'], $version);
+    $result = $this->draftSaver->save(
+      $session,
+      $draft['fields'],
+      $draft['templateId'],
+      $version,
+      $this->resolveDraftMessage($session, $version),
+    );
 
     $this->messageRecorder->recordEvent(
       $session,
@@ -536,6 +568,46 @@ class DraftingPlugin extends AiAssistantPluginBase {
     );
 
     return $result;
+  }
+
+  /**
+   * Resolves the assistant message that produced a stored draft version.
+   *
+   * The draft fields and their provenance must come from the same persisted
+   * draft_content result. This deliberately does not trust client-supplied
+   * draft metadata.
+   *
+   * @param \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $session
+   *   The session hosting the draft.
+   * @param int $version
+   *   The stored draft version.
+   *
+   * @return \Drupal\oe_ai_assistant\Entity\AiConversationMessageInterface
+   *   The assistant message containing the requested draft result.
+   *
+   * @throws \Drupal\oe_ai_assistant\Exception\ActionException
+   *   If the draft result has no triggering message.
+   */
+  private function resolveDraftMessage(AiEditorialSessionInterface $session, int $version): AiConversationMessageInterface {
+    $storage = $this->entityTypeManager->getStorage('ai_conversation_message');
+    foreach ($storage->loadTranscript($session) as $message) {
+      if (!$message instanceof AiConversationMessageInterface) {
+        continue;
+      }
+      foreach ($message->getToolCalls() as $call) {
+        if (($call['function']['name'] ?? '') === 'draft_content'
+          && (int) ($call['result']['version'] ?? 0) === $version
+        ) {
+          return $message;
+        }
+      }
+    }
+
+    throw new ActionException(
+      'invalid_request',
+      sprintf('Draft %d has no triggering assistant message.', $version),
+      400,
+    );
   }
 
   /**
@@ -804,8 +876,11 @@ class DraftingPlugin extends AiAssistantPluginBase {
    *   The assistant turn that triggered drafting.
    * @param array $result
    *   The versioned draft result: {version, context, fields}.
+   * @param string|null $templateId
+   *   The template used to produce the draft, stamped on the message for
+   *   stable provenance after a later session template change.
    */
-  private function attachDraftResult(AiConversationMessageInterface $message, array $result): void {
+  private function attachDraftResult(AiConversationMessageInterface $message, array $result, ?string $templateId = NULL): void {
     $toolCalls = $message->getToolCalls();
     $found = FALSE;
     foreach ($toolCalls as &$call) {
@@ -825,6 +900,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
       ];
     }
     $message->setToolCalls($toolCalls);
+    $message->setDraftTemplateId($templateId);
     $message->save();
   }
 

@@ -8,6 +8,7 @@ use Drupal\Core\Lock\LockBackendInterface;
 use Drupal\file\Entity\File;
 use Drupal\media\Entity\Media;
 use Drupal\media\MediaInterface;
+use Drupal\oe_ai_assistant\Entity\AiConversationMessageInterface;
 use Drupal\oe_ai_assistant\Service\Drafting\DocumentExtractionProcessorInterface;
 use Drupal\oe_ai_assistant_test\Plugin\AiProvider\MockAiProvider;
 use Drupal\oe_ai_assistant_test\Plugin\AiProvider\MockResponse;
@@ -55,6 +56,8 @@ class DocumentExtractionProcessorTest extends AiEditorialSessionKernelTestBase {
    * Creates a scheduled context document media with a text file.
    */
   private function createDocument(string $name = 'brief.txt'): MediaInterface {
+    $owner = $this->createUser();
+    $session = $this->createSession($owner);
     file_put_contents('public://' . $name, 'payload');
     $file = File::create(['uri' => 'public://' . $name, 'filename' => $name, 'status' => 1]);
     $file->save();
@@ -63,6 +66,7 @@ class DocumentExtractionProcessorTest extends AiEditorialSessionKernelTestBase {
       'name' => $name,
       'status' => 0,
       'oe_ai_context_document' => ['target_id' => $file->id()],
+      'oe_ai_session' => ['target_id' => $session->id()],
     ]);
     $media->save();
     return $media;
@@ -108,6 +112,20 @@ class DocumentExtractionProcessorTest extends AiEditorialSessionKernelTestBase {
     $this->assertSame('Full text', $fresh->get(DocumentExtractionProcessorInterface::EXTRACT_FIELD)->value);
     $this->assertSame('A brief summary.', $fresh->get(DocumentExtractionProcessorInterface::SUMMARY_FIELD)->value);
     $this->assertSame($revisions, $this->countRevisions($media));
+
+    $messages = $this->container->get('entity_type.manager')
+      ->getStorage('ai_conversation_message')
+      ->loadByProperties([
+        'host_entity_type' => 'ai_editorial_session',
+        'agent_id' => 'document_summary',
+      ]);
+    $this->assertCount(1, $messages);
+    $message = reset($messages);
+    $this->assertSame(AiConversationMessageInterface::ROLE_ASSISTANT, $message->getRole());
+    $this->assertSame('A brief summary.', $message->get('content')->value);
+    $this->assertSame('document_summary', $message->get('agent_id')->value);
+    $this->assertSame('mock_ai', $message->get('provider')->value);
+    $this->assertSame('mock-model', $message->get('model')->value);
 
     $log = MockAiProvider::getCallLog();
     $this->assertCount(1, $log);
