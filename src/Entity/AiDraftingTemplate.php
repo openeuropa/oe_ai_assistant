@@ -515,16 +515,25 @@ final class AiDraftingTemplate extends ConfigEntityBase implements AiDraftingTem
         if (!is_array($item) || empty($item['entity_type']) || empty($item['bundle']) || !is_array($item['fields'] ?? NULL)) {
           continue;
         }
-        $item_defaults = [];
+        // An item that pins no value has no 'defaults' key, and adding an
+        // empty one would rewrite a template the deletion did not touch.
+        $itemDefaults = $item['defaults'] ?? [];
         $changed = $this->stripField(
           $item['fields'],
-          $item_defaults,
+          $itemDefaults,
           $item['entity_type'],
           $item['bundle'],
           $target_entity_type_id,
           $target_bundle,
           $field_name,
         ) || $changed;
+
+        if ($itemDefaults !== []) {
+          $item['defaults'] = $itemDefaults;
+        }
+        elseif (isset($item['defaults'])) {
+          unset($item['defaults']);
+        }
       }
     }
 

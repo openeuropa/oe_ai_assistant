@@ -1,0 +1,30 @@
+services:
+  _defaults:
+    autoconfigure: true
+    autowire: true
+
+  Drupal\schema_builder\SchemaBuilder: {}
+  Drupal\schema_builder\SchemaBuilderInterface: '@Drupal\schema_builder\SchemaBuilder'
+
+  # Every builder below is tagged event_subscriber by autoconfiguration, which
+  # core registers for EventSubscriberInterface. Listing them is the price of
+  # not loading every class under src/SchemaBuilder while the container is
+  # compiled, where a builder whose parent module is absent would be a fatal
+  # error rather than a class to skip.
+  Drupal\schema_builder\SchemaBuilder\Field\BundleKeyBuilder: {}
+  Drupal\schema_builder\SchemaBuilder\Field\FieldDescriptionBuilder: {}
+  Drupal\schema_builder\SchemaBuilder\Field\FieldStructureBuilder: {}
+
+  Drupal\schema_builder\SchemaBuilder\Item\InternalPropertyBuilder: {}
+  Drupal\schema_builder\SchemaBuilder\Item\ItemStructureBuilder: {}
+  Drupal\schema_builder\SchemaBuilder\Item\ReferenceBuilder: {}
+
+  Drupal\schema_builder\SchemaBuilder\Property\ChoiceBuilder: {}
+  Drupal\schema_builder\SchemaBuilder\Property\ConstantBuilder: {}
+  Drupal\schema_builder\SchemaBuilder\Property\CountBuilder: {}
+  Drupal\schema_builder\SchemaBuilder\Property\DataTypeBuilder: {}
+  Drupal\schema_builder\SchemaBuilder\Property\FieldSettingsBuilder: {}
+  Drupal\schema_builder\SchemaBuilder\Property\LengthBuilder: {}
+  Drupal\schema_builder\SchemaBuilder\Property\PatternBuilder: {}
+  Drupal\schema_builder\SchemaBuilder\Property\RangeBuilder: {}
+  Drupal\schema_builder\SchemaBuilder\Property\StringFormatBuilder: {}

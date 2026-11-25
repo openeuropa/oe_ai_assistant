@@ -107,7 +107,9 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
       ],
     ));
     MockAiProvider::enqueue(new MockResponse(
-      text: '{"title": [{"value": "T"}], "field_teaser": [{"value": "S"}]}',
+      text: '{"langcode": [{"value": "en"}], "type": [{"target_id": "oe_news"}],'
+        . ' "moderation_state": [{"value": "draft"}],'
+        . ' "title": [{"value": "T"}], "field_teaser": [{"value": "S"}]}',
     ));
     MockAiProvider::enqueue(new MockResponse(
       text: '{"field_content_paragraphs": [{"field_text_body": [{"value": "<p>B</p>"}],'
@@ -194,6 +196,9 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
       'documents' => $draftedFieldsEvents[0]['data']['context']['documents'],
     ]);
     $this->assertSame([
+      'langcode' => [['value' => 'en']],
+      'type' => [['target_id' => 'oe_news']],
+      'moderation_state' => [['value' => 'draft']],
       'title' => [['value' => 'T']],
       'field_teaser' => [['value' => 'S']],
       'field_content_paragraphs' => [
@@ -1050,10 +1055,12 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
     // field_content_paragraphs, same shape as DraftingTurnTest's kernel
     // fixture.
     MockAiProvider::enqueue(new MockResponse(
-      text: '{"title": [{"value": "Test Title"}], "field_teaser": [{"value": "Test teaser."}]}',
+      text: '{"langcode": [{"value": "en"}], "type": [{"target_id": "oe_news"}],'
+        . ' "moderation_state": [{"value": "draft"}],'
+        . ' "title": [{"value": "Test Title"}], "field_teaser": [{"value": "Test teaser."}]}',
     ));
     MockAiProvider::enqueue(new MockResponse(
-      text: '{"field_content_paragraphs": [{"field_text_body": [{"value": "<p>Body</p>", "format": "full_html"}],'
+      text: '{"field_content_paragraphs": [{"field_text_body": [{"value": "<p>Body</p>"}],'
         . ' "type": [{"target_id": "text_block"}]}]}',
     ));
     // The model composes this after seeing the settled tool result; the

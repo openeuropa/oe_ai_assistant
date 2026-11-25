@@ -13,7 +13,7 @@ use Symfony\Component\Serializer\SerializerInterface;
 /**
  * Builds an unsaved Drupal entity from an LLM-shaped fields map.
  *
- * Save-side counterpart to EntityJsonSchemaComposer: the composer produces
+ * Save-side counterpart to the drafting schema: the schema describes
  * the JSON Schema that shapes the LLM's output; this builder turns that
  * output back into an unsaved Drupal entity ready for $entity->save().
  *

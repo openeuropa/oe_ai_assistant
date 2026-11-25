@@ -21,7 +21,7 @@ use PHPUnit\Framework\Attributes\Group;
  * $node->save(). The hydrator is a pure builder. End-to-end save behaviour
  * is covered by DraftingPluginSaveTest in the ExistingSite suite.
  *
- * Module list and setUp are aligned with EntityJsonSchemaComposerTest so the
+ * Module list and setUp are aligned with NewsSchemaTest so the
  * shared `oe_ai_assistant_test` fixture (oe_news + text_block + quote_block)
  * is available.
  */
@@ -53,6 +53,7 @@ class InlineEntityHydratorTest extends KernelTestBase {
     'key',
     'ai',
     'oe_ai_assistant',
+    'schema_builder',
     'state_machine',
     'document_loader',
     'document_loader_tika',

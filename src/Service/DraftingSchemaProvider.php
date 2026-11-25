@@ -4,19 +4,23 @@ declare(strict_types=1);
 
 namespace Drupal\oe_ai_assistant\Service;
 
+use Drupal\Core\Entity\EntityFieldManagerInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\oe_ai_assistant\AiDraftingTemplateInterface;
 use Drupal\oe_ai_assistant\Exception\DraftingTemplateException;
+use Drupal\oe_ai_assistant\SchemaBuilder\TemplateIndex;
+use Drupal\schema_builder\SchemaBuilderInterface;
 
 /**
- * Resolves a drafting template and returns the (template-pruned) field groups.
+ * Resolves a drafting template and returns the field groups it asks for.
  */
 class DraftingSchemaProvider implements DraftingSchemaProviderInterface {
 
   public function __construct(
-    private readonly EntityJsonSchemaComposer $composer,
-    private readonly TemplateSchemaFilterInterface $filter,
+    private readonly SchemaBuilderInterface $schemaBuilder,
+    private readonly TemplateDefaultsResolverInterface $defaultsResolver,
     private readonly EntityTypeManagerInterface $entityTypeManager,
+    private readonly EntityFieldManagerInterface $entityFieldManager,
   ) {}
 
   /**
@@ -24,11 +28,86 @@ class DraftingSchemaProvider implements DraftingSchemaProviderInterface {
    */
   public function groups(string $entityTypeId, string $bundle, ?string $templateId = NULL): array {
     $template = $this->resolveTemplate($entityTypeId, $bundle, $templateId);
-    if ($template === NULL) {
-      return $this->composer->splitSchemaIntoGroups($entityTypeId, $bundle);
+    $parameters = $template === NULL
+      ? []
+      : ['template' => new TemplateIndex($this->defaultsResolver, $template)];
+
+    $schema = $this->schemaBuilder->get($entityTypeId, $bundle, $parameters);
+
+    return $this->split($entityTypeId, $bundle, $schema);
+  }
+
+  /**
+   * Splits a bundle schema into the groups the drafters work on.
+   *
+   * One drafter writes a whole group, so a group is as much as a single call
+   * should carry. Every scalar field goes in one group, and each field that
+   * holds entities of its own gets a group to itself, which keeps a long run
+   * of paragraphs out of the call that writes the title.
+   *
+   * @return array
+   *   Ordered groups, each with 'groupId', 'label', 'fieldNames' and
+   *   'schemaSlice' keys.
+   */
+  private function split(string $entityTypeId, string $bundle, array $schema): array {
+    $definitions = $this->entityFieldManager->getFieldDefinitions($entityTypeId, $bundle);
+
+    $mainFields = [];
+    $groups = [];
+    foreach ($schema['properties'] ?? [] as $fieldName => $fieldSchema) {
+      if (!isset($fieldSchema['items']['oneOf'])) {
+        $mainFields[$fieldName] = $fieldSchema;
+        continue;
+      }
+      $groups[] = [
+        'groupId' => $fieldName,
+        'label' => isset($definitions[$fieldName])
+          ? (string) $definitions[$fieldName]->getLabel()
+          : $fieldName,
+        'fieldNames' => [$fieldName],
+        'schemaSlice' => $this->slice([$fieldName => $fieldSchema], $schema['required'] ?? []),
+      ];
     }
-    $schema = $this->composer->compose($entityTypeId, $bundle);
-    return $this->filter->splitIntoGroups($schema, $template);
+
+    if ($mainFields !== []) {
+      array_unshift($groups, [
+        'groupId' => 'main_fields',
+        'label' => 'Main fields',
+        'fieldNames' => array_keys($mainFields),
+        'schemaSlice' => $this->slice($mainFields, $schema['required'] ?? []),
+      ]);
+    }
+
+    return $groups;
+  }
+
+  /**
+   * Wraps the fields of one group in a schema a drafter can be given.
+   *
+   * The required list comes from the bundle and names fields of other
+   * groups too, so it is narrowed to the fields this group holds. Without
+   * it a drafter may answer with nothing and still match the schema, and a
+   * value the template pins is only checked while the key happens to be
+   * there.
+   *
+   * @param array $properties
+   *   The fields of the group, keyed by name.
+   * @param array $required
+   *   The names of the required fields of the whole bundle.
+   */
+  private function slice(array $properties, array $required): array {
+    $slice = [
+      'type' => 'object',
+      'properties' => $properties,
+      'additionalProperties' => FALSE,
+    ];
+
+    $required = array_values(array_intersect($required, array_keys($properties)));
+    if ($required !== []) {
+      $slice['required'] = $required;
+    }
+
+    return $slice;
   }
 
   /**

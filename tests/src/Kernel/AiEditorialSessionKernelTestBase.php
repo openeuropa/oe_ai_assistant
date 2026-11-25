@@ -34,6 +34,7 @@ abstract class AiEditorialSessionKernelTestBase extends KernelTestBase {
     'text',
     'node',
     'oe_ai_assistant',
+    'schema_builder',
     'options',
     'system',
     'taxonomy',

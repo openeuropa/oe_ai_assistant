@@ -1,0 +1,5 @@
+services:
+  Drupal\schema_builder\Drush\Commands\SchemaBuilderCommands:
+    arguments: ['@Drupal\schema_builder\SchemaBuilderInterface']
+    tags:
+      - { name: drush.command }

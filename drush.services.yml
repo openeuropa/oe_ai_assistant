@@ -1,0 +1,5 @@
+services:
+  Drupal\oe_ai_assistant\Drush\Commands\SchemaCommands:
+    arguments: ['@Drupal\oe_ai_assistant\Service\DraftingSchemaProviderInterface']
+    tags:
+      - { name: drush.command }

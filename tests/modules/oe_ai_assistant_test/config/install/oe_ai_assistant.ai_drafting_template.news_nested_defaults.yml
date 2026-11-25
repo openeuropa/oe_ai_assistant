@@ -1,0 +1,38 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - field.field.node.oe_news.field_content_paragraphs
+    - field.field.paragraph.quote_block.field_quote_attribution
+    - field.field.paragraph.quote_block.field_quote_text
+    - node.type.oe_news
+    - paragraphs.paragraphs_type.quote_block
+  module:
+    - oe_ai_assistant
+id: news_nested_defaults
+label: 'News article with a pinned attribution'
+description: 'News article whose quote paragraphs always credit the same source.'
+content_type: oe_news
+fields:
+  title:
+    prompt: 'News headline, max 80 characters.'
+  field_content_paragraphs:
+    type: entity_reference_revisions
+    items:
+      -
+        entity_type: paragraph
+        bundle: quote_block
+        prompt: 'A relevant quote from a key stakeholder.'
+        fields:
+          field_quote_text:
+            prompt: 'The quote text.'
+        defaults:
+          field_quote_attribution:
+            default_value:
+              -
+                value: 'European Commission'
+defaults:
+  langcode:
+    default_value:
+      -
+        value: en
