@@ -18,6 +18,7 @@ import {
 
 import DOMPurify from "dompurify";
 import { Streamdown } from "streamdown";
+import { useWaitingSaves } from "../waiting-saves";
 import "streamdown/styles.css";
 import {
   AlertCircle,
@@ -316,9 +317,9 @@ function MessageFooter({ className = "" }: { className?: string }) {
 
 /**
  * Renders a single assistant message, or the typing indicator
- * when the message has no content yet (waiting for the LLM to
- * start streaming), so the user sees pulsating dots until real
- * content arrives.
+ * when the message has no content yet and its run is still going
+ * (waiting for the LLM to start streaming), so the user sees
+ * pulsating dots until real content arrives.
  *
  * Assistant responses sit directly on the chat surface with no
  * bubble; only user messages keep one. Event-only messages (all
@@ -328,6 +329,7 @@ function MessageFooter({ className = "" }: { className?: string }) {
 function AssistantMessage() {
   const content = useAuiState((s) => s.message?.content ?? []);
   const hasContent = content.length > 0;
+  const status = useAuiState((s) => s.message?.status);
 
   // Detect event-only messages: all parts are editorial_event tool-calls.
   // These are injected by the history adapter and carry no text parts.
@@ -347,14 +349,26 @@ function AssistantMessage() {
       ((part as { text?: string }).text ?? "").trim().length > 0,
   );
 
-  // Show pulsating dots while waiting for the first content
-  // part (text or tool call) to arrive from the backend.
+  // Show pulsating dots while the run is still waiting for the first
+  // content part (text or tool call). A message that finished without any
+  // content, such as the turn that ends at a save waiting for approval,
+  // renders nothing, or its error when the run failed.
   if (!hasContent) {
-    return (
-      <MessagePrimitive.Root className="mb-4">
-        <TypingIndicator />
-      </MessagePrimitive.Root>
-    );
+    if (status?.type === "running") {
+      return (
+        <MessagePrimitive.Root className="mb-4">
+          <TypingIndicator />
+        </MessagePrimitive.Root>
+      );
+    }
+    if (status?.type === "incomplete" && status.reason === "error") {
+      return (
+        <MessagePrimitive.Root className="mb-4">
+          <MessageError />
+        </MessagePrimitive.Root>
+      );
+    }
+    return null;
   }
 
   // Event-only messages render chips without the bubble wrapper so they
@@ -414,13 +428,20 @@ function ComposerAttachment() {
  * Chat composer arranged like the Claude web interface: a rounded box
  * with the text input on top and a bottom row holding the editorial
  * context pill buttons on the left and the send button on the right.
+ *
+ * Every control goes dead while a save waits. A message sent then starts
+ * a turn that drops the save, so the editor would lose the decision they
+ * were asked for by answering something else.
  */
 function Composer({
   tabs,
   defaultActiveTabId,
+  isLocked = false,
 }: {
   tabs: PaneTabItem[];
   defaultActiveTabId?: string;
+  /** A save waits for a decision, which is the editor's only move. */
+  isLocked?: boolean;
 }) {
   return (
     <ComposerPrimitive.Root className="p-4 pt-2">
@@ -434,15 +455,27 @@ function Composer({
 
         {/* Text input on top, sized like the conversation messages. */}
         <ComposerPrimitive.Input
-          placeholder="Describe the content you want to draft..."
-          className="w-full resize-none border-0 bg-transparent px-3 pt-3 text-base focus:outline-none"
+          placeholder={
+            isLocked
+              ? "Answer the save request above to continue"
+              : "Describe the content you want to draft..."
+          }
+          disabled={isLocked}
+          className="w-full resize-none border-0 bg-transparent px-3 pt-3 text-base focus:outline-none disabled:cursor-not-allowed disabled:text-gray-400"
           autoFocus
         />
 
         {/* Bottom row: context pills left, send right. */}
         <div className="flex items-end justify-between gap-2 p-2 pl-3">
-          <ContextButtons tabs={tabs} defaultActiveTabId={defaultActiveTabId} />
-          <ComposerPrimitive.Send className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50">
+          <ContextButtons
+            tabs={tabs}
+            defaultActiveTabId={defaultActiveTabId}
+            disabled={isLocked}
+          />
+          <ComposerPrimitive.Send
+            disabled={isLocked}
+            className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+          >
             <SendHorizontal size={16} />
           </ComposerPrimitive.Send>
         </div>
@@ -495,6 +528,8 @@ export function DraftingThread({
     [disclaimer],
   );
 
+  const isWaitingForDecision = useWaitingSaves().length > 0;
+
   return (
     <ThreadPrimitive.Root className="flex min-h-0 flex-1 flex-col">
       <ThreadPrimitive.Viewport className="flex-1 overflow-y-auto">
@@ -509,7 +544,11 @@ export function DraftingThread({
         </div>
       </ThreadPrimitive.Viewport>
       <div className="mx-auto w-full max-w-3xl">
-        <Composer tabs={tabs} defaultActiveTabId={defaultActiveTabId} />
+        <Composer
+          tabs={tabs}
+          defaultActiveTabId={defaultActiveTabId}
+          isLocked={isWaitingForDecision}
+        />
         {safeDisclaimer !== "" && (
           <p
             className="pb-2 text-center text-xs text-gray-400 [&_a]:cursor-pointer [&_a]:underline"

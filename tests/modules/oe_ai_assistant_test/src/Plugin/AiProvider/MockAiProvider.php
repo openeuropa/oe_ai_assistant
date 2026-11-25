@@ -51,6 +51,8 @@ class MockAiProvider extends AiProviderClientBase implements ChatInterface {
    */
   public static function enqueue(MockResponse $response): void {
     $state = \Drupal::state();
+    // The web process consumes the queue, so the test process reads it fresh.
+    $state->resetCache();
     $queue = $state->get(static::QUEUE_KEY, []);
     $queue[] = serialize($response);
     $state->set(static::QUEUE_KEY, $queue);
@@ -72,6 +74,7 @@ class MockAiProvider extends AiProviderClientBase implements ChatInterface {
    *   TRUE if all responses have been consumed.
    */
   public static function isEmpty(): bool {
+    \Drupal::state()->resetCache();
     $queue = \Drupal::state()->get(static::QUEUE_KEY, []);
     return empty($queue);
   }
@@ -87,6 +90,8 @@ class MockAiProvider extends AiProviderClientBase implements ChatInterface {
    *   Array of call log entries.
    */
   public static function getCallLog(): array {
+    // The web process writes the log, so the test process reads it fresh.
+    \Drupal::state()->resetCache();
     return \Drupal::state()->get(static::LOG_KEY, []);
   }
 

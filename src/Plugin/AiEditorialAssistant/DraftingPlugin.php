@@ -22,16 +22,20 @@ use Drupal\oe_ai_assistant\Exception\DraftingTemplateException;
 use Drupal\oe_ai_assistant\Exception\DraftingToneException;
 use Drupal\oe_ai_assistant\Plugin\AiAssistantPluginBase;
 use Drupal\oe_ai_assistant\Plugin\NeuronTool\RequestDraftNeuronTool;
+use Drupal\oe_ai_assistant\Plugin\NeuronTool\SaveDraftNeuronTool;
 use Drupal\oe_ai_assistant\Service\AiEditorialContextInterface;
 use Drupal\oe_ai_assistant\Service\DraftAssemblerInterface;
-use Drupal\oe_ai_assistant\Service\DraftSaverInterface;
 use Drupal\oe_ai_assistant\Service\DraftingSchemaProviderInterface;
 use Drupal\oe_ai_assistant\Service\PreviewRendererInterface;
 use Drupal\oe_ai_assistant\Response\SseResponse;
 use Drupal\oe_ai_assistant\Utility\MessageContent;
+use NeuronAI\Agent\Interrupt\ApprovalRequest;
 use NeuronAI\Chat\Messages\UserMessage;
+use NeuronAI\Exceptions\WorkflowRefusedException;
+use NeuronAI\Workflow\Persistence\PersistenceInterface;
 use NeuronAI\Workflow\Streaming\ProtocolEvent;
-use NeuronAI\Workflow\Workflow;
+use NeuronAI\Workflow\WorkflowEngine;
+use NeuronAI\Workflow\WorkflowRunSnapshot;
 use NeuronAI\Workflow\WorkflowStatus;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\File\Exception\FileException;
@@ -79,11 +83,11 @@ class DraftingPlugin extends AiAssistantPluginBase {
   protected DraftingSchemaProviderInterface $schemaProvider;
 
   /**
-   * The draft saver service.
+   * The store of the suspended runs, which holds the waiting calls.
    *
-   * @var \Drupal\oe_ai_assistant\Service\DraftSaverInterface
+   * @var \NeuronAI\Workflow\Persistence\PersistenceInterface
    */
-  protected DraftSaverInterface $draftSaver;
+  protected PersistenceInterface $persistence;
 
   /**
    * The editorial tone context service.
@@ -139,7 +143,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
     $instance = parent::create($container, $configuration, $plugin_id, $plugin_definition);
     $instance->agents = $container->get(NeuronAgentManagerInterface::class);
     $instance->schemaProvider = $container->get(DraftingSchemaProviderInterface::class);
-    $instance->draftSaver = $container->get(DraftSaverInterface::class);
+    $instance->persistence = $container->get(PersistenceInterface::class);
     $instance->aiEditorialContext = $container->get(AiEditorialContextInterface::class);
     $instance->contextDocumentRepository = $container->get(ContextDocumentRepository::class);
     $instance->inputStreamFileWriter = $container->get(InputStreamFileWriterInterface::class);
@@ -157,7 +161,6 @@ class DraftingPlugin extends AiAssistantPluginBase {
       'chat' => $this->chat(...),
       'get-messages' => $this->getMessages(...),
       'reset' => $this->reset(...),
-      'save' => $this->save(...),
       'set-tone' => $this->setTone(...),
       'set-template' => $this->setTemplate(...),
       'add-document' => $this->addDocument(...),
@@ -173,9 +176,9 @@ class DraftingPlugin extends AiAssistantPluginBase {
    */
   public function getRequestSchemas(): array {
     return parent::getRequestSchemas() + [
+      'chat' => 'DraftingChatRequest',
       'get-messages' => 'GetMessagesRequest',
       'reset' => 'DraftingResetRequest',
-      'save' => 'DraftingSaveRequest',
       'set-tone' => 'DraftingSetToneRequest',
       'set-template' => 'DraftingSetTemplateRequest',
       'add-document' => 'DraftingAddDocumentRequest',
@@ -282,18 +285,44 @@ class DraftingPlugin extends AiAssistantPluginBase {
    */
   public function chat(Request $request): Response {
     $body = $this->decodeJsonBody($request);
-    $message = $this->extractUserMessage($body);
-
-    if (empty($message)) {
-      throw new ActionException(
-        'invalid_request', 'Message is required.', 400,
-      );
-    }
-
     $session = $this->loadSession($body);
     if (!$session instanceof ContentCreationSessionInterface) {
       throw new ActionException('invalid_request', 'The editorial session does not support drafting.', 400);
     }
+
+    $decision = $body['runConfig']['custom']['approval'] ?? NULL;
+
+    $engine = new WorkflowEngine($this->persistence);
+    // inspect() goes to the workflow store on every call. waitingApprovals(),
+    // the abandon below and turnInFlight() all need the same run, so it is
+    // read once here.
+    $run = $engine->inspect($session->editorialThread());
+
+    // The DraftingChatRequest schema checks the shape of a decision, not
+    // whether the call it names still waits for one. Only the suspended run
+    // knows that, so a decision for any other call is refused here.
+    $waiting = $decision === NULL ? [] : $this->waitingApprovals($run);
+    if ($decision !== NULL && !isset($waiting[$decision['callId']])) {
+      throw new ActionException('invalid_request', 'No call waits for that decision.', 400);
+    }
+
+    // A request that carries a decision answers a waiting call, not a prompt,
+    // though it still sends 'messages'. extractUserMessage() would pull the
+    // editor's last prompt out of it, so it is not called for one.
+    $message = $decision === NULL ? $this->extractUserMessage($body) : '';
+    // The prompt arrives in 'message' or in the last user entry of
+    // 'messages', so the schema cannot require it. An empty one is refused
+    // here instead.
+    if ($decision === NULL && $message === '') {
+      throw new ActionException('invalid_request', 'Message is required.', 400);
+    }
+
+    $turn = $decision === NULL ? new UserMessage($message) : NULL;
+    $decisions = $decision === NULL ? NULL : [
+      $decision['callId'] => $decision['decision'] === 'approve'
+        ? 'approve'
+        : ['reject', self::rejectionOf($waiting[$decision['callId']]['name'])],
+    ];
 
     $channel = new SseChannel();
     // The template or the tone a session stores can go stale, and the editor
@@ -317,11 +346,23 @@ class DraftingPlugin extends AiAssistantPluginBase {
       throw new ActionException('invalid_context', $e->getMessage(), 400);
     }
 
+    // A message instead of a decision means the editor is leaving that save
+    // alone. Its run is still suspended under the session's id, and the
+    // engine refuses to start a turn over a suspended run. So the run is
+    // dropped from the store and the message is answered instead.
+    //
+    // Agent::abandon() refuses a run that waits on a call, because the call
+    // would go unanswered. The call is answered: the next run settles it as
+    // interrupted before it asks the model anything.
+    if ($decisions === NULL && $run?->status === WorkflowStatus::Suspended) {
+      $engine->abandon($session->editorialThread());
+    }
+
     // The engine keeps one run per id, and every turn of this session runs
     // under the id the session names. A turn that is still streaming holds
     // that id, and the engine would refuse a second start inside the open
     // stream. So the status is read off the run here and answered with a 409.
-    if ($this->turnInFlight($agent)) {
+    if ($this->turnInFlight($run)) {
       throw new ActionException(
         'conflict',
         'The assistant is still working on this session. Wait for it to finish.',
@@ -330,13 +371,22 @@ class DraftingPlugin extends AiAssistantPluginBase {
     }
 
     $logger = $this->logger;
-    $response = new SseResponse(static function () use ($agent, $message, $channel, $logger): void {
+    $response = new SseResponse(static function () use ($agent, $turn, $decisions, $channel, $logger): void {
       try {
         // A run executes while its generator is advanced, and chat() is what
         // advances it to the end. The channel wrote every event as the run
         // produced it, so nothing here reads what it answers. Without the
         // stream flag the editor reads the reply only once the turn ends.
-        $agent->chat(new UserMessage($message), TRUE);
+        //
+        // A decision answers the call its run suspended on, so that run is
+        // resumed instead of a new one started. run() drives it the same way,
+        // under the stream flag its checkpoint restores.
+        if ($decisions !== NULL) {
+          $agent->submitApprovalDecisions($decisions)->run();
+
+          return;
+        }
+        $agent->chat($turn, TRUE);
       }
       catch (\Throwable $e) {
         // Never let an exception escape into the open SSE stream: Drupal's
@@ -419,6 +469,13 @@ class DraftingPlugin extends AiAssistantPluginBase {
       }
     }
 
+    // A row keeps the approval state it was written with, so the thread
+    // alone cannot say which saves still wait. The run is the authority on
+    // that, and one read of it serves every row of the loop below.
+    $waiting = $this->waitingApprovals(
+      (new WorkflowEngine($this->persistence))->inspect($session->editorialThread()),
+    );
+
     $messages = [];
     foreach ($thread as $row) {
       // The 'created' field is a plain UNIX timestamp (the 'created' field
@@ -428,7 +485,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
 
       // Neuron stores a tool result under the user role. The editor reads
       // the model's action instead.
-      $toolCalls = $this->toolCallsOf($row, $settled, $session);
+      $toolCalls = $this->toolCallsOf($row, $settled, $waiting, $session);
       if ($toolCalls !== []) {
         $messages[] = ['role' => 'assistant', 'at' => $at, 'toolCalls' => $toolCalls];
         continue;
@@ -459,22 +516,25 @@ class DraftingPlugin extends AiAssistantPluginBase {
   /**
    * The tool calls of a row, as the editor's transcript renders them.
    *
-   * A settled call carries its result. A run suspends on an approval-gated
-   * call, which has no result yet, and the editor sees a running card. A call
-   * a later row settled belongs to that row.
+   * A settled call carries its result. A save that still waits has no result
+   * yet, so it carries the awaitingDecision flag and the call id the editor's
+   * answer names. A call a later row settled belongs to that row.
    *
    * @param \Drupal\ai_neuron\Entity\NeuronMessageInterface $row
    *   The stored message.
    * @param array $settled
    *   The ids of the calls the thread settled, keyed by id.
+   * @param array $waiting
+   *   The calls the run waits on, keyed by id.
    * @param \Drupal\oe_ai_assistant\Entity\Bundle\ContentCreationSessionInterface $session
    *   The session hosting the drafts thread.
    *
    * @return array
-   *   One entry per call, shaped {function: {name}, result?}. A row that is
-   *   not a tool row has none.
+   *   One entry per call, shaped {function: {name}, result?}. A waiting save
+   *   adds its call id, its arguments and the awaitingDecision flag. A row
+   *   that is not a tool row has none.
    */
-  private function toolCallsOf(NeuronMessageInterface $row, array $settled, ContentCreationSessionInterface $session): array {
+  private function toolCallsOf(NeuronMessageInterface $row, array $settled, array $waiting, ContentCreationSessionInterface $session): array {
     $meta = $row->getMeta() ?? [];
 
     if (($meta['type'] ?? '') === 'tool_call_result') {
@@ -493,14 +553,19 @@ class DraftingPlugin extends AiAssistantPluginBase {
 
     $unsettled = array_filter(
       (array) ($meta['tools'] ?? []),
-      // The key sits in a text column, so check its shape too.
+      // The key sits in a text column, so check its shape too. An abandoned
+      // turn leaves its save call unsettled for good, and a card for it would
+      // ask for a decision nothing can take. So a save the run no longer
+      // waits on is left out.
       static fn ($tool): bool => is_array($tool)
         && isset($tool['name'], $tool['callId'])
-        && !isset($settled[(string) $tool['callId']]),
+        && !isset($settled[(string) $tool['callId']])
+        && ($tool['name'] !== SaveDraftNeuronTool::TOOL_ID
+          || isset($waiting[(string) $tool['callId']])),
     );
 
     return array_map(
-      static function (array $tool): array {
+      static function (array $tool) use ($waiting): array {
         $call = ['function' => ['name' => (string) $tool['name']]];
 
         // A call with no result draws a card that spins forever. A
@@ -509,6 +574,19 @@ class DraftingPlugin extends AiAssistantPluginBase {
         // hands that call a failure as its result.
         if ((string) $tool['name'] === RequestDraftNeuronTool::TOOL_ID) {
           $call['result'] = self::failedDraft('');
+
+          return $call;
+        }
+
+        // The card asks the editor to confirm one version, and their answer
+        // has to name the call it decides. So a save that still waits carries
+        // the call id, the inputs the pending action holds, and the flag that
+        // marks it as undecided.
+        $pending = $waiting[(string) $tool['callId']] ?? NULL;
+        if ($pending !== NULL) {
+          $call['callId'] = (string) $tool['callId'];
+          $call['function']['arguments'] = json_encode($pending['inputs'] ?? [], JSON_THROW_ON_ERROR);
+          $call['awaitingDecision'] = TRUE;
         }
 
         return $call;
@@ -576,17 +654,60 @@ class DraftingPlugin extends AiAssistantPluginBase {
    * second run over it. It replaces a run whose lease has run out, so that
    * one counts as gone.
    *
-   * @param \NeuronAI\Workflow\Workflow $workflow
-   *   The run of the session.
+   * @param \NeuronAI\Workflow\WorkflowRunSnapshot|null $run
+   *   The run holding the session's id, or NULL when none does.
    *
    * @return bool
    *   TRUE when a new turn cannot start.
    */
-  private function turnInFlight(Workflow $workflow): bool {
-    $run = $workflow->inspect();
-
+  private function turnInFlight(?WorkflowRunSnapshot $run): bool {
     return $run?->status === WorkflowStatus::Running
       && ($run->leaseExpiresAt === NULL || $run->leaseExpiresAt > time());
+  }
+
+  /**
+   * The text a rejected call is answered with.
+   *
+   * Neuron hands this to the model as the editor's instruction, and the model
+   * repeats it when it reports what did not happen. A tool that needs the
+   * model to know more than that keeps its own wording, as
+   * SaveDraftNeuronTool::CANCELLED does.
+   *
+   * @param string $tool
+   *   The tool whose call was rejected.
+   *
+   * @return string
+   *   The refusal, in the tool's own wording when it has one.
+   */
+  private static function rejectionOf(string $tool): string {
+    return match ($tool) {
+      SaveDraftNeuronTool::TOOL_ID => SaveDraftNeuronTool::CANCELLED,
+      default => 'The editor did not approve this, so nothing was done.',
+    };
+  }
+
+  /**
+   * The calls the session's run waits on, keyed by call id.
+   *
+   * @param \NeuronAI\Workflow\WorkflowRunSnapshot|null $run
+   *   The run holding the session's id, or NULL when none does.
+   *
+   * @return array
+   *   One {name, inputs} entry per call the editor has not answered.
+   */
+  private function waitingApprovals(?WorkflowRunSnapshot $run): array {
+    if ($run?->status !== WorkflowStatus::Suspended || !$run->interrupt instanceof ApprovalRequest) {
+      return [];
+    }
+
+    $waiting = [];
+    foreach ($run->interrupt->getActions() as $action) {
+      if ($action->isPending()) {
+        $waiting[$action->id] = ['name' => $action->name, 'inputs' => $action->inputs];
+      }
+    }
+
+    return $waiting;
   }
 
   /**
@@ -600,56 +721,34 @@ class DraftingPlugin extends AiAssistantPluginBase {
    */
   public function reset(Request $request): array {
     $session = $this->loadSession($this->decodeJsonBody($request));
+    // A save that waits for the editor belongs to the conversation, and the
+    // run that holds it lives in the workflow store rather than the thread.
+    // So it is abandoned here, and deleteConversation() clears the rest.
+    //
+    // A failed run has to go as well. A turn starts under recoverFailed, so
+    // a failed run left in the store is resumed by the next turn, against a
+    // conversation that has no thread any more.
+    //
+    // abandon() refuses a completed run, one a worker is executing, and one
+    // another request claimed while this one read it. A reset answers none
+    // of those with a 500, because it clears the thread either way.
+    try {
+      (new WorkflowEngine($this->persistence))->abandon($session->editorialThread());
+    }
+    catch (WorkflowRefusedException) {
+      // The next turn sweeps a run it can and refuses one it cannot.
+    }
     $session->deleteConversation();
     return ['status' => 'ok'];
   }
 
   /**
-   * Saves one of the session's draft versions as an unpublished node.
-   *
-   * The request names a session and a draft version; the fields come from
-   * the session's own draft history, so clients can never save field data
-   * the session did not produce. The save is recorded as a durable
-   * timeline event on the transcript.
-   *
-   * @param \Symfony\Component\HttpFoundation\Request $request
-   *   The save request with `sessionId` and `version`.
-   *
-   * @return array<string, string>
-   *   An array with `nodeId` and `previewUrl`.
-   *
-   * @throws \Drupal\oe_ai_assistant\Exception\ActionException
-   *   On an unknown version, missing permission, or builder rejection.
-   */
-  public function save(Request $request): array {
-    $body = $this->decodeJsonBody($request);
-    $session = $this->loadSession($body);
-    $version = (int) ($body['version'] ?? 0);
-
-    if (!$session instanceof ContentCreationSessionInterface) {
-      throw new ActionException('invalid_request', 'The editorial session does not support drafting.', 400);
-    }
-    $draft = $session->getDraftContent($version);
-    if ($draft === NULL || $draft['fields'] === []) {
-      throw new ActionException(
-        'invalid_request',
-        sprintf('Draft %d does not exist in this session.', $version),
-        400,
-      );
-    }
-
-    // No save event is recorded; the editorial change log is an accepted,
-    // documented loss until OEL-5127 answers it from session revisions.
-    return $this->draftSaver->save($session, $draft['fields'], $draft['templateId'], $version);
-  }
-
-  /**
    * Renders a themed HTML preview of a stored draft version.
    *
-   * Builds the unsaved node the same way save() would (bundle validation,
-   * create-permission check, template-defaults merge via DraftAssembler),
-   * but never persists it: the built node is handed straight to
-   * PreviewRenderer and discarded after the response is built.
+   * Builds the node the way DraftSaver does, with the bundle validated, the
+   * create permission checked and the template defaults merged in through
+   * DraftAssembler. Nothing is persisted. The built node goes straight to
+   * PreviewRenderer and is discarded once the response is built.
    *
    * Unlike the other actions this one is addressed with GET, so the
    * app's preview iframe can load it through its src attribute. The

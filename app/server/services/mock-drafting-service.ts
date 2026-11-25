@@ -17,8 +17,6 @@ import type {
 import type {
   ChatOptions,
   DraftingService,
-  DraftSavePayload,
-  DraftSaveResult,
   StreamEvent,
 } from "./drafting-service";
 import { emitDraftToolCall, extractFieldsToStream } from "./drafting-service";
@@ -40,6 +38,8 @@ interface BundleDraftingFixture {
 }
 
 const DEFAULT_USAGE = { inputTokens: 0, outputTokens: 0 };
+/** The call id of the mock's gated save; only one ever waits at a time. */
+const SAVE_CALL_ID = "mock-save-call";
 const DRAFT_INTENT_PATTERN =
   /\b(draft|generate|write|create|prepare|regenerate|rewrite|revise|update)\b/i;
 const FIXTURE_CACHE = new Map<string, BundleDraftingFixture | null>();
@@ -93,18 +93,36 @@ function selectDraftedFields(
   );
 }
 
+/**
+ * Matches the message the Save button sends, "Save draft N.".
+ *
+ * That message contains "draft", so DRAFT_INTENT_PATTERN matches it too.
+ * Without this check first, the mock would write a new version instead of
+ * saving the one the editor is looking at.
+ */
+const SAVE_INTENT_PATTERN = /^\s*save draft (\d+)/i;
+
 /** True when the prompt should trigger a mock draft fixture. */
 function isDraftRequest(message: string, fieldsToStream: string[]): boolean {
+  if (SAVE_INTENT_PATTERN.test(message)) {
+    return false;
+  }
+
   return fieldsToStream.length > 0 || DRAFT_INTENT_PATTERN.test(message);
 }
 
-export class MockDraftingService implements DraftingService {
-  private nextNodeId = 42000;
+/** The draft version a save request names, or null for another prompt. */
+export function saveRequestVersion(message: string): number | null {
+  const match = message.match(SAVE_INTENT_PATTERN);
 
+  return match?.[1] ? Number(match[1]) : null;
+}
+
+export class MockDraftingService implements DraftingService {
   /**
    * Draft history per session: fields keyed by version, mirroring the
-   * Drupal backend's drafting_draft_content result history. The save action
-   * resolves the requested version from here.
+   * Drupal backend's drafting_draft_content result history. Its size numbers
+   * the next draft version.
    */
   private readonly draftsBySession = new Map<
     string,
@@ -114,7 +132,7 @@ export class MockDraftingService implements DraftingService {
   constructor(private readonly store: ConversationStore) {}
 
   async *chat(opts: ChatOptions): AsyncGenerator<StreamEvent> {
-    const { message, sessionId, bundle } = opts;
+    const { message, sessionId, bundle, approval } = opts;
     const messageId = randomUUID();
     const fieldsToStream = extractFieldsToStream(message);
 
@@ -137,6 +155,16 @@ export class MockDraftingService implements DraftingService {
       } else if (!fixture) {
         assistantText = `Mock drafting mode does not have a fixture for bundle "${bundle}".`;
         yield* this.createTextStep(assistantText);
+      } else if (approval) {
+        // A decision arrives as a turn of its own, and answers the call
+        // it names. No model turn is spent on the outcome, as on the site.
+        assistantText = "";
+        yield* this.createSaveResultStep(approval);
+      } else if (saveRequestVersion(message) !== null) {
+        assistantText = "";
+        yield* this.createSaveRequestStep(
+          saveRequestVersion(message) as number,
+        );
       } else if (isDraftRequest(message, fieldsToStream)) {
         const useRegeneratedVariant =
           fieldsToStream.length > 0 ||
@@ -145,7 +173,7 @@ export class MockDraftingService implements DraftingService {
           ? fixture.drafts.regenerated
           : fixture.drafts.initial;
 
-        // Record the draft under the next version so save can resolve it.
+        // Record the draft under the next version.
         const versions =
           this.draftsBySession.get(sessionId) ??
           new Map<number, Record<string, unknown>>();
@@ -188,23 +216,6 @@ export class MockDraftingService implements DraftingService {
     return this.store.getTranscript(sessionId);
   }
 
-  save(body: DraftSavePayload): DraftSaveResult | null {
-    // Resolve the requested version from the session's draft history,
-    // the way the Drupal backend does; unknown versions are rejected.
-    const fields = this.draftsBySession
-      .get(body.sessionId ?? "")
-      ?.get(body.version ?? 0);
-    if (!fields) {
-      return null;
-    }
-    this.nextNodeId += 1;
-    const nodeId = String(this.nextNodeId);
-    return {
-      nodeId,
-      previewUrl: `/node/${nodeId}/latest`,
-    };
-  }
-
   private async *createTextStep(text: string): AsyncGenerator<StreamEvent> {
     yield { type: "start-step" };
     yield* this.streamText(text);
@@ -229,6 +240,47 @@ export class MockDraftingService implements DraftingService {
     }
 
     yield { type: "text-end" };
+  }
+
+  /**
+   * Emits a save call that waits, the way the site's gated tool does.
+   *
+   * The call carries no result, which is what makes the card in the thread
+   * ask the editor to confirm it.
+   */
+  private async *createSaveRequestStep(
+    version: number,
+  ): AsyncGenerator<StreamEvent> {
+    yield { type: "start-step" };
+    yield {
+      type: "tool-call-start",
+      id: SAVE_CALL_ID,
+      toolCallId: SAVE_CALL_ID,
+      toolName: "drafting_save_draft",
+    };
+    yield { type: "tool-call-delta", argsText: JSON.stringify({ version }) };
+    yield { type: "tool-call-end" };
+    yield {
+      type: "finish-step",
+      finishReason: "stop",
+      usage: DEFAULT_USAGE,
+      isContinued: false,
+    };
+  }
+
+  /** Answers the call the editor decided, and says what came of it. */
+  private async *createSaveResultStep(approval: {
+    callId: string;
+    decision: "approve" | "reject";
+  }): AsyncGenerator<StreamEvent> {
+    yield {
+      type: "tool-result",
+      toolCallId: approval.callId,
+      result:
+        approval.decision === "approve"
+          ? { version: 1, nodeId: "1", previewUrl: "/node/1/latest" }
+          : { cancelled: true },
+    };
   }
 
   private async *createDraftStep(

@@ -136,3 +136,38 @@ GetMessagesResponse:
           version:
             type: integer
             description: The draft version a "save" event persisted (event items).
+          toolCalls:
+            type: array
+            description: >
+              The tool calls of an assistant turn, in the order the model
+              made them.
+            items:
+              type: object
+              required:
+                - function
+              properties:
+                callId:
+                  type: string
+                  description: >
+                    The id the editor's decision names. Sent only for a
+                    call that is waiting for one.
+                function:
+                  type: object
+                  required:
+                    - name
+                  properties:
+                    name:
+                      type: string
+                      description: The machine name of the tool.
+                    arguments:
+                      type: string
+                      description: The arguments the model gave the tool, as JSON.
+                result:
+                  description: >
+                    What the call answered. Absent while the call waits for
+                    the editor's decision.
+                awaitingDecision:
+                  type: boolean
+                  description: >
+                    The call waits for the editor's decision and carries no
+                    result. Its card in the transcript asks the question.

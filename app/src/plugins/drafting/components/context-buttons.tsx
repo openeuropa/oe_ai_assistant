@@ -19,11 +19,14 @@ interface ContextButtonsProps {
   tabs: PaneTabItem[];
   /** Opens a panel modal by id on mount (Storybook/previews). */
   defaultActiveTabId?: string;
+  /** Greys out every pill and stops it opening its panel. */
+  disabled?: boolean;
 }
 
 export function ContextButtons({
   tabs,
   defaultActiveTabId,
+  disabled = false,
 }: ContextButtonsProps) {
   const [activeTabId, setActiveTabId] = useState<string | null>(
     defaultActiveTabId ?? null,
@@ -41,8 +44,9 @@ export function ContextButtons({
         <button
           key={tab.id}
           type="button"
+          disabled={disabled}
           onClick={() => setActiveTabId(tab.id)}
-          className="flex cursor-pointer items-center gap-2 rounded-xl px-3 py-1.5 text-left transition-colors hover:bg-gray-100"
+          className="flex cursor-pointer items-center gap-2 rounded-xl px-3 py-1.5 text-left transition-colors hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent"
         >
           <span className="shrink-0 text-gray-500">{tab.icon}</span>
           <span className="flex min-w-0 flex-col leading-tight">
