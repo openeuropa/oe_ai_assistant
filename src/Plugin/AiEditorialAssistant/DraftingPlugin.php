@@ -33,8 +33,8 @@ use NeuronAI\Agent\Interrupt\ApprovalRequest;
 use NeuronAI\Chat\Messages\UserMessage;
 use NeuronAI\Workflow\Persistence\PersistenceInterface;
 use NeuronAI\Workflow\Streaming\ProtocolEvent;
-use NeuronAI\Workflow\Workflow;
 use NeuronAI\Workflow\WorkflowEngine;
+use NeuronAI\Workflow\WorkflowRunSnapshot;
 use NeuronAI\Workflow\WorkflowStatus;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\File\Exception\FileException;
@@ -311,10 +311,16 @@ class DraftingPlugin extends AiAssistantPluginBase {
 
     $decision = $body['runConfig']['custom']['approval'] ?? NULL;
 
+    $engine = new WorkflowEngine($this->persistence);
+    // inspect() goes to the workflow store on every call. waitingApprovals(),
+    // the abandon below and turnInFlight() all need the same run, so it is
+    // read once here.
+    $run = $engine->inspect($session->editorialThread());
+
     // The DraftingChatRequest schema checks the shape of a decision, not
     // whether the call it names still waits for one. Only the suspended run
     // knows that, so a decision for any other call is refused here.
-    $waiting = $decision === NULL ? [] : $this->waitingApprovals($session);
+    $waiting = $decision === NULL ? [] : $this->waitingApprovals($run);
     if ($decision !== NULL && !isset($waiting[$decision['callId']])) {
       throw new ActionException('invalid_request', 'No call waits for that decision.', 400);
     }
@@ -367,15 +373,15 @@ class DraftingPlugin extends AiAssistantPluginBase {
     // Agent::abandon() refuses a run that waits on a call, because the call
     // would go unanswered. The call is answered: the next run settles it as
     // interrupted before it asks the model anything.
-    if ($decisions === NULL && $agent->inspect()?->status === WorkflowStatus::Suspended) {
-      (new WorkflowEngine($this->persistence))->abandon($session->editorialThread());
+    if ($decisions === NULL && $run?->status === WorkflowStatus::Suspended) {
+      $engine->abandon($session->editorialThread());
     }
 
     // The engine keeps one run per id, and every turn of this session runs
     // under the id the session names. A turn that is still streaming holds
     // that id, and the engine would refuse a second start inside the open
     // stream. So the status is read off the run here and answered with a 409.
-    if ($this->turnInFlight($agent)) {
+    if ($this->turnInFlight($run)) {
       throw new ActionException(
         'conflict',
         'The assistant is still working on this session. Wait for it to finish.',
@@ -485,7 +491,9 @@ class DraftingPlugin extends AiAssistantPluginBase {
     // A row keeps the approval state it was written with, so the thread
     // alone cannot say which saves still wait. The run is the authority on
     // that, and one read of it serves every row of the loop below.
-    $waiting = $this->waitingApprovals($session);
+    $waiting = $this->waitingApprovals(
+      (new WorkflowEngine($this->persistence))->inspect($session->editorialThread()),
+    );
 
     $messages = [];
     foreach ($thread as $row) {
@@ -665,15 +673,13 @@ class DraftingPlugin extends AiAssistantPluginBase {
    * second run over it. It replaces a run whose lease has run out, so that
    * one counts as gone.
    *
-   * @param \NeuronAI\Workflow\Workflow $workflow
-   *   The run of the session.
+   * @param \NeuronAI\Workflow\WorkflowRunSnapshot|null $run
+   *   The run holding the session's id, or NULL when none does.
    *
    * @return bool
    *   TRUE when a new turn cannot start.
    */
-  private function turnInFlight(Workflow $workflow): bool {
-    $run = $workflow->inspect();
-
+  private function turnInFlight(?WorkflowRunSnapshot $run): bool {
     return $run?->status === WorkflowStatus::Running
       && ($run->leaseExpiresAt === NULL || $run->leaseExpiresAt > time());
   }
@@ -702,14 +708,13 @@ class DraftingPlugin extends AiAssistantPluginBase {
   /**
    * The calls the session's run waits on, keyed by call id.
    *
-   * @param \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $session
-   *   The session.
+   * @param \NeuronAI\Workflow\WorkflowRunSnapshot|null $run
+   *   The run holding the session's id, or NULL when none does.
    *
    * @return array
    *   One {name, inputs} entry per call the editor has not answered.
    */
-  private function waitingApprovals(AiEditorialSessionInterface $session): array {
-    $run = (new WorkflowEngine($this->persistence))->inspect($session->editorialThread());
+  private function waitingApprovals(?WorkflowRunSnapshot $run): array {
     if ($run?->status !== WorkflowStatus::Suspended || !$run->interrupt instanceof ApprovalRequest) {
       return [];
     }
