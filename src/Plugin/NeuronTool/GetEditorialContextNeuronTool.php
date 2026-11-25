@@ -13,7 +13,6 @@ use Drupal\oe_ai_assistant\Plugin\NeuronAgent\GetEditorialContextNeuronAgent;
 use NeuronAI\Chat\Messages\UserMessage;
 use NeuronAI\Tools\PropertyType;
 use NeuronAI\Tools\ToolProperty;
-use NeuronAI\Workflow\Persistence\InMemoryPersistence;
 
 /**
  * Answers one question about what the editor set up for this session.
@@ -77,10 +76,6 @@ final class GetEditorialContextNeuronTool extends NeuronToolPluginBase {
       GetEditorialContextNeuronAgent::PLUGIN_ID,
       ['session' => $session],
     );
-    // Each call opens its own thread, so keeping the workflow state in
-    // memory stops neuron_workflow_store from accumulating an orphaned
-    // partition for it.
-    $agent->setPersistence(new InMemoryPersistence());
 
     $message = $agent->chat(new UserMessage($question))->getMessage();
     $answer = trim((string) $message?->getContent());

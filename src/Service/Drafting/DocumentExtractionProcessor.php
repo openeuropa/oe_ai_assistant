@@ -21,7 +21,6 @@ use Drupal\oe_ai_assistant\Exception\DocumentExtractionException;
 use Drupal\oe_ai_assistant\Plugin\NeuronAgent\SummaryNeuronAgent;
 use Drupal\state_machine\Plugin\Field\FieldType\StateItemInterface;
 use NeuronAI\Chat\Messages\UserMessage;
-use NeuronAI\Workflow\Persistence\InMemoryPersistence;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 
@@ -312,14 +311,6 @@ final class DocumentExtractionProcessor implements DocumentExtractionProcessorIn
     catch (\InvalidArgumentException $e) {
       throw new DocumentExtractionException('No default chat provider is configured.', 0, $e);
     }
-
-    // Keep the workflow state in memory. The manager binds the site's
-    // workflow store to every agent it builds, and a failed run leaves a
-    // partition in neuron_workflow_store that only a later run under the
-    // same workflow ID would sweep. Every attempt here opens a thread of
-    // its own, so that run never comes. The session history reads the
-    // message rows, which the message store writes either way.
-    $agent->setPersistence(new InMemoryPersistence());
 
     $text = (string) $media->get(self::EXTRACT_FIELD)->value;
     $message = new UserMessage(mb_substr($text, 0, self::MAX_PROMPT_CHARS));

@@ -25,6 +25,7 @@ use NeuronAI\Providers\AIProviderInterface;
   label: new TranslatableMarkup('Document summary'),
   description: new TranslatableMarkup('Writes a short summary of an extracted document.'),
   operation_type: 'chat',
+  enable_persistence: FALSE,
   context_definitions: [
     'session' => new EntityContextDefinition(
       data_type: 'entity:ai_editorial_session',

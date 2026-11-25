@@ -144,6 +144,49 @@ class EditorialContextToolsTest extends AiEditorialSessionKernelTestBase {
   }
 
   /**
+   * Tests that the sub-agent's turn is counted against the session.
+   *
+   * Every agent of a session writes to the same store, so the history page
+   * can total what the session spent. An agent that stopped writing, or
+   * wrote without naming the session, would take its tokens out of that
+   * total and leave the rows unreachable by the session that paid for them.
+   */
+  public function testContextAnswerIsCountedAgainstTheSession(): void {
+    $session = $this->stubbedSession(NULL, []);
+
+    MockAiProvider::enqueue(new MockResponse(
+      toolCalls: [
+        [
+          'id' => 'call_1',
+          'type' => 'function',
+          'function' => ['name' => 'context_get_tone_options', 'arguments' => '{}'],
+        ],
+      ],
+    ));
+    MockAiProvider::enqueue(new MockResponse('No tone is set.', tokenUsage: [
+      'input' => 300,
+      'output' => 20,
+    ]));
+
+    $this->contextTool($session, 'What tone is set up?');
+
+    $rows = $this->container->get('entity_type.manager')
+      ->getStorage('neuron_message')
+      ->loadByProperties(['oe_ai_session' => (int) $session->id()]);
+    $this->assertNotEmpty($rows, 'The context answer writes rows naming the session.');
+
+    $threads = [];
+    $tokens = 0;
+    foreach ($rows as $row) {
+      $threads[(string) $row->get('thread_id')->value] = TRUE;
+      $tokens += (int) $row->get('tokens_total')->value;
+      $this->assertSame('editorial_context_answer', (string) $row->get('agent_id')->value);
+    }
+    $this->assertCount(1, $threads, 'One question opens one thread.');
+    $this->assertSame(320, $tokens, 'The answer carries the usage the provider reported.');
+  }
+
+  /**
    * Tests that the context tool answers after calling all three tools.
    */
   public function testContextToolReportsNothingSetUp(): void {

@@ -24,6 +24,7 @@ use Drupal\Core\StringTranslation\TranslatableMarkup;
   description: new TranslatableMarkup("Answers one question about the session's current tone, template and attached documents."),
   operation_type: 'chat_with_tools',
   tools: ['context_get_tone_options', 'context_get_template_options', 'context_get_session_documents'],
+  enable_persistence: FALSE,
   context_definitions: [
     'session' => new EntityContextDefinition(
       data_type: 'entity:ai_editorial_session',
