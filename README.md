@@ -149,15 +149,16 @@ git tag "$(ddev dev-tag)" && git push origin --tags
 Session documents are turned into text and summarised so the drafting prompts
 can use them. The pipeline runs server-side on the document media entity:
 
-- An Apache Tika server extracts the text through the `document_loader_tika`
-  submodule (a Document Loader plugin). In DDEV it runs as the `tika` service
+- An Apache Tika server extracts the text through the
+  [Document Loader Tika](https://www.drupal.org/project/document_loader_tika)
+  module (a Document Loader plugin). In DDEV it runs as the `tika` service
   from `.ddev/docker-compose.tika.yaml`, reachable from the web container at
   `http://tika:9998`. `web/sites/default/settings.ai.php` sets the extraction
   mode, that URL and the path of the Tika app JAR shipped in the web image, so
   switching mode in that live copy and running `ddev drush cr` tests either
   source. `ddev install` seeds it from `.ddev/settings.ai.php`, which is where
   the default belongs. Check the server with
-  `ddev exec curl http://tika:9998/version`. The submodule itself ships no
+  `ddev exec curl http://tika:9998/version`. The module itself ships no
   URL, so other environments set it in `settings.php`:
 
   ```php
