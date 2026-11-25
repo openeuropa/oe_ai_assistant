@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Drupal\oe_ai_assistant\Plugin\NeuronTool;
 
 use Drupal\ai_neuron\Attribute\NeuronTool;
+use Drupal\ai_neuron\Tools\NeuronToolPluginBase;
 use Drupal\Core\Plugin\Context\EntityContextDefinition;
 use Drupal\Core\StringTranslation\TranslatableMarkup;
 use Drupal\oe_ai_assistant\Exception\ActionException;
@@ -35,7 +36,7 @@ use Symfony\Component\DependencyInjection\ContainerInterface;
     ),
   ],
 )]
-final class SaveDraftNeuronTool extends EditorialToolBase {
+final class SaveDraftNeuronTool extends NeuronToolPluginBase {
 
   /**
    * The id this tool is registered under.
@@ -80,26 +81,30 @@ final class SaveDraftNeuronTool extends EditorialToolBase {
   }
 
   /**
-   * Saves the draft of the given version and returns the outcome as JSON.
+   * Saves the draft of the given version.
+   *
+   * @return array
+   *   The version, with 'nodeId' and 'previewUrl' when the draft was saved
+   *   or 'error' when it was not.
    */
-  public function __invoke(int $version): string {
+  public function __invoke(int $version): array {
     // A draft gone since the request lets the call run without a decision.
     $draft = $this->draftWithFields($version);
     if ($draft === NULL) {
-      return $this->encode([
+      return [
         'version' => $version,
         'error' => sprintf('Draft %d does not exist in this session.', $version),
-      ]);
+      ];
     }
 
     try {
       $result = $this->draftSaver->save($this->getContextValue('session'), $draft['fields'], $draft['templateId'], $version);
     }
     catch (ActionException $e) {
-      return $this->encode(['version' => $version, 'error' => $e->getMessage()]);
+      return ['version' => $version, 'error' => $e->getMessage()];
     }
 
-    return $this->encode(['version' => $version] + $result);
+    return ['version' => $version] + $result;
   }
 
   /**
