@@ -22,7 +22,13 @@ class TemplateSchemaFilter implements TemplateSchemaFilterInterface {
    * {@inheritdoc}
    */
   public function filter(array $schema, AiDraftingTemplateInterface $template): array {
-    return $this->pruneObject($schema, $template->getFields());
+    return $this->pruneObject(
+      $schema,
+      $template->getFields(),
+      $template->getDefaultsByBundle(),
+      'node',
+      $template->getContentType(),
+    );
   }
 
   /**
@@ -79,24 +85,34 @@ class TemplateSchemaFilter implements TemplateSchemaFilterInterface {
   /**
    * Prunes an object schema's properties to a template fields map.
    *
+   * A field the template pins by default is dropped as well: its value is
+   * never drafted.
+   *
    * @param array $schema
    *   An `{type: "object", properties: {...}, required?: [...]}` schema.
    * @param array $templateFields
    *   A template fields map (machine name => field definition).
+   * @param array $defaultsByBundle
+   *   The template's defaults keyed by entity type ID and bundle.
+   * @param string $entityTypeId
+   *   The entity type the schema describes.
+   * @param string $bundle
+   *   The bundle the schema describes.
    *
    * @return array
    *   The pruned object schema.
    */
-  private function pruneObject(array $schema, array $templateFields): array {
+  private function pruneObject(array $schema, array $templateFields, array $defaultsByBundle, string $entityTypeId, string $bundle): array {
     $properties = $schema['properties'] ?? [];
+    $defaultedFields = $defaultsByBundle[$entityTypeId][$bundle] ?? [];
 
     $kept = [];
     foreach ($templateFields as $fieldName => $templateField) {
       // Defensive: skip a template field the composer did not emit.
-      if (!isset($properties[$fieldName])) {
+      if (!isset($properties[$fieldName]) || isset($defaultedFields[$fieldName])) {
         continue;
       }
-      $kept[$fieldName] = $this->pruneField($properties[$fieldName], $templateField);
+      $kept[$fieldName] = $this->pruneField($properties[$fieldName], $templateField, $defaultsByBundle);
     }
 
     $result = [
@@ -121,11 +137,13 @@ class TemplateSchemaFilter implements TemplateSchemaFilterInterface {
    *   The composed field schema.
    * @param array $templateField
    *   The matching template field definition.
+   * @param array $defaultsByBundle
+   *   The template's defaults keyed by entity type ID and bundle.
    *
    * @return array
    *   The pruned field schema.
    */
-  private function pruneField(array $fieldSchema, array $templateField): array {
+  private function pruneField(array $fieldSchema, array $templateField, array $defaultsByBundle): array {
     if (empty($templateField['items']) || !is_array($templateField['items'])) {
       return $fieldSchema;
     }
@@ -142,8 +160,10 @@ class TemplateSchemaFilter implements TemplateSchemaFilterInterface {
       return $fieldSchema;
     }
 
-    // The same bundle may appear in multiple items; union their field names.
+    // The same bundle may appear in multiple items; union their field names
+    // and join their prompts.
     $allowedFields = [];
+    $bundlePrompts = [];
     foreach ($templateField['items'] as $item) {
       $bundle = $item['bundle'] ?? NULL;
       if ($bundle === NULL) {
@@ -153,6 +173,9 @@ class TemplateSchemaFilter implements TemplateSchemaFilterInterface {
         $allowedFields[$bundle] ?? [],
         array_keys($item['fields'] ?? []),
       );
+      if (!empty($item['prompt'])) {
+        $bundlePrompts[$bundle][] = $item['prompt'];
+      }
     }
 
     // Multiple allowed bundles: prune the oneOf to the template's bundles.
@@ -163,7 +186,13 @@ class TemplateSchemaFilter implements TemplateSchemaFilterInterface {
         if ($bundle === NULL || !array_key_exists($bundle, $allowedFields)) {
           continue;
         }
-        $variants[] = $this->pruneVariant($variant, $bundleKey, $allowedFields[$bundle]);
+        $variants[] = $this->pruneVariant(
+          $variant,
+          $bundleKey,
+          $allowedFields[$bundle],
+          array_keys($defaultsByBundle[$targetType][$bundle] ?? []),
+          implode(' ', $bundlePrompts[$bundle] ?? []),
+        );
       }
       // No variant matched a template bundle: keep the field whole rather than
       // emit an empty oneOf.
@@ -183,7 +212,13 @@ class TemplateSchemaFilter implements TemplateSchemaFilterInterface {
     if ($bundle === NULL || !array_key_exists($bundle, $allowedFields)) {
       return $fieldSchema;
     }
-    $fieldSchema['items'] = $this->pruneVariant($items, $bundleKey, $allowedFields[$bundle]);
+    $fieldSchema['items'] = $this->pruneVariant(
+      $items,
+      $bundleKey,
+      $allowedFields[$bundle],
+      array_keys($defaultsByBundle[$targetType][$bundle] ?? []),
+      implode(' ', $bundlePrompts[$bundle] ?? []),
+    );
 
     return $fieldSchema;
   }
@@ -196,20 +231,50 @@ class TemplateSchemaFilter implements TemplateSchemaFilterInterface {
    * @param string $bundleKey
    *   The discriminator property name (the target type's bundle key).
    * @param string[] $allowedFields
-   *   The nested field names the template keeps for this bundle.
+   *   The nested field names the template keeps for this bundle. Empty when
+   *   the template does not restrict the bundle's fields, in which case every
+   *   field is kept.
+   * @param string[] $defaultedFields
+   *   The field names the template pins by default for this bundle. Always
+   *   dropped, whether or not the bundle restricts its fields.
+   * @param string $description
+   *   The prompts of the template items for this bundle, joined. Empty when
+   *   none declares a prompt, in which case the variant keeps no description.
    *
    * @return array
    *   The pruned variant.
    */
-  private function pruneVariant(array $variant, string $bundleKey, array $allowedFields): array {
-    // A bundle listed with no nested fields keeps the whole variant.
+  private function pruneVariant(array $variant, string $bundleKey, array $allowedFields, array $defaultedFields, string $description): array {
+    if ($description !== '') {
+      $variant['description'] = $description;
+    }
+
+    // No explicit restriction: keep every field except anything covered by
+    // a default (the discriminator is never defaulted, so it's kept too).
     // @todo Revisit whether to restrict to leaf fields instead, once we have
     //   observed how this behaves on large content types.
     if ($allowedFields === []) {
+      $properties = [];
+      foreach ($variant['properties'] ?? [] as $name => $propSchema) {
+        if (!in_array($name, $defaultedFields, TRUE)) {
+          $properties[$name] = $propSchema;
+        }
+      }
+      $variant['properties'] = $properties;
+      $required = array_values(array_diff($variant['required'] ?? [], $defaultedFields));
+      if ($required !== []) {
+        $variant['required'] = $required;
+      }
+      else {
+        unset($variant['required']);
+      }
       return $variant;
     }
 
-    $keep = array_fill_keys(array_merge($allowedFields, [$bundleKey]), TRUE);
+    $keep = array_fill_keys(
+      array_merge(array_diff($allowedFields, $defaultedFields), [$bundleKey]),
+      TRUE,
+    );
     $properties = [];
     foreach ($variant['properties'] ?? [] as $name => $propSchema) {
       if (isset($keep[$name])) {
@@ -218,10 +283,10 @@ class TemplateSchemaFilter implements TemplateSchemaFilterInterface {
     }
     $variant['properties'] = $properties;
 
-    // Recompute required against kept fields; never list the discriminator.
-    $required = array_values(array_diff(
-      array_intersect($variant['required'] ?? [], array_keys($properties)),
-      [$bundleKey],
+    // Recompute required against kept fields. The discriminator stays
+    // required: an inline item without it cannot be routed to a bundle.
+    $required = array_values(array_intersect(
+      $variant['required'] ?? [], array_keys($properties),
     ));
     if ($required !== []) {
       $variant['required'] = $required;

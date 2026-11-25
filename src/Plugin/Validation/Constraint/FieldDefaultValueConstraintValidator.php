@@ -8,7 +8,9 @@ use Drupal\Core\Config\Schema\TypeResolver;
 use Drupal\Core\DependencyInjection\AutowireTrait;
 use Drupal\Core\DependencyInjection\ContainerInjectionInterface;
 use Drupal\Core\Entity\EntityFieldManagerInterface;
-use Drupal\Core\TypedData\TypedDataManagerInterface;
+use Drupal\Core\Entity\EntityTypeManagerInterface;
+use Drupal\Core\Entity\Plugin\Validation\Constraint\ReferenceAccessConstraint;
+use Drupal\oe_ai_assistant\Service\TemplateDefaultsResolverInterface;
 use Symfony\Component\Validator\Constraint;
 use Symfony\Component\Validator\ConstraintValidator;
 use Symfony\Component\Validator\Exception\UnexpectedTypeException;
@@ -22,7 +24,8 @@ class FieldDefaultValueConstraintValidator extends ConstraintValidator implement
 
   public function __construct(
     private readonly EntityFieldManagerInterface $entityFieldManager,
-    private readonly TypedDataManagerInterface $typedDataManager,
+    private readonly EntityTypeManagerInterface $entityTypeManager,
+    private readonly TemplateDefaultsResolverInterface $defaultsResolver,
   ) {}
 
   /**
@@ -60,11 +63,32 @@ class FieldDefaultValueConstraintValidator extends ConstraintValidator implement
       return;
     }
 
+    $bundleKey = $this->entityTypeManager->getDefinition($entity_type_id)->getKey('bundle');
+    $scratch = $bundleKey
+      ? $this->entityTypeManager->getStorage($entity_type_id)->create([$bundleKey => $bundle])
+      : $this->entityTypeManager->getStorage($entity_type_id)->create();
+
     try {
-      $field = $this->typedDataManager->create($field_definition, $default_value);
+      $default_value = $this->defaultsResolver->resolveFieldDefaultValue(
+        $default_value, $field_definition, $entity_type_id, $bundle,
+      );
+
+      // File and image fields carry a ReferenceAccess constraint that reads
+      // the item's host entity, so the value is validated on an unsaved
+      // entity of the bundle.
+      $scratch->set($field_name, $default_value);
+      $field = $scratch->get($field_name);
       $violations = $field->validate();
 
       foreach ($violations as $violation) {
+        // Skip the referencing-user's view-access check: it tests the
+        // session saving this template against the default's target, not
+        // the (different, not-yet-known) user who will later draft content
+        // from it. Irrelevant to whether the default value is well-formed.
+        if ($violation->getConstraint() instanceof ReferenceAccessConstraint) {
+          continue;
+        }
+
         $this->context->buildViolation($constraint->message)
           ->setParameter('@field_name', $field_name)
           ->setParameter('@reason', (string) $violation->getMessage())

@@ -22,6 +22,37 @@ use Psr\Log\NullLogger;
 class DraftingOrchestratorTest extends TestCase {
 
   /**
+   * Unrelated associative output from a reference group is ignored.
+   *
+   * This protects the consolidator from assigning a flat main-fields result
+   * to an inline entity field, which would later fail without its bundle
+   * discriminator.
+   */
+  public function testRunIgnoresUnwrappedAssociativeReferenceOutput(): void {
+    $groups = [
+      [
+        'groupId' => 'field_content_paragraphs',
+        'label' => 'Content paragraphs',
+        'fieldNames' => ['field_content_paragraphs'],
+        'schemaSlice' => ['type' => 'object'],
+      ],
+    ];
+    $method = new \ReflectionMethod(DraftingOrchestrator::class, 'consolidate');
+    $result = $method->invoke(
+      new DraftingOrchestrator(
+        $this->createMock(DraftingSchemaProviderInterface::class),
+        $this->createMock(AiAgentManager::class),
+        new NullLogger(),
+        $this->createMock(MessageRecorderInterface::class),
+      ),
+      $groups,
+      ['field_content_paragraphs' => ['title' => [['value' => 'Wrong group']]]],
+    );
+
+    $this->assertSame([], $result);
+  }
+
+  /**
    * The template id given to run() is passed to the schema provider.
    */
   public function testRunPassesTemplateIdToProvider(): void {

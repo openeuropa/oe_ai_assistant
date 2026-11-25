@@ -28,6 +28,9 @@ services:
   Drupal\oe_ai_assistant\Service\Drafting\ContextDocumentRepository: {}
   Drupal\oe_ai_assistant\Service\TextFormatResolver: {}
 
+  Drupal\oe_ai_assistant\Service\TemplateDefaultsResolver: {}
+  Drupal\oe_ai_assistant\Service\TemplateDefaultsResolverInterface: '@Drupal\oe_ai_assistant\Service\TemplateDefaultsResolver'
+
   # Drives a document through extraction and summarisation.
   Drupal\oe_ai_assistant\Service\Drafting\DocumentExtractionProcessorInterface:
     class: Drupal\oe_ai_assistant\Service\Drafting\DocumentExtractionProcessor

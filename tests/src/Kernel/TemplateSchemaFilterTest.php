@@ -175,8 +175,8 @@ class TemplateSchemaFilterTest extends KernelTestBase {
    * A variant's required list is recomputed against the kept fields.
    *
    * The fixture marks field_quote_text as required. Kept, it stays in the
-   * variant's required list (and the discriminator is never added); dropped,
-   * the required key is removed rather than left as an empty list.
+   * variant's required list alongside the bundle discriminator; dropped, the
+   * discriminator remains required so inline entities can be routed.
    */
   public function testVariantRequiredRecomputedAgainstKeptFields(): void {
     $schema = $this->composer()->compose('node', 'oe_news');
@@ -186,7 +186,7 @@ class TemplateSchemaFilterTest extends KernelTestBase {
     $byBundle = $this->variantsByBundle(
       $filtered['properties']['field_content_paragraphs']['items']['oneOf'],
     );
-    $this->assertSame(['field_quote_text'], $byBundle['quote_block']['required']);
+    $this->assertSame(['field_quote_text', 'type'], $byBundle['quote_block']['required']);
 
     // An unsaved template keeping only the attribution drops the required
     // field, so the variant must not keep a stale or empty required list.
@@ -214,7 +214,7 @@ class TemplateSchemaFilterTest extends KernelTestBase {
     $byBundle = $this->variantsByBundle(
       $filtered['properties']['field_content_paragraphs']['items']['oneOf'],
     );
-    $this->assertArrayNotHasKey('required', $byBundle['quote_block']);
+    $this->assertSame(['type'], $byBundle['quote_block']['required']);
   }
 
   /**
@@ -350,7 +350,119 @@ class TemplateSchemaFilterTest extends KernelTestBase {
 
     $items = $filtered['properties']['field_content_paragraphs']['items'];
     $this->assertNotSame([], $items['oneOf'], 'oneOf must not be empty.');
-    $this->assertCount(2, $items['oneOf'], 'Both composed variants survive.');
+    $this->assertCount(4, $items['oneOf'], 'All composed variants survive.');
+  }
+
+  /**
+   * A node field pinned by a template default is not offered to the LLM.
+   */
+  public function testNodeDefaultedFieldIsHiddenFromTopLevel(): void {
+    $template = AiDraftingTemplate::create([
+      'id' => 'hidden_node_default',
+      'label' => 'Hidden node default',
+      'content_type' => 'oe_news',
+      'fields' => [
+        'title' => ['prompt' => 'Headline.'],
+        'field_teaser' => ['prompt' => 'Teaser.'],
+      ],
+      'defaults' => [
+        'field_teaser' => ['default_value' => [['value' => 'Pinned teaser.']]],
+      ],
+    ]);
+
+    $schema = $this->composer()->compose('node', 'oe_news');
+    $filtered = $this->filter()->filter($schema, $template);
+
+    $this->assertSame(['title'], array_keys($filtered['properties']));
+  }
+
+  /**
+   * A field pinned by an item default is not offered to the LLM.
+   *
+   * Applies whether the bundle restricts its fields (quote_block) or keeps
+   * them all (text_block).
+   */
+  public function testItemDefaultedFieldIsHiddenFromVariant(): void {
+    $template = AiDraftingTemplate::create([
+      'id' => 'hidden_default',
+      'label' => 'Hidden default',
+      'content_type' => 'oe_news',
+      'fields' => [
+        'field_content_paragraphs' => [
+          'type' => 'entity_reference_revisions',
+          'items' => [
+            [
+              'entity_type' => 'paragraph',
+              'bundle' => 'quote_block',
+              'prompt' => 'Quote.',
+              'fields' => [
+                'field_quote_text' => ['prompt' => 'The quote.'],
+                'field_quote_attribution' => ['prompt' => 'Who said it.'],
+              ],
+              'defaults' => [
+                'field_quote_attribution' => ['default_value' => [['value' => 'Anon']]],
+              ],
+            ],
+            [
+              'entity_type' => 'paragraph',
+              'bundle' => 'text_block',
+              'prompt' => 'Text.',
+              'defaults' => [
+                'field_text_body' => ['default_value' => [['value' => 'Pinned.']]],
+              ],
+            ],
+          ],
+        ],
+      ],
+    ]);
+
+    $schema = $this->composer()->compose('node', 'oe_news');
+    $filtered = $this->filter()->filter($schema, $template);
+    $byBundle = $this->variantsByBundle(
+      $filtered['properties']['field_content_paragraphs']['items']['oneOf'],
+    );
+
+    $this->assertEqualsCanonicalizing(
+      ['field_quote_text', 'type'],
+      array_keys($byBundle['quote_block']['properties']),
+    );
+    $composed = $this->variantsByBundle(
+      $schema['properties']['field_content_paragraphs']['items']['oneOf'],
+    );
+    $this->assertSame(
+      array_values(array_diff(array_keys($composed['text_block']['properties']), ['field_text_body'])),
+      array_keys($byBundle['text_block']['properties']),
+    );
+  }
+
+  /**
+   * Item prompts become the variant description, joined per bundle.
+   */
+  public function testItemPromptsBecomeVariantDescription(): void {
+    $template = AiDraftingTemplate::create([
+      'id' => 'variant_description',
+      'label' => 'Variant description',
+      'content_type' => 'oe_news',
+      'fields' => [
+        'field_content_paragraphs' => [
+          'type' => 'entity_reference_revisions',
+          'items' => [
+            ['entity_type' => 'paragraph', 'bundle' => 'text_block', 'prompt' => 'Opening text.'],
+            ['entity_type' => 'paragraph', 'bundle' => 'quote_block'],
+            ['entity_type' => 'paragraph', 'bundle' => 'text_block', 'prompt' => 'Closing text.'],
+          ],
+        ],
+      ],
+    ]);
+
+    $schema = $this->composer()->compose('node', 'oe_news');
+    $filtered = $this->filter()->filter($schema, $template);
+    $byBundle = $this->variantsByBundle(
+      $filtered['properties']['field_content_paragraphs']['items']['oneOf'],
+    );
+
+    $this->assertSame('Opening text. Closing text.', $byBundle['text_block']['description']);
+    $this->assertArrayNotHasKey('description', $byBundle['quote_block']);
   }
 
   /**

@@ -265,6 +265,104 @@ class DraftingPluginSaveTest extends DraftingPluginTestBase {
   }
 
   /**
+   * Tests that a bundle's item defaults reach every item of that bundle.
+   *
+   * The news_with_hero template declares the hero image default once, on the
+   * top-level hero item. The model reorders the paragraphs, emits the hero
+   * twice and nests a third one inside a section: all three get the image,
+   * the other paragraphs are left as drafted.
+   */
+  public function testSaveAppliesItemDefaultsToEveryItemOfBundle(): void {
+    $user = $this->createUser([
+      'use oe ai assistant',
+      'create oe_news content',
+    ]);
+    $this->loginUser($user);
+    $session = $this->createSession($user);
+
+    $this->seedDraft($session, 1, [
+      'title' => [['value' => 'Hero defaults round-trip']],
+      'field_content_paragraphs' => [
+        [
+          'type' => [['target_id' => 'text_block']],
+          'field_text_body' => [['value' => 'Intro.']],
+        ],
+        [
+          'type' => [['target_id' => 'hero']],
+        ],
+        [
+          'type' => [['target_id' => 'section']],
+          'field_section_paragraphs' => [
+            [
+              'type' => [['target_id' => 'hero']],
+            ],
+            [
+              'type' => [['target_id' => 'text_block']],
+              'field_text_body' => [['value' => 'Section text.']],
+            ],
+          ],
+        ],
+        [
+          'type' => [['target_id' => 'hero']],
+        ],
+      ],
+    ], 'news_with_hero');
+
+    $result = $this->httpPost('/api/ai/plugins/drafting/save', [
+      'sessionId' => $session->id(),
+      'version' => 1,
+    ]);
+
+    $this->assertEquals(200, $result['status'],
+      'Expected 200 response. Body: ' . substr($result['body'], 0, 500));
+    $body = json_decode($result['body'], TRUE);
+    $node = \Drupal::entityTypeManager()->getStorage('node')->load($body['nodeId']);
+
+    $paragraphs = $node->get('field_content_paragraphs')->referencedEntities();
+    $this->assertSame(
+      ['text_block', 'hero', 'section', 'hero'],
+      array_map(fn($p) => $p->bundle(), $paragraphs),
+    );
+    $this->assertSame('Intro.', $paragraphs[0]->get('field_text_body')->value);
+    $this->assertSame('Default hero image', $paragraphs[1]->get('field_hero_image')->alt);
+    $this->assertSame('Default hero image', $paragraphs[3]->get('field_hero_image')->alt);
+
+    $nested = $paragraphs[2]->get('field_section_paragraphs')->referencedEntities();
+    $this->assertSame(['hero', 'text_block'], array_map(fn($p) => $p->bundle(), $nested));
+    $this->assertSame('Default hero image', $nested[0]->get('field_hero_image')->alt);
+    $this->assertSame('Section text.', $nested[1]->get('field_text_body')->value);
+  }
+
+  /**
+   * Tests that a paragraph without a bundle is rejected, not guessed.
+   */
+  public function testSaveRejectsParagraphWithoutBundle(): void {
+    $user = $this->createUser([
+      'use oe ai assistant',
+      'create oe_news content',
+    ]);
+    $this->loginUser($user);
+    $session = $this->createSession($user);
+
+    $this->seedDraft($session, 1, [
+      'title' => [['value' => 'Untyped paragraph']],
+      'field_content_paragraphs' => [
+        [
+          'field_text_body' => [['value' => 'No type.']],
+        ],
+      ],
+    ], 'news_with_hero');
+
+    $result = $this->httpPost('/api/ai/plugins/drafting/save', [
+      'sessionId' => $session->id(),
+      'version' => 1,
+    ]);
+
+    $this->assertEquals(400, $result['status']);
+    $this->assertSame('invalid_payload', json_decode($result['body'], TRUE)['code']);
+  }
+
+  /**
    * Tests that saving a version the session never produced returns 400.
    */
   public function testSaveUnknownVersionReturns400(): void {

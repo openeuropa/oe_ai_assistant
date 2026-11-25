@@ -21,15 +21,16 @@ interface AiDraftingTemplateInterface extends ConfigEntityInterface {
   public function validate(): ConstraintViolationListInterface;
 
   /**
-   * Returns the defaults map with special tokens resolved.
+   * Returns all declared defaults keyed by entity type and bundle.
    *
-   * Supported tokens inside default value structures: __NOW__ → current Unix
-   * timestamp.
+   * The node's own defaults sit under its content type. When several items
+   * share a bundle, the first declaration of a field wins.
    *
-   * @return array<string, mixed>
-   *   The mapping with tokens resolved.
+   * @return array
+   *   Default definitions, as stored, keyed by entity type ID, then bundle,
+   *   then field name. Bundles without defaults are absent.
    */
-  public function resolveDefaults(): array;
+  public function getDefaultsByBundle(): array;
 
   /**
    * Returns the human-readable description.
