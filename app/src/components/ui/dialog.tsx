@@ -35,11 +35,6 @@ export interface DialogProps {
    * rendered visually hidden for accessibility.
    */
   hideHeader?: boolean;
-  /**
-   * Stacking classes for the overlay and the panel. Raise it for a dialog
-   * that opens above a layer that already sits over `z-50`.
-   */
-  layerClassName?: string;
 }
 
 /**
@@ -56,7 +51,6 @@ export function Dialog({
   children,
   className,
   hideHeader = false,
-  layerClassName = "z-50",
 }: DialogProps) {
   return (
     <DialogPrimitive.Root
@@ -71,10 +65,7 @@ export function Dialog({
             renders outside the app mount into the host page body. */}
         <DialogPrimitive.Overlay
           data-ai-app=""
-          className={cn(
-            "fixed inset-0 bg-black/40 data-[state=open]:animate-in data-[state=open]:fade-in-0",
-            layerClassName,
-          )}
+          className="fixed inset-0 z-50 bg-black/40 data-[state=open]:animate-in data-[state=open]:fade-in-0"
         />
 
         {/* Centered content panel; closes without an exit animation. The
@@ -89,11 +80,10 @@ export function Dialog({
             ? { "aria-describedby": undefined }
             : {})}
           className={cn(
-            "fixed left-1/2 top-1/2 h-auto w-full max-w-lg -translate-x-1/2 -translate-y-1/2",
+            "fixed left-1/2 top-1/2 z-50 h-auto w-full max-w-lg -translate-x-1/2 -translate-y-1/2",
             "overflow-hidden rounded-lg border border-gray-200 bg-white shadow-lg",
             "data-[state=open]:animate-in",
             "data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95",
-            layerClassName,
             className,
           )}
         >
