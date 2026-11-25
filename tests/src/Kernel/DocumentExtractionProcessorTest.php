@@ -160,11 +160,6 @@ class DocumentExtractionProcessorTest extends AiEditorialSessionKernelTestBase {
 
   /**
    * Tests that the extract reaches the summary agent, capped in length.
-   *
-   * SummaryNeuronAgentTest covers the agent on its own, but a mock summary
-   * response comes back the same whatever it is asked, so only this call
-   * log assertion would catch summarize() sending the wrong field, calling
-   * a different agent, or dropping the mb_substr() length cap.
    */
   public function testSummarizeSendsTheCappedExtractToTheSummaryAgent(): void {
     $long = str_repeat('a', 60010);
@@ -245,8 +240,6 @@ class DocumentExtractionProcessorTest extends AiEditorialSessionKernelTestBase {
     }
     $this->assertSame([$thread], array_keys($this->session()->conversationThreads()));
 
-    // What the page adds up: the answer carries the usage the provider
-    // reported, and the question that preceded it carries none.
     $this->assertNull($rows[0]->get('tokens_total')->value);
     $this->assertSame(1280, (int) $rows[1]->get('tokens_total')->value);
   }
@@ -255,9 +248,7 @@ class DocumentExtractionProcessorTest extends AiEditorialSessionKernelTestBase {
    * Tests that a second run opens the next attempt instead of resuming.
    *
    * Resuming the first attempt's thread would send its extract to the
-   * provider again and charge the session for it twice. The call log
-   * assertion catches that: the second call carries one message, the
-   * replaced text.
+   * provider again and charge the session for it twice.
    */
   public function testSecondRunOpensTheNextAttemptThread(): void {
     $this->tika->append(new Response(200, [], 'Full text'));

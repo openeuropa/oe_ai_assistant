@@ -16,11 +16,9 @@ use NeuronAI\Providers\AIProviderInterface;
 /**
  * The agent that summarises an attached document for the editor.
  *
- * It takes the document and its session as context. EditorialMessageStore
- * reads the session and stamps it on every row it writes, so the session's
- * history page lists this call and counts its tokens. The agent holds no
- * conversation with the editor and publishes no tools, so it extends the
- * plain agent base rather than EditorialSessionAgentBase.
+ * It takes the document and its session as context, so the summary's cost
+ * and history are attributed to the session. The agent holds no
+ * conversation with the editor and publishes no tools.
  */
 #[NeuronAgent(
   id: SummaryNeuronAgent::PLUGIN_ID,
@@ -40,9 +38,6 @@ use NeuronAI\Providers\AIProviderInterface;
 )]
 final class SummaryNeuronAgent extends NeuronAgentPluginBase {
 
-  /**
-   * The ID this agent is registered under.
-   */
   public const string PLUGIN_ID = 'document_summary';
 
   public function __construct(
@@ -70,10 +65,9 @@ final class SummaryNeuronAgent extends NeuronAgentPluginBase {
    *
    * Keep the 'oe_ai_assistant' and 'document_summary' tags alongside the
    * one the base class derives from the plugin ID. A site's moderation or
-   * prompt-logging config may still be keyed on either of them, from when
-   * DocumentExtractionProcessor called the provider directly, and it should
-   * go on screening the one text here an editor fully controls: the
-   * document they uploaded.
+   * prompt-logging config may be keyed on either of them, and it should go
+   * on screening the one text here an editor fully controls: the document
+   * they uploaded.
    */
   protected function provider(): AIProviderInterface {
     return $this->providers->create($this->operationType(), [

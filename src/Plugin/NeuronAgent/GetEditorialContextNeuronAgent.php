@@ -36,9 +36,6 @@ final class GetEditorialContextNeuronAgent extends NeuronAgentPluginBase {
   use JsonToolErrorHandlerTrait;
   use LoggerChannelTrait;
 
-  /**
-   * The ID this agent is registered under.
-   */
   public const string PLUGIN_ID = 'editorial_context_answer';
 
   /**

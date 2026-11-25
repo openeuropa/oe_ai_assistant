@@ -38,9 +38,6 @@ use NeuronAI\Workflow\Streaming\Adapter\StreamAdapterInterface;
 )]
 final class EditorialNeuronAgent extends EditorialSessionAgentBase {
 
-  /**
-   * The ID this agent is registered under.
-   */
   public const string PLUGIN_ID = 'editorial';
 
   /**

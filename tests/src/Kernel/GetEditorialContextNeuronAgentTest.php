@@ -17,9 +17,9 @@ use Psr\Log\AbstractLogger;
 /**
  * Tests the sub-agent that answers one question from the session's state.
  *
- * The session facts themselves (tone, template, documents) are covered by
- * EditorialContextToolsTest, against the tools this agent calls; this file
- * covers the agent's own wiring to those tools and the tool-call round trip.
+ * It covers the agent's own wiring to the context tools and the tool-call
+ * round trip. What each tool returns is covered against the tools
+ * themselves.
  *
  * @group oe_ai_assistant
  */

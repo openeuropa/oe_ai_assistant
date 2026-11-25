@@ -14,11 +14,7 @@ use NeuronAI\Tools\PropertyType;
 use NeuronAI\Tools\ToolProperty;
 
 /**
- * Returns the extracted text of one attached document.
- *
- * The context_get_session_documents tool lists the documents by ID
- * alongside a summary or a not-available note; this reads one in full,
- * so a long briefing is only spelled out when it is used.
+ * Returns the extracted text of one attached document, capped in length.
  */
 #[NeuronTool(
   id: 'context_read_document',

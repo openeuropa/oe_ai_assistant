@@ -96,8 +96,8 @@ class SummaryNeuronAgentTest extends AiEditorialSessionKernelTestBase {
   /**
    * Tests that a provider failure reaches the caller rather than being hidden.
    *
-   * DocumentExtractionProcessor::summarize() catches this and ends the
-   * document in error; this covers what the agent itself does.
+   * The caller turns this into an error state for the document. This test
+   * covers only what the agent itself does.
    */
   public function testProviderFailureReachesTheCaller(): void {
     MockAiProvider::enqueue(new MockResponse(error: new \RuntimeException('Provider down.')));

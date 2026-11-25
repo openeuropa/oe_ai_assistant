@@ -155,9 +155,9 @@ class MockAiProvider extends AiProviderClientBase implements ChatInterface {
     // response carries it on the message instead.
     $message = new ChatMessage('assistant', $response->text);
     if ($response->toolCalls !== NULL) {
-      // Mirrors MockChatMessageIterator::getTools(): complete-at-once tool
-      // calls, not the OpenAI incremental delta format setTools() elsewhere
-      // assembles from.
+      // A non-streaming response reports its tool calls complete at once,
+      // and not in the incremental delta format the streaming path
+      // assembles through setTools().
       $tools = [];
       foreach ($response->toolCalls as $toolCall) {
         $fn = $toolCall['function'] ?? [];

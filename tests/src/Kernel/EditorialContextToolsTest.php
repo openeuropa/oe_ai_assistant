@@ -66,11 +66,6 @@ class EditorialContextToolsTest extends AiEditorialSessionKernelTestBase {
 
   /**
    * Tests that editorial agent instructions carry no tone guidelines.
-   *
-   * The guidelines only go into GroupDrafterNeuronAgent's prompt, through
-   * tonePrompt(), since that's the agent that writes the field text. This
-   * one only ever sees the tone's label and description, through
-   * context_get_editorial_context.
    */
   public function testEditorialAgentInstructionsCarryNoToneText(): void {
     $this->enableModules(['entity_reference_revisions', 'paragraphs', 'link', 'inline_entity_form']);
@@ -94,10 +89,6 @@ class EditorialContextToolsTest extends AiEditorialSessionKernelTestBase {
 
   /**
    * Tests that editorial agent instructions carry no document text.
-   *
-   * A document's text reaches this agent only through context_read_document;
-   * it is never inlined, so the agent discovers and reads documents purely
-   * through tools.
    */
   public function testEditorialAgentInstructionsCarryNoDocumentText(): void {
     $this->enableModules(['entity_reference_revisions', 'paragraphs', 'link', 'inline_entity_form']);
@@ -120,11 +111,8 @@ class EditorialContextToolsTest extends AiEditorialSessionKernelTestBase {
   /**
    * Tests that the context tool answers after calling tone and document tools.
    *
-   * The round trip itself is what this test proves; the facts each tool
-   * returns (the tone label without its guidelines, a document's summary
-   * without its full text) are covered directly against those tools in
-   * testToneOptionsToolReportsSelectedAndAvailableTone and
-   * testSessionDocumentsToolReportsSummaryOrStatusNote.
+   * The round trip itself is what this test proves. What each tool returns
+   * is covered directly against the tools themselves.
    */
   public function testContextToolReportsTheToneLabelNeverItsGuidelines(): void {
     $session = $this->stubbedSession([
@@ -329,7 +317,6 @@ class EditorialContextToolsTest extends AiEditorialSessionKernelTestBase {
       'description' => 'Short, institutional sentences.',
     ], $result['selected']);
     $this->assertCount(2, $result['options']);
-    // The tone's AI guidelines never reach this tool's output.
     $this->assertStringNotContainsString('Use professional, institutional language.', json_encode($result));
   }
 

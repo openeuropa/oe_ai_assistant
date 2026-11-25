@@ -21,8 +21,7 @@ use NeuronAI\Workflow\Persistence\InMemoryPersistence;
  * We hand the question to GetEditorialContextNeuronAgent and return its
  * answer, not the session data itself. That agent is built fresh for every
  * call, so it answers from the tone, the template and the documents as they
- * stand now, and not from what EditorialNeuronAgent said about them earlier
- * in the conversation.
+ * stand now.
  */
 #[NeuronTool(
   id: 'context_get_editorial_context',
@@ -78,10 +77,9 @@ final class GetEditorialContextNeuronTool extends NeuronToolPluginBase {
       GetEditorialContextNeuronAgent::PLUGIN_ID,
       ['session' => $session],
     );
-    // Keep the workflow state in memory. Every call opens a thread of its
-    // own, so no later run would ever sweep the partition this one leaves
-    // behind in neuron_workflow_store.
-    // DocumentExtractionProcessor::summarize() does the same.
+    // Each call opens its own thread, so keeping the workflow state in
+    // memory stops neuron_workflow_store from accumulating an orphaned
+    // partition for it.
     $agent->setPersistence(new InMemoryPersistence());
 
     $message = $agent->chat(new UserMessage($question))->getMessage();

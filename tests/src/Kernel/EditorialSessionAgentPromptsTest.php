@@ -94,10 +94,6 @@ class EditorialSessionAgentPromptsTest extends AiEditorialSessionKernelTestBase 
 
   /**
    * Tests that the drafter's instructions carry no document text.
-   *
-   * A document's text reaches this agent only through context_read_document;
-   * it is never inlined, so the drafter discovers and reads documents purely
-   * through tools.
    */
   public function testDrafterInstructionsCarryNoDocumentText(): void {
     $prompt = $this->instructions(NULL, [

@@ -212,10 +212,9 @@ function safeJsonParse(raw: string): unknown {
  * Decodes a tool's JSON result into a plain object, whatever shape it
  * arrives in.
  *
- * A live call carries the JSON string __invoke() returned verbatim; a
- * rehydrated one carries the same payload already decoded into a plain
- * object, by NeuronMessage::decodeResult()/DraftingPlugin::toolCallsOf() on
- * the backend. Both shapes are accepted here.
+ * A live call carries the JSON string the tool returned verbatim; a
+ * rehydrated one, after a page reload, carries the same payload already
+ * decoded into a plain object. Both shapes are accepted here.
  */
 function parseToolResult(result: unknown): Record<string, unknown> | undefined {
   const parsed = typeof result === "string" ? safeJsonParse(result) : result;
@@ -230,11 +229,10 @@ function parseToolResult(result: unknown): Record<string, unknown> | undefined {
  *
  * assistant-ui always settles the call as complete, so the card has to look
  * inside the result itself. A result can carry a failure three ways: our own
- * tools report it in-band as `{error: "..."}`; Neuron's own input validation
- * (a missing document, a wrong type, an id outside an enum) never reaches
- * the tool, settling the call with ToolOutput::error() instead, which arrives
- * live as the plain, non-JSON error text, and after a reload as the decoded
- * `{is_error: true, blocks: [...]}` NeuronMessage::decodeResult() shape.
+ * tools report it in-band as `{error: "..."}`; an input validation failure
+ * that never reaches the tool arrives live as plain, non-JSON error text,
+ * and after a reload as the decoded `{is_error: true, blocks: [...]}`
+ * shape.
  */
 function resultIsError(
   result: unknown,

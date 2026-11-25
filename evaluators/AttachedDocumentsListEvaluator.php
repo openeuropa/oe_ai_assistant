@@ -115,9 +115,8 @@ final class AttachedDocumentsListEvaluator extends BaseEvaluator {
     }
     finally {
       // Nested so the throwaway user is deleted even when reloading or
-      // deleting the session throws. With zend.assertions off the assert()
-      // in reloadSession() is a no-op, so a session that is already gone
-      // would fatal here on a NULL.
+      // deleting the session throws. reloadSession() can hand back a NULL
+      // session, which would fatal on delete() without this inner finally.
       try {
         $this->reloadSession($sessionId)->delete();
       }
@@ -147,13 +146,9 @@ final class AttachedDocumentsListEvaluator extends BaseEvaluator {
   /**
    * Builds an editorial agent for one turn, on a freshly loaded session.
    *
-   * An agent answers a question about the documents through the session
-   * object it was built with, and that object caches its document list the
-   * first time it is read. An agent held across turns would keep reporting
-   * the list as it stood when it first answered, and miss a later attach or
-   * removal. So every turn gets its own agent, which is also what
-   * DraftingPlugin::chat() does per request, and the stored thread
-   * carries the conversation from one turn to the next.
+   * An agent answers through the session object it was built with, which is
+   * why every turn needs its own, reloaded by reloadSession(). The stored
+   * thread carries the conversation from one turn to the next.
    */
   private function editorialAgent(NeuronAgentManagerInterface $manager, int $sessionId): Agent {
     return $manager->createAgent('editorial', ['session' => $this->reloadSession($sessionId)]);
@@ -212,12 +207,11 @@ final class AttachedDocumentsListEvaluator extends BaseEvaluator {
   /**
    * Attaches one fixture document, with its extraction already done.
    *
-   * The evaluation only reads the attached-documents listing, and
-   * DocumentRepositoryBase::describe() builds that from the media and its
-   * file. So we create those two here instead of calling
-   * ContextDocumentRepository::add() and extract(). A real extraction run
-   * costs a Tika request and a provider summary call per document, and no
-   * assertion reads the text they produce.
+   * DocumentRepositoryBase::describe() reads the listing straight off the
+   * media and its file, so we build those two with the extract and summary
+   * fields already set. A real extraction run would cost a Tika request and
+   * a provider summary call per document, and no assertion here reads the
+   * text they produce.
    *
    * @param \Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface $session
    *   The session to attach the document to.

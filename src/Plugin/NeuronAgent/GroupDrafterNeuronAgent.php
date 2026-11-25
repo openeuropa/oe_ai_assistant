@@ -64,8 +64,8 @@ final class GroupDrafterNeuronAgent extends EditorialSessionAgentBase {
    * {@inheritdoc}
    *
    * The tone steers what the drafter writes. Documents are discovered and
-   * read through tools rather than told inline, so the drafter fetches
-   * only what the group it is writing actually needs.
+   * read through tools, so the drafter fetches only what the group it is
+   * writing actually needs.
    */
   protected function instructions(): string {
     $instructions = <<<'PROMPT'
