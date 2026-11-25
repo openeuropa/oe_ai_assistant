@@ -61,7 +61,7 @@ class PluginController extends ControllerBase {
    *   The machine name of the target plugin (e.g. "drafting", "echo",
    *   "notes"). Sourced from the {plugin_id} route placeholder.
    * @param string $action
-   *   The action to execute on the plugin (e.g. "chat", "list", "save").
+   *   The action to execute on the plugin (e.g. "chat", "reset").
    *   Sourced from the {action} route placeholder.
    * @param \Symfony\Component\HttpFoundation\Request $request
    *   The incoming HTTP request. The request body must be valid JSON when the

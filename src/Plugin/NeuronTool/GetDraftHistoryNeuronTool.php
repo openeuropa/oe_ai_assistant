@@ -33,10 +33,13 @@ use Drupal\Core\StringTranslation\TranslatableMarkup;
 final class GetDraftHistoryNeuronTool extends NeuronToolPluginBase {
 
   /**
-   * Returns the drafts of the session as JSON.
+   * Returns the drafts of the session.
+   *
+   * @return array
+   *   The drafts, under a 'drafts' key.
    */
-  public function __invoke(): string {
-    return json_encode(['drafts' => $this->getContextValue('session')->listDrafts()]);
+  public function __invoke(): array {
+    return ['drafts' => $this->getContextValue('session')->listDrafts()];
   }
 
 }

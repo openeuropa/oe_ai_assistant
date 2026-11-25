@@ -15,9 +15,13 @@ import { apiFetch } from "./csrf-token";
 export interface SessionToolCall {
   id?: string;
   type?: string;
+  /** The id the editor's decision names, sent only for a waiting call. */
+  callId?: string;
   function?: { name?: string; arguments?: string };
   /** Structured tool output (e.g. drafted field values). */
   result?: Record<string, unknown>;
+  /** The call waits for the editor's decision and carries no result. */
+  awaitingDecision?: boolean;
 }
 
 /** A single user-visible transcript entry from get-messages. */
