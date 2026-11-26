@@ -8,6 +8,7 @@ use Drupal\ai_neuron\Agent\NeuronAgentPluginBase;
 use Drupal\ai_neuron\Attribute\NeuronAgent;
 use Drupal\ai_neuron\Providers\ProviderFactoryInterface;
 use Drupal\ai_neuron\Tools\NeuronToolManagerInterface;
+use Drupal\Core\Datetime\DateFormatterInterface;
 use Drupal\Core\Plugin\Context\EntityContextDefinition;
 use Drupal\Core\Session\AccountProxyInterface;
 use Drupal\Core\StringTranslation\TranslatableMarkup;
@@ -50,6 +51,7 @@ final class GetSessionActivityNeuronAgent extends NeuronAgentPluginBase {
     ProviderFactoryInterface $providers,
     NeuronToolManagerInterface $toolManager,
     private readonly AccountProxyInterface $currentUser,
+    private readonly DateFormatterInterface $dateFormatter,
   ) {
     parent::__construct($configuration, $plugin_id, $plugin_definition, $providers, $toolManager);
   }
@@ -82,7 +84,7 @@ final class GetSessionActivityNeuronAgent extends NeuronAgentPluginBase {
     The record is the CSV between the BEGIN_ACTIVITY_CSV and END_ACTIVITY_CSV
     markers below, and it holds every entry of the session. Its first row
     reads "time,who,what": the time the entry was recorded, the editor it
-    belongs to, and what they did. Every time is UTC. Any field can be
+    belongs to, and what they did. Any field can be
     wrapped in double quotes, and those wrapping quotes are not part of the
     value. Inside a wrapped field, a doubled double quote is one quote
     character. The rows run oldest first. The editor who asks the question
@@ -120,10 +122,7 @@ final class GetSessionActivityNeuronAgent extends NeuronAgentPluginBase {
     $rows = [];
     foreach ($entries as $entry) {
       $rows[] = [
-        // Drupal formats dates in the timezone of the account that asks, so
-        // date() would give two editors different times for the same entry.
-        // The instructions above promise UTC, so use gmdate().
-        'time' => gmdate('c', $entry->getCreatedTime()),
+        'time' => $this->dateFormatter->format($entry->getCreatedTime(), 'short'),
         'who' => $this->actor($entry),
         'what' => $entry->getMessage(),
       ];

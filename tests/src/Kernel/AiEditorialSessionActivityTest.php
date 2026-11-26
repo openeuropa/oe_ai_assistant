@@ -259,8 +259,9 @@ class AiEditorialSessionActivityTest extends AiEditorialSessionKernelTestBase {
 
     $this->assertStringContainsString(
       sprintf(
-        '%s,you,"Tone set to ""Formal""."',
-        gmdate('c', $session->getLatestActivity()[0]->getCreatedTime()),
+        '"%s",you,"Tone set to ""Formal""."',
+        $this->container->get('date.formatter')
+          ->format($session->getLatestActivity()[0]->getCreatedTime(), 'short'),
       ),
       $this->activityPrompt($session),
     );
