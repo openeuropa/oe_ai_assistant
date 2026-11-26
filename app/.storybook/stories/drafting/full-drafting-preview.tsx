@@ -2,8 +2,8 @@
  * Shared full drafting plugin preview for stories.
  *
  * Composes the complete drafting plugin UI: the chat thread seeded with a
- * realistic transcript (event chips, versioned draft cards, a save tool
- * call), the composer tabs, and the artifact pane showing the latest
+ * realistic transcript (versioned draft cards and a save tool call), the
+ * composer tabs, and the artifact pane showing the latest
  * draft. Mirrors the layout of the plugin root component with a local
  * mock runtime instead of the backend stream. Used by the "Full plugin"
  * drafting story and by the "Full app" shell story.
@@ -215,19 +215,12 @@ function draftCall(
  * Persisted-transcript fixture simulating a full editorial session.
  * Several editors take turns one after another (sessions have no real
  * concurrency: one active user at any moment), handing the work over as
- * they come and go. Covers user turns from five authors, event chips,
- * eight draft versions, and save tool calls, all mapped through the
+ * they come and go. Covers user turns from five authors, eight draft
+ * versions, and save tool calls, all mapped through the
  * real hydrate path so the story exercises the same rendering pipeline
  * as a reloaded session.
  */
 const transcript: SessionMessage[] = [
-  {
-    role: "event",
-    type: "session_start",
-    summary: "Session started",
-    at: "2026-08-19T09:00:00Z",
-  },
-
   // Dev Editor opens the session and produces the first two drafts.
   {
     role: "user",
@@ -293,12 +286,6 @@ const transcript: SessionMessage[] = [
 
   // Maria Rossi takes over: formal tone and institutional additions.
   {
-    role: "event",
-    type: "tone",
-    summary: "Tone changed from Clear and professional to Formal",
-    at: "2026-08-19T09:40:00Z",
-  },
-  {
     role: "user",
     userName: "Maria Rossi",
     userId: "maria-rossi",
@@ -363,12 +350,6 @@ const transcript: SessionMessage[] = [
   },
 
   // Ana Silva restructures the piece for the website layout.
-  {
-    role: "event",
-    type: "template",
-    summary: "Template changed to News article with paragraphs",
-    at: "2026-08-19T11:30:00Z",
-  },
   {
     role: "user",
     userName: "Ana Silva",

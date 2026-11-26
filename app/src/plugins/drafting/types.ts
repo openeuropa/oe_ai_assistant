@@ -77,8 +77,3 @@ export interface DraftingPluginConfig {
    */
   preview?: { url?: string };
 }
-
-/** Response body for the drafting reset endpoint. */
-export interface DraftingResetResponse {
-  status: string;
-}

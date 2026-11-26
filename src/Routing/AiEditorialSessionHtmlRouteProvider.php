@@ -23,6 +23,10 @@ class AiEditorialSessionHtmlRouteProvider extends AdminHtmlRouteProvider {
       $collection->add('entity.ai_editorial_session.history', $history_route);
     }
 
+    if ($activity_route = $this->getActivityRoute($entity_type)) {
+      $collection->add('entity.ai_editorial_session.activity', $activity_route);
+    }
+
     return $collection;
   }
 
@@ -47,6 +51,40 @@ class AiEditorialSessionHtmlRouteProvider extends AdminHtmlRouteProvider {
         '_title_callback' => '\Drupal\oe_ai_assistant\Controller\SessionConversationHistoryController::title',
       ])
       ->setRequirement('_permission', 'access ai editorial session neuron history')
+      // The permission says who may open a session subpage, not which
+      // sessions. Without the entity check, anyone who has it can read
+      // every editor's session by walking the ids in the URL.
+      ->setRequirement('_entity_access', $entity_type_id . '.view')
+      ->setOption('_admin_route', TRUE)
+      ->setOption('parameters', [
+        $entity_type_id => ['type' => 'entity:' . $entity_type_id],
+      ]);
+
+    return $route;
+  }
+
+  /**
+   * Gets the activity route of a session.
+   *
+   * @param \Drupal\Core\Entity\EntityTypeInterface $entity_type
+   *   The entity type.
+   *
+   * @return \Symfony\Component\Routing\Route|null
+   *   The generated route, if the entity type declares the link template.
+   */
+  protected function getActivityRoute(EntityTypeInterface $entity_type): ?Route {
+    if (!$entity_type->hasLinkTemplate('activity')) {
+      return NULL;
+    }
+    $entity_type_id = $entity_type->id();
+    $route = new Route($entity_type->getLinkTemplate('activity'));
+    $route
+      ->setDefaults([
+        '_controller' => '\Drupal\oe_ai_assistant\Controller\SessionActivityController::view',
+        '_title_callback' => '\Drupal\oe_ai_assistant\Controller\SessionActivityController::title',
+      ])
+      ->setRequirement('_permission', 'access ai editorial session activity')
+      ->setRequirement('_entity_access', $entity_type_id . '.view')
       ->setOption('_admin_route', TRUE)
       ->setOption('parameters', [
         $entity_type_id => ['type' => 'entity:' . $entity_type_id],

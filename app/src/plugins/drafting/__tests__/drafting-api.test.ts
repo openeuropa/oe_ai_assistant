@@ -5,7 +5,6 @@ import {
   addDraftingDocument,
   listDraftingDocuments,
   removeDraftingDocument,
-  resetDrafting,
   setDraftingTemplate,
 } from "../api/drafting-api";
 
@@ -18,28 +17,6 @@ describe("drafting api", () => {
 
   afterEach(() => {
     vi.unstubAllGlobals();
-  });
-
-  it("posts the sessionId to reset", async () => {
-    const fetchMock = vi.fn().mockImplementation(async (url: string) =>
-      url === "/session/token"
-        ? { ok: true, text: async () => "csrf-42" }
-        : {
-            ok: true,
-            json: async () => ({ status: "ok" }),
-          },
-    );
-    vi.stubGlobal("fetch", fetchMock);
-
-    await resetDrafting();
-
-    expect(fetchMock).toHaveBeenCalledWith(
-      "/api/plugins/drafting/reset",
-      expect.objectContaining({
-        method: "POST",
-        body: JSON.stringify({ sessionId: "session-42" }),
-      }),
-    );
   });
 
   it("posts the template and sessionId to set-template", async () => {

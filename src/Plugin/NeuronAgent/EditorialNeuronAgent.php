@@ -27,6 +27,7 @@ use NeuronAI\Workflow\Streaming\Adapter\StreamAdapterInterface;
     'drafting_get_history',
     'drafting_draft_content',
     SaveDraftNeuronTool::TOOL_ID,
+    'context_get_session_activity',
   ],
   context_definitions: [
     'session' => new EntityContextDefinition(
@@ -121,6 +122,14 @@ final class EditorialNeuronAgent extends EditorialSessionAgentBase {
     - Never say a draft is saved before the result arrives.
     - A cancelled save applies to that request only. When the editor
       asks to save again, call drafting_save_draft again.
+    - Answer questions about what happened in this session and when, such as
+      which tone was used before, when a document was attached or removed, or
+      which draft was saved, by calling context_get_session_activity with the
+      question the editor asked. It answers from the record of the session
+      and never sees this conversation, so write out what a follow-up refers
+      to: "how many times?" goes to it as "how many times was the tone
+      changed?". Report its answer as your own and never guess a time or an
+      order of events.
     - You can have normal conversations with the user at any point.
     PROMPT;
 
