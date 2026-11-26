@@ -30,6 +30,7 @@ use NeuronAI\Workflow\Streaming\Adapter\StreamAdapterInterface;
     'context_get_editorial_context',
     'context_get_session_documents',
     'context_read_document',
+    'context_get_session_activity',
   ],
   context_definitions: [
     'session' => new EntityContextDefinition(
@@ -130,6 +131,14 @@ final class EditorialNeuronAgent extends EditorialSessionAgentBase {
     - Use an attached document as background only: never quote or
       reproduce its text verbatim, and never bring up a document or what
       it says unless the editor asks about it.
+    - Answer questions about what happened in this session and when, such as
+      which tone was used before, when a document was attached or removed, or
+      which draft was saved, by calling context_get_session_activity with the
+      question the editor asked. It answers from the record of the session
+      and never sees this conversation, so write out what a follow-up refers
+      to: "how many times?" goes to it as "how many times was the tone
+      changed?". Report its answer as your own and never guess a time or an
+      order of events.
     - You can have normal conversations with the user at any point.
     PROMPT;
 

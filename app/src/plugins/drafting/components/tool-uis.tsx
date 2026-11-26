@@ -13,6 +13,7 @@ import { makeAssistantToolUI, useAuiState } from "@assistant-ui/react";
 import {
   Check,
   FileSearch,
+  History,
   Info,
   Loader2,
   PenLine,
@@ -284,9 +285,9 @@ export const SaveDraftToolUI = makeAssistantToolUI<SaveArgs, unknown>({
 /**
  * UI for the editorial_event tool call.
  *
- * Editorial events are injected into the transcript by the history adapter
- * so they appear at their chronological position in the thread. This renderer
- * converts the tool-call part into a compact, centered EventChip.
+ * DraftingChat splices one of these into the live thread when a draft
+ * save lands or fails. This renderer converts the tool-call part into a
+ * compact, centered EventChip.
  */
 export const EditorialEventToolUI = makeAssistantToolUI<
   { eventType: string; summary: string; at?: string },
@@ -400,6 +401,12 @@ export const ReadDocumentToolUI = makeSimpleToolUI<
   { document?: string },
   unknown
 >("context_read_document", FileSearch, titleOf);
+
+/** UI for the context_get_session_activity tool call. */
+export const GetSessionActivityToolUI = makeSimpleToolUI<
+  { question: string },
+  unknown
+>("context_get_session_activity", History);
 
 /**
  * Fallback renderer for any tool call not registered with makeAssistantToolUI.

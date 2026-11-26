@@ -477,11 +477,7 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
       'content' => json_encode([['type' => 'text', 'content' => 'leaked sub-agent chatter', 'meta' => []]]),
     ]);
 
-    // Events are exercised in EditorialEventsTest; filter here.
-    $messages = array_values(array_filter(
-      $this->getMessages($session),
-      fn($m) => $m['role'] !== 'event',
-    ));
+    $messages = $this->getMessages($session);
 
     $this->assertSame(
       [
@@ -593,11 +589,7 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
     assert($session instanceof ContentCreationSessionInterface);
     $this->storeDraft($session, $draft);
 
-    // Events are exercised in EditorialEventsTest; filter here.
-    $messages = array_values(array_filter(
-      $this->getMessages($session),
-      fn($m) => $m['role'] !== 'event',
-    ));
+    $messages = $this->getMessages($session);
 
     $this->assertCount(2, $messages);
     $this->assertSame('user', $messages[0]['role']);
@@ -665,10 +657,7 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
     assert($session instanceof ContentCreationSessionInterface);
     $this->storeDraft($session, $draft);
 
-    $messages = array_values(array_filter(
-      $this->getMessages($session),
-      fn($m) => $m['role'] !== 'event',
-    ));
+    $messages = $this->getMessages($session);
 
     $this->assertSame($draft, $messages[0]['toolCalls'][0]['result']);
 
@@ -726,10 +715,7 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
       'fields' => ['title' => [['value' => 'Test Title']]],
     ]);
 
-    $messages = array_values(array_filter(
-      $this->getMessages($session),
-      fn($m) => $m['role'] !== 'event',
-    ));
+    $messages = $this->getMessages($session);
 
     // One message for the pair, not two: the pending row's own card must
     // not appear beside the settled one.
@@ -763,10 +749,7 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
       ]),
     ]);
 
-    $messages = array_values(array_filter(
-      $this->getMessages($session),
-      fn($m) => $m['role'] !== 'event',
-    ));
+    $messages = $this->getMessages($session);
 
     $this->assertCount(1, $messages);
     $calls = $messages[0]['toolCalls'];
@@ -780,33 +763,45 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
   }
 
   /**
-   * Tests that reset clears the whole conversation for the session.
+   * Parses SSE events from a raw response body string.
    *
-   * Provider-independent: it seeds rows and asserts they are deleted.
+   * Each SSE frame is a "data: <json>\n\n" block. This method splits
+   * the body, decodes the JSON, and returns structured event data.
+   *
+   * @param string $body
+   *   The raw SSE response body.
+   *
+   * @return array
+   *   Array of parsed event arrays, each with a 'type' key.
    */
-  public function testResetClearsConversation(): void {
-    $user = $this->createUser(['use oe ai assistant']);
-    $this->loginUser($user);
-    $session = $this->createSession($user);
-    $thread = 'editorial.session_' . $session->id();
+  protected function parseSseEvents(string $body): array {
+    $events = [];
+    $frames = preg_split('/\n\n+/', trim($body));
 
-    $this->seedNeuronRow($session, $thread, [
-      'role' => 'user',
-      'content' => json_encode([['type' => 'text', 'content' => 'Draft a news article.', 'meta' => []]]),
-    ]);
-    $this->seedNeuronRow($session, $thread, [
-      'role' => 'assistant',
-      'content' => json_encode([['type' => 'text', 'content' => 'Here is a draft.', 'meta' => []]]),
-    ]);
+    foreach ($frames as $frame) {
+      $frame = trim($frame);
+      if ($frame === '') {
+        continue;
+      }
 
-    $result = $this->httpPost('/api/ai/plugins/drafting/reset', [
-      'sessionId' => $session->id(),
-    ]);
-    $this->assertEquals(200, $result['status']);
-    $this->assertSame(['status' => 'ok'], json_decode($result['body'], TRUE));
+      $data = '';
+      foreach (explode("\n", $frame) as $line) {
+        if (str_starts_with($line, 'data: ')) {
+          $data .= substr($line, 6);
+        }
+      }
 
-    $this->assertSame([], $session->conversationThreads(),
-      'Reset must delete every message hosted by the session.');
+      if ($data === '' || $data === '[DONE]') {
+        continue;
+      }
+
+      $decoded = json_decode($data, TRUE);
+      if (is_array($decoded) && isset($decoded['type'])) {
+        $events[] = $decoded;
+      }
+    }
+
+    return $events;
   }
 
   /**

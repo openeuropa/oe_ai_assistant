@@ -17,6 +17,7 @@ export const developmentConfig = {
       toolLabels: {
         drafting_draft_content: "Draft content",
         drafting_get_history: "Get draft history",
+        context_get_session_activity: "Get session activity",
         drafting_save_draft: "Save draft",
       },
       preview: {

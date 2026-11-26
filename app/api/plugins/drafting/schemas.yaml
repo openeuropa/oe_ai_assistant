@@ -57,24 +57,6 @@ DraftingChatRequest:
                     - approve
                     - reject
 
-DraftingResetRequest:
-  type: object
-  required:
-    - sessionId
-  properties:
-    sessionId:
-      type: string
-      description: The editorial session whose conversation to reset.
-
-DraftingResetResponse:
-  type: object
-  required:
-    - status
-  properties:
-    status:
-      type: string
-      description: Confirmation status (e.g. "ok").
-
 DraftingSetToneRequest:
   type: object
   required:

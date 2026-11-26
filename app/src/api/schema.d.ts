@@ -93,23 +93,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/plugins/drafting/reset": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Reset the drafting conversation thread */
-        post: operations["postDraftingReset"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/plugins/drafting/set-tone": {
         parameters: {
             query?: never;
@@ -396,7 +379,7 @@ export interface components {
         GetMessagesResponse: {
             /** @description The user-visible transcript, oldest first. */
             messages: {
-                /** @description The message role ("user", "assistant" or "event"). */
+                /** @description The message role ("user" or "assistant"). */
                 role: string;
                 /** @description The message text (user and assistant items). */
                 content?: string;
@@ -404,14 +387,8 @@ export interface components {
                 userName?: string;
                 /** @description Stable CMS user id of the author (user items). Clients key participants by this id so two users sharing a display name stay distinct. */
                 userId?: string;
-                /** @description The event type, e.g. "session_start", "tone", "template" (event items). */
-                type?: string;
-                /** @description The human-readable event summary (event items). */
-                summary?: string;
-                /** @description RFC 3339 timestamp of the event (event items). */
+                /** @description RFC 3339 time the message was stored. */
                 at?: string;
-                /** @description The draft version a "save" event persisted (event items). */
-                version?: number;
                 /** @description The tool calls of an assistant turn, in the order the model made them. */
                 toolCalls?: {
                     /** @description The id the editor's decision names. Sent only for a call that is waiting for one. */
@@ -450,14 +427,6 @@ export interface components {
                     };
                 };
             };
-        };
-        DraftingResetRequest: {
-            /** @description The editorial session whose conversation to reset. */
-            sessionId: string;
-        };
-        DraftingResetResponse: {
-            /** @description Confirmation status (e.g. "ok"). */
-            status: string;
         };
         DraftingSetToneRequest: {
             /** @description The editorial session on which the selected tone is saved. */
@@ -784,30 +753,6 @@ export interface operations {
                 };
                 content: {
                     "text/event-stream": unknown;
-                };
-            };
-        };
-    };
-    postDraftingReset: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["DraftingResetRequest"];
-            };
-        };
-        responses: {
-            /** @description Reset confirmation */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["DraftingResetResponse"];
                 };
             };
         };

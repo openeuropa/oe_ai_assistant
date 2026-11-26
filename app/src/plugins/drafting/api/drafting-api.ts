@@ -3,10 +3,10 @@
  *
  * Sends requests to our RPC-style wrapper endpoint which
  * delegates to the AG-UI controller internally. The chat response
- * is an SSE stream of AG-UI protocol events; reset returns JSON.
- * Every request is scoped to the current editorial session, read
- * from the app config. The session transcript (get-messages) lives
- * in the shared `@/api/session-messages` module.
+ * is an SSE stream of AG-UI protocol events. Every request is
+ * scoped to the current editorial session, read from the app
+ * config. The session transcript (get-messages) lives in the
+ * shared `@/api/session-messages` module.
  */
 
 import { apiFetch } from "@/api/csrf-token";
@@ -50,21 +50,6 @@ export async function postDraftingChat(
     throw new Error(`Drafting API error: ${response.status}`);
   }
   return response;
-}
-
-/** Resets the conversation for the current session. */
-export async function resetDrafting(): Promise<void> {
-  const response = await apiFetch(
-    `${getConfig().apiBaseUrl}/plugins/drafting/reset`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ sessionId: getConfig().sessionId }),
-    },
-  );
-  if (!response.ok) {
-    throw new Error(`Drafting reset error: ${response.status}`);
-  }
 }
 
 /** Sets the selected tone for drafting on the current session. */

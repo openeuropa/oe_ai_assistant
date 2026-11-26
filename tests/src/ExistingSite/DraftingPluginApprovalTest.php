@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Drupal\Tests\oe_ai_assistant\ExistingSite;
 
 use Drupal\node\Entity\Node;
+use Drupal\oe_ai_assistant\Entity\ActivityType;
+use Drupal\oe_ai_assistant\Entity\AiEditorialSessionActivityInterface;
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
 use Drupal\oe_ai_assistant_test\Plugin\AiProvider\MockAiProvider;
 use Drupal\oe_ai_assistant_test\Plugin\AiProvider\MockResponse;
@@ -140,20 +142,6 @@ class DraftingPluginApprovalTest extends DraftingPluginTestBase {
   }
 
   /**
-   * Tests that a reset drops the save that waits for the editor.
-   */
-  public function testResetDropsTheWaitingSave(): void {
-    $session = $this->sessionWithDraft();
-    $this->askToSave($session, 1);
-
-    $result = $this->httpPost('/api/ai/plugins/drafting/reset', ['sessionId' => $session->id()]);
-
-    $this->assertEquals(200, $result['status'], substr($result['body'], 0, 500));
-    $this->assertSame([], $this->getApprovals($session));
-    $this->assertNull($this->editorialRun($session));
-  }
-
-  /**
    * Tests that the transcript carries a save that waits for the editor.
    */
   public function testWaitingSaveIsInTheTranscript(): void {
@@ -207,6 +195,44 @@ class DraftingPluginApprovalTest extends DraftingPluginTestBase {
     $calls = array_merge([], ...array_column($this->getMessages($session), 'toolCalls'));
     $this->assertSame(['drafting_save_draft'], array_column(array_column($calls, 'function'), 'name'));
     $this->assertSame(['version', 'nodeId', 'previewUrl'], array_keys($calls[0]['result']));
+  }
+
+  /**
+   * Tests that an approved save is in the activity record of the session.
+   */
+  public function testApprovedSavesAreInTheActivityRecord(): void {
+    $session = $this->sessionWithDraft([
+      'use oe ai assistant',
+      'create oe_news content',
+      'edit own oe_news content',
+      'use editorial transition create_new_draft',
+    ]);
+    $this->seedDraft($session, 2, ['title' => [['value' => 'Draft two']]]);
+    // Creating the session records an entry of its own, and the assertions
+    // below cover the whole record. Delete it so only the saves remain.
+    $session->deleteActivity();
+
+    $this->askToSave($session, 1, 'call_save_1', 'Draft 1 is saved.');
+    $this->assertSame(200, $this->decide($session, 'call_save_1', TRUE)['status']);
+    $this->askToSave($session, 2, 'call_save_2', 'Draft 2 is saved.');
+    $this->assertSame(200, $this->decide($session, 'call_save_2', TRUE)['status']);
+
+    $nodeId = reset($this->newNodeIds());
+    $entries = $session->getLatestActivity(100);
+    $this->assertSame([
+      sprintf('Draft 1 saved to the CMS as a new node (node %s).', $nodeId),
+      sprintf('Draft 2 saved to the CMS as a new revision of node %s.', $nodeId),
+    ], array_map(
+      static fn (AiEditorialSessionActivityInterface $entry): string => $entry->getMessage(),
+      $entries,
+    ));
+    $this->assertSame(
+      [ActivityType::DraftSaved, ActivityType::DraftSaved],
+      array_map(
+        static fn (AiEditorialSessionActivityInterface $entry): ActivityType => $entry->getType(),
+        $entries,
+      ),
+    );
   }
 
   /**
@@ -318,21 +344,6 @@ class DraftingPluginApprovalTest extends DraftingPluginTestBase {
     $this->assertSame(400, $refused['status']);
     $this->assertSame(self::NO_WAITING_CALL, $refused['message']);
     $this->assertCount(1, $this->newNodeIds());
-  }
-
-  /**
-   * Tests that a decision after a reset is refused.
-   */
-  public function testDecisionAfterResetIsRefused(): void {
-    $session = $this->sessionWithDraft();
-    $this->askToSave($session, 1);
-    $callId = $this->waitingCallId($session);
-    $this->httpPost('/api/ai/plugins/drafting/reset', ['sessionId' => $session->id()]);
-
-    $refused = $this->decide($session, $callId, TRUE);
-    $this->assertSame(400, $refused['status']);
-    $this->assertSame(self::NO_WAITING_CALL, $refused['message']);
-    $this->assertSame([], $this->newNodeIds());
   }
 
   /**

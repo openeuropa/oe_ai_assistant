@@ -5,9 +5,7 @@
  * DraftingChat owns the assistant-ui runtime, the tone/template/documents
  * hooks, and the tab construction. The pane's Save button sends the chat
  * message "Save draft {n}." and the editor confirms the resulting save call
- * in a dialog. Tone and template changes splice a local event chip into the
- * thread state via appendEventToThread so the chip appears instantly without
- * any remount or refetch.
+ * in a dialog.
  *
  * DraftingRoot is a thin shell that renders DraftingChat.
  */
@@ -30,6 +28,7 @@ import {
   DraftContentToolUI,
   EditorialEventToolUI,
   GetEditorialContextToolUI,
+  GetSessionActivityToolUI,
   ReadDocumentToolUI,
   SaveDraftToolUI,
 } from "./components/tool-uis";
@@ -42,7 +41,6 @@ import { useReportParticipants } from "./participants";
 import { useSavedVersions } from "./saved-versions";
 import { useSessionDrafts } from "./session-drafts";
 import { useDraftingSlice } from "./store";
-import { appendEventToThread } from "./thread-events";
 import { useWaitingSaves } from "./waiting-saves";
 
 /** Bridges the runtime's pending state into the shell store. */
@@ -106,9 +104,7 @@ function VersionedDraftPreview({
  *
  * The pane's Save button appends "Save draft {n}." to the thread, which makes
  * the agent call the save tool. The call waits for the editor's decision in
- * the approval dialog. Tone and template handlers capture labels before
- * calling submitValues() and splice a local event chip (or error chip on
- * failure) directly into the thread, without any remount or network refetch.
+ * the approval dialog.
  */
 function DraftingChat() {
   const { draftedFields, runs, activeCallIds, activeDraftVersion } =
@@ -122,18 +118,6 @@ function DraftingChat() {
   const hasFields = Object.keys(draftedFields).length > 0;
   const isDrafting = activeCallIds.some(
     (callId) => runs[callId]?.status === "running",
-  );
-
-  /**
-   * Splices a local event chip (or error chip) into the thread.
-   *
-   * Memoised on runtime so the identity is stable across re-renders that do
-   * not change the runtime reference.
-   */
-  const appendEvent = useCallback(
-    (eventType: string, summary: string) =>
-      appendEventToThread(runtime.thread, { eventType, summary }),
-    [runtime],
   );
 
   /**
@@ -176,8 +160,8 @@ function DraftingChat() {
   }
 
   // Editorial context panels, shown as pill buttons under the composer.
-  // Each opens a centered modal; the save handler appends a local event
-  // chip to the thread on success or an error chip on failure.
+  // Each opens a centered modal. A panel that saves keeps its own pane
+  // open on a failure, and reports the failure in it.
   const tabs: PaneTabItem[] = [];
 
   if (tone.enabled) {
@@ -195,24 +179,9 @@ function DraftingChat() {
           value={tone.value}
           onChange={tone.updateValue}
           onSave={async () => {
-            // Capture labels before saving so the summary matches the backend's.
-            const previous = tone.selectedLabel;
-            const next =
-              tone.options.find((option) => option.value === tone.value)
-                ?.label ?? tone.value;
-            try {
-              await tone.submitValues();
-            } catch (error) {
-              // The pane keeps its inline error; the chat records the failure.
-              appendEvent("error", "Tone change failed");
-              throw error;
-            }
-            appendEvent(
-              "tone",
-              previous
-                ? `Tone changed from ${previous} to ${next}`
-                : `Tone changed to ${next}`,
-            );
+            // submitValues() throws when the save fails. Nothing catches it,
+            // so close() never runs and the pane stays open.
+            await tone.submitValues();
             close();
           }}
           onCancel={() => {
@@ -281,18 +250,9 @@ function DraftingChat() {
           value={template.value}
           onChange={template.updateValue}
           onSave={async () => {
-            // Capture label before saving so the summary matches the backend's.
-            const next =
-              template.options.find((option) => option.value === template.value)
-                ?.label ?? template.value;
-            try {
-              await template.submitValues();
-            } catch (error) {
-              // The pane keeps its inline error; the chat records the failure.
-              appendEvent("error", "Template change failed");
-              throw error;
-            }
-            appendEvent("template", `Template changed to ${next}`);
+            // submitValues() throws when the save fails. Nothing catches it,
+            // so close() never runs and the pane stays open.
+            await template.submitValues();
             close();
           }}
           onCancel={() => {
@@ -301,6 +261,8 @@ function DraftingChat() {
             close();
           }}
           hasChanges={template.hasChanges}
+          isSaving={template.isSaving}
+          error={template.error}
         />
       ),
     });
@@ -315,6 +277,7 @@ function DraftingChat() {
         <SaveDraftToolUI />
         <GetEditorialContextToolUI />
         <ReadDocumentToolUI />
+        <GetSessionActivityToolUI />
 
         {/* Feed the shell exit guard with this plugin's pending state.
           Panel saves report themselves via useCardSelection. */}
