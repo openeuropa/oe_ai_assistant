@@ -113,16 +113,21 @@ describe("parseDraftResult", () => {
     expect(result.fields).toEqual(raw);
   });
 
-  it("treats an object with a numeric version as a legacy fields map", () => {
-    // The backend only ever sends a version as a string; a number here is
-    // data from a shape this parser does not know, not a draft version.
-    const raw = { version: 1, title: [{ value: "Old" }] };
+  it("reads a numeric version as that major with no minor, for history predating the major.minor scheme", () => {
+    const raw = {
+      version: 1,
+      fields: { title: [{ value: "Old" }] },
+    };
 
     const result = parseDraftResult(raw);
 
-    expect(result.version).toBeNull();
-    expect(result.context).toBeNull();
-    expect(result.fields).toEqual(raw);
+    expect(result.version).toBe("1.0");
+    expect(result.context).toEqual({
+      tone: null,
+      template: null,
+      documents: [],
+    });
+    expect(result.fields).toEqual({ title: [{ value: "Old" }] });
   });
 
   it("gives an empty group list to a versioned result that names none", () => {

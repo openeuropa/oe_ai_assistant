@@ -85,18 +85,28 @@ final class AmendContentNode extends Node {
     // this key existed falls back to the session's live groups.
     $groups = (array) ($source['schemaGroups'] ?? $resources->session->getFieldGroups());
     $availableIds = array_column($groups, 'groupId');
-    $named = array_filter(array_map('strval', $this->groups));
+    $named = array_values(array_filter(
+      array_map('strval', $this->groups),
+      static fn (string $id): bool => $id !== '',
+    ));
     $targetIds = $named !== [] ? array_intersect($named, $availableIds) : $availableIds;
+    $unknownIds = $named !== [] ? array_diff($named, $availableIds) : [];
 
-    // If the call names only groups this draft doesn't have, the loop below
-    // would copy the source draft over unchanged and still report the new
-    // version as ready. Tell the editor which group IDs it can pick from.
-    if ($targetIds === []) {
-      $message = sprintf(
-        'None of the named groups exist in draft %s. Available groups: %s.',
-        DraftVersion::display($sourceVersion),
-        implode(', ', $availableIds),
-      );
+    // Fail on any unknown group ID instead of silently amending only the
+    // known ones.
+    if ($targetIds === [] || $unknownIds !== []) {
+      $message = $targetIds === []
+        ? sprintf(
+          'None of the named groups exist in draft %s. Available groups: %s.',
+          DraftVersion::display($sourceVersion),
+          implode(', ', $availableIds),
+        )
+        : sprintf(
+          'Draft %s has no group(s) named %s. Available groups: %s.',
+          DraftVersion::display($sourceVersion),
+          implode(', ', $unknownIds),
+          implode(', ', $availableIds),
+        );
       yield new CustomStreamEvent('amend-failed', [
         'callId' => $callId,
         'sourceVersion' => $sourceVersion,

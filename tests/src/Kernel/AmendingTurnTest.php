@@ -260,6 +260,36 @@ class AmendingTurnTest extends AiEditorialSessionKernelTestBase {
   }
 
   /**
+   * Naming one real group and one unknown one fails without amending either.
+   */
+  public function testAmendingMixOfKnownAndUnknownGroupNamesReportsFailureWithoutDrafting(): void {
+    $session = $this->createSession($this->createUser());
+
+    MockAiProvider::reset();
+    $this->enqueueTurn();
+    $this->turn($session, 'Please draft it, go ahead.');
+
+    MockAiProvider::reset();
+    MockAiProvider::enqueue($this->amendCall('call_1', '1.0', ['main_fields', 'no_such_group']));
+    MockAiProvider::enqueue(new MockResponse(text: 'That group does not exist.'));
+
+    $this->turn($session, 'Fix the title and the no_such_group field.');
+
+    $results = $session->conversationToolResults();
+    $this->assertSame(
+      [
+        'error' => 'Draft 1 has no group(s) named no_such_group. Available'
+        . ' groups: main_fields, field_content_paragraphs.',
+        'version' => '1.0',
+        'status' => 'failed',
+      ],
+      $results[1]['result'],
+    );
+    // Neither group was amended: no new draft was stored at all.
+    $this->assertSame(['Draft 1'], array_column($session->listDrafts(), 'name'));
+  }
+
+  /**
    * A group that never matches its schema fails the amendment and records why.
    */
   public function testAmendingGroupThatNeverMatchesFailsAndRecordsNoHeaderError(): void {

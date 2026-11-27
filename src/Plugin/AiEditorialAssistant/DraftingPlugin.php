@@ -737,8 +737,9 @@ class DraftingPlugin extends AiAssistantPluginBase {
     ]);
 
     $version = (string) $request->query->get('version', '');
-    if ($version === '') {
-      throw new ActionException('invalid_request', 'A version is required.', 400);
+    // DraftVersion::parts() casts a malformed value instead of rejecting it.
+    if ($version === '' || !preg_match('/^\d+(\.\d+)?$/', $version)) {
+      throw new ActionException('invalid_request', 'A valid version (e.g. "2" or "2.1") is required.', 400);
     }
 
     if (!$session instanceof ContentCreationSessionInterface) {
