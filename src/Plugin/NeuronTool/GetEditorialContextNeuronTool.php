@@ -24,13 +24,13 @@ use NeuronAI\Tools\ToolProperty;
  */
 #[NeuronTool(
   id: 'context_get_editorial_context',
-  description: 'Answers one question about what the editor set up for this'
-  . ' session and what else they can pick: the tone and the template, each'
-  . ' with the options available, and the documents attached as background.'
-  . ' Call it with the question itself, close to the editor\'s own wording,'
-  . ' to answer what the session is about, what material is attached or'
-  . ' what it covers, or which tones or templates the editor can choose'
-  . ' from. Its answer reflects the session\'s current state.',
+  description: 'Answers one question about how this session stands now: the tone'
+  . ' and the template it holds, the options the editor can pick instead, and'
+  . ' the documents attached as background. Call it with the question itself,'
+  . ' close to the editor\'s own wording, to answer what the session is about,'
+  . ' what material is attached or what it covers, or which tones or templates'
+  . ' the editor can choose from. For what changed, when, or in which order,'
+  . ' call context_get_session_activity instead.',
   label: new TranslatableMarkup('Get editorial context'),
   context_definitions: [
     'session' => new EntityContextDefinition(
