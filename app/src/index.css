@@ -16,6 +16,10 @@
 @import "shadcn/tailwind.css";
 @import "@fontsource-variable/geist";
 
+/* Tailwind never scans node_modules; without this, classes Streamdown
+   alone uses (e.g. bg-sidebar) are never generated. */
+@source "../node_modules/streamdown/dist/**/*.js";
+
 @custom-variant dark (&:is(.dark *));
 
 @theme {
@@ -374,6 +378,22 @@
 
   .chat-markdown p + p {
     margin-top: 0.75rem !important;
+  }
+}
+
+/* Added via classList at runtime (drafting-thread.tsx); can't be a
+   Tailwind utility. */
+@layer components {
+  .streamdown-copy-failed {
+    color: var(--color-red-500) !important;
+  }
+}
+
+/* No language info-string leaves an empty label span and a blank header
+   bar. */
+@layer components {
+  [data-streamdown="code-block-header"]:has(span:empty) {
+    display: none !important;
   }
 }
 

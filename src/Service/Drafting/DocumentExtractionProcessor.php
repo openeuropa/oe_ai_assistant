@@ -4,9 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\oe_ai_assistant\Service\Drafting;
 
-use Drupal\ai\AiProviderPluginManager;
-use Drupal\ai\OperationType\Chat\ChatInput;
-use Drupal\ai\OperationType\Chat\ChatMessage;
+use Drupal\ai_neuron\Agent\NeuronAgentManagerInterface;
 use Drupal\Component\Datetime\TimeInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Lock\LockBackendInterface;
@@ -18,8 +16,11 @@ use Drupal\document_loader\DocumentLoaderType\Input\WordInput;
 use Drupal\document_loader\Service\DocumentLoaderManager;
 use Drupal\file\FileInterface;
 use Drupal\media\MediaInterface;
+use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
 use Drupal\oe_ai_assistant\Exception\DocumentExtractionException;
+use Drupal\oe_ai_assistant\Plugin\NeuronAgent\SummaryNeuronAgent;
 use Drupal\state_machine\Plugin\Field\FieldType\StateItemInterface;
+use NeuronAI\Chat\Messages\UserMessage;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 
@@ -55,19 +56,11 @@ final class DocumentExtractionProcessor implements DocumentExtractionProcessorIn
    */
   private const int MAX_PROMPT_CHARS = 60000;
 
-  /**
-   * System prompt of the summary call.
-   */
-  private const string SUMMARY_PROMPT = 'You summarise briefing documents for editors. '
-    . 'Write a brief summary of the document in English, three to five sentences: '
-    . 'what it is and its key points. Return only the summary.';
-
   public function __construct(
     #[Autowire(service: 'document_loader.manager')]
     private readonly DocumentLoaderManager $loader,
     private readonly AccountProxyInterface $currentUser,
-    #[Autowire(service: 'ai.provider')]
-    private readonly AiProviderPluginManager $aiProviderManager,
+    private readonly NeuronAgentManagerInterface $agents,
     private readonly EntityTypeManagerInterface $entityTypeManager,
     #[Autowire(service: 'lock')]
     private readonly LockBackendInterface $lock,
@@ -230,7 +223,7 @@ final class DocumentExtractionProcessor implements DocumentExtractionProcessorIn
         $this->transition($media, 'claim_summarize');
       }
 
-      $summary = $this->summarize((string) $media->get(self::EXTRACT_FIELD)->value);
+      $summary = $this->summarize($media);
       if ($this->isDeleted($media)) {
         return self::STATE_SUMMARIZING;
       }
@@ -295,28 +288,63 @@ final class DocumentExtractionProcessor implements DocumentExtractionProcessorIn
   }
 
   /**
-   * Writes a brief summary of the extract with the default chat provider.
+   * Writes a brief summary of the extract with the summary agent.
    *
    * The call is not streamed and the extract is capped so a long document
-   * never overflows the model context.
+   * never overflows the model context. We build the agent with the document
+   * and the session it belongs to, so the session's history page shows the
+   * call and counts its tokens.
+   *
+   * @throws \Drupal\oe_ai_assistant\Exception\DocumentExtractionException
+   *   When the document names no session, no chat provider is configured,
+   *   or the provider answers with no summary.
    */
-  private function summarize(string $text): string {
-    $defaults = $this->aiProviderManager->getDefaultProviderForOperationType('chat');
-    if (empty($defaults['provider_id']) || empty($defaults['model_id'])) {
-      throw new DocumentExtractionException('No default chat provider is configured.');
+  private function summarize(MediaInterface $media): string {
+    $session = $this->session($media);
+
+    try {
+      $agent = $this->agents->createAgent(SummaryNeuronAgent::PLUGIN_ID, [
+        'session' => $session,
+        'media' => $media,
+      ]);
     }
-    $provider = $this->aiProviderManager->createInstance($defaults['provider_id']);
+    catch (\InvalidArgumentException $e) {
+      throw new DocumentExtractionException('No default chat provider is configured.', 0, $e);
+    }
 
-    $input = new ChatInput([new ChatMessage('user', mb_substr($text, 0, self::MAX_PROMPT_CHARS))]);
-    $input->setSystemPrompt(self::SUMMARY_PROMPT);
-    $output = $provider->chat($input, $defaults['model_id'], ['oe_ai_assistant', 'document_summary']);
+    $text = (string) $media->get(self::EXTRACT_FIELD)->value;
+    $message = new UserMessage(mb_substr($text, 0, self::MAX_PROMPT_CHARS));
+    $response = $agent->chat($message)->getMessage();
+    if ($response === NULL) {
+      throw new DocumentExtractionException('The provider returned no response.');
+    }
 
-    $summary = trim($output->getNormalized()->getText());
+    $content = $response->getContent();
+    if ($content === NULL) {
+      throw new DocumentExtractionException('The provider returned a response with no text content.');
+    }
+
+    $summary = trim($content);
     if ($summary === '') {
       throw new DocumentExtractionException('The provider returned an empty summary.');
     }
 
     return $summary;
+  }
+
+  /**
+   * The editorial session a document belongs to.
+   *
+   * @throws \Drupal\oe_ai_assistant\Exception\DocumentExtractionException
+   *   When the document names no session.
+   */
+  private function session(MediaInterface $media): AiEditorialSessionInterface {
+    $session = $media->get(DocumentRepositoryBase::SESSION_FIELD)->entity;
+    if (!$session instanceof AiEditorialSessionInterface) {
+      throw new DocumentExtractionException(sprintf('Document %s names no editorial session.', $media->id()));
+    }
+
+    return $session;
   }
 
   /**

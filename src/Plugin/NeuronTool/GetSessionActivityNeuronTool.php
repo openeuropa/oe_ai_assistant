@@ -24,11 +24,13 @@ use NeuronAI\Tools\ToolProperty;
  */
 #[NeuronTool(
   id: 'context_get_session_activity',
-  description: 'Answers a question about what happened in this session: the tones'
-  . ' and templates the editor picked, the documents attached or removed, the'
-  . ' drafts generated or failed, and the drafts saved to the CMS. The record'
-  . ' says when each one happened and who did it. Call it to answer what the'
-  . ' editor changed, when, or in which order, and pass their question.',
+  description: 'Answers a question about what changed in this session, when, and'
+  . ' in which order. The record covers the tones and templates the editor'
+  . ' picked, the documents attached or removed, the drafts generated or'
+  . ' failed, and the drafts saved to the CMS, and it says when each one'
+  . ' happened and who did it. Call it with the editor\'s question for the'
+  . ' history of the session. For what the session holds now, and what else'
+  . ' the editor can pick, call context_get_editorial_context instead.',
   label: new TranslatableMarkup('Get session activity'),
   context_definitions: [
     'session' => new EntityContextDefinition(

@@ -4,11 +4,8 @@ declare(strict_types=1);
 
 namespace Drupal\oe_ai_assistant\Evaluators;
 
-use Drupal\ai_neuron\Agent\NeuronAgentManagerInterface;
-use NeuronAI\Chat\Messages\UserMessage;
 use NeuronAI\Evaluation\Assertions\StringContains;
 use NeuronAI\Evaluation\Contracts\DatasetInterface;
-use NeuronAI\Evaluation\Conversation\Trajectory;
 use NeuronAI\Evaluation\Dataset\ArrayDataset;
 
 /**
@@ -52,15 +49,12 @@ final class SessionSelectionLabelsEvaluator extends EditorialSessionEvaluatorBas
    *   The answer of the one turn this evaluator takes.
    */
   public function run(array $datasetItem): mixed {
-    [$session, $owner] = $this->createSession($datasetItem['input']);
+    [$session, $owner] = $this->createSession(...$datasetItem['input']);
     $sessionId = (int) $session->id();
 
     try {
-      $agent = \Drupal::service(NeuronAgentManagerInterface::class)
-        ->createAgent('editorial', ['session' => $this->session($sessionId)]);
-      $agent->chat(new UserMessage('Which tone and which template is this session set up with?'));
-
-      return Trajectory::fromChatHistory($agent->getChatHistory())->finalAnswer();
+      return $this->ask($sessionId, 'Which tone and which template is this session set up with?')
+        ->finalAnswer();
     }
     finally {
       $this->deleteSession($sessionId, $owner);
@@ -73,8 +67,8 @@ final class SessionSelectionLabelsEvaluator extends EditorialSessionEvaluatorBas
   public function evaluate(mixed $output, array $datasetItem): void {
     assert(is_string($output));
 
-    foreach ($datasetItem['expected_output'] as $selection => $label) {
-      $this->assert(new StringContains($label), $output, $selection);
+    foreach ($datasetItem['expected_output'] as $checkpoint => $label) {
+      $this->assert(new StringContains($label), $output, $checkpoint);
     }
   }
 

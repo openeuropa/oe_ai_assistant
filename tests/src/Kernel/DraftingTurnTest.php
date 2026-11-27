@@ -114,13 +114,13 @@ class DraftingTurnTest extends AiEditorialSessionKernelTestBase {
   }
 
   /**
-   * A drafter reads what the editor and the assistant said before the draft.
+   * A drafter reads the brief, and nothing else the session has heard.
    *
-   * The task is the only thing a drafter reads, and the drafts stay out of
-   * it. So an earlier turn reaches the drafter as a line of the conversation,
-   * and the fields of an earlier draft reach it not at all.
+   * The task is the only thing a drafter reads. It carries the brief the
+   * editorial agent wrote for this run, so neither an earlier turn of the
+   * conversation nor the fields of an earlier draft reach a drafter.
    */
-  public function testDrafterReadsTheConversationWithoutTheDrafts(): void {
+  public function testDrafterReadsTheBriefAndNothingElse(): void {
     $session = $this->createSession($this->createUser());
 
     MockAiProvider::reset();
@@ -137,15 +137,18 @@ class DraftingTurnTest extends AiEditorialSessionKernelTestBase {
     $threads = $session->conversationThreads();
     $task = (string) ($threads[$this->thread($session, 2, 'main_fields')][0]->getContent()[0]['content'] ?? '');
 
-    $this->assertStringContainsString('Editor: We are writing about the floods in Valencia.', $task);
-    $this->assertStringContainsString('Assistant: Tell me when you are ready.', $task);
-    $this->assertStringContainsString('Assistant: Draft 1 is ready.', $task);
-    // This turn is still open while the drafters run, so its message is not
-    // in the conversation block. The drafter gets it as the brief instead.
     $this->assertStringContainsString('What the editor asked for:', $task);
     $this->assertStringContainsString('Draft another one.', $task);
 
-    // The conversation names the drafts it produced and carries none of them.
+    // A document the editor removes is still described in what the agent
+    // said about it earlier. The brief is written for this run, so the
+    // turns behind it are the ones that can name material that is gone.
+    $this->assertStringNotContainsString('Editor: We are writing about the floods in Valencia.', $task);
+    $this->assertStringNotContainsString('Assistant: Tell me when you are ready.', $task);
+    $this->assertStringNotContainsString('Assistant: Draft 1 is ready.', $task);
+
+    // A drafter writes one group against its own schema, so the fields of
+    // an earlier draft are another group's answer to another question.
     $this->assertStringNotContainsString('field_teaser', $task);
     $this->assertStringNotContainsString('<p>B</p>', $task);
   }

@@ -72,10 +72,6 @@ final class DraftContentNode extends Node {
       fn (): int => $resources->session->nextVersion(),
     );
     $run = $this->runId($version);
-    // The conversation can't change while the groups are drafted, so reading
-    // it per group would repeat the same query. It is read once here, for the
-    // whole draft.
-    $conversation = $this->conversation($resources);
     $answers = [];
     $index = 0;
     $failed = '';
@@ -129,7 +125,7 @@ final class DraftContentNode extends Node {
 
         if (!is_array($fields)) {
           yield $this->progress($callId, $group, 'drafting', $index, $total);
-          $fields = $this->draftGroup($resources, $group, $run, $this->task($conversation, $answers));
+          $fields = $this->draftGroup($resources, $group, $run, $this->task($answers));
           $fields = $this->memoize('group.' . $callId . '.' . $groupId, static fn (): array => $fields);
         }
 
@@ -439,27 +435,23 @@ final class DraftContentNode extends Node {
    * Builds what this run tells one group's drafter.
    *
    * A drafter only sees its own thread, so without a task it would write
-   * about a subject of its own choosing. The task gives it the conversation
-   * from the session and whatever the earlier groups wrote.
+   * about a subject of its own choosing. The task gives it the brief and
+   * whatever the earlier groups wrote.
    *
-   * @param string $conversation
-   *   The conversation block from conversation(), empty when the session has
-   *   no turns yet.
    * @param array $answers
    *   What the groups drafted so far wrote, keyed by group id.
    *
    * @return string
    *   The task.
    */
-  private function task(string $conversation, array $answers): string {
-    $task = $conversation;
-
-    // The conversation block only has turns that have been closed. The turn
-    // that asked for this draft is still open while the tool runs, so only
-    // the brief has the editor's request.
-    if ($this->brief !== '') {
-      $task .= "What the editor asked for:\n" . $this->brief . "\n\n";
-    }
+  private function task(array $answers): string {
+    // The drafter is told what the editor wants and nothing else. The
+    // conversation would carry every sentence the assistant ever wrote,
+    // including what it said about a document the editor has since taken
+    // away, and a drafter cannot tell those apart. The material comes from
+    // the document tools, which answer for the documents the session holds
+    // now.
+    $task = "What the editor asked for:\n" . $this->brief . "\n\n";
 
     // A later group must fit the title and the summary the main group wrote,
     // so the task carries them.
@@ -468,35 +460,7 @@ final class DraftContentNode extends Node {
         . json_encode($answers[self::MAIN_GROUP]) . "\n\n";
     }
 
-    return $task . 'Generate content for the fields in the provided schema. Follow the conversation context.';
-  }
-
-  /**
-   * Formats the session's conversation for a drafter's prompt.
-   *
-   * This reads the editorial thread only. The drafts don't show up in it,
-   * because each group's drafter writes to a thread of its own.
-   *
-   * @param \Drupal\oe_ai_assistant\Plugin\NeuronWorkflow\DraftContent\DraftContentResources $resources
-   *   What this run shares.
-   *
-   * @return string
-   *   The conversation block, empty when the session has no turns yet.
-   */
-  private function conversation(DraftContentResources $resources): string {
-    $turns = $resources->session->conversationTurns();
-    if ($turns === []) {
-      return '';
-    }
-
-    return "The conversation so far:\n" . implode("\n", array_map(
-      static fn (array $turn): string => sprintf(
-        '%s: %s',
-        $turn['role'] === 'user' ? 'Editor' : 'Assistant',
-        $turn['text'],
-      ),
-      $turns,
-    )) . "\n\n";
+    return $task . 'Generate content for the fields in the provided schema. Follow the brief.';
   }
 
 }

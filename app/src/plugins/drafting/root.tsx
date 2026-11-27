@@ -27,7 +27,9 @@ import { PaneBusyOverlay } from "./components/pane-busy-overlay";
 import {
   DraftContentToolUI,
   EditorialEventToolUI,
+  GetEditorialContextToolUI,
   GetSessionActivityToolUI,
+  ReadDocumentToolUI,
   SaveDraftToolUI,
 } from "./components/tool-uis";
 import { useDraftingDocuments } from "./hooks/use-drafting-documents";
@@ -273,6 +275,8 @@ function DraftingChat() {
         <DraftContentToolUI />
         <EditorialEventToolUI />
         <SaveDraftToolUI />
+        <GetEditorialContextToolUI />
+        <ReadDocumentToolUI />
         <GetSessionActivityToolUI />
 
         {/* Feed the shell exit guard with this plugin's pending state.

@@ -12,7 +12,9 @@ import type { ToolCallMessagePartProps } from "@assistant-ui/react";
 import { makeAssistantToolUI, useAuiState } from "@assistant-ui/react";
 import {
   Check,
+  FileSearch,
   History,
+  Info,
   Loader2,
   PenLine,
   Save,
@@ -310,10 +312,9 @@ function safeJsonParse(raw: string): unknown {
  * Decodes a tool's JSON result into a plain object, whatever shape it
  * arrives in.
  *
- * A live call carries the JSON string __invoke() returned verbatim; a
- * rehydrated one carries the same payload already decoded into a plain
- * object, by NeuronMessage::decodeResult()/DraftingPlugin::toolCallsOf() on
- * the backend. Both shapes are accepted here.
+ * A live call carries the JSON string the tool returned verbatim; a
+ * rehydrated one, after a page reload, carries the same payload already
+ * decoded into a plain object. Both shapes are accepted here.
  */
 function parseToolResult(result: unknown): Record<string, unknown> | undefined {
   const parsed = typeof result === "string" ? safeJsonParse(result) : result;
@@ -324,14 +325,37 @@ function parseToolResult(result: unknown): Record<string, unknown> | undefined {
 }
 
 /**
- * Whether a tool's result carries an in-band error.
+ * Whether a tool's result signals failure.
  *
- * The backend reports a tool failure this way rather than as a tool error,
- * so assistant-ui always settles the call as complete; the card has to look
- * inside the result itself to tell the two apart.
+ * assistant-ui always settles the call as complete, so the card has to look
+ * inside the result itself. A result can carry a failure three ways: our own
+ * tools report it in-band as `{error: "..."}`; an input validation failure
+ * that never reaches the tool arrives live as plain, non-JSON error text,
+ * and after a reload as the decoded `{is_error: true, blocks: [...]}`
+ * shape.
  */
-function resultIsError(parsed: Record<string, unknown> | undefined): boolean {
-  return typeof parsed?.error === "string" && parsed.error !== "";
+function resultIsError(
+  result: unknown,
+  parsed: Record<string, unknown> | undefined,
+): boolean {
+  if (parsed !== undefined) {
+    return (
+      parsed.is_error === true ||
+      (typeof parsed.error === "string" && parsed.error !== "")
+    );
+  }
+  // Our own tools only ever succeed with a JSON object string, so a result
+  // that is a non-empty string but did not parse as one is Neuron's own
+  // validation failure text.
+  return typeof result === "string" && result !== "";
+}
+
+/** Reads the document's title off its parsed result. */
+function titleOf(
+  parsed: Record<string, unknown> | undefined,
+): string | undefined {
+  const title = parsed?.title;
+  return typeof title === "string" && title !== "" ? title : undefined;
 }
 
 /**
@@ -357,12 +381,26 @@ function makeSimpleToolUI<TArgs, TResult>(
           icon={icon}
           label={toolLabel(toolName)}
           detail={detail?.(parsed)}
-          status={resultIsError(parsed) ? { type: "incomplete" } : status}
+          status={
+            resultIsError(result, parsed) ? { type: "incomplete" } : status
+          }
         />
       );
     },
   });
 }
+
+/** UI for the context_get_editorial_context tool call. */
+export const GetEditorialContextToolUI = makeSimpleToolUI<
+  Record<string, never>,
+  unknown
+>("context_get_editorial_context", Info);
+
+/** UI for the context_read_document tool call. */
+export const ReadDocumentToolUI = makeSimpleToolUI<
+  { document?: string },
+  unknown
+>("context_read_document", FileSearch, titleOf);
 
 /** UI for the context_get_session_activity tool call. */
 export const GetSessionActivityToolUI = makeSimpleToolUI<

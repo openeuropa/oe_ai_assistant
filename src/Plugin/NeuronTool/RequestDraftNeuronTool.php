@@ -74,18 +74,23 @@ final class RequestDraftNeuronTool extends NeuronToolPluginBase implements Workf
   /**
    * {@inheritdoc}
    *
-   * The drafters read the session's conversation, and conversationTurns()
-   * only returns turns that have been closed. The turn that asks for a draft
-   * is still open while this tool runs, so its message is missing from the
-   * conversation. The agent repeats it in this property.
+   * The drafters can't see this conversation, so the brief is all they know
+   * about what the editor wants. Keep it to the editor's intent. They read
+   * the attached documents themselves with context_get_session_documents.
+   * A brief that names a subject can send them after a document the editor
+   * has since removed.
    */
   protected function properties(): array {
     return [
       ToolProperty::make(
         'brief',
         PropertyType::STRING,
-        'What the editor asked for, in their own words. Quote the request'
-        . ' that asked for this draft rather than summarising it.',
+        'What the editor asked for and how they want it, written for a'
+        . ' drafter that cannot see this conversation: the angle they want,'
+        . ' and anything they told you to include or leave out. Carry their'
+        . ' intent and nothing else. Never name, describe or quote the'
+        . ' attached material: the drafter reads whatever the session holds'
+        . ' at the time it runs, which is not what you were told earlier.',
         TRUE,
       ),
     ];
@@ -98,7 +103,7 @@ final class RequestDraftNeuronTool extends NeuronToolPluginBase implements Workf
     return $this->workflows->createWorkflow('draft_content', [], [
       'session' => $this->getContextValue('session'),
       'call' => (string) $call->getCallId(),
-      'brief' => (string) ($call->getInput('brief') ?? ''),
+      'brief' => trim((string) ($call->getInput('brief') ?? '')),
     ]);
   }
 

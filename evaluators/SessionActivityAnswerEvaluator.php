@@ -4,17 +4,10 @@ declare(strict_types=1);
 
 namespace Drupal\oe_ai_assistant\Evaluators;
 
-use Drupal\ai_neuron\Agent\NeuronAgentManagerInterface;
-use Drupal\ai_neuron\Providers\ProviderFactoryInterface;
-use Drupal\file\Upload\InputStreamUploadedFile;
 use Drupal\oe_ai_assistant\Service\Drafting\ContextDocumentRepository;
-use NeuronAI\Agent\Agent;
-use NeuronAI\Agent\AgentInterface;
-use NeuronAI\Chat\Messages\UserMessage;
-use NeuronAI\Evaluation\Assertions\Judges\CorrectnessJudge;
+use NeuronAI\Evaluation\Assertions\AgentJudge;
 use NeuronAI\Evaluation\Assertions\Trajectory\ToolWasCalled;
 use NeuronAI\Evaluation\Contracts\DatasetInterface;
-use NeuronAI\Evaluation\Conversation\Trajectory;
 use NeuronAI\Evaluation\Dataset\ArrayDataset;
 
 /**
@@ -27,20 +20,7 @@ use NeuronAI\Evaluation\Dataset\ArrayDataset;
  */
 final class SessionActivityAnswerEvaluator extends EditorialSessionEvaluatorBase {
 
-  /**
-   * The judge that scores each checkpoint's answer against its criteria.
-   */
-  private AgentInterface $judge;
-
-  /**
-   * {@inheritdoc}
-   */
-  public function setUp(): void {
-    // AgentJudge asks the judge for a JudgeScoreOutput, so plain chat is not
-    // enough: the provider has to support structured responses.
-    $provider = \Drupal::service(ProviderFactoryInterface::class)->create('chat_with_structured_response', ['evaluation_judge']);
-    $this->judge = Agent::make()->setAiProvider($provider);
-  }
+  use EvaluationDocumentsTrait;
 
   /**
    * {@inheritdoc}
@@ -51,20 +31,23 @@ final class SessionActivityAnswerEvaluator extends EditorialSessionEvaluatorBase
         'input' => [
           'tone' => 'Formal',
           'changed_tone' => 'Technical',
-          'document' => [
-            'title' => 'Press Release',
-            'text' => 'The product launches on March 3rd in Brussels.',
-          ],
+          'document' => 'Fishing quotas',
         ],
         // One fact per checkpoint. A judge scores a reply that answers half
         // of a two-part question as half wrong, so the count of the tone
-        // changes and the tone before them are asked apart.
+        // changes and the tone before them are asked apart. Each entry is a
+        // criterion the reply has to meet, not a reply to match: the
+        // assistant volunteers what a document covers, and a judge asked
+        // for equivalence marks that extra detail as a difference.
         'expected_output' => [
-          'created' => 'The session uses the Formal tone.',
-          'tone_change_count' => 'The tone of the session changed once.',
-          'tone_before_change' => 'Before the change the tone was Formal.',
-          'document_attached' => 'One document is attached, named "Press Release.txt".',
-          'document_removed' => 'The document "Press Release.txt" was attached, and then removed.',
+          'created' => 'The reply says the session was created with the Formal tone.',
+          'tone_change_count' => 'The reply says the tone changed once.',
+          'tone_before_change' => 'The reply says the tone was Formal before the change.',
+          'document_attached' => 'The reply says a document called Fishing quotas is attached.',
+          // The record names a document by its file, so the criterion asks
+          // for the name without pinning the extension: a judge docks a
+          // reply that says "Fishing quotas.txt" against "Fishing quotas".
+          'document_removed' => 'The reply says a document called Fishing quotas was removed.',
         ],
       ],
     ]);
@@ -81,32 +64,30 @@ final class SessionActivityAnswerEvaluator extends EditorialSessionEvaluatorBase
    */
   public function run(array $datasetItem): mixed {
     $input = $datasetItem['input'];
-    [$session, $owner] = $this->createSession(['tone' => $input['tone']]);
+    [$session, $owner] = $this->createSession(tone: $input['tone']);
     $sessionId = (int) $session->id();
-    $switcher = \Drupal::service('account_switcher');
-
-    // Attaching a document saves a media that references the uploaded file,
-    // and Drupal checks that the current user may reference it. On the
-    // command line we start out as anonymous, so we run as the owner.
-    $switcher->switchTo($owner);
 
     try {
       $answers = [
-        'created' => $this->ask($sessionId, 'What tone is this session using?'),
+        'created' => $this->ask($sessionId, 'What tone was this session created with?'),
       ];
 
       $this->setTone($sessionId, $input['changed_tone']);
       $answers['tone_change_count'] = $this->ask($sessionId, 'How many times has the tone changed in this session?');
       $answers['tone_before_change'] = $this->ask($sessionId, 'What was the tone of this session before the last change?');
 
-      $documentId = $this->attachDocument($sessionId, $input['document']);
+      $documentId = $this->attachFixtureDocument(
+        $this->session($sessionId),
+        $input['document'],
+        $this->fixtureFiles()[$input['document']],
+      );
       $answers['document_attached'] = $this->ask($sessionId, 'Which documents are attached to this session?');
 
       \Drupal::service(ContextDocumentRepository::class)->remove($this->session($sessionId), $documentId);
       $answers['document_removed'] = $this->ask($sessionId, 'What happened to the documents of this session?');
     }
     finally {
-      $switcher->switchBack();
+      $this->deleteFixtureDocuments();
       $this->deleteSession($sessionId, $owner);
     }
 
@@ -117,38 +98,43 @@ final class SessionActivityAnswerEvaluator extends EditorialSessionEvaluatorBase
    * Scores each answer against what the record held when it was asked.
    */
   public function evaluate(mixed $output, array $datasetItem): void {
+    $expected = $datasetItem['expected_output'];
+
+    // The attach and the remove both happened after the last call to
+    // context_get_session_activity, and an earlier answer still reports the
+    // document as attached. An agent that answers from the thread repeats
+    // it, so this checkpoint asserts a fresh call.
     $this->assert(
       new ToolWasCalled('context_get_session_activity'),
-      $output['created'],
-      'tool_called',
+      $output['document_removed'],
+      'reads_the_record_after_the_remove',
     );
 
-    foreach ($datasetItem['expected_output'] as $checkpoint => $expected) {
-      $this->assert(
-        new CorrectnessJudge(judge: $this->judge, expected: $expected, threshold: 0.7),
-        $output[$checkpoint]->finalAnswer(),
-        $checkpoint,
-      );
-    }
-  }
-
-  /**
-   * Asks the editorial agent one question and returns the turn it ran.
-   *
-   * @param int $sessionId
-   *   The session to ask about.
-   * @param string $question
-   *   The question to ask.
-   *
-   * @return \NeuronAI\Evaluation\Conversation\Trajectory
-   *   The turn, which holds its answer and the tools it called.
-   */
-  private function ask(int $sessionId, string $question): Trajectory {
-    $agent = \Drupal::service(NeuronAgentManagerInterface::class)
-      ->createAgent('editorial', ['session' => $this->session($sessionId)]);
-    $agent->chat(new UserMessage($question));
-
-    return Trajectory::fromChatHistory($agent->getChatHistory());
+    $this->assert(
+      new AgentJudge($this->judge(), $expected['created']),
+      $output['created']->finalAnswer(),
+      'created',
+    );
+    $this->assert(
+      new AgentJudge($this->judge(), $expected['tone_change_count']),
+      $output['tone_change_count']->finalAnswer(),
+      'tone_change_count',
+    );
+    $this->assert(
+      new AgentJudge($this->judge(), $expected['tone_before_change']),
+      $output['tone_before_change']->finalAnswer(),
+      'tone_before_change',
+    );
+    $this->assert(
+      new AgentJudge($this->judge(), $expected['document_attached']),
+      $output['document_attached']->finalAnswer(),
+      'document_attached',
+    );
+    $this->assert(
+      new AgentJudge($this->judge(), $expected['document_removed']),
+      $output['document_removed']->finalAnswer(),
+      'document_removed',
+    );
   }
 
   /**
@@ -163,33 +149,6 @@ final class SessionActivityAnswerEvaluator extends EditorialSessionEvaluatorBase
     $session = $this->session($sessionId);
     $session->set('tone', $this->tone($label)->id());
     $session->save();
-  }
-
-  /**
-   * Attaches one document and extracts its text.
-   *
-   * @param int $sessionId
-   *   The session to attach the document to.
-   * @param array $document
-   *   The document to write to a temporary file, with a title and a text.
-   *
-   * @return string
-   *   The id of the attached document.
-   */
-  private function attachDocument(int $sessionId, array $document): string {
-    $path = tempnam(sys_get_temp_dir(), 'eval_doc_');
-    file_put_contents($path, $document['text']);
-    // The name is the one an expectation names, so the run deletes the
-    // session it attached to and core has the name free again. A leftover
-    // file would make core store the next one as "Press Release_0.txt".
-    $filename = $document['title'] . '.txt';
-    $upload = new InputStreamUploadedFile($filename, $filename, $path, @filesize($path));
-
-    $repository = \Drupal::service(ContextDocumentRepository::class);
-    $attached = $repository->add($this->session($sessionId), $upload);
-    $repository->extract($this->session($sessionId), $attached['id']);
-
-    return $attached['id'];
   }
 
 }
