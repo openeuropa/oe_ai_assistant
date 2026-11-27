@@ -67,8 +67,8 @@ final class SessionSelectionLabelsEvaluator extends EditorialSessionEvaluatorBas
   public function evaluate(mixed $output, array $datasetItem): void {
     assert(is_string($output));
 
-    foreach ($datasetItem['expected_output'] as $selection => $label) {
-      $this->assert(new StringContains($label), $output, $selection);
+    foreach ($datasetItem['expected_output'] as $checkpoint => $label) {
+      $this->assert(new StringContains($label), $output, $checkpoint);
     }
   }
 

@@ -43,8 +43,11 @@ final class SessionActivityAnswerEvaluator extends EditorialSessionEvaluatorBase
           'created' => 'The reply says the session was created with the Formal tone.',
           'tone_change_count' => 'The reply says the tone changed once.',
           'tone_before_change' => 'The reply says the tone was Formal before the change.',
-          'document_attached' => 'The reply says a document named "Fishing quotas" is attached.',
-          'document_removed' => 'The reply says the document named "Fishing quotas" was removed.',
+          'document_attached' => 'The reply says a document called Fishing quotas is attached.',
+          // The record names a document by its file, so the criterion asks
+          // for the name without pinning the extension: a judge docks a
+          // reply that says "Fishing quotas.txt" against "Fishing quotas".
+          'document_removed' => 'The reply says a document called Fishing quotas was removed.',
         ],
       ],
     ]);

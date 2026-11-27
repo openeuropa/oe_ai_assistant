@@ -20,6 +20,11 @@ fleet from catching its full entitlement on another that shares the same ground.
 limit to the level the science suggests may therefore tie up vessels that depend on a mixed fishery,
 and ministers who represent those fleets argue for a slower path to the target.
 
+One figure makes the scale concrete. The 2024 advice for North Sea herring put the spawning stock
+biomass at 1,184,600 tonnes, against a limit reference point below which recruitment is expected to
+fail, and the catch advice follows from the distance between the two rather than from the biomass
+alone.
+
 Allocation between member states is the part that does not get renegotiated. Each state's share of a
 stock is fixed by a distribution key known as relative stability, set from historic catch records in
 the early years of the policy and left deliberately untouched since. A state that wants more of one

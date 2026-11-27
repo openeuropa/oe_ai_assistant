@@ -102,17 +102,17 @@ final class AttachedDocumentsListEvaluator extends EditorialSessionEvaluatorBase
     $this->assert(
       new AgentJudge($this->judge(), "The reply lists a document named '{$first}'."),
       $listsFirstDocument,
-      'Lists the first document once it is attached',
+      'lists_first_document',
     );
     $this->assert(
       new AgentJudge($this->judge(), "The reply lists two documents, named '{$first}' and '{$second}'."),
       $listsBothDocuments,
-      'Lists both documents once the second is attached',
+      'lists_both_documents',
     );
     $this->assert(
       new AgentJudge($this->judge(), "The reply lists a document named '{$second}', and does not list one named '{$first}'."),
       $listsOnlySecondDocument,
-      'Lists only the second document once the first is removed',
+      'lists_only_second_document',
     );
   }
 
