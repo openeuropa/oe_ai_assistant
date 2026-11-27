@@ -22,7 +22,7 @@ use NeuronAI\Providers\AIProviderInterface;
   label: new TranslatableMarkup('Field group drafter'),
   description: new TranslatableMarkup('Writes the values of one field group against its JSON schema.'),
   operation_type: 'chat_with_structured_response',
-  tools: ['context_get_session_documents', 'context_read_document'],
+  tools: ['context_get_session_documents', 'context_read_document', 'context_get_session_activity'],
   context_definitions: [
     'session' => new EntityContextDefinition(
       data_type: 'entity:ai_editorial_session',
@@ -80,6 +80,14 @@ final class GroupDrafterNeuronAgent extends EditorialSessionAgentBase {
     when its summary does not give you enough to draft well. Once you
     have everything you need, return ONLY valid JSON with no markdown
     fencing, no explanation, no commentary.
+
+    The documents that tool reports are the whole of the material you
+    draft from. The instructions say what the editor asked for, not what
+    to draft it from, and they were written before this call: a subject
+    they name may belong to a document the editor has since removed. When
+    they name one no attached document covers, call
+    context_get_session_activity to ask what happened to it, and leave
+    the subject out of what you write. Say nothing about why.
 
     Every field value is an array of items, each item an object with
     the property keys the schema lists, for example

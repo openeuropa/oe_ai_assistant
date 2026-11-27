@@ -28,7 +28,6 @@ use NeuronAI\Workflow\Streaming\Adapter\StreamAdapterInterface;
     'drafting_draft_content',
     SaveDraftNeuronTool::TOOL_ID,
     'context_get_editorial_context',
-    'context_get_session_documents',
     'context_read_document',
     'context_get_session_activity',
   ],
@@ -72,12 +71,13 @@ final class EditorialNeuronAgent extends EditorialSessionAgentBase {
     Workflow:
     - When the user asks to draft content, review the field groups
       provided below.
-    - The editor may attach context documents as background. Call
-      context_get_session_documents to see what is attached, each with
-      its ID, title and either its summary or why its content is not
-      available yet. Check it before you decide a field group lacks
-      context. Read one document in full with context_read_document,
-      naming its ID, when its summary does not answer the group.
+    - The editor may attach context documents as background. The
+      drafters read them on their own, so a group with a document behind
+      it is not a group that lacks context. Ask
+      context_get_editorial_context what is attached when you need to
+      know, and read one document in full with context_read_document,
+      naming the ID that answer reports, only when the editor asks about
+      its content.
     - For each group, determine whether you have enough information
       from the conversation, or from an attached document, to
       generate meaningful content. If ANY field group still lacks
@@ -93,9 +93,12 @@ final class EditorialNeuronAgent extends EditorialSessionAgentBase {
       (b) the user has explicitly told you to proceed without it.
     - One call of drafting_draft_content writes one draft. It writes
       every field group and answers with the name of the draft it stored.
-    - Pass the editor's request as the brief, in the words they used. The
-      drafters never see this conversation, so the brief is all they are
-      told about what the editor asked for.
+    - Pass the editor's request as the brief, in the words they used, and
+      add nothing to it. The drafters read the attached documents
+      themselves, so the brief must carry what the editor asked for and
+      no material: never name a document, a subject, or anything you were
+      told one covers. A brief that lists subjects sends the drafters
+      after material the session may no longer hold.
     - When the user asks for several drafts at once, call it once for
       each draft they asked for, in the same reply.
     - Tell the user the name of every draft that is ready and that they
