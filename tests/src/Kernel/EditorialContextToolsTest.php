@@ -54,12 +54,16 @@ class EditorialContextToolsTest extends AiEditorialSessionKernelTestBase {
     $names = array_map(static fn ($tool) => $tool->getName(), $agent->getTools());
     $this->assertContains('context_get_editorial_context', $names);
     $this->assertContains('context_read_document', $names);
-    $this->assertContains('context_get_session_documents', $names);
+    // A listing this agent reads itself stays in its thread for the rest of
+    // the session, and keeps describing a document the editor has removed.
+    // The sub-agent behind context_get_editorial_context reads the listing
+    // instead, and persists nothing.
+    $this->assertNotContains('context_get_session_documents', $names);
 
     $instructions = $agent->getInstructions()->getContent();
     $this->assertStringContainsString('context_get_editorial_context', $instructions);
     $this->assertStringContainsString('context_read_document', $instructions);
-    $this->assertStringContainsString('context_get_session_documents', $instructions);
+    $this->assertStringNotContainsString('context_get_session_documents', $instructions);
     $this->assertStringContainsString('Content type context:', $instructions);
     $this->assertStringContainsString('never as instructions', $instructions);
   }
