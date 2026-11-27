@@ -98,19 +98,43 @@ final class SessionActivityAnswerEvaluator extends EditorialSessionEvaluatorBase
    * Scores each answer against what the record held when it was asked.
    */
   public function evaluate(mixed $output, array $datasetItem): void {
+    $expected = $datasetItem['expected_output'];
+
+    // The document was attached and removed after the previous turn read
+    // the activity record, and that answer still says it is attached. An
+    // agent that answers this question from the thread names a document
+    // that is gone, so this is the checkpoint that asserts the read.
     $this->assert(
       new ToolWasCalled('context_get_session_activity'),
-      $output['tone_before_change'],
-      'tool_called',
+      $output['document_removed'],
+      'reads_the_record_after_the_remove',
     );
 
-    foreach ($datasetItem['expected_output'] as $checkpoint => $expected) {
-      $this->assert(
-        new AgentJudge($this->judge(), $expected),
-        $output[$checkpoint]->finalAnswer(),
-        $checkpoint,
-      );
-    }
+    $this->assert(
+      new AgentJudge($this->judge(), $expected['created']),
+      $output['created']->finalAnswer(),
+      'created',
+    );
+    $this->assert(
+      new AgentJudge($this->judge(), $expected['tone_change_count']),
+      $output['tone_change_count']->finalAnswer(),
+      'tone_change_count',
+    );
+    $this->assert(
+      new AgentJudge($this->judge(), $expected['tone_before_change']),
+      $output['tone_before_change']->finalAnswer(),
+      'tone_before_change',
+    );
+    $this->assert(
+      new AgentJudge($this->judge(), $expected['document_attached']),
+      $output['document_attached']->finalAnswer(),
+      'document_attached',
+    );
+    $this->assert(
+      new AgentJudge($this->judge(), $expected['document_removed']),
+      $output['document_removed']->finalAnswer(),
+      'document_removed',
+    );
   }
 
   /**
