@@ -52,6 +52,7 @@ class DraftSaverTest extends DraftingPluginTestBase {
     $result = $this->save($user, $session, 1);
 
     $this->assertArrayHasKey('nodeId', $result);
+    $this->assertSame('Draft 1', $result['draftName']);
     // The first save is the node's only revision, which core's latest-version
     // route refuses, so the preview is the node page itself.
     $this->assertSame('/node/' . $result['nodeId'], $result['previewUrl']);
@@ -274,11 +275,11 @@ class DraftSaverTest extends DraftingPluginTestBase {
    */
   private function save(UserInterface $user, AiEditorialSessionInterface $session, int $version): array {
     $this->setCurrentUser($user);
-    $draft = $session->getDraftContent($version);
+    $draft = $session->getDraftContent((string) $version);
     $this->assertNotNull($draft, sprintf('Draft %d is seeded.', $version));
 
     return \Drupal::service(DraftSaverInterface::class)
-      ->save($session, $draft['fields'], $draft['templateId'], $version);
+      ->save($session, $draft['fields'], $draft['templateId'], (string) $version);
   }
 
   /**

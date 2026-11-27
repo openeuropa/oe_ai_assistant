@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Drupal\oe_ai_assistant\Evaluators;
 
-use Drupal\oe_ai_assistant\Entity\Bundle\ContentCreationSessionInterface;
 use Drupal\oe_ai_assistant\Service\Drafting\ContextDocumentRepository;
 use NeuronAI\Evaluation\Assertions\AgentJudge;
 use NeuronAI\Evaluation\Assertions\Trajectory\ToolWasCalled;
@@ -122,50 +121,6 @@ final class RemovedDocumentRecallEvaluator extends EditorialSessionEvaluatorBase
       $output['draft'],
       'draft_omits_the_removed_document',
     );
-  }
-
-  /**
-   * The text of every field of the draft the session stored last.
-   *
-   * @param int $sessionId
-   *   The session that holds the draft.
-   *
-   * @return string
-   *   Every scalar the draft holds, joined into one searchable string.
-   */
-  private function latestDraftText(int $sessionId): string {
-    $session = $this->session($sessionId);
-    assert($session instanceof ContentCreationSessionInterface);
-    $drafts = $session->listDrafts();
-    if ($drafts === []) {
-      throw new \RuntimeException('The run stored no draft to read.');
-    }
-
-    $latest = end($drafts);
-    $draft = $session->getDraftContent((int) $latest['version']);
-    if ($draft === NULL) {
-      throw new \RuntimeException(sprintf('Draft %s holds no content.', $latest['version']));
-    }
-
-    return $this->flatten($draft['fields']);
-  }
-
-  /**
-   * Flattens a nested field map into one searchable string.
-   *
-   * @param array $values
-   *   The values to flatten.
-   *
-   * @return string
-   *   The scalars, separated by newlines.
-   */
-  private function flatten(array $values): string {
-    $text = '';
-    foreach ($values as $value) {
-      $text .= is_array($value) ? $this->flatten($value) : (string) $value . "\n";
-    }
-
-    return $text;
   }
 
 }

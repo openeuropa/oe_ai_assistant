@@ -94,13 +94,14 @@ function selectDraftedFields(
 }
 
 /**
- * Matches the message the Save button sends, "Save draft N.".
+ * Matches the message the Save button sends, "Save draft N." or "Save draft
+ * N.M.".
  *
  * That message contains "draft", so DRAFT_INTENT_PATTERN matches it too.
  * Without this check first, the mock would write a new version instead of
  * saving the one the editor is looking at.
  */
-const SAVE_INTENT_PATTERN = /^\s*save draft (\d+)/i;
+const SAVE_INTENT_PATTERN = /^\s*save draft (\d+(?:\.\d+)?)/i;
 
 /** True when the prompt should trigger a mock draft fixture. */
 function isDraftRequest(message: string, fieldsToStream: string[]): boolean {
@@ -112,13 +113,25 @@ function isDraftRequest(message: string, fieldsToStream: string[]): boolean {
 }
 
 /** The draft version a save request names, or null for another prompt. */
-export function saveRequestVersion(message: string): number | null {
+export function saveRequestVersion(message: string): string | null {
   const match = message.match(SAVE_INTENT_PATTERN);
 
-  return match?.[1] ? Number(match[1]) : null;
+  return match?.[1] ?? null;
+}
+
+/**
+ * Drops a zero minor from a version, so "1.0" shows as "1".
+ *
+ * Mirrors DraftVersion::display() on the backend and displayDraftVersion()
+ * in the app. Nothing under server/ imports from src/, so the mock keeps
+ * its own copy.
+ */
+function displayVersion(version: string): string {
+  return version.endsWith(".0") ? version.slice(0, -2) : version;
 }
 
 export class MockDraftingService implements DraftingService {
+  private nextNodeId = 42000;
   /**
    * Draft history per session: fields keyed by version, mirroring the
    * Drupal backend's drafting_draft_content result history. Its size numbers
@@ -126,8 +139,10 @@ export class MockDraftingService implements DraftingService {
    */
   private readonly draftsBySession = new Map<
     string,
-    Map<number, Record<string, unknown>>
+    Map<string, Record<string, unknown>>
   >();
+  /** The version a waiting save call named, until the editor decides it. */
+  private pendingSaveVersion: string | null = null;
 
   constructor(private readonly store: ConversationStore) {}
 
@@ -159,11 +174,11 @@ export class MockDraftingService implements DraftingService {
         // A decision arrives as a turn of its own, and answers the call
         // it names. No model turn is spent on the outcome, as on the site.
         assistantText = "";
-        yield* this.createSaveResultStep(approval);
+        yield* this.createSaveResultStep(sessionId, approval);
       } else if (saveRequestVersion(message) !== null) {
         assistantText = "";
         yield* this.createSaveRequestStep(
-          saveRequestVersion(message) as number,
+          saveRequestVersion(message) as string,
         );
       } else if (isDraftRequest(message, fieldsToStream)) {
         const useRegeneratedVariant =
@@ -176,8 +191,8 @@ export class MockDraftingService implements DraftingService {
         // Record the draft under the next version.
         const versions =
           this.draftsBySession.get(sessionId) ??
-          new Map<number, Record<string, unknown>>();
-        const version = versions.size + 1;
+          new Map<string, Record<string, unknown>>();
+        const version = `${versions.size + 1}.0`;
         versions.set(version, variant.fields);
         this.draftsBySession.set(sessionId, versions);
 
@@ -246,11 +261,14 @@ export class MockDraftingService implements DraftingService {
    * Emits a save call that waits, the way the site's gated tool does.
    *
    * The call carries no result, which is what makes the card in the thread
-   * ask the editor to confirm it.
+   * ask the editor to confirm it. The decision turn carries only the call
+   * ID, so remember the version here; on the site Neuron re-runs
+   * SaveDraftNeuronTool with the call's own arguments instead.
    */
   private async *createSaveRequestStep(
-    version: number,
+    version: string,
   ): AsyncGenerator<StreamEvent> {
+    this.pendingSaveVersion = version;
     yield { type: "start-step" };
     yield {
       type: "tool-call-start",
@@ -269,24 +287,40 @@ export class MockDraftingService implements DraftingService {
   }
 
   /** Answers the call the editor decided, and says what came of it. */
-  private async *createSaveResultStep(approval: {
-    callId: string;
-    decision: "approve" | "reject";
-  }): AsyncGenerator<StreamEvent> {
-    yield {
-      type: "tool-result",
-      toolCallId: approval.callId,
-      result:
-        approval.decision === "approve"
-          ? { version: 1, nodeId: "1", previewUrl: "/node/1/latest" }
-          : { cancelled: true },
-    };
+  private async *createSaveResultStep(
+    sessionId: string,
+    approval: { callId: string; decision: "approve" | "reject" },
+  ): AsyncGenerator<StreamEvent> {
+    const version = this.pendingSaveVersion ?? "";
+    this.pendingSaveVersion = null;
+    const fields = this.draftsBySession.get(sessionId)?.get(version);
+
+    let result: Record<string, unknown>;
+    if (approval.decision !== "approve") {
+      result = { cancelled: true };
+    } else if (!fields) {
+      result = {
+        version,
+        error: `Draft ${displayVersion(version)} does not exist in this session.`,
+      };
+    } else {
+      this.nextNodeId += 1;
+      const nodeId = String(this.nextNodeId);
+      result = {
+        version,
+        nodeId,
+        previewUrl: `/node/${nodeId}/latest`,
+        draftName: `Draft ${displayVersion(version)}`,
+      };
+    }
+
+    yield { type: "tool-result", toolCallId: approval.callId, result };
   }
 
   private async *createDraftStep(
     variant: DraftFixtureVariant,
     fieldsToStream: string[],
-    version: number,
+    version: string,
   ): AsyncGenerator<StreamEvent> {
     const selectedFields = selectDraftedFields(variant.fields, fieldsToStream);
 
@@ -337,7 +371,7 @@ export class MockDraftingService implements DraftingService {
 
     // Confirmation text, matching the Drupal backend wording.
     const confirmText =
-      `Draft ${version} generated with ${fieldNames.length} fields. ` +
+      `Draft ${displayVersion(version)} generated with ${fieldNames.length} fields. ` +
       "Review the content on the right.";
     yield { type: "start-step" };
     yield* this.streamText(confirmText);

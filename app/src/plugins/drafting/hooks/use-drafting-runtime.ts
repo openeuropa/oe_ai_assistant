@@ -37,7 +37,7 @@ import {
 } from "../store";
 
 /**
- * One group's progress, as the drafting node reports it.
+ * One group's progress, as the drafting or amending node reports it.
  */
 interface DraftingActivity {
   id: string;
@@ -51,6 +51,8 @@ interface DraftingActivity {
     total: number;
   };
 }
+
+const DRAFT_ACTIVITY_TYPES = new Set(["drafting", "amending"]);
 
 /**
  * What each status of a group means to the card.
@@ -161,9 +163,9 @@ export function useDraftingRuntime() {
     onData: (data) => {
       // The run names its groups before it drafts the first one, so the card
       // of the call that asked shows every row from the start.
-      if (data.name === "draft-started") {
+      if (data.name === "draft-started" || data.name === "amend-started") {
         const started = data.data as {
-          version: number;
+          version: string;
           callId: string;
           context: DraftContext;
           groups: DraftGroupProgress[];
@@ -194,7 +196,7 @@ export function useDraftingRuntime() {
       // later draft can carry fewer fields than an earlier one (a template
       // switch, a narrower revision), so merging would leave stale values
       // from a draft no longer open.
-      if (data.name === "drafted-fields") {
+      if (data.name === "drafted-fields" || data.name === "amended-fields") {
         // Parsed rather than cast: the event and the stored record are two
         // spellings of one draft, and a key the stream leaves out would
         // otherwise reach the card as undefined.
@@ -211,8 +213,8 @@ export function useDraftingRuntime() {
         const { liveDrafts } = getDraftingState();
         setDraftingState({
           draftedFields: incoming.fields,
-          activeDraftVersion: incoming.version as number,
-          liveDrafts: { ...liveDrafts, [incoming.version as number]: incoming },
+          activeDraftVersion: incoming.version as string,
+          liveDrafts: { ...liveDrafts, [incoming.version as string]: incoming },
           // The editor asked for this draft, so the pane opens on it. A pane
           // the editor collapsed earlier holds an older draft, and leaving it
           // shut hides the one they waited for.
@@ -221,11 +223,11 @@ export function useDraftingRuntime() {
         updateRun(callId, (run) => ({ ...run, status: "drafted" }));
       }
 
-      // The drafting node reports one group at a time, because Neuron's own
-      // progress event replaces the activity that shares its id.
+      // The drafting/amending node reports one group at a time, because
+      // Neuron's own progress event replaces the activity that shares its id.
       if (data.name === "workflow-activity") {
         const activity = data.data as DraftingActivity;
-        if (activity.type !== "drafting") {
+        if (!DRAFT_ACTIVITY_TYPES.has(activity.type)) {
           return;
         }
         const status = ACTIVITY_STATUS[activity.data.status];
@@ -239,7 +241,7 @@ export function useDraftingRuntime() {
 
       // A failure ends the run, and the message belongs to the group that
       // stopped it. A failure that reached no group is the run's own.
-      if (data.name === "draft-failed") {
+      if (data.name === "draft-failed" || data.name === "amend-failed") {
         const failure = data.data as {
           callId: string;
           group: string;

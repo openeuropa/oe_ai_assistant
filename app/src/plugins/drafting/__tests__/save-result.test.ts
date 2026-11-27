@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { parseSaveResult, readSaveState } from "../save-result";
 
-const SAVED = { version: 2, nodeId: "7", previewUrl: "/node/7/latest" };
+const SAVED = { version: "2", nodeId: "7", previewUrl: "/node/7/latest" };
 
 describe("parseSaveResult", () => {
   it("reads a saved result from the live JSON string", () => {
@@ -18,8 +18,8 @@ describe("parseSaveResult", () => {
   it("reads an error as not saved, live and reloaded", () => {
     const error = "Draft 9 does not exist in this session.";
     const expected = { status: "not_saved", error };
-    expect(parseSaveResult({ version: 9, error })).toEqual(expected);
-    expect(parseSaveResult(JSON.stringify({ version: 9, error }))).toEqual(
+    expect(parseSaveResult({ version: "9", error })).toEqual(expected);
+    expect(parseSaveResult(JSON.stringify({ version: "9", error }))).toEqual(
       expected,
     );
   });
@@ -75,33 +75,33 @@ describe("parseSaveResult", () => {
 describe("readSaveState", () => {
   it("reads a call the server marked as awaiting a decision", () => {
     expect(
-      readSaveState({ version: 3, awaitingDecision: true }, undefined, false),
-    ).toEqual({ status: "waiting", version: 3 });
+      readSaveState({ version: "3", awaitingDecision: true }, undefined, false),
+    ).toEqual({ status: "waiting", version: "3" });
   });
 
   it("reads a call with no result that is still streaming as running", () => {
-    expect(readSaveState({ version: 3 }, undefined, true)).toEqual({
+    expect(readSaveState({ version: "3" }, undefined, true)).toEqual({
       status: "running",
     });
   });
 
   it("reads a call left with no result once the reply ended as waiting", () => {
-    expect(readSaveState({ version: 3 }, undefined, false)).toEqual({
+    expect(readSaveState({ version: "3" }, undefined, false)).toEqual({
       status: "waiting",
-      version: 3,
+      version: "3",
     });
   });
 
   it("prefers the result over the awaiting mark", () => {
     expect(
-      readSaveState({ version: 2, awaitingDecision: true }, SAVED, false),
+      readSaveState({ version: "2", awaitingDecision: true }, SAVED, false),
     ).toEqual({ status: "saved", ...SAVED });
   });
 
-  it("reads a waiting call whose version is unknown as version zero", () => {
+  it("reads a waiting call whose version is unknown as an empty version", () => {
     expect(readSaveState({}, undefined, false)).toEqual({
       status: "waiting",
-      version: 0,
+      version: "",
     });
   });
 });

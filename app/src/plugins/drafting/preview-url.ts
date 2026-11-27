@@ -14,9 +14,9 @@
 export function buildPreviewUrl(
   template: string,
   sessionId: string,
-  versionId: number,
+  versionId: string,
 ): string {
   return template
     .replace("{sessionId}", encodeURIComponent(sessionId))
-    .replace("{versionId}", encodeURIComponent(String(versionId)));
+    .replace("{versionId}", encodeURIComponent(versionId));
 }

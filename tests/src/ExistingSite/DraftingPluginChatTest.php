@@ -134,7 +134,7 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
     // frame.
     $started = array_values(array_filter($events, fn($e) => $e['type'] === 'data-draft-started'));
     $this->assertCount(1, $started, 'Exactly one data-draft-started frame.');
-    $this->assertSame(1, $started[0]['data']['version']);
+    $this->assertSame('1.0', $started[0]['data']['version']);
     $this->assertSame('call_1', $started[0]['data']['callId']);
     $this->assertSame([
       ['id' => 'main_fields', 'label' => 'Main fields', 'status' => 'pending'],
@@ -177,7 +177,7 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
     $draftedFieldsIndex = array_search($draftedFieldsEvents[0], $events, TRUE);
     $this->assertGreaterThan($lastActivityIndex, $draftedFieldsIndex,
       'data-drafted-fields must arrive after the last activity frame.');
-    $this->assertSame(1, $draftedFieldsEvents[0]['data']['version']);
+    $this->assertSame('1.0', $draftedFieldsEvents[0]['data']['version']);
     // The frame carries the whole draft, not the fields alone: the card the
     // editor is watching reads its groups and its status off this one, and a
     // key left out here reaches it as nothing at all.
@@ -203,6 +203,108 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
         ],
       ],
     ], $draftedFieldsEvents[0]['data']['fields']);
+  }
+
+  /**
+   * Tests that amending reports per-group progress and the amended fields.
+   *
+   * The amend half of testDraftingReportsPerGroupProgressAndDraftedFields().
+   * use-drafting-runtime.ts has nothing but these four frame names to follow
+   * an amendment by, and no other test in the suite pins them.
+   */
+  public function testAmendingReportsPerGroupProgressAndAmendedFields(): void {
+    $user = $this->createUser(['use oe ai assistant']);
+    $this->loginUser($user);
+    $session = $this->createSession($user);
+
+    $this->storeDraft($session, [
+      'version' => '1.0',
+      'run' => 'draft_1.0.abcdef',
+      'status' => 'drafted',
+      'context' => [
+        'tone' => NULL,
+        'template' => NULL,
+        'documents' => [],
+      ],
+      'fields' => [
+        'title' => [['value' => 'T']],
+        'field_teaser' => [['value' => 'S']],
+        'field_content_paragraphs' => [
+          [
+            'field_text_body' => [['value' => '<p>B</p>']],
+            'type' => [['target_id' => 'text_block']],
+          ],
+        ],
+      ],
+    ]);
+
+    MockAiProvider::enqueue(new MockResponse(
+      toolCalls: [
+        [
+          'id' => 'call_1',
+          'type' => 'function',
+          'function' => ['name' => 'amend_draft', 'arguments' => '{"version": "1.0"}'],
+        ],
+      ],
+    ));
+    MockAiProvider::enqueue(new MockResponse(
+      text: '{"title": [{"value": "T2"}], "field_teaser": [{"value": "S2"}]}',
+    ));
+    MockAiProvider::enqueue(new MockResponse(
+      text: '{"field_content_paragraphs": [{"field_text_body": [{"value": "<p>B2</p>"}],'
+        . ' "type": [{"target_id": "text_block"}]}]}',
+    ));
+    MockAiProvider::enqueue(new MockResponse(text: 'Draft 1.1 is ready.'));
+
+    $result = $this->httpPost('/api/ai/plugins/drafting/chat', [
+      'message' => 'Make it punchier.',
+      'sessionId' => $session->id(),
+    ]);
+
+    $this->assertEquals(200, $result['status'],
+      'Expected 200 response. Body: ' . substr($result['body'], 0, 500));
+
+    $events = $this->parseSseEvents($result['body']);
+
+    $started = array_values(array_filter($events, fn($e) => $e['type'] === 'data-amend-started'));
+    $this->assertCount(1, $started, 'Exactly one data-amend-started frame.');
+    $this->assertSame('1.1', $started[0]['data']['version']);
+    $this->assertSame('1.0', $started[0]['data']['sourceVersion']);
+    $this->assertSame('call_1', $started[0]['data']['callId']);
+
+    $activity = array_values(array_filter($events, fn($e) => $e['type'] === 'data-workflow-activity'));
+    $amendingActivity = array_values(array_filter($activity, fn($e) => ($e['data']['type'] ?? NULL) === 'amending'));
+    $this->assertCount(4, $amendingActivity,
+      'One "drafting" frame and one "drafted" frame per group, typed "amending".');
+    $this->assertGreaterThan(
+      array_search($started[0], $events, TRUE),
+      array_search($amendingActivity[0], $events, TRUE),
+      'data-amend-started must arrive before the first activity frame.',
+    );
+
+    $amendedFieldsEvents = array_values(array_filter($events, fn($e) => $e['type'] === 'data-amended-fields'));
+    $this->assertCount(1, $amendedFieldsEvents, 'Exactly one data-amended-fields frame.');
+    $lastActivityIndex = array_search(end($amendingActivity), $events, TRUE);
+    $amendedFieldsIndex = array_search($amendedFieldsEvents[0], $events, TRUE);
+    $this->assertGreaterThan($lastActivityIndex, $amendedFieldsIndex,
+      'data-amended-fields must arrive after the last activity frame.');
+    $this->assertSame('1.1', $amendedFieldsEvents[0]['data']['version']);
+    $this->assertSame('1.0', $amendedFieldsEvents[0]['data']['sourceVersion']);
+    $this->assertSame('drafted', $amendedFieldsEvents[0]['data']['status']);
+    $this->assertSame('', $amendedFieldsEvents[0]['data']['error']);
+    $this->assertSame([
+      'title' => [['value' => 'T2']],
+      'field_teaser' => [['value' => 'S2']],
+      'field_content_paragraphs' => [
+        [
+          'field_text_body' => [['value' => '<p>B2</p>']],
+          'type' => [['target_id' => 'text_block']],
+        ],
+      ],
+    ], $amendedFieldsEvents[0]['data']['fields']);
+
+    $this->assertSame([], array_values(array_filter($events, fn($e) => $e['type'] === 'data-amend-failed')),
+      'No data-amend-failed frame on a run that succeeds.');
   }
 
   /**
@@ -561,7 +663,7 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
       'meta' => json_encode([
         'type' => 'tool_call_result',
         'tools' => [
-          ['name' => 'drafting_draft_content', 'result' => ['draft' => 'Draft 1', 'version' => 1]],
+          ['name' => 'drafting_draft_content', 'result' => ['draft' => 'Draft 1', 'version' => '1.0']],
         ],
       ]),
     ]);
@@ -579,7 +681,7 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
       ['id' => 'content_paragraphs', 'label' => 'Content paragraphs', 'status' => 'drafted'],
     ];
     $draft = [
-      'version' => 1,
+      'version' => '1.0',
       'run' => 'draft_1.abcdef',
       'status' => 'drafted',
       'context' => $context,
@@ -624,7 +726,7 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
             'result' => [
               'error' => 'The group could not be drafted.',
               'group' => 'content_paragraphs',
-              'version' => 1,
+              'version' => '1.0',
             ],
           ],
         ],
@@ -646,7 +748,7 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
       ],
     ];
     $draft = [
-      'version' => 1,
+      'version' => '1.0',
       'run' => 'draft_1.abcdef',
       'status' => 'failed',
       'context' => $context,
@@ -664,7 +766,7 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
     // A run that stored no field is no draft: it reaches neither the rail,
     // nor the history the model reads, nor the preview and save endpoints.
     $this->assertSame([], $session->listDrafts());
-    $this->assertNull($session->getDraftContent(1));
+    $this->assertNull($session->getDraftContent('1'));
   }
 
   /**
@@ -701,7 +803,7 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
           [
             'name' => 'drafting_draft_content',
             'callId' => 'call_1',
-            'result' => ['draft' => 'Draft 1', 'version' => 1],
+            'result' => ['draft' => 'Draft 1', 'version' => '1.0'],
           ],
         ],
       ]),
@@ -709,7 +811,7 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
 
     assert($session instanceof ContentCreationSessionInterface);
     $this->storeDraft($session, [
-      'version' => 1,
+      'version' => '1.0',
       'run' => 'draft_1.abcdef',
       'context' => ['tone' => NULL, 'template' => NULL, 'documents' => []],
       'fields' => ['title' => [['value' => 'Test Title']]],
@@ -828,7 +930,7 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
 
     $drafts = $this->loadDraftResults($session);
     $this->assertCount(1, $drafts);
-    $this->assertSame(1, $drafts[0]['version']);
+    $this->assertSame('1.0', $drafts[0]['version']);
     $this->assertSame('Formal', $drafts[0]['context']['tone']['label']);
     $this->assertSame(
       'Use professional, institutional language. Maintain a neutral, authoritative voice. Avoid contractions and colloquialisms.',
@@ -867,10 +969,10 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
 
     $drafts = $this->loadDraftResults($session);
     $this->assertCount(2, $drafts);
-    $this->assertSame(1, $drafts[0]['version']);
+    $this->assertSame('1.0', $drafts[0]['version']);
     $this->assertSame('Formal', $drafts[0]['context']['tone']['label'],
       'The first snapshot must not change when the tone changes.');
-    $this->assertSame(2, $drafts[1]['version']);
+    $this->assertSame('2.0', $drafts[1]['version']);
     $this->assertSame('Technical', $drafts[1]['context']['tone']['label']);
     $this->assertNotEmpty($drafts[1]['context']['tone']['prompt'],
       'The second snapshot must carry its own tone guidelines.');
@@ -904,7 +1006,7 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
       ],
     ];
     $this->storeDraft($session, [
-      'version' => 1,
+      'version' => '1.0',
       'run' => 'draft_1.abcdef',
       'context' => [
         'tone' => ['id' => '1', 'label' => 'Formal', 'prompt' => 'Use professional, institutional language.'],
@@ -914,7 +1016,7 @@ class DraftingPluginChatTest extends DraftingPluginTestBase {
       'fields' => ['title' => [['value' => 'First']]],
     ]);
     $this->storeDraft($session, [
-      'version' => 2,
+      'version' => '2.0',
       'run' => 'draft_2.abcdef',
       'context' => [
         'tone' => ['id' => '2', 'label' => 'Technical', 'prompt' => 'Use domain-specific terminology precisely.'],

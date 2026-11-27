@@ -25,6 +25,7 @@ import { DraftRail } from "./components/draft-rail";
 import { DraftingThread } from "./components/drafting-thread";
 import { PaneBusyOverlay } from "./components/pane-busy-overlay";
 import {
+  AmendDraftToolUI,
   DraftContentToolUI,
   EditorialEventToolUI,
   GetEditorialContextToolUI,
@@ -78,7 +79,7 @@ function VersionedDraftPreview({
   version,
   onSave,
 }: {
-  version: number;
+  version: string;
   onSave: () => void;
 }) {
   const sessionDrafts = useSessionDrafts();
@@ -273,6 +274,7 @@ function DraftingChat() {
       <ApprovalDecisionProvider value={decide}>
         {/* Register tool call renderers so they appear inline in chat. */}
         <DraftContentToolUI />
+        <AmendDraftToolUI />
         <EditorialEventToolUI />
         <SaveDraftToolUI />
         <GetEditorialContextToolUI />

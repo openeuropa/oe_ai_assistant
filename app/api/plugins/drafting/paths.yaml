@@ -218,10 +218,11 @@ preview:
         in: query
         required: true
         schema:
-          type: integer
+          type: string
         description: >
           The draft version to render, as returned by get_draft_history /
-          the drafting_draft_content result (e.g. 1 for "Draft 1").
+          the drafting_draft_content or amend_draft result (e.g. "1" for
+          "Draft 1", "1.1" for "Draft 1.1").
     responses:
       "200":
         description: >

@@ -96,7 +96,20 @@ export type DataStreamLifecycleEvent =
 export interface DraftedFieldsEvent {
   type: "data-drafted-fields";
   data: {
-    version: number;
+    version: string;
+    context: Record<string, unknown> | null;
+    fields: Record<string, unknown>;
+  };
+  /** When true, this is a progressive update (not accumulated). */
+  transient?: true;
+}
+
+/** Custom data event carrying an amended version, its context and fields. */
+export interface AmendedFieldsEvent {
+  type: "data-amended-fields";
+  data: {
+    version: string;
+    sourceVersion: string;
     context: Record<string, unknown> | null;
     fields: Record<string, unknown>;
   };
@@ -117,7 +130,10 @@ export interface EchoDataEvent {
 }
 
 /** Union of all SSE events emitted by the drafting plugin. */
-export type DraftingSSEEvent = DataStreamLifecycleEvent | DraftedFieldsEvent;
+export type DraftingSSEEvent =
+  | DataStreamLifecycleEvent
+  | DraftedFieldsEvent
+  | AmendedFieldsEvent;
 
 /** Union of all SSE events emitted by the echo plugin. */
 export type EchoSSEEvent = StartEvent | FinishEvent | EchoDataEvent;

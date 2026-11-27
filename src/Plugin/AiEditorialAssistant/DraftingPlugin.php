@@ -21,6 +21,7 @@ use Drupal\oe_ai_assistant\Entity\Bundle\ContentCreationSessionInterface;
 use Drupal\oe_ai_assistant\Exception\DraftingTemplateException;
 use Drupal\oe_ai_assistant\Exception\DraftingToneException;
 use Drupal\oe_ai_assistant\Plugin\AiAssistantPluginBase;
+use Drupal\oe_ai_assistant\Plugin\NeuronTool\AmendDraftNeuronTool;
 use Drupal\oe_ai_assistant\Plugin\NeuronTool\RequestDraftNeuronTool;
 use Drupal\oe_ai_assistant\Plugin\NeuronTool\SaveDraftNeuronTool;
 use Drupal\oe_ai_assistant\Service\AiEditorialContextInterface;
@@ -565,11 +566,11 @@ class DraftingPlugin extends AiAssistantPluginBase {
       static function (array $tool) use ($waiting): array {
         $call = ['function' => ['name' => (string) $tool['name']]];
 
-        // A call with no result draws a card that spins forever. A
-        // drafting call settles in the request that asked for it, so a
-        // call the transcript finds open wrote no draft. The transcript
-        // hands that call a failure as its result.
-        if ((string) $tool['name'] === RequestDraftNeuronTool::TOOL_ID) {
+        // A drafting or amending call settles inside the request that
+        // asked for it, so a call the transcript still finds open never
+        // wrote a draft. Its card would spin forever without a result, so
+        // we hand it a failure.
+        if (in_array((string) $tool['name'], [RequestDraftNeuronTool::TOOL_ID, AmendDraftNeuronTool::TOOL_ID], TRUE)) {
           $call['result'] = self::failedDraft('');
 
           return $call;
@@ -609,7 +610,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
   }
 
   /**
-   * Replaces a settled drafting_draft_content result with its full shape.
+   * Replaces a settled drafting or amending result with its full shape.
    *
    * The tool settles its call with a bare {draft, version} so a schema of any
    * size costs the conversation the same. The editor's card reads the stored
@@ -624,12 +625,12 @@ class DraftingPlugin extends AiAssistantPluginBase {
    *   The call's own settled result.
    *
    * @return array
-   *   The stored record for drafting_draft_content, or the failure when the
-   *   call names no version. Any other tool, and a version no run stored,
-   *   keep the result they came with.
+   *   The stored record for a drafting_draft_content or amend_draft call, or
+   *   a failure when the call names no version. Results from other tools, and
+   *   versions no run stored, come back unchanged.
    */
   private function joinDraftToolResult(ContentCreationSessionInterface $session, string $toolName, array $result): array {
-    if ($toolName !== RequestDraftNeuronTool::TOOL_ID) {
+    if (!in_array($toolName, [RequestDraftNeuronTool::TOOL_ID, AmendDraftNeuronTool::TOOL_ID], TRUE)) {
       return $result;
     }
 
@@ -641,7 +642,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
       return self::failedDraft(MessageContent::toText((array) ($result['blocks'] ?? [])));
     }
 
-    return $session->getDraftRun((int) $result['version']) ?? $result;
+    return $session->getDraftRun((string) $result['version']) ?? $result;
   }
 
   /**
@@ -735,9 +736,10 @@ class DraftingPlugin extends AiAssistantPluginBase {
       'sessionId' => (string) $request->query->get('sessionId', ''),
     ]);
 
-    $version = (int) $request->query->get('version', 0);
-    if ($version <= 0) {
-      throw new ActionException('invalid_request', 'A positive version is required.', 400);
+    $version = (string) $request->query->get('version', '');
+    // DraftVersion::parts() casts a malformed value instead of rejecting it.
+    if ($version === '' || !preg_match('/^\d+(\.\d+)?$/', $version)) {
+      throw new ActionException('invalid_request', 'A valid version (e.g. "2" or "2.1") is required.', 400);
     }
 
     if (!$session instanceof ContentCreationSessionInterface) {
@@ -747,7 +749,7 @@ class DraftingPlugin extends AiAssistantPluginBase {
     if ($draft === NULL) {
       throw new ActionException(
         'invalid_request',
-        sprintf('Draft version %d was not found.', $version),
+        sprintf('Draft version %s was not found.', $version),
         404,
       );
     }

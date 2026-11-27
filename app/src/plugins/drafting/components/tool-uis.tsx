@@ -112,87 +112,104 @@ const TOOL_STATUS = {
   failed: "incomplete",
 } as const satisfies Record<DraftRunStatus, string>;
 
-/** UI for the drafting_draft_content tool call. */
-export const DraftContentToolUI = makeAssistantToolUI<
-  Record<string, never>,
-  Record<string, unknown>
->({
-  toolName: "drafting_draft_content",
-  render: ({ result, status, toolCallId, toolName }) => {
-    // Saved state and creation time come from the thread index, so the
-    // card stays in step with the preview header and the rail.
-    const sessionDrafts = useSessionDrafts();
-    const savedVersions = useSavedVersions();
-    // The run streams its progress under the id of the call that asked for
-    // the draft. A reload reports no run, and the result then carries the
-    // record the backend joins onto it.
-    const run = useDraftingSlice().runs[toolCallId];
-    const parsed = parseDraftResult(result);
+/**
+ * Builds the card renderer for one of the tools that write a draft.
+ *
+ * Both tools store the same record shape and draw the same DraftCard, so
+ * one renderer is registered under each tool's own name.
+ */
+function makeDraftToolUI(toolName: "drafting_draft_content" | "amend_draft") {
+  return makeAssistantToolUI<Record<string, never>, Record<string, unknown>>({
+    toolName,
+    render: DraftToolRender,
+  });
+}
 
-    const version = run?.version ?? parsed.version;
-    const runStatus = run?.status ?? parsed.status;
-    const groups = run?.groups ?? parsed.groups;
-    const context = run?.context ?? parsed.context;
-    const error =
-      run?.error ?? (parsed.error === "" ? undefined : parsed.error);
+/** Render function shared by drafting_draft_content and amend_draft. */
+function DraftToolRender({
+  result,
+  status,
+  toolCallId,
+  toolName,
+}: ToolCallMessagePartProps<Record<string, never>, Record<string, unknown>>) {
+  // Saved state and creation time come from the thread index, so the
+  // card stays in step with the preview header and the rail.
+  const sessionDrafts = useSessionDrafts();
+  const savedVersions = useSavedVersions();
+  // The run streams its progress under the id of the call that asked for
+  // the draft. A reload reports no run, and the result then carries the
+  // record the backend joins onto it.
+  const run = useDraftingSlice().runs[toolCallId];
+  const parsed = parseDraftResult(result);
 
-    // The fields never travel with the call's own result, so they come from
-    // the drafts index, which merges the live stream with the thread.
-    const draft =
-      version === null
-        ? undefined
-        : sessionDrafts.find((entry) => entry.version === version);
+  const version = run?.version ?? parsed.version;
+  const runStatus = run?.status ?? parsed.status;
+  const groups = run?.groups ?? parsed.groups;
+  const context = run?.context ?? parsed.context;
+  const error = run?.error ?? (parsed.error === "" ? undefined : parsed.error);
 
-    const card = (
-      <ToolCallCard
-        icon={PenLine}
-        label={toolLabel(toolName)}
-        // A run with no version draws no draft card, and the card is where
-        // a failure names its reason. The editor would read a failed call
-        // and no reason for it. So the detail line carries the error.
-        detail={version === null ? error : undefined}
-        // A failed run still answers its call, so the call itself reads as
-        // complete. A card that took the status of the call would show the
-        // editor a draft that landed. So the status comes from the run, and
-        // only a call with no run of its own keeps its status.
-        status={
-          version === null && runStatus !== "failed"
-            ? status
-            : { type: TOOL_STATUS[runStatus] }
+  // The fields never travel with the call's own result, so they come from
+  // the drafts index, which merges the live stream with the thread.
+  const draft =
+    version === null
+      ? undefined
+      : sessionDrafts.find((entry) => entry.version === version);
+
+  const card = (
+    <ToolCallCard
+      icon={PenLine}
+      label={toolLabel(toolName)}
+      // A run with no version draws no draft card, and the card is where
+      // a failure names its reason. The editor would read a failed call
+      // and no reason for it. So the detail line carries the error.
+      detail={version === null ? error : undefined}
+      // A failed run still answers its call, so the call itself reads as
+      // complete. A card that took the status of the call would show the
+      // editor a draft that landed. So the status comes from the run, and
+      // only a call with no run of its own keeps its status.
+      status={
+        version === null && runStatus !== "failed"
+          ? status
+          : { type: TOOL_STATUS[runStatus] }
+      }
+    />
+  );
+
+  // Until the run names its version there is nothing to draw a card from,
+  // so the call shows as the plain tool card it is.
+  if (version === null) {
+    return card;
+  }
+
+  return (
+    <>
+      {card}
+      <DraftCard
+        version={version}
+        context={context}
+        groups={groups}
+        status={runStatus}
+        error={error}
+        isSaved={savedVersions.has(version)}
+        createdAt={draft?.createdAt ?? null}
+        onOpen={() =>
+          // Show this draft in the pane, expanding it if collapsed.
+          setDraftingState({
+            draftedFields: draft?.fields ?? {},
+            activeDraftVersion: version,
+            isArtifactCollapsed: false,
+          })
         }
       />
-    );
+    </>
+  );
+}
 
-    // Until the run names its version there is nothing to draw a card from,
-    // so the call shows as the plain tool card it is.
-    if (version === null) {
-      return card;
-    }
+/** UI for the drafting_draft_content tool call. */
+export const DraftContentToolUI = makeDraftToolUI("drafting_draft_content");
 
-    return (
-      <>
-        {card}
-        <DraftCard
-          version={version}
-          context={context}
-          groups={groups}
-          status={runStatus}
-          error={error}
-          isSaved={savedVersions.has(version)}
-          createdAt={draft?.createdAt ?? null}
-          onOpen={() =>
-            // Show this draft in the pane, expanding it if collapsed.
-            setDraftingState({
-              draftedFields: draft?.fields ?? {},
-              activeDraftVersion: version,
-              isArtifactCollapsed: false,
-            })
-          }
-        />
-      </>
-    );
-  },
-});
+/** UI for the amend_draft tool call. */
+export const AmendDraftToolUI = makeDraftToolUI("amend_draft");
 
 /** UI for the drafting_save_draft tool call. */
 export const SaveDraftToolUI = makeAssistantToolUI<SaveArgs, unknown>({

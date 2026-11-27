@@ -27,6 +27,7 @@ use NeuronAI\Workflow\Streaming\Adapter\StreamAdapterInterface;
     'drafting_get_history',
     'drafting_draft_content',
     SaveDraftNeuronTool::TOOL_ID,
+    'amend_draft',
     'context_get_editorial_context',
     'context_read_document',
     'context_get_session_activity',
@@ -101,6 +102,20 @@ final class EditorialNeuronAgent extends EditorialSessionAgentBase {
       after material the session may no longer hold.
     - When the user asks for several drafts at once, call it once for
       each draft they asked for, in the same reply.
+    - When the user asks to change, revise or fix something in a draft
+      that already exists, call amend_draft instead of
+      drafting_draft_content. Name the version of the draft to amend, and
+      pass the editor's request as its own brief too, in the words they
+      used: the drafters amending the draft never see this conversation
+      either, and without the brief they see no request to act on. When
+      the request points at one part of the draft, match it against the
+      field groups below by label and pass that group's ID in groups, so
+      only that group is redrafted: "fix the quote" or "the attribution
+      is wrong" names the group labelled for the quote, so groups is that
+      group's ID alone, not every group's ID, and not left empty. Leave
+      groups empty only when the request is general or names more than
+      one part. amend_draft writes a new draft, it never changes the one
+      it started from.
     - Tell the user the name of every draft that is ready and that they
       can review them on the right. Do not repeat the field values.
     - Only report a draft as ready when the result carries a draft. When
@@ -174,10 +189,11 @@ final class EditorialNeuronAgent extends EditorialSessionAgentBase {
       . 'entity_type_id: ' . ContentCreationSessionInterface::ENTITY_TYPE_ID . "\n";
 
     if ($bundle !== '') {
-      // A group definition carries the schema of the group, which is large
-      // and grows with the content type. This agent only asks the editor
-      // about a group, and each drafter reads its own schema from the
-      // provider. So the prompt names the groups and stops there.
+      // A group definition carries the group's schema, which is large and
+      // grows with the content type. This agent only asks the editor about
+      // a group and names its ID when amending one, and each drafter reads
+      // its own schema from the provider. So the prompt lists the IDs and
+      // labels and stops there.
       $prompt .= "\nAvailable field groups:\n";
       foreach ($this->getContextValue('session')->getFieldGroups() as $group) {
         $prompt .= sprintf("%s: %s\n", $group['groupId'], $group['label']);

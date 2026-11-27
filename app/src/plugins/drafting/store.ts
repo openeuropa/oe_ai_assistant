@@ -29,7 +29,7 @@ const PLUGIN_ID = "drafting";
  * record reaches the browser on the next reload.
  */
 export interface DraftRunProgress {
-  version: number;
+  version: string;
   status: DraftRunStatus;
   groups: DraftGroupProgress[];
   /** What the editor set up, as the run read it when it started. */
@@ -72,13 +72,13 @@ export interface DraftingSliceState {
    * draft produced in the current session before a reload rehydrates the
    * thread with the join getMessages() performs server side.
    */
-  liveDrafts: Record<number, LiveDraft>;
+  liveDrafts: Record<string, LiveDraft>;
   /** Confirmed selection per composer panel, keyed by panel id. */
   selections: Record<string, string>;
   /** Whether the artifact pane is collapsed to a slim rail (transient). */
   isArtifactCollapsed: boolean;
   /** Version of the draft currently shown in the pane; null for none/legacy. */
-  activeDraftVersion: number | null;
+  activeDraftVersion: string | null;
 }
 
 export const draftingSliceConfig: PluginSliceConfig<DraftingSliceState> = {

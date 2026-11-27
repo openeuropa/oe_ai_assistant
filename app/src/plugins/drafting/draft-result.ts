@@ -38,8 +38,18 @@ export interface DraftContext {
   documents: DraftDocumentSnapshot[];
 }
 
-/** Where one field group of a draft stands. */
-export type DraftGroupStatus = "pending" | "drafting" | "drafted" | "failed";
+/**
+ * Where one field group of a draft stands.
+ *
+ * Only an amendment reports "carried": the call didn't name this group for
+ * rewriting, so it keeps the values its source draft already had.
+ */
+export type DraftGroupStatus =
+  | "pending"
+  | "drafting"
+  | "drafted"
+  | "failed"
+  | "carried";
 
 /** One field group of a draft, with the progress the run reported for it. */
 export interface DraftGroupProgress {
@@ -63,8 +73,8 @@ export type DraftRunStatus = "running" | "drafted" | "failed";
 
 /** Normalized draft result: versioned shape or legacy flat fields map. */
 export interface ParsedDraftResult {
-  /** Numeric version when the versioned shape is detected; null for legacy. */
-  version: number | null;
+  /** "major.minor" version (e.g. "1.1") when detected; null for legacy. */
+  version: string | null;
   /** Editorial context present in versioned shape; null for legacy. */
   context: DraftContext | null;
   /** The groups the run drafted; empty for a record that stored none. */
@@ -131,13 +141,14 @@ function normaliseGroups(raw: unknown): DraftGroupProgress[] {
 }
 
 /**
- * Parses a draft_content tool-call result into a normalised shape.
+ * Parses a draft_content or amend_draft tool-call result into a normalised
+ * shape.
  *
- * Versioned detection: an object with a numeric `version`. A run that failed
- * stores no field, so the field map cannot settle this. A run that wrote no
- * draft has no version, and says so with its status. Everything else that is
- * object-like is treated as a legacy flat fields map. Null/undefined and
- * non-object inputs produce empty fields.
+ * A result counts as versioned when it carries a `version`, as a
+ * "major.minor" string or as a plain number. A run that wrote no draft has
+ * a status and no version, so the status is read next. Anything else
+ * object-like is a legacy flat fields map, and null, undefined or a
+ * non-object gives empty fields.
  */
 export function parseDraftResult(result: unknown): ParsedDraftResult {
   const empty = {
@@ -152,9 +163,18 @@ export function parseDraftResult(result: unknown): ParsedDraftResult {
     return { ...empty, fields: {} };
   }
 
-  if (typeof result["version"] === "number") {
+  // Pre-major.minor history can still hold a numeric version.
+  const rawVersion = result["version"];
+  const version =
+    typeof rawVersion === "string"
+      ? rawVersion
+      : typeof rawVersion === "number"
+        ? `${rawVersion}.0`
+        : null;
+
+  if (version !== null) {
     return {
-      version: result["version"],
+      version,
       context: normaliseContext(result["context"]),
       groups: normaliseGroups(result["groups"]),
       status: result["status"] === "failed" ? "failed" : "drafted",

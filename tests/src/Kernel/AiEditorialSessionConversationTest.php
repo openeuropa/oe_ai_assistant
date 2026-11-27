@@ -69,7 +69,7 @@ class AiEditorialSessionConversationTest extends AiEditorialSessionKernelTestBas
       'content' => json_encode([['type' => 'text', 'content' => 'not a draft', 'meta' => []]]),
     ]);
 
-    $this->assertSame(12, $session->nextVersion());
+    $this->assertSame('12.0', $session->nextVersion());
   }
 
   /**

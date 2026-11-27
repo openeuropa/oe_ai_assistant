@@ -10,19 +10,19 @@
 
 /** How a save ended, once the server recorded an outcome. */
 export type SaveResult =
-  | { status: "saved"; version: number; nodeId: string; previewUrl: string }
+  | { status: "saved"; version: string; nodeId: string; previewUrl: string }
   | { status: "not_saved"; error: string }
   | { status: "cancelled" };
 
 /** What the card shows, including the states that are not outcomes. */
 export type SaveState =
   | { status: "running" }
-  | { status: "waiting"; version: number }
+  | { status: "waiting"; version: string }
   | SaveResult;
 
 /** The arguments the model called drafting_save_draft with. */
 export interface SaveArgs {
-  version?: number;
+  version?: string;
   /** The server says this call waits for the editor's decision. */
   awaitingDecision?: boolean;
 }
@@ -73,7 +73,7 @@ export function parseSaveResult(result: unknown): SaveResult {
   if (typeof record["nodeId"] === "string" && record["nodeId"] !== "") {
     return {
       status: "saved",
-      version: Number(record["version"]),
+      version: String(record["version"] ?? ""),
       nodeId: record["nodeId"],
       previewUrl: String(record["previewUrl"] ?? ""),
     };
@@ -118,5 +118,5 @@ export function readSaveState(
     return { status: "running" };
   }
 
-  return { status: "waiting", version: args.version ?? 0 };
+  return { status: "waiting", version: args.version ?? "" };
 }

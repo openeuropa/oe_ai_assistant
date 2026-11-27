@@ -9,6 +9,7 @@ use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
 use Drupal\oe_ai_assistant\Entity\Bundle\ContentCreationSessionInterface;
 use Drupal\oe_ai_assistant\Neuron\Chat\History\EditorialMessageStore;
 use Drupal\oe_ai_assistant\Neuron\Chat\Messages\EditorialAssistantMessage;
+use Drupal\oe_ai_assistant\Utility\DraftVersion;
 use Drupal\oe_ai_assistant_test\Plugin\AiProvider\MockAiProvider;
 use Drupal\Tests\oe_ai_assistant\Traits\ExistingSiteConfigBackupTrait;
 use Drupal\user\UserInterface;
@@ -152,8 +153,12 @@ abstract class DraftingPluginTestBase extends ExistingSiteBase {
    *   The record of the run, as the node writes it.
    */
   protected function storeDraft(ContentCreationSessionInterface $session, array $draft): void {
+    // DraftContentNode always stores a normalized "major.minor" version,
+    // and draftResult() normalizes the version it looks up. A fixture
+    // stored under a plain "1" would never be found again.
+    $draft['version'] = DraftVersion::normalize((string) $draft['version']);
     $message = (new EditorialAssistantMessage(json_encode($draft)))
-      ->setDraftVersion((string) $draft['version']);
+      ->setDraftVersion($draft['version']);
 
     \Drupal::service(EditorialMessageStore::class)
       ->forSession($session)

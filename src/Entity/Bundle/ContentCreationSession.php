@@ -9,6 +9,7 @@ use Drupal\oe_ai_assistant\Entity\AiEditorialSession;
 use Drupal\oe_ai_assistant\Service\AiEditorialContextInterface;
 use Drupal\oe_ai_assistant\Service\Drafting\ContextDocumentRepository;
 use Drupal\oe_ai_assistant\Service\DraftingSchemaProviderInterface;
+use Drupal\oe_ai_assistant\Utility\DraftVersion;
 
 /**
  * Bundle class for the content creation session.
@@ -86,17 +87,50 @@ class ContentCreationSession extends AiEditorialSession implements ContentCreati
    * would hand the editor a number they already saw, so the next version
    * follows the highest one stored.
    */
-  public function nextVersion(): int {
-    // Read the version off the oe_draft_version column so we don't have to
-    // decode a draft here. Each row of this thread holds a whole draft, and
-    // draftResults() would parse that whole JSON payload just to get one
-    // number out of it. The column is a string, so we cast before comparing.
+  public function nextVersion(): string {
+    $versions = $this->storedVersions();
+
+    return $versions === []
+      ? '1.0'
+      : DraftVersion::incrementMajor(end($versions));
+  }
+
+  /**
+   * {@inheritdoc}
+   *
+   * We number a revision after the highest minor its major has reached, not
+   * after the version it started from. So amending "1.1" when another
+   * amendment already took "1.2" gives us "1.3".
+   */
+  public function nextMinorVersion(string $version): string {
+    $major = DraftVersion::major($version);
+    $underMajor = array_values(array_filter(
+      $this->storedVersions(),
+      static fn (string $stored): bool => DraftVersion::major($stored) === $major,
+    ));
+
+    $latest = $underMajor === [] ? DraftVersion::normalize($version) : end($underMajor);
+
+    return DraftVersion::incrementMinor($latest);
+  }
+
+  /**
+   * Returns the versions already stored for this session, lowest first.
+   *
+   * We read them off the oe_draft_version column rather than through
+   * draftResults(): every row on the drafts thread holds a whole draft, and
+   * that would decode each JSON payload just to get one number out of it.
+   *
+   * @return string[]
+   *   The versions, sorted.
+   */
+  private function storedVersions(): array {
     $versions = array_map(
-      static fn (NeuronMessageInterface $row): int => (int) $row->get('oe_draft_version')->value,
+      static fn (NeuronMessageInterface $row): string => (string) $row->get('oe_draft_version')->value,
       $this->conversationThread($this->draftsThread()),
     );
 
-    return ($versions === [] ? 0 : max($versions)) + 1;
+    return DraftVersion::sort($versions);
   }
 
   /**
@@ -108,9 +142,9 @@ class ContentCreationSession extends AiEditorialSession implements ContentCreati
       if (self::hasFailed($result)) {
         continue;
       }
-      $version = (int) $result['version'];
+      $version = (string) $result['version'];
       $drafts[] = [
-        'name' => sprintf('Draft %d', $version),
+        'name' => sprintf('Draft %s', DraftVersion::display($version)),
         'version' => $version,
         'context' => $result['context'],
       ];
@@ -122,7 +156,7 @@ class ContentCreationSession extends AiEditorialSession implements ContentCreati
   /**
    * {@inheritdoc}
    */
-  public function getDraftContent(int $version): ?array {
+  public function getDraftContent(string $version): ?array {
     $result = $this->draftResult($version);
     if ($result === NULL || self::hasFailed($result)) {
       return NULL;
@@ -137,7 +171,7 @@ class ContentCreationSession extends AiEditorialSession implements ContentCreati
   /**
    * {@inheritdoc}
    */
-  public function getDraftRun(int $version): ?array {
+  public function getDraftRun(string $version): ?array {
     return $this->draftResult($version);
   }
 
@@ -214,7 +248,7 @@ class ContentCreationSession extends AiEditorialSession implements ContentCreati
       }
     }
 
-    usort($results, static fn (array $a, array $b): int => (int) $a['version'] <=> (int) $b['version']);
+    usort($results, static fn (array $a, array $b): int => DraftVersion::compare((string) $a['version'], (string) $b['version']));
 
     return $results;
   }
@@ -222,17 +256,17 @@ class ContentCreationSession extends AiEditorialSession implements ContentCreati
   /**
    * Reads the record of one run, by the version the run took.
    *
-   * @param int $version
+   * @param string $version
    *   The version to read.
    *
    * @return array|null
    *   The record, or NULL when the session stored no such version.
    */
-  private function draftResult(int $version): ?array {
+  private function draftResult(string $version): ?array {
     $rows = \Drupal::entityTypeManager()->getStorage('neuron_message')->loadByProperties([
       'oe_ai_session' => (int) $this->id(),
       'thread_id' => $this->draftsThread(),
-      'oe_draft_version' => (string) $version,
+      'oe_draft_version' => DraftVersion::normalize($version),
     ]);
     $row = reset($rows);
 

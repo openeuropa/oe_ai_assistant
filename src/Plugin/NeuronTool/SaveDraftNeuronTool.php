@@ -10,6 +10,7 @@ use Drupal\Core\Plugin\Context\EntityContextDefinition;
 use Drupal\Core\StringTranslation\TranslatableMarkup;
 use Drupal\oe_ai_assistant\Exception\ActionException;
 use Drupal\oe_ai_assistant\Service\DraftSaverInterface;
+use Drupal\oe_ai_assistant\Utility\DraftVersion;
 use NeuronAI\Tools\PropertyType;
 use NeuronAI\Tools\Tool;
 use NeuronAI\Tools\ToolProperty;
@@ -87,13 +88,13 @@ final class SaveDraftNeuronTool extends NeuronToolPluginBase {
    *   The version, with 'nodeId' and 'previewUrl' when the draft was saved
    *   or 'error' when it was not.
    */
-  public function __invoke(int $version): array {
+  public function __invoke(string $version): array {
     // A draft gone since the request lets the call run without a decision.
     $draft = $this->draftWithFields($version);
     if ($draft === NULL) {
       return [
         'version' => $version,
-        'error' => sprintf('Draft %d does not exist in this session.', $version),
+        'error' => sprintf('Draft %s does not exist in this session.', DraftVersion::display($version)),
       ];
     }
 
@@ -112,7 +113,7 @@ final class SaveDraftNeuronTool extends NeuronToolPluginBase {
    */
   protected function properties(): array {
     return [
-      new ToolProperty('version', PropertyType::INTEGER, 'The version of the draft to save.', TRUE),
+      new ToolProperty('version', PropertyType::STRING, 'The version of the draft to save, e.g. "1" or "1.1".', TRUE),
     ];
   }
 
@@ -126,7 +127,7 @@ final class SaveDraftNeuronTool extends NeuronToolPluginBase {
    *   The draft's fields and template id, or NULL when there is none.
    */
   private function draftWithFields(mixed $version): ?array {
-    $draft = $this->getContextValue('session')->getDraftContent((int) $version);
+    $draft = $this->getContextValue('session')->getDraftContent((string) $version);
 
     return $draft === NULL || $draft['fields'] === [] ? NULL : $draft;
   }

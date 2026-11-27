@@ -9,10 +9,9 @@ use Drupal\Component\Utility\Unicode;
 use Drupal\oe_ai_assistant\Entity\ActivityType;
 use Drupal\oe_ai_assistant\Exception\SchemaRetriesExhaustedException;
 use Drupal\oe_ai_assistant\Neuron\ToolWorkflowInterface;
-use Drupal\oe_ai_assistant\Neuron\Chat\Messages\EditorialAssistantMessage;
 use Drupal\oe_ai_assistant\Plugin\NeuronWorkflow\DraftContent\DraftContentResources;
 use Drupal\oe_ai_assistant\Plugin\NeuronWorkflow\DraftContent\Events\DraftContentRequestEvent;
-use Drupal\oe_ai_assistant\Plugin\NeuronWorkflow\Drafting\Nodes\ValidateNode;
+use Drupal\oe_ai_assistant\Utility\DraftVersion;
 use NeuronAI\Agent\Adapters\Events\ActivityStreamEvent;
 use NeuronAI\Agent\Adapters\Events\CustomStreamEvent;
 use NeuronAI\Workflow\Events\StopEvent;
@@ -26,6 +25,8 @@ use NeuronAI\Workflow\WorkflowState;
  * stands as it reaches it.
  */
 final class DraftContentNode extends Node {
+
+  use GroupDraftingTrait;
 
   /**
    * The group that carries the title and the summary of the content.
@@ -62,14 +63,13 @@ final class DraftContentNode extends Node {
     $callId = $this->callId;
     $groups = $resources->session->getFieldGroups();
     $total = count($groups);
-    // The run already told the editor the name of this draft. A replayed
-    // step calls nextVersion() again, which returns a higher number once a
-    // draft has been stored, so we would promise "Draft 3" and then store
-    // "Draft 4". Memoizing per call id pins the version to the first
-    // reading.
-    $version = (int) $this->memoize(
+    // nextVersion() isn't stable across retries: once a draft has been
+    // stored it returns the next number up. If this step is re-run, we'd
+    // tell the editor "Draft 3" and then store it as "Draft 4". Memoizing
+    // per call id pins the version to the one we got the first time.
+    $version = (string) $this->memoize(
       'version.' . $callId,
-      fn (): int => $resources->session->nextVersion(),
+      fn (): string => $resources->session->nextVersion(),
     );
     $run = $this->runId($version);
     $answers = [];
@@ -142,6 +142,10 @@ final class DraftContentNode extends Node {
         'status' => 'drafted',
         'context' => $context,
         'groups' => array_values($progress),
+        // Keep the groups this draft was written against. AmendContentNode
+        // drafts a revision of it against this copy, so editing the template
+        // later on can't change what that revision asks for.
+        'schemaGroups' => $groups,
         'fields' => $fields,
       ]);
       // A resumed run replays this node with its groups already memoized,
@@ -150,8 +154,8 @@ final class DraftContentNode extends Node {
       $this->memoize('recorded.' . $callId, function () use ($resources, $version): bool {
         $resources->session->recordActivity(
           ActivityType::DraftGenerated,
-          'Draft %d generated.',
-          [$version],
+          'Draft %s generated.',
+          [DraftVersion::display($version)],
         );
 
         return TRUE;
@@ -175,11 +179,11 @@ final class DraftContentNode extends Node {
         'createdAt' => date('c'),
       ]);
 
-      // A draft holds every field of the content type, and the agent re-sends
-      // its whole thread on every turn, so fields in a tool result would be
-      // paid for on every later request. The model is only told the name of
-      // the draft, and the fields stay in the drafts thread.
-      $result = ['draft' => sprintf('Draft %d', $version), 'version' => $version];
+      // Only give the model the draft's name. The agent re-sends its whole
+      // thread on every turn, so a full set of fields in the tool result
+      // would be paid for on every later request. The fields stay in the
+      // drafts thread.
+      $result = ['draft' => sprintf('Draft %s', DraftVersion::display($version)), 'version' => $version];
     }
     catch (\Throwable $e) {
       // The editor only ever reads the short message built below, so the
@@ -219,6 +223,7 @@ final class DraftContentNode extends Node {
         'status' => 'failed',
         'context' => $context,
         'groups' => array_values($progress),
+        'schemaGroups' => $groups,
         'fields' => [],
         // A failure that belongs to no group has no row to carry it, so the
         // record carries it for the header of the card.
@@ -232,15 +237,15 @@ final class DraftContentNode extends Node {
         if ($failed === '') {
           $resources->session->recordActivity(
             ActivityType::DraftFailed,
-            'Draft %d failed: %s',
-            [$version, $reason],
+            'Draft %s failed: %s',
+            [DraftVersion::display($version), $reason],
           );
         }
         else {
           $resources->session->recordActivity(
             ActivityType::DraftFailed,
-            'Draft %d failed in the "%s" group: %s',
-            [$version, $failed, $reason],
+            'Draft %s failed in the "%s" group: %s',
+            [DraftVersion::display($version), $failed, $reason],
           );
         }
 
@@ -301,36 +306,6 @@ final class DraftContentNode extends Node {
   }
 
   /**
-   * Runs the drafter of one group and reports the values it wrote.
-   *
-   * @param \Drupal\oe_ai_assistant\Plugin\NeuronWorkflow\DraftContent\DraftContentResources $resources
-   *   What this run shares.
-   * @param array $group
-   *   The group definition, with its id and its schema slice.
-   * @param string $run
-   *   The run this draft belongs to.
-   * @param string $task
-   *   What to tell the drafter.
-   *
-   * @return array
-   *   The field values the drafter wrote.
-   *
-   * @throws \Drupal\oe_ai_assistant\Exception\SchemaRetriesExhaustedException
-   *   When no answer of the drafter matched the group schema.
-   */
-  private function draftGroup(DraftContentResources $resources, array $group, string $run, string $task): array {
-    $state = $resources->workflows->createWorkflow('draft_group', [], [
-      'session' => $resources->session,
-      'group' => (string) $group['groupId'],
-      'schema' => (array) $group['schemaSlice'],
-      'task' => $task,
-      'run' => $run,
-    ])->run();
-
-    return (array) $state->get(ValidateNode::FIELDS_KEY, []);
-  }
-
-  /**
    * Names this run, so two attempts at one draft never share a conversation.
    *
    * A replayed step drafts the version it took the first time. A name built
@@ -339,36 +314,14 @@ final class DraftContentNode extends Node {
    * random segment separates the two, and the version ties the run to the
    * draft it wrote.
    *
-   * @param int $version
+   * @param string $version
    *   The version this run drafts.
    *
    * @return string
    *   The run id, which names the drafter conversations of this run.
    */
-  private function runId(int $version): string {
-    return sprintf('draft_%d.%s', $version, Crypt::randomBytesBase64(4));
-  }
-
-  /**
-   * Keeps the draft in a thread of its own.
-   *
-   * No model has to read a draft back, and no agent runs on this thread, so
-   * a record can be as large as the content type needs. A reader asks for one
-   * draft, so the message names its version and the store records it on the
-   * row.
-   *
-   * @param \Drupal\oe_ai_assistant\Plugin\NeuronWorkflow\DraftContent\DraftContentResources $resources
-   *   What this run shares.
-   * @param array $draft
-   *   The record of the run: its version, the run that wrote it, its status,
-   *   the snapshot of what the editor set up, the groups with the status each
-   *   one reached, and the field values.
-   */
-  private function storeDraft(DraftContentResources $resources, array $draft): void {
-    $message = (new EditorialAssistantMessage(json_encode($draft)))
-      ->setDraftVersion((string) $draft['version']);
-
-    $resources->store->append($resources->session->draftsThread(), $message);
+  private function runId(string $version): string {
+    return sprintf('draft_%s.%s', $version, Crypt::randomBytesBase64(4));
   }
 
   /**

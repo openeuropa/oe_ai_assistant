@@ -59,7 +59,7 @@ class DraftingPluginApprovalTest extends DraftingPluginTestBase {
     $this->assertInstanceOf(ApprovalRequest::class, $run->interrupt);
     $action = $run->interrupt->getActions()[0];
     $this->assertSame(
-      ['call_save', 'drafting_save_draft', ['version' => 1]],
+      ['call_save', 'drafting_save_draft', ['version' => '1']],
       [$action->id, $action->name, $action->inputs],
     );
     $this->assertSame([], $this->newNodeIds());
@@ -87,23 +87,33 @@ class DraftingPluginApprovalTest extends DraftingPluginTestBase {
 
     $output = $this->toolOutput($decided['events'], $callId);
     $this->assertSame(
-      ['version' => 9, 'error' => 'Draft 9 does not exist in this session.'],
+      ['version' => '9', 'error' => 'Draft 9 does not exist in this session.'],
       json_decode($output['output'], TRUE),
     );
     $this->assertSame([], $this->newNodeIds());
   }
 
   /**
-   * Tests that a version that is not an integer is not gated.
+   * Tests that a non-numeric version is gated like any other, then fails.
+   *
+   * A version is a free-form "major.minor" string, so there's no type that
+   * rejects "two" up front. The call waits for the editor like any other
+   * save and only fails once they decide it, the way an unknown version
+   * does.
    */
-  public function testNonIntegerVersionIsNotGated(): void {
+  public function testNonNumericVersionIsGatedThenAnswersTheError(): void {
     $session = $this->sessionWithDraft();
+    $this->askToSave($session, 'two');
+    MockAiProvider::enqueue(new MockResponse(text: 'I need a draft number.'));
 
-    $events = $this->askToSave($session, 'two', reply: 'I need a draft number.');
+    $callId = $this->waitingCallId($session);
+    $decided = $this->decide($session, $callId, TRUE);
 
-    $this->assertContains('finish', array_column($events, 'type'));
-    $this->assertArrayHasKey('errorText', $this->toolOutput($events, 'call_save'));
-    $this->assertSame([], $this->getApprovals($session));
+    $output = $this->toolOutput($decided['events'], $callId);
+    $this->assertSame(
+      ['version' => 'two', 'error' => 'Draft 0 does not exist in this session.'],
+      json_decode($output['output'], TRUE),
+    );
     $this->assertSame([], $this->newNodeIds());
   }
 
@@ -126,7 +136,7 @@ class DraftingPluginApprovalTest extends DraftingPluginTestBase {
 
     $output = $this->toolOutput($decided['events'], $callId);
     $this->assertSame(
-      ['version' => 1, 'error' => 'Draft 1 does not exist in this session.'],
+      ['version' => '1', 'error' => 'Draft 1 does not exist in this session.'],
       json_decode($output['output'], TRUE),
     );
     $this->assertSame([], $this->newNodeIds());
@@ -152,7 +162,7 @@ class DraftingPluginApprovalTest extends DraftingPluginTestBase {
     $this->assertCount(1, $calls);
     $this->assertSame('drafting_save_draft', $calls[0]['function']['name']);
     $this->assertSame($this->waitingCallId($session), $calls[0]['callId']);
-    $this->assertSame(['version' => 1], json_decode($calls[0]['function']['arguments'], TRUE));
+    $this->assertSame(['version' => '1'], json_decode($calls[0]['function']['arguments'], TRUE));
     $this->assertTrue($calls[0]['awaitingDecision']);
     $this->assertArrayNotHasKey('result', $calls[0]);
   }
@@ -187,14 +197,14 @@ class DraftingPluginApprovalTest extends DraftingPluginTestBase {
 
     $this->assertSame(200, $decided['status']);
     $result = json_decode($this->toolOutput($decided['events'], $callId)['output'], TRUE);
-    $this->assertSame(1, $result['version']);
+    $this->assertSame('1', $result['version']);
     $node = Node::load($result['nodeId']);
     $this->assertSame('Draft one', $node->getTitle());
     $this->assertSame('draft', $node->get('moderation_state')->value);
     $this->assertSame([], $this->getApprovals($session));
     $calls = array_merge([], ...array_column($this->getMessages($session), 'toolCalls'));
     $this->assertSame(['drafting_save_draft'], array_column(array_column($calls, 'function'), 'name'));
-    $this->assertSame(['version', 'nodeId', 'previewUrl'], array_keys($calls[0]['result']));
+    $this->assertSame(['version', 'nodeId', 'previewUrl', 'draftName'], array_keys($calls[0]['result']));
   }
 
   /**
@@ -271,7 +281,7 @@ class DraftingPluginApprovalTest extends DraftingPluginTestBase {
 
     $this->assertSame(200, $decided['status']);
     $this->assertSame(
-      ['version' => 1, 'error' => 'You do not have permission to create oe_news content.'],
+      ['version' => '1', 'error' => 'You do not have permission to create oe_news content.'],
       json_decode($this->toolOutput($decided['events'], $callId)['output'], TRUE),
     );
     $this->assertSame([], $this->newNodeIds());

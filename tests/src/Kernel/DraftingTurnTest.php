@@ -79,7 +79,7 @@ class DraftingTurnTest extends AiEditorialSessionKernelTestBase {
     $results = $session->conversationToolResults();
     $this->assertCount(1, $results);
     $this->assertSame('drafting_draft_content', $results[0]['name']);
-    $this->assertSame(['draft' => 'Draft 1', 'version' => 1], $results[0]['result']);
+    $this->assertSame(['draft' => 'Draft 1', 'version' => '1.0'], $results[0]['result']);
 
     // The draft holds what the two groups wrote, assembled in code.
     $drafts = $session->listDrafts();
@@ -94,7 +94,7 @@ class DraftingTurnTest extends AiEditorialSessionKernelTestBase {
           'type' => [['target_id' => 'text_block']],
         ],
       ],
-    ], $session->getDraftContent(1)['fields']);
+    ], $session->getDraftContent('1')['fields']);
 
     // Each group ran in its own thread, named after the run that wrote it.
     $threads = $session->conversationThreads();
@@ -170,11 +170,11 @@ class DraftingTurnTest extends AiEditorialSessionKernelTestBase {
     $rows = $session->conversationThread($session->draftsThread());
     $this->assertCount(1, $rows);
     $this->assertSame('editorial_session', $rows[0]->bundle());
-    $this->assertSame('1', $rows[0]->get('oe_draft_version')->value);
+    $this->assertSame('1.0', $rows[0]->get('oe_draft_version')->value);
 
     // One query finds the record by its version.
-    $this->assertSame(1, $session->getDraftRun(1)['version']);
-    $this->assertNull($session->getDraftRun(2));
+    $this->assertSame('1.0', $session->getDraftRun('1')['version']);
+    $this->assertNull($session->getDraftRun('2'));
 
     $session->deleteConversation();
 
@@ -200,7 +200,7 @@ class DraftingTurnTest extends AiEditorialSessionKernelTestBase {
     $this->turn($session, 'Draft it again.');
 
     $this->assertSame(['Draft 1', 'Draft 2'], array_column($session->listDrafts(), 'name'));
-    $this->assertSame([1, 2], array_column($session->listDrafts(), 'version'));
+    $this->assertSame(['1.0', '2.0'], array_column($session->listDrafts(), 'version'));
 
     // The second run holds its own conversation, so a drafter never replays
     // the answer it gave for the draft before.
@@ -235,7 +235,7 @@ class DraftingTurnTest extends AiEditorialSessionKernelTestBase {
 
     // The draft still holds both groups, so a retry costs the editor nothing.
     $this->assertSame(['Draft 1'], array_column($session->listDrafts(), 'name'));
-    $this->assertArrayHasKey('field_content_paragraphs', $session->getDraftContent(1)['fields']);
+    $this->assertArrayHasKey('field_content_paragraphs', $session->getDraftContent('1')['fields']);
   }
 
   /**
@@ -312,7 +312,7 @@ class DraftingTurnTest extends AiEditorialSessionKernelTestBase {
     $this->assertSame([
       'error' => 'The group could not be drafted.',
       'group' => 'main_fields',
-      'version' => 1,
+      'version' => '1.0',
     ], $results[0]['result']);
     $this->assertSame([], $session->listDrafts());
 
@@ -320,7 +320,7 @@ class DraftingTurnTest extends AiEditorialSessionKernelTestBase {
     $logged = implode("\n", $records);
     $this->assertStringContainsString('host db-77 refused', $logged);
     $this->assertStringContainsString('main_fields', $logged);
-    $this->assertMatchesRegularExpression('@draft_1\.[A-Za-z0-9_-]{6}@', $logged);
+    $this->assertMatchesRegularExpression('@draft_1\.0\.[A-Za-z0-9_-]{6}@', $logged);
   }
 
   /**
@@ -454,8 +454,8 @@ class DraftingTurnTest extends AiEditorialSessionKernelTestBase {
     // the drafters of its own groups.
     $results = $session->conversationToolResults();
     $this->assertCount(2, $results);
-    $this->assertSame(['draft' => 'Draft 1', 'version' => 1], $results[0]['result']);
-    $this->assertSame(['draft' => 'Draft 2', 'version' => 2], $results[1]['result']);
+    $this->assertSame(['draft' => 'Draft 1', 'version' => '1.0'], $results[0]['result']);
+    $this->assertSame(['draft' => 'Draft 2', 'version' => '2.0'], $results[1]['result']);
     $this->assertCount(2, preg_grep('@\.group_main_fields$@', array_keys($session->conversationThreads())));
   }
 
@@ -479,7 +479,7 @@ class DraftingTurnTest extends AiEditorialSessionKernelTestBase {
     $this->assertSame([
       'error' => 'The draft could not be written.',
       'group' => '',
-      'version' => 1,
+      'version' => '1.0',
     ], $session->conversationToolResults()[0]['result']);
   }
 
@@ -516,7 +516,7 @@ class DraftingTurnTest extends AiEditorialSessionKernelTestBase {
     );
     $this->assertSame(
       [['field_text_body' => [['value' => '<p>B</p>']], 'type' => [['target_id' => 'text_block']]]],
-      $session->getDraftContent(1)['fields']['field_content_paragraphs'],
+      $session->getDraftContent('1')['fields']['field_content_paragraphs'],
     );
   }
 
@@ -549,12 +549,12 @@ class DraftingTurnTest extends AiEditorialSessionKernelTestBase {
     $this->assertNotEmpty(array_diff($threads, $failed), 'The second run drafts in threads of its own.');
     $this->assertCount(
       1,
-      preg_grep('@\.draft_1\.[A-Za-z0-9_-]{6}\.group_main_fields$@', $threads),
+      preg_grep('@\.draft_1\.0\.[A-Za-z0-9_-]{6}\.group_main_fields$@', $threads),
       'The failed run holds the conversation of its own version.',
     );
     $this->assertCount(
       1,
-      preg_grep('@\.draft_2\.[A-Za-z0-9_-]{6}\.group_main_fields$@', $threads),
+      preg_grep('@\.draft_2\.0\.[A-Za-z0-9_-]{6}\.group_main_fields$@', $threads),
       'The run that followed it holds a conversation of its own.',
     );
   }
@@ -725,8 +725,8 @@ class DraftingTurnTest extends AiEditorialSessionKernelTestBase {
     $this->turn($session, 'Draft it, then draft it again.');
 
     $this->assertSame(['Draft 1', 'Draft 2'], array_column($session->listDrafts(), 'name'));
-    $this->assertSame([['value' => 'T']], $session->getDraftContent(1)['fields']['title']);
-    $this->assertSame([['value' => 'T2']], $session->getDraftContent(2)['fields']['title']);
+    $this->assertSame([['value' => 'T']], $session->getDraftContent('1')['fields']['title']);
+    $this->assertSame([['value' => 'T2']], $session->getDraftContent('2')['fields']['title']);
   }
 
   /**
@@ -842,7 +842,7 @@ class DraftingTurnTest extends AiEditorialSessionKernelTestBase {
    */
   private function thread(AiEditorialSessionInterface $session, int $version, string $group): string {
     $pattern = sprintf(
-      '@^group_drafter\.session_%s\.draft_%d\.[A-Za-z0-9_-]{6}\.group_%s$@',
+      '@^group_drafter\.session_%s\.draft_%d\.0\.[A-Za-z0-9_-]{6}\.group_%s$@',
       $session->id(),
       $version,
       preg_quote($group, '@'),

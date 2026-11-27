@@ -34,6 +34,7 @@ import {
   useState,
 } from "react";
 import { getConfig } from "@/config";
+import { displayDraftVersion } from "../draft-version";
 import { formatDraftDate } from "../format-draft-date";
 import { buildPreviewUrl } from "../preview-url";
 import type { DraftingPluginConfig } from "../types";
@@ -59,7 +60,7 @@ interface DraftPreviewProps {
   /** Editorial session the previewed draft belongs to. */
   sessionId: string;
   /** Draft version to preview, as shown in the version rail. */
-  versionId: number;
+  versionId: string;
   /** When the draft was generated; null when unknown. */
   createdAt: Date | null;
   /** Whether this version has already been saved as a revision. */
@@ -301,7 +302,7 @@ export function DraftPreview({
             />
           )}
           <h2 className="text-base font-semibold whitespace-nowrap text-gray-900">
-            Draft {versionId}
+            Draft {displayDraftVersion(versionId)}
           </h2>
           {createdAt && (
             <span className="truncate text-xs text-gray-500">

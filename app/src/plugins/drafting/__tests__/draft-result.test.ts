@@ -11,7 +11,7 @@ import { parseDraftResult } from "../draft-result";
 describe("parseDraftResult", () => {
   it("parses the versioned shape with full context", () => {
     const raw = {
-      version: 1,
+      version: "1.0",
       context: {
         tone: { id: "formal", label: "Formal", prompt: "Be formal." },
         template: { id: "news", label: "News Article" },
@@ -39,7 +39,7 @@ describe("parseDraftResult", () => {
 
     const result = parseDraftResult(raw);
 
-    expect(result.version).toBe(1);
+    expect(result.version).toBe("1.0");
     expect(result.context).not.toBeNull();
     expect(result.context?.tone).toEqual({
       id: "formal",
@@ -57,7 +57,7 @@ describe("parseDraftResult", () => {
 
   it("parses versioned shape with null tone, null template, empty documents", () => {
     const raw = {
-      version: 2,
+      version: "2.0",
       context: {
         tone: null,
         template: null,
@@ -68,29 +68,39 @@ describe("parseDraftResult", () => {
 
     const result = parseDraftResult(raw);
 
-    expect(result.version).toBe(2);
+    expect(result.version).toBe("2.0");
     expect(result.context?.tone).toBeNull();
     expect(result.context?.template).toBeNull();
     expect(result.context?.documents).toEqual([]);
     expect(result.fields).toEqual(raw.fields);
   });
 
+  it("parses a minor revision version produced by amend_draft", () => {
+    const result = parseDraftResult({
+      version: "1.1",
+      context: null,
+      fields: { title: [{ value: "Amended" }] },
+    });
+
+    expect(result.version).toBe("1.1");
+  });
+
   it("falls back null/missing context fields to null/empty-array", () => {
     const raw = {
-      version: 1,
+      version: "1.0",
       // No context key at all.
       fields: { body: [{ value: "Text" }] },
     };
 
     const result = parseDraftResult(raw);
 
-    expect(result.version).toBe(1);
+    expect(result.version).toBe("1.0");
     expect(result.context?.tone).toBeNull();
     expect(result.context?.template).toBeNull();
     expect(result.context?.documents).toEqual([]);
   });
 
-  it("treats a flat object without numeric version as a legacy fields map", () => {
+  it("treats a flat object with no version key as a legacy fields map", () => {
     const raw = {
       title: [{ value: "Legacy Title" }],
       body: [{ value: "Legacy body." }],
@@ -103,21 +113,28 @@ describe("parseDraftResult", () => {
     expect(result.fields).toEqual(raw);
   });
 
-  it("treats an object with a non-numeric version as a legacy fields map", () => {
-    const raw = { version: "v1", title: [{ value: "Old" }] };
+  it("reads a numeric version as that major with no minor, for history predating the major.minor scheme", () => {
+    const raw = {
+      version: 1,
+      fields: { title: [{ value: "Old" }] },
+    };
 
     const result = parseDraftResult(raw);
 
-    expect(result.version).toBeNull();
-    expect(result.context).toBeNull();
-    expect(result.fields).toEqual(raw);
+    expect(result.version).toBe("1.0");
+    expect(result.context).toEqual({
+      tone: null,
+      template: null,
+      documents: [],
+    });
+    expect(result.fields).toEqual({ title: [{ value: "Old" }] });
   });
 
   it("gives an empty group list to a versioned result that names none", () => {
     // The card reads the list without checking it, so a record or a stream
     // event that leaves the key out must still parse to a list.
     const parsed = parseDraftResult({
-      version: 2,
+      version: "2.0",
       context: null,
       fields: { title: [{ value: "Title" }] },
     });
@@ -139,7 +156,7 @@ describe("parseDraftResult", () => {
     ];
 
     const parsed = parseDraftResult({
-      version: 2,
+      version: "2.0",
       status: "failed",
       context: null,
       groups,

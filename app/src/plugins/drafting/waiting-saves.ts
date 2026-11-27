@@ -29,7 +29,7 @@ export interface WaitingSave {
   /** The id the decision names. */
   callId: string;
   /** The draft version the call asks to save. */
-  version: number;
+  version: string;
 }
 
 /** Collects the save calls that nothing has answered. */
@@ -37,7 +37,7 @@ export function extractWaitingSaves(
   messages: readonly ThreadMessageLikeShape[],
 ): WaitingSave[] {
   const answered = new Set<string>();
-  const waiting = new Map<string, number>();
+  const waiting = new Map<string, string>();
   for (const message of messages) {
     for (const part of message.content ?? []) {
       if (
@@ -52,7 +52,7 @@ export function extractWaitingSaves(
         continue;
       }
       const args = (part.args ?? {}) as SaveArgs;
-      waiting.set(callId, args.version ?? 0);
+      waiting.set(callId, args.version ?? "");
     }
   }
   for (const callId of answered) {

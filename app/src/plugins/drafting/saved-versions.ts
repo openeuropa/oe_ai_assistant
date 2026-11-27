@@ -25,8 +25,8 @@ interface ThreadMessageLikeShape {
 /** Collects the versions of the saves the editor approved in the thread. */
 export function extractSavedVersions(
   messages: readonly ThreadMessageLikeShape[],
-): Set<number> {
-  const saved = new Set<number>();
+): Set<string> {
+  const saved = new Set<string>();
   for (const message of messages) {
     for (const part of message.content ?? []) {
       if (
@@ -45,7 +45,7 @@ export function extractSavedVersions(
 }
 
 /** Reads the saved versions from the current thread. */
-export function useSavedVersions(): Set<number> {
+export function useSavedVersions(): Set<string> {
   const messages = useAuiState((s) => s.thread.messages);
   return useMemo(
     () => extractSavedVersions(messages as readonly ThreadMessageLikeShape[]),

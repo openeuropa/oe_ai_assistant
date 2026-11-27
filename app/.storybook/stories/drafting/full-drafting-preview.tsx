@@ -196,7 +196,7 @@ function draftCall(
     {
       function: { name: "drafting_draft_content" },
       result: {
-        version,
+        version: `${version}.0`,
         context: {
           tone: {
             id: toneLabel.toLowerCase().replace(/\s+/g, "-"),
@@ -434,7 +434,7 @@ export function seedDraftingPreviewState(): void {
     ...draftingSliceConfig.initialState,
     draftedFields: v8Fields,
     // The seeded fields belong to the latest draft in the transcript.
-    activeDraftVersion: 8,
+    activeDraftVersion: "8.0",
   });
 }
 
