@@ -7,6 +7,7 @@ namespace Drupal\oe_ai_assistant\Evaluators;
 use Drupal\ai_neuron\Agent\NeuronAgentManagerInterface;
 use Drupal\ai_neuron\Providers\ProviderFactoryInterface;
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
+use Drupal\oe_ai_assistant\Entity\Bundle\ContentCreationSessionInterface;
 use Drupal\taxonomy\TermInterface;
 use Drupal\user\Entity\User;
 use Drupal\user\UserInterface;
@@ -175,6 +176,50 @@ abstract class EditorialSessionEvaluatorBase extends BaseEvaluator {
     }
 
     return $term;
+  }
+
+  /**
+   * The text of every field of the draft the session stored last.
+   *
+   * @param int $sessionId
+   *   The session that holds the draft.
+   *
+   * @return string
+   *   Every scalar the draft holds, joined into one searchable string.
+   */
+  protected function latestDraftText(int $sessionId): string {
+    $session = $this->session($sessionId);
+    assert($session instanceof ContentCreationSessionInterface);
+    $drafts = $session->listDrafts();
+    if ($drafts === []) {
+      throw new \RuntimeException('The run stored no draft to read.');
+    }
+
+    $latest = end($drafts);
+    $draft = $session->getDraftContent((string) $latest['version']);
+    if ($draft === NULL) {
+      throw new \RuntimeException(sprintf('Draft %s holds no content.', $latest['version']));
+    }
+
+    return $this->flatten($draft['fields']);
+  }
+
+  /**
+   * Flattens a nested field map into one searchable string.
+   *
+   * @param array $values
+   *   The values to flatten.
+   *
+   * @return string
+   *   The scalars, separated by newlines.
+   */
+  protected function flatten(array $values): string {
+    $text = '';
+    foreach ($values as $value) {
+      $text .= is_array($value) ? $this->flatten($value) : (string) $value . "\n";
+    }
+
+    return $text;
   }
 
 }
