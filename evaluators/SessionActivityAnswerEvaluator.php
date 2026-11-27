@@ -100,10 +100,10 @@ final class SessionActivityAnswerEvaluator extends EditorialSessionEvaluatorBase
   public function evaluate(mixed $output, array $datasetItem): void {
     $expected = $datasetItem['expected_output'];
 
-    // The document was attached and removed after the previous turn read
-    // the activity record, and that answer still says it is attached. An
-    // agent that answers this question from the thread names a document
-    // that is gone, so this is the checkpoint that asserts the read.
+    // The attach and the remove both happened after the last call to
+    // context_get_session_activity, and an earlier answer still reports the
+    // document as attached. An agent that answers from the thread repeats
+    // it, so this checkpoint asserts a fresh call.
     $this->assert(
       new ToolWasCalled('context_get_session_activity'),
       $output['document_removed'],
