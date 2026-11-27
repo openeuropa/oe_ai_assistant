@@ -53,17 +53,6 @@ interface AiEditorialSessionInterface extends ContentEntityInterface, EntityChan
   public function editorialThread(): string;
 
   /**
-   * Returns what the editor and the assistant said, oldest first.
-   *
-   * A draft is written to a thread of its own, and a tool call carries no
-   * text. So these turns are the conversation with no draft in it.
-   *
-   * @return array
-   *   One entry per turn, shaped {role, text}.
-   */
-  public function conversationTurns(): array;
-
-  /**
    * Returns the stored rows of one thread of this session.
    *
    * A caller that only reads one thread does not have to load and group
