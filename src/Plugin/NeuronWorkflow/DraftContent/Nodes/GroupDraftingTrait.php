@@ -66,32 +66,4 @@ trait GroupDraftingTrait {
     $resources->store->append($resources->session->draftsThread(), $message);
   }
 
-  /**
-   * Formats the session's conversation for a drafter's prompt.
-   *
-   * This reads the editorial thread only. The drafts don't show up in it,
-   * because each group's drafter writes to a thread of its own.
-   *
-   * @param \Drupal\oe_ai_assistant\Plugin\NeuronWorkflow\DraftContent\DraftContentResources $resources
-   *   What this run shares.
-   *
-   * @return string
-   *   The conversation block, empty when the session has no turns yet.
-   */
-  private function conversation(DraftContentResources $resources): string {
-    $turns = $resources->session->conversationTurns();
-    if ($turns === []) {
-      return '';
-    }
-
-    return "The conversation so far:\n" . implode("\n", array_map(
-      static fn (array $turn): string => sprintf(
-        '%s: %s',
-        $turn['role'] === 'user' ? 'Editor' : 'Assistant',
-        $turn['text'],
-      ),
-      $turns,
-    )) . "\n\n";
-  }
-
 }

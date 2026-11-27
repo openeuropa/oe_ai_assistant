@@ -89,10 +89,10 @@ class AmendingTurnTest extends AiEditorialSessionKernelTestBase {
   /**
    * Amending tells the drafter what the editor asked for in this turn.
    *
-   * The turn that asks for the amendment is still open while the tool runs,
-   * so conversationTurns() doesn't have it yet. Without the brief passed
-   * explicitly, the drafter has no request to act on and either leaves the
-   * field as it is or invents a change nobody asked for.
+   * The group drafter sees none of the editorial conversation, only the
+   * task it is handed. Without the brief passed explicitly, it has no
+   * request to act on and either leaves the field as it is or invents a
+   * change nobody asked for.
    */
   public function testAmendingTellsTheDrafterWhatTheEditorAskedForInThisTurn(): void {
     $session = $this->createSession($this->createUser());

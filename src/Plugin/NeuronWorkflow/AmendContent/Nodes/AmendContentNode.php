@@ -123,7 +123,6 @@ final class AmendContentNode extends Node {
       fn (): string => $resources->session->nextMinorVersion($sourceVersion),
     );
     $run = sprintf('amend_%s.%s', $version, Crypt::randomBytesBase64(4));
-    $conversation = $this->conversation($resources);
     $context = (array) ($source['context'] ?? []);
     $fields = (array) ($source['fields'] ?? []);
 
@@ -170,15 +169,11 @@ final class AmendContentNode extends Node {
           yield $this->progress($callId, $group, 'drafting', $index, $total);
 
           $existing = array_intersect_key($fields, array_flip($group['fieldNames']));
-          $task = $conversation;
-          // conversationTurns() only gives us closed turns, and the turn that
-          // asked for this amendment is still open while the tool runs. Without
-          // the brief the drafter has no request to act on, so it either leaves
-          // the group as it is or invents a change nobody asked for.
-          if ($this->brief !== '') {
-            $task .= "What the editor asked for:\n" . $this->brief . "\n\n";
-          }
-          $task .= "The group's current values:\n" . json_encode($existing) . "\n\n"
+          // The brief is all the drafter gets about the request. It runs on
+          // its own thread, and replaying the conversation here would send
+          // it after documents the editor has since removed.
+          $task = "What the editor asked for:\n" . $this->brief . "\n\n"
+            . "The group's current values:\n" . json_encode($existing) . "\n\n"
             . 'Amend the fields of the provided schema to follow that request.'
             . ' Keep anything it does not mention as it already is.';
 
