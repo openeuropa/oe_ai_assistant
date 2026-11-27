@@ -1,0 +1,42 @@
+How fishing quotas are set under the Common Fisheries Policy
+
+Every December, fisheries ministers from the member states meet in Brussels to fix the total
+allowable catch for the following year, stock by stock. The meeting is the visible end of a process
+that has been running since the previous spring, and almost nothing decided in the room is invented
+there. What ministers negotiate is the gap between what the scientific advice recommends and what
+each national fleet can absorb.
+
+The advice itself comes from the International Council for the Exploration of the Sea, which is not
+a European Union body and advises coastal states across the North Atlantic. Its working groups
+assemble catch records, research survey data and biological sampling into an assessment of each
+stock, and express the result as the catch consistent with maximum sustainable yield. That concept
+is the policy's legal objective: the largest quantity that can be taken year after year without
+reducing the stock's ability to replace itself. Where data are too thin for a full assessment, the
+advice falls back on a precautionary approach and recommends more cautious limits.
+
+The Commission turns that advice into a proposal, and this is where the arithmetic becomes
+political. A single trawl rarely catches a single species, so a quota cut on one stock can stop a
+fleet from catching its full entitlement on another that shares the same ground. Reducing a catch
+limit to the level the science suggests may therefore tie up vessels that depend on a mixed fishery,
+and ministers who represent those fleets argue for a slower path to the target.
+
+Allocation between member states is the part that does not get renegotiated. Each state's share of a
+stock is fixed by a distribution key known as relative stability, set from historic catch records in
+the early years of the policy and left deliberately untouched since. A state that wants more of one
+stock and less of another trades during the year through quota swaps, which are bilateral,
+administratively routine, and invisible in the December figures.
+
+The landing obligation changed what a quota means. Before it, a vessel that exceeded its quota for
+one species while fishing for another discarded the excess at sea, dead and unrecorded. The
+obligation requires those catches to be brought ashore and counted, which makes the limiting stock
+in a mixed fishery decisive: once its quota is exhausted, the vessel must stop fishing even if its
+other quotas are untouched. That consequence, often called the choke species problem, drives much of
+the technical argument over gear selectivity and over the exemptions that soften it.
+
+Stocks shared with states outside the Union follow a parallel track. Catch limits for stocks that
+straddle the boundary with Norway, the United Kingdom, Iceland or the Faroe Islands are agreed in
+bilateral or coastal state consultations before the December Council, and the Union's internal
+allocation then applies to its agreed share. Where those consultations fail, as they have
+periodically for mackerel and for blue whiting, each party sets its own limit and the sum exceeds
+the scientific advice, which is the clearest illustration of why the negotiation matters as much as
+the assessment.

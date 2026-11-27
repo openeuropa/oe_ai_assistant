@@ -1,0 +1,42 @@
+One signalling system for European railways
+
+Europe's railways were built as national networks, and nothing shows that more plainly than their
+signalling. Each country developed its own system for telling a driver how fast to go and when to
+stop, with its own trackside equipment, its own onboard reader and its own logic. More than twenty
+incompatible systems remain in service. A locomotive crossing three borders historically needed
+three sets of equipment and a driver qualified on all three, which is why international trains were
+so often handed over at the frontier.
+
+The European Rail Traffic Management System is the agreed replacement, and its train control
+component, the European Train Control System, works on a different principle from most of what it
+supersedes. Instead of signals at the lineside that a driver reads, the train is given a movement
+authority: permission to proceed to a defined point at defined speeds. The onboard computer
+compares that authority against the train's braking characteristics and supervises the driver
+continuously, intervening if the train would overrun it.
+
+Deployment is described in levels, and the levels are not a quality ranking but a description of how
+much lineside equipment remains. At the first level the existing signals stay and balises in the
+track pass the authority to the train at fixed points. At the second, authorities arrive by radio
+from a control centre and the lineside signals can come down, which removes the hardware that costs
+most to maintain. Higher levels dispense with trackside train detection as well, letting the train
+report its own position and integrity.
+
+The hard part has never been the specification. It is that a line must carry traffic throughout the
+transition. Fitting a route means equipping the infrastructure and every train that uses it,
+including those of operators from other countries, and until the last of them is fitted the old
+system has to stay in place too. Dual fitting is expensive, and the economic case for a route
+arrives only when the old equipment can finally be switched off. That sequencing problem, rather
+than any technical doubt, explains why deployment has taken decades and why national plans are
+coordinated through binding timetables for the core network corridors.
+
+Interoperability depends on more than signalling, and the technical specifications cover the rest:
+the loading gauge that fixes how large a vehicle may be, the electrification systems a locomotive
+must handle, the couplers, the brakes. A vehicle authorised in one member state is now authorised
+once for an area of use that can span several, with the European Union Agency for Railways issuing
+the authorisation rather than each national authority in turn.
+
+The benefit is easiest to see in freight. A train from a North Sea port to northern Italy crosses
+several networks, and every change of system is a point at which the locomotive, the driver or both
+must be exchanged, adding hours to a journey that competes with road haulage on exactly that margin.
+Removing those breaks is the practical argument for the whole programme, and it is why the corridors
+carrying the most freight were fitted first.

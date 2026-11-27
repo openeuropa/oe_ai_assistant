@@ -4,27 +4,19 @@ declare(strict_types=1);
 
 namespace Drupal\oe_ai_assistant\Evaluators;
 
-use Drupal\ai_neuron\Agent\NeuronAgentManagerInterface;
-use Drupal\ai_neuron\Providers\ProviderFactoryInterface;
 use Drupal\Core\File\FileSystemInterface;
 use Drupal\file\Entity\File;
 use Drupal\oe_ai_assistant\Entity\AiEditorialSessionInterface;
 use Drupal\oe_ai_assistant\Service\Drafting\ContextDocumentRepository;
 use Drupal\oe_ai_assistant\Service\Drafting\DocumentExtractionProcessorInterface;
-use Drupal\user\Entity\User;
-use NeuronAI\Agent\Agent;
-use NeuronAI\Agent\AgentInterface;
-use NeuronAI\Chat\Messages\UserMessage;
 use NeuronAI\Evaluation\Assertions\AgentJudge;
-use NeuronAI\Evaluation\BaseEvaluator;
 use NeuronAI\Evaluation\Contracts\DatasetInterface;
-use NeuronAI\Evaluation\Conversation\Trajectory;
 use NeuronAI\Evaluation\Dataset\ArrayDataset;
 
 /**
  * Checks that the attached-documents listing tracks attach/remove calls.
  */
-final class AttachedDocumentsListEvaluator extends BaseEvaluator {
+final class AttachedDocumentsListEvaluator extends EditorialSessionEvaluatorBase {
 
   /**
    * Where the fixture files are written.
@@ -35,19 +27,9 @@ final class AttachedDocumentsListEvaluator extends BaseEvaluator {
   private const string FILE_DIRECTORY = 'private://ai-context-documents/evaluation';
 
   /**
-   * The judge that scores each checkpoint's answer against its criteria.
-   */
-  private AgentInterface $judge;
-
-  /**
    * {@inheritdoc}
    */
   public function setUp(): void {
-    // AgentJudge asks the judge for a JudgeScoreOutput, so plain chat is not
-    // enough: the provider has to support structured responses.
-    $provider = \Drupal::service(ProviderFactoryInterface::class)->create('chat_with_structured_response', ['evaluation_judge']);
-    $this->judge = Agent::make()->setAiProvider($provider);
-
     // prepareDirectory() takes the directory by reference, so it needs a
     // variable and refuses the constant itself.
     $directory = self::FILE_DIRECTORY;
@@ -88,70 +70,24 @@ final class AttachedDocumentsListEvaluator extends BaseEvaluator {
   public function run(array $datasetItem): mixed {
     [$session, $owner] = $this->createSession();
     $sessionId = (int) $session->id();
-    $repository = \Drupal::service(ContextDocumentRepository::class);
-    $manager = \Drupal::service(NeuronAgentManagerInterface::class);
+    $question = 'list all context documents';
 
     try {
-      $agent = $this->editorialAgent($manager, $sessionId);
-      $agent->chat(new UserMessage('Hi.'));
-
       $firstId = $this->attachDocument($session, $datasetItem['first']);
-
-      $agent = $this->editorialAgent($manager, $sessionId);
-      $agent->chat(new UserMessage('list all context documents'));
-      $listsFirstDocument = Trajectory::fromChatHistory($agent->getChatHistory())->finalAnswer();
+      $listsFirstDocument = $this->ask($sessionId, $question)->finalAnswer();
 
       $this->attachDocument($session, $datasetItem['second']);
+      $listsBothDocuments = $this->ask($sessionId, $question)->finalAnswer();
 
-      $agent = $this->editorialAgent($manager, $sessionId);
-      $agent->chat(new UserMessage('list all context documents'));
-      $listsBothDocuments = Trajectory::fromChatHistory($agent->getChatHistory())->finalAnswer();
-
-      $repository->remove($this->reloadSession($sessionId), $firstId);
-
-      $agent = $this->editorialAgent($manager, $sessionId);
-      $agent->chat(new UserMessage('list all context documents'));
-      $listsOnlySecondDocument = Trajectory::fromChatHistory($agent->getChatHistory())->finalAnswer();
+      \Drupal::service(ContextDocumentRepository::class)
+        ->remove($this->session($sessionId), $firstId);
+      $listsOnlySecondDocument = $this->ask($sessionId, $question)->finalAnswer();
     }
     finally {
-      // Nested so the throwaway user is deleted even when reloading or
-      // deleting the session throws. reloadSession() can hand back a NULL
-      // session, which would fatal on delete() without this inner finally.
-      try {
-        $this->reloadSession($sessionId)->delete();
-      }
-      finally {
-        $owner->delete();
-      }
+      $this->deleteSession($sessionId, $owner);
     }
 
     return [$listsFirstDocument, $listsBothDocuments, $listsOnlySecondDocument];
-  }
-
-  /**
-   * Loads the session again, the way every HTTP request does.
-   *
-   * ContentCreationSession::brief() reads the document list once and then
-   * caches it on the object. That never shows up over HTTP, because every
-   * request loads its own session. If we held on to one object here, each
-   * turn would keep seeing the empty list we read before the first attach.
-   */
-  private function reloadSession(int $id): AiEditorialSessionInterface {
-    $session = \Drupal::entityTypeManager()->getStorage('ai_editorial_session')->loadUnchanged($id);
-    assert($session instanceof AiEditorialSessionInterface);
-
-    return $session;
-  }
-
-  /**
-   * Builds an editorial agent for one turn, on a freshly loaded session.
-   *
-   * An agent answers through the session object it was built with, which is
-   * why every turn needs its own, reloaded by reloadSession(). The stored
-   * thread carries the conversation from one turn to the next.
-   */
-  private function editorialAgent(NeuronAgentManagerInterface $manager, int $sessionId): Agent {
-    return $manager->createAgent('editorial', ['session' => $this->reloadSession($sessionId)]);
   }
 
   /**
@@ -164,44 +100,20 @@ final class AttachedDocumentsListEvaluator extends BaseEvaluator {
     $second = $datasetItem['second']['title'];
 
     $this->assert(
-      new AgentJudge($this->judge, "The reply lists a document named '{$first}'."),
+      new AgentJudge($this->judge(), "The reply lists a document named '{$first}'."),
       $listsFirstDocument,
       'Lists the first document once it is attached',
     );
     $this->assert(
-      new AgentJudge($this->judge, "The reply lists two documents, named '{$first}' and '{$second}'."),
+      new AgentJudge($this->judge(), "The reply lists two documents, named '{$first}' and '{$second}'."),
       $listsBothDocuments,
       'Lists both documents once the second is attached',
     );
     $this->assert(
-      new AgentJudge($this->judge, "The reply lists a document named '{$second}', and does not list one named '{$first}'."),
+      new AgentJudge($this->judge(), "The reply lists a document named '{$second}', and does not list one named '{$first}'."),
       $listsOnlySecondDocument,
       'Lists only the second document once the first is removed',
     );
-  }
-
-  /**
-   * Creates a throwaway session owned by a throwaway user.
-   *
-   * @return array
-   *   The new session, then the user that owns it.
-   */
-  private function createSession(): array {
-    $user = User::create([
-      'name' => 'eval-' . \uniqid(),
-      'mail' => 'eval-' . \uniqid() . '@example.com',
-      'status' => 1,
-    ]);
-    $user->save();
-
-    $session = \Drupal::entityTypeManager()->getStorage('ai_editorial_session')->create([
-      'type' => 'content_creation',
-      'uid' => $user->id(),
-      'content_type' => 'oe_news',
-    ]);
-    $session->save();
-
-    return [$session, $user];
   }
 
   /**

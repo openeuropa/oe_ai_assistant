@@ -4,17 +4,11 @@ declare(strict_types=1);
 
 namespace Drupal\oe_ai_assistant\Evaluators;
 
-use Drupal\ai_neuron\Agent\NeuronAgentManagerInterface;
-use Drupal\ai_neuron\Providers\ProviderFactoryInterface;
 use Drupal\file\Upload\InputStreamUploadedFile;
 use Drupal\oe_ai_assistant\Service\Drafting\ContextDocumentRepository;
-use NeuronAI\Agent\Agent;
-use NeuronAI\Agent\AgentInterface;
-use NeuronAI\Chat\Messages\UserMessage;
 use NeuronAI\Evaluation\Assertions\Judges\CorrectnessJudge;
 use NeuronAI\Evaluation\Assertions\Trajectory\ToolWasCalled;
 use NeuronAI\Evaluation\Contracts\DatasetInterface;
-use NeuronAI\Evaluation\Conversation\Trajectory;
 use NeuronAI\Evaluation\Dataset\ArrayDataset;
 
 /**
@@ -26,21 +20,6 @@ use NeuronAI\Evaluation\Dataset\ArrayDataset;
  * failure names the change the record lost.
  */
 final class SessionActivityAnswerEvaluator extends EditorialSessionEvaluatorBase {
-
-  /**
-   * The judge that scores each checkpoint's answer against its criteria.
-   */
-  private AgentInterface $judge;
-
-  /**
-   * {@inheritdoc}
-   */
-  public function setUp(): void {
-    // AgentJudge asks the judge for a JudgeScoreOutput, so plain chat is not
-    // enough: the provider has to support structured responses.
-    $provider = \Drupal::service(ProviderFactoryInterface::class)->create('chat_with_structured_response', ['evaluation_judge']);
-    $this->judge = Agent::make()->setAiProvider($provider);
-  }
 
   /**
    * {@inheritdoc}
@@ -81,7 +60,7 @@ final class SessionActivityAnswerEvaluator extends EditorialSessionEvaluatorBase
    */
   public function run(array $datasetItem): mixed {
     $input = $datasetItem['input'];
-    [$session, $owner] = $this->createSession(['tone' => $input['tone']]);
+    [$session, $owner] = $this->createSession(tone: $input['tone']);
     $sessionId = (int) $session->id();
     $switcher = \Drupal::service('account_switcher');
 
@@ -125,30 +104,11 @@ final class SessionActivityAnswerEvaluator extends EditorialSessionEvaluatorBase
 
     foreach ($datasetItem['expected_output'] as $checkpoint => $expected) {
       $this->assert(
-        new CorrectnessJudge(judge: $this->judge, expected: $expected, threshold: 0.7),
+        new CorrectnessJudge(judge: $this->judge(), expected: $expected, threshold: 0.7),
         $output[$checkpoint]->finalAnswer(),
         $checkpoint,
       );
     }
-  }
-
-  /**
-   * Asks the editorial agent one question and returns the turn it ran.
-   *
-   * @param int $sessionId
-   *   The session to ask about.
-   * @param string $question
-   *   The question to ask.
-   *
-   * @return \NeuronAI\Evaluation\Conversation\Trajectory
-   *   The turn, which holds its answer and the tools it called.
-   */
-  private function ask(int $sessionId, string $question): Trajectory {
-    $agent = \Drupal::service(NeuronAgentManagerInterface::class)
-      ->createAgent('editorial', ['session' => $this->session($sessionId)]);
-    $agent->chat(new UserMessage($question));
-
-    return Trajectory::fromChatHistory($agent->getChatHistory());
   }
 
   /**
