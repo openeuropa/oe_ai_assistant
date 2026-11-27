@@ -50,9 +50,17 @@ abstract class EditorialSessionEvaluatorBase extends BaseEvaluator {
   protected function ask(int $sessionId, string $question): Trajectory {
     $agent = \Drupal::service(NeuronAgentManagerInterface::class)
       ->createAgent('editorial', ['session' => $this->session($sessionId)]);
+
+    // The message store holds every earlier turn of this session, and a
+    // trajectory over the whole history reports their tool calls as this
+    // turn's. An assertion on a call would then pass on a turn that made
+    // none, so we keep only the messages chat() added.
+    $earlierTurns = count($agent->getChatHistory()->getMessages());
     $agent->chat(new UserMessage($question));
 
-    return Trajectory::fromChatHistory($agent->getChatHistory());
+    return Trajectory::fromMessages(
+      array_slice($agent->getChatHistory()->getMessages(), $earlierTurns),
+    );
   }
 
   /**
