@@ -9,7 +9,6 @@ use Drupal\ai_neuron\Tools\NeuronToolPluginBase;
 use Drupal\ai_neuron\Workflow\NeuronWorkflowManagerInterface;
 use Drupal\Core\Plugin\Context\EntityContextDefinition;
 use Drupal\Core\StringTranslation\TranslatableMarkup;
-use Drupal\oe_ai_assistant\Exception\ToolRefusalException;
 use Drupal\oe_ai_assistant\Neuron\Tools\WorkflowToolProxy;
 use Drupal\oe_ai_assistant\Neuron\Tools\WorkflowToolInterface;
 use NeuronAI\Exceptions\ToolException;
@@ -101,22 +100,10 @@ final class RequestDraftNeuronTool extends NeuronToolPluginBase implements Workf
    * {@inheritdoc}
    */
   public function workflow(ToolCall $call): Workflow {
-    $brief = trim((string) ($call->getInput('brief') ?? ''));
-    // WorkflowToolNode runs a tool's workflow without binding its inputs,
-    // so the required flag on the brief property is never checked. A
-    // drafting run with no brief costs minutes of provider calls, and the
-    // drafters write about whatever subject they like. So we refuse here.
-    if ($brief === '') {
-      throw new ToolRefusalException(
-        'No draft was started: this tool needs a brief saying what to draft'
-        . ' and how. Call it again with one.'
-      );
-    }
-
     return $this->workflows->createWorkflow('draft_content', [], [
       'session' => $this->getContextValue('session'),
       'call' => (string) $call->getCallId(),
-      'brief' => $brief,
+      'brief' => trim((string) ($call->getInput('brief') ?? '')),
     ]);
   }
 
